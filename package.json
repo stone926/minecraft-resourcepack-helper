@@ -1,11 +1,11 @@
 {
   "name": "minecraft-resourcepack-helper",
-  "displayName": "minecraft-resourcepack-helper",
+  "displayName": "Minecraft Resourcepack Helper",
   "publisher": "stone926",
   "author": { "name": "hans000" },
-  "contributors": ["stone926"],
+  "contributors": ["stone926", "hans000"],
   "description": "This extension features that can be used to improve productivity for CBer.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "engines": {
     "vscode": "^1.52.0"
   },
@@ -15,7 +15,7 @@
     "Other"
   ],
   "repository": {
-    "url": "https://github.com/hans000/minecraft-assets-helper.git"
+    "url": "https://gitee.com/stone926/minecraft-resourcepack-helper"
   },
   "activationEvents": [
     "*"
@@ -55,7 +55,7 @@
       "title": "Minecraft Resourcepack Helper",
       "properties": {
         "McResHelper.defaultMcAssetsPath": {
-          "type": ["string","null"],
+          "type": ["string", "null"],
           "description": "指定minecraft材质的默认路径，用于跳转到原版材质，请使用绝对路径，起点为`minecraft`文件夹所在的目录",
           "default": null
         }
