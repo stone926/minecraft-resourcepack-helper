@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://raw.githubusercontent.com/haima16/texture-json/master/src/pack.mcmeta.json",
+  "title": "Resource pack information",
+  "description": "资源包的描述信息",
+  "additionalProperties": true,
+  "defaultSnippets": [
+  {
+    "label": "快速生成pack.mcmeta",
+    "prefix": "pack",
+    "body": {
+      "pack": {
+        "description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
+        "pack_format": 9
+      }
+    }
+  }],
+  "properties": {
+    "pack": {
+      "type": "object",
+      "additionalProperties": true,
+      "title": "pack",
+      "description": "资源包的描述信息",
+      "properties": {
+        "pack_format": {
+          "default": 9,
+          "type": "integer",
+          "title": "资源包的版本",
+          "description": "数字9代表1.19版本"
+        },
+        "description": {
+          "$ref": "./shared/text_component.json#",
+          "title": "资源包的描述信息",
+          "description": "The description for this pack. Any text which doesn't fit on two lines will be removed"
+        }
+      },
+      "required": ["pack_format", "description"]
+    },
+    "filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "设置要屏蔽的资源",
+      "properties": {
+        "block": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["namespace", "path"],
+            "additionalProperties": false,
+            "description": "每一项要屏蔽的资源"
+          }
+        }
+      }
+    }
+  },
+  "required": ["pack"]
+}

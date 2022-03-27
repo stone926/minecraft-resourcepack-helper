@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["animation"],
+  "properties": {
+    "animation": {
+      "additionalProperties": false,
+      "properties": {
+        "interpolate": {
+          "type": "boolean",
+          "description": "若为 true，游戏将会在帧与帧之间生成一张间隔时间大于1的帧。默认为false"
+        },
+        "frametime": {
+          "type": "integer",
+          "description": "设置在每个游戏刻内每一帧的时间增量。默认为1"
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "integer", "description": "指定开始播放的帧的位置，最上面的一帧为 0" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "index": { "type": "integer", "description": "指定开始播放的帧的位置，最上面的一帧为 0" },
+                  "time": {
+                    "type": "integer",
+                    "description": "这一帧的显示时间（单位：刻），覆盖上面的“frametime”"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
