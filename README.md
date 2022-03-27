@@ -1,4 +1,4 @@
-# minecraft assets helper
+# Minecraft Resourcepack Helper
 
 This extension features that can be used to improve productivity for CBer.
 

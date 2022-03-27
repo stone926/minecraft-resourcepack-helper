@@ -234,7 +234,7 @@
             "type": "object",
             "title": "element 元素",
             "description": "定义一个元素",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "required": ["from", "to", "faces"],
             "properties": {
                 "__comment": {

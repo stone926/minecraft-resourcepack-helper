@@ -44,7 +44,7 @@
                 }
               },
               "additionalProperties": {
-                "type": "string",
+                "type": ["string", "integer", "boolean"],
                 "description": "方块状态名称。只能规定一个方块状态。但方块状态可以有多个值，由|来分隔，使得不同状态均可以匹配。不能和OR标签同时出现"
               }
             },

@@ -1,75 +1,85 @@
 {
-	"name": "minecraft-assets-helper",
-	"displayName": "minecraft-assets-helper",
-	"publisher": "hans000",
-	"description": "This extension features that can be used to improve productivity for CBer.",
-	"version": "1.0.1",
-	"engines": {
-		"vscode": "^1.52.0"
-	},
-	"categories": [
-		"Linters",
-		"Other"
-	],
-	"repository": {
-		"url": "https://github.com/hans000/minecraft-assets-helper.git"
-	},
-	"activationEvents": [
-		"*"
-	],
-	"main": "./out/extension.js",
-	"contributes": {
-		"languages": [
-			{
-				"id": "json",
-				"extensions": [
-					"mcmeta"
-				]
-			}
-		],
-		"jsonValidation": [
-			{
-				"fileMatch": "pack.mcmeta",
-				"url": "./assets/linters/pack.mcmeta.json"
-			},
-			{
-				"fileMatch": "assets/**/blockstates/*.json",
-				"url": "./assets/linters/blockstates.json"
-			},
-			{
-				"fileMatch": "assets/**/models/block/**/*.json",
-				"url": "./assets/linters/models-block.json"
-			},
-			{
-				"fileMatch": "assets/**/models/item/**/*.json",
-				"url": "./assets/linters/models-item.json"
-			},
-			{
-				"fileMatch": "assets/**/textures/**/*.png.mcmeta",
-				"url": "./assets/linters/animation.mcmeta.json"
-			}
-		],
-		"commands": []
-	},
-	"scripts": {
-		"vscode:prepublish": "npm run compile",
-		"compile": "tsc -p ./",
-		"watch": "tsc -watch -p ./",
-		"pretest": "npm run compile && npm run lint",
-		"lint": "eslint src --ext ts",
-		"test": "node ./out/test/runTest.js"
-	},
-	"devDependencies": {
-		"@types/glob": "^7.1.3",
-		"@types/mocha": "^8.0.4",
-		"@types/node": "^12.20.47",
-		"@types/vscode": "^1.52.0",
-		"@typescript-eslint/eslint-plugin": "^4.9.0",
-		"@typescript-eslint/parser": "^4.9.0",
-		"eslint": "^7.15.0",
-		"glob": "^7.1.6",
-		"mocha": "^8.1.3",
-		"typescript": "^4.1.2",
-		"vscode-test": "^1.4.1"
-	}
+  "name": "minecraft-assets-helper",
+  "displayName": "minecraft-assets-helper",
+  "publisher": "hans000",
+  "author": { "name": "hans000" },
+  "contributors": ["stone926"],
+  "description": "This extension features that can be used to improve productivity for CBer.",
+  "version": "1.0.1",
+  "engines": {
+    "vscode": "^1.52.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "repository": {
+    "url": "https://github.com/hans000/minecraft-assets-helper.git"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+    {
+      "id": "json",
+      "extensions": [
+        "mcmeta"
+      ]
+    }],
+    "jsonValidation": [
+    {
+      "fileMatch": "pack.mcmeta",
+      "url": "./assets/linters/pack.mcmeta.json"
+    },
+    {
+      "fileMatch": "assets/**/blockstates/*.json",
+      "url": "./assets/linters/blockstates.json"
+    },
+    {
+      "fileMatch": "assets/**/models/block/**/*.json",
+      "url": "./assets/linters/models-block.json"
+    },
+    {
+      "fileMatch": "assets/**/models/item/**/*.json",
+      "url": "./assets/linters/models-item.json"
+    },
+    {
+      "fileMatch": "assets/**/textures/**/*.png.mcmeta",
+      "url": "./assets/linters/animation.mcmeta.json"
+    }],
+    "commands": [],
+    "configuration": {
+      "title": "Minecraft Resourcepack Helper",
+      "properties": {
+        "McResHelper.defaultMcAssetsPath": {
+          "type": ["string","null"],
+          "description": "指定minecraft材质的默认路径，用于跳转到原版材质，请使用绝对路径，起点为`minecraft`文件夹所在的目录",
+          "default": null
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^7.1.3",
+    "@types/mocha": "^8.0.4",
+    "@types/node": "^12.20.47",
+    "@types/vscode": "^1.52.0",
+    "@typescript-eslint/eslint-plugin": "^4.9.0",
+    "@typescript-eslint/parser": "^4.9.0",
+    "eslint": "^7.15.0",
+    "glob": "^7.1.6",
+    "mocha": "^8.1.3",
+    "typescript": "^4.1.2",
+    "vscode-test": "^1.4.1"
+  }
 }
