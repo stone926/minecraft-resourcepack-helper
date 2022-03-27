@@ -1,7 +1,7 @@
 {
-  "name": "minecraft-assets-helper",
-  "displayName": "minecraft-assets-helper",
-  "publisher": "hans000",
+  "name": "minecraft-resourcepack-helper",
+  "displayName": "minecraft-resourcepack-helper",
+  "publisher": "stone926",
   "author": { "name": "hans000" },
   "contributors": ["stone926"],
   "description": "This extension features that can be used to improve productivity for CBer.",
@@ -9,6 +9,7 @@
   "engines": {
     "vscode": "^1.52.0"
   },
+  "icon": "icon.png",
   "categories": [
     "Linters",
     "Other"
