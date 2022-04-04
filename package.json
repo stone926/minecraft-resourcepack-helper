@@ -4,7 +4,7 @@
   "publisher": "stone926",
   "author": { "name": "hans000" },
   "contributors": ["stone926", "hans000"],
-  "description": "This extension features that can be used to improve productivity for CBer.",
+  "description": "To help minecraft developers create resource packs more efficiently",
   "version": "1.0.2",
   "engines": {
     "vscode": "^1.52.0"
@@ -48,7 +48,7 @@
       "url": "./assets/linters/models-item.json"
     },
     {
-      "fileMatch": "assets/**/textures/**/*.png.mcmeta",
+      "fileMatch": "assets/**/*.png.mcmeta",
       "url": "./assets/linters/animation.mcmeta.json"
     }],
     "commands": [],

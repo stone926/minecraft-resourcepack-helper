@@ -3,7 +3,6 @@ import { createCompletionItems } from '../lib'
 import { JsonModelMatcher, JsonParentMatcher, JsonTextureMatcher } from '../lib/JsonMatcher'
 
 export default (document: vscode.TextDocument, position: vscode.Position) => {
-    
     const model = new JsonModelMatcher(document, position).getContext()
     if (model) {
         return createCompletionItems(model)

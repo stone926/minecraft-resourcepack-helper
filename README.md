@@ -1,6 +1,7 @@
 # Minecraft Resourcepack Helper
 
 This extension features that can be used to improve productivity for CBer.
+**Only support namespace "minecraft"**
 
 ## Features
 
