@@ -5,7 +5,7 @@
   "author": { "name": "hans000" },
   "contributors": ["stone926", "hans000"],
   "description": "To help minecraft developers create resource packs more efficiently",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "engines": {
     "vscode": "^1.52.0"
   },

@@ -12,10 +12,10 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
       value = value.replace(/minecraft:/g, "");
       if (value.includes("/")) {
         if (!value.startsWith("assets")) {
-          let type="";
+          let type = "";
           if (/texture.?[\s\S]*/.test(key)) { type = "textures"; }
           else if (/model.?[\s\S]*/.test(key)) { type = "models"; }
-          value = path.join("assets/minecraft", type,value);
+          value = path.join("assets/minecraft", type, value);
         }
         const folders = vscode.workspace.workspaceFolders;
         let rootPath;
