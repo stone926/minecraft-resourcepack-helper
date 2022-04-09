@@ -15,8 +15,8 @@
     },
     "ambientocclusion": {
       "type": "boolean",
-      "title": "ambient occlusion 环境遮挡",
-      "description": "是否使用环境遮挡，默认为true。如果设置了parent，则其父模型的ambientocclusion标签会覆盖该模型的ambientocclusion标签"
+      "title": "环境光遮蔽",
+      "description": "是否使用环境光遮蔽，默认为true。如果设置了parent，则其父模型的ambientocclusion标签会覆盖该模型的ambientocclusion标签"
     },
     "display": {
       "title": "display 显示",
@@ -63,35 +63,35 @@
           "type": "string"
         },
         "thirdperson_righthand": {
-          "description": "指的是当被放到第三人称右手上时",
+          "description": "当被放到第三人称右手上时",
           "$ref": "#/definitions/position"
         },
         "thirdperson_lefthand": {
-          "description": "指的是当被放到第三人称左手上时",
+          "description": "当被放到第三人称左手上时",
           "$ref": "#/definitions/position"
         },
         "firstperson_righthand": {
-          "description": "指的是当被放到第一人称右手上时",
+          "description": "当被放到第一人称右手上时",
           "$ref": "#/definitions/position"
         },
         "firstperson_lefthand": {
-          "description": "指的是当被放到第一人称左手上时",
+          "description": "当被放到第一人称左手上时",
           "$ref": "#/definitions/position"
         },
         "gui": {
-          "description": "指的是当被放到容器时",
+          "description": "当被放到容器时",
           "$ref": "#/definitions/position"
         },
         "head": {
-          "description": "指的是当被放到头部时",
+          "description": "当被放到头部时",
           "$ref": "#/definitions/position"
         },
         "ground": {
-          "description": "指的是当被放到地上时",
+          "description": "当被放到地上时",
           "$ref": "#/definitions/position"
         },
         "fixed": {
-          "description": "指的是当被摆放在物品展示框上时，其他的显示位置如同其名。值得注意的是平移优先于旋转",
+          "description": "当被摆放在物品展示框上时，其他的显示位置如同其名。值得注意的是平移优先于旋转",
           "$ref": "#/definitions/position"
         }
       }
@@ -223,7 +223,8 @@
         },
         "tintindex": {
           "description": "是否使用硬编码对该材质进行重新着色。默认不使用着色和任何着色数值。注意只有特定方块可以着色，其他方块设置此项无效",
-          "type": ["boolean", "integer"]
+          "type": "integer",
+          "enum": [0, 1]
         }
       }
     },

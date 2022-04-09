@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import definitionProvider from './providers/definitionProvider';
 import completionProvider from './providers/completionProvider';
-import textureVariantDefinitionProvider from './providers/textureVariantDefinitionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 import renameProvider from './providers/renameProvider';
 
@@ -10,10 +9,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
     provideDefinition: definitionProvider,
   }));
-
-  // context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
-  //   provideDefinition: textureVariantDefinitionProvider
-  // }));
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('properties', {
     provideDefinition: citDefinitionProvider
@@ -27,4 +22,5 @@ export function activate(context: vscode.ExtensionContext) {
   // 	provideRenameEdits: renameProvider,
   // }))
 }
+
 export function deactivate() { }
