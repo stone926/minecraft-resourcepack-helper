@@ -3,6 +3,7 @@ import definitionProvider from './providers/definitionProvider';
 import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 import renameProvider from './providers/renameProvider';
+import pictureHoverProvider from './providers/pictureHoverProvider';
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -17,6 +18,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(['json', 'javascript'], {
     provideCompletionItems: completionProvider,
   }, ...['"', '/']));
+
+  context.subscriptions.push(vscode.languages.registerHoverProvider("json", {
+    provideHover: pictureHoverProvider
+  }));
 
   // context.subscriptions.push(vscode.languages.registerRenameProvider('json', {
   // 	provideRenameEdits: renameProvider,
