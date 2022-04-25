@@ -10,7 +10,7 @@
     "hans000"
   ],
   "description": "To help minecraft developers create resource packs more efficiently",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "engines": {
     "vscode": "^1.66.0"
   },
@@ -42,19 +42,19 @@
         "url": "./assets/linters/pack.mcmeta.json"
       },
       {
-        "fileMatch": "assets/**/blockstates/*.json",
+        "fileMatch": "**/blockstates/*.json",
         "url": "./assets/linters/blockstates.json"
       },
       {
-        "fileMatch": "assets/**/models/block/**/*.json",
+        "fileMatch": "**/models/block/**/*.json",
         "url": "./assets/linters/models-block.json"
       },
       {
-        "fileMatch": "assets/**/models/item/**/*.json",
+        "fileMatch": "**/models/item/**/*.json",
         "url": "./assets/linters/models-item.json"
       },
       {
-        "fileMatch": "assets/**/*.png.mcmeta",
+        "fileMatch": "**/*.png.mcmeta",
         "url": "./assets/linters/animation.mcmeta.json"
       }
     ],
