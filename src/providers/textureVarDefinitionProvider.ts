@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 const { parse } = require('@humanwhocodes/momoa');
 
-
 export default (document: vscode.TextDocument, position: vscode.Position) => {
   const ast = parse(document.getText(), { tokens: true });
   const line = position.line + 1;
@@ -61,7 +60,6 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
                 }
               }
               if (texture !== null) {
-                console.log(texture);
                 for (let member of ast.body.members) {
                   if (member.name.value === 'textures') {
                     for (let variants of member.value.members) {
