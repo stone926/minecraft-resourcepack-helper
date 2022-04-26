@@ -2,12 +2,11 @@ import * as vscode from 'vscode';
 import definitionProvider from './providers/definitionProvider';
 import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
-import renameProvider from './providers/renameProvider';
 import pictureHoverProvider from './providers/pictureHoverProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
+import applyDecoration from './decorator/textureVarDecorator';
 
 export function activate(context: vscode.ExtensionContext) {
-
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
     provideDefinition: definitionProvider,
   }));
@@ -37,9 +36,28 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }));
 
-  // context.subscriptions.push(vscode.languages.registerRenameProvider('json', {
-  // 	provideRenameEdits: renameProvider,
-  // }))
+  let activeEditor: vscode.TextEditor;
+
+  if (vscode.window.activeTextEditor) {
+    activeEditor = vscode.window.activeTextEditor;
+    applyDecoration(activeEditor);
+  }
+
+  // * Handle active file changed
+  vscode.window.onDidChangeActiveTextEditor(editor => {
+    if (editor) {
+      activeEditor = editor;
+      applyDecoration(activeEditor);
+    }
+  }, null, context.subscriptions);
+
+  // * Handle file contents changed
+  vscode.workspace.onDidChangeTextDocument(event => {
+    if (activeEditor && event.document === activeEditor.document) {
+      applyDecoration(activeEditor);
+    }
+  }, null, context.subscriptions);
+
 }
 
 export function deactivate() { }

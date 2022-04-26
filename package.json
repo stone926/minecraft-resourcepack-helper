@@ -26,6 +26,14 @@
   "activationEvents": [
     "*"
   ],
+  "keywords": [
+    "minecraft",
+    "resourcepack",
+    "resource pack",
+    "helper",
+    "assets helper",
+    "mc"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
