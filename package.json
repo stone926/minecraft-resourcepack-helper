@@ -68,8 +68,8 @@
     ],
     "commands": [
       {
-        "command": "McAssetsHelper.openDefaultMcAssetsPath",
-        "title": "McAssetsHelper: 打开原版材质所在文件夹"
+        "command": "McResHelper.openDefaultMcAssetsPath",
+        "title": "McResHelper: 打开原版材质所在文件夹"
       }
     ],
     "configuration": {

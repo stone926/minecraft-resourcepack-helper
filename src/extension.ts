@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
     provideHover: pictureHoverProvider
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand('McAssetsHelper.openDefaultMcAssetsPath', () => {
+  context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', () => {
     const defaultPath = vscode.workspace.getConfiguration().get("McResHelper.defaultMcAssetsPath");
     if (defaultPath !== null) {
       vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(<string>defaultPath), {
