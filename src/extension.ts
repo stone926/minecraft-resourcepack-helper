@@ -57,7 +57,6 @@ export function activate(context: vscode.ExtensionContext) {
       applyDecoration(activeEditor);
     }
   }, null, context.subscriptions);
-
 }
 
 export function deactivate() { }

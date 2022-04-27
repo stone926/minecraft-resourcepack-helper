@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 const { parse } = require("@humanwhocodes/momoa");
 
+const tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.TipColorForUndefinedTextureVariables");
 const decorationType = vscode.window.createTextEditorDecorationType({
-  color: "Chartreuse"
+  color: tipColor
 });
 
 export default function applyDecoration(editor: vscode.TextEditor) {
