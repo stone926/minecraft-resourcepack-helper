@@ -10,7 +10,7 @@
     "hans000"
   ],
   "description": "To help minecraft developers create resource packs more efficiently",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "engines": {
     "vscode": "^1.66.0"
   },
@@ -85,7 +85,7 @@
         },
         "McResHelper.TipColorForUndefinedTextureVariables": {
           "type": "string",
-          "description": "model文件中，引用的#开头的材质变量未在texture部分中定义时，该变量被高亮的颜色，重启以生效",
+          "description": "model文件中，引用的#开头的材质变量未在texture部分中定义时，该变量被高亮的颜色",
           "default": "Chartreuse"
         }
       }

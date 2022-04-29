@@ -4,7 +4,7 @@ import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 import pictureHoverProvider from './providers/pictureHoverProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
-import applyDecoration from './decorator/textureVarDecorator';
+import { applyDecoration, updateDecoration } from './decorator/textureVarDecorator';
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
@@ -57,6 +57,12 @@ export function activate(context: vscode.ExtensionContext) {
       applyDecoration(activeEditor);
     }
   }, null, context.subscriptions);
+
+  vscode.workspace.onDidChangeConfiguration(event => {
+    if (activeEditor) {
+      updateDecoration(activeEditor);
+    }
+  });
 }
 
 export function deactivate() { }

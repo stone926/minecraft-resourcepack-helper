@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 const { parse } = require("@humanwhocodes/momoa");
 
-const tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.TipColorForUndefinedTextureVariables");
-const decorationType = vscode.window.createTextEditorDecorationType({
+let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.TipColorForUndefinedTextureVariables");
+let decorationType = vscode.window.createTextEditorDecorationType({
   color: tipColor
 });
 
-export default function applyDecoration(editor: vscode.TextEditor) {
+export function applyDecoration(editor: vscode.TextEditor) {
   if (editor.document.languageId === "json") {
     const documentPath = editor.document.uri.fsPath;
     if (/(.+)\\models\\block.+json$/.test(documentPath)) {
@@ -27,7 +27,7 @@ export default function applyDecoration(editor: vscode.TextEditor) {
                         let noDefinition: boolean = true;
                         if (texturesAst !== null) {
                           for (let texture of texturesAst.value.members) {
-                            if (texture.name.value === (<string>(key.value.value)).replace("#","")) {
+                            if (texture.name.value === (<string>(key.value.value)).replace("#", "")) {
                               noDefinition = false;
                             }
                           }
@@ -40,12 +40,31 @@ export default function applyDecoration(editor: vscode.TextEditor) {
                   }
                 }
               }
-             
             }
           }
+        }
+      }
+      const textureDefinition: string[] = [];
+      for (let item4 of texturesAst.value.members) {
+        if (item4.name.value !== "particle") {
+          textureDefinition.push(item4.name.value);
+        }
+      }
+      for (let item4 of texturesAst.value.members) {
+        if (item4.value.value.startsWith("#") && !textureDefinition.includes(item4.value.value.replace("#", ""))) {
+          ranges.push(new vscode.Range(new vscode.Position(item4.value.loc.start.line - 1, item4.value.loc.start.column - 1), new vscode.Position(item4.value.loc.end.line - 1, item4.value.loc.end.column - 1)))
         }
       }
       editor.setDecorations(decorationType, ranges);
     }
   }
+}
+
+export function updateDecoration(editor: vscode.TextEditor) {
+  tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.TipColorForUndefinedTextureVariables");
+  editor.setDecorations(decorationType, []);
+  decorationType = vscode.window.createTextEditorDecorationType({
+    color: tipColor
+  });
+  applyDecoration(editor);
 }
