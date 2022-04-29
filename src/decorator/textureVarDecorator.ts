@@ -45,14 +45,16 @@ export function applyDecoration(editor: vscode.TextEditor) {
         }
       }
       const textureDefinition: string[] = [];
-      for (let item4 of texturesAst.value.members) {
-        if (item4.name.value !== "particle") {
-          textureDefinition.push(item4.name.value);
+      if (texturesAst !== null) {
+        for (let item4 of texturesAst.value.members) {
+          if (item4.name.value !== "particle") {
+            textureDefinition.push(item4.name.value);
+          }
         }
-      }
-      for (let item4 of texturesAst.value.members) {
-        if (item4.value.value.startsWith("#") && !textureDefinition.includes(item4.value.value.replace("#", ""))) {
-          ranges.push(new vscode.Range(new vscode.Position(item4.value.loc.start.line - 1, item4.value.loc.start.column - 1), new vscode.Position(item4.value.loc.end.line - 1, item4.value.loc.end.column - 1)))
+        for (let item4 of texturesAst.value.members) {
+          if (item4.value.value.startsWith("#") && !textureDefinition.includes(item4.value.value.replace("#", ""))) {
+            ranges.push(new vscode.Range(new vscode.Position(item4.value.loc.start.line - 1, item4.value.loc.start.column - 1), new vscode.Position(item4.value.loc.end.line - 1, item4.value.loc.end.column - 1)));
+          }
         }
       }
       editor.setDecorations(decorationType, ranges);
