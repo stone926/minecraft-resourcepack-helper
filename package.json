@@ -70,6 +70,14 @@
       {
         "command": "McResHelper.openDefaultMcAssetsPath",
         "title": "McResHelper: 打开原版材质所在文件夹"
+      },
+      {
+        "command": "McResHelper.createNewResourcePack",
+        "title": "McResHelper: 在当前文件夹下创建新材质包"
+      },
+      {
+        "command": "McResHelper.createNewResourcePackRoot",
+        "title": "McResHelper: 以当前文件夹为根目录创建新材质包"
       }
     ],
     "configuration": {
@@ -114,6 +122,7 @@
     "vscode-test": "^1.4.1"
   },
   "dependencies": {
-    "@humanwhocodes/momoa": "^2.0.4"
+    "@humanwhocodes/momoa": "^2.0.4",
+    "string": "^3.3.3"
   }
 }

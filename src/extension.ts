@@ -4,6 +4,9 @@ import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 import pictureHoverProvider from './providers/pictureHoverProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
+import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
+import createNewResourcePack from './commands/createNewResourcePack';
+import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
 import { applyDecoration, updateDecoration } from './decorator/textureVarDecorator';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -27,14 +30,9 @@ export function activate(context: vscode.ExtensionContext) {
     provideHover: pictureHoverProvider
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', () => {
-    const defaultPath = vscode.workspace.getConfiguration().get("McResHelper.defaultMcAssetsPath");
-    if (defaultPath !== null) {
-      vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(<string>defaultPath), {
-        "forceNewWindow": true
-      });
-    }
-  }));
+  context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
+  context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
+  context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
 
   let activeEditor: vscode.TextEditor;
 
