@@ -10,7 +10,7 @@
     "hans000"
   ],
   "description": "To help minecraft developers create resource packs more efficiently",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "engines": {
     "vscode": "^1.66.0"
   },
@@ -36,50 +36,49 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "languages": [
-      {
-        "id": "json",
-        "extensions": [
-          ".mcmeta"
-        ]
-      }
-    ],
+    "languages": [{ "id": "json", "extensions": [".mcmeta"] }],
     "jsonValidation": [
-      {
-        "fileMatch": "pack.mcmeta",
-        "url": "./assets/linters/pack.mcmeta.json"
-      },
-      {
-        "fileMatch": "**/blockstates/*.json",
-        "url": "./assets/linters/blockstates.json"
-      },
-      {
-        "fileMatch": "**/models/block/**/*.json",
-        "url": "./assets/linters/models-block.json"
-      },
-      {
-        "fileMatch": "**/models/item/**/*.json",
-        "url": "./assets/linters/models-item.json"
-      },
-      {
-        "fileMatch": "**/*.png.mcmeta",
-        "url": "./assets/linters/animation.mcmeta.json"
-      }
-    ],
+    {
+      "fileMatch": "pack.mcmeta",
+      "url": "./assets/linters/pack.mcmeta.json"
+    },
+    {
+      "fileMatch": "**/blockstates/*.json",
+      "url": "./assets/linters/blockstates.json"
+    },
+    {
+      "fileMatch": "**/models/block/**/*.json",
+      "url": "./assets/linters/models-block.json"
+    },
+    {
+      "fileMatch": "**/models/item/**/*.json",
+      "url": "./assets/linters/models-item.json"
+    },
+    {
+      "fileMatch": ["**/textures/block/**/*.png.mcmeta", "**/textures/item/**/*.png.mcmeta"],
+      "url": "./assets/linters/animation.mcmeta.json"
+    },
+    {
+      "fileMatch": "**/textures/misc/**/*.png.mcmeta",
+      "url": "./assets/linters/misc.mcmeta.json"
+    },
+    {
+      "fileMatch": ["**/textures/entity/villager/**/*.png.mcmeta", "**/textures/entity/zombie_villager/**/*.png.mcmeta"],
+      "url": "./assets/linters/villager.mcmeta.json"
+    }],
     "commands": [
-      {
-        "command": "McResHelper.openDefaultMcAssetsPath",
-        "title": "McResHelper: 打开原版材质所在文件夹"
-      },
-      {
-        "command": "McResHelper.createNewResourcePack",
-        "title": "McResHelper: 在当前文件夹下创建新材质包"
-      },
-      {
-        "command": "McResHelper.createNewResourcePackRoot",
-        "title": "McResHelper: 以当前文件夹为根目录创建新材质包"
-      }
-    ],
+    {
+      "command": "McResHelper.openDefaultMcAssetsPath",
+      "title": "McResHelper: 打开原版材质所在文件夹"
+    },
+    {
+      "command": "McResHelper.createNewResourcePack",
+      "title": "McResHelper: 在当前文件夹下创建新材质包"
+    },
+    {
+      "command": "McResHelper.createNewResourcePackRoot",
+      "title": "McResHelper: 以当前文件夹为根目录创建新材质包"
+    }],
     "configuration": {
       "title": "Minecraft Resourcepack Helper",
       "properties": {

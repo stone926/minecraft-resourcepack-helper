@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["villager"],
+  "properties": {
+    "villager": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "包含了纹理的数据",
+      "properties": {
+        "hat": { "type": "string", "enum": ["partial", "full"], "description": "村民种类的帽子图层是否仍完整渲染（默认），或者不（full）" }
+      }
+    }
+  }
+}

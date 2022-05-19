@@ -1,25 +1,20 @@
 # Minecraft Resourcepack Helper
 
-This extension features that can be used to improve productivity for CBer.
-**Only support namespace "minecraft"**
+To help minecraft developers create resource packs more efficiently
+**Only support namespace "minecraft", and other namespaces may be suppoted later**
 
 ## Features
 
-- Completions
-- Goto Definitions
-- Validator
+- Goto Definitions (also support CIT)
+- Json Validator
+- Creating New Pack by Command
+- Highlight for Variables in Model Files
+
 
 ## Install
 
 You can install it from the [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)
 
-## Completions
-
-The extension can compute completions as you typing commands. Completions will automatically show if you commit one of these characters: ['/', '"'].
-
-Alternatively you can use `Ctrl + Space` (or other configured hotkey) to show completions manually.
-
-![completion](./assets/completion.gif)
 
 ## Goto Definitions
 

@@ -27,12 +27,11 @@
           "default": 9,
           "type": "integer",
           "title": "资源包的版本",
-          "description": "数字9代表1.19版本"
+          "description": "如果这个数值与当前需要的数值不匹配，则资源包就会显示一个错误，进行附加确认后才能加载资源包。1.19为9"
         },
         "description": {
           "$ref": "./shared/text_component.json#",
-          "title": "资源包的描述信息",
-          "description": "The description for this pack. Any text which doesn't fit on two lines will be removed"
+          "description": "在资源包菜单里要显示的资源包名称。该文本将会显示为2行。如果文本太长则会被截断"
         }
       },
       "required": ["pack_format", "description"]
