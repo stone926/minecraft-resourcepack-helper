@@ -1,0 +1,7 @@
+{
+  "config.desc.defaultMcAssetsPath": "指定minecraft材质的默认路径，用于跳转到原版材质，请使用绝对路径，起点为`minecraft`文件夹所在的目录",
+  "config.desc.tipColorForUndefinedTextureVariables": "model文件中，引用的#开头的材质变量未在texture部分中定义时，该变量被高亮的颜色",
+  "command.title.openDefaultMcAssetsPath": "McResHelper: 打开原版材质所在文件夹",
+  "command.title.createNewResourcePack": "McResHelper: 在当前文件夹下创建新材质包",
+  "command.title.createNewResourcePackRoot": "McResHelper: 以当前文件夹为根目录创建新材质包"
+}

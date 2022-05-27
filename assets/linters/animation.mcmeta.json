@@ -26,7 +26,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "index": { "type": "integer", "description": "指定开始播放的帧的位置，最上面的一帧为 0" },
+                  "index": { "type": "integer", "description": "指定开始播放的帧的位置，最上面的一帧为0" },
                   "time": {
                     "type": "integer",
                     "description": "这一帧的显示时间（单位：刻），覆盖上面的“frametime”"
@@ -38,11 +38,11 @@
         },
         "width": {
           "type": "integer",
-          "description": "方块的宽度，以直接比例而不是像素为单位。这在原版中没有使用，但是可以被mod使用以具有不是完整正方形的帧。"
+          "description": "方块的宽度，以直接比例而不是像素为单位。这在原版中没有使用，但是可以被mod使用以具有不是完整正方形的帧"
         },
         "height": {
           "type": "integer",
-          "description": "方块的高度，以直接比例而不是像素为单位。这在原版中没有使用，但是可以被mod使用以具有不是完整正方形的帧。"
+          "description": "方块的高度，以直接比例而不是像素为单位。这在原版中没有使用，但是可以被mod使用以具有不是完整正方形的帧"
         }
       }
     }

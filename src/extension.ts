@@ -26,9 +26,10 @@ export function activate(context: vscode.ExtensionContext) {
     provideCompletionItems: completionProvider,
   }, ...['"', '/']));
 
-  context.subscriptions.push(vscode.languages.registerHoverProvider("json", {
-    provideHover: pictureHoverProvider
-  }));
+  context.subscriptions.push(vscode.languages.registerHoverProvider(
+    [{ language: "json", pattern: "**/models/block/**/*.json" }, { language: "json", pattern: "**/models/item/**/*.json" }],
+    { provideHover: pictureHoverProvider }
+  ));
 
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));

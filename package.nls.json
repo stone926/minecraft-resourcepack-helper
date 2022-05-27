@@ -1,0 +1,7 @@
+{
+  "config.desc.defaultMcAssetsPath": "directory of vanilla minecraft assets, used for goning to definitions, please use absolute path, the directory should include folder named `minecraft`",
+  "config.desc.tipColorForUndefinedTextureVariables": "the tip color for undefined texture variants in model files",
+  "command.title.openDefaultMcAssetsPath": "McResHelper: open folder of vanilla assets",
+  "command.title.createNewResourcePack": "McResHelper: create a new pack in current folder",
+  "command.title.createNewResourcePackRoot": "McResHelper: create a new pack with the current folder as the root directory"
+}

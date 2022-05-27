@@ -69,15 +69,15 @@
     "commands": [
     {
       "command": "McResHelper.openDefaultMcAssetsPath",
-      "title": "McResHelper: 打开原版材质所在文件夹"
+      "title": "%command.title.openDefaultMcAssetsPath%"
     },
     {
       "command": "McResHelper.createNewResourcePack",
-      "title": "McResHelper: 在当前文件夹下创建新材质包"
+      "title": "%command.title.createNewResourcePack%"
     },
     {
       "command": "McResHelper.createNewResourcePackRoot",
-      "title": "McResHelper: 以当前文件夹为根目录创建新材质包"
+      "title": "%command.title.createNewResourcePackRoot%"
     }],
     "configuration": {
       "title": "Minecraft Resourcepack Helper",
@@ -87,12 +87,12 @@
             "string",
             "null"
           ],
-          "description": "指定minecraft材质的默认路径，用于跳转到原版材质，请使用绝对路径，起点为`minecraft`文件夹所在的目录",
+          "description": "%config.desc.defaultMcAssetsPath%",
           "default": null
         },
-        "McResHelper.TipColorForUndefinedTextureVariables": {
+        "McResHelper.tipColorForUndefinedTextureVariables": {
           "type": "string",
-          "description": "model文件中，引用的#开头的材质变量未在texture部分中定义时，该变量被高亮的颜色",
+          "description": "%config.desc.tipColorForUndefinedTextureVariables%",
           "default": "Chartreuse"
         }
       }

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 const { parse } = require("@humanwhocodes/momoa");
 
-let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.TipColorForUndefinedTextureVariables");
+let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
 let decorationType = vscode.window.createTextEditorDecorationType({
   color: tipColor
 });
@@ -63,7 +63,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
 }
 
 export function updateDecoration(editor: vscode.TextEditor) {
-  tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.TipColorForUndefinedTextureVariables");
+  tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
   editor.setDecorations(decorationType, []);
   decorationType = vscode.window.createTextEditorDecorationType({
     color: tipColor
