@@ -38,7 +38,6 @@
                   "items": {
                     "type": "object",
                     "minProperties": 1,
-                    "maxProperties": 1,
                     "description": "方块状态。一个键值对只能规定一个方块状态。但方块状态可以有多个值，由|来分隔，使得不同状态均可以匹配"
                   }
                 }

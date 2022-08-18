@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import definitionProvider from './providers/definitionProvider';
 import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 import pictureHoverProvider from './providers/pictureHoverProvider';
@@ -8,15 +7,22 @@ import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
 import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
 import { applyDecoration, updateDecoration } from './decorator/textureVarDecorator';
+import BlockstateDefinitionProvider from './providers/BlockstateDefinitionProvider';
 
 export function activate(context: vscode.ExtensionContext) {
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
-    provideDefinition: definitionProvider,
-  }));
+  // context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
+  //   provideDefinition: definitionProvider,
+  // }));
 
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
-    provideDefinition: textureVarDefinitionProvider,
-  }));
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/blockstates/*.json" }],
+    { provideDefinition: BlockstateDefinitionProvider }
+  ));
+
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/models/block/**/*.json" }],
+    { provideDefinition: textureVarDefinitionProvider, }
+  ));
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('properties', {
     provideDefinition: citDefinitionProvider

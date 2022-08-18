@@ -102,6 +102,7 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
   const stateMatch = /(.+)\\blockstates.+json$/.exec(document.fileName)
   if (stateMatch) {
     const word = document.getText(document.getWordRangeAtPosition(position))
+    console.log(word)
     const json = document.getText()
     if (new RegExp(`"model"\\s*?:\\s*?[\\s\\S]*?${word.replace('/', '\\/')}[\\s\\S]*?\\}`, 'gm').test(json)) {
       const name = word.startsWith('"minecraft:') ? word.slice(11, -1) : word.slice(1, -1)
