@@ -25,7 +25,6 @@ export default (document: TextDocument, position: Position) => {
           for (let item2 of item.value.members) {
             let startPosition: Position = new Position(item2.loc.start.line - 1, item2.loc.start.column - 1);
             let endPosition: Position = new Position(item2.loc.end.line - 1, item2.loc.end.column - 1);
-            console.log(startPosition, position, endPosition)
             if (position.isAfterOrEqual(startPosition) && position.isBeforeOrEqual(endPosition)) {
               let modelPath = item2.value.value;
               let path = generateRedirectPath(modelPath, document, "textures", "models\\\\block", "png");
