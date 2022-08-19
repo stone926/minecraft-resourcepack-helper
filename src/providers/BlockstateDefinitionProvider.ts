@@ -1,9 +1,9 @@
 import { Definition, DefinitionLink, Location, Position, ProviderResult, TextDocument } from 'vscode';
-import { generateRedirectPath } from '../utils/PathGeneration';
+import { generateRedirectPath } from "../utils/pathGenerator";
 const { parse } = require("@humanwhocodes/momoa");
 
 export default (document: TextDocument, position: Position) => {
-  const ast = parse(document.getText(), { tokens: true });
+  const ast = parse(document.getText());
   const line: number = position.line + 1;
   const character: number = position.character + 1;
   if (ast.type === "Document") {
@@ -17,7 +17,6 @@ export default (document: TextDocument, position: Position) => {
       }
     }
   }
-  return null;
 };
 
 function processVariants(variants, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
@@ -35,7 +34,7 @@ function processVariants(variants, line: number, character: number, document: Te
               const endColumn: number = item2.value.loc.end.column;
               if (startLine <= line && line <= endLine && startColumn <= character && character <= endColumn) {
                 let modelPath = item2.value.value;
-                let path = generateRedirectPath(modelPath, document, "models");
+                let path = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
                 if (path !== null) {
                   return new Location(path, new Position(0, 0));
                 }
@@ -68,7 +67,7 @@ function processMultipart(multipart, line: number, character: number, document: 
                     const startColumn: number = item2.value.loc.start.column;
                     const endColumn: number = item2.value.loc.end.column;
                     if (startLine <= line && line <= endLine && startColumn <= character && character <= endColumn) {
-                      let path = generateRedirectPath(item3.value.value, document, "models");
+                      let path = generateRedirectPath(item3.value.value, document, "models", "blockstates", "json");
                       if (path !== null) {
                         return new Location(path, new Position(0, 0));
                       }
@@ -84,4 +83,3 @@ function processMultipart(multipart, line: number, character: number, document: 
   }
   return null;
 }
-

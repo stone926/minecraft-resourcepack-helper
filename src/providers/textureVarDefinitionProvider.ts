@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 const { parse } = require('@humanwhocodes/momoa');
 
 export default (document: vscode.TextDocument, position: vscode.Position) => {
-  const ast = parse(document.getText(), { tokens: true });
+  const ast = parse(document.getText());
   const line = position.line + 1;
   const character = position.character + 1;
   if (ast.type === 'Document') {

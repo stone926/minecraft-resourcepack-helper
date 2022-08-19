@@ -7,16 +7,24 @@ import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
 import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
 import { applyDecoration, updateDecoration } from './decorator/textureVarDecorator';
-import BlockstateDefinitionProvider from './providers/BlockstateDefinitionProvider';
+import blockstateDefinitionProvider from './providers/blockstateDefinitionProvider';
+import blockModelDefinitionProvider from './providers/blockModelDefinitionProvider';
+import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider';
 
 export function activate(context: vscode.ExtensionContext) {
-  // context.subscriptions.push(vscode.languages.registerDefinitionProvider('json', {
-  //   provideDefinition: definitionProvider,
-  // }));
-
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     [{ language: "json", pattern: "**/blockstates/*.json" }],
-    { provideDefinition: BlockstateDefinitionProvider }
+    { provideDefinition: blockstateDefinitionProvider }
+  ));
+
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/models/block/**/*.json" }],
+    { provideDefinition: blockModelDefinitionProvider }
+  ));
+
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/models/item/**/*.json" }],
+    { provideDefinition: itemModelDefinitionProvider }
   ));
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
@@ -33,7 +41,8 @@ export function activate(context: vscode.ExtensionContext) {
   }, ...['"', '/']));
 
   context.subscriptions.push(vscode.languages.registerHoverProvider(
-    [{ language: "json", pattern: "**/models/block/**/*.json" }, { language: "json", pattern: "**/models/item/**/*.json" }],
+    [{ language: "json", pattern: "**/models/block/**/*.json" },
+    { language: "json", pattern: "**/models/item/**/*.json" }],
     { provideHover: pictureHoverProvider }
   ));
 
