@@ -40,6 +40,16 @@
                     "minProperties": 1,
                     "description": "方块状态。一个键值对只能规定一个方块状态。但方块状态可以有多个值，由|来分隔，使得不同状态均可以匹配"
                   }
+                },
+                "AND": {
+                  "description": "如果该标签包含的所有条件返回为true时匹配。不能同时设定其他单独的情况",
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "description": "方块状态。一个键值对只能规定一个方块状态。但方块状态可以有多个值，由|来分隔，使得不同状态均可以匹配"
+                  }
                 }
               },
               "additionalProperties": {

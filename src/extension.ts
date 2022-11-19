@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
-import pictureHoverProvider from './providers/pictureHoverProvider';
+// import pictureHoverProvider from './providers/pictureHoverProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
 import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
@@ -40,11 +40,11 @@ export function activate(context: vscode.ExtensionContext) {
     provideCompletionItems: completionProvider,
   }, ...['"', '/']));
 
-  context.subscriptions.push(vscode.languages.registerHoverProvider(
-    [{ language: "json", pattern: "**/models/block/**/*.json" },
-    { language: "json", pattern: "**/models/item/**/*.json" }],
-    { provideHover: pictureHoverProvider }
-  ));
+  // context.subscriptions.push(vscode.languages.registerHoverProvider(
+  //   [{ language: "json", pattern: "**/models/block/**/*.json" },
+  //   { language: "json", pattern: "**/models/item/**/*.json" }],
+  //   { provideHover: pictureHoverProvider }
+  // ));
 
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));

@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 import * as fs from 'fs';
 import * as path from 'path';
 
+/**
+ * @deprecated
+ */
 export default (document: vscode.TextDocument, position: vscode.Position) => {
   const defaultPath = vscode.workspace.getConfiguration().get("McResHelper.defaultMcAssetsPath")
 
