@@ -61,11 +61,12 @@ function processMultipart(multipart, line: number, character: number, document: 
               const endLine: number = item2.loc.end.line;
               if (startLine <= line && line <= endLine) {
                 for (let item3 of item2.value.members) {
+                  
                   if (item3?.name?.value === "model") {
-                    const startLine: number = item2.value.loc.start.line;
-                    const endLine: number = item2.value.loc.end.line;
-                    const startColumn: number = item2.value.loc.start.column;
-                    const endColumn: number = item2.value.loc.end.column;
+                    const startLine: number = item3.value.loc.start.line;
+                    const endLine: number = item3.value.loc.end.line;
+                    const startColumn: number = item3.value.loc.start.column;
+                    const endColumn: number = item3.value.loc.end.column;
                     if (startLine <= line && line <= endLine && startColumn <= character && character <= endColumn) {
                       let path = generateRedirectPath(item3.value.value, document, "models", "blockstates", "json");
                       if (path !== null) {

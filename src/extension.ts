@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import completionProvider from './providers/completionProvider';
+// import completionProvider from './providers/completionProvider';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 // import pictureHoverProvider from './providers/pictureHoverProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
@@ -10,6 +10,7 @@ import { applyDecoration, updateDecoration } from './decorator/textureVarDecorat
 import blockstateDefinitionProvider from './providers/blockstateDefinitionProvider';
 import blockModelDefinitionProvider from './providers/blockModelDefinitionProvider';
 import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider';
+import particleDefinitionProvider from './providers/particleDefinitionProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
@@ -32,13 +33,18 @@ export function activate(context: vscode.ExtensionContext) {
     { provideDefinition: textureVarDefinitionProvider, }
   ));
 
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/particles/**/*.json" }],
+    { provideDefinition: particleDefinitionProvider, }
+  ));
+
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('properties', {
     provideDefinition: citDefinitionProvider
   }));
 
-  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(['json', 'javascript'], {
-    provideCompletionItems: completionProvider,
-  }, ...['"', '/']));
+  // context.subscriptions.push(vscode.languages.registerCompletionItemProvider(['json', 'javascript'], {
+  //   provideCompletionItems: completionProvider,
+  // }, ...['"', '/']));
 
   // context.subscriptions.push(vscode.languages.registerHoverProvider(
   //   [{ language: "json", pattern: "**/models/block/**/*.json" },

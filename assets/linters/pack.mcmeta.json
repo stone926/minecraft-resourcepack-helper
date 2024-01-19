@@ -1,63 +1,117 @@
 {
-  "type": "object",
-  "$schema": "https://json-schema.org/draft-07/schema",
-  "$id": "https://raw.githubusercontent.com/haima16/texture-json/master/src/pack.mcmeta.json",
-  "title": "Resource pack information",
-  "description": "资源包的描述信息",
-  "additionalProperties": true,
-  "defaultSnippets": [
-  {
-    "label": "快速生成pack.mcmeta",
-    "prefix": "pack",
-    "body": {
-      "pack": {
-        "description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
-        "pack_format": 9
-      }
-    }
-  }],
-  "properties": {
-    "pack": {
+	"type": "object",
+	"$schema": "https://json-schema.org/draft-07/schema",
+	"$id": "https://raw.githubusercontent.com/haima16/texture-json/master/src/pack.mcmeta.json",
+	"title": "Resource pack information",
+	"description": "资源包的描述信息",
+	"additionalProperties": true,
+	"defaultSnippets": [
+		{
+			"label": "快速生成pack.mcmeta",
+			"prefix": "pack",
+			"body": {
+				"pack": {
+					"description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
+					"pack_format": 24
+				}
+			}
+		}
+	],
+	"properties": {
+		"pack": {
+			"type": "object",
+			"additionalProperties": true,
+			"title": "pack",
+			"description": "资源包的描述信息",
+			"properties": {
+				"pack_format": {
+					"default": 24,
+					"type": "integer",
+					"title": "资源包的版本",
+					"description": "如果这个数值与当前需要的数值不匹配，则资源包就会显示一个错误，进行附加确认后才能加载资源包。1.19为9"
+				},
+				"description": {
+					"$ref": "./shared/text_component.json#",
+					"description": "在资源包菜单里要显示的资源包名称。该文本将会显示为2行。如果文本太长则会被截断"
+				}
+			},
+			"required": ["pack_format", "description"]
+		},
+		"filter": {
+			"type": "object",
+			"additionalProperties": false,
+			"description": "设置要屏蔽的资源",
+			"properties": {
+				"block": {
+					"type": "array",
+					"items": {
+						"properties": {
+							"namespace": {
+								"type": "string",
+								"description": "要匹配的命名空间。若省略则匹配所有命名空间。"
+							},
+							"path": {
+								"type": "string",
+								"description": "要匹配的路径。若省略则匹配所有路径。"
+							}
+						}
+					}
+				}
+			}
+		},
+		"overlays": {
+			"type": "object",
+			"additionalProperties": "false",
+			"description": "资源包的叠加目录。",
+			"properties": {
+				"additionalProperties": false,
+				"entries": {
+					"type": "array",
+					"description": "叠加目录的列表，游戏会自下而上读取。",
+					"items": {
+						"type": "object",
+						"description": "一个叠加目录，其文件资源结构与普通的资源包基本相同，但根目录下的pack.mcmeta和pack.png会被忽略。",
+						"additionalProperties": false,
+						"properties": {
+							"directory": {
+								"type": "string",
+								"description": "该叠加目录的名称。对应资源包根目录下的同名文件夹。"
+							},
+							"formats": {
+								"type": "integer",
+								"description": "叠加目录适用的版本范围。具体规则与supported_formats字段相同，也可以写成整数型或复合标签的形式。"
+							}
+						},
+						"required": ["properties", "formats"]
+					}
+				}
+			}
+		},
+		"language": {
+			"description": "包含了要向语言菜单里添加的附加语言。",
       "type": "object",
-      "additionalProperties": true,
-      "title": "pack",
-      "description": "资源包的描述信息",
-      "properties": {
-        "pack_format": {
-          "default": 9,
-          "type": "integer",
-          "title": "资源包的版本",
-          "description": "如果这个数值与当前需要的数值不匹配，则资源包就会显示一个错误，进行附加确认后才能加载资源包。1.19为9"
-        },
-        "description": {
-          "$ref": "./shared/text_component.json#",
-          "description": "在资源包菜单里要显示的资源包名称。该文本将会显示为2行。如果文本太长则会被截断"
-        }
-      },
-      "required": ["pack_format", "description"]
-    },
-    "filter": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "设置要屏蔽的资源",
-      "properties": {
-        "block": {
-          "type": "array",
-          "items": {
-            "properties": {
-              "namespace": {
-                "type": "string",
-                "description": "要匹配的命名空间。若省略则匹配所有命名空间。"
-              },
-              "path": {
-                "type": "string",
-                "description": "要匹配的路径。若省略则匹配所有路径。"
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "required": ["pack"]
+			"patternProperties": {
+				".*": {
+					"description": "语言的语言代码，与对应文件夹assets/minecraft/lang的同名json文件。",
+					"properties": {
+						"required": ["name", "region", "bidirectional"],
+						"name": {
+							"type": "string",
+							"description": "语言的完整名称。"
+						},
+						"region": {
+							"type": "string",
+							"description": "国家或地区名称。"
+						},
+						"bidirectional": {
+							"type": "boolean",
+							"description": "若为true，语言将会从右到左显示。",
+							"default": false
+						}
+					}
+				}
+			}
+		}
+	},
+	"required": ["pack"]
 }
