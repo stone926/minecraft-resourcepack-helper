@@ -1,5 +1,6 @@
 import { Definition, DefinitionLink, Location, Position, ProviderResult, TextDocument } from 'vscode';
 import { generateRedirectPath } from "../utils/pathGenerator";
+import { isInArea } from '../utils/locationChecker';
 const { parse } = require("@humanwhocodes/momoa");
 
 export default (document: TextDocument, position: Position) => {
@@ -22,21 +23,30 @@ export default (document: TextDocument, position: Position) => {
 function processVariants(variants, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
   if (variants?.value.members !== null) {
     for (let item of variants.value.members) {
-      const startLine: number = item.loc.start.line;
-      const endLine: number = item.loc.end.line;
-      if (startLine <= line && line <= endLine) {
+      if (isInArea(line, character, item.loc)) {
         if (item?.value?.members !== null) {
-          for (let item2 of item.value.members) {
-            if (item2?.name?.value === "model") {
-              const startLine: number = item2.value.loc.start.line;
-              const endLine: number = item2.value.loc.end.line;
-              const startColumn: number = item2.value.loc.start.column;
-              const endColumn: number = item2.value.loc.end.column;
-              if (startLine <= line && line <= endLine && startColumn <= character && character <= endColumn) {
-                let modelPath = item2.value.value;
-                let path = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
-                if (path !== null) {
-                  return new Location(path, new Position(0, 0));
+          if (item.value.type === "Object") {
+            for (let item2 of item.value.members) {
+              if (item2?.name?.value === "model") {
+                if (isInArea(line, character, item2.value.loc)) {
+                  let modelPath = item2.value.value;
+                  console.log(line, character, item2.value.loc)
+                  let path = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
+                  if (path !== null) { return new Location(path, new Position(0, 0)); }
+                }
+              }
+            }
+          } else if (item.value.type === "Array") {
+            for (let modelDirection of item.value.elements) {
+              if (isInArea(line, character, modelDirection.loc)) {
+                for (let modelEntry of modelDirection.members) {
+                  if (modelEntry?.name?.value === "model") {
+                    if (isInArea(line, character, modelEntry.value.loc)) {
+                      let modelPath = modelEntry.value.value;
+                      let path = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
+                      if (path !== null) { return new Location(path, new Position(0, 0)); }
+                    }
+                  }
                 }
               }
             }
@@ -51,29 +61,38 @@ function processVariants(variants, line: number, character: number, document: Te
 function processMultipart(multipart, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
   if (multipart?.value?.elements !== null) {
     for (let item of multipart.value.elements) {
-      const startLine: number = item.loc.start.line;
-      const endLine: number = item.loc.end.line;
-      if (startLine <= line && line <= endLine) {
+      if (isInArea(line, character, item.loc)) {
         if (item.members !== null) {
           for (let item2 of item.members) {
             if (item2?.name?.value === "apply" && item2?.value?.members !== null) {
-              const startLine: number = item2.loc.start.line;
-              const endLine: number = item2.loc.end.line;
-              if (startLine <= line && line <= endLine) {
-                for (let item3 of item2.value.members) {
-                  
-                  if (item3?.name?.value === "model") {
-                    const startLine: number = item3.value.loc.start.line;
-                    const endLine: number = item3.value.loc.end.line;
-                    const startColumn: number = item3.value.loc.start.column;
-                    const endColumn: number = item3.value.loc.end.column;
-                    if (startLine <= line && line <= endLine && startColumn <= character && character <= endColumn) {
-                      let path = generateRedirectPath(item3.value.value, document, "models", "blockstates", "json");
-                      if (path !== null) {
-                        return new Location(path, new Position(0, 0));
+              if (isInArea(line, character, item2.loc)) {
+                if (item2.value.type === "Object") {
+                  for (let item3 of item2.value.members) {
+                    if (item3?.name?.value === "model") {
+                      if (isInArea(line, character, item3.value.loc)) {
+                        let path = generateRedirectPath(item3.value.value, document, "models", "blockstates", "json");
+                        if (path !== null) {
+                          return new Location(path, new Position(0, 0));
+                        }
                       }
                     }
                   }
+                } else if (item2.value.type === "Array") {
+                  for (let modelDirection of item2.value.elements) {
+                    if (isInArea(line, character, modelDirection.loc)) {
+                      for (let modelEntry of modelDirection.members) {
+                        if (modelEntry?.name?.value === "model") {
+                          if (isInArea(line, character, modelEntry.value.loc)) {
+                            let path = generateRedirectPath(modelEntry.value.value, document, "models", "blockstates", "json");
+                            if (path !== null) {
+                              return new Location(path, new Position(0, 0));
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+
                 }
               }
             }

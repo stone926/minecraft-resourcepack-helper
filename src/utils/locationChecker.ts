@@ -5,7 +5,8 @@ export function isInArea(inputLine: number, inputColumn: number, astLoc: {
   const endLine: number = astLoc.end.line;
   const startColumn: number = astLoc.start.column;
   const endColumn: number = astLoc.end.column;
-  return  (startLine < inputLine && inputLine < endLine) ||
-  (startLine === inputLine && startColumn <= inputColumn) ||
-  (endLine === inputLine && endColumn >= inputColumn);
+  return (startLine < inputLine && inputLine < endLine) ||
+    (startLine === inputLine && startLine !== endLine && startColumn <= inputColumn) ||
+    (endLine === inputLine && startLine !== endLine && endColumn >= inputColumn) ||
+    (startLine === endLine && endLine === inputLine && startColumn <= inputColumn && inputColumn <= endColumn);
 }
