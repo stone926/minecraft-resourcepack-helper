@@ -5,20 +5,20 @@ import { defaultPackPng, errorMsg, promptMsg, defaultPackAttributes, getPackMcme
 
 export default async function createNewResourcePack() {
   if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders[0]) {
-    vscode.window.showErrorMessage("McResHelper: No open folder, failed to create resource pack");
+    vscode.window.showErrorMessage(vscode.l10n.t("McResHelper: No open folder, failed to create resource pack"));
     return;
   }
 
   const rootFolder = vscode.workspace.workspaceFolders[0];
   const packName = await vscode.window.showInputBox({
-    prompt: promptMsg.packName,
+    prompt: vscode.l10n.t(promptMsg.packName),
     validateInput(input: string) {
       if (isEmpty(input)) {
-        return errorMsg.emptyInput;
+        return vscode.l10n.t(errorMsg.emptyInput);
       }
 
       if (fs.existsSync(path.join(rootFolder.uri.fsPath, input))) {
-        return errorMsg.folderAlreadyExist;
+        return vscode.l10n.t(errorMsg.folderAlreadyExist);
       }
 
       return null;
@@ -29,10 +29,10 @@ export default async function createNewResourcePack() {
   }
 
   const namespace = await vscode.window.showInputBox({
-    prompt: promptMsg.namespace,
+    prompt: vscode.l10n.t(promptMsg.namespace),
     value: defaultPackAttributes.namespace,
     validateInput(input: string) {
-      return isEmpty(input) ? errorMsg.emptyInput : null;
+      return isEmpty(input) ? vscode.l10n.t(errorMsg.emptyInput) : null;
     }
   });
   if (namespace === undefined) {
@@ -40,10 +40,10 @@ export default async function createNewResourcePack() {
   }
 
   const packFormat = await vscode.window.showInputBox({
-    prompt: promptMsg.packFormat,
+    prompt: vscode.l10n.t(promptMsg.packFormat),
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      return isPositiveInteger(input) ? null : errorMsg.nanInput;
+      return isPositiveInteger(input) ? null : vscode.l10n.t(errorMsg.nanInput);
     }
   });
   if (packFormat === undefined) {
@@ -51,7 +51,7 @@ export default async function createNewResourcePack() {
   }
 
   const description = await vscode.window.showInputBox({
-    prompt: promptMsg.description
+    prompt: vscode.l10n.t(promptMsg.description)
   });
   if (description === undefined) {
     return;

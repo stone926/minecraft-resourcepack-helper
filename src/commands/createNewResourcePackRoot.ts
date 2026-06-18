@@ -6,22 +6,22 @@ import { createNamespaceFolders } from "./createNewResourcePack";
 
 export default async function createNewResourcePackRoot() {
   if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders[0]) {
-    vscode.window.showErrorMessage("McResHelper: No open folder, failed to create resource pack");
+    vscode.window.showErrorMessage(vscode.l10n.t("McResHelper: No open folder, failed to create resource pack"));
     return;
   }
 
   const rootFolder = vscode.workspace.workspaceFolders[0];
   const packPath = rootFolder.uri.fsPath;
   if (fs.existsSync(path.join(packPath, "pack.mcmeta")) || fs.existsSync(path.join(packPath, "pack.png"))) {
-    vscode.window.showErrorMessage("McResHelper: pack.mcmeta or pack.png already exists in the current folder");
+    vscode.window.showErrorMessage(vscode.l10n.t("McResHelper: pack.mcmeta or pack.png already exists in the current folder"));
     return;
   }
 
   const namespace = await vscode.window.showInputBox({
-    prompt: promptMsg.namespace,
+    prompt: vscode.l10n.t(promptMsg.namespace),
     value: defaultPackAttributes.namespace,
     validateInput(input: string) {
-      return input.trim().length === 0 ? errorMsg.emptyInput : null;
+      return input.trim().length === 0 ? vscode.l10n.t(errorMsg.emptyInput) : null;
     }
   });
   if (namespace === undefined) {
@@ -29,10 +29,10 @@ export default async function createNewResourcePackRoot() {
   }
 
   const packFormat = await vscode.window.showInputBox({
-    prompt: promptMsg.packFormat,
+    prompt: vscode.l10n.t(promptMsg.packFormat),
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      return /^[1-9]\d*$/.test(input.trim()) ? null : errorMsg.nanInput;
+      return /^[1-9]\d*$/.test(input.trim()) ? null : vscode.l10n.t(errorMsg.nanInput);
     }
   });
   if (packFormat === undefined) {
@@ -40,7 +40,7 @@ export default async function createNewResourcePackRoot() {
   }
 
   const description = await vscode.window.showInputBox({
-    prompt: promptMsg.description
+    prompt: vscode.l10n.t(promptMsg.description)
   });
   if (description === undefined) {
     return;

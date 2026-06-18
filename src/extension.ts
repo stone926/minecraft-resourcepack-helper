@@ -62,7 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
     resourceGraphTreeProvider.refresh();
   }));
 
-  const resourceDiagnostics = vscode.languages.createDiagnosticCollection("McResHelper resources");
+  const resourceDiagnostics = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper resources"));
   context.subscriptions.push(resourceDiagnostics);
   for (const document of vscode.workspace.textDocuments) {
     refreshResourceDiagnostics(document, resourceDiagnostics);

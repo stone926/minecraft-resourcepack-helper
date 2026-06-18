@@ -76,7 +76,7 @@ async function collectCompletionItems(
       item.range = replacementRange;
       item.insertText = insertText;
       if (entry.isDirectory()) {
-        item.command = { command: "editor.action.triggerSuggest", title: "Suggest" };
+        item.command = { command: "editor.action.triggerSuggest", title: vscode.l10n.t("Suggest") };
       }
       itemsByInsertText.set(insertText, item);
     }
