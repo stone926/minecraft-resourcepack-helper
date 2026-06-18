@@ -44,6 +44,26 @@ export function normalizePathPart(value: string): string {
   return value.split(pathPartSeparator).filter(Boolean).join(path.sep);
 }
 
+export function getResourceRootCandidates(assetsRoot: string | null, defaultAssetsPath: string | null | undefined, namespace: string, target: string): string[] {
+  const targetPath = normalizePathPart(target);
+  const candidates: string[] = [];
+
+  if (assetsRoot) {
+    candidates.push(path.join(assetsRoot, namespace, targetPath));
+  }
+
+  if (defaultAssetsPath) {
+    const defaultPath = path.normalize(defaultAssetsPath);
+    candidates.push(
+      path.join(defaultPath, namespace, targetPath),
+      path.join(defaultPath, targetPath),
+      path.join(defaultPath, "assets", namespace, targetPath)
+    );
+  }
+
+  return [...new Set(candidates)];
+}
+
 function findSourceIndex(segments: string[], sourceSegments: string[]): number {
   for (let index = segments.length - sourceSegments.length; index >= 0; index--) {
     const matches = sourceSegments.every((segment, offset) => segments[index + offset] === segment);

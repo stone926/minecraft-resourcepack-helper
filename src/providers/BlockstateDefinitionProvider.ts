@@ -1,7 +1,7 @@
 import { Definition, DefinitionLink, Location, Position, ProviderResult, TextDocument } from 'vscode';
 import { generateRedirectPath } from "../utils/pathGenerator";
 import { isInArea } from '../utils/locationChecker';
-import { arrayElements, memberName, objectMembers, parseJsonAst, stringValue } from '../utils/jsonAst';
+import { arrayElements, JsonAstNode, JsonMemberNode, memberName, objectMembers, parseJsonAst, stringValue } from '../utils/jsonAst';
 
 export default (document: TextDocument, position: Position) => {
   const ast = parseJsonAst(document.getText());
@@ -25,7 +25,7 @@ export default (document: TextDocument, position: Position) => {
   return null;
 };
 
-function processVariants(variants, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
+function processVariants(variants: JsonMemberNode, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
   for (const variantEntry of objectMembers(variants?.value)) {
     if (isInArea(line, character, variantEntry.loc)) {
       if (variantEntry.value?.type === "Object") {
@@ -48,7 +48,7 @@ function processVariants(variants, line: number, character: number, document: Te
   return null;
 }
 
-function processMultipart(multipart, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
+function processMultipart(multipart: JsonMemberNode, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
   for (const multipartEntry of arrayElements(multipart?.value)) {
     if (isInArea(line, character, multipartEntry.loc)) {
       for (const applyEntry of objectMembers(multipartEntry)) {
@@ -75,7 +75,7 @@ function processMultipart(multipart, line: number, character: number, document: 
   return null;
 }
 
-function resolveModelProperty(node, line: number, character: number, document: TextDocument): Location | null {
+function resolveModelProperty(node: JsonAstNode, line: number, character: number, document: TextDocument): Location | null {
   for (const modelEntry of objectMembers(node)) {
     if (memberName(modelEntry) === "model" && isInArea(line, character, modelEntry.value?.loc)) {
       const modelPath = stringValue(modelEntry.value);

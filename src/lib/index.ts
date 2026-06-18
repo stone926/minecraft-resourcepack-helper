@@ -32,7 +32,7 @@ export async function createCompletionItems(context: ICompletionContext | null) 
             })
         }
         return items
-    } catch (error) {
+    } catch {
         return []
     }
 }

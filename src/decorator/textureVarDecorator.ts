@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { arrayElements, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
+import { arrayElements, JsonAstNode, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
 let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
@@ -36,7 +36,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
       for (const face of objectMembers(faces?.value)) {
         const textureEntry = objectMembers(face.value).find(member => memberName(member) === "texture");
         const textureReference = stringValue(textureEntry?.value);
-        if (textureReference?.startsWith("#") && !textureDefinitions.has(textureReference.slice(1))) {
+        if (textureEntry && textureReference?.startsWith("#") && !textureDefinitions.has(textureReference.slice(1))) {
           pushRange(ranges, textureEntry.value);
         }
       }
@@ -71,7 +71,7 @@ function isBlockModelFile(filePath: string): boolean {
   return /[\\/]models[\\/]block[\\/].+\.json$/i.test(filePath);
 }
 
-function pushRange(ranges: vscode.Range[], node: any) {
+function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined) {
   if (!node?.loc) {
     return;
   }

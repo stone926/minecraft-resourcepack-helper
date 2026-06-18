@@ -39,23 +39,25 @@ function getResourceType(key: string): "textures" | "models" | null {
 function resolveCitPath(document: vscode.TextDocument, value: string, resourceType: "textures" | "models"): string | null {
   const cleanValue = value.replace(/^minecraft:/, "");
   const extension = resourceType === "textures" ? ".png" : ".json";
-  let resolvedPath = "";
-
-  if (cleanValue.includes("/") || cleanValue.includes("\\")) {
-    if (cleanValue.startsWith("assets/") || cleanValue.startsWith("assets\\")) {
-      resolvedPath = path.join(getWorkspaceRoot(), cleanValue);
-    } else {
-      resolvedPath = path.join(getWorkspaceRoot(), "assets", "minecraft", resourceType, cleanValue);
-    }
-  } else {
-    resolvedPath = path.join(path.dirname(document.fileName), cleanValue);
-  }
+  let resolvedPath = getInitialCitPath(document, cleanValue, resourceType);
 
   if (path.extname(resolvedPath) === "") {
     resolvedPath += extension;
   }
 
   return resolvedPath;
+}
+
+function getInitialCitPath(document: vscode.TextDocument, cleanValue: string, resourceType: "textures" | "models"): string {
+  if (!cleanValue.includes("/") && !cleanValue.includes("\\")) {
+    return path.join(path.dirname(document.fileName), cleanValue);
+  }
+
+  if (cleanValue.startsWith("assets/") || cleanValue.startsWith("assets\\")) {
+    return path.join(getWorkspaceRoot(), cleanValue);
+  }
+
+  return path.join(getWorkspaceRoot(), "assets", "minecraft", resourceType, cleanValue);
 }
 
 function getWorkspaceRoot(): string {

@@ -1,7 +1,7 @@
 import { Location, Position, TextDocument } from "vscode";
-import { JsonAstNode, memberName, objectMembers } from "./jsonAst";
+import { JsonDocumentNode, memberName, objectMembers } from "./jsonAst";
 
-export function resolveTextureVariableDefinition(ast: JsonAstNode, document: TextDocument, textureReference: string): Location | null {
+export function resolveTextureVariableDefinition(ast: JsonDocumentNode, document: TextDocument, textureReference: string): Location | null {
   if (!textureReference.startsWith("#")) {
     return null;
   }

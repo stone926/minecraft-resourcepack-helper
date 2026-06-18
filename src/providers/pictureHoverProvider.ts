@@ -18,7 +18,7 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
       const distName = `${blockMatch[1]}/textures/${name}.png`;
       if (fs.existsSync(distName)) {
         const uri = vscode.Uri.file(distName);
-        let markdown = new vscode.MarkdownString(
+        const markdown = new vscode.MarkdownString(
           `<img src="${uri}"/><img src="${uri}" width="160px" height="160px" />`
         );
         markdown.supportHtml = true;
@@ -27,7 +27,7 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
         const join = path.join(<string>defaultPath, "minecraft", `/textures/${name}.png`)
         if (fs.existsSync(join)) {
           const uri = vscode.Uri.file(join);
-          let markdown = new vscode.MarkdownString(
+          const markdown = new vscode.MarkdownString(
             `<img src="${uri}" /><img src="${uri}" width="160px" height="160px" />`
           );
           markdown.supportHtml = true;
