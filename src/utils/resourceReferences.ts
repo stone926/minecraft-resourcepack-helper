@@ -324,12 +324,25 @@ function collectItemModelReferences(node: JsonAstNode, references: ResourceRefer
     const name = memberName(member);
     if (name === "model" || name === "base") {
       pushReference(references, member.value, "models", "items", "json", "model");
+    } else if (name === "texture") {
+      pushItemSpecialTextureReference(references, node, member.value);
     }
     collectItemModelReferences(member.value, references);
   }
 
   for (const element of arrayElements(node)) {
     collectItemModelReferences(element, references);
+  }
+}
+
+function pushItemSpecialTextureReference(references: ResourceReference[], node: JsonAstNode, valueNode: JsonAstNode) {
+  const type = getObjectString(node, "type");
+  if (type === "minecraft:chest" || type === "chest") {
+    pushReference(references, valueNode, "textures/entity/chest", "items", "png", "texture");
+  } else if (type === "minecraft:shulker_box" || type === "shulker_box") {
+    pushReference(references, valueNode, "textures/entity/shulker", "items", "png", "texture");
+  } else if (type === "minecraft:copper_golem_statue" || type === "copper_golem_statue") {
+    pushReference(references, valueNode, "", "items", "png", "texture");
   }
 }
 

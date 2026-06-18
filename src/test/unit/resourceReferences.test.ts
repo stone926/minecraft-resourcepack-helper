@@ -190,6 +190,63 @@ describe("resource references", () => {
     );
   });
 
+  it("extracts special item model texture references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "items", "special.json"),
+      {
+        model: {
+          type: "minecraft:select",
+          cases: [
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/chest",
+                model: {
+                  type: "minecraft:chest",
+                  texture: "minecraft:christmas"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/black_shulker_box",
+                model: {
+                  type: "minecraft:shulker_box",
+                  texture: "minecraft:shulker_black"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/template_copper_golem_statue",
+                model: {
+                  type: "minecraft:copper_golem_statue",
+                  texture: "minecraft:textures/entity/copper_golem/copper_golem.png"
+                }
+              }
+            }
+          ]
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:item/chest", "models", "items", "json"],
+        ["texture", "minecraft:christmas", "textures/entity/chest", "items", "png"],
+        ["model", "minecraft:item/black_shulker_box", "models", "items", "json"],
+        ["texture", "minecraft:shulker_black", "textures/entity/shulker", "items", "png"],
+        ["model", "minecraft:item/template_copper_golem_statue", "models", "items", "json"],
+        ["texture", "minecraft:textures/entity/copper_golem/copper_golem.png", "", "items", "png"]
+      ]
+    );
+  });
+
   it("extracts sound file references and skips sound event references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "custom", "sounds.json"),
