@@ -119,22 +119,8 @@
         "url": "./assets/linters/regional-compliancies.json"
       },
       {
-        "fileMatch": [
-          "**/textures/block/**/*.png.mcmeta",
-          "**/textures/item/**/*.png.mcmeta"
-        ],
-        "url": "./assets/linters/animation.mcmeta.json"
-      },
-      {
-        "fileMatch": "**/textures/misc/**/*.png.mcmeta",
-        "url": "./assets/linters/misc.mcmeta.json"
-      },
-      {
-        "fileMatch": [
-          "**/textures/entity/villager/**/*.png.mcmeta",
-          "**/textures/entity/zombie_villager/**/*.png.mcmeta"
-        ],
-        "url": "./assets/linters/villager.mcmeta.json"
+        "fileMatch": "**/textures/**/*.png.mcmeta",
+        "url": "./assets/linters/png.mcmeta.json"
       }
     ],
     "commands": [

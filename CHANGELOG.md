@@ -11,6 +11,7 @@
 - Added model reference support for `base` fields in modern item model definitions.
 - Added resource navigation/completion support for atlases, equipment, fonts, waypoint styles, post-effect shaders, and sounds.
 - Added JSON schemas for modern resource pack JSON files including particles, items, atlases, equipment, fonts, waypoint styles, post effects, sounds, language files, credits, GPU warnlists, and regional compliancies.
+- Expanded PNG texture metadata validation to all `textures/**/*.png.mcmeta` files, including animation, texture sampling, and villager metadata.
 - Updated new-pack metadata generation to use modern `min_format`/`max_format` fields with an 86.2 default.
 - Updated new-pack scaffolds to create modern namespace directories such as `items`, `atlases`, `equipment`, `font`, `particles`, `post_effect`, `sounds`, `texts`, and `waypoint_style`.
 - Fixed JSON edit-time crashes, CIT path matching, resource lifecycle leaks, unsafe pack metadata generation, and cancelled command input handling.

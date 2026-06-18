@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/png.mcmeta.json",
+  "type": "object",
+  "title": "Minecraft PNG texture metadata",
+  "description": "Metadata for PNG textures under assets/<namespace>/textures.",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "anyOf": [
+    { "required": ["animation"] },
+    { "required": ["texture"] },
+    { "required": ["villager"] }
+  ],
+  "properties": {
+    "animation": {
+      "type": "object",
+      "title": "animation",
+      "description": "Animated texture metadata.",
+      "additionalProperties": false,
+      "properties": {
+        "interpolate": {
+          "type": "boolean",
+          "description": "Whether the game should interpolate between frames."
+        },
+        "frametime": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default frame display time in game ticks."
+        },
+        "frames": {
+          "type": "array",
+          "description": "Animation frames in playback order.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Frame index, starting at 0."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["index"],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Frame index, starting at 0."
+                  },
+                  "time": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Display time for this frame in game ticks."
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Frame width ratio."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Frame height ratio."
+        }
+      }
+    },
+    "texture": {
+      "type": "object",
+      "title": "texture",
+      "description": "Texture sampling metadata.",
+      "additionalProperties": false,
+      "properties": {
+        "blur": {
+          "type": "boolean",
+          "description": "Whether close-up sampling should blur the texture."
+        },
+        "clamp": {
+          "type": "boolean",
+          "description": "Whether texture coordinates should clamp instead of tile."
+        },
+        "mipmaps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Custom mipmap level count."
+        }
+      }
+    },
+    "villager": {
+      "type": "object",
+      "title": "villager",
+      "description": "Villager and zombie villager texture metadata.",
+      "additionalProperties": false,
+      "properties": {
+        "hat": {
+          "type": "string",
+          "enum": ["partial", "full"],
+          "description": "How the villager hat layer is rendered."
+        }
+      }
+    }
+  }
+}
