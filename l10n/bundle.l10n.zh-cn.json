@@ -11,6 +11,7 @@
   "Please input the name of your resource pack": "请输入资源包名称",
   "Please input the namespace of your resource pack": "请输入资源包命名空间",
   "Please input the target resource pack format": "请输入目标资源包格式版本",
+  "Select workspace folder": "选择工作区文件夹",
   "Suggest": "补全建议",
   "blockstate": "方块状态",
   "folder already exist": "文件夹已存在",

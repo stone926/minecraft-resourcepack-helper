@@ -1,15 +1,16 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { defaultPackPng, errorMsg, promptMsg, defaultPackAttributes, getPackMcmeta, isPackFormatVersion } from "./constants";
+import { errorMsg, promptMsg, defaultPackAttributes, isPackFormatVersion } from "./constants";
+import { writePackScaffold } from "./resourcePackScaffold";
+import { pickWorkspaceFolder } from "./workspace";
 
 export default async function createNewResourcePack() {
-  if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders[0]) {
-    vscode.window.showErrorMessage(vscode.l10n.t("McResHelper: No open folder, failed to create resource pack"));
+  const rootFolder = await pickWorkspaceFolder();
+  if (!rootFolder) {
     return;
   }
 
-  const rootFolder = vscode.workspace.workspaceFolders[0];
   const packName = await vscode.window.showInputBox({
     prompt: vscode.l10n.t(promptMsg.packName),
     validateInput(input: string) {
@@ -59,30 +60,6 @@ export default async function createNewResourcePack() {
 
   const packPath = path.join(rootFolder.uri.fsPath, packName);
   writePackScaffold(packPath, namespace, packFormat, description);
-}
-
-export function writePackScaffold(packPath: string, namespace: string, packFormat: string, description: string) {
-  const packMcmeta = getPackMcmeta(packFormat, description);
-
-  fs.mkdirSync(packPath);
-  fs.writeFileSync(path.join(packPath, "pack.mcmeta"), packMcmeta, { flag: "wx" });
-  fs.writeFileSync(path.join(packPath, "pack.png"), Buffer.from(defaultPackPng, "base64"), { flag: "wx" });
-  createNamespaceFolders(packPath, namespace);
-}
-
-export function createNamespaceFolders(packPath: string, namespace: string) {
-  const namespacePath = path.join(packPath, "assets", namespace);
-  for (const resourcePath of [
-    "blockstates",
-    "models",
-    path.join("models", "block"),
-    path.join("models", "item"),
-    "textures",
-    path.join("textures", "block"),
-    path.join("textures", "item")
-  ]) {
-    fs.mkdirSync(path.join(namespacePath, resourcePath), { recursive: true });
-  }
 }
 
 function isEmpty(input: string): boolean {
