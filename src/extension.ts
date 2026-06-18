@@ -7,84 +7,40 @@ import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
 import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
 import { applyDecoration, disposeDecoration, updateDecoration } from './decorator/textureVarDecorator';
-import blockstateDefinitionProvider from './providers/blockstateDefinitionProvider';
-import blockModelDefinitionProvider from './providers/blockModelDefinitionProvider';
-import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider';
-import particleDefinitionProvider from './providers/particleDefinitionProvider';
 import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
 
+const resourceReferenceSelectors: vscode.DocumentSelector = [
+  { language: "json", pattern: "**/blockstates/*.json" },
+  { language: "json", pattern: "**/models/block/**/*.json" },
+  { language: "json", pattern: "**/models/item/**/*.json" },
+  { language: "json", pattern: "**/particles/**/*.json" },
+  { language: "json", pattern: "**/items/**/*.json" },
+  { language: "json", pattern: "**/atlases/**/*.json" },
+  { language: "json", pattern: "**/equipment/**/*.json" },
+  { language: "json", pattern: "**/font/**/*.json" },
+  { language: "json", pattern: "**/waypoint_style/**/*.json" },
+  { language: "json", pattern: "**/post_effect/**/*.json" }
+];
+
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/blockstates/*.json" }],
-    { provideDefinition: blockstateDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/models/block/**/*.json" }],
-    { provideDefinition: blockModelDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/models/item/**/*.json" }],
-    { provideDefinition: itemModelDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/models/block/**/*.json" }],
-    { provideDefinition: textureVarDefinitionProvider, }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/particles/**/*.json" }],
-    { provideDefinition: particleDefinitionProvider, }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/items/**/*.json" }],
+    resourceReferenceSelectors,
     { provideDefinition: resourceDefinitionProvider }
   ));
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/atlases/**/*.json" }],
-    { provideDefinition: resourceDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/equipment/**/*.json" }],
-    { provideDefinition: resourceDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/font/**/*.json" }],
-    { provideDefinition: resourceDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/waypoint_style/**/*.json" }],
-    { provideDefinition: resourceDefinitionProvider }
-  ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
-    [{ language: "json", pattern: "**/post_effect/**/*.json" }],
-    { provideDefinition: resourceDefinitionProvider }
+    [
+      { language: "json", pattern: "**/models/block/**/*.json" },
+      { language: "json", pattern: "**/models/item/**/*.json" }
+    ],
+    { provideDefinition: textureVarDefinitionProvider }
   ));
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
-    [
-      { language: "json", pattern: "**/blockstates/*.json" },
-      { language: "json", pattern: "**/models/block/**/*.json" },
-      { language: "json", pattern: "**/models/item/**/*.json" },
-      { language: "json", pattern: "**/particles/**/*.json" },
-      { language: "json", pattern: "**/items/**/*.json" },
-      { language: "json", pattern: "**/atlases/**/*.json" },
-      { language: "json", pattern: "**/equipment/**/*.json" },
-      { language: "json", pattern: "**/font/**/*.json" },
-      { language: "json", pattern: "**/waypoint_style/**/*.json" },
-      { language: "json", pattern: "**/post_effect/**/*.json" }
-    ],
+    resourceReferenceSelectors,
     resourceCompletionProvider,
     '"',
     '/',
