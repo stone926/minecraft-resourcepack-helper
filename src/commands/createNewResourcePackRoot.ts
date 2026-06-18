@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { defaultPackPng, promptMsg, defaultPackAttributes, getPackMcmeta, errorMsg } from "./constants";
+import { defaultPackPng, promptMsg, defaultPackAttributes, getPackMcmeta, errorMsg, isPackFormatVersion } from "./constants";
 import { createNamespaceFolders } from "./createNewResourcePack";
 
 export default async function createNewResourcePackRoot() {
@@ -32,7 +32,7 @@ export default async function createNewResourcePackRoot() {
     prompt: vscode.l10n.t(promptMsg.packFormat),
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      return /^[1-9]\d*$/.test(input.trim()) ? null : vscode.l10n.t(errorMsg.nanInput);
+      return isPackFormatVersion(input) ? null : vscode.l10n.t(errorMsg.invalidPackFormat);
     }
   });
   if (packFormat === undefined) {

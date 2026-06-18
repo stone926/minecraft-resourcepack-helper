@@ -1,117 +1,212 @@
 {
-	"type": "object",
-	"$schema": "https://json-schema.org/draft-07/schema",
-	"$id": "https://raw.githubusercontent.com/haima16/texture-json/master/src/pack.mcmeta.json",
-	"title": "Resource pack information",
-	"description": "资源包的描述信息",
-	"additionalProperties": true,
-	"defaultSnippets": [
-		{
-			"label": "快速生成pack.mcmeta",
-			"prefix": "pack",
-			"body": {
-				"pack": {
-					"description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
-					"pack_format": 24
-				}
-			}
-		}
-	],
-	"properties": {
-		"pack": {
-			"type": "object",
-			"additionalProperties": true,
-			"title": "pack",
-			"description": "资源包的描述信息",
-			"properties": {
-				"pack_format": {
-					"default": 24,
-					"type": "integer",
-					"title": "资源包的版本",
-					"description": "如果这个数值与当前需要的数值不匹配，则资源包就会显示一个错误，进行附加确认后才能加载资源包。1.19为9"
-				},
-				"description": {
-					"$ref": "./shared/text_component.json#",
-					"description": "在资源包菜单里要显示的资源包名称。该文本将会显示为2行。如果文本太长则会被截断"
-				}
-			},
-			"required": ["pack_format", "description"]
-		},
-		"filter": {
-			"type": "object",
-			"additionalProperties": false,
-			"description": "设置要屏蔽的资源",
-			"properties": {
-				"block": {
-					"type": "array",
-					"items": {
-						"properties": {
-							"namespace": {
-								"type": "string",
-								"description": "要匹配的命名空间。若省略则匹配所有命名空间。"
-							},
-							"path": {
-								"type": "string",
-								"description": "要匹配的路径。若省略则匹配所有路径。"
-							}
-						}
-					}
-				}
-			}
-		},
-		"overlays": {
-			"type": "object",
-			"additionalProperties": "false",
-			"description": "资源包的叠加目录。",
-			"properties": {
-				"additionalProperties": false,
-				"entries": {
-					"type": "array",
-					"description": "叠加目录的列表，游戏会自下而上读取。",
-					"items": {
-						"type": "object",
-						"description": "一个叠加目录，其文件资源结构与普通的资源包基本相同，但根目录下的pack.mcmeta和pack.png会被忽略。",
-						"additionalProperties": false,
-						"properties": {
-							"directory": {
-								"type": "string",
-								"description": "该叠加目录的名称。对应资源包根目录下的同名文件夹。"
-							},
-							"formats": {
-								"type": "integer",
-								"description": "叠加目录适用的版本范围。具体规则与supported_formats字段相同，也可以写成整数型或复合标签的形式。"
-							}
-						},
-						"required": ["properties", "formats"]
-					}
-				}
-			}
-		},
-		"language": {
-			"description": "包含了要向语言菜单里添加的附加语言。",
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/pack.mcmeta.json",
+  "type": "object",
+  "title": "Resource pack metadata",
+  "description": "资源包的元数据信息。",
+  "additionalProperties": true,
+  "required": ["pack"],
+  "defaultSnippets": [
+    {
+      "label": "快速生成 pack.mcmeta",
+      "prefix": "pack",
+      "body": {
+        "pack": {
+          "description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
+          "min_format": [86, 2],
+          "max_format": [86, 2]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "pack": {
       "type": "object",
-			"patternProperties": {
-				".*": {
-					"description": "语言的语言代码，与对应文件夹assets/minecraft/lang的同名json文件。",
-					"properties": {
-						"required": ["name", "region", "bidirectional"],
-						"name": {
-							"type": "string",
-							"description": "语言的完整名称。"
-						},
-						"region": {
-							"type": "string",
-							"description": "国家或地区名称。"
-						},
-						"bidirectional": {
-							"type": "boolean",
-							"description": "若为true，语言将会从右到左显示。",
-							"default": false
-						}
-					}
-				}
-			}
-		}
-	},
-	"required": ["pack"]
+      "title": "pack 资源包信息",
+      "description": "资源包基础信息。现代版本优先使用 min_format/max_format；pack_format 为兼容旧版本而保留。",
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "$ref": "./shared/text_component.json#",
+          "title": "description 描述",
+          "description": "资源包列表中显示的描述文本或文本组件。"
+        },
+        "min_format": {
+          "$ref": "#/definitions/formatVersion",
+          "title": "min_format 最低资源包格式",
+          "description": "资源包兼容的最低格式版本。小版本可写为 [major, minor]，例如 [86, 2]。"
+        },
+        "max_format": {
+          "$ref": "#/definitions/formatVersion",
+          "title": "max_format 最高资源包格式",
+          "description": "资源包兼容的最高格式版本。小版本可写为 [major, minor]，例如 [86, 2]。"
+        },
+        "pack_format": {
+          "$ref": "#/definitions/legacyFormatVersion",
+          "title": "pack_format 旧版资源包格式",
+          "description": "旧版资源包格式字段，现代版本中已作为兼容字段保留。"
+        },
+        "supported_formats": {
+          "title": "supported_formats 旧版兼容范围",
+          "description": "旧版资源包格式范围字段，现代版本中已作为兼容字段保留。",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/legacyFormatVersion"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/definitions/legacyFormatVersion"
+              }
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["description", "min_format", "max_format"]
+        },
+        {
+          "required": ["description", "pack_format"]
+        }
+      ]
+    },
+    "filter": {
+      "type": "object",
+      "title": "filter 过滤下层资源",
+      "description": "指定要从低优先级资源包中屏蔽的资源。",
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "要匹配的命名空间；省略时匹配所有命名空间。"
+              },
+              "path": {
+                "type": "string",
+                "description": "要匹配的资源路径正则；省略时匹配所有路径。"
+              }
+            }
+          }
+        }
+      }
+    },
+    "overlays": {
+      "type": "object",
+      "title": "overlays 叠加资源包",
+      "description": "设置在不同格式版本下生效的叠加资源包目录。",
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "type": "array",
+          "description": "叠加目录列表，游戏会自下而上读取。",
+          "items": {
+            "$ref": "#/definitions/overlayEntry"
+          }
+        }
+      }
+    },
+    "language": {
+      "type": "object",
+      "title": "language 附加语言",
+      "description": "向语言菜单添加附加语言。",
+      "additionalProperties": {
+        "$ref": "#/definitions/language"
+      }
+    }
+  },
+  "definitions": {
+    "legacyFormatVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "formatVersion": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/legacyFormatVersion"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ]
+    },
+    "overlayEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory"],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "description": "相对于资源包根目录的叠加目录。"
+        },
+        "min_format": {
+          "$ref": "#/definitions/formatVersion",
+          "description": "此叠加资源包生效的最低格式版本。"
+        },
+        "max_format": {
+          "$ref": "#/definitions/formatVersion",
+          "description": "此叠加资源包生效的最高格式版本。"
+        },
+        "formats": {
+          "description": "旧版叠加格式范围字段，现代版本中已作为兼容字段保留。",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/legacyFormatVersion"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/definitions/legacyFormatVersion"
+              }
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["min_format", "max_format"]
+        },
+        {
+          "required": ["formats"]
+        }
+      ]
+    },
+    "language": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "region"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "语言的完整名称。"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "国家或地区名称。"
+        },
+        "bidirectional": {
+          "type": "boolean",
+          "description": "为 true 时，语言从右到左显示。",
+          "default": false
+        }
+      }
+    }
+  }
 }

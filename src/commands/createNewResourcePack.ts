@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { defaultPackPng, errorMsg, promptMsg, defaultPackAttributes, getPackMcmeta } from "./constants";
+import { defaultPackPng, errorMsg, promptMsg, defaultPackAttributes, getPackMcmeta, isPackFormatVersion } from "./constants";
 
 export default async function createNewResourcePack() {
   if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders[0]) {
@@ -43,7 +43,7 @@ export default async function createNewResourcePack() {
     prompt: vscode.l10n.t(promptMsg.packFormat),
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      return isPositiveInteger(input) ? null : vscode.l10n.t(errorMsg.nanInput);
+      return isPackFormatVersion(input) ? null : vscode.l10n.t(errorMsg.invalidPackFormat);
     }
   });
   if (packFormat === undefined) {
@@ -87,8 +87,4 @@ export function createNamespaceFolders(packPath: string, namespace: string) {
 
 function isEmpty(input: string): boolean {
   return input.trim().length === 0;
-}
-
-function isPositiveInteger(input: string): boolean {
-  return /^[1-9]\d*$/.test(input.trim());
 }

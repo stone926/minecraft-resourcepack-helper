@@ -1,6 +1,6 @@
 import * as assert from "assert";
 import * as path from "node:path";
-import { getPackMcmeta } from "../../commands/constants";
+import { getPackMcmeta, isPackFormatVersion } from "../../commands/constants";
 import { findAssetsRoot, parseResourceLocation } from "../../utils/resourceLocation";
 
 describe("resource location utilities", () => {
@@ -41,10 +41,18 @@ describe("resource location utilities", () => {
     assert.strictEqual(result, path.join(root, "pack", "assets"));
   });
 
-  it("serializes pack.mcmeta description safely", () => {
-    const result = JSON.parse(getPackMcmeta("24", 'quote " and slash \\'));
+  it("serializes modern pack.mcmeta metadata safely", () => {
+    const result = JSON.parse(getPackMcmeta("86.2", 'quote " and slash \\'));
 
-    assert.strictEqual(result.pack.pack_format, 24);
+    assert.deepStrictEqual(result.pack.min_format, [86, 2]);
+    assert.deepStrictEqual(result.pack.max_format, [86, 2]);
     assert.strictEqual(result.pack.description, 'quote " and slash \\');
+  });
+
+  it("accepts integer and decimal pack format inputs", () => {
+    assert.strictEqual(isPackFormatVersion("69"), true);
+    assert.strictEqual(isPackFormatVersion("86.2"), true);
+    assert.strictEqual(isPackFormatVersion("0"), false);
+    assert.strictEqual(isPackFormatVersion("86.x"), false);
   });
 });

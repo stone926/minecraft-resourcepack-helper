@@ -2,23 +2,40 @@ export const defaultPackPng: string = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8
 export const errorMsg = {
   emptyInput: "input must not be empty",
   folderAlreadyExist: "folder already exist",
-  nanInput: "input must be a positive integer"
+  invalidPackFormat: "input must be a pack format version such as 86.2 or 69"
 };
 export const promptMsg = {
   packName: "Please input the name of your resource pack",
   namespace: "Please input the namespace of your resource pack",
-  packFormat: "Please input the pack format of your resource pack",
+  packFormat: "Please input the target resource pack format",
   description: "Please input the description of your resource pack, can be empty"
 };
 export const defaultPackAttributes = {
-  packFormat: "69",
+  packFormat: "86.2",
   namespace: "minecraft"
 };
+
+type PackFormatValue = number | [number, number];
+
 export function getPackMcmeta(packFormat: string, description: string): string {
+  const format = parsePackFormatValue(packFormat);
+
   return JSON.stringify({
     pack: {
-      ["pack_format"]: Number(packFormat),
+      ["min_format"]: format,
+      ["max_format"]: format,
       description
     }
   }, null, 2);
+}
+
+export function isPackFormatVersion(input: string): boolean {
+  return /^[1-9]\d*(?:\.(?:0|[1-9]\d*))?$/.test(input.trim());
+}
+
+function parsePackFormatValue(input: string): PackFormatValue {
+  const parts = input.trim().split(".");
+  const major = Number(parts[0]);
+  const minor = parts[1] === undefined ? null : Number(parts[1]);
+  return minor === null ? major : [major, minor];
 }
