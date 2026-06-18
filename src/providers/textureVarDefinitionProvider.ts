@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { arrayElements, memberName, objectMembers, parseJsonAst, stringValue } from '../utils/jsonAst';
+import { arrayElements, JsonAstNode, memberName, objectMembers, parseJsonAst, stringValue } from '../utils/jsonAst';
 import { isInArea } from '../utils/locationChecker';
 import { resolveTextureVariableDefinition } from '../utils/modelTexture';
 
@@ -11,26 +11,41 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
 
   const line = position.line + 1;
   const character = position.character + 1;
-  if (ast.type === 'Document') {
-    const modelElements = objectMembers(ast.body).find(member => memberName(member) === 'elements');
-    if (modelElements && isInArea(line, character, modelElements.loc)) {
-      const element = arrayElements(modelElements.value).find(modelItem => isInArea(line, character, modelItem.loc));
-      const modelFaces = objectMembers(element).find(elementItem => memberName(elementItem) === 'faces');
 
-      if (modelFaces && isInArea(line, character, modelFaces.loc)) {
-        const modelFace = objectMembers(modelFaces.value).find(faceItem => isInArea(line, character, faceItem.loc));
-
-        if (modelFace) {
-          const textureEntry = objectMembers(modelFace.value).find(couple => memberName(couple) === 'texture' && isInArea(line, character, couple.value?.loc));
-          const texture = stringValue(textureEntry?.value);
-
-          if (texture) {
-            return resolveTextureVariableDefinition(ast, document, texture);
-          }
-        }
-      }
+  for (const textureReference of getTextureVariableReferences(ast.body)) {
+    if (isInArea(line, character, textureReference.loc)) {
+      const texture = stringValue(textureReference);
+      return texture ? resolveTextureVariableDefinition(ast, document, texture) : null;
     }
   }
 
   return null;
 };
+
+function getTextureVariableReferences(modelBody: JsonAstNode): JsonAstNode[] {
+  const references: JsonAstNode[] = [];
+
+  for (const member of objectMembers(modelBody)) {
+    if (memberName(member) === 'textures') {
+      for (const texture of objectMembers(member.value)) {
+        pushTextureVariableReference(references, texture.value);
+      }
+    } else if (memberName(member) === 'elements') {
+      for (const element of arrayElements(member.value)) {
+        const faces = objectMembers(element).find(face => memberName(face) === 'faces');
+        for (const face of objectMembers(faces?.value)) {
+          const texture = objectMembers(face.value).find(faceMember => memberName(faceMember) === 'texture');
+          pushTextureVariableReference(references, texture?.value);
+        }
+      }
+    }
+  }
+
+  return references;
+}
+
+function pushTextureVariableReference(references: JsonAstNode[], node: JsonAstNode | null | undefined) {
+  if (node && stringValue(node)?.startsWith('#')) {
+    references.push(node);
+  }
+}
