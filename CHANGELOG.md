@@ -17,6 +17,7 @@
 - Updated new-pack scaffolds to create modern namespace directories such as `items`, `atlases`, `equipment`, `font`, `particles`, `post_effect`, `sounds`, `texts`, and `waypoint_style`.
 - Fixed JSON edit-time crashes, CIT path matching, resource lifecycle leaks, unsafe pack metadata generation, and cancelled command input handling.
 - Fixed resource-pack creation in multi-root workspaces by asking for the target workspace folder.
+- Fixed the resource graph block list so it no longer stops after 300 blockstate files.
 - Fixed OptiFine CIT resource resolution for relative paths, namespaced paths, and explicit `assets/` paths.
 - Fixed texture variable lookup so parent model texture definitions are considered.
 

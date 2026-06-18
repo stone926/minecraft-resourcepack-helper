@@ -90,7 +90,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 
   private async createBlocksNode(): Promise<ResourceGraphNode> {
-    const blockstateUris = await vscode.workspace.findFiles("**/assets/*/blockstates/*.json", "**/node_modules/**", 300);
+    const blockstateUris = await vscode.workspace.findFiles("**/assets/*/blockstates/*.json", "**/node_modules/**");
     const blockNodes: ResourceGraphNode[] = [];
 
     for (const uri of blockstateUris) {
