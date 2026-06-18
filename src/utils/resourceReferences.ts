@@ -8,7 +8,7 @@ export interface ResourceReference {
   target: string;
   source: string;
   extension: string | null;
-  kind: "model" | "texture" | "textureDirectory";
+  kind: "model" | "texture" | "textureDirectory" | "font";
 }
 
 export interface ResourceReferenceDocument {
@@ -53,6 +53,14 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
 
   if (isFileInFolder(document.fileName, "equipment")) {
     return getEquipmentReferences(ast);
+  }
+
+  if (isFileInFolder(document.fileName, "font")) {
+    return getFontReferences(ast);
+  }
+
+  if (isFileInFolder(document.fileName, "waypoint_style")) {
+    return getWaypointStyleReferences(ast);
   }
 
   return [];
@@ -186,6 +194,39 @@ function getEquipmentReferences(ast: JsonDocumentNode): ResourceReference[] {
   return references;
 }
 
+function getFontReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+  const providers = objectMembers(ast.body).find(member => memberName(member) === "providers");
+
+  for (const provider of arrayElements(providers?.value)) {
+    const type = getObjectString(provider, "type");
+    if (type === "reference") {
+      const id = objectMembers(provider).find(member => memberName(member) === "id");
+      if (id) {
+        pushReference(references, id.value, "font", "font", "json", "font");
+      }
+    } else if (type === "bitmap") {
+      const file = objectMembers(provider).find(member => memberName(member) === "file");
+      if (file) {
+        pushReference(references, file.value, "textures", "font", "png", "texture");
+      }
+    }
+  }
+
+  return references;
+}
+
+function getWaypointStyleReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+  const sprites = objectMembers(ast.body).find(member => memberName(member) === "sprites");
+
+  for (const sprite of arrayElements(sprites?.value)) {
+    pushReference(references, sprite, "textures/gui/sprites/hud/locator_bar_dot", "waypoint_style", "png", "texture");
+  }
+
+  return references;
+}
+
 function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: ResourceReference[]) {
   const type = getObjectString(sourceEntry, "type");
 
@@ -250,7 +291,7 @@ function pushReference(
   target: string,
   source: string,
   extension: string | null,
-  kind: "model" | "texture" | "textureDirectory"
+  kind: "model" | "texture" | "textureDirectory" | "font"
 ): void {
   const value = stringValue(valueNode);
   if (value) {

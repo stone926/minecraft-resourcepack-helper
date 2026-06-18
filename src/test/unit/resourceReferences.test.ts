@@ -73,6 +73,56 @@ describe("resource references", () => {
       ]
     );
   });
+
+  it("extracts font reference and bitmap file references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "font", "default.json"),
+      {
+        providers: [
+          {
+            type: "reference",
+            id: "minecraft:include/space"
+          },
+          {
+            type: "bitmap",
+            file: "minecraft:font/ascii.png"
+          }
+        ]
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
+      [
+        ["font", "minecraft:include/space", "font", "json"],
+        ["texture", "minecraft:font/ascii.png", "textures", "png"]
+      ]
+    );
+  });
+
+  it("extracts waypoint locator sprite references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "waypoint_style", "default.json"),
+      {
+        sprites: [
+          "minecraft:default_0",
+          "minecraft:default_1"
+        ]
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
+      [
+        ["texture", "minecraft:default_0", "textures/gui/sprites/hud/locator_bar_dot", "png"],
+        ["texture", "minecraft:default_1", "textures/gui/sprites/hud/locator_bar_dot", "png"]
+      ]
+    );
+  });
 });
 
 function createJsonDocument(fileName: string, value: unknown): ResourceReferenceDocument {
