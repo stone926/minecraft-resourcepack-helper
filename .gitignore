@@ -7,5 +7,6 @@ node_modules
 .vscode
 doc
 *.md
-!READNE.md
+!README.md
+!README_CN.md
 !CHANGELOG.md
