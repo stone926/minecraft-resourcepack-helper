@@ -19,6 +19,17 @@ describe("schema assets", () => {
     }
   });
 
+  it("does not use common misspelled JSON Schema keywords", () => {
+    const misspelledKeywords = new Set(["miximum"]);
+    const findings: string[] = [];
+
+    for (const file of collectJsonFiles(path.join(process.cwd(), "assets", "linters"))) {
+      findMisspelledSchemaKeywords(readJsonFile<unknown>(file), path.relative(process.cwd(), file), misspelledKeywords, findings);
+    }
+
+    assert.deepStrictEqual(findings, []);
+  });
+
   it("ships every local schema referenced by package.json jsonValidation", () => {
     const packageJson = readJsonFile<PackageJson>(path.join(process.cwd(), "package.json"));
     const validations = packageJson.contributes?.jsonValidation ?? [];
@@ -51,4 +62,28 @@ function collectJsonFiles(root: string): string[] {
 
 function readJsonFile<T>(file: string): T {
   return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+}
+
+function findMisspelledSchemaKeywords(
+  value: unknown,
+  location: string,
+  misspelledKeywords: Set<string>,
+  findings: string[]
+): void {
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => findMisspelledSchemaKeywords(item, `${location}[${index}]`, misspelledKeywords, findings));
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    const childLocation = `${location}.${key}`;
+    if (misspelledKeywords.has(key)) {
+      findings.push(childLocation);
+    }
+    findMisspelledSchemaKeywords(child, childLocation, misspelledKeywords, findings);
+  }
 }

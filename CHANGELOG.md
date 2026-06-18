@@ -25,6 +25,7 @@
 - Improved resource graph performance by loading each block's model and texture children only when the block is expanded.
 - Fixed OptiFine CIT resource resolution for relative paths, namespaced paths, and explicit `assets/` paths.
 - Fixed texture variable lookup so parent model texture definitions are considered.
+- Fixed misspelled block model schema range keywords so coordinate and rotation limits validate correctly.
 
 ## [1.0.3]
 
