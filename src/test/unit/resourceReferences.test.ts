@@ -74,7 +74,7 @@ describe("resource references", () => {
     );
   });
 
-  it("extracts font reference and bitmap file references", () => {
+  it("extracts font references and provider file references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "font", "default.json"),
       {
@@ -86,6 +86,14 @@ describe("resource references", () => {
           {
             type: "bitmap",
             file: "minecraft:font/ascii.png"
+          },
+          {
+            type: "ttf",
+            file: "example:custom.ttf"
+          },
+          {
+            type: "unihex",
+            ["hex_file"]: "example:unifont.hex"
           }
         ]
       }
@@ -97,7 +105,9 @@ describe("resource references", () => {
       references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
       [
         ["font", "minecraft:include/space", "font", "json"],
-        ["texture", "minecraft:font/ascii.png", "textures", "png"]
+        ["texture", "minecraft:font/ascii.png", "textures", "png"],
+        ["fontFile", "example:custom.ttf", "font", null],
+        ["fontFile", "example:unifont.hex", "font", null]
       ]
     );
   });

@@ -248,6 +248,10 @@ function getReferenceLabel(reference: ResourceReference): string {
     return vscode.l10n.t("font: {0}", reference.value);
   }
 
+  if (reference.kind === "fontFile") {
+    return vscode.l10n.t("font file: {0}", reference.value);
+  }
+
   if (reference.kind === "shader") {
     return vscode.l10n.t("shader: {0}", reference.value);
   }
@@ -256,7 +260,7 @@ function getReferenceLabel(reference: ResourceReference): string {
 }
 
 function getReferenceIcon(reference: ResourceReference): vscode.ThemeIcon {
-  if (reference.kind === "model" || reference.kind === "shader" || reference.kind === "font") {
+  if (reference.kind === "model" || reference.kind === "shader" || reference.kind === "font" || reference.kind === "fontFile") {
     return new vscode.ThemeIcon("file-code");
   }
 

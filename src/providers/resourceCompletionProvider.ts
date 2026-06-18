@@ -124,6 +124,10 @@ function stripExtension(fileName: string, extension: string | null): string {
 }
 
 function isCompletableEntry(entry: Dirent, reference: ResourceReference): boolean {
+  if (reference.kind === "fontFile") {
+    return entry.isDirectory() || entry.isFile();
+  }
+
   if (reference.extension === null) {
     return entry.isDirectory();
   }

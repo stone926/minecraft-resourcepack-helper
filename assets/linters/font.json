@@ -33,7 +33,12 @@
         "file": {
           "type": "string",
           "title": "file 字体或贴图文件",
-          "description": "bitmap provider 通常指向 textures 下的 png，ttf/unihex 指向字体文件。"
+          "description": "bitmap provider 指向 textures 下的 PNG；ttf provider 指向 font 下的 TTF/OTF 文件。资源路径通常应包含文件扩展名。"
+        },
+        "hex_file": {
+          "type": "string",
+          "title": "hex_file Unihex 文件",
+          "description": "unihex provider 指向 font 下的 .hex 文件。资源路径通常应包含文件扩展名。"
         },
         "chars": {
           "type": "array",
@@ -82,6 +87,32 @@
             "uniform": {
               "type": "boolean",
               "title": "uniform 等宽字体过滤"
+            }
+          }
+        },
+        "size_overrides": {
+          "type": "array",
+          "title": "size_overrides Unihex 宽度覆盖",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "from": {
+                "type": "string",
+                "title": "from 起始字符"
+              },
+              "to": {
+                "type": "string",
+                "title": "to 结束字符"
+              },
+              "left": {
+                "type": "integer",
+                "title": "left 左边界"
+              },
+              "right": {
+                "type": "integer",
+                "title": "right 右边界"
+              }
             }
           }
         }

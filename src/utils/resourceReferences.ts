@@ -11,7 +11,7 @@ export interface ResourceReference {
   kind: ResourceReferenceKind;
 }
 
-type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "shader" | "sound";
+type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "fontFile" | "shader" | "sound";
 
 export interface ResourceReferenceDocument {
   languageId: string;
@@ -219,6 +219,16 @@ function getFontReferences(ast: JsonDocumentNode): ResourceReference[] {
       const file = objectMembers(provider).find(member => memberName(member) === "file");
       if (file) {
         pushReference(references, file.value, "textures", "font", "png", "texture");
+      }
+    } else if (type === "ttf") {
+      const file = objectMembers(provider).find(member => memberName(member) === "file");
+      if (file) {
+        pushReference(references, file.value, "font", "font", null, "fontFile");
+      }
+    } else if (type === "unihex") {
+      const hexFile = objectMembers(provider).find(member => memberName(member) === "hex_file");
+      if (hexFile) {
+        pushReference(references, hexFile.value, "font", "font", null, "fontFile");
       }
     }
   }
