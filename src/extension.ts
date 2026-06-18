@@ -11,6 +11,8 @@ import blockstateDefinitionProvider from './providers/blockstateDefinitionProvid
 import blockModelDefinitionProvider from './providers/blockModelDefinitionProvider';
 import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider';
 import particleDefinitionProvider from './providers/particleDefinitionProvider';
+import resourceCompletionProvider from './providers/resourceCompletionProvider';
+import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
@@ -38,6 +40,19 @@ export function activate(context: vscode.ExtensionContext) {
     { provideDefinition: particleDefinitionProvider, }
   ));
 
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
+    [
+      { language: "json", pattern: "**/blockstates/*.json" },
+      { language: "json", pattern: "**/models/block/**/*.json" },
+      { language: "json", pattern: "**/models/item/**/*.json" },
+      { language: "json", pattern: "**/particles/**/*.json" }
+    ],
+    resourceCompletionProvider,
+    '"',
+    '/',
+    ':'
+  ));
+
   context.subscriptions.push(vscode.languages.registerDefinitionProvider('properties', {
     provideDefinition: citDefinitionProvider
   }));
@@ -55,6 +70,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
+
+  const resourceDiagnostics = vscode.languages.createDiagnosticCollection("McResHelper resources");
+  context.subscriptions.push(resourceDiagnostics);
+  for (const document of vscode.workspace.textDocuments) {
+    refreshResourceDiagnostics(document, resourceDiagnostics);
+  }
 
   let activeEditor: vscode.TextEditor | undefined;
 
@@ -78,11 +99,25 @@ export function activate(context: vscode.ExtensionContext) {
     if (activeEditor && event.document === activeEditor.document) {
       applyDecoration(activeEditor);
     }
+    refreshResourceDiagnostics(event.document, resourceDiagnostics);
+  }, null, context.subscriptions);
+
+  vscode.workspace.onDidOpenTextDocument(document => {
+    refreshResourceDiagnostics(document, resourceDiagnostics);
+  }, null, context.subscriptions);
+
+  vscode.workspace.onDidCloseTextDocument(document => {
+    resourceDiagnostics.delete(document.uri);
   }, null, context.subscriptions);
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration("McResHelper.tipColorForUndefinedTextureVariables") && activeEditor) {
       updateDecoration(activeEditor);
+    }
+    if (event.affectsConfiguration("McResHelper.defaultMcAssetsPath")) {
+      for (const document of vscode.workspace.textDocuments) {
+        refreshResourceDiagnostics(document, resourceDiagnostics);
+      }
     }
   }));
 
