@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/particles.json",
+  "type": "object",
+  "title": "Minecraft particle definition",
+  "description": "定义粒子可使用的纹理列表。",
+  "additionalProperties": true,
+  "required": ["textures"],
+  "properties": {
+    "textures": {
+      "type": "array",
+      "title": "textures 粒子纹理",
+      "description": "粒子随机使用的纹理路径。插件会解析到 textures/particle。",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

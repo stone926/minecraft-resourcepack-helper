@@ -70,6 +70,34 @@
         "url": "./assets/linters/models-item.json"
       },
       {
+        "fileMatch": "**/particles/**/*.json",
+        "url": "./assets/linters/particles.json"
+      },
+      {
+        "fileMatch": "**/items/**/*.json",
+        "url": "./assets/linters/items.json"
+      },
+      {
+        "fileMatch": "**/atlases/**/*.json",
+        "url": "./assets/linters/atlases.json"
+      },
+      {
+        "fileMatch": "**/equipment/**/*.json",
+        "url": "./assets/linters/equipment.json"
+      },
+      {
+        "fileMatch": "**/font/**/*.json",
+        "url": "./assets/linters/font.json"
+      },
+      {
+        "fileMatch": "**/waypoint_style/**/*.json",
+        "url": "./assets/linters/waypoint-style.json"
+      },
+      {
+        "fileMatch": "**/post_effect/**/*.json",
+        "url": "./assets/linters/post-effect.json"
+      },
+      {
         "fileMatch": [
           "**/textures/block/**/*.png.mcmeta",
           "**/textures/item/**/*.png.mcmeta"

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/post-effect.json",
+  "type": "object",
+  "title": "Minecraft post effect definition",
+  "description": "定义后处理渲染目标和 pass 列表。",
+  "additionalProperties": true,
+  "properties": {
+    "targets": {
+      "type": "object",
+      "title": "targets 渲染目标",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "passes": {
+      "type": "array",
+      "title": "passes 后处理步骤",
+      "items": {
+        "$ref": "#/definitions/pass"
+      }
+    }
+  },
+  "definitions": {
+    "pass": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "vertex_shader": {
+          "type": "string",
+          "title": "vertex_shader 顶点着色器",
+          "description": "顶点着色器资源路径。插件会解析到 shaders 下的 .vsh 文件。"
+        },
+        "fragment_shader": {
+          "type": "string",
+          "title": "fragment_shader 片段着色器",
+          "description": "片段着色器资源路径。插件会解析到 shaders 下的 .fsh 文件。"
+        },
+        "inputs": {
+          "type": "array",
+          "title": "inputs 输入",
+          "items": {
+            "$ref": "#/definitions/input"
+          }
+        },
+        "output": {
+          "type": "string",
+          "title": "output 输出目标"
+        },
+        "uniforms": {
+          "type": "object",
+          "title": "uniforms uniform 配置",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/uniform"
+            }
+          }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sampler_name": {
+          "type": "string",
+          "title": "sampler_name 采样器名称"
+        },
+        "target": {
+          "type": "string",
+          "title": "target 输入目标"
+        },
+        "bilinear": {
+          "type": "boolean",
+          "title": "bilinear 双线性过滤"
+        }
+      }
+    },
+    "uniform": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 名称"
+        },
+        "type": {
+          "type": "string",
+          "title": "type 类型",
+          "enum": ["float", "int", "vec2", "vec3", "vec4", "matrix4x4"]
+        },
+        "value": {
+          "title": "value 值",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

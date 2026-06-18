@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/equipment.json",
+  "type": "object",
+  "title": "Minecraft equipment definition",
+  "description": "定义装备渲染层所使用的纹理。",
+  "additionalProperties": true,
+  "required": ["layers"],
+  "properties": {
+    "layers": {
+      "type": "object",
+      "title": "layers 渲染层",
+      "description": "键名为装备层类型，例如 humanoid、humanoid_leggings、wolf_body、llama_body。",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/layer"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "layer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["texture"],
+      "properties": {
+        "texture": {
+          "type": "string",
+          "title": "texture 纹理",
+          "description": "装备层纹理路径。插件会解析到 textures/entity/equipment/<layer>。"
+        },
+        "dyeable": {
+          "type": "object",
+          "title": "dyeable 可染色",
+          "description": "可染色装备的颜色配置。",
+          "additionalProperties": true,
+          "properties": {
+            "color_when_undyed": {
+              "type": "integer",
+              "title": "color_when_undyed 未染色颜色",
+              "description": "未染色时使用的十进制 RGB 颜色值。"
+            }
+          }
+        }
+      }
+    }
+  }
+}

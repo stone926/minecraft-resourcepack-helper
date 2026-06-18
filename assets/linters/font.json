@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/font.json",
+  "type": "object",
+  "title": "Minecraft font definition",
+  "description": "定义字体 provider 列表。",
+  "additionalProperties": true,
+  "required": ["providers"],
+  "properties": {
+    "providers": {
+      "type": "array",
+      "title": "providers 字体来源",
+      "items": {
+        "$ref": "#/definitions/provider"
+      }
+    }
+  },
+  "definitions": {
+    "provider": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type provider 类型",
+          "enum": ["bitmap", "ttf", "space", "unihex", "reference"]
+        },
+        "id": {
+          "type": "string",
+          "title": "id 引用字体",
+          "description": "reference provider 引用的字体定义。"
+        },
+        "file": {
+          "type": "string",
+          "title": "file 字体或贴图文件",
+          "description": "bitmap provider 通常指向 textures 下的 png，ttf/unihex 指向字体文件。"
+        },
+        "chars": {
+          "type": "array",
+          "title": "chars 字符网格",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ascent": {
+          "type": "number",
+          "title": "ascent 上升高度"
+        },
+        "height": {
+          "type": "number",
+          "title": "height 字符高度"
+        },
+        "size": {
+          "type": "number",
+          "title": "size 字号"
+        },
+        "oversample": {
+          "type": "number",
+          "title": "oversample 过采样"
+        },
+        "shift": {
+          "type": "array",
+          "title": "shift 位移",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number"
+          }
+        },
+        "advances": {
+          "type": "object",
+          "title": "advances 字符宽度",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "filter": {
+          "type": "object",
+          "title": "filter 过滤条件",
+          "additionalProperties": true,
+          "properties": {
+            "uniform": {
+              "type": "boolean",
+              "title": "uniform 等宽字体过滤"
+            }
+          }
+        }
+      }
+    }
+  }
+}

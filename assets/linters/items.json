@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/items.json",
+  "type": "object",
+  "title": "Minecraft item model definition",
+  "description": "新版 items 目录中的物品模型选择定义。",
+  "additionalProperties": true,
+  "required": ["model"],
+  "properties": {
+    "model": {
+      "$ref": "#/definitions/itemModel",
+      "title": "model 物品模型"
+    },
+    "swap_animation_scale": {
+      "type": "number",
+      "title": "swap_animation_scale 切换动画缩放"
+    }
+  },
+  "definitions": {
+    "resourceLocation": {
+      "type": "string",
+      "description": "Minecraft 资源路径，例如 minecraft:item/diamond_sword。"
+    },
+    "itemModel": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 模型类型",
+          "enum": [
+            "minecraft:model",
+            "minecraft:composite",
+            "minecraft:condition",
+            "minecraft:select",
+            "minecraft:range_dispatch",
+            "minecraft:special",
+            "minecraft:bundle/selected_item",
+            "minecraft:empty",
+            "minecraft:banner",
+            "minecraft:chest",
+            "minecraft:conduit",
+            "minecraft:constant",
+            "minecraft:copper_golem_statue",
+            "minecraft:decorated_pot",
+            "minecraft:dye",
+            "minecraft:firework",
+            "minecraft:grass",
+            "minecraft:head",
+            "minecraft:map_color",
+            "minecraft:player_head",
+            "minecraft:potion",
+            "minecraft:shield",
+            "minecraft:shulker_box",
+            "minecraft:trident"
+          ]
+        },
+        "model": {
+          "title": "model 模型",
+          "description": "minecraft:model 中为模型资源路径；在分发器条目中也可为嵌套 item model。",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/resourceLocation"
+            },
+            {
+              "$ref": "#/definitions/itemModel"
+            }
+          ]
+        },
+        "models": {
+          "type": "array",
+          "title": "models 组合模型",
+          "items": {
+            "$ref": "#/definitions/itemModel"
+          }
+        },
+        "on_true": {
+          "$ref": "#/definitions/itemModel",
+          "title": "on_true 条件为真"
+        },
+        "on_false": {
+          "$ref": "#/definitions/itemModel",
+          "title": "on_false 条件为假"
+        },
+        "fallback": {
+          "$ref": "#/definitions/itemModel",
+          "title": "fallback 后备模型"
+        },
+        "base": {
+          "title": "base 基础模型",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/resourceLocation"
+            },
+            {
+              "$ref": "#/definitions/itemModel"
+            }
+          ]
+        },
+        "property": {
+          "type": "string",
+          "title": "property 属性"
+        },
+        "entries": {
+          "type": "array",
+          "title": "entries 阈值分发",
+          "items": {
+            "$ref": "#/definitions/rangeEntry"
+          }
+        },
+        "cases": {
+          "type": "array",
+          "title": "cases 条件分支",
+          "items": {
+            "$ref": "#/definitions/selectCase"
+          }
+        },
+        "tints": {
+          "type": "array",
+          "title": "tints 着色",
+          "items": {
+            "$ref": "#/definitions/tint"
+          }
+        },
+        "transformation": {
+          "type": "object",
+          "title": "transformation 显示变换",
+          "additionalProperties": {
+            "$ref": "#/definitions/vector"
+          }
+        }
+      }
+    },
+    "rangeEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["threshold", "model"],
+      "properties": {
+        "threshold": {
+          "type": "number",
+          "title": "threshold 阈值"
+        },
+        "model": {
+          "$ref": "#/definitions/itemModel",
+          "title": "model 模型"
+        }
+      }
+    },
+    "selectCase": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["when", "model"],
+      "properties": {
+        "when": {
+          "title": "when 匹配值",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": ["string", "number", "boolean"]
+              }
+            }
+          ]
+        },
+        "model": {
+          "$ref": "#/definitions/itemModel",
+          "title": "model 模型"
+        }
+      }
+    },
+    "tint": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型"
+        },
+        "default": {
+          "type": "integer",
+          "title": "default 默认颜色"
+        }
+      }
+    },
+    "vector": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 4,
+      "items": {
+        "type": "number"
+      }
+    }
+  }
+}

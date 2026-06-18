@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/atlases.json",
+  "type": "object",
+  "title": "Minecraft atlas definition",
+  "description": "定义纹理图集的来源列表。资源路径相对于 assets/<namespace>/textures。",
+  "additionalProperties": true,
+  "required": ["sources"],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "title": "sources 图集来源",
+      "description": "按顺序列出加入图集的纹理来源。",
+      "items": {
+        "$ref": "#/definitions/source"
+      }
+    }
+  },
+  "definitions": {
+    "resourceLocation": {
+      "type": "string",
+      "description": "Minecraft 资源路径，例如 minecraft:block/stone；省略命名空间时默认为 minecraft。"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 来源类型",
+          "description": "图集来源类型。",
+          "enum": [
+            "directory",
+            "single",
+            "paletted_permutations",
+            "filter",
+            "unstitch",
+            "minecraft:directory",
+            "minecraft:single",
+            "minecraft:paletted_permutations",
+            "minecraft:filter",
+            "minecraft:unstitch"
+          ]
+        },
+        "source": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "source 来源目录",
+          "description": "directory 来源读取的纹理目录。"
+        },
+        "prefix": {
+          "type": "string",
+          "title": "prefix 前缀",
+          "description": "directory 来源添加到图集后的资源路径前缀。"
+        },
+        "resource": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "resource 单个纹理",
+          "description": "single 来源读取的单个纹理。"
+        },
+        "sprite": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "sprite 图集名",
+          "description": "single 来源写入图集时使用的 sprite 名称。"
+        },
+        "palette_key": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "palette_key 调色板键",
+          "description": "paletted_permutations 使用的调色板基准纹理。"
+        },
+        "permutations": {
+          "type": "object",
+          "title": "permutations 调色板变体",
+          "description": "调色板名称到纹理路径的映射。",
+          "additionalProperties": {
+            "$ref": "#/definitions/resourceLocation"
+          }
+        },
+        "textures": {
+          "type": "array",
+          "title": "textures 纹理",
+          "description": "paletted_permutations 应用到的一组纹理。",
+          "items": {
+            "$ref": "#/definitions/resourceLocation"
+          }
+        }
+      }
+    }
+  }
+}
