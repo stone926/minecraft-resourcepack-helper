@@ -13,11 +13,17 @@
   "Please input the target resource pack format": "请输入目标资源包格式版本",
   "Select workspace folder": "选择工作区文件夹",
   "Suggest": "补全建议",
+  "already shown": "已显示",
   "blockstate": "方块状态",
+  "font: {0}": "字体：{0}",
   "folder already exist": "文件夹已存在",
   "input must be a pack format version such as 86.2 or 69": "输入必须是类似 86.2 或 69 的资源包格式版本",
   "input must not be empty": "输入不能为空",
   "missing": "缺失",
   "model: {0}": "模型：{0}",
+  "shader: {0}": "着色器：{0}",
+  "sound: {0}": "声音：{0}",
+  "texture directory: {0}": "纹理目录：{0}",
+  "texture: {0}": "纹理：{0}",
   "texture variable": "纹理变量"
 }

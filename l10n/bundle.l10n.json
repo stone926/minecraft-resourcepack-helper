@@ -13,11 +13,17 @@
   "Please input the target resource pack format": "Please input the target resource pack format",
   "Select workspace folder": "Select workspace folder",
   "Suggest": "Suggest",
+  "already shown": "already shown",
   "blockstate": "blockstate",
+  "font: {0}": "font: {0}",
   "folder already exist": "folder already exist",
   "input must be a pack format version such as 86.2 or 69": "input must be a pack format version such as 86.2 or 69",
   "input must not be empty": "input must not be empty",
   "missing": "missing",
   "model: {0}": "model: {0}",
+  "shader: {0}": "shader: {0}",
+  "sound: {0}": "sound: {0}",
+  "texture directory: {0}": "texture directory: {0}",
+  "texture: {0}": "texture: {0}",
   "texture variable": "texture variable"
 }

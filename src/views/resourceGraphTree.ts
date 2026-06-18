@@ -73,10 +73,13 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
       );
     }
 
-    const children = await this.createReferenceNodes(document, getResourceReferences(document));
+    const children = isBlockstateDocument(document.fileName)
+      ? await this.createBlockstateModelNodes(document)
+      : await this.createReferenceNodes(document, getResourceReferences(document));
+
     return new ResourceGraphNode(
       vscode.l10n.t("Current File"),
-      vscode.TreeItemCollapsibleState.Expanded,
+      children.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
       {
         description: path.basename(document.fileName),
         uri: document.uri,
@@ -109,15 +112,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
   private async createBlockNode(uri: vscode.Uri): Promise<ResourceGraphNode> {
     const document = await readJsonDocument(uri);
-    const modelReferences = getResourceReferences(document).filter(reference => reference.kind === "model");
-    const modelNodes: ResourceGraphNode[] = [];
-
-    for (const reference of modelReferences) {
-      const modelNode = await this.createModelNode(document, reference);
-      if (modelNode) {
-        modelNodes.push(modelNode);
-      }
-    }
+    const modelNodes = await this.createBlockstateModelNodes(document);
 
     const blockstateNode = new ResourceGraphNode(
       vscode.l10n.t("blockstate"),
@@ -136,7 +131,25 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     );
   }
 
-  private async createModelNode(document: ResourceDocument, reference: ResourceReference): Promise<ResourceGraphNode | null> {
+  private async createBlockstateModelNodes(document: ResourceDocument): Promise<ResourceGraphNode[]> {
+    const modelReferences = uniqueResourceReferences(getResourceReferences(document).filter(reference => reference.kind === "model"));
+    const modelNodes: ResourceGraphNode[] = [];
+
+    for (const reference of modelReferences) {
+      const modelNode = await this.createModelNode(document, reference, new Set<string>());
+      if (modelNode) {
+        modelNodes.push(modelNode);
+      }
+    }
+
+    return modelNodes;
+  }
+
+  private async createModelNode(
+    document: ResourceDocument,
+    reference: ResourceReference,
+    visitedModels: Set<string>
+  ): Promise<ResourceGraphNode | null> {
     const modelUri = generateRedirectPath(reference.value, document as vscode.TextDocument, reference.target, reference.source, reference.extension);
     if (!modelUri) {
       return new ResourceGraphNode(
@@ -146,18 +159,39 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
       );
     }
 
+    if (visitedModels.has(modelUri.fsPath)) {
+      return new ResourceGraphNode(
+        vscode.l10n.t("model: {0}", reference.value),
+        vscode.TreeItemCollapsibleState.None,
+        { description: vscode.l10n.t("already shown"), uri: modelUri, iconPath: new vscode.ThemeIcon("file-code") }
+      );
+    }
+
+    visitedModels.add(modelUri.fsPath);
+
     const modelDocument = await readJsonDocument(modelUri);
-    const textureNodes = await this.createReferenceNodes(
+    const modelReferences = getResourceReferences(modelDocument);
+    const parentModelNodes: ResourceGraphNode[] = [];
+
+    for (const parentReference of uniqueResourceReferences(modelReferences.filter(modelReference => modelReference.kind === "model"))) {
+      const parentNode = await this.createModelNode(modelDocument, parentReference, new Set(visitedModels));
+      if (parentNode) {
+        parentModelNodes.push(parentNode);
+      }
+    }
+
+    const resourceNodes = await this.createReferenceNodes(
       modelDocument,
-      getResourceReferences(modelDocument).filter(modelReference => modelReference.kind === "texture")
+      uniqueResourceReferences(modelReferences.filter(modelReference => modelReference.kind !== "model"))
     );
+    const children = [...parentModelNodes, ...resourceNodes];
 
     return new ResourceGraphNode(
       vscode.l10n.t("model: {0}", reference.value),
-      textureNodes.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+      children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
       {
         uri: modelUri,
-        children: textureNodes,
+        children,
         iconPath: new vscode.ThemeIcon("file-code")
       }
     );
@@ -169,7 +203,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     for (const reference of references) {
       if (reference.value.startsWith("#")) {
         nodes.push(new ResourceGraphNode(
-          `${reference.kind}: ${reference.value}`,
+          getReferenceLabel(reference),
           vscode.TreeItemCollapsibleState.None,
           { description: vscode.l10n.t("texture variable"), iconPath: new vscode.ThemeIcon("symbol-variable") }
         ));
@@ -178,7 +212,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
       const uri = generateRedirectPath(reference.value, document as vscode.TextDocument, reference.target, reference.source, reference.extension);
       nodes.push(new ResourceGraphNode(
-        `${reference.kind}: ${reference.value}`,
+        getReferenceLabel(reference),
         vscode.TreeItemCollapsibleState.None,
         {
           description: uri ? undefined : vscode.l10n.t("missing"),
@@ -190,6 +224,30 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
     return nodes;
   }
+}
+
+function getReferenceLabel(reference: ResourceReference): string {
+  if (reference.kind === "model") {
+    return vscode.l10n.t("model: {0}", reference.value);
+  }
+
+  if (reference.kind === "texture") {
+    return vscode.l10n.t("texture: {0}", reference.value);
+  }
+
+  if (reference.kind === "textureDirectory") {
+    return vscode.l10n.t("texture directory: {0}", reference.value);
+  }
+
+  if (reference.kind === "font") {
+    return vscode.l10n.t("font: {0}", reference.value);
+  }
+
+  if (reference.kind === "shader") {
+    return vscode.l10n.t("shader: {0}", reference.value);
+  }
+
+  return vscode.l10n.t("sound: {0}", reference.value);
 }
 
 function getReferenceIcon(reference: ResourceReference): vscode.ThemeIcon {
@@ -207,4 +265,21 @@ async function readJsonDocument(uri: vscode.Uri): Promise<ResourceDocument> {
     fileName: uri.fsPath,
     getText: () => Buffer.from(bytes).toString("utf8")
   };
+}
+
+function isBlockstateDocument(fileName: string): boolean {
+  return /[\\/]blockstates[\\/].+\.json$/i.test(fileName);
+}
+
+function uniqueResourceReferences(references: ResourceReference[]): ResourceReference[] {
+  const uniqueReferences = new Map<string, ResourceReference>();
+
+  for (const reference of references) {
+    const key = `${reference.kind}\0${reference.target}\0${reference.source}\0${reference.extension ?? ""}\0${reference.value}`;
+    if (!uniqueReferences.has(key)) {
+      uniqueReferences.set(key, reference);
+    }
+  }
+
+  return [...uniqueReferences.values()];
 }
