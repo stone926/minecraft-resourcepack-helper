@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { arrayElements, JsonAstNode, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
+import { hasTextureVariableDefinition, modelSourceForFile } from "../utils/modelTexture";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
 let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
@@ -19,6 +20,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
   }
 
   const texturesAst = objectMembers(ast.body).find(member => memberName(member) === "textures");
+  const modelSource = modelSourceForFile(editor.document.fileName);
   const textureDefinitions = new Set(
     objectMembers(texturesAst?.value)
       .map(member => memberName(member))
@@ -36,7 +38,12 @@ export function applyDecoration(editor: vscode.TextEditor) {
       for (const face of objectMembers(faces?.value)) {
         const textureEntry = objectMembers(face.value).find(member => memberName(member) === "texture");
         const textureReference = stringValue(textureEntry?.value);
-        if (textureEntry && textureReference?.startsWith("#") && !textureDefinitions.has(textureReference.slice(1))) {
+        if (
+          textureEntry &&
+          textureReference?.startsWith("#") &&
+          !textureDefinitions.has(textureReference.slice(1)) &&
+          !hasTextureVariableDefinition(ast, editor.document, textureReference, modelSource)
+        ) {
           pushRange(ranges, textureEntry.value);
         }
       }
@@ -45,7 +52,11 @@ export function applyDecoration(editor: vscode.TextEditor) {
 
   for (const texture of objectMembers(texturesAst?.value)) {
     const value = stringValue(texture.value);
-    if (value?.startsWith("#") && !textureDefinitions.has(value.slice(1))) {
+    if (
+      value?.startsWith("#") &&
+      !textureDefinitions.has(value.slice(1)) &&
+      !hasTextureVariableDefinition(ast, editor.document, value, modelSource)
+    ) {
       pushRange(ranges, texture.value);
     }
   }
