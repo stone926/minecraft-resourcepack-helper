@@ -1,34 +1,33 @@
 # Minecraft Resourcepack Helper
 
-To help minecraft developers create resource packs more efficiently
-**Only support namespace "minecraft", and other namespaces may be suppoted later**
+Minecraft Resourcepack Helper helps Minecraft resource pack authors work with JSON-based pack files in VS Code.
 
 ## Features
 
-- Goto Definitions (also support CIT)
-- Json Validator
-- Creating New Pack by Command
-- Highlight for Variables in Model Files
+- Go to definitions for blockstate models, model parents, model textures, particle textures, item model definitions, and OptiFine CIT texture/model paths.
+- Resource path completion for blockstates, block/item models, particles, and item model definition files.
+- Missing resource diagnostics with fallback support through `McResHelper.defaultMcAssetsPath`.
+- Texture variable navigation and undefined variable highlighting in model files, including variables inherited through parent models.
+- Minecraft Resources sidebar showing the current file references and blockstate -> model -> texture relationships.
+- JSON validation for supported resource pack file types.
+- Commands for creating a resource pack scaffold.
 
+## Configuration
+
+- `McResHelper.defaultMcAssetsPath`: absolute path to vanilla Minecraft assets. The path may point at an `assets` folder, an `assets/minecraft` folder, or a resource pack root containing `assets/minecraft`.
+- `McResHelper.tipColorForUndefinedTextureVariables`: color used to highlight undefined `#texture` variables in model files.
+
+## Commands
+
+- `McResHelper: open folder of vanilla assets`
+- `McResHelper: create a new pack in current folder`
+- `McResHelper: create a new pack with the current folder as the root directory`
+- `McResHelper: refresh resource graph`
 
 ## Install
 
-You can install it from the [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)
-
-
-## Goto Definitions
-
-You can goto the definitions of textures and models in the workspace by `Ctrl-clicking` on their names.
-
-![definition](./assets/definition.gif)
-
-## Validator
-
-It can help you verify the validity of the JSON file and display error messages and suggestions.
-
-![validitor](./assets/validitor.gif)
+You can install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper).
 
 ## Repository
-[https://gitee.com/stone926/minecraft-resourcepack-helper](https://gitee.com/stone926/minecraft-resourcepack-helper)
 
-**Enjoy!**
+[https://github.com/stone926/minecraft-resourcepack-helper](https://github.com/stone926/minecraft-resourcepack-helper)

@@ -1,6 +1,20 @@
-v1.0.2
-1. support minecraft 1.19+
-2. fix bugs
+# Changelog
 
-v1.0.3
-support optifine cit partly, I hope there are no bugs
+## [Unreleased]
+
+- Updated the extension target and toolchain to VS Code 1.125 and current npm dependency versions.
+- Added cross-platform resource path resolution with configured vanilla asset fallback support.
+- Added resource path completion and missing resource diagnostics.
+- Added the Minecraft Resources sidebar for current-file and blockstate/model/texture mapping.
+- Added support for item model definition files under `assets/<namespace>/items`.
+- Fixed JSON edit-time crashes, CIT path matching, resource lifecycle leaks, unsafe pack metadata generation, and cancelled command input handling.
+- Fixed texture variable lookup so parent model texture definitions are considered.
+
+## [1.0.3]
+
+- Added partial OptiFine CIT support.
+
+## [1.0.2]
+
+- Added Minecraft 1.19+ support.
+- Fixed bugs.
