@@ -103,6 +103,22 @@
         "url": "./assets/linters/sounds.json"
       },
       {
+        "fileMatch": "**/assets/*/lang/*.json",
+        "url": "./assets/linters/lang.json"
+      },
+      {
+        "fileMatch": "**/assets/*/texts/credits.json",
+        "url": "./assets/linters/credits.json"
+      },
+      {
+        "fileMatch": "**/assets/*/gpu_warnlist.json",
+        "url": "./assets/linters/gpu-warnlist.json"
+      },
+      {
+        "fileMatch": "**/assets/*/regional_compliancies.json",
+        "url": "./assets/linters/regional-compliancies.json"
+      },
+      {
         "fileMatch": [
           "**/textures/block/**/*.png.mcmeta",
           "**/textures/item/**/*.png.mcmeta"

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/gpu-warnlist.json",
+  "type": "object",
+  "title": "Minecraft GPU warnlist",
+  "description": "定义触发图形环境警告的 renderer/version/vendor 正则表达式列表。",
+  "additionalProperties": false,
+  "properties": {
+    "renderer": {
+      "$ref": "#/definitions/regexList",
+      "title": "renderer 渲染器匹配"
+    },
+    "version": {
+      "$ref": "#/definitions/regexList",
+      "title": "version 版本匹配"
+    },
+    "vendor": {
+      "$ref": "#/definitions/regexList",
+      "title": "vendor 厂商匹配"
+    }
+  },
+  "definitions": {
+    "regexList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Java 正则表达式。"
+      }
+    }
+  }
+}

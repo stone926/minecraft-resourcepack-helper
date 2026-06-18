@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/regional-compliancies.json",
+  "type": "object",
+  "title": "Minecraft regional compliancies",
+  "description": "按 ISO 3166-1 三位字母地区代码定义定时合规提示。",
+  "additionalProperties": {
+    "type": "array",
+    "items": {
+      "$ref": "#/definitions/compliance"
+    }
+  },
+  "definitions": {
+    "compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["period", "title", "message"],
+      "properties": {
+        "delay": {
+          "type": "integer",
+          "title": "delay 首次延迟",
+          "minimum": 0,
+          "default": 0
+        },
+        "period": {
+          "type": "integer",
+          "title": "period 周期",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "title": "title 标题本地化键"
+        },
+        "message": {
+          "type": "string",
+          "title": "message 信息本地化键"
+        }
+      }
+    }
+  }
+}
