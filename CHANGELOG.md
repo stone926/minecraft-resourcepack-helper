@@ -18,6 +18,7 @@
 - Fixed JSON edit-time crashes, CIT path matching, resource lifecycle leaks, unsafe pack metadata generation, and cancelled command input handling.
 - Fixed resource-pack creation in multi-root workspaces by asking for the target workspace folder.
 - Fixed the resource graph block list so it no longer stops after 300 blockstate files.
+- Improved resource graph performance by loading each block's model and texture children only when the block is expanded.
 - Fixed OptiFine CIT resource resolution for relative paths, namespaced paths, and explicit `assets/` paths.
 - Fixed texture variable lookup so parent model texture definitions are considered.
 

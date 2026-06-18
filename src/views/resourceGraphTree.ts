@@ -9,8 +9,10 @@ interface ResourceDocument {
   getText(): string;
 }
 
+type ResourceGraphChildren = ResourceGraphNode[] | (() => Promise<ResourceGraphNode[]>);
+
 class ResourceGraphNode extends vscode.TreeItem {
-  public readonly children: ResourceGraphNode[];
+  private readonly childrenProvider: () => Promise<ResourceGraphNode[]>;
 
   constructor(
     label: string,
@@ -18,7 +20,7 @@ class ResourceGraphNode extends vscode.TreeItem {
     options: {
       description?: string;
       uri?: vscode.Uri;
-      children?: ResourceGraphNode[];
+      children?: ResourceGraphChildren;
       iconPath?: vscode.ThemeIcon;
       contextValue?: string;
     } = {}
@@ -26,7 +28,7 @@ class ResourceGraphNode extends vscode.TreeItem {
     super(label, collapsibleState);
     this.description = options.description;
     this.resourceUri = options.uri;
-    this.children = options.children ?? [];
+    this.childrenProvider = toChildrenProvider(options.children);
     this.iconPath = options.iconPath;
     this.contextValue = options.contextValue;
 
@@ -37,6 +39,10 @@ class ResourceGraphNode extends vscode.TreeItem {
         arguments: [options.uri]
       };
     }
+  }
+
+  getChildren(): Promise<ResourceGraphNode[]> {
+    return this.childrenProvider();
   }
 }
 
@@ -54,7 +60,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
   async getChildren(element?: ResourceGraphNode): Promise<ResourceGraphNode[]> {
     if (element) {
-      return element.children;
+      return element.getChildren();
     }
 
     return [
@@ -91,12 +97,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
   private async createBlocksNode(): Promise<ResourceGraphNode> {
     const blockstateUris = await vscode.workspace.findFiles("**/assets/*/blockstates/*.json", "**/node_modules/**");
-    const blockNodes: ResourceGraphNode[] = [];
-
-    for (const uri of blockstateUris) {
-      blockNodes.push(await this.createBlockNode(uri));
-    }
-
+    const blockNodes = blockstateUris.map(uri => this.createBlockNode(uri));
     blockNodes.sort((left, right) => left.label?.toString().localeCompare(right.label?.toString() ?? "") ?? 0);
 
     return new ResourceGraphNode(
@@ -110,25 +111,29 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     );
   }
 
-  private async createBlockNode(uri: vscode.Uri): Promise<ResourceGraphNode> {
-    const document = await readJsonDocument(uri);
-    const modelNodes = await this.createBlockstateModelNodes(document);
-
-    const blockstateNode = new ResourceGraphNode(
-      vscode.l10n.t("blockstate"),
-      vscode.TreeItemCollapsibleState.None,
-      { uri, iconPath: new vscode.ThemeIcon("json") }
-    );
-
+  private createBlockNode(uri: vscode.Uri): ResourceGraphNode {
     return new ResourceGraphNode(
       path.basename(uri.fsPath, ".json"),
-      modelNodes.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+      vscode.TreeItemCollapsibleState.Collapsed,
       {
         uri,
-        children: [blockstateNode, ...modelNodes],
+        children: () => this.createBlockChildren(uri),
         iconPath: new vscode.ThemeIcon("symbol-structure")
       }
     );
+  }
+
+  private async createBlockChildren(uri: vscode.Uri): Promise<ResourceGraphNode[]> {
+    const document = await readJsonDocument(uri);
+    const modelNodes = await this.createBlockstateModelNodes(document);
+    return [
+      new ResourceGraphNode(
+        vscode.l10n.t("blockstate"),
+        vscode.TreeItemCollapsibleState.None,
+        { uri, iconPath: new vscode.ThemeIcon("json") }
+      ),
+      ...modelNodes
+    ];
   }
 
   private async createBlockstateModelNodes(document: ResourceDocument): Promise<ResourceGraphNode[]> {
@@ -256,6 +261,14 @@ function getReferenceIcon(reference: ResourceReference): vscode.ThemeIcon {
   }
 
   return new vscode.ThemeIcon("file-media");
+}
+
+function toChildrenProvider(children: ResourceGraphChildren | undefined): () => Promise<ResourceGraphNode[]> {
+  if (typeof children === "function") {
+    return children;
+  }
+
+  return () => Promise.resolve(children ?? []);
 }
 
 async function readJsonDocument(uri: vscode.Uri): Promise<ResourceDocument> {
