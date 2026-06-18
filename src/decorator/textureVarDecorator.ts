@@ -8,7 +8,7 @@ let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEd
 });
 
 export function applyDecoration(editor: vscode.TextEditor) {
-  if (editor.document.languageId !== "json" || !isBlockModelFile(editor.document.uri.fsPath)) {
+  if (editor.document.languageId !== "json" || !isModelFile(editor.document.uri.fsPath)) {
     editor.setDecorations(decorationType, []);
     return;
   }
@@ -78,8 +78,8 @@ export function disposeDecoration() {
   decorationType.dispose();
 }
 
-function isBlockModelFile(filePath: string): boolean {
-  return /[\\/]models[\\/]block[\\/].+\.json$/i.test(filePath);
+function isModelFile(filePath: string): boolean {
+  return /[\\/]models[\\/](block|item)[\\/].+\.json$/i.test(filePath);
 }
 
 function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined) {
