@@ -11,6 +11,7 @@ import blockstateDefinitionProvider from './providers/blockstateDefinitionProvid
 import blockModelDefinitionProvider from './providers/blockModelDefinitionProvider';
 import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider';
 import particleDefinitionProvider from './providers/particleDefinitionProvider';
+import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
@@ -41,12 +42,18 @@ export function activate(context: vscode.ExtensionContext) {
     { provideDefinition: particleDefinitionProvider, }
   ));
 
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/items/**/*.json" }],
+    { provideDefinition: resourceDefinitionProvider }
+  ));
+
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     [
       { language: "json", pattern: "**/blockstates/*.json" },
       { language: "json", pattern: "**/models/block/**/*.json" },
       { language: "json", pattern: "**/models/item/**/*.json" },
-      { language: "json", pattern: "**/particles/**/*.json" }
+      { language: "json", pattern: "**/particles/**/*.json" },
+      { language: "json", pattern: "**/items/**/*.json" }
     ],
     resourceCompletionProvider,
     '"',

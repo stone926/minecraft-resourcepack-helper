@@ -43,6 +43,10 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return getParticleReferences(ast);
   }
 
+  if (isFileInFolder(document.fileName, "items")) {
+    return getItemDefinitionReferences(ast);
+  }
+
   return [];
 }
 
@@ -151,6 +155,25 @@ function getParticleReferences(ast: JsonDocumentNode): ResourceReference[] {
   }
 
   return references;
+}
+
+function getItemDefinitionReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+  collectItemModelReferences(ast.body, references);
+  return references;
+}
+
+function collectItemModelReferences(node: JsonAstNode, references: ResourceReference[]) {
+  for (const member of objectMembers(node)) {
+    if (memberName(member) === "model") {
+      pushReference(references, member.value, "models", "items", "json", "model");
+    }
+    collectItemModelReferences(member.value, references);
+  }
+
+  for (const element of arrayElements(node)) {
+    collectItemModelReferences(element, references);
+  }
 }
 
 function pushModelPropertyReferences(references: ResourceReference[], node: JsonAstNode, source: string) {
