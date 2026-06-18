@@ -44,6 +44,35 @@ describe("resource references", () => {
       ]
     );
   });
+
+  it("extracts equipment layer texture references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "equipment", "armadillo_scute.json"),
+      {
+        layers: {
+          ["wolf_body"]: [
+            {
+              texture: "minecraft:armadillo_scute"
+            },
+            {
+              dyeable: {},
+              texture: "minecraft:armadillo_scute_overlay"
+            }
+          ]
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
+      [
+        ["texture", "minecraft:armadillo_scute", "textures/entity/equipment/wolf_body", "png"],
+        ["texture", "minecraft:armadillo_scute_overlay", "textures/entity/equipment/wolf_body", "png"]
+      ]
+    );
+  });
 });
 
 function createJsonDocument(fileName: string, value: unknown): ResourceReferenceDocument {

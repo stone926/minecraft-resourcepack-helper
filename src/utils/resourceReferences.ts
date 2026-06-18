@@ -51,6 +51,10 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return getAtlasReferences(ast);
   }
 
+  if (isFileInFolder(document.fileName, "equipment")) {
+    return getEquipmentReferences(ast);
+  }
+
   return [];
 }
 
@@ -155,6 +159,27 @@ function getAtlasReferences(ast: JsonDocumentNode): ResourceReference[] {
 
     for (const sourceEntry of arrayElements(item.value)) {
       collectAtlasSourceReferences(sourceEntry, references);
+    }
+  }
+
+  return references;
+}
+
+function getEquipmentReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+  const layers = objectMembers(ast.body).find(member => memberName(member) === "layers");
+
+  for (const layer of objectMembers(layers?.value)) {
+    const layerName = memberName(layer);
+    if (!layerName) {
+      continue;
+    }
+
+    for (const layerEntry of arrayElements(layer.value)) {
+      const texture = objectMembers(layerEntry).find(member => memberName(member) === "texture");
+      if (texture) {
+        pushReference(references, texture.value, `textures/entity/equipment/${layerName}`, "equipment", "png", "texture");
+      }
     }
   }
 
