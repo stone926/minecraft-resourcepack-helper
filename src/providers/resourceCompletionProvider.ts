@@ -2,8 +2,9 @@ import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { findResourceReferenceAtPosition, rangeInsideString, ResourceReference } from "../utils/resourceReferences";
+import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
 import { findAssetsRoot, getResourceRootCandidates } from "../utils/resourceLocation";
+import { rangeInsideString } from "../utils/resourceRange";
 
 interface PartialResourcePath {
   namespace: string;
@@ -54,7 +55,7 @@ async function collectCompletionItems(
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() && (!entry.isFile() || !entry.name.endsWith(`.${reference.extension}`))) {
+      if (!isCompletableEntry(entry, reference)) {
         continue;
       }
 
@@ -118,6 +119,14 @@ function splitResourcePath(value: string): string[] {
   return value.split(/[\\/]+/).filter(Boolean);
 }
 
-function stripExtension(fileName: string, extension: string): string {
-  return fileName.endsWith(`.${extension}`) ? fileName.slice(0, -extension.length - 1) : fileName;
+function stripExtension(fileName: string, extension: string | null): string {
+  return extension && fileName.endsWith(`.${extension}`) ? fileName.slice(0, -extension.length - 1) : fileName;
+}
+
+function isCompletableEntry(entry: Dirent, reference: ResourceReference): boolean {
+  if (reference.extension === null) {
+    return entry.isDirectory();
+  }
+
+  return entry.isDirectory() || (entry.isFile() && entry.name.endsWith(`.${reference.extension}`));
 }

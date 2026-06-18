@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { generateRedirectPath } from "../utils/pathGenerator";
-import { getResourceReferences, rangeInsideString } from "../utils/resourceReferences";
+import { getResourceReferences } from "../utils/resourceReferences";
+import { rangeInsideString } from "../utils/resourceRange";
 
 export function refreshResourceDiagnostics(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
   if (document.languageId !== "json") {

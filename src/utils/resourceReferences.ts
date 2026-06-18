@@ -1,4 +1,4 @@
-import { Position, Range } from "vscode";
+import type { Position } from "vscode";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, parseJsonAst, stringValue } from "./jsonAst";
 import { isInArea } from "./locationChecker";
 
@@ -7,8 +7,8 @@ export interface ResourceReference {
   valueNode: JsonAstNode;
   target: string;
   source: string;
-  extension: string;
-  kind: "model" | "texture";
+  extension: string | null;
+  kind: "model" | "texture" | "textureDirectory";
 }
 
 export interface ResourceReferenceDocument {
@@ -47,6 +47,10 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return getItemDefinitionReferences(ast);
   }
 
+  if (isFileInFolder(document.fileName, "atlases")) {
+    return getAtlasReferences(ast);
+  }
+
   return [];
 }
 
@@ -55,28 +59,6 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
   const character = position.character + 1;
 
   return getResourceReferences(document).find(reference => isInArea(line, character, reference.valueNode?.loc)) ?? null;
-}
-
-export function rangeInsideString(node: JsonAstNode): Range | null {
-  if (!node?.loc) {
-    return null;
-  }
-
-  return new Range(
-    new Position(node.loc.start.line - 1, node.loc.start.column),
-    new Position(node.loc.end.line - 1, Math.max(node.loc.start.column, node.loc.end.column - 2))
-  );
-}
-
-export function rangeIncludingString(node: JsonAstNode): Range | null {
-  if (!node?.loc) {
-    return null;
-  }
-
-  return new Range(
-    new Position(node.loc.start.line - 1, node.loc.start.column - 1),
-    new Position(node.loc.end.line - 1, node.loc.end.column - 1)
-  );
 }
 
 function getBlockstateReferences(ast: JsonDocumentNode): ResourceReference[] {
@@ -163,6 +145,59 @@ function getItemDefinitionReferences(ast: JsonDocumentNode): ResourceReference[]
   return references;
 }
 
+function getAtlasReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+
+  for (const item of objectMembers(ast.body)) {
+    if (memberName(item) !== "sources") {
+      continue;
+    }
+
+    for (const sourceEntry of arrayElements(item.value)) {
+      collectAtlasSourceReferences(sourceEntry, references);
+    }
+  }
+
+  return references;
+}
+
+function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: ResourceReference[]) {
+  const type = getObjectString(sourceEntry, "type");
+
+  if (type === "minecraft:directory" || type === "directory") {
+    const source = objectMembers(sourceEntry).find(member => memberName(member) === "source");
+    if (source) {
+      pushReference(references, source.value, "textures", "atlases", null, "textureDirectory");
+    }
+    return;
+  }
+
+  if (type === "minecraft:single" || type === "single") {
+    const resource = objectMembers(sourceEntry).find(member => memberName(member) === "resource");
+    if (resource) {
+      pushReference(references, resource.value, "textures", "atlases", "png", "texture");
+    }
+    return;
+  }
+
+  if (type === "minecraft:paletted_permutations" || type === "paletted_permutations") {
+    const paletteKey = objectMembers(sourceEntry).find(member => memberName(member) === "palette_key");
+    if (paletteKey) {
+      pushReference(references, paletteKey.value, "textures", "atlases", "png", "texture");
+    }
+
+    const permutations = objectMembers(sourceEntry).find(member => memberName(member) === "permutations");
+    for (const permutation of objectMembers(permutations?.value)) {
+      pushReference(references, permutation.value, "textures", "atlases", "png", "texture");
+    }
+
+    const textures = objectMembers(sourceEntry).find(member => memberName(member) === "textures");
+    for (const texture of arrayElements(textures?.value)) {
+      pushReference(references, texture, "textures", "atlases", "png", "texture");
+    }
+  }
+}
+
 function collectItemModelReferences(node: JsonAstNode, references: ResourceReference[]) {
   for (const member of objectMembers(node)) {
     if (memberName(member) === "model") {
@@ -189,13 +224,18 @@ function pushReference(
   valueNode: JsonAstNode,
   target: string,
   source: string,
-  extension: string,
-  kind: "model" | "texture"
-) {
+  extension: string | null,
+  kind: "model" | "texture" | "textureDirectory"
+): void {
   const value = stringValue(valueNode);
   if (value) {
     references.push({ value, valueNode, target, source, extension, kind });
   }
+}
+
+function getObjectString(node: JsonAstNode, name: string): string | null {
+  const member = objectMembers(node).find(item => memberName(item) === name);
+  return stringValue(member?.value) ?? null;
 }
 
 function isFileInFolder(fileName: string, folder: string): boolean {

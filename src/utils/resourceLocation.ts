@@ -7,7 +7,7 @@ export interface ResourceLocation {
 
 const pathPartSeparator = /[\\/]+/;
 
-export function parseResourceLocation(input: string, targetFileExtension: string): ResourceLocation {
+export function parseResourceLocation(input: string, targetFileExtension: string | null): ResourceLocation {
   const [rawNamespace, ...rawPathParts] = input.split(":");
   const hasNamespace = rawPathParts.length > 0;
   const namespace = hasNamespace && rawNamespace.trim() ? rawNamespace.trim() : "minecraft";
@@ -15,7 +15,7 @@ export function parseResourceLocation(input: string, targetFileExtension: string
   const normalizedSegments = locationPath.split(pathPartSeparator).filter(segment => segment.length > 0 && segment !== ".");
   let normalizedPath = normalizedSegments.join(path.sep);
 
-  if (!normalizedPath.endsWith(`.${targetFileExtension}`)) {
+  if (targetFileExtension && !normalizedPath.endsWith(`.${targetFileExtension}`)) {
     normalizedPath += `.${targetFileExtension}`;
   }
 

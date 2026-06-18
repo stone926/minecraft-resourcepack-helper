@@ -18,6 +18,13 @@ describe("resource location utilities", () => {
     assert.strictEqual(result.resourcePath, path.join("item", "custom.png"));
   });
 
+  it("parses directory resource locations without appending an extension", () => {
+    const result = parseResourceLocation("minecraft:block", null);
+
+    assert.strictEqual(result.namespace, "minecraft");
+    assert.strictEqual(result.resourcePath, "block");
+  });
+
   it("finds assets root from nested source folders", () => {
     const root = path.parse(__dirname).root;
     const fileName = path.join(root, "pack", "assets", "minecraft", "models", "block", "cube.json");

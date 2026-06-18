@@ -47,13 +47,19 @@ export function activate(context: vscode.ExtensionContext) {
     { provideDefinition: resourceDefinitionProvider }
   ));
 
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/atlases/**/*.json" }],
+    { provideDefinition: resourceDefinitionProvider }
+  ));
+
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     [
       { language: "json", pattern: "**/blockstates/*.json" },
       { language: "json", pattern: "**/models/block/**/*.json" },
       { language: "json", pattern: "**/models/item/**/*.json" },
       { language: "json", pattern: "**/particles/**/*.json" },
-      { language: "json", pattern: "**/items/**/*.json" }
+      { language: "json", pattern: "**/items/**/*.json" },
+      { language: "json", pattern: "**/atlases/**/*.json" }
     ],
     resourceCompletionProvider,
     '"',
