@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://github.com/stone926/minecraft-resourcepack-helper/schemas/sounds.json",
+  "type": "object",
+  "title": "Minecraft sounds definition",
+  "description": "定义命名空间内的声音事件及其可播放的声音文件。",
+  "additionalProperties": {
+    "$ref": "#/definitions/soundEvent"
+  },
+  "definitions": {
+    "resourceLocation": {
+      "type": "string",
+      "description": "Minecraft 资源路径。声音文件会解析到 assets/<namespace>/sounds/<path>.ogg。"
+    },
+    "soundEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replace": {
+          "type": "boolean",
+          "title": "replace 替换低优先级定义",
+          "description": "为 true 时替换低优先级资源包中的同名声音事件；否则与低优先级定义合并。"
+        },
+        "subtitle": {
+          "type": "string",
+          "title": "subtitle 字幕键",
+          "description": "播放此声音事件时显示的字幕本地化键名。"
+        },
+        "sounds": {
+          "type": "array",
+          "title": "sounds 声音列表",
+          "description": "此声音事件可随机选择的声音文件或声音事件引用。",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/resourceLocation"
+              },
+              {
+                "$ref": "#/definitions/sound"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "sound": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "name 声音文件或事件"
+        },
+        "type": {
+          "type": "string",
+          "title": "type 目标类型",
+          "description": "file 表示声音文件，event 表示另一个声音事件。",
+          "enum": ["file", "event"]
+        },
+        "weight": {
+          "type": "integer",
+          "title": "weight 权重",
+          "minimum": 1,
+          "default": 1
+        },
+        "attenuation_distance": {
+          "type": "integer",
+          "title": "attenuation_distance 衰减距离",
+          "minimum": 1,
+          "default": 16
+        },
+        "pitch": {
+          "type": "number",
+          "title": "pitch 音高",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "volume": {
+          "type": "number",
+          "title": "volume 音量",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "preload": {
+          "type": "boolean",
+          "title": "preload 预载",
+          "default": false
+        },
+        "stream": {
+          "type": "boolean",
+          "title": "stream 流式播放",
+          "default": false
+        }
+      }
+    }
+  }
+}

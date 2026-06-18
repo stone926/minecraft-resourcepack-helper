@@ -20,7 +20,8 @@ const resourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/equipment/**/*.json" },
   { language: "json", pattern: "**/font/**/*.json" },
   { language: "json", pattern: "**/waypoint_style/**/*.json" },
-  { language: "json", pattern: "**/post_effect/**/*.json" }
+  { language: "json", pattern: "**/post_effect/**/*.json" },
+  { language: "json", pattern: "**/assets/*/sounds.json" }
 ];
 
 export function activate(context: vscode.ExtensionContext) {

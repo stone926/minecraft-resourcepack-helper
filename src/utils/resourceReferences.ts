@@ -11,7 +11,7 @@ export interface ResourceReference {
   kind: ResourceReferenceKind;
 }
 
-type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "shader";
+type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "shader" | "sound";
 
 export interface ResourceReferenceDocument {
   languageId: string;
@@ -67,6 +67,10 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
 
   if (isFileInFolder(document.fileName, "post_effect")) {
     return getPostEffectReferences(ast);
+  }
+
+  if (isSoundsDefinitionFile(document.fileName)) {
+    return getSoundReferences(ast);
   }
 
   return [];
@@ -251,6 +255,33 @@ function getPostEffectReferences(ast: JsonDocumentNode): ResourceReference[] {
   return references;
 }
 
+function getSoundReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+
+  for (const soundEvent of objectMembers(ast.body)) {
+    const sounds = objectMembers(soundEvent.value).find(member => memberName(member) === "sounds");
+    for (const sound of arrayElements(sounds?.value)) {
+      const directSound = stringValue(sound);
+      if (directSound) {
+        pushReference(references, sound, "sounds", "sounds.json", "ogg", "sound");
+        continue;
+      }
+
+      const type = getObjectString(sound, "type");
+      if (type === "event") {
+        continue;
+      }
+
+      const name = objectMembers(sound).find(member => memberName(member) === "name");
+      if (name) {
+        pushReference(references, name.value, "sounds", "sounds.json", "ogg", "sound");
+      }
+    }
+  }
+
+  return references;
+}
+
 function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: ResourceReference[]) {
   const type = getObjectString(sourceEntry, "type");
 
@@ -334,6 +365,10 @@ function isFileInFolder(fileName: string, folder: string): boolean {
 
 function isFileInNestedFolder(fileName: string, firstFolder: string, secondFolder: string): boolean {
   return new RegExp(`[\\\\/]${escapeRegExp(firstFolder)}[\\\\/]${escapeRegExp(secondFolder)}[\\\\/].+\\.json$`, "i").test(fileName);
+}
+
+function isSoundsDefinitionFile(fileName: string): boolean {
+  return /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i.test(fileName);
 }
 
 function escapeRegExp(value: string): string {

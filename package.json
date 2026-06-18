@@ -99,6 +99,10 @@
         "url": "./assets/linters/post-effect.json"
       },
       {
+        "fileMatch": "**/assets/*/sounds.json",
+        "url": "./assets/linters/sounds.json"
+      },
+      {
         "fileMatch": [
           "**/textures/block/**/*.png.mcmeta",
           "**/textures/item/**/*.png.mcmeta"

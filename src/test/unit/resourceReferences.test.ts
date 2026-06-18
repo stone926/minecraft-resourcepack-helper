@@ -157,6 +157,46 @@ describe("resource references", () => {
       ]
     );
   });
+
+  it("extracts sound file references and skips sound event references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "custom", "sounds.json"),
+      {
+        ["entity.example.ambient"]: {
+          replace: true,
+          subtitle: "subtitles.entity.example.ambient",
+          sounds: [
+            "custom:entity/example/ambient1",
+            {
+              name: "custom:entity/example/ambient2",
+              volume: 0.8,
+              pitch: 1.1
+            },
+            {
+              name: "custom:entity/example/variant",
+              type: "file",
+              weight: 2
+            },
+            {
+              name: "custom:entity.example.other",
+              type: "event"
+            }
+          ]
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["sound", "custom:entity/example/ambient1", "sounds", "sounds.json", "ogg"],
+        ["sound", "custom:entity/example/ambient2", "sounds", "sounds.json", "ogg"],
+        ["sound", "custom:entity/example/variant", "sounds", "sounds.json", "ogg"]
+      ]
+    );
+  });
 });
 
 function createJsonDocument(fileName: string, value: unknown): ResourceReferenceDocument {

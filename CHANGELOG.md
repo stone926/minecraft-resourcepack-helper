@@ -7,8 +7,8 @@
 - Added resource path completion and missing resource diagnostics.
 - Added the Minecraft Resources sidebar for current-file and blockstate/model/texture mapping.
 - Added support for item model definition files under `assets/<namespace>/items`.
-- Added resource navigation/completion support for atlases, equipment, fonts, waypoint styles, and post-effect shaders.
-- Added JSON schemas for modern resource pack JSON files including particles, items, atlases, equipment, fonts, waypoint styles, and post effects.
+- Added resource navigation/completion support for atlases, equipment, fonts, waypoint styles, post-effect shaders, and sounds.
+- Added JSON schemas for modern resource pack JSON files including particles, items, atlases, equipment, fonts, waypoint styles, post effects, and sounds.
 - Updated the new-pack default resource `pack_format` to 69 for Minecraft Java 1.21.9-1.21.10 era packs.
 - Fixed JSON edit-time crashes, CIT path matching, resource lifecycle leaks, unsafe pack metadata generation, and cancelled command input handling.
 - Fixed OptiFine CIT resource resolution for relative paths, namespaced paths, and explicit `assets/` paths.

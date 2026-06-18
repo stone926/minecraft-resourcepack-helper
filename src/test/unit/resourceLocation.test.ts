@@ -33,6 +33,14 @@ describe("resource location utilities", () => {
     assert.strictEqual(result, path.join(root, "pack", "assets"));
   });
 
+  it("finds assets root from namespace-root source files", () => {
+    const root = path.parse(__dirname).root;
+    const fileName = path.join(root, "pack", "assets", "minecraft", "sounds.json");
+    const result = findAssetsRoot(fileName, "sounds.json");
+
+    assert.strictEqual(result, path.join(root, "pack", "assets"));
+  });
+
   it("serializes pack.mcmeta description safely", () => {
     const result = JSON.parse(getPackMcmeta("24", 'quote " and slash \\'));
 
