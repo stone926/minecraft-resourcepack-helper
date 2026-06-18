@@ -67,6 +67,11 @@ export function activate(context: vscode.ExtensionContext) {
     { provideDefinition: resourceDefinitionProvider }
   ));
 
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+    [{ language: "json", pattern: "**/post_effect/**/*.json" }],
+    { provideDefinition: resourceDefinitionProvider }
+  ));
+
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     [
       { language: "json", pattern: "**/blockstates/*.json" },
@@ -77,7 +82,8 @@ export function activate(context: vscode.ExtensionContext) {
       { language: "json", pattern: "**/atlases/**/*.json" },
       { language: "json", pattern: "**/equipment/**/*.json" },
       { language: "json", pattern: "**/font/**/*.json" },
-      { language: "json", pattern: "**/waypoint_style/**/*.json" }
+      { language: "json", pattern: "**/waypoint_style/**/*.json" },
+      { language: "json", pattern: "**/post_effect/**/*.json" }
     ],
     resourceCompletionProvider,
     '"',

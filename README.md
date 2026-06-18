@@ -4,8 +4,8 @@ Minecraft Resourcepack Helper helps Minecraft resource pack authors work with JS
 
 ## Features
 
-- Go to definitions for blockstate models, model parents, model textures, particle textures, item model definitions, and OptiFine CIT texture/model paths.
-- Resource path completion for blockstates, block/item models, particles, and item model definition files.
+- Go to definitions for blockstate models, model parents, model textures, particle textures, item model definitions, atlases, equipment, fonts, waypoint styles, post-effect shaders, and OptiFine CIT texture/model paths.
+- Resource path completion for blockstates, block/item models, particles, item model definitions, atlases, equipment, fonts, waypoint styles, and post-effect shader files.
 - Missing resource diagnostics with fallback support through `McResHelper.defaultMcAssetsPath`.
 - Texture variable navigation and undefined variable highlighting in model files, including variables inherited through parent models.
 - Minecraft Resources sidebar showing the current file references and blockstate -> model -> texture relationships.

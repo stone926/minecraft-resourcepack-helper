@@ -123,6 +123,40 @@ describe("resource references", () => {
       ]
     );
   });
+
+  it("extracts post effect shader references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "post_effect", "blur.json"),
+      {
+        targets: {
+          swap: {}
+        },
+        passes: [
+          {
+            ["vertex_shader"]: "minecraft:core/screenquad",
+            ["fragment_shader"]: "minecraft:post/box_blur",
+            inputs: [
+              {
+                ["sampler_name"]: "In",
+                target: "minecraft:main"
+              }
+            ],
+            output: "swap"
+          }
+        ]
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
+      [
+        ["shader", "minecraft:core/screenquad", "shaders", "vsh"],
+        ["shader", "minecraft:post/box_blur", "shaders", "fsh"]
+      ]
+    );
+  });
 });
 
 function createJsonDocument(fileName: string, value: unknown): ResourceReferenceDocument {

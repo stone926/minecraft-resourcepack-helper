@@ -183,13 +183,21 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
         {
           description: uri ? undefined : vscode.l10n.t("missing"),
           uri: uri ?? undefined,
-          iconPath: uri ? new vscode.ThemeIcon(reference.kind === "model" ? "file-code" : "file-media") : new vscode.ThemeIcon("warning")
+          iconPath: uri ? getReferenceIcon(reference) : new vscode.ThemeIcon("warning")
         }
       ));
     }
 
     return nodes;
   }
+}
+
+function getReferenceIcon(reference: ResourceReference): vscode.ThemeIcon {
+  if (reference.kind === "model" || reference.kind === "shader" || reference.kind === "font") {
+    return new vscode.ThemeIcon("file-code");
+  }
+
+  return new vscode.ThemeIcon("file-media");
 }
 
 async function readJsonDocument(uri: vscode.Uri): Promise<ResourceDocument> {

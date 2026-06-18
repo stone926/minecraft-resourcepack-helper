@@ -8,8 +8,10 @@ export interface ResourceReference {
   target: string;
   source: string;
   extension: string | null;
-  kind: "model" | "texture" | "textureDirectory" | "font";
+  kind: ResourceReferenceKind;
 }
+
+type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "shader";
 
 export interface ResourceReferenceDocument {
   languageId: string;
@@ -61,6 +63,10 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
 
   if (isFileInFolder(document.fileName, "waypoint_style")) {
     return getWaypointStyleReferences(ast);
+  }
+
+  if (isFileInFolder(document.fileName, "post_effect")) {
+    return getPostEffectReferences(ast);
   }
 
   return [];
@@ -227,6 +233,24 @@ function getWaypointStyleReferences(ast: JsonDocumentNode): ResourceReference[] 
   return references;
 }
 
+function getPostEffectReferences(ast: JsonDocumentNode): ResourceReference[] {
+  const references: ResourceReference[] = [];
+  const passes = objectMembers(ast.body).find(member => memberName(member) === "passes");
+
+  for (const pass of arrayElements(passes?.value)) {
+    for (const member of objectMembers(pass)) {
+      const name = memberName(member);
+      if (name === "vertex_shader") {
+        pushReference(references, member.value, "shaders", "post_effect", "vsh", "shader");
+      } else if (name === "fragment_shader") {
+        pushReference(references, member.value, "shaders", "post_effect", "fsh", "shader");
+      }
+    }
+  }
+
+  return references;
+}
+
 function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: ResourceReference[]) {
   const type = getObjectString(sourceEntry, "type");
 
@@ -291,7 +315,7 @@ function pushReference(
   target: string,
   source: string,
   extension: string | null,
-  kind: "model" | "texture" | "textureDirectory" | "font"
+  kind: ResourceReferenceKind
 ): void {
   const value = stringValue(valueNode);
   if (value) {
