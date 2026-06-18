@@ -11,7 +11,7 @@ export const promptMsg = {
   description: "Please input the description of your resource pack, can be empty"
 };
 export const defaultPackAttributes = {
-  packFormat: "24",
+  packFormat: "69",
   namespace: "minecraft"
 };
 export function getPackMcmeta(packFormat: string, description: string): string {
