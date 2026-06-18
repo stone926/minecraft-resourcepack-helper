@@ -5,7 +5,8 @@ export const getWorkPath = (document: vscode.TextDocument) => {
 };
 
 export const barename = (filename: string) => {
-    return filename.slice(0, filename.lastIndexOf('.'));
+    const dotIndex = filename.lastIndexOf('.');
+    return dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
 };
 
 export const trimNamespace = (path: string) => {

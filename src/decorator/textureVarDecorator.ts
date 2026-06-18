@@ -1,72 +1,83 @@
 import * as vscode from "vscode";
-const { parse } = require("@humanwhocodes/momoa");
+import { arrayElements, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
-let decorationType = vscode.window.createTextEditorDecorationType({
+let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
   color: tipColor
 });
 
 export function applyDecoration(editor: vscode.TextEditor) {
-  if (editor.document.languageId === "json") {
-    const documentPath = editor.document.uri.fsPath;
-    if (/(.+)\\models\\block.+json$/.test(documentPath)) {
-      const ast = parse(editor.document.getText(), { tokens: true });
-      let texturesAst: any = null;
-      let ranges: vscode.Range[] = [];
-      for (let item1 of ast.body.members) {
-        if (item1.name.value === "textures") {
-          texturesAst = item1;
-        } else if (item1.name.value === "elements" && item1.value.type === "Array") {
-          for (let item2 of item1.value.elements) {
-            for (let item3 of item2.members) {
-              if (item3.name.value === "faces" && item3.value.type === "Object") {
-                for (let face of item3.value.members) {
-                  for (let key of face.value.members) {
-                    if (key.name.value === "texture") {
-                      if (key.value.type === "String" && (<string>(key.value.value)).startsWith("#")) {
-                        let noDefinition: boolean = true;
-                        if (texturesAst !== null) {
-                          for (let texture of texturesAst.value.members) {
-                            if (texture.name.value === (<string>(key.value.value)).replace("#", "")) {
-                              noDefinition = false;
-                            }
-                          }
-                        }
-                        if (texturesAst === null || noDefinition) {
-                          ranges.push(new vscode.Range(new vscode.Position(key.value.loc.start.line - 1, key.value.loc.start.column - 1), new vscode.Position(key.value.loc.end.line - 1, key.value.loc.end.column - 1)));
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+  if (editor.document.languageId !== "json" || !isBlockModelFile(editor.document.uri.fsPath)) {
+    editor.setDecorations(decorationType, []);
+    return;
+  }
+
+  const ast = parseJsonAst(editor.document.getText());
+  if (!ast) {
+    editor.setDecorations(decorationType, []);
+    return;
+  }
+
+  const texturesAst = objectMembers(ast.body).find(member => memberName(member) === "textures");
+  const textureDefinitions = new Set(
+    objectMembers(texturesAst?.value)
+      .map(member => memberName(member))
+      .filter((name): name is string => typeof name === "string" && name !== "particle")
+  );
+  const ranges: vscode.Range[] = [];
+
+  for (const item of objectMembers(ast.body)) {
+    if (memberName(item) !== "elements") {
+      continue;
+    }
+
+    for (const element of arrayElements(item.value)) {
+      const faces = objectMembers(element).find(member => memberName(member) === "faces");
+      for (const face of objectMembers(faces?.value)) {
+        const textureEntry = objectMembers(face.value).find(member => memberName(member) === "texture");
+        const textureReference = stringValue(textureEntry?.value);
+        if (textureReference?.startsWith("#") && !textureDefinitions.has(textureReference.slice(1))) {
+          pushRange(ranges, textureEntry.value);
         }
       }
-      const textureDefinition: string[] = [];
-      if (texturesAst !== null) {
-        for (let item4 of texturesAst.value.members) {
-          if (item4.name.value !== "particle") {
-            textureDefinition.push(item4.name.value);
-          }
-        }
-        for (let item4 of texturesAst.value.members) {
-          if (item4.value.value.startsWith("#") && !textureDefinition.includes(item4.value.value.replace("#", ""))) {
-            ranges.push(new vscode.Range(new vscode.Position(item4.value.loc.start.line - 1, item4.value.loc.start.column - 1), new vscode.Position(item4.value.loc.end.line - 1, item4.value.loc.end.column - 1)));
-          }
-        }
-      }
-      editor.setDecorations(decorationType, ranges);
     }
   }
+
+  for (const texture of objectMembers(texturesAst?.value)) {
+    const value = stringValue(texture.value);
+    if (value?.startsWith("#") && !textureDefinitions.has(value.slice(1))) {
+      pushRange(ranges, texture.value);
+    }
+  }
+
+  editor.setDecorations(decorationType, ranges);
 }
 
 export function updateDecoration(editor: vscode.TextEditor) {
   tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
   editor.setDecorations(decorationType, []);
+  decorationType.dispose();
   decorationType = vscode.window.createTextEditorDecorationType({
     color: tipColor
   });
   applyDecoration(editor);
+}
+
+export function disposeDecoration() {
+  decorationType.dispose();
+}
+
+function isBlockModelFile(filePath: string): boolean {
+  return /[\\/]models[\\/]block[\\/].+\.json$/i.test(filePath);
+}
+
+function pushRange(ranges: vscode.Range[], node: any) {
+  if (!node?.loc) {
+    return;
+  }
+
+  ranges.push(new vscode.Range(
+    new vscode.Position(node.loc.start.line - 1, node.loc.start.column - 1),
+    new vscode.Position(node.loc.end.line - 1, node.loc.end.column - 1)
+  ));
 }

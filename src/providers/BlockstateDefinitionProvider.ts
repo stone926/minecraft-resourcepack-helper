@@ -1,52 +1,69 @@
 import { Definition, DefinitionLink, Location, Position, ProviderResult, TextDocument } from 'vscode';
 import { generateRedirectPath } from "../utils/pathGenerator";
 import { isInArea } from '../utils/locationChecker';
-const { parse } = require("@humanwhocodes/momoa");
+import { arrayElements, memberName, objectMembers, parseJsonAst, stringValue } from '../utils/jsonAst';
 
 export default (document: TextDocument, position: Position) => {
-  const ast = parse(document.getText());
+  const ast = parseJsonAst(document.getText());
+  if (!ast) {
+    return null;
+  }
+
   const line: number = position.line + 1;
   const character: number = position.character + 1;
+
   if (ast.type === "Document") {
-    if (ast.body.type === "Object" && ast.body.members !== null) {
-      for (let item of ast.body.members) {
-        if (item.name.value === "variants") {
-          return processVariants(item, line, character, document);
-        } else if (item.name.value === "multipart") {
-          return processMultipart(item, line, character, document);
+    for (const item of objectMembers(ast.body)) {
+      if (memberName(item) === "variants") {
+        return processVariants(item, line, character, document);
+      } else if (memberName(item) === "multipart") {
+        return processMultipart(item, line, character, document);
+      }
+    }
+  }
+
+  return null;
+};
+
+function processVariants(variants, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
+  for (const variantEntry of objectMembers(variants?.value)) {
+    if (isInArea(line, character, variantEntry.loc)) {
+      if (variantEntry.value?.type === "Object") {
+        const location = resolveModelProperty(variantEntry.value, line, character, document);
+        if (location) {
+          return location;
+        }
+      } else if (variantEntry.value?.type === "Array") {
+        for (const modelDirection of arrayElements(variantEntry.value)) {
+          if (isInArea(line, character, modelDirection.loc)) {
+            const location = resolveModelProperty(modelDirection, line, character, document);
+            if (location) {
+              return location;
+            }
+          }
         }
       }
     }
   }
-};
+  return null;
+}
 
-function processVariants(variants, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
-  if (variants?.value.members !== null) {
-    for (let item of variants.value.members) {
-      if (isInArea(line, character, item.loc)) {
-        if (item?.value?.members !== null) {
-          if (item.value.type === "Object") {
-            for (let item2 of item.value.members) {
-              if (item2?.name?.value === "model") {
-                if (isInArea(line, character, item2.value.loc)) {
-                  let modelPath = item2.value.value;
-                  console.log(line, character, item2.value.loc)
-                  let path = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
-                  if (path !== null) { return new Location(path, new Position(0, 0)); }
-                }
-              }
+function processMultipart(multipart, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
+  for (const multipartEntry of arrayElements(multipart?.value)) {
+    if (isInArea(line, character, multipartEntry.loc)) {
+      for (const applyEntry of objectMembers(multipartEntry)) {
+        if (memberName(applyEntry) === "apply" && isInArea(line, character, applyEntry.loc)) {
+          if (applyEntry.value?.type === "Object") {
+            const location = resolveModelProperty(applyEntry.value, line, character, document);
+            if (location) {
+              return location;
             }
-          } else if (item.value.type === "Array") {
-            for (let modelDirection of item.value.elements) {
+          } else if (applyEntry.value?.type === "Array") {
+            for (const modelDirection of arrayElements(applyEntry.value)) {
               if (isInArea(line, character, modelDirection.loc)) {
-                for (let modelEntry of modelDirection.members) {
-                  if (modelEntry?.name?.value === "model") {
-                    if (isInArea(line, character, modelEntry.value.loc)) {
-                      let modelPath = modelEntry.value.value;
-                      let path = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
-                      if (path !== null) { return new Location(path, new Position(0, 0)); }
-                    }
-                  }
+                const location = resolveModelProperty(modelDirection, line, character, document);
+                if (location) {
+                  return location;
                 }
               }
             }
@@ -58,48 +75,18 @@ function processVariants(variants, line: number, character: number, document: Te
   return null;
 }
 
-function processMultipart(multipart, line: number, character: number, document: TextDocument): ProviderResult<Definition | DefinitionLink[]> {
-  if (multipart?.value?.elements !== null) {
-    for (let item of multipart.value.elements) {
-      if (isInArea(line, character, item.loc)) {
-        if (item.members !== null) {
-          for (let item2 of item.members) {
-            if (item2?.name?.value === "apply" && item2?.value?.members !== null) {
-              if (isInArea(line, character, item2.loc)) {
-                if (item2.value.type === "Object") {
-                  for (let item3 of item2.value.members) {
-                    if (item3?.name?.value === "model") {
-                      if (isInArea(line, character, item3.value.loc)) {
-                        let path = generateRedirectPath(item3.value.value, document, "models", "blockstates", "json");
-                        if (path !== null) {
-                          return new Location(path, new Position(0, 0));
-                        }
-                      }
-                    }
-                  }
-                } else if (item2.value.type === "Array") {
-                  for (let modelDirection of item2.value.elements) {
-                    if (isInArea(line, character, modelDirection.loc)) {
-                      for (let modelEntry of modelDirection.members) {
-                        if (modelEntry?.name?.value === "model") {
-                          if (isInArea(line, character, modelEntry.value.loc)) {
-                            let path = generateRedirectPath(modelEntry.value.value, document, "models", "blockstates", "json");
-                            if (path !== null) {
-                              return new Location(path, new Position(0, 0));
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-
-                }
-              }
-            }
-          }
-        }
+function resolveModelProperty(node, line: number, character: number, document: TextDocument): Location | null {
+  for (const modelEntry of objectMembers(node)) {
+    if (memberName(modelEntry) === "model" && isInArea(line, character, modelEntry.value?.loc)) {
+      const modelPath = stringValue(modelEntry.value);
+      if (!modelPath) {
+        return null;
       }
+
+      const targetPath = generateRedirectPath(modelPath, document, "models", "blockstates", "json");
+      return targetPath ? new Location(targetPath, new Position(0, 0)) : null;
     }
   }
+
   return null;
 }

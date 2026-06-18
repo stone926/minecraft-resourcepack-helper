@@ -1,49 +1,56 @@
 import { TextDocument, Position, Location } from "vscode";
 import { generateRedirectPath } from "../utils/pathGenerator";
 import { isInArea } from "../utils/locationChecker";
-const { parse } = require("@humanwhocodes/momoa");
+import { arrayElements, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
+import { resolveTextureVariableDefinition } from "../utils/modelTexture";
 
 export default (document: TextDocument, position: Position) => {
-  const ast = parse(document.getText());
+  const ast = parseJsonAst(document.getText());
+  if (!ast) {
+    return null;
+  }
+
   const line: number = position.line + 1;
   const character: number = position.character + 1;
-  if (ast?.body?.members !== null) {
-    for (let item of ast.body.members) {
-      if (item.name.value === "parent") {
-        if (isInArea(line, character, item.value.loc)) {
-          let modelPath = item.value.value;
-          let path = generateRedirectPath(modelPath, document, "models", "models\\\\item", "json");
+
+  for (const item of objectMembers(ast.body)) {
+    if (memberName(item) === "parent") {
+      if (isInArea(line, character, item.value?.loc)) {
+        const modelPath = stringValue(item.value);
+        if (modelPath) {
+          const path = generateRedirectPath(modelPath, document, "models", "models/item", "json");
           if (path !== null) {
             return new Location(path, new Position(0, 0));
           }
         }
-      } else if (item.name.value === "textures") {
-        if (item?.value?.members !== null) {
-          for (let item2 of item.value.members) {
-            if (isInArea(line, character, item2.loc)) {
-              let modelPath = item2.value.value;
-              let path = generateRedirectPath(modelPath, document, "textures", "models\\\\item", "png");
-              if (path !== null) {
-                return new Location(path, new Position(0, 0));
-              }
+      }
+    } else if (memberName(item) === "textures") {
+      for (const textureEntry of objectMembers(item.value)) {
+        if (isInArea(line, character, textureEntry.value?.loc)) {
+          const texturePath = stringValue(textureEntry.value);
+          if (texturePath) {
+            const textureDefinition = resolveTextureVariableDefinition(ast, document, texturePath);
+            if (textureDefinition) {
+              return textureDefinition;
+            }
+
+            const path = generateRedirectPath(texturePath, document, "textures", "models/item", "png");
+            if (path !== null) {
+              return new Location(path, new Position(0, 0));
             }
           }
         }
-      } else if (item.name.value === "overrides") {
-        if (item?.value?.elements !== null) {
-          for (let item2 of item.value.elements) {
-            if (isInArea(line, character, item2.loc)) {
-              if (item2?.members !== null) {
-                for (let item3 of item2.members) {
-                  if (item3?.name?.value === "model") {
-                    if (isInArea(line, character, item3.loc)) {
-                      let modelPath = item3.value.value;
-                      let path = generateRedirectPath(modelPath, document, "models", "models\\\\item", "json");
-                      if (path !== null) {
-                        return new Location(path, new Position(0, 0));
-                      }
-                    }
-                  }
+      }
+    } else if (memberName(item) === "overrides") {
+      for (const overrideEntry of arrayElements(item.value)) {
+        if (isInArea(line, character, overrideEntry.loc)) {
+          for (const modelEntry of objectMembers(overrideEntry)) {
+            if (memberName(modelEntry) === "model" && isInArea(line, character, modelEntry.value?.loc)) {
+              const modelPath = stringValue(modelEntry.value);
+              if (modelPath) {
+                const path = generateRedirectPath(modelPath, document, "models", "models/item", "json");
+                if (path !== null) {
+                  return new Location(path, new Position(0, 0));
                 }
               }
             }

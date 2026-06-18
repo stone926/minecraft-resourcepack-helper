@@ -1,47 +1,53 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { defaultPackPng, errorMsg, promptMsg, defaultPackAttributes, getPackMcmeta } from "./constants";
-const S = require("string");
+import { defaultPackPng, promptMsg, defaultPackAttributes, getPackMcmeta, errorMsg } from "./constants";
+import { createNamespaceFolders } from "./createNewResourcePack";
 
 export default async function createNewResourcePackRoot() {
   if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders[0]) {
     vscode.window.showErrorMessage("McResHelper: No open folder, failed to create resource pack");
     return;
   }
-  const folders = vscode.workspace.workspaceFolders;
-  let namespace = <string>await vscode.window.showInputBox({
+
+  const rootFolder = vscode.workspace.workspaceFolders[0];
+  const packPath = rootFolder.uri.fsPath;
+  if (fs.existsSync(path.join(packPath, "pack.mcmeta")) || fs.existsSync(path.join(packPath, "pack.png"))) {
+    vscode.window.showErrorMessage("McResHelper: pack.mcmeta or pack.png already exists in the current folder");
+    return;
+  }
+
+  const namespace = await vscode.window.showInputBox({
     prompt: promptMsg.namespace,
     value: defaultPackAttributes.namespace,
     validateInput(input: string) {
-      if (S(input).isEmpty()) {
-        return errorMsg.emptyInput;
-      }
+      return input.trim().length === 0 ? errorMsg.emptyInput : null;
     }
   });
-  let packFormat = await vscode.window.showInputBox({
+  if (namespace === undefined) {
+    return;
+  }
+
+  const packFormat = await vscode.window.showInputBox({
     prompt: promptMsg.packFormat,
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      if (!S(input).isNumeric()) {
-        return errorMsg.nanInput;
-      }
+      return /^[1-9]\d*$/.test(input.trim()) ? null : errorMsg.nanInput;
     }
   });
-  let description = await vscode.window.showInputBox({
+  if (packFormat === undefined) {
+    return;
+  }
+
+  const description = await vscode.window.showInputBox({
     prompt: promptMsg.description
   });
+  if (description === undefined) {
+    return;
+  }
+
   const packMcmeta = getPackMcmeta(packFormat, description);
-  const packPath = path.join(folders[0].uri.fsPath);
-  fs.writeFileSync(path.join(packPath, "pack.mcmeta"), packMcmeta);
-  fs.writeFileSync(path.join(packPath, "pack.png"), Buffer.from(defaultPackPng, "base64"));
-  fs.mkdirSync(path.join(packPath, "assets"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "blockstates"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "models"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "models", "block"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "models", "item"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "textures"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "textures", "block"));
-  fs.mkdirSync(path.join(packPath, "assets", namespace, "textures", "item"));
+  fs.writeFileSync(path.join(packPath, "pack.mcmeta"), packMcmeta, { flag: "wx" });
+  fs.writeFileSync(path.join(packPath, "pack.png"), Buffer.from(defaultPackPng, "base64"), { flag: "wx" });
+  createNamespaceFolders(packPath, namespace);
 }

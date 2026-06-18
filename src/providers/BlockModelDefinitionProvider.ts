@@ -1,35 +1,48 @@
-import { TextDocument, Position, Location, InlineValueEvaluatableExpression } from "vscode";
+import { TextDocument, Position, Location } from "vscode";
 import { generateRedirectPath } from "../utils/pathGenerator";
 import { isInArea } from "../utils/locationChecker";
-const { parse } = require("@humanwhocodes/momoa");
+import { memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
+import { resolveTextureVariableDefinition } from "../utils/modelTexture";
 
 export default (document: TextDocument, position: Position) => {
-  const ast = parse(document.getText());
+  const ast = parseJsonAst(document.getText());
+  if (!ast) {
+    return null;
+  }
+
   const line: number = position.line + 1;
   const character: number = position.character + 1;
-  if (ast?.body?.members !== null) {
-    for (let item of ast.body.members) {
-      if (item.name.value === "parent") {
-        if (isInArea(line,character,item.value.loc)) {
-          let modelPath = item.value.value;
-          let path = generateRedirectPath(modelPath, document, "models", "models\\\\block", "json");
+
+  for (const item of objectMembers(ast.body)) {
+    if (memberName(item) === "parent") {
+      if (isInArea(line, character, item.value?.loc)) {
+        const modelPath = stringValue(item.value);
+        if (modelPath) {
+          const path = generateRedirectPath(modelPath, document, "models", "models/block", "json");
           if (path !== null) {
             return new Location(path, new Position(0, 0));
           }
         }
-      } else if (item.name.value === "textures") {
-        if (item?.value?.members !== null) {
-          for (let item2 of item.value.members) {
-            if (isInArea(line,character,item2.loc)) {
-              let modelPath = item2.value.value;
-              let path = generateRedirectPath(modelPath, document, "textures", "models\\\\block", "png");
-              if (path !== null) {
-                return new Location(path, new Position(0, 0));
-              }
+      }
+    } else if (memberName(item) === "textures") {
+      for (const textureEntry of objectMembers(item.value)) {
+        if (isInArea(line, character, textureEntry.value?.loc)) {
+          const texturePath = stringValue(textureEntry.value);
+          if (texturePath) {
+            const textureDefinition = resolveTextureVariableDefinition(ast, document, texturePath);
+            if (textureDefinition) {
+              return textureDefinition;
+            }
+
+            const path = generateRedirectPath(texturePath, document, "textures", "models/block", "png");
+            if (path !== null) {
+              return new Location(path, new Position(0, 0));
             }
           }
         }
       }
     }
   }
+
+  return null;
 };

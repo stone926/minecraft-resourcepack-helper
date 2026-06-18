@@ -1,26 +1,47 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { TextDocument, Uri, workspace } from "vscode";
+import { findAssetsRoot, normalizePathPart, parseResourceLocation, ResourceLocation } from "./resourceLocation";
 
-export function generateRedirectPath(modelPath: string, document: TextDocument, target: string, source: string,targetFileExtension: string): Uri | null {
-  const match = new RegExp(`(.+)\\\\${source}.+json$`).exec(document.fileName);
-  if (modelPath.startsWith("minecraft:")) {
-    modelPath = modelPath.replace("minecraft:", "");
+export function generateRedirectPath(resourcePath: string, document: TextDocument, target: string, source: string, targetFileExtension: string): Uri | null {
+  const location = parseResourceLocation(resourcePath, targetFileExtension);
+  const currentAssetsRoot = findAssetsRoot(document.fileName, source);
+  const candidates: string[] = [];
+
+  if (currentAssetsRoot) {
+    candidates.push(path.join(currentAssetsRoot, location.namespace, normalizePathPart(target), location.resourcePath));
   }
-  if (!modelPath.endsWith(`.${targetFileExtension}`)) {
-    modelPath += `.${targetFileExtension}`;
+
+  for (const defaultCandidate of getDefaultAssetsCandidates(location, target)) {
+    candidates.push(defaultCandidate);
   }
-  if (match !== null && match.length === 2) {
-    const pathInCurrentFolder = path.join(match[1], target, modelPath);
-    const defaultPath = workspace.getConfiguration().get("McResHelper.defaultMcAssetsPath");
-    if (fs.existsSync(pathInCurrentFolder)) {
-      return Uri.file(pathInCurrentFolder);
-    } else if (defaultPath !== null) {
-      const pathInDefaultFolder = path.join(<string>defaultPath, `minecraft/${target}`, modelPath);
-      if (fs.existsSync(pathInDefaultFolder)) {
-        return Uri.file(pathInDefaultFolder);
-      }
+
+  for (const candidate of unique(candidates)) {
+    if (fs.existsSync(candidate)) {
+      return Uri.file(candidate);
     }
   }
+
   return null;
+}
+
+function getDefaultAssetsCandidates(location: ResourceLocation, target: string): string[] {
+  const configuredDefaultPath = workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath");
+
+  if (!configuredDefaultPath) {
+    return [];
+  }
+
+  const defaultPath = path.normalize(configuredDefaultPath);
+  const targetPath = normalizePathPart(target);
+
+  return [
+    path.join(defaultPath, location.namespace, targetPath, location.resourcePath),
+    path.join(defaultPath, targetPath, location.resourcePath),
+    path.join(defaultPath, "assets", location.namespace, targetPath, location.resourcePath)
+  ];
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }

@@ -11,6 +11,7 @@
   ],
   "description": "To help minecraft developers create resource packs more efficiently",
   "version": "1.3.3",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.70.0"
   },
@@ -24,7 +25,12 @@
     "type": "git"
   },
   "activationEvents": [
-    "*"
+    "onLanguage:json",
+    "onLanguage:properties",
+    "workspaceContains:**/pack.mcmeta",
+    "onCommand:McResHelper.openDefaultMcAssetsPath",
+    "onCommand:McResHelper.createNewResourcePack",
+    "onCommand:McResHelper.createNewResourcePackRoot"
   ],
   "keywords": [
     "minecraft",
@@ -39,7 +45,7 @@
     "languages": [{ "id": "json", "extensions": [".mcmeta"] }],
     "jsonValidation": [
     {
-      "fileMatch": "pack.mcmeta",
+      "fileMatch": "**/pack.mcmeta",
       "url": "./assets/linters/pack.mcmeta.json"
     },
     {
@@ -83,12 +89,9 @@
       "title": "Minecraft Resourcepack Helper",
       "properties": {
         "McResHelper.defaultMcAssetsPath": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "%config.desc.defaultMcAssetsPath%",
-          "default": null
+          "default": ""
         },
         "McResHelper.tipColorForUndefinedTextureVariables": {
           "type": "string",
@@ -104,7 +107,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
+    "test": "mocha \"./out/test/unit/**/*.test.js\"",
     "push": "git push origin master && git push github master"
   },
   "devDependencies": {

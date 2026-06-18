@@ -14,12 +14,11 @@ export const defaultPackAttributes = {
   packFormat: "24",
   namespace: "minecraft"
 };
-export function getPackMcmeta(packFormat, description): string {
-  return (
-    `{
-  "pack": {
-  "pack_format": ${packFormat},
-    "description": "${description}"
-  }
-}`);
+export function getPackMcmeta(packFormat: string, description: string): string {
+  return JSON.stringify({
+    pack: {
+      ["pack_format"]: Number(packFormat),
+      description
+    }
+  }, null, 2);
 }

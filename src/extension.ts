@@ -6,7 +6,7 @@ import textureVarDefinitionProvider from './providers/textureVarDefinitionProvid
 import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
 import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
-import { applyDecoration, updateDecoration } from './decorator/textureVarDecorator';
+import { applyDecoration, disposeDecoration, updateDecoration } from './decorator/textureVarDecorator';
 import blockstateDefinitionProvider from './providers/blockstateDefinitionProvider';
 import blockModelDefinitionProvider from './providers/blockModelDefinitionProvider';
 import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider';
@@ -56,7 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
 
-  let activeEditor: vscode.TextEditor;
+  let activeEditor: vscode.TextEditor | undefined;
 
   if (vscode.window.activeTextEditor) {
     activeEditor = vscode.window.activeTextEditor;
@@ -68,6 +68,8 @@ export function activate(context: vscode.ExtensionContext) {
     if (editor) {
       activeEditor = editor;
       applyDecoration(activeEditor);
+    } else {
+      activeEditor = undefined;
     }
   }, null, context.subscriptions);
 
@@ -78,11 +80,13 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }, null, context.subscriptions);
 
-  vscode.workspace.onDidChangeConfiguration(event => {
-    if (activeEditor) {
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration("McResHelper.tipColorForUndefinedTextureVariables") && activeEditor) {
       updateDecoration(activeEditor);
     }
-  });
+  }));
+
+  context.subscriptions.push({ dispose: disposeDecoration });
 }
 
 export function deactivate() { }
