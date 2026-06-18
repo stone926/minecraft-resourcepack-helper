@@ -45,6 +45,27 @@ describe("resource references", () => {
     );
   });
 
+  it("keeps empty string resource references so completion can start from blank values", () => {
+    const variants: Record<string, { model: string }> = {};
+    variants[""] = { model: "" };
+
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "blockstates", "empty.json"),
+      {
+        variants
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "", "models", "blockstates", "json"]
+      ]
+    );
+  });
+
   it("extracts equipment layer texture references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "equipment", "armadillo_scute.json"),

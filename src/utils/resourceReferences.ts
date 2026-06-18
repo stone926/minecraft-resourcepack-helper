@@ -373,7 +373,7 @@ function pushReference(
   kind: ResourceReferenceKind
 ): void {
   const value = stringValue(valueNode);
-  if (value) {
+  if (value !== undefined) {
     references.push({ value, valueNode, target, source, extension, kind });
   }
 }

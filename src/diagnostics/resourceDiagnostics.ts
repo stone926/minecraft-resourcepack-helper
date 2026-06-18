@@ -12,7 +12,7 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
   const diagnostics: vscode.Diagnostic[] = [];
 
   for (const reference of getResourceReferences(document)) {
-    if (reference.value.startsWith("#")) {
+    if (reference.value.length === 0 || reference.value.startsWith("#")) {
       continue;
     }
 

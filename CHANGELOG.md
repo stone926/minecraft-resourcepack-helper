@@ -5,6 +5,7 @@
 - Updated the extension target and toolchain to VS Code 1.125 and current npm dependency versions.
 - Added cross-platform resource path resolution with configured vanilla asset fallback support.
 - Added resource path completion and missing resource diagnostics.
+- Added resource path completion support for blank resource strings while avoiding empty-path diagnostics.
 - Added the Minecraft Resources sidebar for current-file and blockstate/model/texture mapping.
 - Expanded the current-file sidebar view so opened blockstate files show nested model, parent model, and texture references.
 - Added support for item model definition files under `assets/<namespace>/items`.
