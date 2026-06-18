@@ -14,6 +14,7 @@
 - Added font file reference support for TTF and Unihex font providers.
 - Added resource navigation/completion support for atlases, equipment, fonts, waypoint styles, post-effect shaders, and sounds.
 - Added JSON schemas for modern resource pack JSON files including particles, items, atlases, equipment, fonts, waypoint styles, post effects, sounds, language files, credits, GPU warnlists, and regional compliancies.
+- Expanded item model definition schema hints for modern condition, select, range dispatch, special model, and tint fields.
 - Expanded PNG texture metadata validation to all `textures/**/*.png.mcmeta` files, including animation, texture sampling, and villager metadata.
 - Added PNG metadata validation for GUI sprite scaling and modern texture mipmap strategy fields.
 - Updated new-pack metadata generation to use modern `min_format`/`max_format` fields with an 86.2 default.

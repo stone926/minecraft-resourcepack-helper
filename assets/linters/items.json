@@ -38,11 +38,13 @@
             "minecraft:bundle/selected_item",
             "minecraft:empty",
             "minecraft:banner",
+            "minecraft:bed",
             "minecraft:chest",
             "minecraft:conduit",
             "minecraft:constant",
             "minecraft:copper_golem_statue",
             "minecraft:decorated_pot",
+            "minecraft:custom_model_data",
             "minecraft:dye",
             "minecraft:firework",
             "minecraft:grass",
@@ -99,7 +101,36 @@
         },
         "property": {
           "type": "string",
-          "title": "property 属性"
+          "title": "property 属性",
+          "enum": [
+            "minecraft:block_state",
+            "minecraft:broken",
+            "minecraft:bundle/fullness",
+            "minecraft:bundle/has_selected_item",
+            "minecraft:carried",
+            "minecraft:charge_type",
+            "minecraft:compass",
+            "minecraft:context_dimension",
+            "minecraft:cooldown",
+            "minecraft:count",
+            "minecraft:crossbow/pull",
+            "minecraft:custom_model_data",
+            "minecraft:damage",
+            "minecraft:damaged",
+            "minecraft:display_context",
+            "minecraft:fishing_rod/cast",
+            "minecraft:has_component",
+            "minecraft:local_time",
+            "minecraft:main_hand",
+            "minecraft:selected",
+            "minecraft:shift_down",
+            "minecraft:time",
+            "minecraft:trim_material",
+            "minecraft:use_cycle",
+            "minecraft:use_duration",
+            "minecraft:using_item",
+            "minecraft:xmas"
+          ]
         },
         "entries": {
           "type": "array",
@@ -125,9 +156,128 @@
         "transformation": {
           "type": "object",
           "title": "transformation 显示变换",
+          "properties": {
+            "left_rotation": {
+              "$ref": "#/definitions/quaternion",
+              "title": "left_rotation 左旋转"
+            },
+            "right_rotation": {
+              "$ref": "#/definitions/quaternion",
+              "title": "right_rotation 右旋转"
+            },
+            "scale": {
+              "$ref": "#/definitions/vector3",
+              "title": "scale 缩放"
+            },
+            "translation": {
+              "$ref": "#/definitions/vector3",
+              "title": "translation 平移"
+            }
+          },
           "additionalProperties": {
             "$ref": "#/definitions/vector"
           }
+        },
+        "scale": {
+          "type": "number",
+          "title": "scale 数值缩放",
+          "description": "range_dispatch 属性值缩放。"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "index 索引",
+          "description": "custom_model_data 列表中的读取索引。"
+        },
+        "normalize": {
+          "type": "boolean",
+          "title": "normalize 归一化"
+        },
+        "wobble": {
+          "type": "boolean",
+          "title": "wobble 摆动"
+        },
+        "natural_only": {
+          "type": "boolean",
+          "title": "natural_only 仅自然维度"
+        },
+        "remaining": {
+          "type": "boolean",
+          "title": "remaining 剩余时长"
+        },
+        "period": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "title": "period 周期"
+        },
+        "component": {
+          "type": "string",
+          "title": "component 组件"
+        },
+        "target": {
+          "type": "string",
+          "title": "target 指南针目标",
+          "enum": ["spawn", "lodestone", "recovery"]
+        },
+        "block_state_property": {
+          "type": "string",
+          "title": "block_state_property 方块状态属性"
+        },
+        "source": {
+          "type": "string",
+          "title": "source 来源",
+          "enum": ["daytime", "random"]
+        },
+        "pattern": {
+          "type": "string",
+          "title": "pattern 格式"
+        },
+        "texture": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "texture 纹理"
+        },
+        "openness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "title": "openness 开启程度"
+        },
+        "orientation": {
+          "type": "string",
+          "title": "orientation 朝向",
+          "enum": ["up", "down", "north", "south", "east", "west"]
+        },
+        "pose": {
+          "type": "string",
+          "title": "pose 姿势",
+          "enum": ["standing", "sitting", "running", "star"]
+        },
+        "kind": {
+          "type": "string",
+          "title": "kind 头颅类型",
+          "enum": ["skeleton", "wither_skeleton", "player", "zombie", "creeper", "piglin", "dragon"]
+        },
+        "color": {
+          "type": "string",
+          "title": "color 颜色",
+          "enum": [
+            "white",
+            "orange",
+            "magenta",
+            "light_blue",
+            "yellow",
+            "lime",
+            "pink",
+            "gray",
+            "light_gray",
+            "cyan",
+            "purple",
+            "blue",
+            "brown",
+            "green",
+            "red",
+            "black"
+          ]
         }
       }
     },
@@ -183,12 +333,74 @@
       "properties": {
         "type": {
           "type": "string",
-          "title": "type 着色类型"
+          "title": "type 着色类型",
+          "enum": [
+            "minecraft:constant",
+            "minecraft:custom_model_data",
+            "minecraft:dye",
+            "minecraft:firework",
+            "minecraft:grass",
+            "minecraft:map_color",
+            "minecraft:potion"
+          ]
         },
         "default": {
-          "type": "integer",
+          "$ref": "#/definitions/colorValue",
           "title": "default 默认颜色"
+        },
+        "value": {
+          "$ref": "#/definitions/colorValue",
+          "title": "value 固定颜色"
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "title": "temperature 温度"
+        },
+        "downfall": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "title": "downfall 降水"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "index 索引"
         }
+      }
+    },
+    "colorValue": {
+      "description": "RGB 颜色，可为打包整数或三个 RGB 数值。",
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        }
+      ]
+    },
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "number"
+      }
+    },
+    "quaternion": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "number"
       }
     },
     "vector": {
