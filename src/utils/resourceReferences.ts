@@ -321,7 +321,8 @@ function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: Reso
 
 function collectItemModelReferences(node: JsonAstNode, references: ResourceReference[]) {
   for (const member of objectMembers(node)) {
-    if (memberName(member) === "model") {
+    const name = memberName(member);
+    if (name === "model" || name === "base") {
       pushReference(references, member.value, "models", "items", "json", "model");
     }
     collectItemModelReferences(member.value, references);

@@ -8,6 +8,7 @@
 - Added the Minecraft Resources sidebar for current-file and blockstate/model/texture mapping.
 - Expanded the current-file sidebar view so opened blockstate files show nested model, parent model, and texture references.
 - Added support for item model definition files under `assets/<namespace>/items`.
+- Added model reference support for `base` fields in modern item model definitions.
 - Added resource navigation/completion support for atlases, equipment, fonts, waypoint styles, post-effect shaders, and sounds.
 - Added JSON schemas for modern resource pack JSON files including particles, items, atlases, equipment, fonts, waypoint styles, post effects, sounds, language files, credits, GPU warnlists, and regional compliancies.
 - Updated new-pack metadata generation to use modern `min_format`/`max_format` fields with an 86.2 default.

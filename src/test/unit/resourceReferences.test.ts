@@ -158,6 +158,38 @@ describe("resource references", () => {
     );
   });
 
+  it("extracts model and base model references from item model definitions", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "items", "shield.json"),
+      {
+        model: {
+          type: "minecraft:condition",
+          ["on_false"]: {
+            type: "minecraft:special",
+            base: "minecraft:item/shield",
+            model: {
+              type: "minecraft:shield"
+            }
+          },
+          ["on_true"]: {
+            type: "minecraft:model",
+            model: "minecraft:item/shield_blocking"
+          }
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:item/shield", "models", "items", "json"],
+        ["model", "minecraft:item/shield_blocking", "models", "items", "json"]
+      ]
+    );
+  });
+
   it("extracts sound file references and skips sound event references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "custom", "sounds.json"),
