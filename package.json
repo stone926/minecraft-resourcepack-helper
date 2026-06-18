@@ -30,7 +30,9 @@
     "workspaceContains:**/pack.mcmeta",
     "onCommand:McResHelper.openDefaultMcAssetsPath",
     "onCommand:McResHelper.createNewResourcePack",
-    "onCommand:McResHelper.createNewResourcePackRoot"
+    "onCommand:McResHelper.createNewResourcePackRoot",
+    "onCommand:McResHelper.refreshResourceGraph",
+    "onView:McResHelper.resourceGraph"
   ],
   "keywords": [
     "minecraft",
@@ -98,8 +100,21 @@
       {
         "command": "McResHelper.createNewResourcePackRoot",
         "title": "%command.title.createNewResourcePackRoot%"
+      },
+      {
+        "command": "McResHelper.refreshResourceGraph",
+        "title": "%command.title.refreshResourceGraph%",
+        "icon": "$(refresh)"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "McResHelper.resourceGraph",
+          "name": "%view.name.resourceGraph%"
+        }
+      ]
+    },
     "configuration": {
       "title": "Minecraft Resourcepack Helper",
       "properties": {

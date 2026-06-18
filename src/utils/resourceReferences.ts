@@ -1,4 +1,4 @@
-import { Position, Range, TextDocument } from "vscode";
+import { Position, Range } from "vscode";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, parseJsonAst, stringValue } from "./jsonAst";
 import { isInArea } from "./locationChecker";
 
@@ -11,7 +11,13 @@ export interface ResourceReference {
   kind: "model" | "texture";
 }
 
-export function getResourceReferences(document: TextDocument): ResourceReference[] {
+export interface ResourceReferenceDocument {
+  languageId: string;
+  fileName: string;
+  getText(): string;
+}
+
+export function getResourceReferences(document: ResourceReferenceDocument): ResourceReference[] {
   if (document.languageId !== "json") {
     return [];
   }
@@ -40,7 +46,7 @@ export function getResourceReferences(document: TextDocument): ResourceReference
   return [];
 }
 
-export function findResourceReferenceAtPosition(document: TextDocument, position: Position): ResourceReference | null {
+export function findResourceReferenceAtPosition(document: ResourceReferenceDocument, position: Position): ResourceReference | null {
   const line = position.line + 1;
   const character = position.character + 1;
 

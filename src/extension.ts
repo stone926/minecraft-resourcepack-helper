@@ -13,6 +13,7 @@ import itemModelDefinitionProvider from './providers/itemModelDefinitionProvider
 import particleDefinitionProvider from './providers/particleDefinitionProvider';
 import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
+import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
@@ -71,6 +72,15 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
 
+  const resourceGraphTreeProvider = new ResourceGraphTreeProvider();
+  context.subscriptions.push(vscode.window.createTreeView("McResHelper.resourceGraph", {
+    treeDataProvider: resourceGraphTreeProvider,
+    showCollapseAll: true
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("McResHelper.refreshResourceGraph", () => {
+    resourceGraphTreeProvider.refresh();
+  }));
+
   const resourceDiagnostics = vscode.languages.createDiagnosticCollection("McResHelper resources");
   context.subscriptions.push(resourceDiagnostics);
   for (const document of vscode.workspace.textDocuments) {
@@ -89,8 +99,10 @@ export function activate(context: vscode.ExtensionContext) {
     if (editor) {
       activeEditor = editor;
       applyDecoration(activeEditor);
+      resourceGraphTreeProvider.refresh();
     } else {
       activeEditor = undefined;
+      resourceGraphTreeProvider.refresh();
     }
   }, null, context.subscriptions);
 
@@ -100,6 +112,7 @@ export function activate(context: vscode.ExtensionContext) {
       applyDecoration(activeEditor);
     }
     refreshResourceDiagnostics(event.document, resourceDiagnostics);
+    resourceGraphTreeProvider.refresh();
   }, null, context.subscriptions);
 
   vscode.workspace.onDidOpenTextDocument(document => {
@@ -118,6 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
       for (const document of vscode.workspace.textDocuments) {
         refreshResourceDiagnostics(document, resourceDiagnostics);
       }
+      resourceGraphTreeProvider.refresh();
     }
   }));
 
