@@ -118,6 +118,10 @@ function createIncomingReferenceSearch(targetUri: vscode.Uri): IncomingReference
   return {
     values,
     matchesText: (text: string) => {
+      if (text.includes("\\u")) {
+        return true;
+      }
+
       for (const value of values) {
         if (text.includes(value)) {
           return true;
@@ -227,9 +231,11 @@ function addEquipmentReferencePath(paths: Set<string>, resourcePath: string, pat
 function addSearchValues(values: Set<string>, namespace: string, rawPath: string): void {
   const normalizedPath = rawPath.replaceAll("\\", "/");
   addJsonStringValues(values, `${namespace}:${normalizedPath}`);
+  addJsonStringValues(values, `${namespace.toLowerCase()}:${normalizedPath.toLowerCase()}`);
 
   if (namespace === "minecraft") {
     addJsonStringValues(values, normalizedPath);
+    addJsonStringValues(values, normalizedPath.toLowerCase());
   }
 }
 
