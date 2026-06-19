@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-06-19
+
+- fix: tighten resource pack metadata schemas (d80c791)
+- fix: cover texture metadata and post effect resources (0be894c)
+- fix: align resource pack schemas with wiki specs (defad7d)
+- feat: support shader imports and special textures (63621be)
+- feat: support modern resource pack specs (8a4a6f7)
+- feat: support resource pack overlay fallbacks (99c03bf)
+- fix: localize extension metadata (1c09cbd)
+
 ## [2.0.1] - 2026-06-19
 
 - Maintenance release.

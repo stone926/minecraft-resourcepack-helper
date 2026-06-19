@@ -10,7 +10,7 @@
     "hans000"
   ],
   "description": "%extension.description%",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "license": "MIT",
   "engines": {
     "vscode": "^1.125.0"
