@@ -145,14 +145,14 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "McResHelper.resources",
+          "id": "mcResHelperResources",
           "title": "%viewContainer.title.resources%",
           "icon": "src/pack.png"
         }
       ]
     },
     "views": {
-      "McResHelper.resources": [
+      "mcResHelperResources": [
         {
           "id": "McResHelper.resourceGraph",
           "name": "%view.name.resourceGraph%"
