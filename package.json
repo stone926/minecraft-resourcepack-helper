@@ -10,7 +10,7 @@
     "hans000"
   ],
   "description": "To help minecraft developers create resource packs more efficiently",
-  "version": "1.3.3",
+  "version": "2.0.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.125.0"

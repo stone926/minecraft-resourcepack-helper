@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-19
+
 - Updated the extension target and toolchain to VS Code 1.125 and current npm dependency versions.
 - Added cross-platform resource path resolution with configured vanilla asset fallback support.
 - Added resource path completion and missing resource diagnostics.
