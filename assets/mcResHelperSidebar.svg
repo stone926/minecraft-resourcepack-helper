@@ -1,13 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="title desc">
   <title id="title">Minecraft Resourcepack Helper</title>
-  <desc id="desc">Minimal green cube icon for a VS Code activity bar</desc>
+  <desc id="desc">Outline-only activity bar icon with clear cube package shape</desc>
 
-  <rect x="10" y="10" width="108" height="108" rx="24" fill="#1f6f4f" />
-  <path d="M38 46L64 30L90 46L64 62L38 46Z" fill="#e7fbf0" />
-  <path d="M38 46L38 78L64 94L64 62L38 46Z" fill="#74c9a8" />
-  <path d="M64 62L64 94L90 78L90 46L64 62Z" fill="#2f8d67" />
-  <line x1="64" y1="62" x2="64" y2="94" stroke="#1b4f3c" stroke-width="2" />
-  <path d="M52 44L76 44L76 50L52 50Z" fill="#f4fffa" />
-  <path d="M52 50L76 50L76 56L52 56Z" fill="#d7f4e8" />
-  <path d="M52 56L76 56L76 62L52 62Z" fill="#c0ecd8" />
+  <rect x="2.25" y="3" width="19.5" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+
+  <path d="M6 9L12 5.5L18 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M6 9V15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M18 9V15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M10 12.8L10 17.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+  <path d="M14 12.8L14 17.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+  <path d="M6 15L12 18.5L18 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+
+  <path d="M8.2 13.2L12 10.2L15.8 13.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.8" />
 </svg>
