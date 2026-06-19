@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-06-19
+
+- Maintenance release.
+
 ## [2.0.0] - 2026-06-19
 
 - Updated the extension target and toolchain to VS Code 1.125 and current npm dependency versions.
