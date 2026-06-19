@@ -87,10 +87,12 @@
             "properties": {
               "namespace": {
                 "type": "string",
+                "format": "regex",
                 "description": "要匹配的命名空间；省略时匹配所有命名空间。"
               },
               "path": {
                 "type": "string",
+                "format": "regex",
                 "description": "要匹配的资源路径正则；省略时匹配所有路径。"
               }
             }
@@ -189,6 +191,11 @@
     "language": {
       "type": "object",
       "additionalProperties": true,
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 16,
+        "description": "语言代码长度必须为 1 到 16 个字符。"
+      },
       "required": ["name", "region"],
       "properties": {
         "name": {

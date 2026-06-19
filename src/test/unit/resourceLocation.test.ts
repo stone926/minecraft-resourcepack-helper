@@ -1,7 +1,9 @@
 import * as assert from "assert";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { getPackMcmeta, isPackFormatVersion } from "../../commands/constants";
-import { findAssetsRoot, parseResourceLocation } from "../../utils/resourceLocation";
+import { findAssetsRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "../../utils/resourceLocation";
 
 describe("resource location utilities", () => {
   it("parses implicit minecraft namespace and appends extension", () => {
@@ -49,6 +51,45 @@ describe("resource location utilities", () => {
     assert.strictEqual(result, path.join(root, "pack", "assets"));
   });
 
+  it("uses the base pack assets as fallback for overlay resources", () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(path.join(packRoot, "overlays", "newer", "assets", "minecraft", "models", "block"), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+
+      const fileName = path.join(packRoot, "overlays", "newer", "assets", "minecraft", "models", "block", "cube.json");
+      const roots = getDocumentResourceRootCandidates(fileName, "models/block", null, "minecraft", "textures");
+
+      assert.deepStrictEqual(roots, [
+        path.join(packRoot, "overlays", "newer", "assets", "minecraft", "textures"),
+        path.join(packRoot, "assets", "minecraft", "textures")
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not duplicate the base pack assets for normal pack resources", () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(path.join(packRoot, "assets", "minecraft", "models", "block"), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+
+      const fileName = path.join(packRoot, "assets", "minecraft", "models", "block", "cube.json");
+      const roots = getDocumentResourceRootCandidates(fileName, "models/block", null, "minecraft", "textures");
+
+      assert.deepStrictEqual(roots, [
+        path.join(packRoot, "assets", "minecraft", "textures")
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("serializes modern pack.mcmeta metadata safely", () => {
     const result = JSON.parse(getPackMcmeta("86.2", 'quote " and slash \\'));
 
@@ -64,3 +105,7 @@ describe("resource location utilities", () => {
     assert.strictEqual(isPackFormatVersion("86.x"), false);
   });
 });
+
+function createTempDirectory(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-"));
+}

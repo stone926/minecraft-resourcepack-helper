@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Uri, workspace } from "vscode";
-import { findAssetsRoot, getResourceRootCandidates, parseResourceLocation } from "./resourceLocation";
+import { getDocumentResourceRootCandidates, parseResourceLocation } from "./resourceLocation";
 
 interface ResourcePathDocument {
   fileName: string;
@@ -56,10 +56,16 @@ export function generateRedirectPath(
     return null;
   }
 
-  const currentAssetsRoot = findAssetsRoot(document.fileName, source);
   const candidates: string[] = [];
   const configuredDefaultPath = workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath");
-  for (const root of getResourceRootCandidates(currentAssetsRoot, configuredDefaultPath, location.namespace, target)) {
+  for (const root of getDocumentResourceRootCandidates(
+    document.fileName,
+    source,
+    configuredDefaultPath,
+    location.namespace,
+    target,
+    { pathExists: options.pathExists }
+  )) {
     candidates.push(path.join(root, location.resourcePath));
   }
 

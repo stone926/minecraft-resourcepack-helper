@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
-import { findAssetsRoot, getResourceRootCandidates } from "../utils/resourceLocation";
+import { getDocumentResourceRootCandidates } from "../utils/resourceLocation";
 import { rangeInsideString } from "../utils/resourceRange";
 
 interface PartialResourcePath {
@@ -26,9 +26,14 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
     }
 
     const partialPath = parsePartialResourcePath(reference.value);
-    const assetsRoot = findAssetsRoot(document.fileName, reference.source);
     const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
-    const roots = getResourceRootCandidates(assetsRoot, defaultAssetsPath, partialPath.namespace, reference.target);
+    const roots = getDocumentResourceRootCandidates(
+      document.fileName,
+      reference.source,
+      defaultAssetsPath,
+      partialPath.namespace,
+      reference.target
+    );
     const items = await collectCompletionItems(roots, partialPath, reference, replacementRange);
 
     return items.length > 0 ? items : null;

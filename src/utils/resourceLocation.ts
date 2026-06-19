@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 export interface ResourceLocation {
@@ -7,6 +8,10 @@ export interface ResourceLocation {
 }
 
 const pathPartSeparator = /[\\/]+/;
+
+interface ResourceRootCandidateOptions {
+  pathExists?: (filePath: string) => boolean;
+}
 
 export function parseResourceLocation(input: string, targetFileExtension: string | null): ResourceLocation {
   const [rawNamespace, ...rawPathParts] = input.split(":");
@@ -44,6 +49,26 @@ export function findAssetsRoot(fileName: string, source: string): string | null 
   return path.join(parsedPath.root, ...segments.slice(0, sourceIndex - 1));
 }
 
+export function getDocumentResourceRootCandidates(
+  fileName: string,
+  source: string,
+  defaultAssetsPath: string | null | undefined,
+  namespace: string,
+  target: string,
+  options: ResourceRootCandidateOptions = {}
+): string[] {
+  const assetsRoot = findAssetsRoot(fileName, source);
+  const candidates = getResourceRootCandidates(assetsRoot, null, namespace, target);
+  const basePackAssetsRoot = findBasePackAssetsRoot(fileName, assetsRoot, options);
+
+  if (basePackAssetsRoot) {
+    candidates.push(...getResourceRootCandidates(basePackAssetsRoot, null, namespace, target));
+  }
+
+  candidates.push(...getResourceRootCandidates(null, defaultAssetsPath, namespace, target));
+  return unique(candidates);
+}
+
 export function normalizePathPart(value: string): string {
   return value.split(pathPartSeparator).filter(Boolean).join(path.sep);
 }
@@ -68,6 +93,42 @@ export function getResourceRootCandidates(assetsRoot: string | null, defaultAsse
   return [...new Set(candidates)];
 }
 
+function findBasePackAssetsRoot(
+  fileName: string,
+  currentAssetsRoot: string | null,
+  options: ResourceRootCandidateOptions
+): string | null {
+  const packRoot = findPackRoot(fileName, options);
+  if (!packRoot) {
+    return null;
+  }
+
+  const baseAssetsRoot = path.join(packRoot, "assets");
+  if (!currentAssetsRoot || isSamePath(baseAssetsRoot, currentAssetsRoot)) {
+    return null;
+  }
+
+  return baseAssetsRoot;
+}
+
+function findPackRoot(fileName: string, options: ResourceRootCandidateOptions): string | null {
+  const pathExists = options.pathExists ?? fs.existsSync;
+  let current = path.dirname(path.normalize(fileName));
+  const root = path.parse(current).root;
+
+  while (true) {
+    if (pathExists(path.join(current, "pack.mcmeta"))) {
+      return current;
+    }
+
+    if (current === root) {
+      return null;
+    }
+
+    current = path.dirname(current);
+  }
+}
+
 function findSourceIndex(segments: string[], sourceSegments: string[]): number {
   for (let index = segments.length - sourceSegments.length; index >= 0; index--) {
     const matches = sourceSegments.every((segment, offset) => segments[index + offset] === segment);
@@ -77,4 +138,19 @@ function findSourceIndex(segments: string[], sourceSegments: string[]): number {
   }
 
   return -1;
+}
+
+function isSamePath(left: string, right: string): boolean {
+  const normalizedLeft = path.normalize(left);
+  const normalizedRight = path.normalize(right);
+
+  if (process.platform === "win32") {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+
+  return normalizedLeft === normalizedRight;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }
