@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import {
+  isResourceGraphDocumentPath,
   isModelDocumentPath,
   loadResourceGraphDocument,
   ResourceGraphDocument,
@@ -92,11 +93,11 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
   private createCurrentFileNode(): ResourceGraphNode {
     const document = vscode.window.activeTextEditor?.document;
-    if (!document || document.languageId !== "json") {
+    if (!document || !isResourceGraphDocumentPath(document.fileName)) {
       return new ResourceGraphNode(
         vscode.l10n.t("Current File"),
         vscode.TreeItemCollapsibleState.None,
-        { description: vscode.l10n.t("No JSON editor"), iconPath: new vscode.ThemeIcon("json") }
+        { description: vscode.l10n.t("No resource editor"), iconPath: new vscode.ThemeIcon("file-code") }
       );
     }
 
@@ -107,7 +108,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
         description: path.basename(document.fileName),
         uri: document.uri,
         children: () => this.createResourceSections(document.uri, new Set(), document),
-        iconPath: new vscode.ThemeIcon("json")
+        iconPath: getResourceIcon(document.fileName)
       }
     );
   }
@@ -164,7 +165,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
     const nextVisitedResources = new Set(visitedResources);
     nextVisitedResources.add(resourceUriKey(uri));
-    const document = await this.tryLoadJsonDocument(uri, documentOverride);
+    const document = await this.tryLoadResourceDocument(uri, documentOverride);
     const nodes = [
       await this.createOutgoingReferencesGroup(nextVisitedResources, document),
       this.createIncomingReferencesGroup(uri, nextVisitedResources)
@@ -343,7 +344,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
             return [createAlreadyShownNode(uri)];
           }
 
-          const document = await this.tryLoadJsonDocument(uri);
+          const document = await this.tryLoadResourceDocument(uri);
           if (!document) {
             return [];
           }
@@ -402,7 +403,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     );
   }
 
-  private async tryLoadJsonDocument(
+  private async tryLoadResourceDocument(
     uri: vscode.Uri,
     documentOverride?: ResourceGraphDocument
   ): Promise<ResourceGraphDocument | null> {
@@ -410,7 +411,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
       return documentOverride;
     }
 
-    if (!uri.fsPath.toLowerCase().endsWith(".json")) {
+    if (!isResourceGraphDocumentPath(uri.fsPath)) {
       return null;
     }
 

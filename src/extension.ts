@@ -9,9 +9,9 @@ import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
-import { isResourceJsonDocumentPath } from './utils/resourceGraph';
+import { isResourceGraphDocumentPath } from './utils/resourceGraph';
 
-const resourceReferenceSelectors: vscode.DocumentSelector = [
+const jsonResourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/blockstates/*.json" },
   { language: "json", pattern: "**/models/block/**/*.json" },
   { language: "json", pattern: "**/models/item/**/*.json" },
@@ -23,6 +23,18 @@ const resourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/waypoint_style/**/*.json" },
   { language: "json", pattern: "**/post_effect/**/*.json" },
   { language: "json", pattern: "**/assets/*/sounds.json" }
+];
+
+const shaderResourceReferenceSelectors: vscode.DocumentSelector = [
+  { pattern: "**/assets/*/shaders/core/**/*.vsh" },
+  { pattern: "**/assets/*/shaders/core/**/*.fsh" },
+  { pattern: "**/assets/*/shaders/post/**/*.vsh" },
+  { pattern: "**/assets/*/shaders/post/**/*.fsh" }
+];
+
+const resourceReferenceSelectors: vscode.DocumentSelector = [
+  ...jsonResourceReferenceSelectors,
+  ...shaderResourceReferenceSelectors
 ];
 
 export function activate(context: vscode.ExtensionContext) {
@@ -43,6 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
     resourceReferenceSelectors,
     resourceCompletionProvider,
     '"',
+    '<',
     '/',
     ':'
   ));
@@ -96,7 +109,7 @@ export function activate(context: vscode.ExtensionContext) {
       applyDecoration(activeEditor);
     }
     refreshResourceDiagnostics(event.document, resourceDiagnostics);
-    if (isResourceJsonDocumentPath(event.document.fileName)) {
+    if (isResourceGraphDocumentPath(event.document.fileName)) {
       resourceGraphTreeProvider.refreshSoon();
     }
   }, null, context.subscriptions);
@@ -106,6 +119,18 @@ export function activate(context: vscode.ExtensionContext) {
   resourceJsonWatcher.onDidCreate(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
   resourceJsonWatcher.onDidChange(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
   resourceJsonWatcher.onDidDelete(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+
+  const shaderWatchers = [
+    vscode.workspace.createFileSystemWatcher("**/assets/*/shaders/**/*.vsh"),
+    vscode.workspace.createFileSystemWatcher("**/assets/*/shaders/**/*.fsh"),
+    vscode.workspace.createFileSystemWatcher("**/assets/*/shaders/**/*.glsl")
+  ];
+  context.subscriptions.push(...shaderWatchers);
+  for (const shaderWatcher of shaderWatchers) {
+    shaderWatcher.onDidCreate(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+    shaderWatcher.onDidChange(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+    shaderWatcher.onDidDelete(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+  }
 
   vscode.workspace.onDidOpenTextDocument(document => {
     refreshResourceDiagnostics(document, resourceDiagnostics);

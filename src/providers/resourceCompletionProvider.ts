@@ -133,9 +133,17 @@ function isCompletableEntry(entry: Dirent, reference: ResourceReference): boolea
     return entry.isDirectory() || entry.isFile();
   }
 
+  if (reference.kind === "shader" && reference.extension === null) {
+    return entry.isDirectory() || (entry.isFile() && isShaderSourceFile(entry.name));
+  }
+
   if (reference.extension === null) {
     return entry.isDirectory();
   }
 
   return entry.isDirectory() || (entry.isFile() && entry.name.endsWith(`.${reference.extension}`));
+}
+
+function isShaderSourceFile(fileName: string): boolean {
+  return /\.(?:glsl|vsh|fsh)$/i.test(fileName);
 }

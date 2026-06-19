@@ -1,15 +1,20 @@
 import type { Position } from "vscode";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, parseJsonAst, stringValue } from "./jsonAst";
-import { isInArea } from "./locationChecker";
+import { AstLocation, isInArea } from "./locationChecker";
 
 export interface ResourceReference {
   value: string;
-  valueNode: JsonAstNode;
+  valueNode: ResourceReferenceValueNode;
   target: string;
   source: string;
   extension: string | null;
   kind: ResourceReferenceKind;
   relationship?: ResourceReferenceRelationship;
+}
+
+export interface ResourceReferenceValueNode {
+  loc?: AstLocation | null;
+  valueLoc?: AstLocation | null;
 }
 
 type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "fontFile" | "shader" | "sound";
@@ -33,7 +38,9 @@ type ResourceReferenceDocumentKind =
   | "font"
   | "waypointStyle"
   | "postEffect"
-  | "sounds";
+  | "sounds"
+  | "shaderCore"
+  | "shaderPost";
 
 interface CachedResourceReferences {
   fileName: string;
@@ -55,24 +62,32 @@ const resourceReferenceDocumentPatterns: Array<{
   { kind: "font", pattern: /[\\/]font[\\/].+\.json$/i },
   { kind: "waypointStyle", pattern: /[\\/]waypoint_style[\\/].+\.json$/i },
   { kind: "postEffect", pattern: /[\\/]post_effect[\\/].+\.json$/i },
-  { kind: "sounds", pattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i }
+  { kind: "sounds", pattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i },
+  { kind: "shaderCore", pattern: /[\\/]shaders[\\/]core[\\/].+\.(?:vsh|fsh)$/i },
+  { kind: "shaderPost", pattern: /[\\/]shaders[\\/]post[\\/].+\.(?:vsh|fsh)$/i }
 ];
 
 const resourceReferenceCache = new WeakMap<ResourceReferenceDocument, CachedResourceReferences>();
 
 export function getResourceReferences(document: ResourceReferenceDocument): ResourceReference[] {
-  if (document.languageId !== "json") {
+  const documentKind = getResourceReferenceDocumentKind(document.fileName);
+  if (!documentKind) {
     return [];
   }
 
-  const documentKind = getResourceReferenceDocumentKind(document.fileName);
-  if (!documentKind) {
+  if (document.languageId !== "json" && !isShaderDocumentKind(documentKind)) {
     return [];
   }
 
   const cachedReferences = getCachedResourceReferences(document);
   if (cachedReferences) {
     return cachedReferences;
+  }
+
+  if (isShaderDocumentKind(documentKind)) {
+    const references = getShaderReferences(document.getText(), getShaderDocumentSource(documentKind));
+    setCachedResourceReferences(document, references);
+    return references;
   }
 
   const ast = parseJsonAst(document.getText());
@@ -89,11 +104,14 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
   const line = position.line + 1;
   const character = position.character + 1;
 
-  return getResourceReferences(document).find(reference => isInArea(line, character, reference.valueNode?.loc)) ?? null;
+  return getResourceReferences(document).find(reference =>
+    isInArea(line, character, reference.valueNode.valueLoc ?? reference.valueNode.loc)
+  ) ?? null;
 }
 
 export function isResourceReferenceDocument(document: ResourceReferenceDocument): boolean {
-  return document.languageId === "json" && isResourceReferenceFileName(document.fileName);
+  const kind = getResourceReferenceDocumentKind(document.fileName);
+  return kind !== null && (document.languageId === "json" || isShaderDocumentKind(kind));
 }
 
 export function isResourceReferenceFileName(fileName: string): boolean {
@@ -353,6 +371,37 @@ function getSoundReferences(ast: JsonDocumentNode): ResourceReference[] {
   return references;
 }
 
+function getShaderReferences(text: string, source: string): ResourceReference[] {
+  const references: ResourceReference[] = [];
+  const lineStarts = getLineStarts(text);
+  const importPattern = /#\s*moj_import\s*(?:<([^>\r\n]+)>|"([^"\r\n]+)")/g;
+
+  for (const match of text.matchAll(importPattern)) {
+    const value = match[1] ?? match[2];
+    if (value === undefined || match.index === undefined) {
+      continue;
+    }
+
+    const valueStart = match.index + match[0].indexOf(value);
+    const valueEnd = valueStart + value.length;
+    const valueLoc = getLocationForOffsets(lineStarts, valueStart, valueEnd);
+    const target = match[1] !== undefined || value.includes(":") ? "shaders/include" : "shaders/core";
+    references.push({
+      value,
+      valueNode: {
+        loc: valueLoc,
+        valueLoc
+      },
+      target,
+      source,
+      extension: null,
+      kind: "shader"
+    });
+  }
+
+  return references;
+}
+
 function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: ResourceReference[]) {
   const type = getObjectString(sourceEntry, "type");
 
@@ -431,8 +480,14 @@ function pushItemSpecialTextureReference(references: ResourceReference[], node: 
   const type = getObjectString(node, "type");
   if (type === "minecraft:chest" || type === "chest") {
     pushReference(references, valueNode, "textures/entity/chest", "items", "png", "texture");
+  } else if (type === "minecraft:bed" || type === "bed") {
+    pushReference(references, valueNode, "textures/entity/bed", "items", "png", "texture");
   } else if (type === "minecraft:shulker_box" || type === "shulker_box") {
     pushReference(references, valueNode, "textures/entity/shulker", "items", "png", "texture");
+  } else if (type === "minecraft:standing_sign" || type === "standing_sign") {
+    pushReference(references, valueNode, "textures/entity/signs", "items", "png", "texture");
+  } else if (type === "minecraft:hanging_sign" || type === "hanging_sign") {
+    pushReference(references, valueNode, "textures/entity/signs/hanging", "items", "png", "texture");
   } else if (type === "minecraft:copper_golem_statue" || type === "copper_golem_statue") {
     pushReference(references, valueNode, "", "items", "png", "texture");
   } else if (type === "minecraft:head" || type === "head") {
@@ -493,6 +548,55 @@ function setCachedResourceReferences(document: ResourceReferenceDocument, refere
       references
     });
   }
+}
+
+function isShaderDocumentKind(kind: ResourceReferenceDocumentKind): boolean {
+  return kind === "shaderCore" || kind === "shaderPost";
+}
+
+function getShaderDocumentSource(kind: ResourceReferenceDocumentKind): string {
+  if (kind === "shaderCore") {
+    return "shaders/core";
+  }
+
+  return "shaders/post";
+}
+
+function getLineStarts(text: string): number[] {
+  const lineStarts = [0];
+  for (let index = 0; index < text.length; index++) {
+    if (text.charCodeAt(index) === 10) {
+      lineStarts.push(index + 1);
+    }
+  }
+
+  return lineStarts;
+}
+
+function getLocationForOffsets(lineStarts: number[], startOffset: number, endOffset: number): AstLocation {
+  const startLine = findLineIndex(lineStarts, startOffset);
+  const endLine = findLineIndex(lineStarts, endOffset);
+
+  return {
+    start: {
+      line: startLine + 1,
+      column: startOffset - lineStarts[startLine]
+    },
+    end: {
+      line: endLine + 1,
+      column: endOffset - lineStarts[endLine]
+    }
+  };
+}
+
+function findLineIndex(lineStarts: number[], offset: number): number {
+  for (let index = lineStarts.length - 1; index >= 0; index--) {
+    if (lineStarts[index] <= offset) {
+      return index;
+    }
+  }
+
+  return 0;
 }
 
 function getResourceReferenceDocumentKind(fileName: string): ResourceReferenceDocumentKind | null {

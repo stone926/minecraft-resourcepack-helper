@@ -79,7 +79,7 @@ export class ResourceGraphIndex {
 
 export async function loadResourceGraphDocument(uri: vscode.Uri): Promise<ResourceGraphDocument> {
   const openDocument = vscode.workspace.textDocuments.find(document =>
-    document.languageId === "json" && resourceUriKey(document.uri) === resourceUriKey(uri)
+    isResourceGraphDocumentPath(document.fileName) && resourceUriKey(document.uri) === resourceUriKey(uri)
   );
 
   if (openDocument) {
@@ -161,11 +161,17 @@ function getPossibleReferencePaths(resourcePath: string): Set<string> {
     "models",
     "textures",
     "textures/particle",
+    "textures/entity",
+    "textures/entity/bed",
     "textures/entity/chest",
     "textures/entity/shulker",
+    "textures/entity/signs",
+    "textures/entity/signs/hanging",
     "textures/gui/sprites/hud/locator_bar_dot",
     "font",
     "shaders",
+    "shaders/core",
+    "shaders/include",
     "sounds"
   ];
 
@@ -281,7 +287,6 @@ async function collectResourceDocuments(search?: IncomingReferenceSearch): Promi
 
   for (const document of vscode.workspace.textDocuments) {
     if (
-      document.languageId === "json" &&
       isResourceReferenceFileName(document.fileName) &&
       (!search || search.matchesText(document.getText()))
     ) {
@@ -289,7 +294,7 @@ async function collectResourceDocuments(search?: IncomingReferenceSearch): Promi
     }
   }
 
-  const fileUris = (await collectResourceJsonUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
+  const fileUris = (await collectResourceReferenceUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
   const fileDocuments = await mapLimit(fileUris, 24, async uri => {
     try {
       return await loadResourceGraphDocumentIfMatching(uri, search);
@@ -326,9 +331,14 @@ async function loadResourceGraphDocumentIfMatching(
   };
 }
 
-async function collectResourceJsonUris(): Promise<vscode.Uri[]> {
+async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
   const urisByKey = new Map<string, vscode.Uri>();
-  const workspaceUris = await vscode.workspace.findFiles("**/assets/**/*.json", "**/node_modules/**");
+  const workspaceUris = [
+    ...(await vscode.workspace.findFiles("**/assets/**/*.json", "**/node_modules/**")),
+    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.vsh", "**/node_modules/**")),
+    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.fsh", "**/node_modules/**")),
+    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.glsl", "**/node_modules/**"))
+  ];
 
   for (const uri of workspaceUris) {
     if (isResourceReferenceFileName(uri.fsPath)) {
@@ -339,7 +349,7 @@ async function collectResourceJsonUris(): Promise<vscode.Uri[]> {
   const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
   if (defaultAssetsPath) {
     for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
-      for (const uri of await collectJsonUris(root)) {
+      for (const uri of await collectResourceReferenceUrisInRoot(root)) {
         urisByKey.set(resourceUriKey(uri), uri);
       }
     }
@@ -371,13 +381,13 @@ async function getDefaultAssetsRoots(configuredPath: string): Promise<string[]> 
   return roots;
 }
 
-async function collectJsonUris(directory: string): Promise<vscode.Uri[]> {
+async function collectResourceReferenceUrisInRoot(directory: string): Promise<vscode.Uri[]> {
   const uris: vscode.Uri[] = [];
-  await collectJsonUrisInto(directory, uris);
+  await collectResourceReferenceUrisInto(directory, uris);
   return uris;
 }
 
-async function collectJsonUrisInto(directory: string, uris: vscode.Uri[]): Promise<void> {
+async function collectResourceReferenceUrisInto(directory: string, uris: vscode.Uri[]): Promise<void> {
   let entries: Dirent[];
   try {
     entries = await fs.readdir(directory, { withFileTypes: true });
@@ -389,13 +399,9 @@ async function collectJsonUrisInto(directory: string, uris: vscode.Uri[]): Promi
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       if (!shouldSkipDirectory(entry.name)) {
-        await collectJsonUrisInto(entryPath, uris);
+        await collectResourceReferenceUrisInto(entryPath, uris);
       }
-    } else if (
-      entry.isFile() &&
-      entry.name.toLowerCase().endsWith(".json") &&
-      isResourceReferenceFileName(entryPath)
-    ) {
+    } else if (entry.isFile() && isResourceReferenceFileName(entryPath)) {
       uris.push(vscode.Uri.file(entryPath));
     }
   }
@@ -407,6 +413,11 @@ function shouldSkipDirectory(name: string): boolean {
 
 export function isResourceJsonDocumentPath(fileName: string): boolean {
   return /[\\/]assets[\\/][^\\/]+[\\/].+\.json$/i.test(fileName);
+}
+
+export function isResourceGraphDocumentPath(fileName: string): boolean {
+  return isResourceReferenceFileName(fileName) ||
+    /[\\/]assets[\\/][^\\/]+[\\/]shaders[\\/]include[\\/].+\.(?:glsl|vsh|fsh)$/i.test(fileName);
 }
 
 function uniqueResolvedReferences(references: ResolvedResourceReference[]): ResolvedResourceReference[] {

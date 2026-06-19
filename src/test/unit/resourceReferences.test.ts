@@ -271,6 +271,39 @@ describe("resource references", () => {
     );
   });
 
+  it("extracts shader import references", () => {
+    const coreDocument = createTextDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "core", "entity.vsh"),
+      [
+        "#version 330",
+        "#moj_import <light.glsl>",
+        "#moj_import <custom:lighting/fog.vsh>",
+        "#moj_import \"custom:shared/fog.glsl\"",
+        "#moj_import \"screenquad.glsl\""
+      ].join("\n")
+    );
+    const postDocument = createTextDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "post", "box_blur.fsh"),
+      "#moj_import <post_effect/common.fsh>"
+    );
+
+    const references = [
+      ...getResourceReferences(coreDocument),
+      ...getResourceReferences(postDocument)
+    ];
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["shader", "light.glsl", "shaders/include", "shaders/core", null],
+        ["shader", "custom:lighting/fog.vsh", "shaders/include", "shaders/core", null],
+        ["shader", "custom:shared/fog.glsl", "shaders/include", "shaders/core", null],
+        ["shader", "screenquad.glsl", "shaders/core", "shaders/core", null],
+        ["shader", "post_effect/common.fsh", "shaders/include", "shaders/post", null]
+      ]
+    );
+  });
+
   it("extracts model and base model references from item model definitions", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "items", "shield.json"),
@@ -323,6 +356,17 @@ describe("resource references", () => {
             {
               model: {
                 type: "minecraft:special",
+                base: "minecraft:item/red_bed",
+                model: {
+                  type: "minecraft:bed",
+                  part: "head",
+                  texture: "minecraft:red"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
                 base: "minecraft:item/black_shulker_box",
                 model: {
                   type: "minecraft:shulker_box",
@@ -338,6 +382,28 @@ describe("resource references", () => {
                   type: "minecraft:head",
                   kind: "player",
                   texture: "minecraft:skins/custom"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/oak_sign",
+                model: {
+                  type: "minecraft:standing_sign",
+                  ["wood_type"]: "oak",
+                  texture: "minecraft:custom_oak"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/oak_hanging_sign",
+                model: {
+                  type: "minecraft:hanging_sign",
+                  attachment: "ceiling",
+                  texture: "minecraft:custom_hanging"
                 }
               }
             },
@@ -363,10 +429,16 @@ describe("resource references", () => {
       [
         ["model", "minecraft:item/chest", "models", "items", "json"],
         ["texture", "minecraft:christmas", "textures/entity/chest", "items", "png"],
+        ["model", "minecraft:item/red_bed", "models", "items", "json"],
+        ["texture", "minecraft:red", "textures/entity/bed", "items", "png"],
         ["model", "minecraft:item/black_shulker_box", "models", "items", "json"],
         ["texture", "minecraft:shulker_black", "textures/entity/shulker", "items", "png"],
         ["model", "minecraft:item/player_head", "models", "items", "json"],
         ["texture", "minecraft:skins/custom", "textures/entity", "items", "png"],
+        ["model", "minecraft:item/oak_sign", "models", "items", "json"],
+        ["texture", "minecraft:custom_oak", "textures/entity/signs", "items", "png"],
+        ["model", "minecraft:item/oak_hanging_sign", "models", "items", "json"],
+        ["texture", "minecraft:custom_hanging", "textures/entity/signs/hanging", "items", "png"],
         ["model", "minecraft:item/template_copper_golem_statue", "models", "items", "json"],
         ["texture", "minecraft:textures/entity/copper_golem/copper_golem.png", "", "items", "png"]
       ]
@@ -419,5 +491,13 @@ function createJsonDocument(fileName: string, value: unknown): ResourceReference
     languageId: "json",
     fileName,
     getText: () => JSON.stringify(value, null, 2)
+  };
+}
+
+function createTextDocument(fileName: string, text: string): ResourceReferenceDocument {
+  return {
+    languageId: "plaintext",
+    fileName,
+    getText: () => text
   };
 }
