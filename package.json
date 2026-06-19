@@ -191,7 +191,11 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "mocha \"./out/test/unit/**/*.test.js\"",
-    "push": "git push origin master && git push github master"
+    "package:vsix": "vsce package",
+    "deploy": "vsce publish",
+    "publish": "node scripts/release.mjs",
+    "publish:dry-run": "node scripts/release.mjs --dry-run",
+    "push": "git push origin master"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -199,6 +203,7 @@
     "@types/node": "^25.9.3",
     "@types/vscode": "^1.125.0",
     "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
     "eslint": "^10.5.0",
     "mocha": "^11.7.6",
     "typescript": "^6.0.3",
