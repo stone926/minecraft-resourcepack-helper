@@ -1,12 +1,19 @@
 {
   "Blocks": "Blocks",
+  "Child Models": "Child Models",
   "Current File": "Current File",
   "McResHelper resources": "McResHelper resources",
   "McResHelper: No open folder, failed to create resource pack": "McResHelper: No open folder, failed to create resource pack",
   "McResHelper: pack.mcmeta or pack.png already exists in the current folder": "McResHelper: pack.mcmeta or pack.png already exists in the current folder",
   "Minecraft resource not found: {0}": "Minecraft resource not found: {0}",
+  "Model Inheritance": "Model Inheritance",
+  "No child models": "No child models",
   "No JSON editor": "No JSON editor",
+  "No incoming references": "No incoming references",
+  "No parent model": "No parent model",
+  "No references": "No references",
   "Open Resource": "Open Resource",
+  "Parent Models": "Parent Models",
   "Please input the description of your resource pack, can be empty": "Please input the description of your resource pack, can be empty",
   "Please input the name of your resource pack": "Please input the name of your resource pack",
   "Please input the namespace of your resource pack": "Please input the namespace of your resource pack",
@@ -24,7 +31,10 @@
   "model: {0}": "model: {0}",
   "shader: {0}": "shader: {0}",
   "sound: {0}": "sound: {0}",
+  "Referenced By": "Referenced By",
+  "References": "References",
   "texture directory: {0}": "texture directory: {0}",
   "texture: {0}": "texture: {0}",
-  "texture variable": "texture variable"
+  "texture variable": "texture variable",
+  "{0} references": "{0} references"
 }

@@ -9,9 +9,11 @@ export interface ResourceReference {
   source: string;
   extension: string | null;
   kind: ResourceReferenceKind;
+  relationship?: ResourceReferenceRelationship;
 }
 
 type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "fontFile" | "shader" | "sound";
+export type ResourceReferenceRelationship = "modelParent";
 
 export interface ResourceReferenceDocument {
   languageId: string;
@@ -122,7 +124,7 @@ function getModelReferences(ast: JsonDocumentNode, source: string): ResourceRefe
 
   for (const item of objectMembers(ast.body)) {
     if (memberName(item) === "parent") {
-      pushReference(references, item.value, "models", source, "json", "model");
+      pushReference(references, item.value, "models", source, "json", "model", "modelParent");
     } else if (memberName(item) === "textures") {
       for (const textureEntry of objectMembers(item.value)) {
         pushReference(references, textureEntry.value, "textures", source, "png", "texture");
@@ -370,11 +372,16 @@ function pushReference(
   target: string,
   source: string,
   extension: string | null,
-  kind: ResourceReferenceKind
+  kind: ResourceReferenceKind,
+  relationship?: ResourceReferenceRelationship
 ): void {
   const value = stringValue(valueNode);
   if (value !== undefined) {
-    references.push({ value, valueNode, target, source, extension, kind });
+    const reference: ResourceReference = { value, valueNode, target, source, extension, kind };
+    if (relationship) {
+      reference.relationship = relationship;
+    }
+    references.push(reference);
   }
 }
 

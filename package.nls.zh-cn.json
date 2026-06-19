@@ -5,5 +5,6 @@
   "command.title.createNewResourcePack": "McResHelper: 在当前文件夹下创建新材质包",
   "command.title.createNewResourcePackRoot": "McResHelper: 以当前文件夹为根目录创建新材质包",
   "command.title.refreshResourceGraph": "McResHelper: 刷新资源映射",
-  "view.name.resourceGraph": "Minecraft 资源"
+  "viewContainer.title.resources": "Minecraft 资源",
+  "view.name.resourceGraph": "资源关系"
 }

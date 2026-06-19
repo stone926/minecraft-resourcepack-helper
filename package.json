@@ -142,11 +142,29 @@
         "icon": "$(refresh)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "McResHelper.resources",
+          "title": "%viewContainer.title.resources%",
+          "icon": "src/pack.png"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "McResHelper.resources": [
         {
           "id": "McResHelper.resourceGraph",
           "name": "%view.name.resourceGraph%"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "McResHelper.refreshResourceGraph",
+          "when": "view == McResHelper.resourceGraph",
+          "group": "navigation"
         }
       ]
     },

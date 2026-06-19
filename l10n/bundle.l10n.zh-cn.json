@@ -1,12 +1,19 @@
 {
   "Blocks": "方块",
+  "Child Models": "子模型",
   "Current File": "当前文件",
   "McResHelper resources": "McResHelper 资源",
   "McResHelper: No open folder, failed to create resource pack": "McResHelper：未打开文件夹，无法创建资源包",
   "McResHelper: pack.mcmeta or pack.png already exists in the current folder": "McResHelper：当前文件夹已存在 pack.mcmeta 或 pack.png",
   "Minecraft resource not found: {0}": "未找到 Minecraft 资源：{0}",
+  "Model Inheritance": "模型继承树",
+  "No child models": "没有子模型",
   "No JSON editor": "没有 JSON 编辑器",
+  "No incoming references": "未发现引用者",
+  "No parent model": "没有父模型",
+  "No references": "没有引用其他资源",
   "Open Resource": "打开资源",
+  "Parent Models": "父模型",
   "Please input the description of your resource pack, can be empty": "请输入资源包描述，可留空",
   "Please input the name of your resource pack": "请输入资源包名称",
   "Please input the namespace of your resource pack": "请输入资源包命名空间",
@@ -24,7 +31,10 @@
   "model: {0}": "模型：{0}",
   "shader: {0}": "着色器：{0}",
   "sound: {0}": "声音：{0}",
+  "Referenced By": "被谁引用",
+  "References": "引用了谁",
   "texture directory: {0}": "纹理目录：{0}",
   "texture: {0}": "纹理：{0}",
-  "texture variable": "纹理变量"
+  "texture variable": "纹理变量",
+  "{0} references": "{0} 处引用"
 }

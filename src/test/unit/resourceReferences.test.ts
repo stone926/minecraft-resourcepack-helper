@@ -66,6 +66,33 @@ describe("resource references", () => {
     );
   });
 
+  it("marks only parent model references as inheritance relationships", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "models", "item", "custom.json"),
+      {
+        parent: "minecraft:item/generated",
+        overrides: [
+          {
+            predicate: {
+              ["custom_model_data"]: 1
+            },
+            model: "minecraft:item/custom_variant"
+          }
+        ]
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.value, reference.relationship ?? null]),
+      [
+        ["minecraft:item/generated", "modelParent"],
+        ["minecraft:item/custom_variant", null]
+      ]
+    );
+  });
+
   it("extracts equipment layer texture references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "equipment", "armadillo_scute.json"),

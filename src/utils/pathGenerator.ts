@@ -1,9 +1,13 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { TextDocument, Uri, workspace } from "vscode";
+import { Uri, workspace } from "vscode";
 import { findAssetsRoot, getResourceRootCandidates, parseResourceLocation } from "./resourceLocation";
 
-export function generateRedirectPath(resourcePath: string, document: TextDocument, target: string, source: string, targetFileExtension: string | null): Uri | null {
+interface ResourcePathDocument {
+  fileName: string;
+}
+
+export function generateRedirectPath(resourcePath: string, document: ResourcePathDocument, target: string, source: string, targetFileExtension: string | null): Uri | null {
   const location = parseResourceLocation(resourcePath, targetFileExtension);
   const currentAssetsRoot = findAssetsRoot(document.fileName, source);
   const candidates: string[] = [];
