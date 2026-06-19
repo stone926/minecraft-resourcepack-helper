@@ -93,7 +93,11 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
 }
 
 export function isResourceReferenceDocument(document: ResourceReferenceDocument): boolean {
-  return document.languageId === "json" && getResourceReferenceDocumentKind(document.fileName) !== null;
+  return document.languageId === "json" && isResourceReferenceFileName(document.fileName);
+}
+
+export function isResourceReferenceFileName(fileName: string): boolean {
+  return getResourceReferenceDocumentKind(fileName) !== null;
 }
 
 function getReferencesForDocumentKind(ast: JsonDocumentNode, documentKind: ResourceReferenceDocumentKind): ResourceReference[] {

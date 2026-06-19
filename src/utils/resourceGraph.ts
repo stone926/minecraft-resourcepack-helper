@@ -3,7 +3,12 @@ import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { createResourcePathResolver, generateRedirectPath, type ResourcePathResolver } from "./pathGenerator";
-import { getResourceReferences, ResourceReference, ResourceReferenceDocument } from "./resourceReferences";
+import {
+  getResourceReferences,
+  isResourceReferenceFileName,
+  ResourceReference,
+  ResourceReferenceDocument
+} from "./resourceReferences";
 
 export interface ResourceGraphDocument extends ResourceReferenceDocument {
   uri: vscode.Uri;
@@ -15,11 +20,16 @@ export interface ResolvedResourceReference {
   targetUri: vscode.Uri | null;
 }
 
+interface IncomingReferenceSearch {
+  readonly values: Set<string>;
+  matchesText(text: string): boolean;
+}
+
 export class ResourceGraphIndex {
-  private references: ResolvedResourceReference[] | null = null;
+  private readonly incomingReferencesByTarget = new Map<string, Promise<ResolvedResourceReference[]>>();
 
   invalidate(): void {
-    this.references = null;
+    this.incomingReferencesByTarget.clear();
   }
 
   getReferences(document: ResourceGraphDocument): ResolvedResourceReference[] {
@@ -28,11 +38,17 @@ export class ResourceGraphIndex {
 
   async getIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
     const targetKey = resourceUriKey(targetUri);
-    const references = await this.getAllReferences();
+    const cachedReferences = this.incomingReferencesByTarget.get(targetKey);
+    if (cachedReferences) {
+      return cachedReferences;
+    }
 
-    return references.filter(reference =>
-      reference.targetUri !== null && resourceUriKey(reference.targetUri) === targetKey
-    );
+    const references = this.collectIncomingReferences(targetUri).catch(error => {
+      this.incomingReferencesByTarget.delete(targetKey);
+      throw error;
+    });
+    this.incomingReferencesByTarget.set(targetKey, references);
+    return references;
   }
 
   async getChildModelReferences(modelUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
@@ -43,17 +59,21 @@ export class ResourceGraphIndex {
     );
   }
 
-  private async getAllReferences(): Promise<ResolvedResourceReference[]> {
-    if (this.references) {
-      return this.references;
+  private async collectIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
+    const targetKey = resourceUriKey(targetUri);
+    const search = createIncomingReferenceSearch(targetUri);
+    if (!search || search.values.size === 0) {
+      return [];
     }
 
-    const documents = await collectResourceDocuments();
+    const documents = await collectResourceDocuments(search);
     const resolveResourcePath = createResourcePathResolver();
-    const references = documents.flatMap(document => resolveDocumentReferences(document, resolveResourcePath));
-    this.references = uniqueResolvedReferences(references);
+    const references = documents.flatMap(document =>
+      resolveDocumentReferences(document, resolveResourcePath)
+        .filter(reference => reference.targetUri !== null && resourceUriKey(reference.targetUri) === targetKey)
+    );
 
-    return this.references;
+    return uniqueResolvedReferences(references);
   }
 }
 
@@ -84,6 +104,159 @@ export function resourceUriKey(uri: vscode.Uri): string {
   return process.platform === "win32" ? key.toLowerCase() : key;
 }
 
+function createIncomingReferenceSearch(targetUri: vscode.Uri): IncomingReferenceSearch | null {
+  const targetResource = getAssetResource(targetUri);
+  if (!targetResource) {
+    return null;
+  }
+
+  const values = new Set<string>();
+  for (const rawPath of getPossibleReferencePaths(targetResource.resourcePath)) {
+    addSearchValues(values, targetResource.namespace, rawPath);
+  }
+
+  return {
+    values,
+    matchesText: (text: string) => {
+      for (const value of values) {
+        if (text.includes(value)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+  };
+}
+
+function getAssetResource(uri: vscode.Uri): { namespace: string; resourcePath: string } | null {
+  if (uri.scheme !== "file") {
+    return null;
+  }
+
+  const normalizedPath = path.normalize(uri.fsPath);
+  const segments = normalizedPath.split(path.sep).filter(Boolean);
+  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+
+  if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
+    return null;
+  }
+
+  return {
+    namespace: segments[assetsIndex + 1],
+    resourcePath: segments.slice(assetsIndex + 2).join("/")
+  };
+}
+
+function getPossibleReferencePaths(resourcePath: string): Set<string> {
+  const paths = new Set<string>();
+  const normalizedResourcePath = resourcePath.replaceAll("\\", "/");
+  const pathWithoutExtension = stripExtension(normalizedResourcePath);
+  const targetRoots = [
+    "",
+    "models",
+    "textures",
+    "textures/particle",
+    "textures/entity/chest",
+    "textures/entity/shulker",
+    "textures/gui/sprites/hud/locator_bar_dot",
+    "font",
+    "shaders",
+    "sounds"
+  ];
+
+  for (const targetRoot of targetRoots) {
+    addReferencePathForTargetRoot(paths, normalizedResourcePath, pathWithoutExtension, targetRoot);
+  }
+
+  addEquipmentReferencePath(paths, normalizedResourcePath, pathWithoutExtension);
+  return paths;
+}
+
+function addReferencePathForTargetRoot(
+  paths: Set<string>,
+  resourcePath: string,
+  pathWithoutExtension: string,
+  targetRoot: string
+): void {
+  const normalizedRoot = targetRoot.length > 0 ? `${targetRoot}/` : "";
+  if (targetRoot.length > 0 && !resourcePath.startsWith(normalizedRoot)) {
+    return;
+  }
+
+  const rawPath = targetRoot.length > 0 ? resourcePath.slice(normalizedRoot.length) : resourcePath;
+  const rawPathWithoutExtension = targetRoot.length > 0
+    ? pathWithoutExtension.slice(normalizedRoot.length)
+    : pathWithoutExtension;
+
+  if (rawPathWithoutExtension.length > 0) {
+    paths.add(rawPathWithoutExtension);
+  }
+
+  if (rawPath.length > 0) {
+    paths.add(rawPath);
+  }
+}
+
+function addEquipmentReferencePath(paths: Set<string>, resourcePath: string, pathWithoutExtension: string): void {
+  const equipmentRoot = "textures/entity/equipment/";
+  if (!resourcePath.startsWith(equipmentRoot)) {
+    return;
+  }
+
+  const rawPath = resourcePath.slice(equipmentRoot.length);
+  const rawPathWithoutExtension = pathWithoutExtension.slice(equipmentRoot.length);
+  const slashIndex = rawPath.indexOf("/");
+
+  if (slashIndex < 0) {
+    return;
+  }
+
+  const texturePath = rawPath.slice(slashIndex + 1);
+  const texturePathWithoutExtension = rawPathWithoutExtension.slice(slashIndex + 1);
+
+  if (texturePathWithoutExtension.length > 0) {
+    paths.add(texturePathWithoutExtension);
+  }
+
+  if (texturePath.length > 0) {
+    paths.add(texturePath);
+  }
+}
+
+function addSearchValues(values: Set<string>, namespace: string, rawPath: string): void {
+  const normalizedPath = rawPath.replaceAll("\\", "/");
+  addJsonStringValues(values, `${namespace}:${normalizedPath}`);
+
+  if (namespace === "minecraft") {
+    addJsonStringValues(values, normalizedPath);
+  }
+}
+
+function addJsonStringValues(values: Set<string>, value: string): void {
+  values.add(JSON.stringify(value));
+
+  if (value.includes("/")) {
+    values.add(JSON.stringify(value.replaceAll("/", "\\")));
+    values.add(JSON.stringify(value).replaceAll("/", "\\/"));
+  }
+}
+
+function stripExtension(value: string): string {
+  const extension = path.posix.extname(value);
+  return extension ? value.slice(0, -extension.length) : value;
+}
+
+function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index--) {
+    if (predicate(values[index])) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 function resolveDocumentReferences(
   document: ResourceGraphDocument,
   resolveResourcePath: ResourcePathResolver = generateRedirectPath
@@ -97,11 +270,15 @@ function resolveDocumentReferences(
   }));
 }
 
-async function collectResourceDocuments(): Promise<ResourceGraphDocument[]> {
+async function collectResourceDocuments(search?: IncomingReferenceSearch): Promise<ResourceGraphDocument[]> {
   const documentsByKey = new Map<string, ResourceGraphDocument>();
 
   for (const document of vscode.workspace.textDocuments) {
-    if (document.languageId === "json" && isResourceJsonDocumentPath(document.fileName)) {
+    if (
+      document.languageId === "json" &&
+      isResourceReferenceFileName(document.fileName) &&
+      (!search || search.matchesText(document.getText()))
+    ) {
       documentsByKey.set(resourceUriKey(document.uri), document);
     }
   }
@@ -109,7 +286,7 @@ async function collectResourceDocuments(): Promise<ResourceGraphDocument[]> {
   const fileUris = (await collectResourceJsonUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
   const fileDocuments = await mapLimit(fileUris, 24, async uri => {
     try {
-      return await loadResourceGraphDocument(uri);
+      return await loadResourceGraphDocumentIfMatching(uri, search);
     } catch {
       return null;
     }
@@ -124,12 +301,33 @@ async function collectResourceDocuments(): Promise<ResourceGraphDocument[]> {
   return [...documentsByKey.values()];
 }
 
+async function loadResourceGraphDocumentIfMatching(
+  uri: vscode.Uri,
+  search?: IncomingReferenceSearch
+): Promise<ResourceGraphDocument | null> {
+  const bytes = await vscode.workspace.fs.readFile(uri);
+  const text = Buffer.from(bytes).toString("utf8");
+
+  if (search && !search.matchesText(text)) {
+    return null;
+  }
+
+  return {
+    uri,
+    languageId: "json",
+    fileName: uri.fsPath,
+    getText: () => text
+  };
+}
+
 async function collectResourceJsonUris(): Promise<vscode.Uri[]> {
   const urisByKey = new Map<string, vscode.Uri>();
   const workspaceUris = await vscode.workspace.findFiles("**/assets/**/*.json", "**/node_modules/**");
 
   for (const uri of workspaceUris) {
-    urisByKey.set(resourceUriKey(uri), uri);
+    if (isResourceReferenceFileName(uri.fsPath)) {
+      urisByKey.set(resourceUriKey(uri), uri);
+    }
   }
 
   const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
@@ -187,7 +385,11 @@ async function collectJsonUrisInto(directory: string, uris: vscode.Uri[]): Promi
       if (!shouldSkipDirectory(entry.name)) {
         await collectJsonUrisInto(entryPath, uris);
       }
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".json")) {
+    } else if (
+      entry.isFile() &&
+      entry.name.toLowerCase().endsWith(".json") &&
+      isResourceReferenceFileName(entryPath)
+    ) {
       uris.push(vscode.Uri.file(entryPath));
     }
   }
