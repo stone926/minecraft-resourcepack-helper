@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-06-19
+
+- fix: hide empty model inheritance expanders (16b1137)
+- fix: align item model schemas with wiki specs (5ea1e1e)
+
 ## [2.0.2] - 2026-06-19
 
 - fix: tighten resource pack metadata schemas (d80c791)
