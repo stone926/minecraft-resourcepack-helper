@@ -187,9 +187,7 @@
     },
     "angle": {
       "type": "number",
-      "multipleOf": 22.5,
-      "minimum": -45,
-      "maximum": 45
+      "description": "元素绕单个坐标轴旋转时使用的角度。现代版本不再限制为 22.5 度倍数或 -45 到 45 度范围。"
     },
     "faceType": {
       "description": "指定当方块的指定面被渲染不透明方块覆盖时，父标签所定义的面是否不渲染。指定的面可以为：down, up, north, south, west, 或 east。也就是说，指定渲染时把这个面视为方块的哪一个表面。同时，该面面的亮度计算等同于方块的指定面",
@@ -288,12 +286,27 @@
             },
             "axis": {
               "title": "axis 旋转轴",
-              "description": "旋转的一个且只能为一个轴，可以为x，y或z",
+              "description": "旧式单轴旋转写法使用的旋转轴，可以为 x、y 或 z。",
               "$ref": "#/definitions/axis"
             },
             "angle": {
               "title": "angle 旋转角",
-              "description": "旋转的角度。可以为45到-45度，以22.5度为增量",
+              "description": "旧式单轴旋转写法使用的角度。现代版本不再限制为 22.5 度倍数或 -45 到 45 度范围。",
+              "$ref": "#/definitions/angle"
+            },
+            "x": {
+              "title": "x 旋转角",
+              "description": "现代多轴旋转写法中绕 X 轴旋转的角度。",
+              "$ref": "#/definitions/angle"
+            },
+            "y": {
+              "title": "y 旋转角",
+              "description": "现代多轴旋转写法中绕 Y 轴旋转的角度。",
+              "$ref": "#/definitions/angle"
+            },
+            "z": {
+              "title": "z 旋转角",
+              "description": "现代多轴旋转写法中绕 Z 轴旋转的角度。",
               "$ref": "#/definitions/angle"
             },
             "rescale": {

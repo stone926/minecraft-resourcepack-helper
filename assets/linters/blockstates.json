@@ -103,10 +103,15 @@
           "title": "y旋转轴",
           "description": "模型相对于y轴的旋转，增量90度。"
         },
+        "z": {
+          "$ref": "#/definitions/degree",
+          "title": "z旋转轴",
+          "description": "模型相对于z轴的旋转，增量90度。"
+        },
         "uvlock": {
           "type": "boolean",
           "title": "uvlock贴图锁定",
-          "description": "可为true或false（默认）。设置为true将锁定方块材质的旋转方向。这样在使用上面的 x和 y标签时材质将不会跟着方块一起旋转。"
+          "description": "可为true或false（默认）。设置为true将锁定方块材质的旋转方向。这样在使用上面的 x、y 和 z 标签时材质将不会跟着方块一起旋转。"
         }
       }
     },
@@ -131,10 +136,15 @@
           "title": "y旋转轴",
           "description": "模型相对于y轴的旋转，增量90度。"
         },
+        "z": {
+          "$ref": "#/definitions/degree",
+          "title": "z旋转轴",
+          "description": "模型相对于z轴的旋转，增量90度。"
+        },
         "uvlock": {
           "type": "boolean",
           "title": "uvlock 贴图锁定",
-          "description": "可为true或false（默认）。设置为true将锁定方块材质的旋转方向。这样在使用上面的 x和 y标签时材质将不会跟着方块一起旋转。"
+          "description": "可为true或false（默认）。设置为true将锁定方块材质的旋转方向。这样在使用上面的 x、y 和 z 标签时材质将不会跟着方块一起旋转。"
         },
         "weight": {
           "type": "integer",
