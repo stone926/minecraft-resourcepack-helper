@@ -310,7 +310,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     const parentReferences = this.graphIndex.getReferences(document)
       .filter(reference => reference.reference.relationship === "modelParent");
 
-    const nodes = parentReferences.map(parentReference => {
+    const nodes = await Promise.all(parentReferences.map(parentReference => {
       if (!parentReference.targetUri) {
         return new ResourceGraphNode(
           getReferenceLabel(parentReference.reference),
@@ -320,22 +320,23 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
       }
 
       return this.createParentModelNode(parentReference.targetUri, parentReference.reference, visitedModels);
-    });
+    }));
     nodes.sort(compareNodes);
 
     return nodes;
   }
 
-  private createParentModelNode(
+  private async createParentModelNode(
     uri: vscode.Uri,
     reference: ResourceReference,
     visitedModels: Set<string>
-  ): ResourceGraphNode {
+  ): Promise<ResourceGraphNode> {
     const alreadyVisited = visitedModels.has(resourceUriKey(uri));
+    const hasParentModels = !alreadyVisited && await this.hasParentModelNodes(uri);
 
     return new ResourceGraphNode(
       getReferenceLabel(reference),
-      alreadyVisited ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
+      hasParentModels ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
       {
         description: alreadyVisited ? vscode.l10n.t("already shown") : getResourcePathLabel(uri),
         uri,
@@ -351,11 +352,22 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
           const nextVisitedModels = new Set(visitedModels);
           nextVisitedModels.add(resourceUriKey(uri));
-          return this.createParentModelNodes(document, nextVisitedModels);
+          const nodes = await this.createParentModelNodes(document, nextVisitedModels);
+          return nodes.length > 0 ? nodes : [createEmptyNode(vscode.l10n.t("No parent model"))];
         },
         iconPath: new vscode.ThemeIcon("file-code")
       }
     );
+  }
+
+  private async hasParentModelNodes(uri: vscode.Uri): Promise<boolean> {
+    const document = await this.tryLoadResourceDocument(uri);
+    if (!document) {
+      return false;
+    }
+
+    return this.graphIndex.getReferences(document)
+      .some(reference => reference.reference.relationship === "modelParent");
   }
 
   private async createChildModelNodes(
@@ -364,24 +376,25 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   ): Promise<ResourceGraphNode[]> {
     const childReferences = await this.graphIndex.getChildModelReferences(uri);
     const groupedReferences = groupReferencesBySource(childReferences);
-    const nodes = groupedReferences.map(group =>
+    const nodes = await Promise.all(groupedReferences.map(group =>
       this.createChildModelNode(group.sourceUri, group.references, visitedModels)
-    );
+    ));
     nodes.sort(compareNodes);
 
     return nodes;
   }
 
-  private createChildModelNode(
+  private async createChildModelNode(
     uri: vscode.Uri,
     references: ResolvedResourceReference[],
     visitedModels: Set<string>
-  ): ResourceGraphNode {
+  ): Promise<ResourceGraphNode> {
     const alreadyVisited = visitedModels.has(resourceUriKey(uri));
+    const hasChildModels = !alreadyVisited && (await this.graphIndex.getChildModelReferences(uri)).length > 0;
 
     return new ResourceGraphNode(
       getResourcePathLabel(uri),
-      alreadyVisited ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
+      hasChildModels ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
       {
         description: alreadyVisited
           ? vscode.l10n.t("already shown")
@@ -396,7 +409,8 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
           const nextVisitedModels = new Set(visitedModels);
           nextVisitedModels.add(resourceUriKey(uri));
-          return this.createChildModelNodes(uri, nextVisitedModels);
+          const nodes = await this.createChildModelNodes(uri, nextVisitedModels);
+          return nodes.length > 0 ? nodes : [createEmptyNode(vscode.l10n.t("No child models"))];
         },
         iconPath: new vscode.ThemeIcon("file-code")
       }

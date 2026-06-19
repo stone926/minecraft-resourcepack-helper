@@ -27,9 +27,11 @@ interface IncomingReferenceSearch {
 
 export class ResourceGraphIndex {
   private readonly incomingReferencesByTarget = new Map<string, Promise<ResolvedResourceReference[]>>();
+  private childModelReferencesByParent: Promise<ReadonlyMap<string, ResolvedResourceReference[]>> | null = null;
 
   invalidate(): void {
     this.incomingReferencesByTarget.clear();
+    this.childModelReferencesByParent = null;
   }
 
   getReferences(document: ResourceGraphDocument): ResolvedResourceReference[] {
@@ -52,11 +54,47 @@ export class ResourceGraphIndex {
   }
 
   async getChildModelReferences(modelUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
-    const incomingReferences = await this.getIncomingReferences(modelUri);
+    const referencesByParent = await this.getChildModelReferencesByParent();
 
-    return incomingReferences.filter(reference =>
-      reference.reference.relationship === "modelParent" && isModelDocumentPath(reference.sourceUri.fsPath)
-    );
+    return referencesByParent.get(resourceUriKey(modelUri)) ?? [];
+  }
+
+  private getChildModelReferencesByParent(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
+    if (this.childModelReferencesByParent) {
+      return this.childModelReferencesByParent;
+    }
+
+    this.childModelReferencesByParent = this.collectChildModelReferencesByParent().catch(error => {
+      this.childModelReferencesByParent = null;
+      throw error;
+    });
+    return this.childModelReferencesByParent;
+  }
+
+  private async collectChildModelReferencesByParent(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
+    const documents = await collectModelDocuments();
+    const resolveResourcePath = createResourcePathResolver();
+    const references = uniqueResolvedReferences(documents.flatMap(document =>
+      resolveDocumentReferences(document, resolveResourcePath)
+        .filter(reference => reference.reference.relationship === "modelParent" && reference.targetUri !== null)
+    ));
+    const referencesByParent = new Map<string, ResolvedResourceReference[]>();
+
+    for (const reference of references) {
+      if (!reference.targetUri) {
+        continue;
+      }
+
+      const targetKey = resourceUriKey(reference.targetUri);
+      const targetReferences = referencesByParent.get(targetKey);
+      if (targetReferences) {
+        targetReferences.push(reference);
+      } else {
+        referencesByParent.set(targetKey, [reference]);
+      }
+    }
+
+    return referencesByParent;
   }
 
   private async collectIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
@@ -313,6 +351,33 @@ async function collectResourceDocuments(search?: IncomingReferenceSearch): Promi
   return [...documentsByKey.values()];
 }
 
+async function collectModelDocuments(): Promise<ResourceGraphDocument[]> {
+  const documentsByKey = new Map<string, ResourceGraphDocument>();
+
+  for (const document of vscode.workspace.textDocuments) {
+    if (isModelDocumentPath(document.fileName)) {
+      documentsByKey.set(resourceUriKey(document.uri), document);
+    }
+  }
+
+  const fileUris = (await collectModelDocumentUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
+  const fileDocuments = await mapLimit(fileUris, 24, async uri => {
+    try {
+      return await loadResourceGraphDocument(uri);
+    } catch {
+      return null;
+    }
+  });
+
+  for (const document of fileDocuments) {
+    if (document) {
+      documentsByKey.set(resourceUriKey(document.uri), document);
+    }
+  }
+
+  return [...documentsByKey.values()];
+}
+
 async function loadResourceGraphDocumentIfMatching(
   uri: vscode.Uri,
   search?: IncomingReferenceSearch
@@ -352,6 +417,31 @@ async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
     for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
       for (const uri of await collectResourceReferenceUrisInRoot(root)) {
         urisByKey.set(resourceUriKey(uri), uri);
+      }
+    }
+  }
+
+  return [...urisByKey.values()];
+}
+
+async function collectModelDocumentUris(): Promise<vscode.Uri[]> {
+  const urisByKey = new Map<string, vscode.Uri>();
+  const workspaceUris = [
+    ...(await vscode.workspace.findFiles("**/assets/*/models/block/**/*.json", "**/node_modules/**")),
+    ...(await vscode.workspace.findFiles("**/assets/*/models/item/**/*.json", "**/node_modules/**"))
+  ];
+
+  for (const uri of workspaceUris) {
+    urisByKey.set(resourceUriKey(uri), uri);
+  }
+
+  const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
+  if (defaultAssetsPath) {
+    for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
+      for (const uri of await collectResourceReferenceUrisInRoot(root)) {
+        if (isModelDocumentPath(uri.fsPath)) {
+          urisByKey.set(resourceUriKey(uri), uri);
+        }
       }
     }
   }
