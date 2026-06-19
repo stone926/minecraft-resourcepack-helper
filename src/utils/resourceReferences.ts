@@ -18,12 +18,61 @@ export type ResourceReferenceRelationship = "modelParent";
 export interface ResourceReferenceDocument {
   languageId: string;
   fileName: string;
+  version?: number;
   getText(): string;
 }
+
+type ResourceReferenceDocumentKind =
+  | "blockstates"
+  | "modelsBlock"
+  | "modelsItem"
+  | "particles"
+  | "items"
+  | "atlases"
+  | "equipment"
+  | "font"
+  | "waypointStyle"
+  | "postEffect"
+  | "sounds";
+
+interface CachedResourceReferences {
+  fileName: string;
+  version: number;
+  references: ResourceReference[];
+}
+
+const resourceReferenceDocumentPatterns: Array<{
+  kind: ResourceReferenceDocumentKind;
+  pattern: RegExp;
+}> = [
+  { kind: "blockstates", pattern: /[\\/]blockstates[\\/].+\.json$/i },
+  { kind: "modelsBlock", pattern: /[\\/]models[\\/]block[\\/].+\.json$/i },
+  { kind: "modelsItem", pattern: /[\\/]models[\\/]item[\\/].+\.json$/i },
+  { kind: "particles", pattern: /[\\/]particles[\\/].+\.json$/i },
+  { kind: "items", pattern: /[\\/]items[\\/].+\.json$/i },
+  { kind: "atlases", pattern: /[\\/]atlases[\\/].+\.json$/i },
+  { kind: "equipment", pattern: /[\\/]equipment[\\/].+\.json$/i },
+  { kind: "font", pattern: /[\\/]font[\\/].+\.json$/i },
+  { kind: "waypointStyle", pattern: /[\\/]waypoint_style[\\/].+\.json$/i },
+  { kind: "postEffect", pattern: /[\\/]post_effect[\\/].+\.json$/i },
+  { kind: "sounds", pattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i }
+];
+
+const resourceReferenceCache = new WeakMap<ResourceReferenceDocument, CachedResourceReferences>();
 
 export function getResourceReferences(document: ResourceReferenceDocument): ResourceReference[] {
   if (document.languageId !== "json") {
     return [];
+  }
+
+  const documentKind = getResourceReferenceDocumentKind(document.fileName);
+  if (!documentKind) {
+    return [];
+  }
+
+  const cachedReferences = getCachedResourceReferences(document);
+  if (cachedReferences) {
+    return cachedReferences;
   }
 
   const ast = parseJsonAst(document.getText());
@@ -31,51 +80,9 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return [];
   }
 
-  if (isFileInFolder(document.fileName, "blockstates")) {
-    return getBlockstateReferences(ast);
-  }
-
-  if (isFileInNestedFolder(document.fileName, "models", "block")) {
-    return getModelReferences(ast, "models/block");
-  }
-
-  if (isFileInNestedFolder(document.fileName, "models", "item")) {
-    return getItemModelReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "particles")) {
-    return getParticleReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "items")) {
-    return getItemDefinitionReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "atlases")) {
-    return getAtlasReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "equipment")) {
-    return getEquipmentReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "font")) {
-    return getFontReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "waypoint_style")) {
-    return getWaypointStyleReferences(ast);
-  }
-
-  if (isFileInFolder(document.fileName, "post_effect")) {
-    return getPostEffectReferences(ast);
-  }
-
-  if (isSoundsDefinitionFile(document.fileName)) {
-    return getSoundReferences(ast);
-  }
-
-  return [];
+  const references = getReferencesForDocumentKind(ast, documentKind);
+  setCachedResourceReferences(document, references);
+  return references;
 }
 
 export function findResourceReferenceAtPosition(document: ResourceReferenceDocument, position: Position): ResourceReference | null {
@@ -83,6 +90,54 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
   const character = position.character + 1;
 
   return getResourceReferences(document).find(reference => isInArea(line, character, reference.valueNode?.loc)) ?? null;
+}
+
+export function isResourceReferenceDocument(document: ResourceReferenceDocument): boolean {
+  return document.languageId === "json" && getResourceReferenceDocumentKind(document.fileName) !== null;
+}
+
+function getReferencesForDocumentKind(ast: JsonDocumentNode, documentKind: ResourceReferenceDocumentKind): ResourceReference[] {
+  if (documentKind === "blockstates") {
+    return getBlockstateReferences(ast);
+  }
+
+  if (documentKind === "modelsBlock") {
+    return getModelReferences(ast, "models/block");
+  }
+
+  if (documentKind === "modelsItem") {
+    return getItemModelReferences(ast);
+  }
+
+  if (documentKind === "particles") {
+    return getParticleReferences(ast);
+  }
+
+  if (documentKind === "items") {
+    return getItemDefinitionReferences(ast);
+  }
+
+  if (documentKind === "atlases") {
+    return getAtlasReferences(ast);
+  }
+
+  if (documentKind === "equipment") {
+    return getEquipmentReferences(ast);
+  }
+
+  if (documentKind === "font") {
+    return getFontReferences(ast);
+  }
+
+  if (documentKind === "waypointStyle") {
+    return getWaypointStyleReferences(ast);
+  }
+
+  if (documentKind === "postEffect") {
+    return getPostEffectReferences(ast);
+  }
+
+  return getSoundReferences(ast);
 }
 
 function getBlockstateReferences(ast: JsonDocumentNode): ResourceReference[] {
@@ -390,18 +445,35 @@ function getObjectString(node: JsonAstNode, name: string): string | null {
   return stringValue(member?.value) ?? null;
 }
 
-function isFileInFolder(fileName: string, folder: string): boolean {
-  return new RegExp(`[\\\\/]${escapeRegExp(folder)}[\\\\/].+\\.json$`, "i").test(fileName);
+function getCachedResourceReferences(document: ResourceReferenceDocument): ResourceReference[] | null {
+  if (typeof document.version !== "number") {
+    return null;
+  }
+
+  const cached = resourceReferenceCache.get(document);
+  if (!cached || cached.fileName !== document.fileName || cached.version !== document.version) {
+    return null;
+  }
+
+  return cached.references;
 }
 
-function isFileInNestedFolder(fileName: string, firstFolder: string, secondFolder: string): boolean {
-  return new RegExp(`[\\\\/]${escapeRegExp(firstFolder)}[\\\\/]${escapeRegExp(secondFolder)}[\\\\/].+\\.json$`, "i").test(fileName);
+function setCachedResourceReferences(document: ResourceReferenceDocument, references: ResourceReference[]): void {
+  if (typeof document.version === "number") {
+    resourceReferenceCache.set(document, {
+      fileName: document.fileName,
+      version: document.version,
+      references
+    });
+  }
 }
 
-function isSoundsDefinitionFile(fileName: string): boolean {
-  return /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i.test(fileName);
-}
+function getResourceReferenceDocumentKind(fileName: string): ResourceReferenceDocumentKind | null {
+  for (const { kind, pattern } of resourceReferenceDocumentPatterns) {
+    if (pattern.test(fileName)) {
+      return kind;
+    }
+  }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return null;
 }

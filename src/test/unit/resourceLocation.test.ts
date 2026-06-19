@@ -23,6 +23,14 @@ describe("resource location utilities", () => {
 
     assert.strictEqual(result.namespace, "minecraft");
     assert.strictEqual(result.resourcePath, "block");
+    assert.strictEqual(result.isValid, true);
+  });
+
+  it("rejects resource locations with parent directory traversal", () => {
+    const result = parseResourceLocation("example:../../outside", "json");
+
+    assert.strictEqual(result.namespace, "example");
+    assert.strictEqual(result.isValid, false);
   });
 
   it("finds assets root from nested source folders", () => {

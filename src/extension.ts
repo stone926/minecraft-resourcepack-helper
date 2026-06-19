@@ -9,6 +9,7 @@ import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
+import { isResourceJsonDocumentPath } from './utils/resourceGraph';
 
 const resourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/blockstates/*.json" },
@@ -55,6 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
 
   const resourceGraphTreeProvider = new ResourceGraphTreeProvider();
+  context.subscriptions.push(resourceGraphTreeProvider);
   context.subscriptions.push(vscode.window.createTreeView("McResHelper.resourceGraph", {
     treeDataProvider: resourceGraphTreeProvider,
     showCollapseAll: true
@@ -94,8 +96,16 @@ export function activate(context: vscode.ExtensionContext) {
       applyDecoration(activeEditor);
     }
     refreshResourceDiagnostics(event.document, resourceDiagnostics);
-    resourceGraphTreeProvider.refresh();
+    if (isResourceJsonDocumentPath(event.document.fileName)) {
+      resourceGraphTreeProvider.refreshSoon();
+    }
   }, null, context.subscriptions);
+
+  const resourceJsonWatcher = vscode.workspace.createFileSystemWatcher("**/assets/**/*.json");
+  context.subscriptions.push(resourceJsonWatcher);
+  resourceJsonWatcher.onDidCreate(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+  resourceJsonWatcher.onDidChange(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+  resourceJsonWatcher.onDidDelete(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
 
   vscode.workspace.onDidOpenTextDocument(document => {
     refreshResourceDiagnostics(document, resourceDiagnostics);

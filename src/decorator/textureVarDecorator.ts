@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { arrayElements, JsonAstNode, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
-import { hasTextureVariableDefinition, modelSourceForFile } from "../utils/modelTexture";
+import { createTextureVariableDefinitionResolver, modelSourceForFile } from "../utils/modelTexture";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
 let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
@@ -27,6 +27,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
       .filter((name): name is string => typeof name === "string" && name !== "particle")
   );
   const ranges: vscode.Range[] = [];
+  const textureVariableResolver = createTextureVariableDefinitionResolver(ast, editor.document, modelSource);
 
   for (const item of objectMembers(ast.body)) {
     if (memberName(item) !== "elements") {
@@ -42,7 +43,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
           textureEntry &&
           textureReference?.startsWith("#") &&
           !textureDefinitions.has(textureReference.slice(1)) &&
-          !hasTextureVariableDefinition(ast, editor.document, textureReference, modelSource)
+          !textureVariableResolver.has(textureReference)
         ) {
           pushRange(ranges, textureEntry.value);
         }
@@ -55,7 +56,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
     if (
       value?.startsWith("#") &&
       !textureDefinitions.has(value.slice(1)) &&
-      !hasTextureVariableDefinition(ast, editor.document, value, modelSource)
+      !textureVariableResolver.has(value)
     ) {
       pushRange(ranges, texture.value);
     }

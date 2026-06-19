@@ -1,22 +1,23 @@
 import * as vscode from "vscode";
-import { generateRedirectPath } from "../utils/pathGenerator";
-import { getResourceReferences } from "../utils/resourceReferences";
+import { createResourcePathResolver } from "../utils/pathGenerator";
+import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
 
 export function refreshResourceDiagnostics(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
-  if (document.languageId !== "json") {
+  if (!isResourceReferenceDocument(document)) {
     collection.delete(document.uri);
     return;
   }
 
   const diagnostics: vscode.Diagnostic[] = [];
+  const resolveResourcePath = createResourcePathResolver();
 
   for (const reference of getResourceReferences(document)) {
     if (reference.value.length === 0 || reference.value.startsWith("#")) {
       continue;
     }
 
-    const resolvedUri = generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension);
+    const resolvedUri = resolveResourcePath(reference.value, document, reference.target, reference.source, reference.extension);
     const range = rangeInsideString(reference.valueNode);
     if (!resolvedUri && range) {
       diagnostics.push(new vscode.Diagnostic(

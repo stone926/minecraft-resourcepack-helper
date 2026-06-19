@@ -7,8 +7,55 @@ interface ResourcePathDocument {
   fileName: string;
 }
 
-export function generateRedirectPath(resourcePath: string, document: ResourcePathDocument, target: string, source: string, targetFileExtension: string | null): Uri | null {
+export type ResourcePathResolver = (
+  resourcePath: string,
+  document: ResourcePathDocument,
+  target: string,
+  source: string,
+  targetFileExtension: string | null
+) => Uri | null;
+
+interface ResourcePathResolverOptions {
+  pathExists?: (filePath: string) => boolean;
+}
+
+export function createResourcePathResolver(): ResourcePathResolver {
+  const pathExistsCache = new Map<string, boolean>();
+
+  return (resourcePath, document, target, source, targetFileExtension) => generateRedirectPath(
+    resourcePath,
+    document,
+    target,
+    source,
+    targetFileExtension,
+    {
+      pathExists: filePath => {
+        const cached = pathExistsCache.get(filePath);
+        if (cached !== undefined) {
+          return cached;
+        }
+
+        const exists = fs.existsSync(filePath);
+        pathExistsCache.set(filePath, exists);
+        return exists;
+      }
+    }
+  );
+}
+
+export function generateRedirectPath(
+  resourcePath: string,
+  document: ResourcePathDocument,
+  target: string,
+  source: string,
+  targetFileExtension: string | null,
+  options: ResourcePathResolverOptions = {}
+): Uri | null {
   const location = parseResourceLocation(resourcePath, targetFileExtension);
+  if (!location.isValid) {
+    return null;
+  }
+
   const currentAssetsRoot = findAssetsRoot(document.fileName, source);
   const candidates: string[] = [];
   const configuredDefaultPath = workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath");
@@ -17,7 +64,7 @@ export function generateRedirectPath(resourcePath: string, document: ResourcePat
   }
 
   for (const candidate of unique(candidates)) {
-    if (fs.existsSync(candidate)) {
+    if ((options.pathExists ?? fs.existsSync)(candidate)) {
       return Uri.file(candidate);
     }
   }

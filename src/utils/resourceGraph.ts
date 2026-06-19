@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { generateRedirectPath } from "./pathGenerator";
+import { createResourcePathResolver, generateRedirectPath, type ResourcePathResolver } from "./pathGenerator";
 import { getResourceReferences, ResourceReference, ResourceReferenceDocument } from "./resourceReferences";
 
 export interface ResourceGraphDocument extends ResourceReferenceDocument {
@@ -23,7 +23,7 @@ export class ResourceGraphIndex {
   }
 
   getReferences(document: ResourceGraphDocument): ResolvedResourceReference[] {
-    return uniqueResolvedReferences(resolveDocumentReferences(document));
+    return uniqueResolvedReferences(resolveDocumentReferences(document, createResourcePathResolver()));
   }
 
   async getIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
@@ -49,7 +49,8 @@ export class ResourceGraphIndex {
     }
 
     const documents = await collectResourceDocuments();
-    const references = documents.flatMap(document => resolveDocumentReferences(document));
+    const resolveResourcePath = createResourcePathResolver();
+    const references = documents.flatMap(document => resolveDocumentReferences(document, resolveResourcePath));
     this.references = uniqueResolvedReferences(references);
 
     return this.references;
@@ -83,13 +84,16 @@ export function resourceUriKey(uri: vscode.Uri): string {
   return process.platform === "win32" ? key.toLowerCase() : key;
 }
 
-function resolveDocumentReferences(document: ResourceGraphDocument): ResolvedResourceReference[] {
+function resolveDocumentReferences(
+  document: ResourceGraphDocument,
+  resolveResourcePath: ResourcePathResolver = generateRedirectPath
+): ResolvedResourceReference[] {
   return getResourceReferences(document).map(reference => ({
     reference,
     sourceUri: document.uri,
     targetUri: reference.value.startsWith("#")
       ? null
-      : generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension)
+      : resolveResourcePath(reference.value, document, reference.target, reference.source, reference.extension)
   }));
 }
 
@@ -193,7 +197,7 @@ function shouldSkipDirectory(name: string): boolean {
   return name === ".git" || name === "node_modules" || name === "out";
 }
 
-function isResourceJsonDocumentPath(fileName: string): boolean {
+export function isResourceJsonDocumentPath(fileName: string): boolean {
   return /[\\/]assets[\\/][^\\/]+[\\/].+\.json$/i.test(fileName);
 }
 

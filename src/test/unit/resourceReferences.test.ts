@@ -3,6 +3,18 @@ import * as path from "node:path";
 import { getResourceReferences, ResourceReferenceDocument } from "../../utils/resourceReferences";
 
 describe("resource references", () => {
+  it("skips unrelated JSON documents without reading their contents", () => {
+    const document: ResourceReferenceDocument = {
+      languageId: "json",
+      fileName: path.join("pack", "package.json"),
+      getText: () => {
+        throw new Error("Unrelated JSON should not be parsed");
+      }
+    };
+
+    assert.deepStrictEqual(getResourceReferences(document), []);
+  });
+
   it("extracts atlas texture file and directory references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "atlases", "blocks.json"),

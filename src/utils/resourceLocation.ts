@@ -3,6 +3,7 @@ import * as path from "node:path";
 export interface ResourceLocation {
   namespace: string;
   resourcePath: string;
+  isValid: boolean;
 }
 
 const pathPartSeparator = /[\\/]+/;
@@ -12,7 +13,9 @@ export function parseResourceLocation(input: string, targetFileExtension: string
   const hasNamespace = rawPathParts.length > 0;
   const namespace = hasNamespace && rawNamespace.trim() ? rawNamespace.trim() : "minecraft";
   const locationPath = (hasNamespace ? rawPathParts.join(":") : rawNamespace).trim();
-  const normalizedSegments = locationPath.split(pathPartSeparator).filter(segment => segment.length > 0 && segment !== ".");
+  const rawSegments = locationPath.split(pathPartSeparator);
+  const normalizedSegments = rawSegments.filter(segment => segment.length > 0 && segment !== ".");
+  const isValid = normalizedSegments.every(segment => segment !== "..");
   let normalizedPath = normalizedSegments.join(path.sep);
 
   if (targetFileExtension && !normalizedPath.endsWith(`.${targetFileExtension}`)) {
@@ -21,7 +24,8 @@ export function parseResourceLocation(input: string, targetFileExtension: string
 
   return {
     namespace,
-    resourcePath: normalizedPath
+    resourcePath: normalizedPath,
+    isValid
   };
 }
 

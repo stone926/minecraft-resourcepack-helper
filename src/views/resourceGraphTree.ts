@@ -52,11 +52,27 @@ class ResourceGraphNode extends vscode.TreeItem {
 export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<ResourceGraphNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ResourceGraphNode | undefined | null | void>();
   private readonly graphIndex = new ResourceGraphIndex();
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   public readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
-  refresh() {
+  refresh(): void {
+    this.clearRefreshTimer();
     this.graphIndex.invalidate();
     this.onDidChangeTreeDataEmitter.fire();
+  }
+
+  refreshSoon(delay = 250): void {
+    this.graphIndex.invalidate();
+    this.clearRefreshTimer();
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      this.onDidChangeTreeDataEmitter.fire();
+    }, delay);
+  }
+
+  dispose(): void {
+    this.clearRefreshTimer();
+    this.onDidChangeTreeDataEmitter.dispose();
   }
 
   getTreeItem(element: ResourceGraphNode): vscode.TreeItem {
@@ -402,6 +418,13 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
       return await loadResourceGraphDocument(uri);
     } catch {
       return null;
+    }
+  }
+
+  private clearRefreshTimer(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
     }
   }
 }
