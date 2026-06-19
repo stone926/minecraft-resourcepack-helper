@@ -60,7 +60,8 @@
 		},
 		"overrides": {
 			"title": "overrides",
-			"description": "指定基于物品情况标签而覆写不同模型的情况。所有情况都按从上到下的顺序进行检测，直到有完全匹配的谓词。但是，如果已经被覆写过一次，则会忽略覆写，这可以避免在覆写到同一模型时出现递归",
+			"description": "指定基于物品情况标签而覆写不同模型的情况。Java版1.21.4起已由 assets/<namespace>/items/*.json 中的物品模型映射替代。",
+			"deprecationMessage": "models/item overrides 在 Java版1.21.4+ 已弃用，请使用 items 目录中的物品模型映射。",
 			"type": "array",
 			"minimum": 1,
 			"items": {
@@ -128,7 +129,8 @@
 							"lefthanded": {
 								"title": "lefthanded",
 								"description": "指定被左手玩家使用的模型，会影响其在物品栏的显示样式，以及玩家拿起或穿在身上时的视觉样式",
-								"type": "string"
+								"type": "number",
+								"enum": [0, 1]
 							},
 							"pull": {
 								"title": "pull 拉伸",

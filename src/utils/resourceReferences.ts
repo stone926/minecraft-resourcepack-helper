@@ -242,7 +242,10 @@ function getParticleReferences(ast: JsonDocumentNode): ResourceReference[] {
 
 function getItemDefinitionReferences(ast: JsonDocumentNode): ResourceReference[] {
   const references: ResourceReference[] = [];
-  collectItemModelReferences(ast.body, references);
+  const model = getObjectMemberValue(ast.body, "model");
+  if (model) {
+    collectItemModelReferences(model, references);
+  }
   return references;
 }
 
@@ -468,6 +471,97 @@ function pushModelTextureReference(references: ResourceReference[], valueNode: J
 }
 
 function collectItemModelReferences(node: JsonAstNode, references: ResourceReference[]) {
+  const type = getMinecraftType(node);
+
+  if (type === "model") {
+    pushItemModelReference(references, node, "model");
+    return;
+  }
+
+  if (type === "composite") {
+    collectItemModelArrayMember(node, "models", references);
+    return;
+  }
+
+  if (type === "condition") {
+    collectNamedItemModelMembers(node, new Set(["on_true", "on_false"]), references);
+    return;
+  }
+
+  if (type === "select") {
+    collectSelectCaseModelReferences(node, references);
+    collectItemModelMember(node, "fallback", references);
+    return;
+  }
+
+  if (type === "range_dispatch") {
+    collectRangeEntryModelReferences(node, references);
+    collectItemModelMember(node, "fallback", references);
+    return;
+  }
+
+  if (type === "special") {
+    pushItemModelReference(references, node, "base");
+    collectItemSpecialModelReferences(getObjectMemberValue(node, "model"), references);
+    return;
+  }
+
+  if (type === "empty" || type === "bundle/selected_item") {
+    return;
+  }
+
+  collectLooseItemModelReferences(node, references);
+}
+
+function collectItemModelMember(node: JsonAstNode, name: string, references: ResourceReference[]) {
+  const memberValue = getObjectMemberValue(node, name);
+  if (memberValue) {
+    collectItemModelReferences(memberValue, references);
+  }
+}
+
+function collectItemModelArrayMember(node: JsonAstNode, name: string, references: ResourceReference[]) {
+  const memberValue = getObjectMemberValue(node, name);
+  for (const itemModel of arrayElements(memberValue)) {
+    collectItemModelReferences(itemModel, references);
+  }
+}
+
+function collectNamedItemModelMembers(node: JsonAstNode, names: Set<string>, references: ResourceReference[]) {
+  for (const member of objectMembers(node)) {
+    const name = memberName(member);
+    if (name && names.has(name)) {
+      collectItemModelReferences(member.value, references);
+    }
+  }
+}
+
+function collectSelectCaseModelReferences(node: JsonAstNode, references: ResourceReference[]) {
+  const cases = getObjectMemberValue(node, "cases");
+  for (const selectCase of arrayElements(cases)) {
+    collectItemModelMember(selectCase, "model", references);
+  }
+}
+
+function collectRangeEntryModelReferences(node: JsonAstNode, references: ResourceReference[]) {
+  const entries = getObjectMemberValue(node, "entries");
+  for (const rangeEntry of arrayElements(entries)) {
+    collectItemModelMember(rangeEntry, "model", references);
+  }
+}
+
+function collectItemSpecialModelReferences(node: JsonAstNode | null, references: ResourceReference[]) {
+  if (!node) {
+    return;
+  }
+
+  const texture = getObjectMemberValue(node, "texture");
+  if (texture) {
+    pushItemSpecialTextureReference(references, node, texture);
+  }
+}
+
+function collectLooseItemModelReferences(node: JsonAstNode, references: ResourceReference[]) {
   for (const member of objectMembers(node)) {
     const name = memberName(member);
     if (name === "model" || name === "base") {
@@ -479,26 +573,27 @@ function collectItemModelReferences(node: JsonAstNode, references: ResourceRefer
   }
 
   for (const element of arrayElements(node)) {
-    collectItemModelReferences(element, references);
+    collectLooseItemModelReferences(element, references);
   }
 }
 
 function pushItemSpecialTextureReference(references: ResourceReference[], node: JsonAstNode, valueNode: JsonAstNode) {
-  const type = getObjectString(node, "type");
-  if (type === "minecraft:chest" || type === "chest") {
+  const type = getMinecraftType(node);
+  if (type === "chest") {
     pushReference(references, valueNode, "textures/entity/chest", "items", "png", "texture");
-  } else if (type === "minecraft:bed" || type === "bed") {
-    pushReference(references, valueNode, "textures/entity/bed", "items", "png", "texture");
-  } else if (type === "minecraft:shulker_box" || type === "shulker_box") {
+  } else if (type === "shulker_box") {
     pushReference(references, valueNode, "textures/entity/shulker", "items", "png", "texture");
-  } else if (type === "minecraft:standing_sign" || type === "standing_sign") {
-    pushReference(references, valueNode, "textures/entity/signs", "items", "png", "texture");
-  } else if (type === "minecraft:hanging_sign" || type === "hanging_sign") {
-    pushReference(references, valueNode, "textures/entity/signs/hanging", "items", "png", "texture");
-  } else if (type === "minecraft:copper_golem_statue" || type === "copper_golem_statue") {
+  } else if (type === "copper_golem_statue") {
     pushReference(references, valueNode, "", "items", "png", "texture");
-  } else if (type === "minecraft:head" || type === "head") {
+  } else if (type === "head") {
     pushReference(references, valueNode, "textures/entity", "items", "png", "texture");
+  }
+}
+
+function pushItemModelReference(references: ResourceReference[], node: JsonAstNode, name: string): void {
+  const memberValue = getObjectMemberValue(node, name);
+  if (memberValue) {
+    pushReference(references, memberValue, "models", "items", "json", "model");
   }
 }
 
@@ -530,8 +625,20 @@ function pushReference(
 }
 
 function getObjectString(node: JsonAstNode, name: string): string | null {
-  const member = objectMembers(node).find(item => memberName(item) === name);
-  return stringValue(member?.value) ?? null;
+  return stringValue(getObjectMemberValue(node, name)) ?? null;
+}
+
+function getObjectMemberValue(node: JsonAstNode, name: string): JsonAstNode | null {
+  return objectMembers(node).find(item => memberName(item) === name)?.value ?? null;
+}
+
+function getMinecraftType(node: JsonAstNode): string | null {
+  const type = getObjectString(node, "type");
+  if (!type) {
+    return null;
+  }
+
+  return type.startsWith("minecraft:") ? type.slice("minecraft:".length) : type;
 }
 
 function getCachedResourceReferences(document: ResourceReferenceDocument): ResourceReference[] | null {

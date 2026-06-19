@@ -363,11 +363,21 @@ describe("resource references", () => {
             {
               model: {
                 type: "minecraft:special",
-                base: "minecraft:item/red_bed",
+                base: "minecraft:item/bell",
                 model: {
-                  type: "minecraft:bed",
-                  part: "head",
-                  texture: "minecraft:red"
+                  type: "minecraft:bell"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/enchanted_book",
+                model: {
+                  type: "minecraft:book",
+                  ["open_angle"]: 90,
+                  page1: 0.25,
+                  page2: 0.75
                 }
               }
             },
@@ -395,22 +405,28 @@ describe("resource references", () => {
             {
               model: {
                 type: "minecraft:special",
-                base: "minecraft:item/oak_sign",
+                base: "minecraft:item/conduit",
                 model: {
-                  type: "minecraft:standing_sign",
-                  ["wood_type"]: "oak",
-                  texture: "minecraft:custom_oak"
+                  type: "minecraft:conduit"
                 }
               }
             },
             {
               model: {
                 type: "minecraft:special",
-                base: "minecraft:item/oak_hanging_sign",
+                base: "minecraft:item/end_portal",
                 model: {
-                  type: "minecraft:hanging_sign",
-                  attachment: "ceiling",
-                  texture: "minecraft:custom_hanging"
+                  type: "minecraft:end_cube",
+                  effect: "portal"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
+                base: "minecraft:item/player_head",
+                model: {
+                  type: "minecraft:player_head"
                 }
               }
             },
@@ -420,6 +436,7 @@ describe("resource references", () => {
                 base: "minecraft:item/template_copper_golem_statue",
                 model: {
                   type: "minecraft:copper_golem_statue",
+                  pose: "standing",
                   texture: "minecraft:textures/entity/copper_golem/copper_golem.png"
                 }
               }
@@ -436,18 +453,68 @@ describe("resource references", () => {
       [
         ["model", "minecraft:item/chest", "models", "items", "json"],
         ["texture", "minecraft:christmas", "textures/entity/chest", "items", "png"],
-        ["model", "minecraft:item/red_bed", "models", "items", "json"],
-        ["texture", "minecraft:red", "textures/entity/bed", "items", "png"],
+        ["model", "minecraft:item/bell", "models", "items", "json"],
+        ["model", "minecraft:item/enchanted_book", "models", "items", "json"],
         ["model", "minecraft:item/black_shulker_box", "models", "items", "json"],
         ["texture", "minecraft:shulker_black", "textures/entity/shulker", "items", "png"],
         ["model", "minecraft:item/player_head", "models", "items", "json"],
         ["texture", "minecraft:skins/custom", "textures/entity", "items", "png"],
-        ["model", "minecraft:item/oak_sign", "models", "items", "json"],
-        ["texture", "minecraft:custom_oak", "textures/entity/signs", "items", "png"],
-        ["model", "minecraft:item/oak_hanging_sign", "models", "items", "json"],
-        ["texture", "minecraft:custom_hanging", "textures/entity/signs/hanging", "items", "png"],
+        ["model", "minecraft:item/conduit", "models", "items", "json"],
+        ["model", "minecraft:item/end_portal", "models", "items", "json"],
+        ["model", "minecraft:item/player_head", "models", "items", "json"],
         ["model", "minecraft:item/template_copper_golem_statue", "models", "items", "json"],
         ["texture", "minecraft:textures/entity/copper_golem/copper_golem.png", "", "items", "png"]
+      ]
+    );
+  });
+
+  it("does not resolve removed item special model textures", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "items", "removed_special.json"),
+      {
+        model: {
+          type: "minecraft:composite",
+          models: [
+            {
+              type: "minecraft:special",
+              base: "minecraft:item/red_bed",
+              model: {
+                type: "minecraft:bed",
+                part: "head",
+                texture: "minecraft:red"
+              }
+            },
+            {
+              type: "minecraft:special",
+              base: "minecraft:item/oak_sign",
+              model: {
+                type: "minecraft:standing_sign",
+                ["wood_type"]: "oak",
+                texture: "minecraft:custom_oak"
+              }
+            },
+            {
+              type: "minecraft:special",
+              base: "minecraft:item/oak_hanging_sign",
+              model: {
+                type: "minecraft:hanging_sign",
+                attachment: "ceiling",
+                texture: "minecraft:custom_hanging"
+              }
+            }
+          ]
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:item/red_bed", "models", "items", "json"],
+        ["model", "minecraft:item/oak_sign", "models", "items", "json"],
+        ["model", "minecraft:item/oak_hanging_sign", "models", "items", "json"]
       ]
     );
   });

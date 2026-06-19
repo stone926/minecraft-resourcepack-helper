@@ -170,6 +170,121 @@ describe("schema assets", () => {
     const propertyNames = getObjectAt(regionalCompliances, ["propertyNames"]);
     assert.strictEqual(propertyNames.pattern, "^[A-Z]{3}$");
   });
+
+  it("constrains standalone animation texture metadata", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "animation.mcmeta.json"));
+    const animationProperties = getObjectAt(schema, ["properties", "animation", "properties"]);
+
+    const frametime = getObjectAt(animationProperties, ["frametime"]);
+    assert.strictEqual(frametime.minimum, 1);
+
+    const frames = getObjectAt(animationProperties, ["frames", "items"]);
+    const frameShapes = getArrayProperty(frames, "oneOf");
+    const frameIndex = assertJsonObjectValue(frameShapes[0], "frames.items.oneOf[0]");
+    assert.strictEqual(frameIndex.minimum, 0);
+
+    const frameObject = assertJsonObjectValue(frameShapes[1], "frames.items.oneOf[1]");
+    const frameObjectProperties = getObjectAt(frameObject, ["properties"]);
+    assert.strictEqual(getObjectAt(frameObjectProperties, ["index"]).minimum, 0);
+    assert.strictEqual(getObjectAt(frameObjectProperties, ["time"]).minimum, 1);
+
+    assert.strictEqual(getObjectAt(animationProperties, ["width"]).minimum, 1);
+    assert.strictEqual(getObjectAt(animationProperties, ["height"]).minimum, 1);
+  });
+
+  it("marks legacy item model overrides and lefthanded predicates correctly", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "models-item.json"));
+    const overrides = getObjectAt(schema, ["properties", "overrides"]);
+    assert.match(String(overrides.description), /1\.21\.4/);
+    assert.match(String(overrides.deprecationMessage), /items/);
+
+    const lefthanded = getObjectAt(
+      schema,
+      ["properties", "overrides", "items", "properties", "predicate", "properties", "lefthanded"]
+    );
+    assert.strictEqual(lefthanded.type, "number");
+    assert.deepStrictEqual(lefthanded.enum, [0, 1]);
+  });
+
+  it("separates current item model top-level and special model types", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "items.json"));
+
+    const topLevelTypes = getStringArrayProperty(getObjectAt(schema, ["definitions", "topLevelType"]), "enum");
+    for (const type of [
+      "minecraft:model",
+      "minecraft:composite",
+      "minecraft:condition",
+      "minecraft:select",
+      "minecraft:range_dispatch",
+      "minecraft:empty",
+      "minecraft:bundle/selected_item",
+      "minecraft:special"
+    ]) {
+      assert.ok(topLevelTypes.includes(type), `top-level type ${type}`);
+    }
+
+    for (const type of ["minecraft:banner", "minecraft:bed", "minecraft:standing_sign", "minecraft:hanging_sign"]) {
+      assert.strictEqual(topLevelTypes.includes(type), false, `top-level enum should not contain ${type}`);
+    }
+
+    const specialTypes = getStringArrayProperty(getObjectAt(schema, ["definitions", "specialModelType"]), "enum");
+    for (const type of [
+      "minecraft:banner",
+      "minecraft:bell",
+      "minecraft:book",
+      "minecraft:chest",
+      "minecraft:conduit",
+      "minecraft:copper_golem_statue",
+      "minecraft:decorated_pot",
+      "minecraft:end_cube",
+      "minecraft:head",
+      "minecraft:player_head",
+      "minecraft:shield",
+      "minecraft:shulker_box",
+      "minecraft:trident"
+    ]) {
+      assert.ok(specialTypes.includes(type), `special type ${type}`);
+    }
+
+    for (const type of ["minecraft:bed", "minecraft:standing_sign", "minecraft:hanging_sign"]) {
+      assert.strictEqual(specialTypes.includes(type), false, `removed special enum should not contain ${type}`);
+    }
+  });
+
+  it("covers current item model property groups and special fields", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "items.json"));
+
+    const conditionProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "conditionProperty"]), "enum");
+    assert.ok(conditionProperties.includes("minecraft:keybind_down"));
+    assert.strictEqual(conditionProperties.includes("minecraft:block_state"), false);
+
+    const selectProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "selectProperty"]), "enum");
+    assert.ok(selectProperties.includes("minecraft:block_state"));
+    assert.strictEqual(selectProperties.includes("minecraft:damage"), false);
+
+    const rangeProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "rangeDispatchProperty"]), "enum");
+    assert.ok(rangeProperties.includes("minecraft:use_duration"));
+    assert.strictEqual(rangeProperties.includes("minecraft:selected"), false);
+
+    const bannerAttachment = getObjectAt(schema, ["definitions", "bannerSpecialModel", "properties", "attachment"]);
+    assert.deepStrictEqual(bannerAttachment.enum, ["ground", "wall"]);
+
+    const bookOpenAngle = getObjectAt(schema, ["definitions", "bookSpecialModel", "properties", "open_angle"]);
+    assert.strictEqual(bookOpenAngle.type, "integer");
+
+    const chestRequired = getStringArrayProperty(getObjectAt(schema, ["definitions", "chestSpecialModel"]), "required");
+    assert.ok(chestRequired.includes("texture"));
+    assert.ok(Object.hasOwn(getObjectAt(schema, ["definitions", "chestSpecialModel", "properties"]), "chest_type"));
+
+    const shulkerRequired = getStringArrayProperty(getObjectAt(schema, ["definitions", "shulkerBoxSpecialModel"]), "required");
+    assert.ok(shulkerRequired.includes("texture"));
+    const shulkerProperties = getObjectAt(schema, ["definitions", "shulkerBoxSpecialModel", "properties"]);
+    assert.strictEqual(shulkerProperties.orientation, undefined);
+
+    const headProperties = getObjectAt(schema, ["definitions", "headSpecialModel", "properties"]);
+    assert.ok(Object.hasOwn(headProperties, "texture"));
+    assert.ok(Object.hasOwn(headProperties, "animation"));
+  });
 });
 
 function collectJsonFiles(root: string): string[] {
@@ -207,6 +322,23 @@ function getObjectAt(root: unknown, segments: string[]): JsonObject {
 
 function assertJsonObject(value: unknown, location: string): asserts value is JsonObject {
   assert.ok(value !== null && typeof value === "object" && !Array.isArray(value), `${location} should be an object`);
+}
+
+function assertJsonObjectValue(value: unknown, location: string): JsonObject {
+  assertJsonObject(value, location);
+  return value;
+}
+
+function getArrayProperty(value: JsonObject, propertyName: string): unknown[] {
+  const property = value[propertyName];
+  assert.ok(Array.isArray(property), `${propertyName} should be an array`);
+  return property;
+}
+
+function getStringArrayProperty(value: JsonObject, propertyName: string): string[] {
+  const property = getArrayProperty(value, propertyName);
+  assert.ok(property.every(item => typeof item === "string"), `${propertyName} should only contain strings`);
+  return property;
 }
 
 function findMisspelledSchemaKeywords(
