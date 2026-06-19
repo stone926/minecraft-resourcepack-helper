@@ -147,7 +147,7 @@
         {
           "id": "mcResHelperResources",
           "title": "%viewContainer.title.resources%",
-          "icon": "src/pack.png"
+          "icon": "assets/mcResHelperSidebar.svg"
         }
       ]
     },

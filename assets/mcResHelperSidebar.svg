@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Minecraft Resourcepack Helper</title>
+  <desc id="desc">Minimal green cube icon for a VS Code activity bar</desc>
+
+  <rect x="10" y="10" width="108" height="108" rx="24" fill="#1f6f4f" />
+  <path d="M38 46L64 30L90 46L64 62L38 46Z" fill="#e7fbf0" />
+  <path d="M38 46L38 78L64 94L64 62L38 46Z" fill="#74c9a8" />
+  <path d="M64 62L64 94L90 78L90 46L64 62Z" fill="#2f8d67" />
+  <line x1="64" y1="62" x2="64" y2="94" stroke="#1b4f3c" stroke-width="2" />
+  <path d="M52 44L76 44L76 50L52 50Z" fill="#f4fffa" />
+  <path d="M52 50L76 50L76 56L52 56Z" fill="#d7f4e8" />
+  <path d="M52 56L76 56L76 62L52 62Z" fill="#c0ecd8" />
+</svg>
