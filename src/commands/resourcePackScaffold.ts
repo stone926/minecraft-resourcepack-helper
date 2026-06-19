@@ -29,6 +29,7 @@ export const resourcePackNamespaceDirectories = [
   path.join("textures", "entity", "shulker"),
   path.join("textures", "entity", "signs"),
   path.join("textures", "entity", "signs", "hanging"),
+  path.join("textures", "effect"),
   path.join("textures", "font"),
   path.join("textures", "gui"),
   path.join("textures", "gui", "sprites"),

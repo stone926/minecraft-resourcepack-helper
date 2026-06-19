@@ -38,6 +38,7 @@ describe("resource pack scaffold", () => {
       assert.strictEqual(fs.statSync(path.join(packPath, "assets", "custom", "items")).isDirectory(), true);
       assert.strictEqual(fs.statSync(path.join(packPath, "assets", "custom", "post_effect")).isDirectory(), true);
       assert.strictEqual(fs.statSync(path.join(packPath, "assets", "custom", "sounds")).isDirectory(), true);
+      assert.strictEqual(fs.statSync(path.join(packPath, "assets", "custom", "textures", "effect")).isDirectory(), true);
       assert.strictEqual(fs.statSync(path.join(packPath, "assets", "custom", "waypoint_style")).isDirectory(), true);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

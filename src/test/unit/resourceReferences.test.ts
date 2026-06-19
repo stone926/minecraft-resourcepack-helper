@@ -252,6 +252,12 @@ describe("resource references", () => {
               {
                 ["sampler_name"]: "In",
                 target: "minecraft:main"
+              },
+              {
+                ["sampler_name"]: "Mask",
+                location: "minecraft:blur/mask",
+                width: 16,
+                height: 16
               }
             ],
             output: "swap"
@@ -266,7 +272,8 @@ describe("resource references", () => {
       references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
       [
         ["shader", "minecraft:core/screenquad", "shaders", "vsh"],
-        ["shader", "minecraft:post/box_blur", "shaders", "fsh"]
+        ["shader", "minecraft:post/box_blur", "shaders", "fsh"],
+        ["texture", "minecraft:blur/mask", "textures/effect", "png"]
       ]
     );
   });

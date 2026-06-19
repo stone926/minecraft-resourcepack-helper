@@ -59,6 +59,9 @@ describe("schema assets", () => {
       const axisRotation = getObjectAt(rotationProperties, [axis]);
       assert.strictEqual(axisRotation.$ref, "#/definitions/angle");
     }
+
+    const tintIndex = getObjectAt(schema, ["definitions", "faceProps", "properties", "tintindex"]);
+    assert.strictEqual(tintIndex.minimum, -1);
   });
 
   it("allows z-axis rotation in blockstate model entries", () => {
@@ -113,6 +116,37 @@ describe("schema assets", () => {
       const layer = getObjectAt(presetLayers, [layerName]);
       assert.strictEqual(layer.$ref, "#/definitions/layerList");
     }
+  });
+
+  it("covers current PNG texture metadata enum values", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "png.mcmeta.json"));
+
+    const mipmapStrategy = getObjectAt(schema, ["properties", "texture", "properties", "mipmap_strategy"]);
+    assert.deepStrictEqual(mipmapStrategy.enum, ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"]);
+
+    const villagerHat = getObjectAt(schema, ["properties", "villager", "properties", "hat"]);
+    assert.deepStrictEqual(villagerHat.enum, ["none", "partial", "full"]);
+
+    const legacyVillagerSchema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "villager.mcmeta.json"));
+    const legacyVillagerHat = getObjectAt(legacyVillagerSchema, ["properties", "villager", "properties", "hat"]);
+    assert.deepStrictEqual(legacyVillagerHat.enum, ["none", "partial", "full"]);
+  });
+
+  it("covers current post effect target and input fields", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "post-effect.json"));
+
+    const targetProperties = getObjectAt(schema, ["definitions", "target", "properties"]);
+    for (const property of ["width", "height", "persistent", "clear_color"]) {
+      assert.ok(Object.hasOwn(targetProperties, property), `target.${property}`);
+    }
+
+    const inputProperties = getObjectAt(schema, ["definitions", "input", "properties"]);
+    for (const property of ["sampler_name", "target", "use_depth_buffer", "location", "width", "height", "bilinear"]) {
+      assert.ok(Object.hasOwn(inputProperties, property), `input.${property}`);
+    }
+
+    const uniformType = getObjectAt(schema, ["definitions", "uniform", "properties", "type"]);
+    assert.deepStrictEqual(uniformType.enum, ["float", "int", "ivec3", "vec2", "vec3", "vec4", "matrix4x4"]);
   });
 });
 

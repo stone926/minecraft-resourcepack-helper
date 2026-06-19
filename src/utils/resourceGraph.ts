@@ -167,6 +167,7 @@ function getPossibleReferencePaths(resourcePath: string): Set<string> {
     "textures/entity/shulker",
     "textures/entity/signs",
     "textures/entity/signs/hanging",
+    "textures/effect",
     "textures/gui/sprites/hud/locator_bar_dot",
     "font",
     "shaders",

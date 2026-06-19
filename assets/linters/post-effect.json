@@ -10,8 +10,7 @@
       "type": "object",
       "title": "targets 渲染目标",
       "additionalProperties": {
-        "type": "object",
-        "additionalProperties": true
+        "$ref": "#/definitions/target"
       }
     },
     "passes": {
@@ -23,6 +22,44 @@
     }
   },
   "definitions": {
+    "target": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "width 宽度"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "height 高度"
+        },
+        "persistent": {
+          "type": "boolean",
+          "title": "persistent 持久化",
+          "description": "为 true 时此渲染目标不会在每帧之间清除，默认 false。"
+        },
+        "clear_color": {
+          "title": "clear_color 清除颜色",
+          "description": "渲染目标创建或清除时使用的颜色，可为 ARGB 十进制颜色或 [R, G, B, A] 浮点数组。",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      }
+    },
     "pass": {
       "type": "object",
       "additionalProperties": true,
@@ -72,6 +109,26 @@
           "type": "string",
           "title": "target 输入目标"
         },
+        "use_depth_buffer": {
+          "type": "boolean",
+          "title": "use_depth_buffer 使用深度缓冲",
+          "description": "为 true 时从目标的深度纹理采样，默认 false。"
+        },
+        "location": {
+          "type": "string",
+          "title": "location 输入纹理",
+          "description": "输入纹理资源路径。插件会解析到 textures/effect。"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "width 纹理宽度"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "height 纹理高度"
+        },
         "bilinear": {
           "type": "boolean",
           "title": "bilinear 双线性过滤"
@@ -89,7 +146,7 @@
         "type": {
           "type": "string",
           "title": "type 类型",
-          "enum": ["float", "int", "vec2", "vec3", "vec4", "matrix4x4"]
+          "enum": ["float", "int", "ivec3", "vec2", "vec3", "vec4", "matrix4x4"]
         },
         "value": {
           "title": "value 值",

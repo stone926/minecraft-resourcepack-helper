@@ -246,9 +246,9 @@
           "enum": [0, 90, 180, 270]
         },
         "tintindex": {
-          "description": "引用物品模型定义中的 tint 源索引。未设置时不着色。",
+          "description": "着色索引。-1 表示不着色；物品模型也可指定物品模型定义中的 tint 源索引。",
           "type": "integer",
-          "minimum": 0
+          "minimum": -1
         }
       }
     },

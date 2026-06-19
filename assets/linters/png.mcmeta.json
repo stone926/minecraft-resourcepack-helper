@@ -91,8 +91,8 @@
         },
         "mipmap_strategy": {
           "type": "string",
-          "enum": ["dark_cutout", "mean", "strict_cutout"],
-          "description": "Mipmap generation strategy."
+          "enum": ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"],
+          "description": "Mipmap generation strategy. Defaults to auto."
         },
         "alpha_cutoff_bias": {
           "type": "number",
@@ -175,8 +175,8 @@
       "properties": {
         "hat": {
           "type": "string",
-          "enum": ["partial", "full"],
-          "description": "How the villager hat layer is rendered."
+          "enum": ["none", "partial", "full"],
+          "description": "How the villager hat layer is rendered. Defaults to none."
         }
       }
     }

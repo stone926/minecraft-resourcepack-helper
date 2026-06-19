@@ -337,6 +337,13 @@ function getPostEffectReferences(ast: JsonDocumentNode): ResourceReference[] {
         pushReference(references, member.value, "shaders", "post_effect", "vsh", "shader");
       } else if (name === "fragment_shader") {
         pushReference(references, member.value, "shaders", "post_effect", "fsh", "shader");
+      } else if (name === "inputs") {
+        for (const input of arrayElements(member.value)) {
+          const location = objectMembers(input).find(inputMember => memberName(inputMember) === "location");
+          if (location) {
+            pushReference(references, location.value, "textures/effect", "post_effect", "png", "texture");
+          }
+        }
       }
     }
   }
