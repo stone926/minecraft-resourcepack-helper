@@ -46,6 +46,17 @@ describe("schema assets", () => {
     }
   });
 
+  it("applies pack.mcmeta language code length constraints to language keys", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "pack.mcmeta.json"));
+
+    const languagePropertyNames = getObjectAt(schema, ["properties", "language", "propertyNames"]);
+    assert.strictEqual(languagePropertyNames.minLength, 1);
+    assert.strictEqual(languagePropertyNames.maxLength, 16);
+
+    const languageDefinition = getObjectAt(schema, ["definitions", "language"]);
+    assert.strictEqual(languageDefinition.propertyNames, undefined);
+  });
+
   it("allows modern block model element rotation syntax", () => {
     const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "models-block.json"));
     const angle = getObjectAt(schema, ["definitions", "angle"]);
@@ -147,6 +158,17 @@ describe("schema assets", () => {
 
     const uniformType = getObjectAt(schema, ["definitions", "uniform", "properties", "type"]);
     assert.deepStrictEqual(uniformType.enum, ["float", "int", "ivec3", "vec2", "vec3", "vec4", "matrix4x4"]);
+  });
+
+  it("covers current warning and compliance metadata constraints", () => {
+    const gpuWarnlist = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "gpu-warnlist.json"));
+    assert.deepStrictEqual(gpuWarnlist.required, ["renderer", "version", "vendor"]);
+
+    const regionalCompliances = readJsonFile<JsonObject>(
+      path.join(process.cwd(), "assets", "linters", "regional-compliancies.json")
+    );
+    const propertyNames = getObjectAt(regionalCompliances, ["propertyNames"]);
+    assert.strictEqual(propertyNames.pattern, "^[A-Z]{3}$");
   });
 });
 

@@ -137,6 +137,11 @@
       "type": "object",
       "title": "language 附加语言",
       "description": "向语言菜单添加附加语言。",
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 16,
+        "description": "语言代码长度必须为 1 到 16 个字符。"
+      },
       "additionalProperties": {
         "$ref": "#/definitions/language"
       }
@@ -227,11 +232,6 @@
     "language": {
       "type": "object",
       "additionalProperties": true,
-      "propertyNames": {
-        "minLength": 1,
-        "maxLength": 16,
-        "description": "语言代码长度必须为 1 到 16 个字符。"
-      },
       "required": ["name", "region"],
       "properties": {
         "name": {

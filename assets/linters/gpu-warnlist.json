@@ -5,6 +5,7 @@
   "title": "Minecraft GPU warnlist",
   "description": "定义触发图形环境警告的 renderer/version/vendor 正则表达式列表。",
   "additionalProperties": false,
+  "required": ["renderer", "version", "vendor"],
   "properties": {
     "renderer": {
       "$ref": "#/definitions/regexList",

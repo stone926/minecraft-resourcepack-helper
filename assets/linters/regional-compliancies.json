@@ -4,6 +4,10 @@
   "type": "object",
   "title": "Minecraft regional compliancies",
   "description": "按 ISO 3166-1 三位字母地区代码定义定时合规提示。",
+  "propertyNames": {
+    "pattern": "^[A-Z]{3}$",
+    "description": "ISO 3166-1 alpha-3 三位大写地区代码。"
+  },
   "additionalProperties": {
     "type": "array",
     "items": {
