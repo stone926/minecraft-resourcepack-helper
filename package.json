@@ -1,6 +1,6 @@
 {
   "name": "minecraft-resourcepack-helper",
-  "displayName": "Minecraft Resourcepack Helper",
+  "displayName": "%extension.displayName%",
   "publisher": "stone926",
   "author": {
     "name": "stone926"
@@ -9,7 +9,7 @@
     "stone926",
     "hans000"
   ],
-  "description": "To help minecraft developers create resource packs more efficiently",
+  "description": "%extension.description%",
   "version": "2.0.1",
   "license": "MIT",
   "engines": {
@@ -169,7 +169,7 @@
       ]
     },
     "configuration": {
-      "title": "Minecraft Resourcepack Helper",
+      "title": "%config.title%",
       "properties": {
         "McResHelper.defaultMcAssetsPath": {
           "type": "string",

@@ -1,4 +1,7 @@
 {
+  "extension.displayName": "Minecraft Resourcepack Helper",
+  "extension.description": "To help Minecraft developers create resource packs more efficiently",
+  "config.title": "Minecraft Resourcepack Helper",
   "config.desc.defaultMcAssetsPath": "absolute path to vanilla Minecraft assets, used for definitions, completions, and diagnostics; accepts an assets folder, assets/minecraft folder, or a resource pack root containing assets/minecraft",
   "config.desc.tipColorForUndefinedTextureVariables": "the tip color for undefined texture variants in model files",
   "command.title.openDefaultMcAssetsPath": "McResHelper: open folder of vanilla assets",
