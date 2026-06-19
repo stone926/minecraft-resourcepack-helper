@@ -186,7 +186,7 @@ function getModelReferences(ast: JsonDocumentNode, source: string): ResourceRefe
       pushReference(references, item.value, "models", source, "json", "model", "modelParent");
     } else if (memberName(item) === "textures") {
       for (const textureEntry of objectMembers(item.value)) {
-        pushReference(references, textureEntry.value, "textures", source, "png", "texture");
+        pushModelTextureReference(references, textureEntry.value, source);
       }
     }
   }
@@ -372,6 +372,14 @@ function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: Reso
     return;
   }
 
+  if (type === "minecraft:unstitch" || type === "unstitch") {
+    const resource = objectMembers(sourceEntry).find(member => memberName(member) === "resource");
+    if (resource) {
+      pushReference(references, resource.value, "textures", "atlases", "png", "texture");
+    }
+    return;
+  }
+
   if (type === "minecraft:paletted_permutations" || type === "paletted_permutations") {
     const paletteKey = objectMembers(sourceEntry).find(member => memberName(member) === "palette_key");
     if (paletteKey) {
@@ -387,6 +395,19 @@ function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: Reso
     for (const texture of arrayElements(textures?.value)) {
       pushReference(references, texture, "textures", "atlases", "png", "texture");
     }
+  }
+}
+
+function pushModelTextureReference(references: ResourceReference[], valueNode: JsonAstNode, source: string): void {
+  const directTexture = stringValue(valueNode);
+  if (directTexture !== undefined) {
+    pushReference(references, valueNode, "textures", source, "png", "texture");
+    return;
+  }
+
+  const sprite = objectMembers(valueNode).find(member => memberName(member) === "sprite");
+  if (sprite) {
+    pushReference(references, sprite.value, "textures", source, "png", "texture");
   }
 }
 
@@ -414,6 +435,8 @@ function pushItemSpecialTextureReference(references: ResourceReference[], node: 
     pushReference(references, valueNode, "textures/entity/shulker", "items", "png", "texture");
   } else if (type === "minecraft:copper_golem_statue" || type === "copper_golem_statue") {
     pushReference(references, valueNode, "", "items", "png", "texture");
+  } else if (type === "minecraft:head" || type === "head") {
+    pushReference(references, valueNode, "textures/entity", "items", "png", "texture");
   }
 }
 

@@ -29,18 +29,18 @@
 				"particle": {
 					"title": "particle 粒子",
 					"description": "方块对应的颗粒的材质。玩家在下界传送门中时也会使用此材质。注意：所有非模型渲染的方块的破坏可以为硬编码",
-					"type": "string"
+					"$ref": "./models-block.json#/definitions/textureReference"
 				}
 			},
 			"patternProperties": {
 				"^layer[0-9]{1,}$": {
 					"description": "仅用于指定在物品栏内使用的物品的图标。允许有超过一层（比如刷怪蛋），但是每个物品可能的层数都是硬编码的。必须结合builtin/generated用",
-					"type": "string"
+					"$ref": "./models-block.json#/definitions/textureReference"
 				}
 			},
 			"additionalProperties": {
 				"description": "定义一个材质变量并分配材质",
-				"type": "string"
+				"$ref": "./models-block.json#/definitions/textureReference"
 			}
 		},
 		"elements": {

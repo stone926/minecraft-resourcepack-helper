@@ -8,6 +8,8 @@ export interface ResourceLocation {
 }
 
 const pathPartSeparator = /[\\/]+/;
+const namespacePattern = /^[a-z0-9_.-]+$/;
+const pathSegmentPattern = /^[a-z0-9._-]+$/;
 
 interface ResourceRootCandidateOptions {
   pathExists?: (filePath: string) => boolean;
@@ -20,7 +22,7 @@ export function parseResourceLocation(input: string, targetFileExtension: string
   const locationPath = (hasNamespace ? rawPathParts.join(":") : rawNamespace).trim();
   const rawSegments = locationPath.split(pathPartSeparator);
   const normalizedSegments = rawSegments.filter(segment => segment.length > 0 && segment !== ".");
-  const isValid = normalizedSegments.every(segment => segment !== "..");
+  const isValid = isValidNamespace(namespace) && isValidResourcePath(normalizedSegments);
   let normalizedPath = normalizedSegments.join(path.sep);
 
   if (targetFileExtension && !normalizedPath.endsWith(`.${targetFileExtension}`)) {
@@ -32,6 +34,14 @@ export function parseResourceLocation(input: string, targetFileExtension: string
     resourcePath: normalizedPath,
     isValid
   };
+}
+
+function isValidNamespace(namespace: string): boolean {
+  return namespace !== ".." && namespacePattern.test(namespace);
+}
+
+function isValidResourcePath(segments: string[]): boolean {
+  return segments.length > 0 && segments.every(segment => segment !== ".." && pathSegmentPattern.test(segment));
 }
 
 export function findAssetsRoot(fileName: string, source: string): string | null {

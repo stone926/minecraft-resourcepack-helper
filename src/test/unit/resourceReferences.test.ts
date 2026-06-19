@@ -30,6 +30,21 @@ describe("resource references", () => {
             resource: "minecraft:entity/bell/bell_body"
           },
           {
+            type: "minecraft:unstitch",
+            resource: "minecraft:gui/container/legacy",
+            ["divisor_x"]: 16,
+            ["divisor_y"]: 16,
+            regions: [
+              {
+                sprite: "minecraft:gui/container/slice",
+                x: 0,
+                y: 0,
+                width: 16,
+                height: 16
+              }
+            ]
+          },
+          {
             type: "minecraft:paletted_permutations",
             ["palette_key"]: "minecraft:trims/color_palettes/trim_palette",
             permutations: {
@@ -50,6 +65,7 @@ describe("resource references", () => {
       [
         ["textureDirectory", "block", "textures", null],
         ["texture", "minecraft:entity/bell/bell_body", "textures", "png"],
+        ["texture", "minecraft:gui/container/legacy", "textures", "png"],
         ["texture", "minecraft:trims/color_palettes/trim_palette", "textures", "png"],
         ["texture", "minecraft:trims/color_palettes/amethyst", "textures", "png"],
         ["texture", "minecraft:trims/items/helmet_trim", "textures", "png"]
@@ -74,6 +90,33 @@ describe("resource references", () => {
       references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
       [
         ["model", "", "models", "blockstates", "json"]
+      ]
+    );
+  });
+
+  it("extracts object model texture sprite references", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "models", "block", "custom_glass.json"),
+      {
+        parent: "minecraft:block/cube_all",
+        textures: {
+          all: {
+            sprite: "minecraft:block/custom_glass",
+            ["force_translucent"]: true
+          },
+          particle: "#all"
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:block/cube_all", "models", "models/block", "json"],
+        ["texture", "minecraft:block/custom_glass", "textures", "models/block", "png"],
+        ["texture", "#all", "textures", "models/block", "png"]
       ]
     );
   });
@@ -290,6 +333,17 @@ describe("resource references", () => {
             {
               model: {
                 type: "minecraft:special",
+                base: "minecraft:item/player_head",
+                model: {
+                  type: "minecraft:head",
+                  kind: "player",
+                  texture: "minecraft:skins/custom"
+                }
+              }
+            },
+            {
+              model: {
+                type: "minecraft:special",
                 base: "minecraft:item/template_copper_golem_statue",
                 model: {
                   type: "minecraft:copper_golem_statue",
@@ -311,6 +365,8 @@ describe("resource references", () => {
         ["texture", "minecraft:christmas", "textures/entity/chest", "items", "png"],
         ["model", "minecraft:item/black_shulker_box", "models", "items", "json"],
         ["texture", "minecraft:shulker_black", "textures/entity/shulker", "items", "png"],
+        ["model", "minecraft:item/player_head", "models", "items", "json"],
+        ["texture", "minecraft:skins/custom", "textures/entity", "items", "png"],
         ["model", "minecraft:item/template_copper_golem_statue", "models", "items", "json"],
         ["texture", "minecraft:textures/entity/copper_golem/copper_golem.png", "", "items", "png"]
       ]

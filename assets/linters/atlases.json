@@ -52,20 +52,59 @@
           "title": "prefix 前缀",
           "description": "directory 来源添加到图集后的资源路径前缀。"
         },
+        "pattern": {
+          "type": "object",
+          "title": "pattern 过滤模式",
+          "description": "filter 来源移除已加入图集的 sprite 时使用的命名空间和路径正则。",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "format": "regex"
+            },
+            "path": {
+              "type": "string",
+              "format": "regex"
+            }
+          }
+        },
         "resource": {
           "$ref": "#/definitions/resourceLocation",
           "title": "resource 单个纹理",
-          "description": "single 来源读取的单个纹理。"
+          "description": "single 或 unstitch 来源读取的纹理。"
         },
         "sprite": {
           "$ref": "#/definitions/resourceLocation",
           "title": "sprite 图集名",
           "description": "single 来源写入图集时使用的 sprite 名称。"
         },
+        "divisor_x": {
+          "type": "number",
+          "title": "divisor_x 横向单位",
+          "description": "unstitch 来源中用于换算区域 x 坐标的单位。"
+        },
+        "divisor_y": {
+          "type": "number",
+          "title": "divisor_y 纵向单位",
+          "description": "unstitch 来源中用于换算区域 y 坐标的单位。"
+        },
+        "regions": {
+          "type": "array",
+          "title": "regions 切片区域",
+          "description": "unstitch 来源从原图中复制出的矩形区域。",
+          "items": {
+            "$ref": "#/definitions/unstitchRegion"
+          }
+        },
         "palette_key": {
           "$ref": "#/definitions/resourceLocation",
           "title": "palette_key 调色板键",
           "description": "paletted_permutations 使用的调色板基准纹理。"
+        },
+        "separator": {
+          "type": "string",
+          "title": "separator 分隔符",
+          "description": "paletted_permutations 生成 sprite 名称时连接基础纹理和变体名称的分隔符，默认为 _。"
         },
         "permutations": {
           "type": "object",
@@ -82,6 +121,33 @@
           "items": {
             "$ref": "#/definitions/resourceLocation"
           }
+        }
+      }
+    },
+    "unstitchRegion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sprite", "x", "y", "width", "height"],
+      "properties": {
+        "sprite": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "sprite 图集名"
+        },
+        "x": {
+          "type": "number",
+          "title": "x 横坐标"
+        },
+        "y": {
+          "type": "number",
+          "title": "y 纵坐标"
+        },
+        "width": {
+          "type": "number",
+          "title": "width 宽度"
+        },
+        "height": {
+          "type": "number",
+          "title": "height 高度"
         }
       }
     }

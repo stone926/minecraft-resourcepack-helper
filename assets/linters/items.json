@@ -11,6 +11,16 @@
       "$ref": "#/definitions/itemModel",
       "title": "model 物品模型"
     },
+    "hand_animation_on_swap": {
+      "type": "boolean",
+      "title": "hand_animation_on_swap 切换动画",
+      "description": "切换物品栏槽位或交换到另一只手时是否播放第一人称下压动画，默认为 true。"
+    },
+    "oversized_in_gui": {
+      "type": "boolean",
+      "title": "oversized_in_gui GUI 超尺寸渲染",
+      "description": "物品模型是否允许在 GUI 中渲染到物品槽外，默认为 false。"
+    },
     "swap_animation_scale": {
       "type": "number",
       "title": "swap_animation_scale 切换动画缩放"
@@ -39,21 +49,19 @@
             "minecraft:empty",
             "minecraft:banner",
             "minecraft:bed",
+            "minecraft:bell",
+            "minecraft:book",
             "minecraft:chest",
             "minecraft:conduit",
-            "minecraft:constant",
             "minecraft:copper_golem_statue",
             "minecraft:decorated_pot",
-            "minecraft:custom_model_data",
-            "minecraft:dye",
-            "minecraft:firework",
-            "minecraft:grass",
+            "minecraft:end_cube",
             "minecraft:head",
-            "minecraft:map_color",
             "minecraft:player_head",
-            "minecraft:potion",
             "minecraft:shield",
             "minecraft:shulker_box",
+            "minecraft:standing_sign",
+            "minecraft:hanging_sign",
             "minecraft:trident"
           ]
         },
@@ -109,8 +117,10 @@
             "minecraft:bundle/has_selected_item",
             "minecraft:carried",
             "minecraft:charge_type",
+            "minecraft:component",
             "minecraft:compass",
             "minecraft:context_dimension",
+            "minecraft:context_entity_type",
             "minecraft:cooldown",
             "minecraft:count",
             "minecraft:crossbow/pull",
@@ -118,18 +128,19 @@
             "minecraft:damage",
             "minecraft:damaged",
             "minecraft:display_context",
+            "minecraft:extended_view",
             "minecraft:fishing_rod/cast",
             "minecraft:has_component",
+            "minecraft:keybind_down",
             "minecraft:local_time",
             "minecraft:main_hand",
             "minecraft:selected",
-            "minecraft:shift_down",
             "minecraft:time",
             "minecraft:trim_material",
             "minecraft:use_cycle",
             "minecraft:use_duration",
             "minecraft:using_item",
-            "minecraft:xmas"
+            "minecraft:view_entity"
           ]
         },
         "entries": {
@@ -154,29 +165,16 @@
           }
         },
         "transformation": {
-          "type": "object",
           "title": "transformation 显示变换",
-          "properties": {
-            "left_rotation": {
-              "$ref": "#/definitions/quaternion",
-              "title": "left_rotation 左旋转"
+          "description": "物品模型显示变换，可为 4x4 矩阵或拆分的平移、缩放、旋转对象。",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/transformationObject"
             },
-            "right_rotation": {
-              "$ref": "#/definitions/quaternion",
-              "title": "right_rotation 右旋转"
-            },
-            "scale": {
-              "$ref": "#/definitions/vector3",
-              "title": "scale 缩放"
-            },
-            "translation": {
-              "$ref": "#/definitions/vector3",
-              "title": "translation 平移"
+            {
+              "$ref": "#/definitions/matrix4"
             }
-          },
-          "additionalProperties": {
-            "$ref": "#/definitions/vector"
-          }
+          ]
         },
         "scale": {
           "type": "number",
@@ -217,7 +215,7 @@
         "target": {
           "type": "string",
           "title": "target 指南针目标",
-          "enum": ["spawn", "lodestone", "recovery"]
+          "enum": ["spawn", "lodestone", "recovery", "none"]
         },
         "block_state_property": {
           "type": "string",
@@ -226,7 +224,15 @@
         "source": {
           "type": "string",
           "title": "source 来源",
-          "enum": ["daytime", "random"]
+          "enum": ["daytime", "moon_phase", "random"]
+        },
+        "locale": {
+          "type": "string",
+          "title": "locale 本地化"
+        },
+        "time_zone": {
+          "type": "string",
+          "title": "time_zone 时区"
         },
         "pattern": {
           "type": "string",
@@ -236,11 +242,57 @@
           "$ref": "#/definitions/resourceLocation",
           "title": "texture 纹理"
         },
+        "attachment": {
+          "type": "string",
+          "title": "attachment 附着方式",
+          "enum": ["ground", "wall", "ceiling", "ceiling_middle"]
+        },
+        "attachement": {
+          "type": "string",
+          "title": "attachement 附着方式",
+          "description": "旧版 standing_sign 特殊模型中的拼写错误字段。",
+          "enum": ["ground", "wall"]
+        },
+        "chest_type": {
+          "type": "string",
+          "title": "chest_type 箱子类型",
+          "enum": ["single", "left", "right"]
+        },
         "openness": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
           "title": "openness 开启程度"
+        },
+        "open_angle": {
+          "type": "number",
+          "title": "open_angle 书本打开角度"
+        },
+        "page1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "title": "page1 第一页位置"
+        },
+        "page2": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "title": "page2 第二页位置"
+        },
+        "part": {
+          "type": "string",
+          "title": "part 部分",
+          "enum": ["head", "foot"]
+        },
+        "effect": {
+          "type": "string",
+          "title": "effect 星域效果",
+          "enum": ["gateway", "portal"]
+        },
+        "animation": {
+          "type": "number",
+          "title": "animation 头颅动画"
         },
         "orientation": {
           "type": "string",
@@ -256,6 +308,11 @@
           "type": "string",
           "title": "kind 头颅类型",
           "enum": ["skeleton", "wither_skeleton", "player", "zombie", "creeper", "piglin", "dragon"]
+        },
+        "wood_type": {
+          "type": "string",
+          "title": "wood_type 木质类型",
+          "enum": ["oak", "spruce", "birch", "acacia", "cherry", "jungle", "dark_oak", "pale_oak", "mangrove", "bamboo", "crimson", "warped"]
         },
         "color": {
           "type": "string",
@@ -341,7 +398,8 @@
             "minecraft:firework",
             "minecraft:grass",
             "minecraft:map_color",
-            "minecraft:potion"
+            "minecraft:potion",
+            "minecraft:team"
           ]
         },
         "default": {
@@ -386,6 +444,38 @@
           }
         }
       ]
+    },
+    "transformationObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/vector"
+      },
+      "properties": {
+        "left_rotation": {
+          "$ref": "#/definitions/quaternion",
+          "title": "left_rotation 左旋转"
+        },
+        "right_rotation": {
+          "$ref": "#/definitions/quaternion",
+          "title": "right_rotation 右旋转"
+        },
+        "scale": {
+          "$ref": "#/definitions/vector3",
+          "title": "scale 缩放"
+        },
+        "translation": {
+          "$ref": "#/definitions/vector3",
+          "title": "translation 平移"
+        }
+      }
+    },
+    "matrix4": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {
+        "type": "number"
+      }
     },
     "vector3": {
       "type": "array",

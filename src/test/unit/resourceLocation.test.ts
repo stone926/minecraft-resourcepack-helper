@@ -35,6 +35,13 @@ describe("resource location utilities", () => {
     assert.strictEqual(result.isValid, false);
   });
 
+  it("rejects resource locations with characters outside Java identifier rules", () => {
+    assert.strictEqual(parseResourceLocation("Example:block/stone", "json").isValid, false);
+    assert.strictEqual(parseResourceLocation("example:block/Stone", "json").isValid, false);
+    assert.strictEqual(parseResourceLocation("example:block:name", "json").isValid, false);
+    assert.strictEqual(parseResourceLocation("example:block stone", "json").isValid, false);
+  });
+
   it("finds assets root from nested source folders", () => {
     const root = path.parse(__dirname).root;
     const fileName = path.join(root, "pack", "assets", "minecraft", "models", "block", "cube.json");

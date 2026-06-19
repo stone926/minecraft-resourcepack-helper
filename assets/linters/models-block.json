@@ -33,13 +33,12 @@
           "description": "注释"
         },
         "particle": {
-          "type": "string",
+          "$ref": "#/definitions/textureReference",
           "description": "方块对应的颗粒的材质。玩家在下界传送门中时也会使用此材质。注意：所有非模型渲染的方块的破坏可以为硬编码"
-        },
-        "additionalProperties": {
-          "type": "string",
-          "description": "定义一个材质变量"
         }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/textureReference"
       }
     },
     "elements": {
@@ -93,8 +92,35 @@
         "fixed": {
           "description": "当被摆放在物品展示框上时，其他的显示位置如同其名。值得注意的是平移优先于旋转",
           "$ref": "#/definitions/position"
+        },
+        "on_shelf": {
+          "description": "当物品摆放在架子上时",
+          "$ref": "#/definitions/position"
         }
       }
+    },
+    "textureReference": {
+      "description": "材质变量值。可为材质资源路径、另一个以 # 开头的材质变量，或包含 sprite 与 force_translucent 的对象。",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["sprite"],
+          "properties": {
+            "sprite": {
+              "type": "string",
+              "description": "材质资源路径。对象写法中不能使用 # 材质变量。"
+            },
+            "force_translucent": {
+              "type": "boolean",
+              "description": "即使材质自身没有半透明像素，也强制将其视作半透明材质。"
+            }
+          }
+        }
+      ]
     },
     "position": {
       "type": "object",
@@ -222,9 +248,9 @@
           "enum": [0, 90, 180, 270]
         },
         "tintindex": {
-          "description": "是否使用硬编码对该材质进行重新着色。默认不使用着色和任何着色数值。注意只有特定方块可以着色，其他方块设置此项无效",
+          "description": "引用物品模型定义中的 tint 源索引。未设置时不着色。",
           "type": "integer",
-          "enum": [0]
+          "minimum": 0
         }
       }
     },
@@ -281,6 +307,13 @@
           "title": "shade 阴影",
           "description": "是否渲染阴影，默认true",
           "type": "boolean"
+        },
+        "light_emission": {
+          "title": "light_emission 发光",
+          "description": "元素接收的最低亮度等级，0 到 15，默认为 0。",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
         },
         "faces": {
           "title": "faces 面",

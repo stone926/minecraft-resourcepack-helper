@@ -23,7 +23,7 @@
         "type": {
           "type": "string",
           "title": "type provider 类型",
-          "enum": ["bitmap", "ttf", "space", "unihex", "reference"]
+          "enum": ["bitmap", "ttf", "space", "unihex", "reference", "legacy_unicode"]
         },
         "id": {
           "type": "string",
@@ -38,7 +38,17 @@
         "hex_file": {
           "type": "string",
           "title": "hex_file Unihex 文件",
-          "description": "unihex provider 指向 font 下的 .hex 文件。资源路径通常应包含文件扩展名。"
+          "description": "unihex provider 指向 font 下包含 .hex 文件的 ZIP 归档。资源路径通常应包含文件扩展名。"
+        },
+        "template": {
+          "type": "string",
+          "title": "template Legacy Unicode 模板",
+          "description": "legacy_unicode provider 的 PNG 页模板，必须包含 %s。该 provider 已从现代版本移除。"
+        },
+        "sizes": {
+          "type": "string",
+          "title": "sizes Legacy Unicode 宽度文件",
+          "description": "legacy_unicode provider 的字形宽度二进制文件，通常为 glyph_sizes.bin。"
         },
         "chars": {
           "type": "array",
@@ -72,6 +82,21 @@
             "type": "number"
           }
         },
+        "skip": {
+          "title": "skip 跳过字符",
+          "description": "ttf provider 中不分配字形的字符，可为字符串或字符串数组。",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
         "advances": {
           "type": "object",
           "title": "advances 字符宽度",
@@ -87,6 +112,10 @@
             "uniform": {
               "type": "boolean",
               "title": "uniform 等宽字体过滤"
+            },
+            "jp": {
+              "type": "boolean",
+              "title": "jp 日文字形变体过滤"
             }
           }
         },
@@ -112,6 +141,13 @@
               "right": {
                 "type": "integer",
                 "title": "right 右边界"
+              },
+              "ranges": {
+                "type": "array",
+                "title": "ranges Unicode 区块",
+                "items": {
+                  "type": "string"
+                }
               }
             }
           }

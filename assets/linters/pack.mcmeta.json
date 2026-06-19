@@ -60,8 +60,26 @@
               "items": {
                 "$ref": "#/definitions/legacyFormatVersion"
               }
+            },
+            {
+              "$ref": "#/definitions/formatRangeObject"
             }
           ]
+        },
+        "features": {
+          "type": "object",
+          "title": "features 实验性功能",
+          "description": "声明此包启用的实验性 feature flags。",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "array",
+              "title": "enabled 启用功能",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "anyOf": [
@@ -145,6 +163,21 @@
         }
       ]
     },
+    "formatRangeObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_inclusive", "max_inclusive"],
+      "properties": {
+        "min_inclusive": {
+          "$ref": "#/definitions/legacyFormatVersion",
+          "description": "范围内包含的最低主格式版本。"
+        },
+        "max_inclusive": {
+          "$ref": "#/definitions/legacyFormatVersion",
+          "description": "范围内包含的最高主格式版本。"
+        }
+      }
+    },
     "overlayEntry": {
       "type": "object",
       "additionalProperties": false,
@@ -175,6 +208,9 @@
               "items": {
                 "$ref": "#/definitions/legacyFormatVersion"
               }
+            },
+            {
+              "$ref": "#/definitions/formatRangeObject"
             }
           ]
         }
