@@ -61,7 +61,8 @@ export class ModelPreviewPanel implements vscode.Disposable {
       }
     );
     this.webview = new ModelPreviewWebview(extensionUri, this.panel);
-    this.webview.setHtml();
+    this.disposables.push(this.panel.onDidDispose(() => this.dispose()));
+    this.disposables.push(this.panel.webview.onDidReceiveMessage(message => this.handleMessage(message as WebviewToHost)));
 
     this.watcher = new ModelPreviewWatcher(
       this.tracker,
@@ -69,9 +70,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
       uri => this.setTarget(uri)
     );
     this.disposables.push(this.watcher);
-
-    this.disposables.push(this.panel.onDidDispose(() => this.dispose()));
-    this.disposables.push(this.panel.webview.onDidReceiveMessage(message => this.handleMessage(message as WebviewToHost)));
+    this.webview.setHtml();
   }
 
   dispose(): void {

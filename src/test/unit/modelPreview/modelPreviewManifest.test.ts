@@ -32,8 +32,19 @@ describe("model preview manifest", () => {
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.module.js")));
+    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.core.js")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "OrbitControls.js")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "THREE-LICENSE.txt")));
+  });
+
+  it("registers the webview message listener before injecting HTML", () => {
+    const source = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewPanel.ts"), "utf8");
+    const listenerIndex = source.indexOf("onDidReceiveMessage");
+    const htmlIndex = source.indexOf("this.webview.setHtml()");
+
+    assert.ok(listenerIndex >= 0, "ModelPreviewPanel should listen for webview messages");
+    assert.ok(htmlIndex >= 0, "ModelPreviewPanel should inject webview HTML");
+    assert.ok(listenerIndex < htmlIndex, "ready can be lost if HTML is injected before the message listener is registered");
   });
 });
 

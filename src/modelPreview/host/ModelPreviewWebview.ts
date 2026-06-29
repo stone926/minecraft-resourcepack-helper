@@ -14,19 +14,6 @@ export class ModelPreviewWebview {
     const nonce = createNonce();
     const mainScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "main.js"));
     const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "styles.css"));
-    const threeUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "vendor", "three.module.js")
-    );
-    const orbitControlsImport = "three/addons/controls/OrbitControls.js";
-    const orbitControlsUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "vendor", "OrbitControls.js")
-    );
-    const importMap = JSON.stringify({
-      imports: {
-        "three": threeUri.toString(),
-        [orbitControlsImport]: orbitControlsUri.toString()
-      }
-    });
 
     webview.html = `<!DOCTYPE html>
 <html lang="en">
@@ -35,7 +22,6 @@ export class ModelPreviewWebview {
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; connect-src ${webview.cspSource};">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${stylesUri}">
-  <script type="importmap" nonce="${nonce}">${escapeHtml(importMap)}</script>
   <title>Model Preview</title>
 </head>
 <body>
@@ -166,8 +152,4 @@ function createNonce(): string {
     value += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return value;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 }
