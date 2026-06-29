@@ -14,10 +14,12 @@ export class ModelPreviewWebview {
     const nonce = createNonce();
     const mainScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "main.js"));
     const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "styles.css"));
-    const threeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "node_modules", "three", "build", "three.module.js"));
+    const threeUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "vendor", "three.module.js")
+    );
     const orbitControlsImport = "three/addons/controls/OrbitControls.js";
     const orbitControlsUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "node_modules", "three", "examples", "jsm", "controls", "OrbitControls.js")
+      vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "vendor", "OrbitControls.js")
     );
     const importMap = JSON.stringify({
       imports: {

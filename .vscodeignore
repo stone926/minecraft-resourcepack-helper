@@ -3,6 +3,9 @@
 .claude/**
 .vscode/**
 .vscode-test/**
+node_modules/three/**
+*.vsix
+.codex-*.vsix
 assets/*.gif
 out/test/**
 src/**

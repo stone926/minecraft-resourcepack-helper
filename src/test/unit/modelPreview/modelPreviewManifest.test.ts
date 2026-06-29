@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 interface PackageJson {
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   contributes?: {
     commands?: Array<{ command?: string; title?: string; icon?: string }>;
     menus?: Record<string, Array<{ command?: string; when?: string }>>;
@@ -23,14 +24,16 @@ describe("model preview manifest", () => {
     assert.ok(menus["editor/context"]?.some(menu => menu.command === "McResHelper.exportModelPreviewImage"));
   });
 
-  it("ships webview static assets and the Three.js runtime dependency", () => {
+  it("ships webview static assets and vendored Three.js runtime files", () => {
     const packageJson = readPackageJson();
 
-    assert.ok(packageJson.dependencies?.three, "three should be a runtime dependency");
+    assert.strictEqual(packageJson.dependencies?.three, undefined, "three should not ship through node_modules");
+    assert.ok(packageJson.devDependencies?.three, "three should remain available for vendor updates");
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css")));
-    assert.ok(fs.existsSync(path.join(process.cwd(), "node_modules", "three", "build", "three.module.js")));
-    assert.ok(fs.existsSync(path.join(process.cwd(), "node_modules", "three", "examples", "jsm", "controls", "OrbitControls.js")));
+    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.module.js")));
+    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "OrbitControls.js")));
+    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "THREE-LICENSE.txt")));
   });
 });
 

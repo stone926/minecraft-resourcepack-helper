@@ -24,6 +24,8 @@ export class ModelPreviewPanel implements vscode.Disposable {
   private readonly pendingScreenshots = new Map<string, PendingScreenshot>();
   private targetUri: vscode.Uri;
   private ready = false;
+  private hasPreview = false;
+  private currentRefresh: Promise<void> | null = null;
   private disposed = false;
 
   static open(extensionUri: vscode.Uri, service: ModelPreviewService, targetUri: vscode.Uri): ModelPreviewPanel {
@@ -94,6 +96,11 @@ export class ModelPreviewPanel implements vscode.Disposable {
     if (!this.ready) {
       await this.waitUntilReady();
     }
+    if (!this.hasPreview) {
+      await this.refresh();
+    } else if (this.currentRefresh) {
+      await this.currentRefresh;
+    }
 
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const result = new Promise<string>((resolve, reject) => {
@@ -136,6 +143,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
     }
 
     this.targetUri = uri;
+    this.hasPreview = false;
     this.panel.webview.options = {
       ...this.panel.webview.options,
       localResourceRoots: getModelPreviewLocalResourceRoots(this.extensionUri, uri.fsPath)
@@ -144,6 +152,18 @@ export class ModelPreviewPanel implements vscode.Disposable {
   }
 
   private async refresh(changedFileNameOrUri?: string): Promise<void> {
+    const refresh = this.refreshNow(changedFileNameOrUri);
+    this.currentRefresh = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (this.currentRefresh === refresh) {
+        this.currentRefresh = null;
+      }
+    }
+  }
+
+  private async refreshNow(changedFileNameOrUri?: string): Promise<void> {
     if (this.disposed) {
       return;
     }
@@ -163,6 +183,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
       type: "updatePreview",
       document: this.webview.toWebviewDocument(document)
     });
+    this.hasPreview = true;
   }
 
   private handleMessage(message: WebviewToHost): void {

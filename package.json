@@ -236,11 +236,11 @@
     "@vscode/vsce": "^3.9.2",
     "eslint": "^10.5.0",
     "mocha": "^11.7.6",
+    "three": "^0.185.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1"
   },
   "dependencies": {
-    "@humanwhocodes/momoa": "^3.3.10",
-    "three": "^0.185.0"
+    "@humanwhocodes/momoa": "^3.3.10"
   }
 }
