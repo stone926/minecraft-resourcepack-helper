@@ -94,6 +94,7 @@ class DetailsPanelController {
     this.installToggles();
     this.installResizer();
     this.updateOrientation();
+    this.updateCollapsedLayout();
     this.stackedQuery.addEventListener("change", () => this.updateOrientation());
   }
 
@@ -112,6 +113,7 @@ class DetailsPanelController {
     const expanded = button.getAttribute("aria-expanded") !== "false";
     section.classList.toggle("is-collapsed", expanded);
     button.setAttribute("aria-expanded", String(!expanded));
+    this.updateCollapsedLayout();
   }
 
   installResizer() {
@@ -179,10 +181,17 @@ class DetailsPanelController {
 
   updateOrientation() {
     this.resizer.setAttribute("aria-orientation", this.isStacked() ? "horizontal" : "vertical");
+    this.updateCollapsedLayout();
   }
 
   isStacked() {
     return this.stackedQuery.matches;
+  }
+
+  updateCollapsedLayout() {
+    const sections = [...this.panel.querySelectorAll("[data-details-section]")];
+    const allCollapsed = sections.length > 0 && sections.every(section => section.classList.contains("is-collapsed"));
+    this.layout.classList.toggle("details-all-collapsed", allCollapsed);
   }
 }
 

@@ -207,6 +207,10 @@ input {
     height: calc(100% - 80px);
   }
 
+  .preview-layout.details-all-collapsed {
+    grid-template-rows: minmax(0, 1fr) 6px min-content;
+  }
+
   .details-resizer {
     cursor: row-resize;
   }
