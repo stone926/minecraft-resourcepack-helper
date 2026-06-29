@@ -248,15 +248,15 @@ function updateChangelog(version, notes) {
   if (unreleasedSection) {
     const before = content.slice(0, unreleasedSection.index);
     const after = content.slice(unreleasedSection.bodyEnd);
-    content = `${before}${unreleasedSection.header.trimEnd()}\n\n${entry}${after.trimStart()}`;
+    content = `${before}${entry}${after.trimStart()}`;
   } else {
     const firstVersionIndex = content.search(/\n## \[/);
     if (firstVersionIndex === -1) {
-      content = `${content.trimEnd()}\n\n## [Unreleased]\n\n${entry}`;
+      content = `${content.trimEnd()}\n\n${entry}`;
     } else {
       const prefix = content.slice(0, firstVersionIndex).trimEnd();
       const suffix = content.slice(firstVersionIndex).trimStart();
-      content = `${prefix}\n\n## [Unreleased]\n\n${entry}${suffix}`;
+      content = `${prefix}\n\n${entry}${suffix}`;
     }
   }
 
