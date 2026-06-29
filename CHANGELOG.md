@@ -1,6 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [2.2.0] - 2026-06-29
+
+- fix: tweak height (5ff54b7)
+- fix(model-preview): adapt bottom details height (dd96864)
+- fix(model-preview): shrink collapsed bottom details (2f72917)
+- fix(model-preview): tune camera fit and details panel (a80d27e)
+- fix(model-preview): initialize webview renderer reliably (b321eb2)
+- perf(model-preview): vendor minimal three runtime (13eef6c)
+- feat(model-preview): add interactive webview preview (f8c42f0)
+- feat(model-preview): resolve and bake preview documents (2b7f542)
+- fix: stop creating unreleased changelog section (cfa62bb)
 
 ## [2.1.1] - 2026-06-29
 
