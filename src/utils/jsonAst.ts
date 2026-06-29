@@ -39,6 +39,16 @@ export function stringValue(node: JsonAstNode | null | undefined): string | unde
   return unwrappedNode?.type === "String" ? unwrappedNode.value : undefined;
 }
 
+export function numberValue(node: JsonAstNode | null | undefined): number | undefined {
+  const unwrappedNode = unwrapElement(node);
+  return unwrappedNode?.type === "Number" ? unwrappedNode.value : undefined;
+}
+
+export function booleanValue(node: JsonAstNode | null | undefined): boolean | undefined {
+  const unwrappedNode = unwrapElement(node);
+  return unwrappedNode?.type === "Boolean" ? unwrappedNode.value : undefined;
+}
+
 function unwrapElement(node: JsonAstNode | null | undefined): JsonAstNode | null | undefined {
   return node?.type === "Element" ? node.value : node;
 }

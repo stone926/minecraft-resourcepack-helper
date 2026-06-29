@@ -121,6 +121,28 @@ describe("resource references", () => {
     );
   });
 
+  it("extracts references from models outside block and item folders", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "models", "custom", "machine.json"),
+      {
+        parent: "minecraft:custom/base",
+        textures: {
+          all: "minecraft:block/iron_block"
+        }
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:custom/base", "models", "models", "json"],
+        ["texture", "minecraft:block/iron_block", "textures", "models", "png"]
+      ]
+    );
+  });
+
   it("marks only parent model references as inheritance relationships", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "models", "item", "custom.json"),
@@ -341,6 +363,30 @@ describe("resource references", () => {
         ["model", "minecraft:item/shield_blocking", "models", "items", "json"]
       ]
     );
+  });
+
+  it("treats selected item models and special models without base as leaves", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "items", "selected.json"),
+      {
+        model: {
+          type: "minecraft:composite",
+          models: [
+            {
+              type: "minecraft:selected_item"
+            },
+            {
+              type: "minecraft:special",
+              model: {
+                type: "minecraft:shield"
+              }
+            }
+          ]
+        }
+      }
+    );
+
+    assert.deepStrictEqual(getResourceReferences(document), []);
   });
 
   it("extracts special item model texture references", () => {

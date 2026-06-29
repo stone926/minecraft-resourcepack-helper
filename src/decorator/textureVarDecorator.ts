@@ -80,7 +80,7 @@ export function disposeDecoration() {
 }
 
 function isModelFile(filePath: string): boolean {
-  return /[\\/]models[\\/](block|item)[\\/].+\.json$/i.test(filePath);
+  return /[\\/]models[\\/].+\.json$/i.test(filePath);
 }
 
 function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined) {

@@ -97,6 +97,122 @@ describe("resource location utilities", () => {
     }
   });
 
+  it("orders active overlays above the base pack with later entries first", () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(path.join(packRoot, "assets", "minecraft", "models", "custom"), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), JSON.stringify({
+        pack: {
+          ["min_format"]: [88, 0],
+          ["max_format"]: [88, 0],
+          description: "test"
+        },
+        overlays: {
+          entries: [
+            {
+              directory: "old_overlay",
+              ["min_format"]: [88, 0],
+              ["max_format"]: [88, 0]
+            },
+            {
+              directory: "new_overlay",
+              ["min_format"]: [88, 0],
+              ["max_format"]: [88, 0]
+            }
+          ]
+        }
+      }));
+
+      const fileName = path.join(packRoot, "assets", "minecraft", "models", "custom", "machine.json");
+      const roots = getDocumentResourceRootCandidates(fileName, "models", null, "minecraft", "textures");
+
+      assert.deepStrictEqual(roots, [
+        path.join(packRoot, "new_overlay", "assets", "minecraft", "textures"),
+        path.join(packRoot, "old_overlay", "assets", "minecraft", "textures"),
+        path.join(packRoot, "assets", "minecraft", "textures")
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not use default assets when the current pack filter blocks the resource", () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+    const defaultAssets = path.join(root, "default_assets");
+
+    try {
+      fs.mkdirSync(path.join(packRoot, "assets", "minecraft", "models", "block"), { recursive: true });
+      fs.mkdirSync(defaultAssets, { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), JSON.stringify({
+        pack: {
+          ["min_format"]: [88, 0],
+          ["max_format"]: [88, 0],
+          description: "test"
+        },
+        filter: {
+          block: [
+            {
+              namespace: "minecraft",
+              path: "textures/block/stone.*"
+            }
+          ]
+        }
+      }));
+
+      const fileName = path.join(packRoot, "assets", "minecraft", "models", "block", "cube.json");
+      const roots = getDocumentResourceRootCandidates(fileName, "models/block", defaultAssets, "minecraft", "textures", {
+        resourcePath: "textures/block/stone.png"
+      });
+
+      assert.deepStrictEqual(roots, [
+        path.join(packRoot, "assets", "minecraft", "textures")
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses configured lower-priority resource packs before default assets", () => {
+    const root = createTempDirectory();
+    const currentPack = path.join(root, "current");
+    const lowerPack = path.join(root, "lower");
+    const defaultAssets = path.join(root, "default_assets");
+
+    try {
+      fs.mkdirSync(path.join(currentPack, "assets", "minecraft", "models", "block"), { recursive: true });
+      fs.mkdirSync(path.join(lowerPack, "assets", "minecraft", "textures"), { recursive: true });
+      fs.mkdirSync(defaultAssets, { recursive: true });
+      for (const packRoot of [currentPack, lowerPack]) {
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), JSON.stringify({
+          pack: {
+            ["min_format"]: [88, 0],
+            ["max_format"]: [88, 0],
+            description: "test"
+          }
+        }));
+      }
+
+      const fileName = path.join(currentPack, "assets", "minecraft", "models", "block", "cube.json");
+      const roots = getDocumentResourceRootCandidates(fileName, "models/block", defaultAssets, "minecraft", "textures", {
+        resourcePath: "textures/block/stone.png",
+        resourcePackRoots: [lowerPack]
+      });
+
+      assert.deepStrictEqual(roots, [
+        path.join(currentPack, "assets", "minecraft", "textures"),
+        path.join(lowerPack, "assets", "minecraft", "textures"),
+        path.join(defaultAssets, "minecraft", "textures"),
+        path.join(defaultAssets, "textures"),
+        path.join(defaultAssets, "assets", "minecraft", "textures")
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("serializes modern pack.mcmeta metadata safely", () => {
     const result = JSON.parse(getPackMcmeta("86.2", 'quote " and slash \\'));
 

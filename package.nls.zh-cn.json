@@ -3,6 +3,7 @@
   "extension.description": "帮助 Minecraft 开发者更高效地制作资源包",
   "config.title": "Minecraft 资源包助手",
   "config.desc.defaultMcAssetsPath": "原版 Minecraft 资源的绝对路径，用于跳转、补全和诊断；可指向 assets 文件夹、assets/minecraft 文件夹，或包含 assets/minecraft 的资源包根目录",
+  "config.desc.resourcePackLoadOrder": "当前编辑资源包下层已启用资源包根目录的绝对路径列表，按高优先级到低优先级排序",
   "config.desc.tipColorForUndefinedTextureVariables": "模型文件中，引用的 # 开头的材质变量未在 textures 部分中定义时，该变量被高亮的颜色",
   "command.title.openDefaultMcAssetsPath": "McResHelper: 打开原版材质所在文件夹",
   "command.title.createNewResourcePack": "McResHelper: 在当前文件夹下创建新资源包",

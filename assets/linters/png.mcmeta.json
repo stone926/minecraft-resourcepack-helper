@@ -85,14 +85,21 @@
           "description": "Whether texture coordinates should clamp instead of tile."
         },
         "mipmaps": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Custom mipmap level count."
+          "type": "array",
+          "description": "Custom mipmap levels.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "mipmap_strategy": {
           "type": "string",
           "enum": ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"],
           "description": "Mipmap generation strategy. Defaults to auto."
+        },
+        "darkened_cutout_mipmap": {
+          "type": "boolean",
+          "description": "Whether cutout mipmaps should be darkened."
         },
         "alpha_cutoff_bias": {
           "type": "number",
@@ -107,63 +114,19 @@
       "additionalProperties": false,
       "properties": {
         "scaling": {
-          "type": "object",
-          "title": "scaling",
-          "description": "GUI sprite scaling configuration.",
-          "additionalProperties": false,
-          "required": ["type"],
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": ["nine_slice", "stretch", "tile"],
-              "description": "Scaling strategy for this GUI sprite."
+          "oneOf": [
+            {
+              "$ref": "#/definitions/stretchScaling"
             },
-            "width": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Source sprite width."
+            {
+              "$ref": "#/definitions/tileScaling"
             },
-            "height": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Source sprite height."
-            },
-            "border": {
-              "description": "Nine-slice border size.",
-              "oneOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "left": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "top": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "right": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "bottom": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                }
-              ]
-            },
-            "stretch_inner": {
-              "type": "boolean",
-              "description": "Whether the center area of a nine-slice sprite stretches."
+            {
+              "$ref": "#/definitions/nineSliceScaling"
             }
-          }
+          ],
+          "title": "scaling",
+          "description": "GUI sprite scaling configuration."
         }
       }
     },
@@ -179,6 +142,106 @@
           "description": "How the villager hat layer is rendered. Defaults to none."
         }
       }
+    }
+  },
+  "definitions": {
+    "scalingBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["nine_slice", "stretch", "tile"],
+          "description": "Scaling strategy for this GUI sprite."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Source sprite width."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Source sprite height."
+        },
+        "border": {
+          "description": "Nine-slice border size.",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "left": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "top": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "right": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "bottom": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "stretch_inner": {
+          "type": "boolean",
+          "description": "Whether the center area of a nine-slice sprite stretches."
+        }
+      }
+    },
+    "stretchScaling": {
+      "allOf": [
+        { "$ref": "#/definitions/scalingBase" },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stretch"
+            }
+          }
+        }
+      ]
+    },
+    "tileScaling": {
+      "allOf": [
+        { "$ref": "#/definitions/scalingBase" },
+        {
+          "type": "object",
+          "required": ["width", "height"],
+          "properties": {
+            "type": {
+              "const": "tile"
+            }
+          }
+        }
+      ]
+    },
+    "nineSliceScaling": {
+      "allOf": [
+        { "$ref": "#/definitions/scalingBase" },
+        {
+          "type": "object",
+          "required": ["width", "height", "border"],
+          "properties": {
+            "type": {
+              "const": "nine_slice"
+            }
+          }
+        }
+      ]
     }
   }
 }

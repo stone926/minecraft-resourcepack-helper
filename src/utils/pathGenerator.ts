@@ -58,13 +58,18 @@ export function generateRedirectPath(
 
   const candidates: string[] = [];
   const configuredDefaultPath = workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath");
+  const configuredResourcePackRoots = workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? [];
   for (const root of getDocumentResourceRootCandidates(
     document.fileName,
     source,
     configuredDefaultPath,
     location.namespace,
     target,
-    { pathExists: options.pathExists }
+    {
+      pathExists: options.pathExists,
+      resourcePath: path.posix.join(target.replaceAll("\\", "/"), location.resourcePath.replaceAll(path.sep, "/")),
+      resourcePackRoots: configuredResourcePackRoots
+    }
   )) {
     candidates.push(path.join(root, location.resourcePath));
   }

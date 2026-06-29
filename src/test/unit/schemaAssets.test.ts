@@ -9,6 +9,7 @@ interface PackageJson {
 }
 
 interface JsonValidationEntry {
+  fileMatch?: string;
   url?: string;
 }
 
@@ -73,6 +74,14 @@ describe("schema assets", () => {
 
     const tintIndex = getObjectAt(schema, ["definitions", "faceProps", "properties", "tintindex"]);
     assert.strictEqual(tintIndex.minimum, -1);
+
+    const elementRequired = getStringArrayProperty(getObjectAt(schema, ["definitions", "element"]), "required");
+    assert.strictEqual(elementRequired.includes("faces"), false);
+
+    const textureReferenceBranches = getArrayProperty(getObjectAt(schema, ["definitions", "textureReference"]), "oneOf");
+    const objectTextureReference = assertJsonObjectValue(textureReferenceBranches[1], "textureReference.oneOf[1]");
+    const textureSprite = getObjectAt(objectTextureReference, ["properties", "sprite"]);
+    assert.strictEqual(getObjectAt(textureSprite, ["not"]).pattern, "^#");
   });
 
   it("allows z-axis rotation in blockstate model entries", () => {
@@ -132,6 +141,13 @@ describe("schema assets", () => {
   it("covers current PNG texture metadata enum values", () => {
     const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "png.mcmeta.json"));
 
+    const mipmaps = getObjectAt(schema, ["properties", "texture", "properties", "mipmaps"]);
+    assert.strictEqual(mipmaps.type, "array");
+    assert.strictEqual(getObjectAt(mipmaps, ["items"]).type, "integer");
+
+    const darkenedCutoutMipmap = getObjectAt(schema, ["properties", "texture", "properties", "darkened_cutout_mipmap"]);
+    assert.strictEqual(darkenedCutoutMipmap.type, "boolean");
+
     const mipmapStrategy = getObjectAt(schema, ["properties", "texture", "properties", "mipmap_strategy"]);
     assert.deepStrictEqual(mipmapStrategy.enum, ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"]);
 
@@ -141,6 +157,23 @@ describe("schema assets", () => {
     const legacyVillagerSchema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "villager.mcmeta.json"));
     const legacyVillagerHat = getObjectAt(legacyVillagerSchema, ["properties", "villager", "properties", "hat"]);
     assert.deepStrictEqual(legacyVillagerHat.enum, ["none", "partial", "full"]);
+  });
+
+  it("requires GUI scaling fields by scaling type", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "png.mcmeta.json"));
+    const scaling = getObjectAt(schema, ["properties", "gui", "properties", "scaling"]);
+    assert.strictEqual(getArrayProperty(scaling, "oneOf").length, 3);
+
+    const tileShape = assertJsonObjectValue(
+      getArrayProperty(getObjectAt(schema, ["definitions", "tileScaling"]), "allOf")[1],
+      "tileScaling.allOf[1]"
+    );
+    const nineSliceShape = assertJsonObjectValue(
+      getArrayProperty(getObjectAt(schema, ["definitions", "nineSliceScaling"]), "allOf")[1],
+      "nineSliceScaling.allOf[1]"
+    );
+    assert.deepStrictEqual(getStringArrayProperty(tileShape, "required"), ["width", "height"]);
+    assert.deepStrictEqual(getStringArrayProperty(nineSliceShape, "required"), ["width", "height", "border"]);
   });
 
   it("covers current post effect target and input fields", () => {
@@ -218,6 +251,7 @@ describe("schema assets", () => {
       "minecraft:range_dispatch",
       "minecraft:empty",
       "minecraft:bundle/selected_item",
+      "minecraft:selected_item",
       "minecraft:special"
     ]) {
       assert.ok(topLevelTypes.includes(type), `top-level type ${type}`);
@@ -254,17 +288,23 @@ describe("schema assets", () => {
   it("covers current item model property groups and special fields", () => {
     const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "items.json"));
 
-    const conditionProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "conditionProperty"]), "enum");
+    const conditionProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "conditionProperty", "properties", "type"]), "enum");
     assert.ok(conditionProperties.includes("minecraft:keybind_down"));
     assert.strictEqual(conditionProperties.includes("minecraft:block_state"), false);
 
-    const selectProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "selectProperty"]), "enum");
+    const selectProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "selectProperty", "properties", "type"]), "enum");
     assert.ok(selectProperties.includes("minecraft:block_state"));
     assert.strictEqual(selectProperties.includes("minecraft:damage"), false);
 
-    const rangeProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "rangeDispatchProperty"]), "enum");
+    const rangeProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "rangeDispatchProperty", "properties", "type"]), "enum");
     assert.ok(rangeProperties.includes("minecraft:use_duration"));
     assert.strictEqual(rangeProperties.includes("minecraft:selected"), false);
+
+    const specialItemModel = getObjectAt(schema, ["definitions", "specialItemModel"]);
+    const specialItemModelParts = getArrayProperty(specialItemModel, "allOf");
+    const specialItemModelShape = assertJsonObjectValue(specialItemModelParts[1], "specialItemModel.allOf[1]");
+    const specialRequired = getStringArrayProperty(specialItemModelShape, "required");
+    assert.strictEqual(specialRequired.includes("base"), false);
 
     const bannerAttachment = getObjectAt(schema, ["definitions", "bannerSpecialModel", "properties", "attachment"]);
     assert.deepStrictEqual(bannerAttachment.enum, ["ground", "wall"]);
@@ -284,6 +324,57 @@ describe("schema assets", () => {
     const headProperties = getObjectAt(schema, ["definitions", "headSpecialModel", "properties"]);
     assert.ok(Object.hasOwn(headProperties, "texture"));
     assert.ok(Object.hasOwn(headProperties, "animation"));
+  });
+
+  it("registers generic model schemas and strict atlas source branches", () => {
+    const packageJson = readJsonFile<PackageJson>(path.join(process.cwd(), "package.json"));
+    const validations = packageJson.contributes?.jsonValidation ?? [];
+    assert.ok(validations.some(validation =>
+      validation.url === "./assets/linters/models-block.json" &&
+      validation.fileMatch === "**/models/**/*.json"
+    ));
+
+    const atlasSchema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "atlases.json"));
+    const sourceBranches = getArrayProperty(getObjectAt(atlasSchema, ["definitions", "source"]), "oneOf");
+    assert.strictEqual(sourceBranches.length, 5);
+
+    const directorySourceShape = assertJsonObjectValue(
+      getArrayProperty(getObjectAt(atlasSchema, ["definitions", "directorySource"]), "allOf")[1],
+      "directorySource.allOf[1]"
+    );
+    assert.deepStrictEqual(getStringArrayProperty(directorySourceShape, "required"), ["type", "source"]);
+  });
+
+  it("uses 88.0 pack defaults and constrains overlay directories", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "pack.mcmeta.json"));
+    const snippets = getArrayProperty(schema, "defaultSnippets");
+    const snippet = assertJsonObjectValue(snippets[0], "defaultSnippets[0]");
+    const body = getObjectAt(snippet, ["body", "pack"]);
+    assert.deepStrictEqual(body.min_format, [88, 0]);
+    assert.deepStrictEqual(body.max_format, [88, 0]);
+
+    const directory = getObjectAt(schema, ["definitions", "overlayEntry", "properties", "directory"]);
+    assert.strictEqual(directory.pattern, "^[a-z0-9_-]+$");
+  });
+
+  it("splits font providers by type with modern ranges", () => {
+    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "font.json"));
+    const providerBranches = getArrayProperty(getObjectAt(schema, ["definitions", "provider"]), "oneOf");
+    assert.strictEqual(providerBranches.length, 6);
+
+    const bitmapShape = assertJsonObjectValue(
+      getArrayProperty(getObjectAt(schema, ["definitions", "bitmapProvider"]), "allOf")[1],
+      "bitmapProvider.allOf[1]"
+    );
+    assert.deepStrictEqual(getStringArrayProperty(bitmapShape, "required"), ["type", "file", "chars", "ascent"]);
+
+    const shiftItem = getObjectAt(schema, ["definitions", "providerBase", "properties", "shift", "items"]);
+    assert.strictEqual(shiftItem.minimum, -512);
+    assert.strictEqual(shiftItem.maximum, 512);
+
+    const left = getObjectAt(schema, ["definitions", "providerBase", "properties", "size_overrides", "items", "properties", "left"]);
+    assert.strictEqual(left.minimum, 0);
+    assert.strictEqual(left.maximum, 32);
   });
 });
 

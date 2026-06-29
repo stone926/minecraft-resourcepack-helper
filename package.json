@@ -56,7 +56,7 @@
         "url": "./assets/linters/blockstates.json"
       },
       {
-        "fileMatch": "**/models/block/**/*.json",
+        "fileMatch": "**/models/**/*.json",
         "url": "./assets/linters/models-block.json"
       },
       {
@@ -168,6 +168,14 @@
           "type": "string",
           "description": "%config.desc.defaultMcAssetsPath%",
           "default": ""
+        },
+        "McResHelper.resourcePackLoadOrder": {
+          "type": "array",
+          "description": "%config.desc.resourcePackLoadOrder%",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
         },
         "McResHelper.tipColorForUndefinedTextureVariables": {
           "type": "string",

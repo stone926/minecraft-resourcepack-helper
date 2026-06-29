@@ -112,6 +112,9 @@
           "properties": {
             "sprite": {
               "type": "string",
+              "not": {
+                "pattern": "^#"
+              },
               "description": "材质资源路径。对象写法中不能使用 # 材质变量。"
             },
             "force_translucent": {
@@ -134,12 +137,12 @@
         "translation": {
           "title": "translation 移动",
           "description": "根据[x, y, z]格式，使模型相对于对应轴进行移动。如果值大于80，会作为80处理，小于-80时则看作-80",
-          "$ref": "#/definitions/vector3"
+          "$ref": "#/definitions/displayTranslation"
         },
         "scale": {
           "title": "scale 缩放",
           "description": "根据[x, y, z]格式，使模型相对于对应轴进行缩放。当值大于4时，效果等同于4",
-          "$ref": "#/definitions/vector3"
+          "$ref": "#/definitions/displayScale"
         }
       }
     },
@@ -181,6 +184,50 @@
         "maximum": 32
       }]
     },
+    "displayTranslation": {
+      "type": "array",
+      "additionalItems": false,
+      "minItems": 3,
+      "maxItems": 3,
+      "items": [
+      {
+        "type": "number",
+        "minimum": -80,
+        "maximum": 80
+      },
+      {
+        "type": "number",
+        "minimum": -80,
+        "maximum": 80
+      },
+      {
+        "type": "number",
+        "minimum": -80,
+        "maximum": 80
+      }]
+    },
+    "displayScale": {
+      "type": "array",
+      "additionalItems": false,
+      "minItems": 3,
+      "maxItems": 3,
+      "items": [
+      {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 4
+      },
+      {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 4
+      },
+      {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 4
+      }]
+    },
     "axis": {
       "type": "string",
       "enum": ["x", "y", "z"]
@@ -209,16 +256,24 @@
       "maxItems": 4,
       "items": [
       {
-        "type": "number"
+        "type": "number",
+        "minimum": 0,
+        "maximum": 16
       },
       {
-        "type": "number"
+        "type": "number",
+        "minimum": 0,
+        "maximum": 16
       },
       {
-        "type": "number"
+        "type": "number",
+        "minimum": 0,
+        "maximum": 16
       },
       {
-        "type": "number"
+        "type": "number",
+        "minimum": 0,
+        "maximum": 16
       }]
     },
     "faceProps": {
@@ -257,7 +312,7 @@
       "title": "element 元素",
       "description": "定义一个元素",
       "additionalProperties": true,
-      "required": ["from", "to", "faces"],
+      "required": ["from", "to"],
       "properties": {
         "__comment": {
           "type": "string",

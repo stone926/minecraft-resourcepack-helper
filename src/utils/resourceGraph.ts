@@ -134,7 +134,7 @@ export async function loadResourceGraphDocument(uri: vscode.Uri): Promise<Resour
 }
 
 export function isModelDocumentPath(fileName: string): boolean {
-  return /[\\/]models[\\/](?:block|item)[\\/].+\.json$/i.test(fileName);
+  return /[\\/]models[\\/].+\.json$/i.test(fileName);
 }
 
 export function resourceUriKey(uri: vscode.Uri): string {
@@ -427,8 +427,7 @@ async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
 async function collectModelDocumentUris(): Promise<vscode.Uri[]> {
   const urisByKey = new Map<string, vscode.Uri>();
   const workspaceUris = [
-    ...(await vscode.workspace.findFiles("**/assets/*/models/block/**/*.json", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/models/item/**/*.json", "**/node_modules/**"))
+    ...(await vscode.workspace.findFiles("**/assets/*/models/**/*.json", "**/node_modules/**"))
   ];
 
   for (const uri of workspaceUris) {

@@ -2,7 +2,7 @@ export const defaultPackPng: string = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8
 export const errorMsg = {
   emptyInput: "input must not be empty",
   folderAlreadyExist: "folder already exist",
-  invalidPackFormat: "input must be a pack format version such as 86.2 or 69"
+  invalidPackFormat: "input must be a pack format version such as 88.0 or 69"
 };
 export const promptMsg = {
   packName: "Please input the name of your resource pack",
@@ -11,7 +11,7 @@ export const promptMsg = {
   description: "Please input the description of your resource pack, can be empty"
 };
 export const defaultPackAttributes = {
-  packFormat: "86.2",
+  packFormat: "88.0",
   namespace: "minecraft"
 };
 

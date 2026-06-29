@@ -13,7 +13,40 @@ const pathSegmentPattern = /^[a-z0-9._-]+$/;
 
 interface ResourceRootCandidateOptions {
   pathExists?: (filePath: string) => boolean;
+  resourcePath?: string;
+  resourcePackRoots?: string[];
 }
+
+interface PackMetadata {
+  overlays: OverlayEntry[];
+  filters: ResourceFilter[];
+}
+
+interface OverlayEntry {
+  directory: string;
+  minFormat: ResourcePackFormat | null;
+  maxFormat: ResourcePackFormat | null;
+  legacyFormats: LegacyFormatRange | null;
+}
+
+interface ResourceFilter {
+  namespace: string | null;
+  path: string | null;
+}
+
+interface ResourcePackFormat {
+  major: number;
+  minor: number;
+}
+
+interface LegacyFormatRange {
+  min: number;
+  max: number;
+}
+
+const currentResourcePackFormat: ResourcePackFormat = { major: 88, minor: 0 };
+const currentLegacyBoundaryFormat = 64;
+const overlayDirectoryPattern = /^[a-z0-9_-]+$/;
 
 export function parseResourceLocation(input: string, targetFileExtension: string | null): ResourceLocation {
   const [rawNamespace, ...rawPathParts] = input.split(":");
@@ -68,14 +101,25 @@ export function getDocumentResourceRootCandidates(
   options: ResourceRootCandidateOptions = {}
 ): string[] {
   const assetsRoot = findAssetsRoot(fileName, source);
-  const candidates = getResourceRootCandidates(assetsRoot, null, namespace, target);
-  const basePackAssetsRoot = findBasePackAssetsRoot(fileName, assetsRoot, options);
+  const packRoot = findPackRoot(fileName, options);
+  const candidates = packRoot
+    ? getPackResourceRootCandidates(packRoot, assetsRoot, namespace, target, options)
+    : getResourceRootCandidates(assetsRoot, null, namespace, target);
+  const higherPriorityFilters = packRoot ? [...readPackMetadata(packRoot, options).filters] : [];
 
-  if (basePackAssetsRoot) {
-    candidates.push(...getResourceRootCandidates(basePackAssetsRoot, null, namespace, target));
+  for (const lowerPriorityPackRoot of getConfiguredLowerPriorityPackRoots(packRoot, options.resourcePackRoots)) {
+    if (!resourceMatchesFilters(higherPriorityFilters, namespace, options.resourcePath)) {
+      candidates.push(...getPackResourceRootCandidates(lowerPriorityPackRoot, null, namespace, target, options));
+      higherPriorityFilters.push(...readPackMetadata(lowerPriorityPackRoot, options).filters);
+    }
   }
 
-  candidates.push(...getResourceRootCandidates(null, defaultAssetsPath, namespace, target));
+  const blocksDefaultAssets = resourceMatchesFilters(higherPriorityFilters, namespace, options.resourcePath);
+
+  if (!blocksDefaultAssets) {
+    candidates.push(...getResourceRootCandidates(null, defaultAssetsPath, namespace, target));
+  }
+
   return unique(candidates);
 }
 
@@ -101,24 +145,6 @@ export function getResourceRootCandidates(assetsRoot: string | null, defaultAsse
   }
 
   return [...new Set(candidates)];
-}
-
-function findBasePackAssetsRoot(
-  fileName: string,
-  currentAssetsRoot: string | null,
-  options: ResourceRootCandidateOptions
-): string | null {
-  const packRoot = findPackRoot(fileName, options);
-  if (!packRoot) {
-    return null;
-  }
-
-  const baseAssetsRoot = path.join(packRoot, "assets");
-  if (!currentAssetsRoot || isSamePath(baseAssetsRoot, currentAssetsRoot)) {
-    return null;
-  }
-
-  return baseAssetsRoot;
 }
 
 function findPackRoot(fileName: string, options: ResourceRootCandidateOptions): string | null {
@@ -159,6 +185,195 @@ function isSamePath(left: string, right: string): boolean {
   }
 
   return normalizedLeft === normalizedRight;
+}
+
+function getPackResourceRootCandidates(
+  packRoot: string,
+  currentAssetsRoot: string | null,
+  namespace: string,
+  target: string,
+  options: ResourceRootCandidateOptions
+): string[] {
+  const metadata = readPackMetadata(packRoot, options);
+  const baseAssetsRoot = path.join(packRoot, "assets");
+  const candidates: string[] = [];
+  const activeOverlayRoots = metadata.overlays
+    .filter(overlay => overlayApplies(overlay))
+    .map(overlay => path.join(packRoot, overlay.directory, "assets"))
+    .reverse();
+
+  for (const overlayAssetsRoot of activeOverlayRoots) {
+    candidates.push(...getResourceRootCandidates(overlayAssetsRoot, null, namespace, target));
+  }
+
+  if (currentAssetsRoot && !isSamePath(currentAssetsRoot, baseAssetsRoot) && !activeOverlayRoots.some(root => isSamePath(root, currentAssetsRoot))) {
+    candidates.unshift(...getResourceRootCandidates(currentAssetsRoot, null, namespace, target));
+  }
+
+  candidates.push(...getResourceRootCandidates(baseAssetsRoot, null, namespace, target));
+  return candidates;
+}
+
+function getConfiguredLowerPriorityPackRoots(currentPackRoot: string | null, configuredRoots: string[] | undefined): string[] {
+  if (!configuredRoots) {
+    return [];
+  }
+
+  return configuredRoots
+    .map(root => path.normalize(root))
+    .filter(root => root.length > 0 && (!currentPackRoot || !isSamePath(root, currentPackRoot)));
+}
+
+function resourceMatchesFilters(
+  filters: ResourceFilter[],
+  namespace: string,
+  resourcePath: string | undefined
+): boolean {
+  if (!resourcePath) {
+    return false;
+  }
+
+  const normalizedResourcePath = resourcePath.replaceAll("\\", "/");
+  return filters.some(filter => {
+    const namespacePattern = filter.namespace ?? ".*";
+    const pathPattern = filter.path ?? ".*";
+    return regexMatches(namespacePattern, namespace) && regexMatches(pathPattern, normalizedResourcePath);
+  });
+}
+
+function readPackMetadata(packRoot: string, options: ResourceRootCandidateOptions): PackMetadata {
+  const packMcmetaPath = path.join(packRoot, "pack.mcmeta");
+  try {
+    if (options.pathExists && !options.pathExists(packMcmetaPath)) {
+      return { overlays: [], filters: [] };
+    }
+    const raw = JSON.parse(fs.readFileSync(packMcmetaPath, "utf8")) as unknown;
+    return parsePackMetadata(raw);
+  } catch {
+    return { overlays: [], filters: [] };
+  }
+}
+
+function parsePackMetadata(raw: unknown): PackMetadata {
+  const root = objectRecord(raw);
+  const overlays = objectRecord(root.overlays);
+  const entries = Array.isArray(overlays.entries) ? overlays.entries : [];
+  const filter = objectRecord(root.filter);
+  const blockFilters = Array.isArray(filter.block) ? filter.block : [];
+
+  return {
+    overlays: entries.map(parseOverlayEntry).filter((entry): entry is OverlayEntry => entry !== null),
+    filters: blockFilters.map(parseResourceFilter).filter((entry): entry is ResourceFilter => entry !== null)
+  };
+}
+
+function parseOverlayEntry(raw: unknown): OverlayEntry | null {
+  const entry = objectRecord(raw);
+  const directory = typeof entry.directory === "string" ? entry.directory : null;
+  if (!directory || !overlayDirectoryPattern.test(directory)) {
+    return null;
+  }
+
+  return {
+    directory,
+    minFormat: parseResourcePackFormat(entry.min_format, false),
+    maxFormat: parseResourcePackFormat(entry.max_format, true),
+    legacyFormats: parseLegacyFormatRange(entry.formats)
+  };
+}
+
+function parseResourceFilter(raw: unknown): ResourceFilter | null {
+  const filter = objectRecord(raw);
+  return {
+    namespace: typeof filter.namespace === "string" ? filter.namespace : null,
+    path: typeof filter.path === "string" ? filter.path : null
+  };
+}
+
+function overlayApplies(entry: OverlayEntry): boolean {
+  if (entry.minFormat || entry.maxFormat) {
+    return (!entry.minFormat || compareFormats(currentResourcePackFormat, entry.minFormat) >= 0) &&
+      (!entry.maxFormat || compareFormats(currentResourcePackFormat, entry.maxFormat) <= 0);
+  }
+
+  if (entry.legacyFormats) {
+    return currentLegacyBoundaryFormat >= entry.legacyFormats.min && currentLegacyBoundaryFormat <= entry.legacyFormats.max;
+  }
+
+  return false;
+}
+
+function parseResourcePackFormat(value: unknown, isMaxFormat: boolean): ResourcePackFormat | null {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return {
+      major: value,
+      minor: isMaxFormat ? Number.MAX_SAFE_INTEGER : 0
+    };
+  }
+
+  if (!Array.isArray(value) || !isFormatTuple(value)) {
+    return null;
+  }
+
+  return {
+    major: value[0],
+    minor: value.length === 2 ? value[1] : (isMaxFormat ? Number.MAX_SAFE_INTEGER : 0)
+  };
+}
+
+function parseLegacyFormatRange(value: unknown): LegacyFormatRange | null {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return { min: value, max: value };
+  }
+
+  if (Array.isArray(value) && isLegacyFormatTuple(value)) {
+    return { min: value[0], max: value[1] };
+  }
+
+  const objectValue = objectRecord(value);
+  if (
+    typeof objectValue.min_inclusive === "number" &&
+    typeof objectValue.max_inclusive === "number" &&
+    Number.isInteger(objectValue.min_inclusive) &&
+    Number.isInteger(objectValue.max_inclusive)
+  ) {
+    return { min: objectValue.min_inclusive, max: objectValue.max_inclusive };
+  }
+
+  return null;
+}
+
+function isFormatTuple(value: unknown[]): value is [number] | [number, number] {
+  return value.length >= 1 &&
+    value.length <= 2 &&
+    value.every(item => typeof item === "number" && Number.isInteger(item) && item >= 0);
+}
+
+function isLegacyFormatTuple(value: unknown[]): value is [number, number] {
+  return value.length === 2 &&
+    value.every(item => typeof item === "number" && Number.isInteger(item) && item > 0);
+}
+
+function compareFormats(left: ResourcePackFormat, right: ResourcePackFormat): number {
+  if (left.major !== right.major) {
+    return left.major - right.major;
+  }
+
+  return left.minor - right.minor;
+}
+
+function regexMatches(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return false;
+  }
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function unique(values: string[]): string[] {

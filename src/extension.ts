@@ -13,8 +13,7 @@ import { isResourceGraphDocumentPath } from './utils/resourceGraph';
 
 const jsonResourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/blockstates/*.json" },
-  { language: "json", pattern: "**/models/block/**/*.json" },
-  { language: "json", pattern: "**/models/item/**/*.json" },
+  { language: "json", pattern: "**/models/**/*.json" },
   { language: "json", pattern: "**/particles/**/*.json" },
   { language: "json", pattern: "**/items/**/*.json" },
   { language: "json", pattern: "**/atlases/**/*.json" },
@@ -45,8 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     [
-      { language: "json", pattern: "**/models/block/**/*.json" },
-      { language: "json", pattern: "**/models/item/**/*.json" }
+      { language: "json", pattern: "**/models/**/*.json" }
     ],
     { provideDefinition: textureVarDefinitionProvider }
   ));
@@ -144,7 +142,10 @@ export function activate(context: vscode.ExtensionContext) {
     if (event.affectsConfiguration("McResHelper.tipColorForUndefinedTextureVariables") && activeEditor) {
       updateDecoration(activeEditor);
     }
-    if (event.affectsConfiguration("McResHelper.defaultMcAssetsPath")) {
+    if (
+      event.affectsConfiguration("McResHelper.defaultMcAssetsPath") ||
+      event.affectsConfiguration("McResHelper.resourcePackLoadOrder")
+    ) {
       for (const document of vscode.workspace.textDocuments) {
         refreshResourceDiagnostics(document, resourceDiagnostics);
       }

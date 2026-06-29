@@ -2,14 +2,15 @@ import * as vscode from "vscode";
 import { createResourcePathResolver } from "../utils/pathGenerator";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
+import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
 
 export function refreshResourceDiagnostics(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
-  if (!isResourceReferenceDocument(document)) {
+  if (!isResourceReferenceDocument(document) && !isSemanticDiagnosticsDocument(document)) {
     collection.delete(document.uri);
     return;
   }
 
-  const diagnostics: vscode.Diagnostic[] = [];
+  const diagnostics: vscode.Diagnostic[] = getSemanticResourceDiagnostics(document);
   const resolveResourcePath = createResourcePathResolver();
 
   for (const reference of getResourceReferences(document)) {

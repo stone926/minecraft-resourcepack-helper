@@ -24,7 +24,7 @@
   "font file: {0}": "字体文件：{0}",
   "font: {0}": "字体：{0}",
   "folder already exist": "文件夹已存在",
-  "input must be a pack format version such as 86.2 or 69": "输入必须是类似 86.2 或 69 的资源包格式版本",
+  "input must be a pack format version such as 88.0 or 69": "输入必须是类似 88.0 或 69 的资源包格式版本",
   "input must not be empty": "输入不能为空",
   "missing": "缺失",
   "model: {0}": "模型：{0}",

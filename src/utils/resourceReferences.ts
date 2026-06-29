@@ -31,6 +31,7 @@ type ResourceReferenceDocumentKind =
   | "blockstates"
   | "modelsBlock"
   | "modelsItem"
+  | "models"
   | "particles"
   | "items"
   | "atlases"
@@ -55,6 +56,7 @@ const resourceReferenceDocumentPatterns: Array<{
   { kind: "blockstates", pattern: /[\\/]blockstates[\\/].+\.json$/i },
   { kind: "modelsBlock", pattern: /[\\/]models[\\/]block[\\/].+\.json$/i },
   { kind: "modelsItem", pattern: /[\\/]models[\\/]item[\\/].+\.json$/i },
+  { kind: "models", pattern: /[\\/]models[\\/].+\.json$/i },
   { kind: "particles", pattern: /[\\/]particles[\\/].+\.json$/i },
   { kind: "items", pattern: /[\\/]items[\\/].+\.json$/i },
   { kind: "atlases", pattern: /[\\/]atlases[\\/].+\.json$/i },
@@ -129,6 +131,10 @@ function getReferencesForDocumentKind(ast: JsonDocumentNode, documentKind: Resou
 
   if (documentKind === "modelsItem") {
     return getItemModelReferences(ast);
+  }
+
+  if (documentKind === "models") {
+    return getModelReferences(ast, "models");
   }
 
   if (documentKind === "particles") {
@@ -506,7 +512,7 @@ function collectItemModelReferences(node: JsonAstNode, references: ResourceRefer
     return;
   }
 
-  if (type === "empty" || type === "bundle/selected_item") {
+  if (type === "empty" || type === "bundle/selected_item" || type === "selected_item") {
     return;
   }
 

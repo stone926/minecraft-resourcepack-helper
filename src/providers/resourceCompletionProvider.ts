@@ -27,12 +27,14 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
 
     const partialPath = parsePartialResourcePath(reference.value);
     const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
+    const resourcePackRoots = vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? [];
     const roots = getDocumentResourceRootCandidates(
       document.fileName,
       reference.source,
       defaultAssetsPath,
       partialPath.namespace,
-      reference.target
+      reference.target,
+      { resourcePackRoots }
     );
     const items = await collectCompletionItems(roots, partialPath, reference, replacementRange);
 

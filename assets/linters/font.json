@@ -17,8 +17,19 @@
   },
   "definitions": {
     "provider": {
+      "oneOf": [
+        { "$ref": "#/definitions/bitmapProvider" },
+        { "$ref": "#/definitions/spaceProvider" },
+        { "$ref": "#/definitions/ttfProvider" },
+        { "$ref": "#/definitions/unihexProvider" },
+        { "$ref": "#/definitions/referenceProvider" },
+        { "$ref": "#/definitions/legacyUnicodeProvider" }
+      ]
+    },
+    "providerBase": {
       "type": "object",
       "additionalProperties": true,
+      "required": ["type"],
       "properties": {
         "type": {
           "type": "string",
@@ -79,7 +90,9 @@
           "minItems": 2,
           "maxItems": 2,
           "items": {
-            "type": "number"
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
           }
         },
         "skip": {
@@ -136,10 +149,14 @@
               },
               "left": {
                 "type": "integer",
+                "minimum": 0,
+                "maximum": 32,
                 "title": "left 左边界"
               },
               "right": {
                 "type": "integer",
+                "minimum": 0,
+                "maximum": 32,
                 "title": "right 右边界"
               },
               "ranges": {
@@ -153,6 +170,93 @@
           }
         }
       }
+    },
+    "bitmapProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "file", "chars", "ascent"],
+          "properties": {
+            "type": {
+              "enum": ["bitmap"]
+            }
+          }
+        }
+      ]
+    },
+    "spaceProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "advances"],
+          "properties": {
+            "type": {
+              "enum": ["space"]
+            }
+          }
+        }
+      ]
+    },
+    "ttfProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "file"],
+          "properties": {
+            "type": {
+              "enum": ["ttf"]
+            }
+          }
+        }
+      ]
+    },
+    "unihexProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "hex_file"],
+          "properties": {
+            "type": {
+              "enum": ["unihex"]
+            }
+          }
+        }
+      ]
+    },
+    "referenceProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "id"],
+          "properties": {
+            "type": {
+              "enum": ["reference"]
+            }
+          }
+        }
+      ]
+    },
+    "legacyUnicodeProvider": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/providerBase"
+        },
+        {
+          "type": "object",
+          "deprecationMessage": "legacy_unicode provider 已从现代 Java 版字体系统移除，仅作为旧版本兼容。",
+          "required": ["type", "template", "sizes"],
+          "properties": {
+            "type": {
+              "enum": ["legacy_unicode"]
+            }
+          }
+        }
+      ]
     }
   }
 }

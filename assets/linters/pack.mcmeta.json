@@ -13,8 +13,8 @@
       "body": {
         "pack": {
           "description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
-          "min_format": [86, 2],
-          "max_format": [86, 2]
+          "min_format": [88, 0],
+          "max_format": [88, 0]
         }
       }
     }
@@ -34,12 +34,12 @@
         "min_format": {
           "$ref": "#/definitions/formatVersion",
           "title": "min_format 最低资源包格式",
-          "description": "资源包兼容的最低格式版本。小版本可写为 [major, minor]，例如 [86, 2]。"
+          "description": "资源包兼容的最低格式版本。小版本可写为 [major, minor]，例如 [88, 0]。"
         },
         "max_format": {
           "$ref": "#/definitions/formatVersion",
           "title": "max_format 最高资源包格式",
-          "description": "资源包兼容的最高格式版本。小版本可写为 [major, minor]，例如 [86, 2]。"
+          "description": "资源包兼容的最高格式版本。小版本可写为 [major, minor]，例如 [88, 0]。"
         },
         "pack_format": {
           "$ref": "#/definitions/legacyFormatVersion",
@@ -190,7 +190,8 @@
       "properties": {
         "directory": {
           "type": "string",
-          "description": "相对于资源包根目录的叠加目录。"
+          "pattern": "^[a-z0-9_-]+$",
+          "description": "相对于资源包根目录的叠加目录，只能包含 a-z、0-9、下划线和连字符。"
         },
         "min_format": {
           "$ref": "#/definitions/formatVersion",

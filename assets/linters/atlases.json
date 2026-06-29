@@ -22,8 +22,18 @@
       "description": "Minecraft 资源路径，例如 minecraft:block/stone；省略命名空间时默认为 minecraft。"
     },
     "source": {
+      "oneOf": [
+        { "$ref": "#/definitions/directorySource" },
+        { "$ref": "#/definitions/singleSource" },
+        { "$ref": "#/definitions/filterSource" },
+        { "$ref": "#/definitions/unstitchSource" },
+        { "$ref": "#/definitions/palettedPermutationsSource" }
+      ]
+    },
+    "sourceBase": {
       "type": "object",
       "additionalProperties": true,
+      "required": ["type"],
       "properties": {
         "type": {
           "type": "string",
@@ -123,6 +133,76 @@
           }
         }
       }
+    },
+    "directorySource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "source"],
+          "properties": {
+            "type": {
+              "enum": ["directory", "minecraft:directory"]
+            }
+          }
+        }
+      ]
+    },
+    "singleSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "resource"],
+          "properties": {
+            "type": {
+              "enum": ["single", "minecraft:single"]
+            }
+          }
+        }
+      ]
+    },
+    "filterSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "pattern"],
+          "properties": {
+            "type": {
+              "enum": ["filter", "minecraft:filter"]
+            }
+          }
+        }
+      ]
+    },
+    "unstitchSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "resource", "regions"],
+          "properties": {
+            "type": {
+              "enum": ["unstitch", "minecraft:unstitch"]
+            }
+          }
+        }
+      ]
+    },
+    "palettedPermutationsSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "textures", "palette_key", "permutations"],
+          "properties": {
+            "type": {
+              "enum": ["paletted_permutations", "minecraft:paletted_permutations"]
+            }
+          }
+        }
+      ]
     },
     "unstitchRegion": {
       "type": "object",
