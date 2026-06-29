@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { getPackImageResourceIssues, getTextResourceIssues, NonJsonIssueSeverity } from "./nonJsonResourceChecks";
 import { generateRedirectPath } from "../utils/pathGenerator";
 import { findAssetsRoot } from "../utils/resourceLocation";
 import {
@@ -42,17 +43,22 @@ interface TextureVariable {
 const modernPackFormatBoundary = 65;
 
 export function isSemanticDiagnosticsDocument(document: SemanticDiagnosticsDocument): boolean {
-  return document.languageId === "json" && (
-    /[\\/]pack\.mcmeta$/i.test(document.fileName) ||
-    /[\\/]models[\\/].+\.json$/i.test(document.fileName) ||
-    /[\\/]post_effect[\\/].+\.json$/i.test(document.fileName) ||
-    /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i.test(document.fileName)
-  );
+  return isTextResourceDocument(document.fileName) ||
+    (document.languageId === "json" && (
+      /[\\/]pack\.mcmeta$/i.test(document.fileName) ||
+      /[\\/]models[\\/].+\.json$/i.test(document.fileName) ||
+      /[\\/]post_effect[\\/].+\.json$/i.test(document.fileName) ||
+      /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i.test(document.fileName)
+    ));
 }
 
 export function getSemanticResourceDiagnostics(document: SemanticDiagnosticsDocument): vscode.Diagnostic[] {
   if (!isSemanticDiagnosticsDocument(document)) {
     return [];
+  }
+
+  if (isTextResourceDocument(document.fileName)) {
+    return getTextResourceDiagnostics(document);
   }
 
   const ast = parseJsonAst(document.getText());
@@ -61,7 +67,7 @@ export function getSemanticResourceDiagnostics(document: SemanticDiagnosticsDocu
   }
 
   if (/[\\/]pack\.mcmeta$/i.test(document.fileName)) {
-    return getPackMcmetaDiagnostics(ast);
+    return getPackMcmetaDiagnostics(document, ast);
   }
 
   if (/[\\/]models[\\/].+\.json$/i.test(document.fileName)) {
@@ -75,7 +81,7 @@ export function getSemanticResourceDiagnostics(document: SemanticDiagnosticsDocu
   return getSoundDiagnostics(document, ast);
 }
 
-function getPackMcmetaDiagnostics(ast: JsonDocumentNode): vscode.Diagnostic[] {
+function getPackMcmetaDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDocumentNode): vscode.Diagnostic[] {
   const diagnostics: vscode.Diagnostic[] = [];
   const pack = getObjectMember(ast.body, "pack");
   const packNode = pack?.value ?? ast.body;
@@ -143,7 +149,35 @@ function getPackMcmetaDiagnostics(ast: JsonDocumentNode): vscode.Diagnostic[] {
     pushDiagnostic(diagnostics, packFormat?.value, "pack_format is only for resource pack formats before 65; use min_format and max_format.");
   }
 
+  const packRoot = path.dirname(document.fileName);
+  for (const issue of getPackImageResourceIssues(packRoot)) {
+    pushDiagnostic(
+      diagnostics,
+      ast.body,
+      `${path.relative(packRoot, issue.filePath).replaceAll("\\", "/")}: ${issue.message}`,
+      severityToDiagnosticSeverity(issue.severity)
+    );
+  }
+
   return diagnostics;
+}
+
+function getTextResourceDiagnostics(document: SemanticDiagnosticsDocument): vscode.Diagnostic[] {
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = fs.readFileSync(document.fileName);
+  } catch {
+    bytes = undefined;
+  }
+
+  return getTextResourceIssues(document.fileName, document.getText(), bytes).map(issue => new vscode.Diagnostic(
+    new vscode.Range(
+      new vscode.Position(issue.line, issue.startCharacter),
+      new vscode.Position(issue.line, issue.endCharacter)
+    ),
+    issue.message,
+    severityToDiagnosticSeverity(issue.severity)
+  ));
 }
 
 function getModelDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDocumentNode): vscode.Diagnostic[] {
@@ -423,10 +457,15 @@ function getObjectMember(node: JsonAstNode | null | undefined, name: string): Js
   return objectMembers(node).find(member => memberName(member) === name) ?? null;
 }
 
-function pushDiagnostic(diagnostics: vscode.Diagnostic[], node: JsonAstNode | null | undefined, message: string): void {
+function pushDiagnostic(
+  diagnostics: vscode.Diagnostic[],
+  node: JsonAstNode | null | undefined,
+  message: string,
+  severity = vscode.DiagnosticSeverity.Warning
+): void {
   const range = rangeFromNode(node);
   if (range) {
-    diagnostics.push(new vscode.Diagnostic(range, vscode.l10n.t(message), vscode.DiagnosticSeverity.Warning));
+    diagnostics.push(new vscode.Diagnostic(range, vscode.l10n.t(message), severity));
   }
 }
 
@@ -473,4 +512,14 @@ function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number
 function pathKey(fileName: string): string {
   const normalized = path.normalize(fileName);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function isTextResourceDocument(fileName: string): boolean {
+  return /[\\/]assets[\\/][^\\/]+[\\/]texts[\\/](?:splashes|end|postcredits)\.txt$/i.test(fileName);
+}
+
+function severityToDiagnosticSeverity(severity: NonJsonIssueSeverity): vscode.DiagnosticSeverity {
+  return severity === "information"
+    ? vscode.DiagnosticSeverity.Information
+    : vscode.DiagnosticSeverity.Warning;
 }

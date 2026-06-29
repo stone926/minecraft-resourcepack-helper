@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { defaultPackAttributes } from "../../commands/constants";
 import { createNamespaceFolders, resourcePackNamespaceDirectories, writePackScaffold } from "../../commands/resourcePackScaffold";
 
 describe("resource pack scaffold", () => {
@@ -43,6 +44,10 @@ describe("resource pack scaffold", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("uses the current manual resource pack format as the scaffold default", () => {
+    assert.strictEqual(defaultPackAttributes.packFormat, "88.0");
   });
 });
 
