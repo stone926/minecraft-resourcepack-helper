@@ -56,7 +56,7 @@ describe("model preview manifest", () => {
     assert.ok(webviewHtml.includes('id="detailsResizer"'), "details panel should expose a resize separator");
     assert.ok(webviewHtml.includes("data-details-toggle"), "issues and dependencies sections should be collapsible");
     assert.ok(styles.includes("grid-template-rows: minmax(0, 1fr) 6px"), "narrow preview layout should reserve a draggable details row");
-    assert.ok(styles.includes("fit-content(58vh)"), "bottom details should default to content-driven height with a viewport cap");
+    assert.ok(styles.includes("fit-content(25vh)"), "bottom details should default to content-driven height with a viewport cap");
     assert.ok(styles.includes(".preview-layout.details-has-manual-height"), "manual resizing should opt into a fixed details row height");
     assert.ok(styles.includes(".preview-layout.details-all-collapsed"), "collapsed bottom details should shrink the grid row");
     assert.ok(script.includes("class DetailsPanelController"), "webview should manage resize and collapse interactions");
