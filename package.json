@@ -11,7 +11,7 @@
   ],
   "description": "%extension.description%",
   "version": "2.0.3",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "engines": {
     "vscode": "^1.125.0"
   },
@@ -25,14 +25,7 @@
     "type": "git"
   },
   "activationEvents": [
-    "onLanguage:json",
-    "onLanguage:properties",
-    "workspaceContains:**/pack.mcmeta",
-    "onCommand:McResHelper.openDefaultMcAssetsPath",
-    "onCommand:McResHelper.createNewResourcePack",
-    "onCommand:McResHelper.createNewResourcePackRoot",
-    "onCommand:McResHelper.refreshResourceGraph",
-    "onView:McResHelper.resourceGraph"
+    "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
     "minecraft",
