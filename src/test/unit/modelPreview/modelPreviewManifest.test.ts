@@ -46,6 +46,20 @@ describe("model preview manifest", () => {
     assert.ok(htmlIndex >= 0, "ModelPreviewPanel should inject webview HTML");
     assert.ok(listenerIndex < htmlIndex, "ready can be lost if HTML is injected before the message listener is registered");
   });
+
+  it("keeps preview camera padded and the details panel adjustable", () => {
+    const webviewHtml = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
+    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const styles = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css"), "utf8");
+    const padding = script.match(/const CAMERA_FIT_PADDING = ([\d.]+);/);
+
+    assert.ok(webviewHtml.includes('id="detailsResizer"'), "details panel should expose a resize separator");
+    assert.ok(webviewHtml.includes("data-details-toggle"), "issues and dependencies sections should be collapsible");
+    assert.ok(styles.includes("grid-template-rows: minmax(0, 1fr) 6px"), "narrow preview layout should reserve a draggable details row");
+    assert.ok(script.includes("class DetailsPanelController"), "webview should manage resize and collapse interactions");
+    assert.ok(script.includes("Math.sin(fitFov / 2)"), "perspective camera should fit using the active FOV");
+    assert.ok(padding && Number(padding[1]) >= 1.35, "initial preview should leave a comfortable camera margin");
+  });
 });
 
 function readPackageJson(): PackageJson {

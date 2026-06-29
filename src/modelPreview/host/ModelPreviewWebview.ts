@@ -47,18 +47,33 @@ export class ModelPreviewWebview {
       <label><input id="showAxes" type="checkbox" checked> Axes</label>
       <button id="exportImage" title="Export PNG">Export</button>
     </header>
-    <main class="preview-layout">
+    <main id="previewLayout" class="preview-layout">
       <section class="viewport">
         <canvas id="previewCanvas"></canvas>
       </section>
-      <aside class="details">
-        <section>
-          <h2>Issues</h2>
-          <ul id="issues"></ul>
+      <div id="detailsResizer" class="details-resizer" role="separator" aria-label="Resize details panel" aria-controls="detailsPanel" aria-orientation="vertical" tabindex="0"></div>
+      <aside id="detailsPanel" class="details">
+        <section class="details-section" data-details-section>
+          <h2>
+            <button class="details-toggle" type="button" data-details-toggle aria-expanded="true" aria-controls="issuesBody">
+              <span class="details-caret" aria-hidden="true"></span>
+              <span>Issues</span>
+            </button>
+          </h2>
+          <div id="issuesBody" class="details-body">
+            <ul id="issues"></ul>
+          </div>
         </section>
-        <section>
-          <h2>Dependencies</h2>
-          <ul id="dependencies"></ul>
+        <section class="details-section" data-details-section>
+          <h2>
+            <button class="details-toggle" type="button" data-details-toggle aria-expanded="true" aria-controls="dependenciesBody">
+              <span class="details-caret" aria-hidden="true"></span>
+              <span>Dependencies</span>
+            </button>
+          </h2>
+          <div id="dependenciesBody" class="details-body">
+            <ul id="dependencies"></ul>
+          </div>
         </section>
       </aside>
     </main>

@@ -2,9 +2,19 @@ import * as THREE from "./vendor/three.module.js";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 
 const vscode = acquireVsCodeApi();
+const CAMERA_FIT_PADDING = 1.45;
+const CAMERA_MIN_DISTANCE = 24;
+const DETAILS_MIN_SIZE = 72;
+const DETAILS_KEYBOARD_STEP = 24;
+const DETAILS_STACKED_QUERY = "(max-width: 780px)";
 
 class PreviewApp {
   constructor() {
+    this.detailsController = new DetailsPanelController(
+      document.getElementById("previewLayout"),
+      document.getElementById("detailsPanel"),
+      document.getElementById("detailsResizer")
+    );
     this.renderer = new PreviewRenderer(document.getElementById("previewCanvas"));
     this.issues = document.getElementById("issues");
     this.dependencies = document.getElementById("dependencies");
@@ -70,6 +80,109 @@ class PreviewApp {
       item.title = dependency.uri;
       this.dependencies.appendChild(item);
     }
+  }
+}
+
+class DetailsPanelController {
+  constructor(layout, panel, resizer) {
+    this.layout = layout;
+    this.panel = panel;
+    this.resizer = resizer;
+    this.stackedQuery = window.matchMedia(DETAILS_STACKED_QUERY);
+    this.dragging = false;
+
+    this.installToggles();
+    this.installResizer();
+    this.updateOrientation();
+    this.stackedQuery.addEventListener("change", () => this.updateOrientation());
+  }
+
+  installToggles() {
+    for (const button of document.querySelectorAll("[data-details-toggle]")) {
+      button.addEventListener("click", () => this.toggleSection(button));
+    }
+  }
+
+  toggleSection(button) {
+    const section = button.closest("[data-details-section]");
+    if (!section) {
+      return;
+    }
+
+    const expanded = button.getAttribute("aria-expanded") !== "false";
+    section.classList.toggle("is-collapsed", expanded);
+    button.setAttribute("aria-expanded", String(!expanded));
+  }
+
+  installResizer() {
+    this.resizer.addEventListener("pointerdown", event => this.startResize(event));
+    this.resizer.addEventListener("keydown", event => this.resizeWithKeyboard(event));
+  }
+
+  startResize(event) {
+    event.preventDefault();
+    this.dragging = true;
+    this.resizer.classList.add("is-dragging");
+    this.resizer.setPointerCapture(event.pointerId);
+
+    const move = moveEvent => this.resizeFromPointer(moveEvent);
+    const stop = () => {
+      this.dragging = false;
+      this.resizer.classList.remove("is-dragging");
+      this.resizer.removeEventListener("pointermove", move);
+      this.resizer.removeEventListener("pointerup", stop);
+      this.resizer.removeEventListener("pointercancel", stop);
+    };
+
+    this.resizer.addEventListener("pointermove", move);
+    this.resizer.addEventListener("pointerup", stop);
+    this.resizer.addEventListener("pointercancel", stop);
+    this.resizeFromPointer(event);
+  }
+
+  resizeFromPointer(event) {
+    const rect = this.layout.getBoundingClientRect();
+    if (this.isStacked()) {
+      this.setDetailsHeight(rect.bottom - event.clientY);
+      return;
+    }
+
+    this.setDetailsWidth(rect.right - event.clientX);
+  }
+
+  resizeWithKeyboard(event) {
+    const keyDelta = keyboardResizeDelta(event.key);
+    if (keyDelta === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    if (this.isStacked()) {
+      this.setDetailsHeight(this.panel.getBoundingClientRect().height + keyDelta);
+      return;
+    }
+
+    this.setDetailsWidth(this.panel.getBoundingClientRect().width + keyDelta);
+  }
+
+  setDetailsHeight(height) {
+    const layoutHeight = this.layout.getBoundingClientRect().height;
+    const maxHeight = Math.max(DETAILS_MIN_SIZE, Math.floor(layoutHeight * 0.68));
+    this.layout.style.setProperty("--details-height", `${clamp(height, DETAILS_MIN_SIZE, maxHeight)}px`);
+  }
+
+  setDetailsWidth(width) {
+    const layoutWidth = this.layout.getBoundingClientRect().width;
+    const maxWidth = Math.max(220, Math.floor(layoutWidth * 0.58));
+    this.layout.style.setProperty("--details-width", `${clamp(width, 220, maxWidth)}px`);
+  }
+
+  updateOrientation() {
+    this.resizer.setAttribute("aria-orientation", this.isStacked() ? "horizontal" : "vertical");
+  }
+
+  isStacked() {
+    return this.stackedQuery.matches;
   }
 }
 
@@ -259,14 +372,16 @@ class PreviewRenderer {
     const max = new THREE.Vector3(...bounds.max);
     const center = min.clone().add(max).multiplyScalar(0.5);
     const size = max.clone().sub(min);
-    const radius = Math.max(size.x, size.y, size.z, 1) * 0.9;
+    const radius = Math.max(size.length() * 0.5, 1) * CAMERA_FIT_PADDING;
     const direction = viewDirection(this.viewPreset);
-    const distance = Math.max(radius * 2.8, 24);
+    const rect = this.canvas.parentElement.getBoundingClientRect();
+    const aspect = Math.max(1, rect.width) / Math.max(1, rect.height);
+    const distance = this.camera.isPerspectiveCamera
+      ? this.getPerspectiveFitDistance(radius, aspect)
+      : Math.max(radius * 2.8, CAMERA_MIN_DISTANCE);
 
     if (this.cameraMode === "orthographic") {
-      const rect = this.canvas.parentElement.getBoundingClientRect();
-      const aspect = Math.max(1, rect.width) / Math.max(1, rect.height);
-      const half = Math.max(radius * 1.2, 8);
+      const half = Math.max(radius, 8);
       this.camera.left = -half * aspect;
       this.camera.right = half * aspect;
       this.camera.top = half;
@@ -282,6 +397,13 @@ class PreviewRenderer {
     this.controls.target.copy(center);
     this.controls.update();
     this.requestRender();
+  }
+
+  getPerspectiveFitDistance(radius, aspect) {
+    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
+    const fitFov = Math.max(0.1, Math.min(verticalFov, horizontalFov));
+    return Math.max(radius / Math.sin(fitFov / 2), CAMERA_MIN_DISTANCE);
   }
 
   resize() {
@@ -454,6 +576,23 @@ function getCssColor(name, fallback) {
 
 function appendCacheBust(uri) {
   return `${uri}${uri.includes("?") ? "&" : "?"}v=${Date.now()}`;
+}
+
+function keyboardResizeDelta(key) {
+  switch (key) {
+    case "ArrowUp":
+    case "ArrowLeft":
+      return DETAILS_KEYBOARD_STEP;
+    case "ArrowDown":
+    case "ArrowRight":
+      return -DETAILS_KEYBOARD_STEP;
+    default:
+      return 0;
+  }
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function createListItem(text, className) {
