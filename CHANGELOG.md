@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.1.1] - 2026-06-29
+
+- update md (06be6df)
+- update md (89ecb89)
+
 ## [2.1.0] - 2026-06-29
 
 - fix: correct vscode package ignore rules (a75b9dd)
