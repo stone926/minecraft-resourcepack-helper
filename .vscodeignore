@@ -8,12 +8,12 @@ out/test/**
 src/**
 scripts/**
 dist/**
-doc/**
+docs/**
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md
 eslint.config.mjs
-*.md
+**/*.md
 !README.md
 !README_CN.md
 !CHANGELOG.md
