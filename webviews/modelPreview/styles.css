@@ -1,0 +1,146 @@
+:root {
+  color-scheme: light dark;
+  --panel-border: color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
+  --muted: color-mix(in srgb, var(--vscode-foreground) 68%, transparent);
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+button,
+select,
+label {
+  height: 28px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-button-secondaryBackground);
+  font: inherit;
+}
+
+button,
+select {
+  padding: 0 8px;
+}
+
+button:hover,
+select:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 5px;
+  user-select: none;
+}
+
+input {
+  margin: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--panel-border);
+  box-sizing: border-box;
+  background: var(--vscode-sideBar-background);
+}
+
+.preview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 28%);
+  height: calc(100% - 40px);
+  min-height: 0;
+}
+
+.viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+#previewCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.details {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--panel-border);
+  background: var(--vscode-sideBar-background);
+}
+
+.details section {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.details h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.details ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.details li {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.issue-error {
+  color: var(--vscode-errorForeground);
+}
+
+.issue-warning {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.issue-info,
+.dependency-kind {
+  color: var(--muted);
+}
+
+@media (max-width: 780px) {
+  .toolbar {
+    flex-wrap: wrap;
+    height: auto;
+  }
+
+  .preview-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 180px;
+    height: calc(100% - 80px);
+  }
+
+  .details {
+    border-left: none;
+    border-top: 1px solid var(--panel-border);
+  }
+}

@@ -133,6 +133,16 @@
         "command": "McResHelper.refreshResourceGraph",
         "title": "%command.title.refreshResourceGraph%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "McResHelper.openModelPreview",
+        "title": "%command.title.openModelPreview%",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "McResHelper.exportModelPreviewImage",
+        "title": "%command.title.exportModelPreviewImage%",
+        "icon": "$(save-as)"
       }
     ],
     "viewsContainers": {
@@ -153,6 +163,25 @@
       ]
     },
     "menus": {
+      "editor/title": [
+        {
+          "command": "McResHelper.openModelPreview",
+          "when": "resourceLangId == json && resourceFilename =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models[\\\\/].+\\.json$/",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "McResHelper.openModelPreview",
+          "when": "resourceLangId == json && resourceFilename =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models[\\\\/].+\\.json$/",
+          "group": "navigation"
+        },
+        {
+          "command": "McResHelper.exportModelPreviewImage",
+          "when": "resourceLangId == json && resourceFilename =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models[\\\\/].+\\.json$/",
+          "group": "navigation"
+        }
+      ],
       "view/title": [
         {
           "command": "McResHelper.refreshResourceGraph",
@@ -211,6 +240,7 @@
     "typescript-eslint": "^8.61.1"
   },
   "dependencies": {
-    "@humanwhocodes/momoa": "^3.3.10"
+    "@humanwhocodes/momoa": "^3.3.10",
+    "three": "^0.185.0"
   }
 }

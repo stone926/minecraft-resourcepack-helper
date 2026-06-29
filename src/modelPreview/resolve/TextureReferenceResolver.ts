@@ -96,7 +96,7 @@ export class TextureReferenceResolver {
       return missingMaterial("missing-object-sprite");
     }
 
-    return this.resolveUncached(value.sprite, sourceModelFileName, visitedSlots, inheritedForceTranslucent || value.force_translucent === true);
+    return this.resolveUncached(value.sprite, sourceModelFileName, visitedSlots, inheritedForceTranslucent || value.forceTranslucent === true);
   }
 
   private resolveTextureFile(

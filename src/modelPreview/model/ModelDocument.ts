@@ -27,7 +27,7 @@ export type RawTextureValue = string | RawTextureObject;
 
 export interface RawTextureObject {
   sprite?: string;
-  force_translucent?: boolean;
+  forceTranslucent?: boolean;
 }
 
 export interface RawElement {
@@ -35,7 +35,7 @@ export interface RawElement {
   to?: PreviewVec3;
   rotation?: RawElementRotation;
   shade?: boolean;
-  light_emission?: number;
+  lightEmission?: number;
   faces?: Partial<Record<RawFaceName, RawFace>>;
 }
 

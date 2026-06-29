@@ -187,7 +187,7 @@ function normalizeTextures(value: unknown): RawModelData["textures"] {
       const textureObject = texture as Record<string, unknown>;
       textures[name] = {
         sprite: typeof textureObject.sprite === "string" ? textureObject.sprite : undefined,
-        force_translucent: typeof textureObject.force_translucent === "boolean" ? textureObject.force_translucent : undefined
+        forceTranslucent: typeof textureObject.force_translucent === "boolean" ? textureObject.force_translucent : undefined
       };
     }
   }
@@ -207,7 +207,7 @@ function normalizeElements(value: unknown): RawModelData["elements"] {
       to: normalizeVec3(element.to),
       rotation: normalizeElementRotation(element.rotation),
       shade: typeof element.shade === "boolean" ? element.shade : undefined,
-      light_emission: typeof element.light_emission === "number" ? element.light_emission : undefined,
+      lightEmission: typeof element.light_emission === "number" ? element.light_emission : undefined,
       faces: normalizeFaces(element.faces)
     }));
 }

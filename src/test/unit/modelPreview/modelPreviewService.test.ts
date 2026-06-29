@@ -177,6 +177,34 @@ describe("model preview service", () => {
     }
   });
 
+  it("uses configured lower-priority packs for texture fallback", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const lowerPack = createPack(root, "lower");
+      writeJson(pack, "assets/minecraft/models/block/custom.json", {
+        textures: { all: "minecraft:block/lower_only" },
+        elements: [
+          {
+            from: [0, 0, 0],
+            to: [16, 16, 16],
+            faces: { north: { texture: "#all" } }
+          }
+        ]
+      });
+      writeFile(lowerPack, "assets/minecraft/textures/block/lower_only.png", "png");
+
+      const preview = await createService({ resourcePackRoots: [lowerPack] })
+        .getPreviewDocument(path.join(pack, "assets/minecraft/models/block/custom.json"));
+
+      assert.match(preview.materials[0].textureUri ?? "", /lower_only\.png$/);
+      assert.ok(preview.dependencies.some(dependency => dependency.uri.includes("/lower/") || dependency.uri.includes("%5Clower%5C")));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
   it("generates a simplified plane for item/generated", async () => {
     const root = createTempDirectory();
 
@@ -266,6 +294,51 @@ describe("model preview service", () => {
       removeTempDirectory(root);
     }
   });
+
+  it("invalidates cached preview documents by dependency", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const modelFileName = path.join(pack, "assets/minecraft/models/block/simple.json");
+      writeJson(pack, "assets/minecraft/models/block/simple.json", {
+        textures: { all: "minecraft:block/stone" },
+        elements: [
+          {
+            from: [0, 0, 0],
+            to: [16, 16, 16],
+            faces: { north: { texture: "#all" } }
+          }
+        ]
+      });
+      writeFile(pack, "assets/minecraft/textures/block/stone.png", "png");
+
+      const service = createService();
+      const first = await service.getPreviewDocument(modelFileName);
+      writeJson(pack, "assets/minecraft/models/block/simple.json", {
+        textures: { all: "minecraft:block/stone" },
+        elements: [
+          {
+            from: [0, 0, 0],
+            to: [16, 16, 16],
+            faces: {
+              north: { texture: "#all" },
+              south: { texture: "#all" }
+            }
+          }
+        ]
+      });
+      const cached = await service.getPreviewDocument(modelFileName);
+      service.invalidateDependents(modelFileName);
+      const refreshed = await service.getPreviewDocument(modelFileName);
+
+      assert.strictEqual(first.meshes[0].faces.length, 1);
+      assert.strictEqual(cached.meshes[0].faces.length, 1);
+      assert.strictEqual(refreshed.meshes[0].faces.length, 2);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
 });
 
 function createService(configuration = {}) {
@@ -278,8 +351,8 @@ function createPack(root: string, name: string): string {
   const pack = path.join(root, name);
   writeJson(pack, "pack.mcmeta", {
     pack: {
-      min_format: [88, 0],
-      max_format: [88, 0],
+      ["min_format"]: [88, 0],
+      ["max_format"]: [88, 0],
       description: "test"
     }
   });

@@ -10,6 +10,10 @@ import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
 import { isResourceGraphDocumentPath } from './utils/resourceGraph';
+import { ModelPreviewService } from './modelPreview/service/ModelPreviewService';
+import { ModelPreviewHostFileSystem } from './modelPreview/host/ModelPreviewHostFileSystem';
+import { openModelPreviewCommand } from './modelPreview/commands/openModelPreview';
+import { captureModelPreviewImageCommand, exportModelPreviewImageCommand } from './modelPreview/commands/exportModelPreviewImage';
 
 const jsonResourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/blockstates/*.json" },
@@ -65,6 +69,26 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
+
+  const modelPreviewService = new ModelPreviewService({
+    fileSystem: new ModelPreviewHostFileSystem(),
+    configuration: () => ({
+      defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
+      resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+    })
+  });
+  context.subscriptions.push(vscode.commands.registerCommand(
+    "McResHelper.openModelPreview",
+    openModelPreviewCommand(context.extensionUri, modelPreviewService)
+  ));
+  context.subscriptions.push(vscode.commands.registerCommand(
+    "McResHelper.exportModelPreviewImage",
+    exportModelPreviewImageCommand(context.extensionUri, modelPreviewService)
+  ));
+  context.subscriptions.push(vscode.commands.registerCommand(
+    "McResHelper.captureModelPreviewImage",
+    captureModelPreviewImageCommand(context.extensionUri, modelPreviewService)
+  ));
 
   const resourceGraphTreeProvider = new ResourceGraphTreeProvider();
   context.subscriptions.push(resourceGraphTreeProvider);

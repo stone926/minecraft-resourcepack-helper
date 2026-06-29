@@ -9,6 +9,8 @@
   "command.title.createNewResourcePack": "McResHelper: create a new pack in current folder",
   "command.title.createNewResourcePackRoot": "McResHelper: create a new pack with the current folder as the root directory",
   "command.title.refreshResourceGraph": "McResHelper: refresh resource graph",
+  "command.title.openModelPreview": "McResHelper: open model preview",
+  "command.title.exportModelPreviewImage": "McResHelper: export model preview image",
   "viewContainer.title.resources": "Minecraft Resources",
   "view.name.resourceGraph": "Resource Relations"
 }

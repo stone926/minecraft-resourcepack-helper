@@ -83,7 +83,7 @@ export class CuboidBaker {
         cullface: face.cullface,
         tintindex: face.tintindex,
         shade: element.shade !== false,
-        lightEmission: clampLightEmission(element.light_emission)
+        lightEmission: clampLightEmission(element.lightEmission)
       });
     }
 
