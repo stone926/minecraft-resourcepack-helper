@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-29
+
+- fix: correct vscode package ignore rules (a75b9dd)
+- update ignore (ea1ff31)
+- fix: add lightweight non-json resource diagnostics (dc3be82)
+- reivew extra files (d1553ab)
+- fix: align resource pack spec validation (c1553f8)
+- update gitignore and package.json (0cfbeea)
+- unlicensed license (08849d0)
+
 ## [2.0.3] - 2026-06-19
 
 - fix: hide empty model inheritance expanders (16b1137)
