@@ -55,9 +55,9 @@ Example:
 
 ```json
 {
-  "McResHelper.defaultMcAssetsPath": "E:/.minecraft/my_test/26.2/assets/minecraft",
+  "McResHelper.defaultMcAssetsPath": "C:/.minecraft/26.2/assets/minecraft",
   "McResHelper.resourcePackLoadOrder": [
-    "E:/.minecraft/resourcepacks/base_pack"
+    "C:/.minecraft/resourcepacks/base_pack"
   ],
   "McResHelper.tipColorForUndefinedTextureVariables": "Chartreuse"
 }
@@ -78,11 +78,6 @@ npm run compile
 npm run lint
 npm test
 ```
-
-Useful references:
-
-- [Project index](docs/AGENT_INDEX.md)
-- [Minecraft resource pack spec notes](docs/Minecraft资源包规范完整手册.md)
 
 ## Links
 

@@ -48,16 +48,16 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 ## 配置项
 
 - `McResHelper.defaultMcAssetsPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹，或包含 `assets/minecraft` 的资源包根目录。
-- `McResHelper.resourcePackLoadOrder`：低优先级已启用资源包根目录的绝对路径列表。当前资源包会优先解析，该列表会在原版资源之前使用。
+- `McResHelper.resourcePackLoadOrder`：低优先级的已启用资源包根目录的绝对路径列表。当前资源包会优先解析，该列表会在原版资源之前使用。
 - `McResHelper.tipColorForUndefinedTextureVariables`：用于高亮模型文件中未定义 `#texture` 变量的颜色。
 
 示例：
 
 ```json
 {
-  "McResHelper.defaultMcAssetsPath": "E:/.minecraft/my_test/26.2/assets/minecraft",
+  "McResHelper.defaultMcAssetsPath": "C:/.minecraft/26.2/assets/minecraft",
   "McResHelper.resourcePackLoadOrder": [
-    "E:/.minecraft/resourcepacks/base_pack"
+    "C:/.minecraft/resourcepacks/base_pack"
   ],
   "McResHelper.tipColorForUndefinedTextureVariables": "Chartreuse"
 }
@@ -78,11 +78,6 @@ npm run compile
 npm run lint
 npm test
 ```
-
-参考文档：
-
-- [项目索引](docs/AGENT_INDEX.md)
-- [Minecraft 资源包规范说明](docs/Minecraft资源包规范完整手册.md)
 
 ## 链接
 
