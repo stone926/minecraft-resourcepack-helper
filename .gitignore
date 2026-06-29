@@ -6,7 +6,6 @@ node_modules
 *.psd
 .vscode
 docs
-docs/**
 *.md
 !README.md
 !README_CN.md
