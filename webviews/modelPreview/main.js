@@ -139,7 +139,6 @@ class DetailsPanelController {
     this.resizer.addEventListener("pointermove", move);
     this.resizer.addEventListener("pointerup", stop);
     this.resizer.addEventListener("pointercancel", stop);
-    this.resizeFromPointer(event);
   }
 
   resizeFromPointer(event) {
@@ -171,6 +170,7 @@ class DetailsPanelController {
     const layoutHeight = this.layout.getBoundingClientRect().height;
     const maxHeight = Math.max(DETAILS_MIN_SIZE, Math.floor(layoutHeight * 0.68));
     this.layout.style.setProperty("--details-height", `${clamp(height, DETAILS_MIN_SIZE, maxHeight)}px`);
+    this.layout.classList.add("details-has-manual-height");
   }
 
   setDetailsWidth(width) {

@@ -203,8 +203,12 @@ input {
 
   .preview-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) 6px clamp(72px, var(--details-height, 220px), 58vh);
+    grid-template-rows: minmax(0, 1fr) 6px fit-content(58vh);
     height: calc(100% - 80px);
+  }
+
+  .preview-layout.details-has-manual-height {
+    grid-template-rows: minmax(0, 1fr) 6px clamp(72px, var(--details-height), 58vh);
   }
 
   .preview-layout.details-all-collapsed {
