@@ -166,19 +166,19 @@
       "editor/title": [
         {
           "command": "McResHelper.openModelPreview",
-          "when": "resourceLangId == json && resourceFilename =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models[\\\\/].+\\.json$/",
+          "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
         }
       ],
       "editor/context": [
         {
           "command": "McResHelper.openModelPreview",
-          "when": "resourceLangId == json && resourceFilename =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models[\\\\/].+\\.json$/",
+          "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
         },
         {
           "command": "McResHelper.exportModelPreviewImage",
-          "when": "resourceLangId == json && resourceFilename =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models[\\\\/].+\\.json$/",
+          "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
         }
       ],

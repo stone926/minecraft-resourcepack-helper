@@ -7,21 +7,27 @@ interface PackageJson {
   devDependencies?: Record<string, string>;
   contributes?: {
     commands?: Array<{ command?: string; title?: string; icon?: string }>;
-    menus?: Record<string, Array<{ command?: string; when?: string }>>;
+    menus?: Record<string, Array<{ command?: string; when?: string; group?: string }>>;
   };
 }
+
+const modelPreviewMenuWhen = String.raw`resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\/]assets[\\/][^\\/]+[\\/]models(?:[\\/]|$)/`;
 
 describe("model preview manifest", () => {
   it("contributes model preview commands and menus", () => {
     const packageJson = readPackageJson();
     const commands = packageJson.contributes?.commands ?? [];
     const menus = packageJson.contributes?.menus ?? {};
+    const openEditorTitleMenu = findMenu(menus, "editor/title", "McResHelper.openModelPreview");
+    const openContextMenu = findMenu(menus, "editor/context", "McResHelper.openModelPreview");
+    const exportContextMenu = findMenu(menus, "editor/context", "McResHelper.exportModelPreviewImage");
 
     assert.ok(commands.some(command => command.command === "McResHelper.openModelPreview" && command.icon === "$(preview)"));
     assert.ok(commands.some(command => command.command === "McResHelper.exportModelPreviewImage" && command.icon === "$(save-as)"));
-    assert.ok(menus["editor/title"]?.some(menu => menu.command === "McResHelper.openModelPreview"));
-    assert.ok(menus["editor/context"]?.some(menu => menu.command === "McResHelper.openModelPreview"));
-    assert.ok(menus["editor/context"]?.some(menu => menu.command === "McResHelper.exportModelPreviewImage"));
+    assert.strictEqual(openEditorTitleMenu?.when, modelPreviewMenuWhen);
+    assert.strictEqual(openEditorTitleMenu?.group, "navigation");
+    assert.strictEqual(openContextMenu?.when, modelPreviewMenuWhen);
+    assert.strictEqual(exportContextMenu?.when, modelPreviewMenuWhen);
   });
 
   it("ships webview static assets and vendored Three.js runtime files", () => {
@@ -71,4 +77,12 @@ describe("model preview manifest", () => {
 
 function readPackageJson(): PackageJson {
   return JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as PackageJson;
+}
+
+function findMenu(
+  menus: NonNullable<NonNullable<PackageJson["contributes"]>["menus"]>,
+  menuId: string,
+  command: string
+) {
+  return menus[menuId]?.find(menu => menu.command === command);
 }
