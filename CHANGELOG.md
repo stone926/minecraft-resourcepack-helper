@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.2] - 2026-06-30
+
+- fix model preview missing texture pattern (76bc966)
+- fix model preview minecraft negative cuboids (daddf5b)
+- fix model preview negative cuboid rendering (4bd9b85)
+
 ## [2.2.1] - 2026-06-30
 
 - fix: show model preview editor button (e18c6af)
