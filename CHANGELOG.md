@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.2.3] - 2026-06-30
+
+- fix item generated model preview rendering (a4b27b4)
+
 ## [2.2.2] - 2026-06-30
 
 - fix model preview missing texture pattern (76bc966)
