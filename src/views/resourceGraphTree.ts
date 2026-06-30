@@ -6,6 +6,7 @@ import {
   loadResourceGraphDocument,
   ResourceGraphDocument,
   ResourceGraphIndex,
+  ResourceGraphWorkspaceCache,
   resourceUriKey,
   ResolvedResourceReference
 } from "../utils/resourceGraph";
@@ -52,18 +53,24 @@ export class ResourceGraphNode extends vscode.TreeItem {
 
 export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<ResourceGraphNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ResourceGraphNode | undefined | null | void>();
-  private readonly graphIndex = new ResourceGraphIndex();
+  private readonly workspaceCache = new ResourceGraphWorkspaceCache();
+  private readonly graphIndex = new ResourceGraphIndex(this.workspaceCache);
+  private blocksNode: Promise<ResourceGraphNode> | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   public readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
   refresh(): void {
     this.clearRefreshTimer();
-    this.graphIndex.invalidate();
+    this.invalidateCaches();
+    this.onDidChangeTreeDataEmitter.fire();
+  }
+
+  refreshActiveEditor(): void {
     this.onDidChangeTreeDataEmitter.fire();
   }
 
   refreshSoon(delay = 250): void {
-    this.graphIndex.invalidate();
+    this.invalidateCaches();
     this.clearRefreshTimer();
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
@@ -114,7 +121,18 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 
   private async createBlocksNode(): Promise<ResourceGraphNode> {
-    const blockstateUris = await vscode.workspace.findFiles("**/assets/*/blockstates/*.json", "**/node_modules/**");
+    if (!this.blocksNode) {
+      this.blocksNode = this.createBlocksNodeCore().catch(error => {
+        this.blocksNode = null;
+        throw error;
+      });
+    }
+
+    return this.blocksNode;
+  }
+
+  private async createBlocksNodeCore(): Promise<ResourceGraphNode> {
+    const blockstateUris = await this.workspaceCache.getBlockstateUris();
     const blockNodes = blockstateUris.map(uri => this.createResourceNode(uri, new Set(), {
       label: path.basename(uri.fsPath, ".json"),
       iconPath: new vscode.ThemeIcon("symbol-structure")
@@ -435,6 +453,11 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     } catch {
       return null;
     }
+  }
+
+  private invalidateCaches(): void {
+    this.graphIndex.invalidate();
+    this.blocksNode = null;
   }
 
   private clearRefreshTimer(): void {

@@ -130,10 +130,10 @@ export function activate(context: vscode.ExtensionContext) {
     if (editor) {
       activeEditor = editor;
       applyDecoration(activeEditor);
-      resourceGraphTreeProvider.refresh();
+      resourceGraphTreeProvider.refreshActiveEditor();
     } else {
       activeEditor = undefined;
-      resourceGraphTreeProvider.refresh();
+      resourceGraphTreeProvider.refreshActiveEditor();
     }
   }, null, context.subscriptions);
 
