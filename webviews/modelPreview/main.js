@@ -13,6 +13,8 @@ const MISSING_TEXTURE_BLACK = [0, 0, 0];
 
 class PreviewApp {
   constructor() {
+    this.disposables = [];
+    this.disposed = false;
     this.detailsController = new DetailsPanelController(
       document.getElementById("previewLayout"),
       document.getElementById("detailsPanel"),
@@ -21,23 +23,42 @@ class PreviewApp {
     this.renderer = new PreviewRenderer(document.getElementById("previewCanvas"));
     this.issues = document.getElementById("issues");
     this.dependencies = document.getElementById("dependencies");
+    this.exportDialog = document.getElementById("exportDialog");
+    this.exportForm = document.getElementById("exportForm");
+    this.exportWidth = document.getElementById("exportWidth");
+    this.exportHeight = document.getElementById("exportHeight");
+    this.exportTransparent = document.getElementById("exportTransparent");
+    this.exportBackground = document.getElementById("exportBackground");
+    this.exportError = document.getElementById("exportError");
+    this.exportCancel = document.getElementById("exportCancel");
 
-    document.getElementById("resetView").addEventListener("click", () => this.renderer.resetView());
-    document.getElementById("viewPreset").addEventListener("change", event => this.renderer.setViewPreset(event.target.value));
-    document.getElementById("cameraMode").addEventListener("click", event => {
+    this.addDomListener(document.getElementById("resetView"), "click", () => this.renderer.resetView());
+    this.addDomListener(document.getElementById("refreshPreview"), "click", () => vscode.postMessage({ type: "refreshPreview" }));
+    this.addDomListener(document.getElementById("viewPreset"), "change", event => this.renderer.setViewPreset(event.target.value));
+    this.addDomListener(document.getElementById("cameraMode"), "click", event => {
       const mode = this.renderer.toggleCameraMode();
       event.currentTarget.textContent = mode === "perspective" ? "Persp" : "Ortho";
     });
-    document.getElementById("displayMode").addEventListener("change", event => this.renderer.setDisplayMode(event.target.value));
-    document.getElementById("showGrid").addEventListener("change", event => this.renderer.setGridVisible(event.target.checked));
-    document.getElementById("showAxes").addEventListener("change", event => this.renderer.setAxesVisible(event.target.checked));
-    document.getElementById("exportImage").addEventListener("click", () => vscode.postMessage({ type: "exportImage" }));
+    this.addDomListener(document.getElementById("displayMode"), "change", event => this.renderer.setDisplayMode(event.target.value));
+    this.addDomListener(document.getElementById("showGrid"), "change", event => this.renderer.setGridVisible(event.target.checked));
+    this.addDomListener(document.getElementById("showAxes"), "change", event => this.renderer.setAxesVisible(event.target.checked));
+    this.addDomListener(document.getElementById("exportImage"), "click", () => this.openExportDialog());
+    this.addDomListener(this.exportCancel, "click", () => this.exportDialog.close());
+    this.addDomListener(this.exportForm, "submit", event => this.submitExport(event));
+    this.addDomListener(this.exportTransparent, "change", () => this.updateExportBackgroundState());
 
-    window.addEventListener("message", event => this.handleMessage(event.data));
+    this.onWindowMessage = event => this.handleMessage(event.data);
+    this.onBeforeUnload = () => this.dispose();
+    window.addEventListener("message", this.onWindowMessage);
+    window.addEventListener("beforeunload", this.onBeforeUnload);
     vscode.postMessage({ type: "ready" });
   }
 
   async handleMessage(message) {
+    if (this.disposed || !message) {
+      return;
+    }
+
     if (message.type === "updatePreview") {
       this.renderer.setDocument(message.document);
       this.renderIssues(message.document.issues);
@@ -50,9 +71,70 @@ class PreviewApp {
         const pngDataUri = await this.renderer.capture(message.options ?? {});
         vscode.postMessage({ type: "screenshotResult", requestId: message.requestId, pngDataUri });
       } catch (error) {
-        vscode.postMessage({ type: "renderIssue", message: String(error) });
+        vscode.postMessage({
+          type: "screenshotError",
+          requestId: message.requestId,
+          error: {
+            code: "captureFailed",
+            message: error instanceof Error ? error.message : String(error)
+          }
+        });
       }
+      return;
     }
+
+    if (message.type === "dispose") {
+      this.dispose();
+    }
+  }
+
+  addDomListener(target, type, listener) {
+    target.addEventListener(type, listener);
+    this.disposables.push(() => target.removeEventListener(type, listener));
+  }
+
+  openExportDialog() {
+    const size = this.renderer.getCanvasSize();
+    this.exportWidth.value = String(size.width);
+    this.exportHeight.value = String(size.height);
+    this.exportBackground.value = normalizeColorInput(this.renderer.getBackgroundColor());
+    this.exportError.textContent = "";
+    this.updateExportBackgroundState();
+    this.exportDialog.showModal();
+    this.exportWidth.select();
+  }
+
+  submitExport(event) {
+    event.preventDefault();
+    const options = this.readExportOptions();
+    if (!options) {
+      return;
+    }
+
+    this.exportDialog.close();
+    vscode.postMessage({ type: "exportImage", options });
+  }
+
+  readExportOptions() {
+    const width = Number(this.exportWidth.value);
+    const height = Number(this.exportHeight.value);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 8192 || height > 8192) {
+      this.exportError.textContent = "Width and height must be 1-8192 px.";
+      return null;
+    }
+
+    return {
+      width,
+      height,
+      transparentBackground: this.exportTransparent.checked,
+      backgroundColor: this.exportTransparent.checked ? undefined : this.exportBackground.value,
+      includeGrid: document.getElementById("showGrid").checked,
+      includeAxes: document.getElementById("showAxes").checked
+    };
+  }
+
+  updateExportBackgroundState() {
+    this.exportBackground.disabled = this.exportTransparent.checked;
   }
 
   renderIssues(issues) {
@@ -63,9 +145,14 @@ class PreviewApp {
     }
 
     for (const issue of issues) {
-      const item = createListItem(`${issue.severity}: ${issue.message}`, `issue-${issue.severity}`);
+      const item = document.createElement("li");
+      item.className = `issue-${issue.severity}`;
+      const text = `${issue.severity}: ${issue.message}`;
       if (issue.resourceUri) {
+        item.appendChild(createResourceButton(text, issue.resourceUri, issue.range));
         item.title = issue.resourceUri;
+      } else {
+        item.textContent = text;
       }
       this.issues.appendChild(item);
     }
@@ -79,10 +166,25 @@ class PreviewApp {
       kind.className = "dependency-kind";
       kind.textContent = `${dependency.kind}: `;
       item.appendChild(kind);
-      item.appendChild(document.createTextNode(formatDependencyUri(dependency.uri)));
+      item.appendChild(createResourceButton(formatDependencyUri(dependency.uri), dependency.uri));
       item.title = dependency.uri;
       this.dependencies.appendChild(item);
     }
+  }
+
+  dispose() {
+    if (this.disposed) {
+      return;
+    }
+
+    this.disposed = true;
+    window.removeEventListener("message", this.onWindowMessage);
+    window.removeEventListener("beforeunload", this.onBeforeUnload);
+    for (const dispose of this.disposables.splice(0)) {
+      dispose();
+    }
+    this.detailsController.dispose();
+    this.renderer.dispose();
   }
 }
 
@@ -93,17 +195,23 @@ class DetailsPanelController {
     this.resizer = resizer;
     this.stackedQuery = window.matchMedia(DETAILS_STACKED_QUERY);
     this.dragging = false;
+    this.disposables = [];
 
     this.installToggles();
     this.installResizer();
     this.updateOrientation();
     this.updateCollapsedLayout();
-    this.stackedQuery.addEventListener("change", () => this.updateOrientation());
+    this.addDomListener(this.stackedQuery, "change", () => this.updateOrientation());
+  }
+
+  addDomListener(target, type, listener) {
+    target.addEventListener(type, listener);
+    this.disposables.push(() => target.removeEventListener(type, listener));
   }
 
   installToggles() {
     for (const button of document.querySelectorAll("[data-details-toggle]")) {
-      button.addEventListener("click", () => this.toggleSection(button));
+      this.addDomListener(button, "click", () => this.toggleSection(button));
     }
   }
 
@@ -120,8 +228,8 @@ class DetailsPanelController {
   }
 
   installResizer() {
-    this.resizer.addEventListener("pointerdown", event => this.startResize(event));
-    this.resizer.addEventListener("keydown", event => this.resizeWithKeyboard(event));
+    this.addDomListener(this.resizer, "pointerdown", event => this.startResize(event));
+    this.addDomListener(this.resizer, "keydown", event => this.resizeWithKeyboard(event));
   }
 
   startResize(event) {
@@ -142,6 +250,11 @@ class DetailsPanelController {
     this.resizer.addEventListener("pointermove", move);
     this.resizer.addEventListener("pointerup", stop);
     this.resizer.addEventListener("pointercancel", stop);
+    this.disposables.push(() => {
+      this.resizer.removeEventListener("pointermove", move);
+      this.resizer.removeEventListener("pointerup", stop);
+      this.resizer.removeEventListener("pointercancel", stop);
+    });
   }
 
   resizeFromPointer(event) {
@@ -196,6 +309,12 @@ class DetailsPanelController {
     const allCollapsed = sections.length > 0 && sections.every(section => section.classList.contains("is-collapsed"));
     this.layout.classList.toggle("details-all-collapsed", allCollapsed);
   }
+
+  dispose() {
+    for (const dispose of this.disposables.splice(0)) {
+      dispose();
+    }
+  }
 }
 
 class PreviewRenderer {
@@ -218,6 +337,9 @@ class PreviewRenderer {
     this.viewPreset = "default";
     this.document = null;
     this.renderQueued = false;
+    this.animationFrame = 0;
+    this.disposed = false;
+    this.backgroundColor = getCssColor("--vscode-editor-background", "#1e1e1e");
     this.texturePromises = [];
     this.disposables = [];
     this.grid = new THREE.GridHelper(32, 16, 0x5f6f7a, 0x303842);
@@ -232,6 +354,18 @@ class PreviewRenderer {
     this.resizeObserver.observe(canvas.parentElement);
     this.resize();
     this.requestRender();
+  }
+
+  getCanvasSize() {
+    const rect = this.canvas.parentElement.getBoundingClientRect();
+    return {
+      width: Math.max(1, Math.floor(rect.width)),
+      height: Math.max(1, Math.floor(rect.height))
+    };
+  }
+
+  getBackgroundColor() {
+    return this.backgroundColor;
   }
 
   addLights() {
@@ -255,11 +389,17 @@ class PreviewRenderer {
   }
 
   setDocument(document) {
+    if (this.disposed) {
+      return;
+    }
     this.document = document;
     this.rebuildScene();
   }
 
   setDisplayMode(mode) {
+    if (this.disposed) {
+      return;
+    }
     this.displayMode = mode;
     this.rebuildScene();
   }
@@ -419,9 +559,11 @@ class PreviewRenderer {
   }
 
   resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
-    const width = Math.max(1, Math.floor(rect.width));
-    const height = Math.max(1, Math.floor(rect.height));
+    if (this.disposed) {
+      return;
+    }
+
+    const { width, height } = this.getCanvasSize();
     this.webgl.setSize(width, height, false);
 
     if (this.camera.isPerspectiveCamera) {
@@ -435,21 +577,35 @@ class PreviewRenderer {
   }
 
   requestRender() {
-    if (this.renderQueued) {
+    if (this.disposed || this.renderQueued) {
       return;
     }
 
     this.renderQueued = true;
-    requestAnimationFrame(() => {
+    this.animationFrame = requestAnimationFrame(() => {
+      this.animationFrame = 0;
+      if (this.disposed) {
+        return;
+      }
       this.renderQueued = false;
       this.webgl.render(this.scene, this.camera);
     });
   }
 
   async capture(options) {
+    if (this.disposed) {
+      throw new Error("Renderer has been disposed");
+    }
+
     await Promise.allSettled(this.texturePromises);
+    if (this.disposed) {
+      throw new Error("Renderer has been disposed");
+    }
+
     const originalGrid = this.grid.visible;
     const originalAxes = this.axes.visible;
+    const originalBackground = this.scene.background;
+    const originalCameraProjection = captureCameraProjection(this.camera);
     if (typeof options.includeGrid === "boolean") {
       this.grid.visible = options.includeGrid;
     }
@@ -457,21 +613,23 @@ class PreviewRenderer {
       this.axes.visible = options.includeAxes;
     }
 
-    const rect = this.canvas.parentElement.getBoundingClientRect();
-    const originalWidth = Math.max(1, Math.floor(rect.width));
-    const originalHeight = Math.max(1, Math.floor(rect.height));
-    const width = options.width ?? originalWidth;
-    const height = options.height ?? originalHeight;
+    const { width: originalWidth, height: originalHeight } = this.getCanvasSize();
+    const width = normalizeCaptureDimension(options.width, originalWidth);
+    const height = normalizeCaptureDimension(options.height, originalHeight);
 
     if (options.transparentBackground) {
       this.scene.background = null;
+    } else if (options.backgroundColor) {
+      this.scene.background = new THREE.Color(options.backgroundColor);
     }
 
     this.webgl.setSize(width, height, false);
+    applyCameraAspect(this.camera, width / height);
     this.webgl.render(this.scene, this.camera);
     const dataUri = this.webgl.domElement.toDataURL("image/png");
 
-    this.scene.background = new THREE.Color(getCssColor("--vscode-editor-background", "#1e1e1e"));
+    restoreCameraProjection(this.camera, originalCameraProjection);
+    this.scene.background = originalBackground;
     this.grid.visible = originalGrid;
     this.axes.visible = originalAxes;
     this.webgl.setSize(originalWidth, originalHeight, false);
@@ -489,6 +647,25 @@ class PreviewRenderer {
     }
     this.disposables = [];
     this.texturePromises = [];
+  }
+
+  dispose() {
+    if (this.disposed) {
+      return;
+    }
+
+    this.disposed = true;
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = 0;
+    }
+    this.resizeObserver.disconnect();
+    this.controls?.dispose();
+    this.disposeSceneObjects();
+    disposeObject3d(this.grid);
+    disposeObject3d(this.axes);
+    this.webgl.dispose();
+    this.webgl.forceContextLoss?.();
   }
 }
 
@@ -594,6 +771,88 @@ function appendCacheBust(uri) {
   return `${uri}${uri.includes("?") ? "&" : "?"}v=${Date.now()}`;
 }
 
+function normalizeCaptureDimension(value, fallback) {
+  if (!Number.isInteger(value) || value < 1) {
+    return fallback;
+  }
+
+  return clamp(value, 1, 8192);
+}
+
+function normalizeColorInput(value) {
+  if (/^#[\da-f]{6}$/i.test(value)) {
+    return value;
+  }
+
+  const probe = document.createElement("span");
+  probe.style.color = value;
+  document.body.appendChild(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  const match = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(computed);
+  if (!match) {
+    return "#1e1e1e";
+  }
+
+  return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+}
+
+function toHex(value) {
+  return Number(value).toString(16).padStart(2, "0");
+}
+
+function captureCameraProjection(camera) {
+  if (camera.isPerspectiveCamera) {
+    return {
+      type: "perspective",
+      aspect: camera.aspect
+    };
+  }
+
+  return {
+    type: "orthographic",
+    left: camera.left,
+    right: camera.right,
+    top: camera.top,
+    bottom: camera.bottom
+  };
+}
+
+function applyCameraAspect(camera, aspect) {
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = aspect;
+    camera.updateProjectionMatrix();
+    return;
+  }
+
+  const halfHeight = Math.max(0.01, (camera.top - camera.bottom) / 2);
+  const halfWidth = halfHeight * aspect;
+  camera.left = -halfWidth;
+  camera.right = halfWidth;
+  camera.updateProjectionMatrix();
+}
+
+function restoreCameraProjection(camera, projection) {
+  if (projection.type === "perspective" && camera.isPerspectiveCamera) {
+    camera.aspect = projection.aspect;
+  } else if (projection.type === "orthographic" && camera.isOrthographicCamera) {
+    camera.left = projection.left;
+    camera.right = projection.right;
+    camera.top = projection.top;
+    camera.bottom = projection.bottom;
+  }
+  camera.updateProjectionMatrix();
+}
+
+function disposeObject3d(object) {
+  object.geometry?.dispose?.();
+  if (Array.isArray(object.material)) {
+    object.material.forEach(material => material.dispose?.());
+  } else {
+    object.material?.dispose?.();
+  }
+}
+
 function keyboardResizeDelta(key) {
   switch (key) {
     case "ArrowUp":
@@ -616,6 +875,15 @@ function createListItem(text, className) {
   item.className = className;
   item.textContent = text;
   return item;
+}
+
+function createResourceButton(text, uri, range) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "resource-link";
+  button.textContent = text;
+  button.addEventListener("click", () => vscode.postMessage({ type: "openResource", uri, range }));
+  return button;
 }
 
 function formatDependencyUri(uri) {

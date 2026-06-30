@@ -11,6 +11,8 @@ import type {
   ResolvedTextureSlot
 } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
+import { collectModelJsonLocations } from "../model/ModelJsonLocations";
+import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
 import { fileNameKey, modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
 
@@ -22,15 +24,24 @@ interface LoadedModelNode {
   resourceId: string;
 }
 
+export interface RawModelDocumentCache {
+  getRawModel(fileName: string, version: string | null): Promise<RawModelDocument> | null;
+  setRawModel(fileName: string, version: string | null, document: Promise<RawModelDocument>): void;
+}
+
 export class ParentChainResolver {
   constructor(
     private readonly fileSystem: ModelPreviewFileSystem,
     private readonly configuration: ModelPreviewConfiguration,
-    private readonly issues: ModelIssueCollector
+    private readonly issues: ModelIssueCollector,
+    private readonly cancellationToken?: ModelPreviewCancellationToken,
+    private readonly rawModelCache?: RawModelDocumentCache
   ) { }
 
   async resolve(entryFileName: string): Promise<ResolvedModel | null> {
+    throwIfCancellationRequested(this.cancellationToken);
     const chain = await this.loadParentChain(entryFileName, new Set<string>(), 0);
+    throwIfCancellationRequested(this.cancellationToken);
     if (chain.length === 0) {
       return null;
     }
@@ -40,6 +51,7 @@ export class ParentChainResolver {
   }
 
   private async loadParentChain(fileName: string, visited: Set<string>, depth: number): Promise<LoadedModelNode[]> {
+    throwIfCancellationRequested(this.cancellationToken);
     const key = fileNameKey(fileName);
     if (visited.has(key)) {
       this.issues.error("Parent model cycle detected", fileName);
@@ -53,6 +65,7 @@ export class ParentChainResolver {
 
     visited.add(key);
     const document = await this.loadRawModel(fileName);
+    throwIfCancellationRequested(this.cancellationToken);
     if (!document.data) {
       return [{
         document,
@@ -72,7 +85,7 @@ export class ParentChainResolver {
 
     const parentFile = resolveModelFileName(parent, fileName, this.fileSystem, this.configuration);
     if (!parentFile) {
-      this.issues.warning(`Parent model not found: ${parent}`, fileName);
+      this.issues.warning(`Parent model not found: ${parent}`, fileName, document.data.parentRange);
       return [node];
     }
 
@@ -81,6 +94,21 @@ export class ParentChainResolver {
   }
 
   private async loadRawModel(fileName: string): Promise<RawModelDocument> {
+    throwIfCancellationRequested(this.cancellationToken);
+    const version = this.fileSystem.fileVersion?.(fileName) ?? null;
+    const cached = this.rawModelCache?.getRawModel(fileName, version);
+    if (cached) {
+      return cached;
+    }
+
+    const document = await this.loadRawModelUncached(fileName);
+    if (document.data) {
+      this.rawModelCache?.setRawModel(fileName, version, Promise.resolve(document));
+    }
+    return document;
+  }
+
+  private async loadRawModelUncached(fileName: string): Promise<RawModelDocument> {
     let text: string;
     try {
       text = await this.fileSystem.readTextFile(fileName);
@@ -89,14 +117,18 @@ export class ParentChainResolver {
       return { fileName, text: "", data: null };
     }
 
+    throwIfCancellationRequested(this.cancellationToken);
     try {
+      const rawValue = JSON.parse(text) as unknown;
+      const locations = collectModelJsonLocations(text);
       return {
         fileName,
         text,
-        data: normalizeRawModel(JSON.parse(text) as unknown)
+        data: normalizeRawModel(rawValue, locations),
+        locations
       };
-    } catch {
-      this.issues.error("Model JSON could not be parsed", fileName);
+    } catch (error) {
+      this.issues.error("Model JSON could not be parsed", fileName, rangeFromJsonParseError(text, error));
       return { fileName, text, data: null };
     }
   }
@@ -129,7 +161,8 @@ export class ParentChainResolver {
         textures.set(name, {
           name,
           value,
-          sourceModelFileName: node.document.fileName
+          sourceModelFileName: node.document.fileName,
+          valueRange: data.textureRanges?.[name]
         });
       }
 
@@ -160,7 +193,7 @@ export class ParentChainResolver {
   }
 }
 
-function normalizeRawModel(value: unknown): RawModelData {
+function normalizeRawModel(value: unknown, locations = collectModelJsonLocations("")): RawModelData {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -168,8 +201,10 @@ function normalizeRawModel(value: unknown): RawModelData {
   const record = value as Record<string, unknown>;
   return {
     parent: typeof record.parent === "string" ? record.parent : undefined,
+    parentRange: locations.parent,
     textures: normalizeTextures(record.textures),
-    elements: normalizeElements(record.elements),
+    textureRanges: locations.textures,
+    elements: normalizeElements(record.elements, locations),
     display: normalizePartialDisplayTransforms(record.display)
   };
 }
@@ -195,24 +230,27 @@ function normalizeTextures(value: unknown): RawModelData["textures"] {
   return textures;
 }
 
-function normalizeElements(value: unknown): RawModelData["elements"] {
+function normalizeElements(value: unknown, locations: ReturnType<typeof collectModelJsonLocations>): RawModelData["elements"] {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
   return value
     .filter((element): element is Record<string, unknown> => element !== null && typeof element === "object" && !Array.isArray(element))
-    .map(element => ({
+    .map((element, index) => ({
       from: normalizeVec3(element.from),
+      fromRange: locations.elements[index]?.from,
       to: normalizeVec3(element.to),
-      rotation: normalizeElementRotation(element.rotation),
+      toRange: locations.elements[index]?.to,
+      range: locations.elements[index]?.range,
+      rotation: normalizeElementRotation(element.rotation, locations.elements[index]),
       shade: typeof element.shade === "boolean" ? element.shade : undefined,
       lightEmission: typeof element.light_emission === "number" ? element.light_emission : undefined,
-      faces: normalizeFaces(element.faces)
+      faces: normalizeFaces(element.faces, locations.elements[index])
     }));
 }
 
-function normalizeElementRotation(value: unknown): RawElementRotation | undefined {
+function normalizeElementRotation(value: unknown, locations?: ReturnType<typeof collectModelJsonLocations>["elements"][number]): RawElementRotation | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
@@ -226,11 +264,12 @@ function normalizeElementRotation(value: unknown): RawElementRotation | undefine
     x: numberValue(record.x),
     y: numberValue(record.y),
     z: numberValue(record.z),
-    rescale: typeof record.rescale === "boolean" ? record.rescale : undefined
+    rescale: typeof record.rescale === "boolean" ? record.rescale : undefined,
+    rescaleRange: locations?.rotationRescale
   };
 }
 
-function normalizeFaces(value: unknown): Partial<Record<RawFaceName, RawFace>> | undefined {
+function normalizeFaces(value: unknown, locations?: ReturnType<typeof collectModelJsonLocations>["elements"][number]): Partial<Record<RawFaceName, RawFace>> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
@@ -244,8 +283,11 @@ function normalizeFaces(value: unknown): Partial<Record<RawFaceName, RawFace>> |
 
     const face = rawFace as Record<string, unknown>;
     faces[direction] = {
+      range: locations?.faces[direction]?.range,
       uv: normalizeUv(face.uv),
+      uvRange: locations?.faces[direction]?.uv,
       texture: typeof face.texture === "string" ? face.texture : undefined,
+      textureRange: locations?.faces[direction]?.texture,
       rotation: numberValue(face.rotation),
       cullface: typeof face.cullface === "string" ? face.cullface : undefined,
       tintindex: typeof face.tintindex === "number" ? face.tintindex : undefined
@@ -299,4 +341,25 @@ function normalizeUv(value: unknown): [number, number, number, number] | undefin
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function rangeFromJsonParseError(text: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = /\bposition\s+(\d+)\b/i.exec(message);
+  const offset = match ? Math.max(0, Math.min(text.length, Number(match[1]))) : text.length;
+  let line = 0;
+  let character = 0;
+  for (let index = 0; index < offset; index++) {
+    if (text.charCodeAt(index) === 10) {
+      line++;
+      character = 0;
+    } else {
+      character++;
+    }
+  }
+
+  return {
+    start: { line, character },
+    end: { line, character: character + 1 }
+  };
 }

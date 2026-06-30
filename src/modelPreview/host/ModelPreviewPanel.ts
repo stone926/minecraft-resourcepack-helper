@@ -1,7 +1,13 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { PreviewRange } from "../ir/PreviewDocument";
 import { ModelPreviewService } from "../service/ModelPreviewService";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
+import {
+  isCancellationError,
+  ModelPreviewCancellationSource,
+  throwIfCancellationRequested
+} from "../service/ModelPreviewCancellation";
 import type { WebviewToHost, ScreenshotOptions } from "./ModelPreviewMessages";
 import { getModelPreviewLocalResourceRoots, ModelPreviewWebview } from "./ModelPreviewWebview";
 import { ModelPreviewWatcher } from "./ModelPreviewWatcher";
@@ -26,6 +32,8 @@ export class ModelPreviewPanel implements vscode.Disposable {
   private ready = false;
   private hasPreview = false;
   private currentRefresh: Promise<void> | null = null;
+  private refreshCancellation: ModelPreviewCancellationSource | null = null;
+  private refreshVersion = 0;
   private disposed = false;
 
   static open(extensionUri: vscode.Uri, service: ModelPreviewService, targetUri: vscode.Uri): ModelPreviewPanel {
@@ -82,6 +90,10 @@ export class ModelPreviewPanel implements vscode.Disposable {
     if (ModelPreviewPanel.current === this) {
       ModelPreviewPanel.current = null;
     }
+    this.refreshCancellation?.cancel();
+    this.refreshCancellation = null;
+
+    void this.panel.webview.postMessage({ type: "dispose" });
 
     for (const pending of this.pendingScreenshots.values()) {
       clearTimeout(pending.timer);
@@ -110,12 +122,20 @@ export class ModelPreviewPanel implements vscode.Disposable {
       this.pendingScreenshots.set(requestId, { resolve, reject, timer });
     });
 
-    await this.panel.webview.postMessage({ type: "requestScreenshot", requestId, options });
+    const posted = await this.panel.webview.postMessage({ type: "requestScreenshot", requestId, options });
+    if (!posted) {
+      const pending = this.pendingScreenshots.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingScreenshots.delete(requestId);
+        pending.reject(new Error("Model preview webview is not available"));
+      }
+    }
     return result;
   }
 
-  async exportImage(): Promise<vscode.Uri | null> {
-    const dataUri = await this.captureImage();
+  async exportImage(options: ScreenshotOptions = {}): Promise<vscode.Uri | null> {
+    const dataUri = await this.captureImage(options);
     const target = await vscode.window.showSaveDialog({
       title: vscode.l10n.t("Save Model Preview Image"),
       filters: {
@@ -151,7 +171,15 @@ export class ModelPreviewPanel implements vscode.Disposable {
   }
 
   private async refresh(changedFileNameOrUri?: string): Promise<void> {
-    const refresh = this.refreshNow(changedFileNameOrUri);
+    this.refreshCancellation?.cancel();
+    const cancellation = new ModelPreviewCancellationSource();
+    this.refreshCancellation = cancellation;
+    const refreshVersion = ++this.refreshVersion;
+    const refresh = this.refreshNow(changedFileNameOrUri, cancellation, refreshVersion).catch(error => {
+      if (!isCancellationError(error)) {
+        throw error;
+      }
+    });
     this.currentRefresh = refresh;
     try {
       await refresh;
@@ -162,12 +190,16 @@ export class ModelPreviewPanel implements vscode.Disposable {
     }
   }
 
-  private async refreshNow(changedFileNameOrUri?: string): Promise<void> {
+  private async refreshNow(
+    changedFileNameOrUri: string | undefined,
+    cancellation: ModelPreviewCancellationSource,
+    refreshVersion: number
+  ): Promise<void> {
     if (this.disposed) {
       return;
     }
 
-    if (changedFileNameOrUri === "configuration") {
+    if (changedFileNameOrUri === "configuration" || changedFileNameOrUri === "manual") {
       this.service.invalidateAll();
     } else if (changedFileNameOrUri) {
       this.service.invalidateDependents(changedFileNameOrUri);
@@ -175,14 +207,21 @@ export class ModelPreviewPanel implements vscode.Disposable {
       this.service.invalidate(this.targetUri.fsPath);
     }
 
-    const document = await this.service.getPreviewDocument(this.targetUri.fsPath);
+    const document = await this.service.getPreviewDocument(this.targetUri.fsPath, cancellation.token);
+    throwIfCancellationRequested(cancellation.token);
+    if (this.disposed || this.refreshVersion !== refreshVersion) {
+      return;
+    }
+
     this.tracker.update(document);
     this.panel.title = `${vscode.l10n.t("Model Preview")}: ${path.basename(this.targetUri.fsPath)}`;
     await this.panel.webview.postMessage({
       type: "updatePreview",
       document: this.webview.toWebviewDocument(document)
     });
-    this.hasPreview = true;
+    if (!cancellation.token.isCancellationRequested && this.refreshVersion === refreshVersion) {
+      this.hasPreview = true;
+    }
   }
 
   private handleMessage(message: WebviewToHost): void {
@@ -192,15 +231,35 @@ export class ModelPreviewPanel implements vscode.Disposable {
       return;
     }
 
+    if (message.type === "refreshPreview") {
+      void this.refresh("manual");
+      return;
+    }
+
     if (message.type === "exportImage") {
-      void this.exportImage().catch(error => {
+      void this.exportImage(message.options).catch(error => {
         void vscode.window.showErrorMessage(vscode.l10n.t("Model preview export failed: {0}", String(error)));
       });
       return;
     }
 
+    if (message.type === "openResource") {
+      void this.openResource(message.uri, message.range);
+      return;
+    }
+
     if (message.type === "renderIssue") {
       void vscode.window.showWarningMessage(message.message);
+      return;
+    }
+
+    if (message.type === "screenshotError") {
+      const pending = this.pendingScreenshots.get(message.requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingScreenshots.delete(message.requestId);
+        pending.reject(new Error(message.error.message));
+      }
       return;
     }
 
@@ -214,6 +273,37 @@ export class ModelPreviewPanel implements vscode.Disposable {
     pending.resolve(message.pngDataUri);
   }
 
+  private async openResource(uriString: string, range?: PreviewRange): Promise<void> {
+    if (uriString.startsWith("configuration:")) {
+      await vscode.commands.executeCommand("workbench.action.openSettings", uriString.slice("configuration:".length));
+      return;
+    }
+
+    let uri: vscode.Uri;
+    try {
+      uri = vscode.Uri.parse(uriString, true);
+    } catch {
+      void vscode.window.showWarningMessage(vscode.l10n.t("Resource URI is invalid: {0}", uriString));
+      return;
+    }
+
+    if (uri.scheme === "file" && !(await fileExists(uri))) {
+      void vscode.window.showWarningMessage(vscode.l10n.t("Resource file does not exist: {0}", uri.fsPath));
+      return;
+    }
+
+    if (uri.scheme === "file" && range && isTextResource(uri.fsPath)) {
+      const document = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(document, { preview: true, viewColumn: vscode.ViewColumn.One });
+      const selection = toVsCodeRange(range);
+      editor.selection = new vscode.Selection(selection.start, selection.end);
+      editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      return;
+    }
+
+    await vscode.commands.executeCommand("vscode.open", uri);
+  }
+
   private waitUntilReady(): Promise<void> {
     return new Promise(resolve => {
       const disposable = this.panel.webview.onDidReceiveMessage(message => {
@@ -225,6 +315,26 @@ export class ModelPreviewPanel implements vscode.Disposable {
       this.disposables.push(disposable);
     });
   }
+}
+
+async function fileExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isTextResource(fileName: string): boolean {
+  return /\.(?:json|mcmeta|txt|properties|vsh|fsh|glsl)$/i.test(fileName);
+}
+
+function toVsCodeRange(range: PreviewRange): vscode.Range {
+  return new vscode.Range(
+    new vscode.Position(range.start.line, range.start.character),
+    new vscode.Position(range.end.line, range.end.character)
+  );
 }
 
 function defaultScreenshotFileName(modelFileName: string): string {

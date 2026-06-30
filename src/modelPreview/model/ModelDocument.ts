@@ -1,4 +1,5 @@
-import type { PreviewTransform, PreviewVec3 } from "../ir/PreviewDocument";
+import type { PreviewRange, PreviewTransform, PreviewVec3 } from "../ir/PreviewDocument";
+import type { ModelJsonLocations } from "./ModelJsonLocations";
 
 export interface ModelPreviewConfiguration {
   defaultAssetsPath?: string | null;
@@ -9,17 +10,21 @@ export interface ModelPreviewFileSystem {
   readTextFile(fileName: string): Promise<string>;
   readBinaryFile(fileName: string): Promise<Uint8Array>;
   fileExists(fileName: string): boolean;
+  fileVersion?(fileName: string): string | null;
 }
 
 export interface RawModelDocument {
   fileName: string;
   text: string;
   data: RawModelData | null;
+  locations?: ModelJsonLocations;
 }
 
 export interface RawModelData {
   parent?: string;
+  parentRange?: PreviewRange;
   textures?: Record<string, RawTextureValue>;
+  textureRanges?: Record<string, PreviewRange>;
   elements?: RawElement[];
   display?: Record<string, Partial<PreviewTransform>>;
 }
@@ -33,7 +38,10 @@ export interface RawTextureObject {
 
 export interface RawElement {
   from?: PreviewVec3;
+  fromRange?: PreviewRange;
   to?: PreviewVec3;
+  toRange?: PreviewRange;
+  range?: PreviewRange;
   rotation?: RawElementRotation;
   shade?: boolean;
   lightEmission?: number;
@@ -48,11 +56,15 @@ export interface RawElementRotation {
   y?: number;
   z?: number;
   rescale?: boolean;
+  rescaleRange?: PreviewRange;
 }
 
 export interface RawFace {
+  range?: PreviewRange;
   uv?: [number, number, number, number];
+  uvRange?: PreviewRange;
   texture?: string;
+  textureRange?: PreviewRange;
   rotation?: number;
   cullface?: string;
   tintindex?: number;
@@ -75,6 +87,7 @@ export interface ResolvedTextureSlot {
   name: string;
   value: RawTextureValue;
   sourceModelFileName: string;
+  valueRange?: PreviewRange;
 }
 
 export interface ResolvedElement {

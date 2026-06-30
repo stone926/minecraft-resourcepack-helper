@@ -57,10 +57,21 @@ export interface PreviewDependency {
   kind: "model" | "texture" | "textureMetadata" | "configuration";
 }
 
+export interface PreviewPosition {
+  line: number;
+  character: number;
+}
+
+export interface PreviewRange {
+  start: PreviewPosition;
+  end: PreviewPosition;
+}
+
 export interface PreviewIssue {
   severity: "error" | "warning" | "info";
   message: string;
   resourceUri?: string;
+  range?: PreviewRange;
 }
 
 export function emptyBounds(): PreviewBounds {

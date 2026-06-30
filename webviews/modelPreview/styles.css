@@ -19,7 +19,9 @@ body,
 
 button,
 select,
-label {
+label,
+input[type="number"],
+input[type="color"] {
   height: 28px;
   border: 1px solid var(--panel-border);
   border-radius: 4px;
@@ -29,12 +31,15 @@ label {
 }
 
 button,
-select {
+select,
+input[type="number"] {
   padding: 0 8px;
 }
 
 button:hover,
-select:hover {
+select:hover,
+input[type="number"]:hover,
+input[type="color"]:hover {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
@@ -48,6 +53,16 @@ label {
 
 input {
   margin: 0;
+}
+
+input[type="number"] {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+input[type="color"] {
+  width: 48px;
+  padding: 2px;
 }
 
 .toolbar {
@@ -182,6 +197,27 @@ input {
   line-height: 1.35;
 }
 
+.resource-link {
+  display: inline;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  color: var(--vscode-textLink-foreground);
+  background: transparent;
+  text-align: left;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+}
+
+.resource-link:hover,
+.resource-link:focus-visible {
+  color: var(--vscode-textLink-activeForeground);
+  background: transparent;
+  text-decoration: underline;
+  outline: none;
+}
+
 .issue-error {
   color: var(--vscode-errorForeground);
 }
@@ -193,6 +229,46 @@ input {
 .issue-info,
 .dependency-kind {
   color: var(--muted);
+}
+
+.export-dialog {
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+  box-shadow: 0 8px 28px color-mix(in srgb, #000 35%, transparent);
+}
+
+.export-dialog::backdrop {
+  background: color-mix(in srgb, #000 40%, transparent);
+}
+
+.export-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.export-grid label {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.export-error {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--vscode-errorForeground);
+}
+
+.export-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 @media (max-width: 780px) {

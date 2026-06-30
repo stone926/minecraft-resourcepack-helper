@@ -28,6 +28,7 @@ export class ModelPreviewWebview {
   <div id="app">
     <header class="toolbar" role="toolbar">
       <button id="resetView" title="Reset view">Reset</button>
+      <button id="refreshPreview" title="Refresh preview">Refresh</button>
       <select id="viewPreset" title="View preset">
         <option value="default">3/4</option>
         <option value="front">Front</option>
@@ -77,6 +78,25 @@ export class ModelPreviewWebview {
         </section>
       </aside>
     </main>
+    <dialog id="exportDialog" class="export-dialog">
+      <form id="exportForm" method="dialog">
+        <div class="export-grid">
+          <label for="exportWidth">Width</label>
+          <input id="exportWidth" type="number" min="1" max="8192" step="1">
+          <label for="exportHeight">Height</label>
+          <input id="exportHeight" type="number" min="1" max="8192" step="1">
+          <label for="exportTransparent">Transparent</label>
+          <input id="exportTransparent" type="checkbox">
+          <label for="exportBackground">Background</label>
+          <input id="exportBackground" type="color" value="#1e1e1e">
+        </div>
+        <p id="exportError" class="export-error" role="alert"></p>
+        <div class="export-actions">
+          <button id="exportCancel" value="cancel" type="button">Cancel</button>
+          <button id="exportConfirm" value="default" type="submit">Export</button>
+        </div>
+      </form>
+    </dialog>
   </div>
   <script type="module" nonce="${nonce}" src="${mainScriptUri}"></script>
 </body>

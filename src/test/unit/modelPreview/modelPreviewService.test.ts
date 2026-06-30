@@ -5,6 +5,8 @@ import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { getDefaultUv, getFaceUvs } from "../../../modelPreview/bake/DefaultUv";
 import type { PreviewFace, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";
+import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
+import { ModelPreviewCancellationSource } from "../../../modelPreview/service/ModelPreviewCancellation";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
 import { ModelPreviewService } from "../../../modelPreview/service/ModelPreviewService";
 
@@ -112,6 +114,49 @@ describe("model preview service", () => {
       assert.strictEqual(preview.materials[0].fallback, "missing");
       assert.ok(preview.issues.some(issue => issue.severity === "warning" && issue.message.includes("Parent model not found")));
       assert.ok(preview.issues.some(issue => issue.severity === "warning" && issue.message.includes("Texture variable not found")));
+      assert.ok(preview.issues.find(issue => issue.message.includes("Parent model not found"))?.range);
+      assert.ok(preview.issues.find(issue => issue.message.includes("Texture variable not found"))?.range);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("adds ranges to invalid JSON and out-of-range field issues", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const invalidModel = path.join(pack, "assets/minecraft/models/block/invalid.json");
+      writeFile(pack, "assets/minecraft/models/block/invalid.json", "{ \"parent\": ");
+
+      const invalidPreview = await createService().getPreviewDocument(invalidModel);
+
+      assert.ok(invalidPreview.issues.some(issue =>
+        issue.severity === "error" &&
+        issue.message.includes("could not be parsed") &&
+        !!issue.range
+      ));
+
+      writeJson(pack, "assets/minecraft/models/block/out_of_range.json", {
+        textures: { all: "minecraft:block/stone" },
+        elements: [
+          {
+            from: [40, 0, 0],
+            to: [16, 16, 16],
+            faces: { north: { texture: "#all" } }
+          }
+        ]
+      });
+      writeFile(pack, "assets/minecraft/textures/block/stone.png", "png");
+
+      const outOfRangePreview = await createService()
+        .getPreviewDocument(path.join(pack, "assets/minecraft/models/block/out_of_range.json"));
+
+      assert.ok(outOfRangePreview.issues.some(issue =>
+        issue.severity === "warning" &&
+        issue.message.includes("outside Minecraft's supported") &&
+        !!issue.range
+      ));
     } finally {
       removeTempDirectory(root);
     }
@@ -455,12 +500,112 @@ describe("model preview service", () => {
       removeTempDirectory(root);
     }
   });
+
+  it("reuses raw model, resolved model, and texture alpha caches across preview IR rebuilds", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const modelFileName = path.join(pack, "assets/minecraft/models/item/cached.json");
+      writeJson(pack, "assets/minecraft/models/item/cached.json", {
+        parent: "minecraft:item/generated",
+        textures: {
+          layer0: "minecraft:item/cached"
+        }
+      });
+      writeFile(pack, "assets/minecraft/textures/item/cached.png", createRgbaPng(2, 2, () => 255));
+
+      const counters = { textReads: 0, binaryReads: 0 };
+      const service = createService({}, createCountingFileSystem(counters));
+      await service.getPreviewDocument(modelFileName);
+      const afterFirst = { ...counters };
+      service.invalidate(modelFileName);
+      await service.getPreviewDocument(modelFileName);
+
+      assert.ok(afterFirst.textReads > 0);
+      assert.ok(afterFirst.binaryReads > 0);
+      assert.strictEqual(counters.textReads, afterFirst.textReads, "resolved/raw model cache should avoid reparsing unchanged model JSON");
+      assert.strictEqual(counters.binaryReads, afterFirst.binaryReads, "texture alpha cache should avoid rereading unchanged PNG dimensions");
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("cancels stale preview requests while parsing", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const modelFileName = path.join(pack, "assets/minecraft/models/block/slow.json");
+      writeJson(pack, "assets/minecraft/models/block/slow.json", {
+        elements: [
+          {
+            from: [0, 0, 0],
+            to: [16, 16, 16],
+            faces: { north: { texture: "#missing" } }
+          }
+        ]
+      });
+      const readGate: { release?: () => void } = {};
+      const fileSystem: ModelPreviewFileSystem = {
+        readTextFile: async fileName => {
+          await new Promise<void>(resolve => {
+            readGate.release = resolve;
+          });
+          return fs.promises.readFile(fileName, "utf8");
+        },
+        readBinaryFile: fileName => fs.promises.readFile(fileName),
+        fileExists: fileName => fs.existsSync(fileName),
+        fileVersion: fileName => {
+          try {
+            const stat = fs.statSync(fileName);
+            return `${stat.mtimeMs}:${stat.size}`;
+          } catch {
+            return null;
+          }
+        }
+      };
+      const cancellation = new ModelPreviewCancellationSource();
+      const preview = createService({}, fileSystem).getPreviewDocument(modelFileName, cancellation.token);
+
+      cancellation.cancel();
+      assert.ok(readGate.release);
+      readGate.release();
+
+      await assert.rejects(preview, /cancelled/i);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
 });
 
-function createService(configuration = {}) {
+function createService(configuration = {}, fileSystem?: ModelPreviewFileSystem) {
   return new ModelPreviewService({
-    configuration: () => configuration
+    configuration: () => configuration,
+    fileSystem
   });
+}
+
+function createCountingFileSystem(counters: { textReads: number; binaryReads: number }): ModelPreviewFileSystem {
+  return {
+    async readTextFile(fileName) {
+      counters.textReads++;
+      return fs.promises.readFile(fileName, "utf8");
+    },
+    async readBinaryFile(fileName) {
+      counters.binaryReads++;
+      return fs.promises.readFile(fileName);
+    },
+    fileExists: fileName => fs.existsSync(fileName),
+    fileVersion: fileName => {
+      try {
+        const stat = fs.statSync(fileName);
+        return `${stat.mtimeMs}:${stat.size}`;
+      } catch {
+        return null;
+      }
+    }
+  };
 }
 
 function createPack(root: string, name: string): string {

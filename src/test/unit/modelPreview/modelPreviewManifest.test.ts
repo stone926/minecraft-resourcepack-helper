@@ -21,13 +21,19 @@ describe("model preview manifest", () => {
     const openEditorTitleMenu = findMenu(menus, "editor/title", "McResHelper.openModelPreview");
     const openContextMenu = findMenu(menus, "editor/context", "McResHelper.openModelPreview");
     const exportContextMenu = findMenu(menus, "editor/context", "McResHelper.exportModelPreviewImage");
+    const graphPreviewMenu = findMenu(menus, "view/item/context", "McResHelper.openResourceGraphModelPreview");
+    const graphUnsupportedMenu = findMenu(menus, "view/item/context", "McResHelper.openUnsupportedModelPreviewResource");
 
     assert.ok(commands.some(command => command.command === "McResHelper.openModelPreview" && command.icon === "$(preview)"));
     assert.ok(commands.some(command => command.command === "McResHelper.exportModelPreviewImage" && command.icon === "$(save-as)"));
+    assert.ok(commands.some(command => command.command === "McResHelper.openResourceGraphModelPreview" && command.icon === "$(preview)"));
+    assert.ok(commands.some(command => command.command === "McResHelper.openUnsupportedModelPreviewResource" && command.icon === "$(circle-slash)"));
     assert.strictEqual(openEditorTitleMenu?.when, modelPreviewMenuWhen);
     assert.strictEqual(openEditorTitleMenu?.group, "navigation");
     assert.strictEqual(openContextMenu?.when, modelPreviewMenuWhen);
     assert.strictEqual(exportContextMenu?.when, modelPreviewMenuWhen);
+    assert.strictEqual(graphPreviewMenu?.when, "view == McResHelper.resourceGraph && viewItem == modelResource");
+    assert.strictEqual(graphUnsupportedMenu?.when, "view == McResHelper.resourceGraph && viewItem == unsupportedPreviewResource");
   });
 
   it("ships webview static assets and vendored Three.js runtime files", () => {
@@ -70,8 +76,39 @@ describe("model preview manifest", () => {
     assert.strictEqual(script.includes("this.resizeFromPointer(event);"), false, "clicking the resizer should not switch to manual height");
     assert.ok(script.includes("updateCollapsedLayout()"), "details collapse state should update the outer layout");
     assert.ok(script.includes('this.panel.querySelectorAll("[data-details-section]")'), "collapse state should only inspect the details panel");
+    assert.ok(script.includes('vscode.postMessage({ type: "refreshPreview" })'), "toolbar should expose a manual refresh message");
     assert.ok(script.includes("Math.sin(fitFov / 2)"), "perspective camera should fit using the active FOV");
     assert.ok(padding && Number(padding[1]) >= 1.35, "initial preview should leave a comfortable camera margin");
+  });
+
+  it("exposes clickable issue/dependency resources and structured screenshot failures", () => {
+    const messageTypes = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewMessages.ts"), "utf8");
+    const panelSource = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewPanel.ts"), "utf8");
+    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+
+    assert.ok(messageTypes.includes('{ type: "openResource"; uri: string; range?: PreviewRange }'));
+    assert.ok(messageTypes.includes('{ type: "screenshotError"; requestId: string; error: ModelPreviewError }'));
+    assert.ok(panelSource.includes("openTextDocument(uri)"), "host should open text resources itself");
+    assert.ok(panelSource.includes("Resource file does not exist"), "missing files should produce an explicit message");
+    assert.ok(script.includes('type: "openResource"'), "webview should request host resource opening");
+    assert.ok(script.includes('type: "screenshotError"'), "capture failures should reject the exact pending request");
+  });
+
+  it("supports export sizing, background options, and explicit webview disposal", () => {
+    const webviewHtml = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
+    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+
+    assert.ok(webviewHtml.includes('id="exportDialog"'), "export UI should expose configurable options");
+    assert.ok(webviewHtml.includes('id="exportWidth"'), "export width should be configurable");
+    assert.ok(webviewHtml.includes('id="exportHeight"'), "export height should be configurable");
+    assert.ok(webviewHtml.includes('id="exportTransparent"'), "transparent background should be configurable");
+    assert.ok(webviewHtml.includes('id="exportBackground"'), "background color should be configurable");
+    assert.ok(script.includes("backgroundColor"), "screenshot options should include a background color");
+    assert.ok(script.includes("applyCameraAspect"), "captures should update projection for requested dimensions");
+    assert.ok(script.includes("window.removeEventListener(\"message\""), "webview dispose should remove window listeners");
+    assert.ok(script.includes("this.resizeObserver.disconnect()"), "renderer dispose should disconnect resize observer");
+    assert.ok(script.includes("cancelAnimationFrame"), "renderer dispose should cancel pending animation frames");
+    assert.ok(script.includes("this.webgl.forceContextLoss?.()"), "renderer dispose should release the WebGL context");
   });
 
   it("uses the Minecraft missing texture colors and quadrant layout", () => {

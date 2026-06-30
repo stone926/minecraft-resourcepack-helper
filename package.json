@@ -143,6 +143,16 @@
         "command": "McResHelper.exportModelPreviewImage",
         "title": "%command.title.exportModelPreviewImage%",
         "icon": "$(save-as)"
+      },
+      {
+        "command": "McResHelper.openResourceGraphModelPreview",
+        "title": "%command.title.openResourceGraphModelPreview%",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "McResHelper.openUnsupportedModelPreviewResource",
+        "title": "%command.title.openUnsupportedModelPreviewResource%",
+        "icon": "$(circle-slash)"
       }
     ],
     "viewsContainers": {
@@ -188,6 +198,18 @@
           "when": "view == McResHelper.resourceGraph",
           "group": "navigation"
         }
+      ],
+      "view/item/context": [
+        {
+          "command": "McResHelper.openResourceGraphModelPreview",
+          "when": "view == McResHelper.resourceGraph && viewItem == modelResource",
+          "group": "inline"
+        },
+        {
+          "command": "McResHelper.openUnsupportedModelPreviewResource",
+          "when": "view == McResHelper.resourceGraph && viewItem == unsupportedPreviewResource",
+          "group": "inline"
+        }
       ]
     },
     "configuration": {
@@ -221,6 +243,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "mocha \"./out/test/unit/**/*.test.js\"",
+    "benchmark:model-preview": "npm run compile && node scripts/model-preview-benchmark.mjs",
     "package:vsix": "vsce package",
     "deploy": "vsce publish",
     "publish": "node scripts/release.mjs",

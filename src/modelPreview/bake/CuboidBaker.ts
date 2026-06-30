@@ -2,6 +2,7 @@ import type { PreviewBounds, PreviewDirection, PreviewMesh, PreviewVec3 } from "
 import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { fileUriString } from "../resolve/ResourceDependencyResolver";
+import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { getDefaultUv, getFaceUvs } from "./DefaultUv";
 
@@ -23,7 +24,8 @@ export interface BakeResult {
 export class CuboidBaker {
   constructor(
     private readonly textureResolver: TextureReferenceResolver,
-    private readonly issues: ModelIssueCollector
+    private readonly issues: ModelIssueCollector,
+    private readonly cancellationToken?: ModelPreviewCancellationToken
   ) { }
 
   bake(model: ResolvedModel): BakeResult {
@@ -32,6 +34,7 @@ export class CuboidBaker {
     const boundsBuilder = new BoundsBuilder();
 
     elements.forEach((resolvedElement, index) => {
+      throwIfCancellationRequested(this.cancellationToken);
       const mesh = this.bakeElement(resolvedElement, index, boundsBuilder);
       if (mesh.faces.length > 0) {
         meshes.push(mesh);
@@ -61,8 +64,16 @@ export class CuboidBaker {
     };
 
     if (!from || !to) {
-      this.issues.warning("Element is missing from/to coordinates", resolvedElement.sourceModelFileName);
+      this.issues.warning("Element is missing from/to coordinates", resolvedElement.sourceModelFileName, element.range);
       return previewMesh;
+    }
+
+    if (hasOutOfRangeCoordinate(from) || hasOutOfRangeCoordinate(to)) {
+      this.issues.warning(
+        "Element from/to coordinates are outside Minecraft's supported -16..32 range",
+        resolvedElement.sourceModelFileName,
+        element.fromRange ?? element.toRange ?? element.range
+      );
     }
 
     const drawableAxes = getDrawableAxes(from, to);
@@ -81,7 +92,7 @@ export class CuboidBaker {
       }
 
       if (!face.texture) {
-        this.issues.warning(`Face ${direction} is missing texture`, resolvedElement.sourceModelFileName);
+        this.issues.warning(`Face ${direction} is missing texture`, resolvedElement.sourceModelFileName, face.textureRange ?? face.range);
         continue;
       }
 
@@ -96,7 +107,7 @@ export class CuboidBaker {
         bounds.include(position);
       }
 
-      const material = this.textureResolver.resolve(face.texture, resolvedElement.sourceModelFileName).material;
+      const material = this.textureResolver.resolve(face.texture, resolvedElement.sourceModelFileName, face.textureRange).material;
       previewMesh.faces.push({
         direction,
         positions,
@@ -110,11 +121,15 @@ export class CuboidBaker {
     }
 
     if (element.rotation?.rescale) {
-      this.issues.info("Element rotation rescale is approximated in preview", resolvedElement.sourceModelFileName);
+      this.issues.info("Element rotation rescale is approximated in preview", resolvedElement.sourceModelFileName, element.rotation.rescaleRange);
     }
 
     return previewMesh;
   }
+}
+
+function hasOutOfRangeCoordinate(vector: PreviewVec3): boolean {
+  return vector.some(value => value < -16 || value > 32);
 }
 
 function getRenderableElements(model: ResolvedModel): ResolvedElement[] {

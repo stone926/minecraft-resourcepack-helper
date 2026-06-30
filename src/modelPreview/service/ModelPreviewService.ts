@@ -5,10 +5,16 @@ import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDepende
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { CuboidBaker } from "../bake/CuboidBaker";
 import { createGeneratedItemElements } from "../bake/GeneratedItemModel";
+import { readPngAlphaMask, type PngAlphaMask } from "../bake/PngAlpha";
 import { ParentChainResolver } from "../resolve/ParentChainResolver";
 import { fileNameKey, fileUriString } from "../resolve/ResourceDependencyResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { ModelPreviewCache } from "./ModelPreviewCache";
+import {
+  isCancellationError,
+  throwIfCancellationRequested,
+  type ModelPreviewCancellationToken
+} from "./ModelPreviewCancellation";
 
 export interface ModelPreviewServiceOptions {
   fileSystem?: ModelPreviewFileSystem;
@@ -25,13 +31,13 @@ export class ModelPreviewService {
     this.getConfiguration = options.configuration ?? (() => ({}));
   }
 
-  getPreviewDocument(fileName: string): Promise<ModelPreviewDocument> {
+  getPreviewDocument(fileName: string, cancellationToken?: ModelPreviewCancellationToken): Promise<ModelPreviewDocument> {
     const cached = this.cache.get(fileName);
     if (cached) {
       return cached;
     }
 
-    const document = this.createPreviewDocument(fileName).catch(error => {
+    const document = this.createPreviewDocument(fileName, cancellationToken).catch(error => {
       this.cache.invalidate(fileName);
       throw error;
     });
@@ -51,11 +57,12 @@ export class ModelPreviewService {
     this.cache.invalidateDependents(changedFileNameOrUri);
   }
 
-  private async createPreviewDocument(fileName: string): Promise<ModelPreviewDocument> {
+  private async createPreviewDocument(fileName: string, cancellationToken?: ModelPreviewCancellationToken): Promise<ModelPreviewDocument> {
+    throwIfCancellationRequested(cancellationToken);
     const issues = new ModelIssueCollector();
     const configuration = this.getConfiguration();
-    const modelResolver = new ParentChainResolver(this.fileSystem, configuration, issues);
-    const model = await modelResolver.resolve(fileName);
+    const model = await this.resolveModel(fileName, configuration, issues, cancellationToken);
+    throwIfCancellationRequested(cancellationToken);
 
     if (!model) {
       return {
@@ -73,12 +80,25 @@ export class ModelPreviewService {
     }
 
     const textureResolver = new TextureReferenceResolver(model, this.fileSystem, configuration, issues);
+    let renderModel = model;
     if (model.generatedItem && model.elements.length === 0) {
-      model.elements = await createGeneratedItemElements(model, textureResolver, this.fileSystem, issues);
+      renderModel = {
+        ...model,
+        elements: await createGeneratedItemElements(
+          model,
+          textureResolver,
+          this.fileSystem,
+          issues,
+          cancellationToken,
+          (textureFileName, targetIssues, token) => this.readTextureAlphaMask(textureFileName, targetIssues, token)
+        )
+      };
     }
+    throwIfCancellationRequested(cancellationToken);
 
-    const baker = new CuboidBaker(textureResolver, issues);
-    const bakeResult = baker.bake(model);
+    const baker = new CuboidBaker(textureResolver, issues, cancellationToken);
+    const bakeResult = baker.bake(renderModel);
+    throwIfCancellationRequested(cancellationToken);
 
     const dependencies = [
       ...model.dependencies,
@@ -97,6 +117,73 @@ export class ModelPreviewService {
       dependencies: toPreviewDependencies(dependencies, true),
       issues: issues.all()
     };
+  }
+
+  private async resolveModel(
+    fileName: string,
+    configuration: ModelPreviewConfiguration,
+    issues: ModelIssueCollector,
+    cancellationToken?: ModelPreviewCancellationToken
+  ) {
+    const configurationKey = getConfigurationKey(configuration);
+    const cached = this.cache.getResolvedModel(fileName, configurationKey, dependency => this.fileVersion(dependency));
+    if (cached) {
+      return cached;
+    }
+
+    const issueStart = issues.size();
+    const modelResolver = new ParentChainResolver(
+      this.fileSystem,
+      configuration,
+      issues,
+      cancellationToken,
+      this.cache
+    );
+    const model = await modelResolver.resolve(fileName);
+    if (issues.size() === issueStart) {
+      this.cache.setResolvedModel(fileName, configurationKey, Promise.resolve(model), dependency => this.fileVersion(dependency));
+    }
+
+    return model;
+  }
+
+  private async readTextureAlphaMask(
+    textureFileName: string,
+    issues: ModelIssueCollector,
+    cancellationToken?: ModelPreviewCancellationToken
+  ): Promise<PngAlphaMask | null> {
+    throwIfCancellationRequested(cancellationToken);
+    const version = this.fileVersion(textureFileName);
+    const cached = this.cache.getTextureAlphaMask(textureFileName, version);
+    if (cached) {
+      const alphaMask = await cached;
+      if (!alphaMask) {
+        issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+      }
+      return alphaMask;
+    }
+
+    try {
+      const bytes = await this.fileSystem.readBinaryFile(textureFileName);
+      throwIfCancellationRequested(cancellationToken);
+      const alphaMask = readPngAlphaMask(bytes);
+      this.cache.setTextureAlphaMask(textureFileName, version, Promise.resolve(alphaMask));
+      if (!alphaMask) {
+        issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+      }
+      return alphaMask;
+    } catch (error) {
+      if (isCancellationError(error)) {
+        throw error;
+      }
+    }
+
+    issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+    return null;
+  }
+
+  private fileVersion(fileName: string): string | null {
+    return this.fileSystem.fileVersion?.(fileName) ?? null;
   }
 }
 
@@ -127,5 +214,20 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
 const nodeFileSystem: ModelPreviewFileSystem = {
   readTextFile: fileName => fs.promises.readFile(fileName, "utf8"),
   readBinaryFile: fileName => fs.promises.readFile(fileName),
-  fileExists: fileName => fs.existsSync(fileName)
+  fileExists: fileName => fs.existsSync(fileName),
+  fileVersion: fileName => {
+    try {
+      const stat = fs.statSync(fileName);
+      return `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return null;
+    }
+  }
 };
+
+function getConfigurationKey(configuration: ModelPreviewConfiguration): string {
+  return JSON.stringify({
+    defaultAssetsPath: configuration.defaultAssetsPath ?? null,
+    resourcePackRoots: configuration.resourcePackRoots ?? []
+  });
+}

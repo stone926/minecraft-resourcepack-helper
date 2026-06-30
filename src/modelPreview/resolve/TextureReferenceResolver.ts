@@ -1,4 +1,4 @@
-import type { PreviewMaterial } from "../ir/PreviewDocument";
+import type { PreviewMaterial, PreviewRange } from "../ir/PreviewDocument";
 import type {
   ModelPreviewConfiguration,
   ModelPreviewFileSystem,
@@ -26,14 +26,14 @@ export class TextureReferenceResolver {
     private readonly issues: ModelIssueCollector
   ) { }
 
-  resolve(textureReference: string, sourceModelFileName: string): TextureMaterialResolution {
+  resolve(textureReference: string, sourceModelFileName: string, referenceRange?: PreviewRange): TextureMaterialResolution {
     const cacheKey = `${sourceModelFileName}\0${textureReference}`;
     const cached = this.materials.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const result = this.resolveUncached(textureReference, sourceModelFileName, new Set<string>(), false);
+    const result = this.resolveUncached(textureReference, sourceModelFileName, new Set<string>(), false, referenceRange);
     this.materials.set(cacheKey, result);
     return result;
   }
@@ -60,54 +60,57 @@ export class TextureReferenceResolver {
     textureReference: string,
     sourceModelFileName: string,
     visitedSlots: Set<string>,
-    forceTranslucent: boolean
+    forceTranslucent: boolean,
+    referenceRange?: PreviewRange
   ): TextureMaterialResolution {
     if (!textureReference.startsWith("#")) {
-      return this.resolveTextureFile(textureReference, sourceModelFileName, forceTranslucent);
+      return this.resolveTextureFile(textureReference, sourceModelFileName, forceTranslucent, referenceRange);
     }
 
     const slotName = textureReference.slice(1);
     if (visitedSlots.has(slotName)) {
-      this.issues.warning(`Texture variable cycle detected: ${textureReference}`, sourceModelFileName);
+      this.issues.warning(`Texture variable cycle detected: ${textureReference}`, sourceModelFileName, referenceRange);
       return missingMaterial(textureReference);
     }
 
     const slot = this.model.textures[slotName];
     if (!slot) {
-      this.issues.warning(`Texture variable not found: ${textureReference}`, sourceModelFileName);
+      this.issues.warning(`Texture variable not found: ${textureReference}`, sourceModelFileName, referenceRange);
       return missingMaterial(textureReference);
     }
 
     visitedSlots.add(slotName);
-    return this.resolveTextureValue(slot.value, slot.sourceModelFileName, visitedSlots, forceTranslucent);
+    return this.resolveTextureValue(slot.value, slot.sourceModelFileName, visitedSlots, forceTranslucent, slot.valueRange ?? referenceRange);
   }
 
   private resolveTextureValue(
     value: RawTextureValue,
     sourceModelFileName: string,
     visitedSlots: Set<string>,
-    inheritedForceTranslucent: boolean
+    inheritedForceTranslucent: boolean,
+    valueRange?: PreviewRange
   ): TextureMaterialResolution {
     if (typeof value === "string") {
-      return this.resolveUncached(value, sourceModelFileName, visitedSlots, inheritedForceTranslucent);
+      return this.resolveUncached(value, sourceModelFileName, visitedSlots, inheritedForceTranslucent, valueRange);
     }
 
     if (!isTextureObject(value) || !value.sprite) {
-      this.issues.warning("Texture object is missing sprite", sourceModelFileName);
+      this.issues.warning("Texture object is missing sprite", sourceModelFileName, valueRange);
       return missingMaterial("missing-object-sprite");
     }
 
-    return this.resolveUncached(value.sprite, sourceModelFileName, visitedSlots, inheritedForceTranslucent || value.forceTranslucent === true);
+    return this.resolveUncached(value.sprite, sourceModelFileName, visitedSlots, inheritedForceTranslucent || value.forceTranslucent === true, valueRange);
   }
 
   private resolveTextureFile(
     textureResource: string,
     sourceModelFileName: string,
-    forceTranslucent: boolean
+    forceTranslucent: boolean,
+    referenceRange?: PreviewRange
   ): TextureMaterialResolution {
     const textureFile = resolveTextureFileName(textureResource, sourceModelFileName, this.fileSystem, this.configuration);
     if (!textureFile) {
-      this.issues.warning(`Texture not found: ${textureResource}`, sourceModelFileName);
+      this.issues.warning(`Texture not found: ${textureResource}`, sourceModelFileName, referenceRange);
       return missingMaterial(textureResource);
     }
 

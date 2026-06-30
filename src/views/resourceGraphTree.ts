@@ -13,7 +13,7 @@ import { ResourceReference } from "../utils/resourceReferences";
 
 type ResourceGraphChildren = ResourceGraphNode[] | (() => Promise<ResourceGraphNode[]>);
 
-class ResourceGraphNode extends vscode.TreeItem {
+export class ResourceGraphNode extends vscode.TreeItem {
   private readonly childrenProvider: () => Promise<ResourceGraphNode[]>;
 
   constructor(
@@ -33,7 +33,7 @@ class ResourceGraphNode extends vscode.TreeItem {
     this.resourceUri = options.uri;
     this.childrenProvider = toChildrenProvider(options.children);
     this.iconPath = options.iconPath;
-    this.contextValue = options.contextValue;
+    this.contextValue = options.contextValue ?? (options.uri ? getResourceContextValue(options.uri.fsPath) : undefined);
     this.tooltip = options.tooltip ?? options.uri?.fsPath;
 
     if (options.uri) {
@@ -149,7 +149,8 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
         description: options.description,
         uri,
         children: () => this.createResourceSections(uri, visitedResources, options.document),
-        iconPath: options.iconPath ?? getResourceIcon(uri.fsPath)
+        iconPath: options.iconPath ?? getResourceIcon(uri.fsPath),
+        contextValue: getResourceContextValue(uri.fsPath)
       }
     );
   }
@@ -444,6 +445,19 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 }
 
+export function getResourceGraphNodeUri(value: unknown): vscode.Uri | null {
+  if (value instanceof vscode.Uri) {
+    return value;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const resourceUri = (value as { resourceUri?: unknown }).resourceUri;
+  return resourceUri instanceof vscode.Uri ? resourceUri : null;
+}
+
 function getReferenceLabel(reference: ResourceReference): string {
   if (reference.kind === "model") {
     return vscode.l10n.t("model: {0}", reference.value);
@@ -499,6 +513,23 @@ function getResourceIcon(fileName: string): vscode.ThemeIcon {
   }
 
   return extension ? new vscode.ThemeIcon("file") : new vscode.ThemeIcon("folder");
+}
+
+function getResourceContextValue(fileName: string): string | undefined {
+  if (isModelDocumentPath(fileName)) {
+    return "modelResource";
+  }
+
+  if (isUnsupportedPreviewResourcePath(fileName)) {
+    return "unsupportedPreviewResource";
+  }
+
+  return undefined;
+}
+
+function isUnsupportedPreviewResourcePath(fileName: string): boolean {
+  return /[\\/]assets[\\/][^\\/]+[\\/]blockstates[\\/].+\.json$/i.test(fileName) ||
+    /[\\/]assets[\\/][^\\/]+[\\/]items[\\/].+\.json$/i.test(fileName);
 }
 
 function getResourcePathLabel(uri: vscode.Uri): string {

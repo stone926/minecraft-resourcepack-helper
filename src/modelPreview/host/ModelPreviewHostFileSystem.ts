@@ -21,6 +21,20 @@ export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
   fileExists(fileName: string): boolean {
     return fs.existsSync(fileName);
   }
+
+  fileVersion(fileName: string): string | null {
+    const document = findOpenTextDocument(fileName);
+    if (document) {
+      return `open:${document.version}`;
+    }
+
+    try {
+      const stat = fs.statSync(fileName);
+      return `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return null;
+    }
+  }
 }
 
 function findOpenTextDocument(fileName: string): vscode.TextDocument | null {

@@ -8,7 +8,7 @@ import { applyDecoration, disposeDecoration, updateDecoration } from './decorato
 import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
-import { ResourceGraphTreeProvider } from './views/resourceGraphTree';
+import { getResourceGraphNodeUri, ResourceGraphTreeProvider } from './views/resourceGraphTree';
 import { isResourceGraphDocumentPath } from './utils/resourceGraph';
 import { ModelPreviewService } from './modelPreview/service/ModelPreviewService';
 import { ModelPreviewHostFileSystem } from './modelPreview/host/ModelPreviewHostFileSystem';
@@ -77,9 +77,21 @@ export function activate(context: vscode.ExtensionContext) {
       resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
     })
   });
+  const openModelPreview = openModelPreviewCommand(context.extensionUri, modelPreviewService);
   context.subscriptions.push(vscode.commands.registerCommand(
     "McResHelper.openModelPreview",
-    openModelPreviewCommand(context.extensionUri, modelPreviewService)
+    openModelPreview
+  ));
+  context.subscriptions.push(vscode.commands.registerCommand(
+    "McResHelper.openResourceGraphModelPreview",
+    (node?: unknown) => {
+      const uri = getResourceGraphNodeUri(node);
+      return openModelPreview(uri ?? undefined);
+    }
+  ));
+  context.subscriptions.push(vscode.commands.registerCommand(
+    "McResHelper.openUnsupportedModelPreviewResource",
+    () => vscode.window.showInformationMessage(vscode.l10n.t("Model preview supports model JSON resources only for now"))
   ));
   context.subscriptions.push(vscode.commands.registerCommand(
     "McResHelper.exportModelPreviewImage",

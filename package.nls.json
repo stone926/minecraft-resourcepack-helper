@@ -11,6 +11,8 @@
   "command.title.refreshResourceGraph": "McResHelper: refresh resource graph",
   "command.title.openModelPreview": "McResHelper: open model preview",
   "command.title.exportModelPreviewImage": "McResHelper: export model preview image",
+  "command.title.openResourceGraphModelPreview": "McResHelper: open model preview from resource graph",
+  "command.title.openUnsupportedModelPreviewResource": "McResHelper: model preview unavailable for this resource",
   "viewContainer.title.resources": "Minecraft Resources",
   "view.name.resourceGraph": "Resource Relations"
 }

@@ -2,6 +2,7 @@ import type { PreviewDirection, PreviewVec3 } from "../ir/PreviewDocument";
 import type { ModelPreviewFileSystem, RawElement, RawFace, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
+import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
 import { readPngAlphaMask, type PngAlphaMask } from "./PngAlpha";
 
 const itemLayers = ["layer0", "layer1", "layer2", "layer3", "layer4"];
@@ -24,16 +25,25 @@ interface SideFace {
 
 type SideDirection = "up" | "down" | "left" | "right";
 
+type TextureAlphaReader = (
+  fileName: string,
+  issues: ModelIssueCollector,
+  token?: ModelPreviewCancellationToken
+) => Promise<PngAlphaMask | null>;
+
 export async function createGeneratedItemElements(
   model: ResolvedModel,
   textureResolver: TextureReferenceResolver,
   fileSystem: ModelPreviewFileSystem,
-  issues: ModelIssueCollector
+  issues: ModelIssueCollector,
+  cancellationToken?: ModelPreviewCancellationToken,
+  readTextureAlpha?: TextureAlphaReader
 ): Promise<ResolvedElement[]> {
-  const layers = await resolveGeneratedLayers(model, textureResolver, fileSystem, issues);
+  const layers = await resolveGeneratedLayers(model, textureResolver, fileSystem, issues, cancellationToken, readTextureAlpha);
   const elements: ResolvedElement[] = [];
 
   for (const layer of layers) {
+    throwIfCancellationRequested(cancellationToken);
     for (const element of createLayerElements(layer)) {
       elements.push({
         element,
@@ -50,20 +60,23 @@ async function resolveGeneratedLayers(
   model: ResolvedModel,
   textureResolver: TextureReferenceResolver,
   fileSystem: ModelPreviewFileSystem,
-  issues: ModelIssueCollector
+  issues: ModelIssueCollector,
+  cancellationToken?: ModelPreviewCancellationToken,
+  readTextureAlpha: TextureAlphaReader = (fileName, targetIssues, token) => readTextureAlphaMask(fileSystem, fileName, targetIssues, token)
 ): Promise<GeneratedLayer[]> {
   const layers: GeneratedLayer[] = [];
 
   for (let layerIndex = 0; layerIndex < itemLayers.length; layerIndex++) {
+    throwIfCancellationRequested(cancellationToken);
     const textureSlot = itemLayers[layerIndex];
     if (!model.textures[textureSlot]) {
       break;
     }
 
     const textureReference = `#${textureSlot}`;
-    const resolution = textureResolver.resolve(textureReference, model.fileName);
+    const resolution = textureResolver.resolve(textureReference, model.fileName, model.textures[textureSlot]?.valueRange);
     const alphaMask = resolution.textureFileName
-      ? await readTextureAlphaMask(fileSystem, resolution.textureFileName, issues)
+      ? await readTextureAlpha(resolution.textureFileName, issues, cancellationToken)
       : null;
 
     layers.push({
@@ -79,10 +92,13 @@ async function resolveGeneratedLayers(
 async function readTextureAlphaMask(
   fileSystem: ModelPreviewFileSystem,
   textureFileName: string,
-  issues: ModelIssueCollector
+  issues: ModelIssueCollector,
+  cancellationToken?: ModelPreviewCancellationToken
 ): Promise<PngAlphaMask | null> {
   try {
+    throwIfCancellationRequested(cancellationToken);
     const alphaMask = readPngAlphaMask(await fileSystem.readBinaryFile(textureFileName));
+    throwIfCancellationRequested(cancellationToken);
     if (alphaMask) {
       return alphaMask;
     }
