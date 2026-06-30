@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.2.1] - 2026-06-30
+
+- fix: show model preview editor button (e18c6af)
+
 ## [2.2.0] - 2026-06-29
 
 - fix: tweak height (5ff54b7)
