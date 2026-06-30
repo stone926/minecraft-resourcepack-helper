@@ -73,6 +73,16 @@ describe("model preview manifest", () => {
     assert.ok(script.includes("Math.sin(fitFov / 2)"), "perspective camera should fit using the active FOV");
     assert.ok(padding && Number(padding[1]) >= 1.35, "initial preview should leave a comfortable camera margin");
   });
+
+  it("uses the Minecraft missing texture colors and quadrant layout", () => {
+    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+
+    assert.ok(script.includes("const MISSING_TEXTURE_SIZE = 16"), "missing texture should match Minecraft's 16x16 sprite size");
+    assert.ok(script.includes("const MISSING_TEXTURE_MAGENTA = [248, 0, 248]"), "missing texture should use Minecraft magenta");
+    assert.ok(script.includes("const MISSING_TEXTURE_BLACK = [0, 0, 0]"), "missing texture should use Minecraft black");
+    assert.ok(script.includes("(y < size / 2) !== (x < size / 2)"), "missing texture should use 2x2 quadrants, not a small checkerboard");
+    assert.strictEqual(script.includes("x >> 2"), false, "missing texture should not use the old 4px checkerboard");
+  });
 });
 
 function readPackageJson(): PackageJson {

@@ -7,6 +7,9 @@ const CAMERA_MIN_DISTANCE = 24;
 const DETAILS_MIN_SIZE = 72;
 const DETAILS_KEYBOARD_STEP = 24;
 const DETAILS_STACKED_QUERY = "(max-width: 780px)";
+const MISSING_TEXTURE_SIZE = 16;
+const MISSING_TEXTURE_MAGENTA = [248, 0, 248];
+const MISSING_TEXTURE_BLACK = [0, 0, 0];
 
 class PreviewApp {
   constructor() {
@@ -534,22 +537,26 @@ function createMissingMaterial(displayMode) {
 }
 
 function createMissingTexture() {
-  const size = 16;
+  const size = MISSING_TEXTURE_SIZE;
   const data = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const offset = (y * size + x) * 4;
-      const purple = ((x >> 2) + (y >> 2)) % 2 === 0;
-      data[offset] = purple ? 242 : 20;
-      data[offset + 1] = purple ? 0 : 20;
-      data[offset + 2] = purple ? 242 : 20;
+      const color = (y < size / 2) !== (x < size / 2)
+        ? MISSING_TEXTURE_MAGENTA
+        : MISSING_TEXTURE_BLACK;
+      data[offset] = color[0];
+      data[offset + 1] = color[1];
+      data[offset + 2] = color[2];
       data[offset + 3] = 255;
     }
   }
 
   const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
+  texture.flipY = false;
   texture.needsUpdate = true;
   return texture;
 }
