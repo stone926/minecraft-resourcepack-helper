@@ -1,3 +1,5 @@
+.claude
+.agents
 out
 dist
 node_modules
@@ -5,7 +7,7 @@ node_modules
 *.vsix
 *.psd
 .vscode
-docs/**
+docs
 *.md
 !README.md
 !README_CN.md

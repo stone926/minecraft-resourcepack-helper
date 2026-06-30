@@ -1,6 +1,7 @@
 .git/**
 .github/**
 .claude/**
+.agents/**
 .vscode/**
 .vscode-test/**
 node_modules/three/**
