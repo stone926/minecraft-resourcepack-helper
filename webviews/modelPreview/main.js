@@ -514,7 +514,7 @@ function createGeometry(faces) {
     for (const uv of face.uvs) {
       uvs.push(uv[0] / 16, uv[1] / 16);
     }
-    indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
   const geometry = new THREE.BufferGeometry();

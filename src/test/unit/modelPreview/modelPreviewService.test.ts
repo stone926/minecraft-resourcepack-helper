@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getDefaultUv, getFaceUvs, getFaceUvsForBoxGeometry } from "../../../modelPreview/bake/DefaultUv";
+import { getDefaultUv, getFaceUvs } from "../../../modelPreview/bake/DefaultUv";
 import type { PreviewFace, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
 import { ModelPreviewService } from "../../../modelPreview/service/ModelPreviewService";
@@ -232,8 +232,7 @@ describe("model preview service", () => {
   it("bakes default UVs and face rotation", () => {
     assert.deepStrictEqual(getDefaultUv("down", [1, 2, 3], [4, 5, 6]), [1, 10, 4, 13]);
     assert.deepStrictEqual(getDefaultUv("north", [1, 2, 3], [4, 5, 6]), [12, 11, 15, 14]);
-    assert.deepStrictEqual(getFaceUvs([0, 0, 16, 16], 90), [[16, 16], [0, 16], [0, 0], [16, 0]]);
-    assert.deepStrictEqual(getFaceUvsForBoxGeometry("east", [0, 0, 16, 16]), [[0, 0], [16, 0], [0, 16], [16, 16]]);
+    assert.deepStrictEqual(getFaceUvs([0, 0, 16, 16], 90), [[0, 16], [16, 16], [16, 0], [0, 0]]);
   });
 
   it("bakes negative cuboids with inward-facing front sides", async () => {
@@ -264,13 +263,46 @@ describe("model preview service", () => {
       assert.ok(east);
       assert.ok(north);
       assert.deepStrictEqual(east.positions, [
-        [-1, -1, -1],
+        [-1, 17, 17],
         [-1, -1, 17],
-        [-1, 17, -1],
-        [-1, 17, 17]
+        [-1, -1, -1],
+        [-1, 17, -1]
       ]);
       assert.ok(faceFrontNormal(east)[0] > 0);
       assert.ok(faceFrontNormal(north)[2] < 0);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("skips zero-thickness cuboid faces like Minecraft", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      writeJson(pack, "assets/minecraft/models/block/flat.json", {
+        textures: { all: "minecraft:block/stone" },
+        elements: [
+          {
+            from: [8, 0, 0],
+            to: [8, 16, 16],
+            faces: {
+              east: { texture: "#all" },
+              west: { texture: "#all" },
+              up: { texture: "#all" },
+              down: { texture: "#all" },
+              north: { texture: "#all" },
+              south: { texture: "#all" }
+            }
+          }
+        ]
+      });
+      writeFile(pack, "assets/minecraft/textures/block/stone.png", "png");
+
+      const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/block/flat.json"));
+      const directions = preview.meshes[0].faces.map(face => face.direction).sort();
+
+      assert.deepStrictEqual(directions, ["east", "west"]);
     } finally {
       removeTempDirectory(root);
     }
@@ -420,7 +452,7 @@ function removeTempDirectory(root: string): void {
 }
 
 function faceFrontNormal(face: PreviewFace): PreviewVec3 {
-  const [a, b, c] = [face.positions[0], face.positions[2], face.positions[1]];
+  const [a, b, c] = [face.positions[0], face.positions[1], face.positions[2]];
   return cross(subtract(b, a), subtract(c, a));
 }
 

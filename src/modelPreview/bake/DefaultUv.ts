@@ -24,32 +24,12 @@ export function getDefaultUv(direction: PreviewDirection, from: [number, number,
 
 export function getFaceUvs(rect: UvRect, rotation = 0): Array<[number, number]> {
   const [u1, v1, u2, v2] = rect;
-  const uvs: Array<[number, number]> = [
-    [u1, v2],
+  const baseUvs: Array<[number, number]> = [
     [u1, v1],
+    [u1, v2],
+    [u2, v2],
     [u2, v1],
-    [u2, v2]
   ];
   const turns = ((((rotation % 360) + 360) % 360) / 90) | 0;
-
-  for (let index = 0; index < turns; index++) {
-    uvs.unshift(uvs.pop() ?? uvs[0]);
-  }
-
-  return uvs;
-}
-
-export function getFaceUvsForBoxGeometry(direction: PreviewDirection, rect: UvRect, rotation = 0): Array<[number, number]> {
-  const uvs = getFaceUvs(rect, rotation);
-
-  switch (direction) {
-    case "down":
-    case "up":
-      return [uvs[0], uvs[3], uvs[1], uvs[2]];
-    case "north":
-    case "south":
-    case "west":
-    case "east":
-      return [uvs[1], uvs[2], uvs[0], uvs[3]];
-  }
+  return baseUvs.map((_, index) => baseUvs[(index + turns) % baseUvs.length]);
 }
