@@ -2,7 +2,8 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getDefaultUv, getFaceUvs } from "../../../modelPreview/bake/DefaultUv";
+import { getDefaultUv, getFaceUvs, getFaceUvsForBoxGeometry } from "../../../modelPreview/bake/DefaultUv";
+import type { PreviewFace, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
 import { ModelPreviewService } from "../../../modelPreview/service/ModelPreviewService";
 
@@ -232,6 +233,47 @@ describe("model preview service", () => {
     assert.deepStrictEqual(getDefaultUv("down", [1, 2, 3], [4, 5, 6]), [1, 10, 4, 13]);
     assert.deepStrictEqual(getDefaultUv("north", [1, 2, 3], [4, 5, 6]), [12, 11, 15, 14]);
     assert.deepStrictEqual(getFaceUvs([0, 0, 16, 16], 90), [[16, 16], [0, 16], [0, 0], [16, 0]]);
+    assert.deepStrictEqual(getFaceUvsForBoxGeometry("east", [0, 0, 16, 16]), [[0, 0], [16, 0], [0, 16], [16, 16]]);
+  });
+
+  it("bakes negative cuboids with inward-facing front sides", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      writeJson(pack, "assets/minecraft/models/block/negative.json", {
+        textures: { wax: "minecraft:block/waxed_block" },
+        elements: [
+          {
+            from: [17, 17, 17],
+            to: [-1, -1, -1],
+            shade: false,
+            faces: {
+              east: { texture: "#wax", uv: [0, 0, 16, 16] },
+              north: { texture: "#wax", uv: [0, 0, 16, 16] }
+            }
+          }
+        ]
+      });
+      writeFile(pack, "assets/minecraft/textures/block/waxed_block.png", "png");
+
+      const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/block/negative.json"));
+      const east = preview.meshes[0].faces.find(face => face.direction === "east");
+      const north = preview.meshes[0].faces.find(face => face.direction === "north");
+
+      assert.ok(east);
+      assert.ok(north);
+      assert.deepStrictEqual(east.positions, [
+        [-1, -1, -1],
+        [-1, -1, 17],
+        [-1, 17, -1],
+        [-1, 17, 17]
+      ]);
+      assert.ok(faceFrontNormal(east)[0] > 0);
+      assert.ok(faceFrontNormal(north)[2] < 0);
+    } finally {
+      removeTempDirectory(root);
+    }
   });
 
   it("applies element rotation to baked face positions", async () => {
@@ -375,4 +417,25 @@ function createTempDirectory(): string {
 
 function removeTempDirectory(root: string): void {
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+function faceFrontNormal(face: PreviewFace): PreviewVec3 {
+  const [a, b, c] = [face.positions[0], face.positions[2], face.positions[1]];
+  return cross(subtract(b, a), subtract(c, a));
+}
+
+function subtract(left: PreviewVec3, right: PreviewVec3): PreviewVec3 {
+  return [
+    left[0] - right[0],
+    left[1] - right[1],
+    left[2] - right[2]
+  ];
+}
+
+function cross(left: PreviewVec3, right: PreviewVec3): PreviewVec3 {
+  return [
+    left[1] * right[2] - left[2] * right[1],
+    left[2] * right[0] - left[0] * right[2],
+    left[0] * right[1] - left[1] * right[0]
+  ];
 }

@@ -3,7 +3,7 @@ import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelD
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { fileUriString } from "../resolve/ResourceDependencyResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
-import { getDefaultUv, getFaceUvs } from "./DefaultUv";
+import { getDefaultUv, getFaceUvsForBoxGeometry } from "./DefaultUv";
 import { createGeneratedItemElements } from "./GeneratedItemModel";
 
 const directions: PreviewDirection[] = ["down", "up", "north", "south", "west", "east"];
@@ -78,7 +78,7 @@ export class CuboidBaker {
       previewMesh.faces.push({
         direction,
         positions,
-        uvs: getFaceUvs(face.uv ?? getDefaultUv(direction, from, to), face.rotation ?? 0),
+        uvs: getFaceUvsForBoxGeometry(direction, face.uv ?? getDefaultUv(direction, from, to), face.rotation ?? 0),
         materialId: material.id,
         cullface: face.cullface,
         tintindex: face.tintindex,
@@ -115,19 +115,21 @@ function getFacePositions(direction: PreviewDirection, from: PreviewVec3, to: Pr
   const [x1, y1, z1] = from;
   const [x2, y2, z2] = to;
 
+  // Match Blockbench's BoxGeometry.setShape vertex order. With front-face
+  // culling this makes negative-size cuboids render from the inside.
   switch (direction) {
     case "down":
-      return [[x1, y1, z2], [x1, y1, z1], [x2, y1, z1], [x2, y1, z2]];
+      return [[x1, y1, z2], [x2, y1, z2], [x1, y1, z1], [x2, y1, z1]];
     case "up":
-      return [[x1, y2, z1], [x1, y2, z2], [x2, y2, z2], [x2, y2, z1]];
+      return [[x1, y2, z1], [x2, y2, z1], [x1, y2, z2], [x2, y2, z2]];
     case "north":
-      return [[x2, y1, z1], [x2, y2, z1], [x1, y2, z1], [x1, y1, z1]];
+      return [[x2, y2, z1], [x1, y2, z1], [x2, y1, z1], [x1, y1, z1]];
     case "south":
-      return [[x1, y1, z2], [x1, y2, z2], [x2, y2, z2], [x2, y1, z2]];
+      return [[x1, y2, z2], [x2, y2, z2], [x1, y1, z2], [x2, y1, z2]];
     case "west":
-      return [[x1, y1, z1], [x1, y2, z1], [x1, y2, z2], [x1, y1, z2]];
+      return [[x1, y2, z1], [x1, y2, z2], [x1, y1, z1], [x1, y1, z2]];
     case "east":
-      return [[x2, y1, z2], [x2, y2, z2], [x2, y2, z1], [x2, y1, z1]];
+      return [[x2, y2, z2], [x2, y2, z1], [x2, y1, z2], [x2, y1, z1]];
   }
 }
 

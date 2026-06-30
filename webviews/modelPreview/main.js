@@ -326,7 +326,7 @@ class PreviewRenderer {
         color: paletteColor(index),
         roughness: 0.8,
         metalness: 0,
-        side: THREE.DoubleSide
+        side: THREE.FrontSide
       });
     }
 
@@ -334,7 +334,7 @@ class PreviewRenderer {
       return new THREE.MeshBasicMaterial({
         color: 0xd6dee8,
         wireframe: true,
-        side: THREE.DoubleSide
+        side: THREE.FrontSide
       });
     }
 
@@ -351,7 +351,7 @@ class PreviewRenderer {
       metalness: 0,
       transparent: material.transparent,
       alphaTest: 0.1,
-      side: THREE.DoubleSide
+      side: THREE.FrontSide
     });
   }
 
@@ -514,7 +514,7 @@ function createGeometry(faces) {
     for (const uv of face.uvs) {
       uvs.push(uv[0] / 16, uv[1] / 16);
     }
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -527,10 +527,10 @@ function createGeometry(faces) {
 
 function createMissingMaterial(displayMode) {
   if (displayMode === "wireframe") {
-    return new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true, side: THREE.DoubleSide });
+    return new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true, side: THREE.FrontSide });
   }
 
-  return new THREE.MeshStandardMaterial({ color: 0xff00ff, roughness: 0.95, side: THREE.DoubleSide });
+  return new THREE.MeshStandardMaterial({ color: 0xff00ff, roughness: 0.95, side: THREE.FrontSide });
 }
 
 function createMissingTexture() {

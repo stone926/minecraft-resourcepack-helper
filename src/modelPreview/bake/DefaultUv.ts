@@ -38,3 +38,18 @@ export function getFaceUvs(rect: UvRect, rotation = 0): Array<[number, number]> 
 
   return uvs;
 }
+
+export function getFaceUvsForBoxGeometry(direction: PreviewDirection, rect: UvRect, rotation = 0): Array<[number, number]> {
+  const uvs = getFaceUvs(rect, rotation);
+
+  switch (direction) {
+    case "down":
+    case "up":
+      return [uvs[0], uvs[3], uvs[1], uvs[2]];
+    case "north":
+    case "south":
+    case "west":
+    case "east":
+      return [uvs[1], uvs[2], uvs[0], uvs[3]];
+  }
+}
