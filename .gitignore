@@ -5,12 +5,8 @@ node_modules
 *.vsix
 *.psd
 .vscode
-docs/*
-!docs/review/
-docs/review/*
+docs/**
 *.md
 !README.md
 !README_CN.md
 !CHANGELOG.md
-!docs/简单模型渲染器高价值迭代清单.md
-!docs/review/model-preview-performance-2026-06-30.md
