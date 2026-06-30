@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as zlib from "node:zlib";
 import { getDefaultUv, getFaceUvs } from "../../../modelPreview/bake/DefaultUv";
 import type { PreviewFace, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
@@ -206,24 +207,65 @@ describe("model preview service", () => {
     }
   });
 
-  it("generates a simplified plane for item/generated", async () => {
+  it("generates item/generated layers like Minecraft", async () => {
     const root = createTempDirectory();
 
     try {
       const pack = createPack(root, "pack");
-      writeJson(pack, "assets/minecraft/models/item/apple.json", {
+      writeJson(pack, "assets/minecraft/models/item/potion.json", {
         parent: "minecraft:item/generated",
         textures: {
-          layer0: "minecraft:item/apple"
+          layer0: "minecraft:item/overlay",
+          layer1: "minecraft:item/potion"
         }
       });
-      writeFile(pack, "assets/minecraft/textures/item/apple.png", "png");
+      writeFile(pack, "assets/minecraft/textures/item/overlay.png", createRgbaPng(2, 2, () => 0));
+      writeFile(pack, "assets/minecraft/textures/item/potion.png", createRgbaPng(2, 2, () => 255));
 
-      const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/item/apple.json"));
+      const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/item/potion.json"));
+      const layer0Material = preview.materials.find(material => /overlay\.png/.test(material.textureUri ?? ""));
+      const layer1Material = preview.materials.find(material => /potion\.png/.test(material.textureUri ?? ""));
+      const faces = preview.meshes.flatMap(mesh => mesh.faces);
+      const layer0Faces = faces.filter(face => face.materialId === layer0Material?.id);
+      const layer1Faces = faces.filter(face => face.materialId === layer1Material?.id);
 
-      assert.strictEqual(preview.meshes.length, 1);
-      assert.strictEqual(preview.meshes[0].faces.length, 6);
-      assert.ok(preview.issues.some(issue => issue.severity === "info" && issue.message.includes("Generated item model")));
+      assert.ok(layer0Material);
+      assert.ok(layer1Material);
+      assert.deepStrictEqual(layer0Faces.map(face => face.direction).sort(), ["north", "south"]);
+      assert.strictEqual(layer1Faces.length, 10);
+      assert.ok(layer1Faces.some(face => face.direction === "south" && face.tintindex === 1));
+      assert.ok(layer1Faces.some(face => face.direction === "up"));
+      assert.ok(layer1Faces.some(face => face.direction === "down"));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("extrudes item/generated sides from opaque texture transitions", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      writeJson(pack, "assets/minecraft/models/item/single_pixel.json", {
+        parent: "minecraft:item/generated",
+        textures: {
+          layer0: "minecraft:item/single_pixel",
+          layer2: "minecraft:item/skipped"
+        }
+      });
+      writeFile(pack, "assets/minecraft/textures/item/single_pixel.png", createRgbaPng(2, 2, (x, y) => x === 0 && y === 0 ? 255 : 0));
+      writeFile(pack, "assets/minecraft/textures/item/skipped.png", createRgbaPng(2, 2, () => 255));
+
+      const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/item/single_pixel.json"));
+      const faces = preview.meshes.flatMap(mesh => mesh.faces);
+      const sideDirections = faces
+        .map(face => face.direction)
+        .filter(direction => direction !== "north" && direction !== "south")
+        .sort();
+
+      assert.strictEqual(faces.length, 6);
+      assert.deepStrictEqual(sideDirections, ["down", "east", "up", "west"]);
+      assert.strictEqual(preview.materials.length, 1, "Minecraft stops generated layers at the first missing layer slot");
     } finally {
       removeTempDirectory(root);
     }
@@ -437,10 +479,55 @@ function writeJson(root: string, relativePath: string, value: unknown): void {
   writeFile(root, relativePath, JSON.stringify(value, null, 2));
 }
 
-function writeFile(root: string, relativePath: string, value: string): void {
+function writeFile(root: string, relativePath: string, value: string | Uint8Array): void {
   const fileName = path.join(root, relativePath);
   fs.mkdirSync(path.dirname(fileName), { recursive: true });
   fs.writeFileSync(fileName, value);
+}
+
+function createRgbaPng(width: number, height: number, alphaAt: (x: number, y: number) => number): Buffer {
+  const rowStride = width * 4 + 1;
+  const rows = Buffer.alloc(rowStride * height);
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * rowStride;
+    rows[rowOffset] = 0;
+    for (let x = 0; x < width; x++) {
+      const offset = rowOffset + 1 + x * 4;
+      rows[offset] = 255;
+      rows[offset + 1] = 255;
+      rows[offset + 2] = 255;
+      rows[offset + 3] = alphaAt(x, y);
+    }
+  }
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", Buffer.from([
+      (width >>> 24) & 0xff,
+      (width >>> 16) & 0xff,
+      (width >>> 8) & 0xff,
+      width & 0xff,
+      (height >>> 24) & 0xff,
+      (height >>> 16) & 0xff,
+      (height >>> 8) & 0xff,
+      height & 0xff,
+      8,
+      6,
+      0,
+      0,
+      0
+    ])),
+    pngChunk("IDAT", zlib.deflateSync(rows)),
+    pngChunk("IEND", Buffer.alloc(0))
+  ]);
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  chunk.write(type, 4, "ascii");
+  data.copy(chunk, 8);
+  return chunk;
 }
 
 function createTempDirectory(): string {

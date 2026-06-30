@@ -13,6 +13,7 @@ import { fileNameKey, fileUriString, resolveTextureFileName } from "./ResourceDe
 export interface TextureMaterialResolution {
   material: PreviewMaterial;
   dependencies: ResolvedDependency[];
+  textureFileName?: string;
 }
 
 export class TextureReferenceResolver {
@@ -125,7 +126,8 @@ export class TextureReferenceResolver {
         fallback: "texture",
         transparent: forceTranslucent
       },
-      dependencies
+      dependencies,
+      textureFileName: textureFile.fileName
     };
   }
 }

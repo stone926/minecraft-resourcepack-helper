@@ -14,6 +14,10 @@ export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
     return fs.promises.readFile(fileName, "utf8");
   }
 
+  async readBinaryFile(fileName: string): Promise<Uint8Array> {
+    return fs.promises.readFile(fileName);
+  }
+
   fileExists(fileName: string): boolean {
     return fs.existsSync(fileName);
   }

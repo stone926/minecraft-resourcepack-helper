@@ -7,6 +7,7 @@ export interface ModelPreviewConfiguration {
 
 export interface ModelPreviewFileSystem {
   readTextFile(fileName: string): Promise<string>;
+  readBinaryFile(fileName: string): Promise<Uint8Array>;
   fileExists(fileName: string): boolean;
 }
 

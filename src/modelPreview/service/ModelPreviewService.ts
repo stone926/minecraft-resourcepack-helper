@@ -4,6 +4,7 @@ import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocum
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { CuboidBaker } from "../bake/CuboidBaker";
+import { createGeneratedItemElements } from "../bake/GeneratedItemModel";
 import { ParentChainResolver } from "../resolve/ParentChainResolver";
 import { fileNameKey, fileUriString } from "../resolve/ResourceDependencyResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
@@ -72,12 +73,12 @@ export class ModelPreviewService {
     }
 
     const textureResolver = new TextureReferenceResolver(model, this.fileSystem, configuration, issues);
+    if (model.generatedItem && model.elements.length === 0) {
+      model.elements = await createGeneratedItemElements(model, textureResolver, this.fileSystem, issues);
+    }
+
     const baker = new CuboidBaker(textureResolver, issues);
     const bakeResult = baker.bake(model);
-
-    if (model.generatedItem) {
-      issues.info("Generated item model is approximated as a thin preview plane", model.fileName);
-    }
 
     const dependencies = [
       ...model.dependencies,
@@ -125,5 +126,6 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
 
 const nodeFileSystem: ModelPreviewFileSystem = {
   readTextFile: fileName => fs.promises.readFile(fileName, "utf8"),
+  readBinaryFile: fileName => fs.promises.readFile(fileName),
   fileExists: fileName => fs.existsSync(fileName)
 };

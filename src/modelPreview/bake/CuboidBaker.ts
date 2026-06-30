@@ -4,7 +4,6 @@ import { ModelIssueCollector } from "../model/ModelIssues";
 import { fileUriString } from "../resolve/ResourceDependencyResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { getDefaultUv, getFaceUvs } from "./DefaultUv";
-import { createGeneratedItemElements } from "./GeneratedItemModel";
 
 const directions: PreviewDirection[] = ["down", "up", "north", "south", "west", "east"];
 const directionVectors: Record<PreviewDirection, PreviewVec3> = {
@@ -119,19 +118,7 @@ export class CuboidBaker {
 }
 
 function getRenderableElements(model: ResolvedModel): ResolvedElement[] {
-  if (model.elements.length > 0) {
-    return model.elements;
-  }
-
-  if (!model.generatedItem) {
-    return [];
-  }
-
-  return createGeneratedItemElements().map((element, index) => ({
-    element,
-    index,
-    sourceModelFileName: model.fileName
-  }));
+  return model.elements;
 }
 
 function getFacePositions(direction: PreviewDirection, from: PreviewVec3, to: PreviewVec3): PreviewVec3[] {
