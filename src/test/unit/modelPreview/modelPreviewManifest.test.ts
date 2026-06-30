@@ -97,6 +97,7 @@ describe("model preview manifest", () => {
   it("supports export sizing, background options, and explicit webview disposal", () => {
     const webviewHtml = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
     const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const styles = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css"), "utf8");
 
     assert.ok(webviewHtml.includes('id="exportDialog"'), "export UI should expose configurable options");
     assert.ok(webviewHtml.includes('id="exportWidth"'), "export width should be configurable");
@@ -109,6 +110,8 @@ describe("model preview manifest", () => {
     assert.ok(script.includes("this.resizeObserver.disconnect()"), "renderer dispose should disconnect resize observer");
     assert.ok(script.includes("cancelAnimationFrame"), "renderer dispose should cancel pending animation frames");
     assert.ok(script.includes("this.webgl.forceContextLoss?.()"), "renderer dispose should release the WebGL context");
+    assert.ok(styles.includes('.export-grid input[type="checkbox"]'), "export checkbox should have explicit grid alignment");
+    assert.ok(styles.includes("justify-self: start"), "export checkbox should align to the left of its value column");
   });
 
   it("uses the Minecraft missing texture colors and quadrant layout", () => {

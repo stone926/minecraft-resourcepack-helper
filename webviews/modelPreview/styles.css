@@ -258,6 +258,12 @@ input[type="color"] {
   background: transparent;
 }
 
+.export-grid input[type="checkbox"] {
+  justify-self: start;
+  width: auto;
+  height: auto;
+}
+
 .export-error {
   min-height: 18px;
   margin: 10px 0 0;
