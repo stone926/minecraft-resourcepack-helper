@@ -8,6 +8,7 @@ import {
   javaStringHashCode,
   readPngMetadata
 } from "../../diagnostics/nonJsonResourceChecks";
+import type { LocalizedMessage } from "../../i18n/messages";
 
 describe("non-JSON resource checks", () => {
   it("reads PNG dimensions from the IHDR header", () => {
@@ -31,7 +32,8 @@ describe("non-JSON resource checks", () => {
       const issues = getPackImageResourceIssues(root);
 
       assert.deepStrictEqual(issues.map(issue => path.basename(issue.filePath)), ["grass.png"]);
-      assert.match(issues[0].message, /256x256/);
+      assert.match(messageKey(issues[0].message), /256x256/);
+      assert.deepStrictEqual(issues[0].message.args, [128, 256]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -61,9 +63,9 @@ describe("non-JSON resource checks", () => {
       Buffer.from("valid utf8")
     );
 
-    assert.ok(issues.some(issue => /will never be displayed/.test(issue.message)));
-    assert.ok(issues.some(issue => /wraps lines wider than 256px/.test(issue.message)));
-    assert.ok(issues.some(issue => /Unsupported Minecraft formatting code/.test(issue.message)));
+    assert.ok(issues.some(issue => /will never be displayed/.test(messageKey(issue.message))));
+    assert.ok(issues.some(issue => /wraps lines wider than 256px/.test(messageKey(issue.message))));
+    assert.ok(issues.some(issue => /Unsupported Minecraft formatting code/.test(messageKey(issue.message))));
   });
 
   it("checks UTF-8 and PLAYERNAME placeholder rules in ending text files", () => {
@@ -73,10 +75,14 @@ describe("non-JSON resource checks", () => {
       Buffer.from([0xff])
     );
 
-    assert.ok(issues.some(issue => /valid UTF-8/.test(issue.message)));
-    assert.ok(issues.some(issue => /Only uppercase PLAYERNAME/.test(issue.message)));
+    assert.ok(issues.some(issue => /valid UTF-8/.test(messageKey(issue.message))));
+    assert.ok(issues.some(issue => /Only uppercase PLAYERNAME/.test(messageKey(issue.message))));
   });
 });
+
+function messageKey(message: LocalizedMessage): string {
+  return message.message;
+}
 
 function createPngBytes(width: number, height: number): Buffer {
   const bytes = Buffer.alloc(24);

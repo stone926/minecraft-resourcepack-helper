@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { lm, type LocalizedMessage } from "../i18n/messages";
+import { localize } from "../i18n/runtime";
 import { workspaceResourceCache, type CachedModelDocument } from "../services/workspaceResourceCache";
 import { getPackImageResourceIssues, getTextResourceIssues, NonJsonIssueSeverity } from "./nonJsonResourceChecks";
 import { findAssetsRoot } from "../utils/resourceLocation";
@@ -88,12 +90,12 @@ function getPackMcmetaDiagnostics(document: SemanticDiagnosticsDocument, ast: Js
     pushDiagnostic(
       diagnostics,
       (minFormat ?? maxFormat)?.value ?? packNode,
-      "pack.mcmeta must use min_format and max_format together for 1.21.9+ resource pack formats."
+      lm("pack.mcmeta must use min_format and max_format together for 1.21.9+ resource pack formats.")
     );
   }
 
   if (min && max && compareFormats(min, max) > 0) {
-    pushDiagnostic(diagnostics, maxFormat?.value ?? packNode, "pack.mcmeta min_format must be less than or equal to max_format.");
+    pushDiagnostic(diagnostics, maxFormat?.value ?? packNode, lm("pack.mcmeta min_format must be less than or equal to max_format."));
   }
 
   if (min && max) {
@@ -105,12 +107,12 @@ function getPackMcmetaDiagnostics(document: SemanticDiagnosticsDocument, ast: Js
       pushDiagnostic(
         diagnostics,
         (packFormat ?? supportedFormats)?.value ?? packNode,
-        "Resource packs that only support 1.21.9+ must not use pack_format or supported_formats."
+        lm("Resource packs that only support 1.21.9+ must not use pack_format or supported_formats.")
       );
     }
 
     if (legacyOnly && !packFormat) {
-      pushDiagnostic(diagnostics, packNode, "Resource packs that only support 1.21.8 or earlier must use pack_format.");
+      pushDiagnostic(diagnostics, packNode, lm("Resource packs that only support 1.21.8 or earlier must use pack_format."));
     }
 
     if (crossesBoundary) {
@@ -121,7 +123,7 @@ function getPackMcmetaDiagnostics(document: SemanticDiagnosticsDocument, ast: Js
         ["max_format", maxFormat]
       ] as const) {
         if (!required[1]) {
-          pushDiagnostic(diagnostics, packNode, `Resource packs crossing the 1.21.8 boundary must include ${required[0]}.`);
+          pushDiagnostic(diagnostics, packNode, lm("Resource packs crossing the 1.21.8 boundary must include {0}.", required[0]));
         }
       }
 
@@ -130,7 +132,7 @@ function getPackMcmetaDiagnostics(document: SemanticDiagnosticsDocument, ast: Js
         pushDiagnostic(
           diagnostics,
           supportedFormats.value,
-          "Resource packs crossing the 1.21.8 boundary must set supported_formats maximum to 64."
+          lm("Resource packs crossing the 1.21.8 boundary must set supported_formats maximum to 64.")
         );
       }
     }
@@ -138,15 +140,16 @@ function getPackMcmetaDiagnostics(document: SemanticDiagnosticsDocument, ast: Js
 
   const packFormatValue = numberValue(packFormat?.value);
   if (packFormatValue !== undefined && packFormatValue >= modernPackFormatBoundary && !minFormat && !maxFormat) {
-    pushDiagnostic(diagnostics, packFormat?.value, "pack_format is only for resource pack formats before 65; use min_format and max_format.");
+    pushDiagnostic(diagnostics, packFormat?.value, lm("pack_format is only for resource pack formats before 65; use min_format and max_format."));
   }
 
   const packRoot = path.dirname(document.fileName);
   for (const issue of getPackImageResourceIssues(packRoot)) {
+    const relativeFileName = path.relative(packRoot, issue.filePath).replaceAll("\\", "/");
     pushDiagnostic(
       diagnostics,
       ast.body,
-      `${path.relative(packRoot, issue.filePath).replaceAll("\\", "/")}: ${issue.message}`,
+      lm("{0}: {1}", relativeFileName, localize(issue.message)),
       severityToDiagnosticSeverity(issue.severity)
     );
   }
@@ -167,7 +170,7 @@ function getTextResourceDiagnostics(document: SemanticDiagnosticsDocument): vsco
       new vscode.Position(issue.line, issue.startCharacter),
       new vscode.Position(issue.line, issue.endCharacter)
     ),
-    issue.message,
+    localize(issue.message),
     severityToDiagnosticSeverity(issue.severity)
   ));
 }
@@ -178,7 +181,7 @@ function getModelDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDoc
   const chain = loadModelChain(document, ast);
 
   if (chain.length > 11) {
-    pushDiagnostic(diagnostics, parent?.value ?? ast.body, "Model parent chain exceeds Minecraft's maximum depth of 10.");
+    pushDiagnostic(diagnostics, parent?.value ?? ast.body, lm("Model parent chain exceeds Minecraft's maximum depth of 10."));
   }
 
   diagnostics.push(...getTextureVariableCycleDiagnostics(chain));
@@ -203,7 +206,7 @@ function getPostEffectDiagnostics(ast: JsonDocumentNode): vscode.Diagnostic[] {
     const outputName = stringValue(output?.value);
 
     if (outputName && !declaredTargets.has(outputName)) {
-      pushDiagnostic(diagnostics, output?.value, `Post effect output target '${outputName}' is not declared in targets.`);
+      pushDiagnostic(diagnostics, output?.value, lm("Post effect output target '{0}' is not declared in targets.", outputName));
     }
 
     const inputs = getObjectMember(pass, "inputs");
@@ -215,11 +218,11 @@ function getPostEffectDiagnostics(ast: JsonDocumentNode): vscode.Diagnostic[] {
       }
 
       if (!declaredTargets.has(targetName)) {
-        pushDiagnostic(diagnostics, target?.value, `Post effect input target '${targetName}' is not declared in targets.`);
+        pushDiagnostic(diagnostics, target?.value, lm("Post effect input target '{0}' is not declared in targets.", targetName));
       }
 
       if (outputName && targetName === outputName) {
-        pushDiagnostic(diagnostics, target?.value, "Post effect pass input target must not be the same as its output target.");
+        pushDiagnostic(diagnostics, target?.value, lm("Post effect pass input target must not be the same as its output target."));
       }
     }
   }
@@ -257,7 +260,7 @@ function getSoundDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDoc
           pushDiagnostic(
             diagnostics,
             field?.value,
-            `Invalid sounds[].${numericField}; Minecraft ignores the whole sounds.json when name, volume, or pitch is invalid.`
+            lm("Invalid sounds[].{0}; Minecraft ignores the whole sounds.json when name, volume, or pitch is invalid.", numericField)
           );
         }
       }
@@ -269,11 +272,11 @@ function getSoundDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDoc
 
 function pushSoundFileDiagnostics(diagnostics: vscode.Diagnostic[], value: string, node: JsonAstNode | null | undefined): void {
   if (/\s/.test(value)) {
-    pushDiagnostic(diagnostics, node, "Sound file names must not contain whitespace; Minecraft may ignore the whole sounds.json.");
+    pushDiagnostic(diagnostics, node, lm("Sound file names must not contain whitespace; Minecraft may ignore the whole sounds.json."));
   }
 
   if (/\.ogg$/i.test(value)) {
-    pushDiagnostic(diagnostics, node, "Sound file references should omit the .ogg extension.");
+    pushDiagnostic(diagnostics, node, lm("Sound file references should omit the .ogg extension."));
   }
 }
 
@@ -295,7 +298,7 @@ function pushSoundEventReferenceDiagnostics(
     : loadSoundEventsForNamespace(document.fileName, location.namespace);
 
   if (availableEvents && !availableEvents.has(location.path)) {
-    pushDiagnostic(diagnostics, node, `Sound event '${value}' is not defined in sounds.json.`);
+    pushDiagnostic(diagnostics, node, lm("Sound event '{0}' is not defined in sounds.json.", value));
   }
 }
 
@@ -337,7 +340,7 @@ function getTextureVariableCycleDiagnostics(chain: CachedModelDocument[]): vscod
     let currentName = name;
     while (true) {
       if (visited.has(currentName)) {
-        pushDiagnostic(diagnostics, variable.valueNode, `Texture variable '${name}' contains a cyclic # reference chain.`);
+        pushDiagnostic(diagnostics, variable.valueNode, lm("Texture variable '{0}' contains a cyclic # reference chain.", name));
         break;
       }
       visited.add(currentName);
@@ -403,12 +406,12 @@ function getObjectMember(node: JsonAstNode | null | undefined, name: string): Js
 function pushDiagnostic(
   diagnostics: vscode.Diagnostic[],
   node: JsonAstNode | null | undefined,
-  message: string,
+  message: LocalizedMessage,
   severity = vscode.DiagnosticSeverity.Warning
 ): void {
   const range = rangeFromNode(node);
   if (range) {
-    diagnostics.push(new vscode.Diagnostic(range, vscode.l10n.t(message), severity));
+    diagnostics.push(new vscode.Diagnostic(range, localize(message), severity));
   }
 }
 

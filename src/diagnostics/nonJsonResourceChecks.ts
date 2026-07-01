@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import { TextDecoder } from "node:util";
+import { lm, type LocalizedMessage } from "../i18n/messages";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import type { PngMetadata } from "../utils/pngMetadata";
 
@@ -10,7 +11,7 @@ export type NonJsonIssueSeverity = "warning" | "information";
 
 export interface FileResourceIssue {
   filePath: string;
-  message: string;
+  message: LocalizedMessage;
   severity: NonJsonIssueSeverity;
 }
 
@@ -18,7 +19,7 @@ export interface TextResourceIssue {
   line: number;
   startCharacter: number;
   endCharacter: number;
-  message: string;
+  message: LocalizedMessage;
   severity: NonJsonIssueSeverity;
 }
 
@@ -45,7 +46,7 @@ export function getTextResourceIssues(fileName: string, text: string, bytes?: Ui
       line: 0,
       startCharacter: 0,
       endCharacter: getLineEnd(text, 0),
-      message: "Text resource files must be valid UTF-8.",
+      message: lm("Text resource files must be valid UTF-8."),
       severity: "warning"
     });
   }
@@ -61,7 +62,7 @@ export function getTextResourceIssues(fileName: string, text: string, bytes?: Ui
         line: index,
         startCharacter: 0,
         endCharacter: line.length,
-        message: "This splashes.txt line has Java hashCode 125780783 and will never be displayed.",
+        message: lm("This splashes.txt line has Java hashCode 125780783 and will never be displayed."),
         severity: "information"
       });
     }
@@ -88,7 +89,7 @@ function getPackPngIssues(packRoot: string): FileResourceIssue[] {
   if (!workspaceResourceCache.getPathExists(packPngPath)) {
     return [{
       filePath: packPngPath,
-      message: "pack.png is missing; Minecraft will use the default unknown pack icon.",
+      message: lm("pack.png is missing; Minecraft will use the default unknown pack icon."),
       severity: "information"
     }];
   }
@@ -96,7 +97,7 @@ function getPackPngIssues(packRoot: string): FileResourceIssue[] {
   const metadata = readPngFileMetadata(packPngPath);
   return metadata ? [] : [{
     filePath: packPngPath,
-    message: "pack.png must be a valid PNG file.",
+    message: lm("pack.png must be a valid PNG file."),
     severity: "warning"
   }];
 }
@@ -120,13 +121,13 @@ function getColormapIssues(packRoot: string): FileResourceIssue[] {
       if (!metadata) {
         issues.push({
           filePath,
-          message: "Colormap texture must be a valid PNG file.",
+          message: lm("Colormap texture must be a valid PNG file."),
           severity: "warning"
         });
       } else if (metadata.width !== 256 || metadata.height !== 256) {
         issues.push({
           filePath,
-          message: `Colormap texture must be 256x256 pixels; current size is ${metadata.width}x${metadata.height}.`,
+          message: lm("Colormap texture must be 256x256 pixels; current size is {0}x{1}.", metadata.width, metadata.height),
           severity: "warning"
         });
       }
@@ -180,7 +181,7 @@ function pushInvalidFormattingCodeIssues(issues: TextResourceIssue[], line: stri
       line: lineIndex,
       startCharacter: start,
       endCharacter: Math.min(line.length, start + 2),
-      message: "Unsupported Minecraft formatting code; use § followed by 0-9, a-f, k-o, or r.",
+      message: lm("Unsupported Minecraft formatting code; use § followed by 0-9, a-f, k-o, or r."),
       severity: "warning"
     });
   }
@@ -196,7 +197,7 @@ function pushLongLineIssue(issues: TextResourceIssue[], effectiveLine: string, r
     line: lineIndex,
     startCharacter: 0,
     endCharacter: rawLine.length,
-    message: `Text line estimated width is ${estimatedWidth}px; Minecraft wraps lines wider than 256px.`,
+    message: lm("Text line estimated width is {0}px; Minecraft wraps lines wider than 256px.", estimatedWidth),
     severity: "information"
   });
 }
@@ -212,7 +213,7 @@ function pushPlayerNamePlaceholderIssues(issues: TextResourceIssue[], line: stri
       line: lineIndex,
       startCharacter: start,
       endCharacter: start + match[0].length,
-      message: "Only uppercase PLAYERNAME is replaced with the current player name.",
+      message: lm("Only uppercase PLAYERNAME is replaced with the current player name."),
       severity: "warning"
     });
   }

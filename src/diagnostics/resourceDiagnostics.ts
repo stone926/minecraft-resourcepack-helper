@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { lm } from "../i18n/messages";
+import { localize } from "../i18n/runtime";
 import { createResourcePathResolver } from "../utils/pathGenerator";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
@@ -24,7 +26,7 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
     if (!resolvedUri && range) {
       diagnostics.push(new vscode.Diagnostic(
         range,
-        vscode.l10n.t("Minecraft resource not found: {0}", reference.value),
+        localize(lm("Minecraft resource not found: {0}", reference.value)),
         vscode.DiagnosticSeverity.Warning
       ));
     }

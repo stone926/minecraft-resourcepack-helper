@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { localize } from "../i18n/runtime";
 import { promptMsg, defaultPackAttributes, errorMsg, isPackFormatVersion } from "./constants";
 import { createNamespaceFolders, writePackRootFiles } from "./resourcePackScaffold";
 import { pickWorkspaceFolder } from "./workspace";
@@ -18,10 +19,10 @@ export default async function createNewResourcePackRoot() {
   }
 
   const namespace = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.namespace),
+    prompt: localize(promptMsg.namespace),
     value: defaultPackAttributes.namespace,
     validateInput(input: string) {
-      return input.trim().length === 0 ? vscode.l10n.t(errorMsg.emptyInput) : null;
+      return input.trim().length === 0 ? localize(errorMsg.emptyInput) : null;
     }
   });
   if (namespace === undefined) {
@@ -29,10 +30,10 @@ export default async function createNewResourcePackRoot() {
   }
 
   const packFormat = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.packFormat),
+    prompt: localize(promptMsg.packFormat),
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      return isPackFormatVersion(input) ? null : vscode.l10n.t(errorMsg.invalidPackFormat);
+      return isPackFormatVersion(input) ? null : localize(errorMsg.invalidPackFormat);
     }
   });
   if (packFormat === undefined) {
@@ -40,7 +41,7 @@ export default async function createNewResourcePackRoot() {
   }
 
   const description = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.description)
+    prompt: localize(promptMsg.description)
   });
   if (description === undefined) {
     return;

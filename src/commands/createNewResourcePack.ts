@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { localize } from "../i18n/runtime";
 import { errorMsg, promptMsg, defaultPackAttributes, isPackFormatVersion } from "./constants";
 import { writePackScaffold } from "./resourcePackScaffold";
 import { pickWorkspaceFolder } from "./workspace";
@@ -12,14 +13,14 @@ export default async function createNewResourcePack() {
   }
 
   const packName = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.packName),
+    prompt: localize(promptMsg.packName),
     validateInput(input: string) {
       if (isEmpty(input)) {
-        return vscode.l10n.t(errorMsg.emptyInput);
+        return localize(errorMsg.emptyInput);
       }
 
       if (fs.existsSync(path.join(rootFolder.uri.fsPath, input))) {
-        return vscode.l10n.t(errorMsg.folderAlreadyExist);
+        return localize(errorMsg.folderAlreadyExist);
       }
 
       return null;
@@ -30,10 +31,10 @@ export default async function createNewResourcePack() {
   }
 
   const namespace = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.namespace),
+    prompt: localize(promptMsg.namespace),
     value: defaultPackAttributes.namespace,
     validateInput(input: string) {
-      return isEmpty(input) ? vscode.l10n.t(errorMsg.emptyInput) : null;
+      return isEmpty(input) ? localize(errorMsg.emptyInput) : null;
     }
   });
   if (namespace === undefined) {
@@ -41,10 +42,10 @@ export default async function createNewResourcePack() {
   }
 
   const packFormat = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.packFormat),
+    prompt: localize(promptMsg.packFormat),
     value: defaultPackAttributes.packFormat,
     validateInput(input: string) {
-      return isPackFormatVersion(input) ? null : vscode.l10n.t(errorMsg.invalidPackFormat);
+      return isPackFormatVersion(input) ? null : localize(errorMsg.invalidPackFormat);
     }
   });
   if (packFormat === undefined) {
@@ -52,7 +53,7 @@ export default async function createNewResourcePack() {
   }
 
   const description = await vscode.window.showInputBox({
-    prompt: vscode.l10n.t(promptMsg.description)
+    prompt: localize(promptMsg.description)
   });
   if (description === undefined) {
     return;
