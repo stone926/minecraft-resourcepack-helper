@@ -15,7 +15,7 @@ import {
   shouldCompleteNamespaces,
   splitResourcePath
 } from "../utils/resourceCompletionPaths";
-import { findFreshResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
+import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
 import { getDocumentResourceRootCandidates } from "../utils/resourceLocation";
 import { rangeInsideString } from "../utils/resourceRange";
 
@@ -60,7 +60,7 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
 export default resourceCompletionProvider;
 
 function getResourceCompletionContext(document: vscode.TextDocument, position: vscode.Position): ResourceCompletionContext | null {
-  const reference = findFreshResourceReferenceAtPosition(document, position);
+  const reference = findResourceReferenceAtPosition(document, position);
   if (reference) {
     const replacementRange = rangeInsideString(reference.valueNode);
     return replacementRange ? { reference, replacementRange, includeQuotes: false } : null;
@@ -121,6 +121,7 @@ async function collectCompletionItems(
         entry.isDirectory() ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File
       );
       item.range = context.replacementRange;
+      item.filterText = insertText;
       item.insertText = buildCompletionInsertText(insertText, context.includeQuotes, entry.isDirectory());
       if (entry.isDirectory()) {
         item.command = createTriggerSuggestCommand();
@@ -164,6 +165,7 @@ async function collectNamespaceCompletionItems(
 
       const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Module);
       item.range = context.replacementRange;
+      item.filterText = label;
       item.insertText = buildCompletionInsertText(label, context.includeQuotes, true);
       item.command = createTriggerSuggestCommand();
       itemsByInsertText.set(label, item);

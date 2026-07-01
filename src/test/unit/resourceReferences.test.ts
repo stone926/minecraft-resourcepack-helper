@@ -1,7 +1,6 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
 import {
-  findFreshResourceReferenceAtPosition,
   findResourceReferenceAtPosition,
   getResourceReferences,
   ResourceReferenceDocument
@@ -153,38 +152,6 @@ describe("resource references", () => {
     );
     assert.strictEqual(referenceAtBlankValue?.kind, "texture");
     assert.strictEqual(referenceAtBlankValue.value, "");
-  });
-
-  it("can find fresh references without using a stale document-version cache", () => {
-    let text = [
-      "{",
-      "  \"textures\": {",
-      "    \"all\": \"\"",
-      "  }",
-      "}"
-    ].join("\n");
-    const document: ResourceReferenceDocument = {
-      languageId: "json",
-      fileName: path.join("pack", "assets", "minecraft", "models", "block", "stale.json"),
-      version: 1,
-      getText: () => text
-    };
-
-    assert.strictEqual(getResourceReferences(document)[0]?.value, "");
-
-    text = [
-      "{",
-      "  \"textures\": {",
-      "    \"all\": \"minecraft:\"",
-      "  }",
-      "}"
-    ].join("\n");
-
-    assert.strictEqual(findResourceReferenceAtPosition(document, { line: 2, character: 22 }), null);
-    assert.strictEqual(
-      findFreshResourceReferenceAtPosition(document, { line: 2, character: 22 })?.value,
-      "minecraft:"
-    );
   });
 
   it("extracts references from models outside block and item folders", () => {

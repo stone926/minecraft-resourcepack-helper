@@ -1,5 +1,5 @@
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, parseJsonAst, stringValue } from "./jsonAst";
+import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "./jsonAst";
 import { AstLocation, isInArea } from "./locationChecker";
 
 export interface ResourceReference {
@@ -108,36 +108,10 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
 }
 
 export function findResourceReferenceAtPosition(document: ResourceReferenceDocument, position: ResourceReferencePosition): ResourceReference | null {
-  return findReferenceAtPosition(getResourceReferences(document), position);
-}
-
-export function findFreshResourceReferenceAtPosition(document: ResourceReferenceDocument, position: ResourceReferencePosition): ResourceReference | null {
-  return findReferenceAtPosition(getFreshResourceReferences(document), position);
-}
-
-export function getFreshResourceReferences(document: ResourceReferenceDocument): ResourceReference[] {
-  const documentKind = getResourceReferenceDocumentKind(document.fileName);
-  if (!documentKind) {
-    return [];
-  }
-
-  if (document.languageId !== "json" && !isShaderDocumentKind(documentKind)) {
-    return [];
-  }
-
-  if (isShaderDocumentKind(documentKind)) {
-    return getShaderReferences(document.getText(), getShaderDocumentSource(documentKind));
-  }
-
-  const ast = parseJsonAst(document.getText());
-  return ast ? getReferencesForDocumentKind(ast, documentKind) : [];
-}
-
-function findReferenceAtPosition(references: ResourceReference[], position: ResourceReferencePosition): ResourceReference | null {
   const line = position.line + 1;
   const character = position.character + 1;
 
-  return references.find(reference =>
+  return getResourceReferences(document).find(reference =>
     isInArea(line, character, reference.valueNode.valueLoc ?? reference.valueNode.loc)
   ) ?? null;
 }
