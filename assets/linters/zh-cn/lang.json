@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "title": "Minecraft language file",
+  "title": "Minecraft 语言文件",
   "description": "定义本地化键与显示文本的映射，或语言键替换/移除规则。",
   "anyOf": [
     {

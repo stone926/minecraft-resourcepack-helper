@@ -55,6 +55,7 @@
         "properties": {
           "translate": {
             "type": "string",
+            "parser": "TranslateKey",
             "title": "翻译标识符"
           },
           "with": {
@@ -89,11 +90,18 @@
             "properties": {
               "name": {
                 "type": "string",
+                "parser": "Entity",
+                "params": {
+                  "amount": "single",
+                  "type": "entities",
+                  "isScoreHolder": true
+                },
                 "title": "计分项持有者",
                 "description": "用于获取分数的实体选择器"
               },
               "objective": {
                 "type": "string",
+                "parser": "Objective",
                 "title": "记分板对象名称"
               },
               "value": {
@@ -131,6 +139,11 @@
         "properties": {
           "selector": {
             "type": "string",
+            "parser": "Entity",
+            "params": {
+              "amount": "multiple",
+              "type": "entities"
+            },
             "title": "实体选择器",
             "description": "显示实体名称的选择器。多个实体会以逗号分隔，最后一个用\"和\"连接"
           }
@@ -178,6 +191,7 @@
         "properties": {
           "nbt": {
             "type": "string",
+            "parser": "NbtPath",
             "title": "NBT 路径"
           },
           "interpret": {
@@ -193,6 +207,10 @@
           "properties": {
             "block": {
               "type": "string",
+              "parser": "Vector",
+              "params": {
+                "dimension": 3
+              },
               "title": "方块坐标",
               "description": "使用与 /setblock 相同格式的方块坐标"
             }
@@ -211,6 +229,11 @@
           "properties": {
             "entity": {
               "type": "string",
+              "parser": "Entity",
+              "params": {
+                "amount": "single",
+                "type": "entities"
+              },
               "title": "目标实体选择器"
             }
           },
@@ -228,6 +251,10 @@
           "properties": {
             "storage": {
               "type": "string",
+              "parser": "Identity",
+              "params": {
+                "registry": "$storages"
+              },
               "title": "存储命名空间ID"
             }
           },
@@ -374,6 +401,10 @@
               },
               "value": {
                 "type": "string",
+                "parser": "Command",
+                "params": {
+                  "leadingSlash": true
+                },
                 "title": "要运行的命令"
               }
             }
@@ -388,6 +419,10 @@
               },
               "value": {
                 "type": "string",
+                "parser": "Command",
+                "params": {
+                  "leadingSlash": true
+                },
                 "title": "建议的命令"
               }
             }
@@ -507,6 +542,7 @@
                 "properties": {
                   "id": {
                     "type": "string",
+                    "parser": "Uuid",
                     "title": "实体 UUID"
                   },
                   "name": {
@@ -515,6 +551,10 @@
                   },
                   "type": {
                     "type": "string",
+                    "parser": "Identity",
+                    "params": {
+                      "registry": "minecraft:entity_type"
+                    },
                     "title": "实体类型",
                     "description": "实体类型的命名空间ID，例如 minecraft:creeper"
                   }
@@ -522,6 +562,12 @@
               },
               "value": {
                 "type": "string",
+                "parser": "Nbt",
+                "params": {
+                  "type": "Compound",
+                  "category": "minecraft:entity",
+                  "id": "spgoding:i-am-guaranteed-not-to-exist"
+                },
                 "title": "SNBT 实体数据"
               }
             }
@@ -539,6 +585,10 @@
                 "properties": {
                   "id": {
                     "type": "string",
+                    "parser": "Identity",
+                    "params": {
+                      "registry": "minecraft:item"
+                    },
                     "title": "物品命名空间ID"
                   },
                   "count": {
@@ -549,12 +599,27 @@
                   },
                   "tag": {
                     "type": "string",
+                    "parser": "Nbt",
+                    "params": {
+                      "type": "Compound",
+                      "category": "minecraft:item",
+                      "id": [
+                      {
+                        "Child": "id"
+                      }]
+                    },
                     "title": "物品 NBT 数据"
                   }
                 }
               },
               "value": {
                 "type": "string",
+                "parser": "Nbt",
+                "params": {
+                  "type": "Compound",
+                  "category": "minecraft:item",
+                  "id": "spgoding:i-am-guaranteed-not-to-exist"
+                },
                 "title": "SNBT 物品数据"
               }
             }

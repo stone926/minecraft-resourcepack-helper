@@ -341,7 +341,12 @@
         },
         "value": {
           "title": "Value",
-          "description": "Value to match against the predicate (for minecraft:component property)."
+          "description": "Value to match against the predicate (for minecraft:component property).",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" }
+          ]
         }
       }
     },

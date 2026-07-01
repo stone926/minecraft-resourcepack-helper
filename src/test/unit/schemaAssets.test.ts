@@ -448,6 +448,34 @@ describe("schema assets", () => {
       assert.ok(zhSchema.title, `ZH schema missing title: ${relPath}`);
       assert.ok(enSchema.description, `EN schema missing description: ${relPath}`);
       assert.ok(zhSchema.description, `ZH schema missing description: ${relPath}`);
+
+      compareSchemaStructures(enSchema, zhSchema, relPath);
+    }
+  });
+
+  it("zh-cn schemas have no untranslated English titles", () => {
+    for (const file of collectJsonFiles(ZH_LINTER)) {
+      const schema = readJsonFile<JsonObject>(file);
+      const title = String(schema.title ?? "");
+      const relPath = path.relative(ZH_LINTER, file);
+      assert.ok(
+        /[\u4e00-\u9fff]/.test(title),
+        `ZH schema title should contain Chinese: ${relPath} — "${title}"`
+      );
+    }
+  });
+
+  it("en schemas have no Chinese characters in user-visible strings", () => {
+    for (const file of collectJsonFiles(EN_LINTER)) {
+      const schema = readJsonFile<JsonObject>(file);
+      const relPath = path.relative(EN_LINTER, file);
+      for (const key of ["title", "description"]) {
+        const value = String(schema[key] ?? "");
+        assert.ok(
+          !/[\u4e00-\u9fff]/.test(value),
+          `EN schema ${key} should not contain Chinese: ${relPath} — "${value}"`
+        );
+      }
     }
   });
 });
@@ -527,5 +555,82 @@ function findMisspelledSchemaKeywords(
       findings.push(childLocation);
     }
     findMisspelledSchemaKeywords(child, childLocation, misspelledKeywords, findings);
+  }
+}
+
+const I18N_KEYS = new Set([
+  "title",
+  "description",
+  "markdownDescription",
+  "deprecationMessage",
+  "label",
+  "prefix",
+  "__comment",
+]);
+
+function compareSchemaStructures(
+  en: unknown,
+  zh: unknown,
+  filePath: string,
+  jsonPath = ""
+): void {
+  if (en === null && zh === null) {
+    return;
+  }
+  if (typeof en !== typeof zh) {
+    assert.fail(`${filePath}${jsonPath}: type mismatch — EN ${typeof en}, ZH ${typeof zh}`);
+  }
+  if (typeof en !== "object" || en === null) {
+    if (en !== zh) {
+      assert.deepStrictEqual(en, zh, `${filePath}${jsonPath}: value mismatch`);
+    }
+    return;
+  }
+
+  if (Array.isArray(en)) {
+    const enArr = en as unknown[];
+    const zhArr = zh as unknown[];
+    if (enArr.length !== zhArr.length) {
+      assert.fail(`${filePath}${jsonPath}: array length mismatch — EN ${enArr.length}, ZH ${zhArr.length}`);
+    }
+    const allPrimitive = enArr.every(v => typeof v !== "object" || v === null);
+    if (allPrimitive) {
+      const enSet = new Set(enArr);
+      const zhSet = new Set(zhArr);
+      for (const v of enSet) {
+        if (!zhSet.has(v)) {
+          assert.fail(`${filePath}${jsonPath}: ZH missing array value "${String(v)}"`);
+        }
+      }
+      for (const v of zhSet) {
+        if (!enSet.has(v)) {
+          assert.fail(`${filePath}${jsonPath}: EN missing array value "${String(v)}"`);
+        }
+      }
+    }
+    return;
+  }
+
+  const enObj = en as JsonObject;
+  const zhObj = zh as JsonObject;
+
+  const enKeys = new Set(Object.keys(enObj).filter(k => !I18N_KEYS.has(k) && k !== "body" && k !== "defaultSnippets"));
+  const zhKeys = new Set(Object.keys(zhObj).filter(k => !I18N_KEYS.has(k) && k !== "body" && k !== "defaultSnippets"));
+
+  for (const key of enKeys) {
+    if (!zhKeys.has(key)) {
+      assert.fail(`${filePath}${jsonPath}: ZH missing key "${key}"`);
+    }
+  }
+  for (const key of zhKeys) {
+    if (!enKeys.has(key)) {
+      assert.fail(`${filePath}${jsonPath}: EN missing key "${key}"`);
+    }
+  }
+
+  for (const key of enKeys) {
+    const enVal = enObj[key];
+    const zhVal = zhObj[key];
+    compareSchemaStructures(enVal, zhVal, filePath, `${jsonPath}.${key}`);
   }
 }
