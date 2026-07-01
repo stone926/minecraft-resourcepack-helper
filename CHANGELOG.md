@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.3.0] - 2026-07-01
+
+- fix: linter translation and alingment (49e3ce3)
+- feat: json linter i18n (0a55841)
+- feat: add workspace resource cache (ff330ba)
+- update ignore (388391e)
+- perf: cache resource graph scans (e336780)
+- fix(model-preview): align export transparent checkbox (24cf6e1)
+- fix gitignore (06e59a5)
+- feat(model-preview): implement P0 and P1 iterations (ee350d2)
+
 ## [2.2.3] - 2026-06-30
 
 - fix item generated model preview rendering (a4b27b4)
