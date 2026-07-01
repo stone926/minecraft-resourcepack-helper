@@ -41,6 +41,20 @@ export function shouldCompleteNamespaces(partialPath: PartialResourcePath): bool
   return !partialPath.explicitNamespace && partialPath.directory.length === 0;
 }
 
+export async function filterExistingResourceRoots(
+  roots: string[],
+  pathExists: (root: string) => boolean | Promise<boolean>
+): Promise<string[]> {
+  const existingRoots: string[] = [];
+  for (const root of roots) {
+    if (await pathExists(root)) {
+      existingRoots.push(root);
+    }
+  }
+
+  return existingRoots;
+}
+
 export function getAssetsRootCandidates(roots: string[], namespace: string, target: string): string[] {
   const targetSegmentCount = splitResourcePath(target).length;
   const assetsRoots: string[] = [];

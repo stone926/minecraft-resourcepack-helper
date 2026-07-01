@@ -8,6 +8,7 @@ import {
 } from "../utils/resourceCompletionContext";
 import {
   buildResourceCompletionValue,
+  filterExistingResourceRoots,
   getAssetsRootCandidates,
   parsePartialResourcePath,
   PartialResourcePath,
@@ -140,7 +141,11 @@ async function collectNamespaceCompletionItems(
     return;
   }
 
-  for (const assetsRoot of getAssetsRootCandidates(roots, partialPath.namespace, context.reference.target)) {
+  const existingRoots = await filterExistingResourceRoots(
+    roots,
+    async root => Boolean(await workspaceResourceCache.getDirectoryEntries(root))
+  );
+  for (const assetsRoot of getAssetsRootCandidates(existingRoots, partialPath.namespace, context.reference.target)) {
     const entries = await workspaceResourceCache.getDirectoryEntries(assetsRoot);
     if (!entries) {
       continue;

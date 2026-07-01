@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import {
   buildResourceCompletionValue,
+  filterExistingResourceRoots,
   getAssetsRootCandidates,
   parsePartialResourcePath,
   shouldCompleteNamespaces
@@ -49,6 +50,27 @@ describe("resource completion paths", () => {
       [
         path.join(packRoot, "assets"),
         path.join(overlayRoot, "assets")
+      ]
+    );
+  });
+
+  it("filters fallback roots that do not exist before deriving namespaces", async () => {
+    const defaultPackRoot = path.join("packs", "vanilla");
+    const roots = [
+      path.join(defaultPackRoot, "minecraft", "textures"),
+      path.join(defaultPackRoot, "textures"),
+      path.join(defaultPackRoot, "assets", "minecraft", "textures")
+    ];
+
+    const existingRoots = await filterExistingResourceRoots(
+      roots,
+      root => root === path.join(defaultPackRoot, "assets", "minecraft", "textures")
+    );
+
+    assert.deepStrictEqual(
+      getAssetsRootCandidates(existingRoots, "minecraft", "textures"),
+      [
+        path.join(defaultPackRoot, "assets")
       ]
     );
   });
