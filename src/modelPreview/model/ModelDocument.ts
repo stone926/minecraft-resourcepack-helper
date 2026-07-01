@@ -1,5 +1,6 @@
 import type { PreviewRange, PreviewTransform, PreviewVec3 } from "../ir/PreviewDocument";
 import type { ModelJsonLocations } from "./ModelJsonLocations";
+import type { PackMetadata } from "../../utils/resourceLocation";
 
 export interface ModelPreviewConfiguration {
   defaultAssetsPath?: string | null;
@@ -11,6 +12,8 @@ export interface ModelPreviewFileSystem {
   readBinaryFile(fileName: string): Promise<Uint8Array>;
   fileExists(fileName: string): boolean;
   fileVersion?(fileName: string): string | null;
+  getPackRoot?(fileName: string): string | null;
+  getPackMetadata?(packRoot: string): PackMetadata;
 }
 
 export interface RawModelDocument {

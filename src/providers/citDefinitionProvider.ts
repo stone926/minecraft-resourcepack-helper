@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
+import { workspaceResourceCache } from '../services/workspaceResourceCache';
 import { getCitPathCandidates, getCitResourceType } from '../utils/citPaths';
 
 export default (document: vscode.TextDocument, position: vscode.Position) => {
@@ -18,7 +17,7 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
   }
 
   for (const resolvedPath of getCitPathCandidates(document.fileName, getPackRoot(document), value, resourceType)) {
-    if (fs.existsSync(resolvedPath)) {
+    if (workspaceResourceCache.getPathExists(resolvedPath)) {
       return new vscode.Location(vscode.Uri.file(resolvedPath), new vscode.Position(0, 0));
     }
   }
@@ -28,21 +27,7 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
 
 function getPackRoot(document: vscode.TextDocument): string {
   const workspaceRoot = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath ?? getWorkspaceRoot();
-  let currentDirectory = path.dirname(document.fileName);
-
-  while (currentDirectory.startsWith(workspaceRoot)) {
-    if (fs.existsSync(path.join(currentDirectory, "pack.mcmeta"))) {
-      return currentDirectory;
-    }
-
-    const parent = path.dirname(currentDirectory);
-    if (parent === currentDirectory) {
-      break;
-    }
-    currentDirectory = parent;
-  }
-
-  return workspaceRoot;
+  return workspaceResourceCache.getPackRootWithin(document.fileName, workspaceRoot) ?? workspaceRoot;
 }
 
 function getWorkspaceRoot(): string {

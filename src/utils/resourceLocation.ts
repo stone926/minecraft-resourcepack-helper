@@ -13,33 +13,35 @@ const pathSegmentPattern = /^[a-z0-9._-]+$/;
 
 interface ResourceRootCandidateOptions {
   pathExists?: (filePath: string) => boolean;
+  getPackRoot?: (fileName: string) => string | null;
+  getPackMetadata?: (packRoot: string) => PackMetadata;
   resourcePath?: string;
   resourcePackRoots?: string[];
 }
 
-interface PackMetadata {
+export interface PackMetadata {
   overlays: OverlayEntry[];
   filters: ResourceFilter[];
 }
 
-interface OverlayEntry {
+export interface OverlayEntry {
   directory: string;
   minFormat: ResourcePackFormat | null;
   maxFormat: ResourcePackFormat | null;
   legacyFormats: LegacyFormatRange | null;
 }
 
-interface ResourceFilter {
+export interface ResourceFilter {
   namespace: string | null;
   path: string | null;
 }
 
-interface ResourcePackFormat {
+export interface ResourcePackFormat {
   major: number;
   minor: number;
 }
 
-interface LegacyFormatRange {
+export interface LegacyFormatRange {
   min: number;
   max: number;
 }
@@ -101,16 +103,16 @@ export function getDocumentResourceRootCandidates(
   options: ResourceRootCandidateOptions = {}
 ): string[] {
   const assetsRoot = findAssetsRoot(fileName, source);
-  const packRoot = findPackRoot(fileName, options);
+  const packRoot = options.getPackRoot ? options.getPackRoot(fileName) : findPackRoot(fileName, options);
   const candidates = packRoot
     ? getPackResourceRootCandidates(packRoot, assetsRoot, namespace, target, options)
     : getResourceRootCandidates(assetsRoot, null, namespace, target);
-  const higherPriorityFilters = packRoot ? [...readPackMetadata(packRoot, options).filters] : [];
+  const higherPriorityFilters = packRoot ? [...getPackMetadata(packRoot, options).filters] : [];
 
   for (const lowerPriorityPackRoot of getConfiguredLowerPriorityPackRoots(packRoot, options.resourcePackRoots)) {
     if (!resourceMatchesFilters(higherPriorityFilters, namespace, options.resourcePath)) {
       candidates.push(...getPackResourceRootCandidates(lowerPriorityPackRoot, null, namespace, target, options));
-      higherPriorityFilters.push(...readPackMetadata(lowerPriorityPackRoot, options).filters);
+      higherPriorityFilters.push(...getPackMetadata(lowerPriorityPackRoot, options).filters);
     }
   }
 
@@ -147,7 +149,7 @@ export function getResourceRootCandidates(assetsRoot: string | null, defaultAsse
   return [...new Set(candidates)];
 }
 
-function findPackRoot(fileName: string, options: ResourceRootCandidateOptions): string | null {
+export function findPackRoot(fileName: string, options: ResourceRootCandidateOptions = {}): string | null {
   const pathExists = options.pathExists ?? fs.existsSync;
   let current = path.dirname(path.normalize(fileName));
   const root = path.parse(current).root;
@@ -194,7 +196,7 @@ function getPackResourceRootCandidates(
   target: string,
   options: ResourceRootCandidateOptions
 ): string[] {
-  const metadata = readPackMetadata(packRoot, options);
+  const metadata = getPackMetadata(packRoot, options);
   const baseAssetsRoot = path.join(packRoot, "assets");
   const candidates: string[] = [];
   const activeOverlayRoots = metadata.overlays
@@ -241,7 +243,11 @@ function resourceMatchesFilters(
   });
 }
 
-function readPackMetadata(packRoot: string, options: ResourceRootCandidateOptions): PackMetadata {
+function getPackMetadata(packRoot: string, options: ResourceRootCandidateOptions): PackMetadata {
+  return options.getPackMetadata ? options.getPackMetadata(packRoot) : readPackMetadata(packRoot, options);
+}
+
+export function readPackMetadata(packRoot: string, options: ResourceRootCandidateOptions = {}): PackMetadata {
   const packMcmetaPath = path.join(packRoot, "pack.mcmeta");
   try {
     if (options.pathExists && !options.pathExists(packMcmetaPath)) {
@@ -254,7 +260,7 @@ function readPackMetadata(packRoot: string, options: ResourceRootCandidateOption
   }
 }
 
-function parsePackMetadata(raw: unknown): PackMetadata {
+export function parsePackMetadata(raw: unknown): PackMetadata {
   const root = objectRecord(raw);
   const overlays = objectRecord(root.overlays);
   const entries = Array.isArray(overlays.entries) ? overlays.entries : [];

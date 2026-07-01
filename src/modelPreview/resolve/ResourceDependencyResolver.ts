@@ -48,6 +48,8 @@ export function resolveResourceFileName(
     target,
     {
       pathExists: fileName => fileSystem.fileExists(fileName),
+      getPackRoot: fileSystem.getPackRoot ? fileName => fileSystem.getPackRoot?.(fileName) ?? null : undefined,
+      getPackMetadata: fileSystem.getPackMetadata ? packRoot => fileSystem.getPackMetadata?.(packRoot) ?? { overlays: [], filters: [] } : undefined,
       resourcePackRoots: configuration.resourcePackRoots,
       resourcePath: path.posix.join(target.replaceAll("\\", "/"), location.resourcePath.replaceAll(path.sep, "/"))
     }

@@ -4,6 +4,8 @@ import { getResourceReferences, isResourceReferenceDocument } from "../utils/res
 import { rangeInsideString } from "../utils/resourceRange";
 import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
 
+const resolveResourcePath = createResourcePathResolver();
+
 export function refreshResourceDiagnostics(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
   if (!isResourceReferenceDocument(document) && !isSemanticDiagnosticsDocument(document)) {
     collection.delete(document.uri);
@@ -11,7 +13,6 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
   }
 
   const diagnostics: vscode.Diagnostic[] = getSemanticResourceDiagnostics(document);
-  const resolveResourcePath = createResourcePathResolver();
 
   for (const reference of getResourceReferences(document)) {
     if (reference.value.length === 0 || reference.value.startsWith("#")) {

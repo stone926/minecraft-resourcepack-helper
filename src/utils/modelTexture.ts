@@ -1,8 +1,6 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { Location, Position, TextDocument, Uri } from "vscode";
-import { generateRedirectPath } from "./pathGenerator";
-import { JsonDocumentNode, memberName, objectMembers, parseJsonAst, stringValue } from "./jsonAst";
+import { Location, Position, TextDocument, Uri, workspace } from "vscode";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { JsonDocumentNode } from "./jsonAst";
 
 interface ModelDocument {
   fileName: string;
@@ -10,26 +8,17 @@ interface ModelDocument {
   getText(): string;
 }
 
-interface LoadedModelDocument {
-  ast: JsonDocumentNode;
-  document: ModelDocument;
-  source: string;
-}
-
 export class TextureVariableDefinitionResolver {
-  private readonly parentDocuments = new Map<string, LoadedModelDocument | null>();
   private readonly ast: JsonDocumentNode;
   private readonly document: ModelDocument;
-  private readonly source: string;
 
   constructor(
     ast: JsonDocumentNode,
     document: ModelDocument,
-    source = modelSourceForFile(document.fileName)
+    private readonly source = modelSourceForFile(document.fileName)
   ) {
     this.ast = ast;
     this.document = document;
-    this.source = source;
   }
 
   resolve(textureReference: string): Location | null {
@@ -37,94 +26,22 @@ export class TextureVariableDefinitionResolver {
       return null;
     }
 
-    return this.resolveTextureVariable(
-      this.ast,
-      this.document,
-      textureReference.slice(1),
-      this.source,
-      new Set<string>([modelUriKey(this.document.uri)])
-    );
+    const variableName = textureReference.slice(1);
+    const definition = workspaceResourceCache
+      .getModelTextureVariableDefinitions(this.document, this.ast, getResourceConfiguration(), this.source)
+      .get(variableName);
+    if (!definition) {
+      return null;
+    }
+
+    const uri = isSamePath(definition.fileName, this.document.fileName)
+      ? this.document.uri
+      : Uri.file(definition.fileName);
+    return new Location(uri, new Position(definition.line, definition.character));
   }
 
   has(textureReference: string): boolean {
     return this.resolve(textureReference) !== null;
-  }
-
-  private resolveTextureVariable(
-    ast: JsonDocumentNode,
-    document: ModelDocument,
-    variableName: string,
-    source: string,
-    visited: Set<string>
-  ): Location | null {
-    const localDefinition = findLocalTextureVariable(ast, document.uri, variableName);
-    if (localDefinition) {
-      return localDefinition;
-    }
-
-    const parentValue = findParentModel(ast);
-    if (!parentValue) {
-      return null;
-    }
-
-    const parentUri = generateRedirectPath(parentValue, document, "models", source, "json");
-    if (!parentUri) {
-      return null;
-    }
-
-    const parentKey = modelUriKey(parentUri);
-    if (visited.has(parentKey)) {
-      return null;
-    }
-    visited.add(parentKey);
-
-    const parentDocument = this.loadParentDocument(parentUri);
-    if (!parentDocument) {
-      return null;
-    }
-
-    return this.resolveTextureVariable(
-      parentDocument.ast,
-      parentDocument.document,
-      variableName,
-      parentDocument.source,
-      visited
-    );
-  }
-
-  private loadParentDocument(uri: Uri): LoadedModelDocument | null {
-    const key = modelUriKey(uri);
-    if (this.parentDocuments.has(key)) {
-      return this.parentDocuments.get(key) ?? null;
-    }
-
-    let parentText: string;
-    try {
-      parentText = fs.readFileSync(uri.fsPath, "utf8");
-    } catch {
-      this.parentDocuments.set(key, null);
-      return null;
-    }
-
-    const parentAst = parseJsonAst(parentText);
-    if (!parentAst) {
-      this.parentDocuments.set(key, null);
-      return null;
-    }
-
-    const document = {
-      fileName: uri.fsPath,
-      uri,
-      getText: () => parentText
-    };
-    const loadedDocument = {
-      ast: parentAst,
-      document,
-      source: modelSourceForFile(uri.fsPath)
-    };
-
-    this.parentDocuments.set(key, loadedDocument);
-    return loadedDocument;
   }
 }
 
@@ -166,24 +83,17 @@ export function modelSourceForFile(fileName: string): string {
   return "models";
 }
 
-function findLocalTextureVariable(ast: JsonDocumentNode, uri: Uri, variableName: string): Location | null {
-  const textures = objectMembers(ast?.body).find(member => memberName(member) === "textures");
-  const definition = objectMembers(textures?.value).find(member => memberName(member) === variableName);
-  const location = definition?.name?.loc ?? definition?.loc;
-
-  if (!location) {
-    return null;
-  }
-
-  return new Location(uri, new Position(location.start.line - 1, location.start.column - 1));
+function getResourceConfiguration() {
+  return {
+    defaultAssetsPath: workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
+    resourcePackRoots: workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+  };
 }
 
-function findParentModel(ast: JsonDocumentNode): string | null {
-  const parent = objectMembers(ast.body).find(member => memberName(member) === "parent");
-  return stringValue(parent?.value) ?? null;
-}
-
-function modelUriKey(uri: Uri): string {
-  const normalizedPath = path.normalize(uri.fsPath);
-  return process.platform === "win32" ? normalizedPath.toLowerCase() : normalizedPath;
+function isSamePath(left: string, right: string): boolean {
+  const normalizedLeft = Uri.file(left).fsPath;
+  const normalizedRight = Uri.file(right).fsPath;
+  return process.platform === "win32"
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
 }

@@ -1,5 +1,6 @@
 import type { Position } from "vscode";
-import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, parseJsonAst, stringValue } from "./jsonAst";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "./jsonAst";
 import { AstLocation, isInArea } from "./locationChecker";
 
 export interface ResourceReference {
@@ -92,7 +93,7 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return references;
   }
 
-  const ast = parseJsonAst(document.getText());
+  const ast = workspaceResourceCache.getJsonAst(document);
   if (!ast) {
     return [];
   }

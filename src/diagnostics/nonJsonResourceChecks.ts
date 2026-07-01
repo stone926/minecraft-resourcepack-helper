@@ -1,7 +1,10 @@
-import * as fs from "node:fs";
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import { TextDecoder } from "node:util";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import type { PngMetadata } from "../utils/pngMetadata";
+
+export { readPngMetadata, type PngMetadata } from "../utils/pngMetadata";
 
 export type NonJsonIssueSeverity = "warning" | "information";
 
@@ -19,12 +22,6 @@ export interface TextResourceIssue {
   severity: NonJsonIssueSeverity;
 }
 
-export interface PngMetadata {
-  width: number;
-  height: number;
-}
-
-const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const hiddenSplashHash = 125780783;
 const validFormattingCodePattern = /§[0-9a-fk-or]/gi;
 const invalidFormattingCodePattern = /§(?![0-9a-fk-or])/gi;
@@ -77,22 +74,6 @@ export function getTextResourceIssues(fileName: string, text: string, bytes?: Ui
   return issues;
 }
 
-export function readPngMetadata(bytes: Uint8Array): PngMetadata | null {
-  if (bytes.length < 24 || !Buffer.from(bytes.subarray(0, pngSignature.length)).equals(pngSignature)) {
-    return null;
-  }
-
-  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.toString("ascii", 12, 16) !== "IHDR") {
-    return null;
-  }
-
-  return {
-    width: buffer.readUInt32BE(16),
-    height: buffer.readUInt32BE(20)
-  };
-}
-
 export function javaStringHashCode(value: string): number {
   let hash = 0;
   for (let index = 0; index < value.length; index++) {
@@ -104,7 +85,7 @@ export function javaStringHashCode(value: string): number {
 
 function getPackPngIssues(packRoot: string): FileResourceIssue[] {
   const packPngPath = path.join(packRoot, "pack.png");
-  if (!fs.existsSync(packPngPath)) {
+  if (!workspaceResourceCache.getPathExists(packPngPath)) {
     return [{
       filePath: packPngPath,
       message: "pack.png is missing; Minecraft will use the default unknown pack icon.",
@@ -156,19 +137,11 @@ function getColormapIssues(packRoot: string): FileResourceIssue[] {
 }
 
 function readPngFileMetadata(filePath: string): PngMetadata | null {
-  try {
-    return readPngMetadata(fs.readFileSync(filePath));
-  } catch {
-    return null;
-  }
+  return workspaceResourceCache.getPngMetadata(filePath);
 }
 
 function readDirectoryEntries(directory: string): Dirent[] {
-  try {
-    return fs.readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  return workspaceResourceCache.getDirectoryEntriesSync(directory) ?? [];
 }
 
 function getTextResourceKind(fileName: string): "splashes" | "endText" | "postcredits" | null {

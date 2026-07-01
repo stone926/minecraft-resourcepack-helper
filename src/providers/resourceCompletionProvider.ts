@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
 import { getDocumentResourceRootCandidates } from "../utils/resourceLocation";
 import { rangeInsideString } from "../utils/resourceRange";
@@ -34,7 +34,12 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
       defaultAssetsPath,
       partialPath.namespace,
       reference.target,
-      { resourcePackRoots }
+      {
+        pathExists: fileName => workspaceResourceCache.getPathExists(fileName),
+        getPackRoot: fileName => workspaceResourceCache.getPackRoot(fileName),
+        getPackMetadata: packRoot => workspaceResourceCache.getPackMetadata(packRoot),
+        resourcePackRoots
+      }
     );
     const items = await collectCompletionItems(roots, partialPath, reference, replacementRange);
 
@@ -54,10 +59,8 @@ async function collectCompletionItems(
 
   for (const root of roots) {
     const directoryPath = path.join(root, ...splitResourcePath(partialPath.directory));
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(directoryPath, { withFileTypes: true });
-    } catch {
+    const entries = await workspaceResourceCache.getDirectoryEntries(directoryPath);
+    if (!entries) {
       continue;
     }
 

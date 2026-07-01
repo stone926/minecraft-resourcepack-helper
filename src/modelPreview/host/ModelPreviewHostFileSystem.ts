@@ -1,8 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import type { ModelPreviewFileSystem } from "../model/ModelDocument";
 import { fileNameKey } from "../resolve/ResourceDependencyResolver";
+import type { PackMetadata } from "../../utils/resourceLocation";
 
 export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
   async readTextFile(fileName: string): Promise<string> {
@@ -19,21 +21,19 @@ export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
   }
 
   fileExists(fileName: string): boolean {
-    return fs.existsSync(fileName);
+    return workspaceResourceCache.getPathExists(fileName);
   }
 
   fileVersion(fileName: string): string | null {
-    const document = findOpenTextDocument(fileName);
-    if (document) {
-      return `open:${document.version}`;
-    }
+    return workspaceResourceCache.getFileVersion(fileName);
+  }
 
-    try {
-      const stat = fs.statSync(fileName);
-      return `${stat.mtimeMs}:${stat.size}`;
-    } catch {
-      return null;
-    }
+  getPackRoot(fileName: string): string | null {
+    return workspaceResourceCache.getPackRoot(fileName);
+  }
+
+  getPackMetadata(packRoot: string): PackMetadata {
+    return workspaceResourceCache.getPackMetadata(packRoot);
   }
 }
 

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 import citDefinitionProvider from './providers/citDefinitionProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
 import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
@@ -14,6 +15,7 @@ import { ModelPreviewService } from './modelPreview/service/ModelPreviewService'
 import { ModelPreviewHostFileSystem } from './modelPreview/host/ModelPreviewHostFileSystem';
 import { openModelPreviewCommand } from './modelPreview/commands/openModelPreview';
 import { captureModelPreviewImageCommand, exportModelPreviewImageCommand } from './modelPreview/commands/exportModelPreviewImage';
+import { workspaceResourceCache } from './services/workspaceResourceCache';
 
 const jsonResourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/blockstates/*.json" },
@@ -41,6 +43,8 @@ const resourceReferenceSelectors: vscode.DocumentSelector = [
 ];
 
 export function activate(context: vscode.ExtensionContext) {
+  workspaceResourceCache.setOpenTextDocumentProvider(fileName => findOpenTextDocument(fileName));
+
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     resourceReferenceSelectors,
     { provideDefinition: resourceDefinitionProvider }
@@ -101,6 +105,10 @@ export function activate(context: vscode.ExtensionContext) {
     "McResHelper.captureModelPreviewImage",
     captureModelPreviewImageCommand(context.extensionUri, modelPreviewService)
   ));
+  context.subscriptions.push(vscode.commands.registerCommand(
+    "McResHelper.showWorkspaceResourceCacheStats",
+    () => vscode.window.showInformationMessage(JSON.stringify(workspaceResourceCache.getStats()))
+  ));
 
   const resourceGraphTreeProvider = new ResourceGraphTreeProvider();
   context.subscriptions.push(resourceGraphTreeProvider);
@@ -117,6 +125,27 @@ export function activate(context: vscode.ExtensionContext) {
   for (const document of vscode.workspace.textDocuments) {
     refreshResourceDiagnostics(document, resourceDiagnostics);
   }
+  let diagnosticsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  const refreshOpenResourceDiagnosticsSoon = (delay = 250) => {
+    if (diagnosticsRefreshTimer) {
+      clearTimeout(diagnosticsRefreshTimer);
+    }
+
+    diagnosticsRefreshTimer = setTimeout(() => {
+      diagnosticsRefreshTimer = null;
+      for (const document of vscode.workspace.textDocuments) {
+        refreshResourceDiagnostics(document, resourceDiagnostics);
+      }
+    }, delay);
+  };
+  context.subscriptions.push({
+    dispose: () => {
+      if (diagnosticsRefreshTimer) {
+        clearTimeout(diagnosticsRefreshTimer);
+        diagnosticsRefreshTimer = null;
+      }
+    }
+  });
 
   let activeEditor: vscode.TextEditor | undefined;
 
@@ -139,6 +168,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // * Handle file contents changed
   vscode.workspace.onDidChangeTextDocument(event => {
+    workspaceResourceCache.invalidateDocument(event.document);
     if (activeEditor && event.document === activeEditor.document) {
       applyDecoration(activeEditor);
     }
@@ -148,29 +178,42 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }, null, context.subscriptions);
 
-  const resourceJsonWatcher = vscode.workspace.createFileSystemWatcher("**/assets/**/*.json");
-  context.subscriptions.push(resourceJsonWatcher);
-  resourceJsonWatcher.onDidCreate(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
-  resourceJsonWatcher.onDidChange(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
-  resourceJsonWatcher.onDidDelete(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
-
-  const shaderWatchers = [
-    vscode.workspace.createFileSystemWatcher("**/assets/*/shaders/**/*.vsh"),
-    vscode.workspace.createFileSystemWatcher("**/assets/*/shaders/**/*.fsh"),
-    vscode.workspace.createFileSystemWatcher("**/assets/*/shaders/**/*.glsl")
-  ];
-  context.subscriptions.push(...shaderWatchers);
-  for (const shaderWatcher of shaderWatchers) {
-    shaderWatcher.onDidCreate(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
-    shaderWatcher.onDidChange(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
-    shaderWatcher.onDidDelete(() => resourceGraphTreeProvider.refreshSoon(), null, context.subscriptions);
+  registerResourceWatcher(context, "**/assets/**/*.json", uri => {
+    invalidateResourcePath(uri);
+    refreshOpenResourceDiagnosticsSoon();
+    resourceGraphTreeProvider.refreshSoon();
+  });
+  for (const pattern of [
+    "**/assets/*/shaders/**/*.vsh",
+    "**/assets/*/shaders/**/*.fsh",
+    "**/assets/*/shaders/**/*.glsl"
+  ]) {
+    registerResourceWatcher(context, pattern, uri => {
+      invalidateResourcePath(uri);
+      refreshOpenResourceDiagnosticsSoon();
+      resourceGraphTreeProvider.refreshSoon();
+    });
+  }
+  for (const pattern of [
+    "**/assets/*/textures/**/*.png",
+    "**/assets/*/textures/**/*.png.mcmeta",
+    "**/pack.mcmeta",
+    "**/pack.png"
+  ]) {
+    registerResourceWatcher(context, pattern, uri => {
+      invalidateResourcePath(uri);
+      refreshOpenResourceDiagnosticsSoon();
+      resourceGraphTreeProvider.refreshSoon();
+    });
   }
 
   vscode.workspace.onDidOpenTextDocument(document => {
+    workspaceResourceCache.invalidateDocument(document);
     refreshResourceDiagnostics(document, resourceDiagnostics);
   }, null, context.subscriptions);
 
   vscode.workspace.onDidCloseTextDocument(document => {
+    workspaceResourceCache.invalidateDocument(document);
     resourceDiagnostics.delete(document.uri);
   }, null, context.subscriptions);
 
@@ -182,6 +225,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration("McResHelper.defaultMcAssetsPath") ||
       event.affectsConfiguration("McResHelper.resourcePackLoadOrder")
     ) {
+      workspaceResourceCache.invalidateConfiguration();
       for (const document of vscode.workspace.textDocuments) {
         refreshResourceDiagnostics(document, resourceDiagnostics);
       }
@@ -193,3 +237,35 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() { }
+
+function registerResourceWatcher(
+  context: vscode.ExtensionContext,
+  pattern: string,
+  handleChange: (uri: vscode.Uri) => void
+): void {
+  const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+  context.subscriptions.push(watcher);
+  watcher.onDidCreate(handleChange, null, context.subscriptions);
+  watcher.onDidChange(handleChange, null, context.subscriptions);
+  watcher.onDidDelete(handleChange, null, context.subscriptions);
+}
+
+function invalidateResourcePath(uri: vscode.Uri): void {
+  if (uri.scheme === "file") {
+    workspaceResourceCache.invalidatePath(uri.fsPath);
+  } else {
+    workspaceResourceCache.invalidateAll();
+  }
+}
+
+function findOpenTextDocument(fileName: string): vscode.TextDocument | null {
+  const key = fileNameKey(fileName);
+  return vscode.workspace.textDocuments.find(document =>
+    document.uri.scheme === "file" && fileNameKey(document.fileName) === key
+  ) ?? null;
+}
+
+function fileNameKey(fileName: string): string {
+  const normalized = path.normalize(fileName);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}

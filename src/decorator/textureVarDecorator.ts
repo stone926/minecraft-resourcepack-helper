@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { arrayElements, JsonAstNode, memberName, objectMembers, parseJsonAst, stringValue } from "../utils/jsonAst";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from "../utils/jsonAst";
 import { createTextureVariableDefinitionResolver, modelSourceForFile } from "../utils/modelTexture";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
@@ -13,7 +14,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
     return;
   }
 
-  const ast = parseJsonAst(editor.document.getText());
+  const ast = workspaceResourceCache.getJsonAst(editor.document);
   if (!ast) {
     editor.setDecorations(decorationType, []);
     return;

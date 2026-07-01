@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { workspaceResourceCache, type CachedModelDocument } from "../services/workspaceResourceCache";
 import { getPackImageResourceIssues, getTextResourceIssues, NonJsonIssueSeverity } from "./nonJsonResourceChecks";
-import { generateRedirectPath } from "../utils/pathGenerator";
 import { findAssetsRoot } from "../utils/resourceLocation";
 import {
   arrayElements,
@@ -12,10 +12,8 @@ import {
   memberName,
   numberValue,
   objectMembers,
-  parseJsonAst,
   stringValue
 } from "../utils/jsonAst";
-import { modelSourceForFile } from "../utils/modelTexture";
 
 interface SemanticDiagnosticsDocument {
   languageId: string;
@@ -26,12 +24,6 @@ interface SemanticDiagnosticsDocument {
 interface FormatVersion {
   major: number;
   minor: number;
-}
-
-interface LoadedModel {
-  ast: JsonDocumentNode;
-  fileName: string;
-  source: string;
 }
 
 interface TextureVariable {
@@ -61,7 +53,7 @@ export function getSemanticResourceDiagnostics(document: SemanticDiagnosticsDocu
     return getTextResourceDiagnostics(document);
   }
 
-  const ast = parseJsonAst(document.getText());
+  const ast = workspaceResourceCache.getJsonAst(document);
   if (!ast) {
     return [];
   }
@@ -310,63 +302,14 @@ function pushSoundEventReferenceDiagnostics(
 function loadSoundEventsForNamespace(fileName: string, namespace: string): Set<string> | null {
   const assetsRoot = findAssetsRoot(fileName, "sounds.json");
   const soundsJsonPath = assetsRoot ? path.join(assetsRoot, namespace, "sounds.json") : null;
-  if (!soundsJsonPath || !fs.existsSync(soundsJsonPath)) {
-    return null;
-  }
-
-  try {
-    const ast = parseJsonAst(fs.readFileSync(soundsJsonPath, "utf8"));
-    return ast ? new Set(objectMembers(ast.body).map(member => memberName(member)).filter((name): name is string => Boolean(name))) : null;
-  } catch {
-    return null;
-  }
+  return soundsJsonPath ? workspaceResourceCache.getSoundEvents(soundsJsonPath) : null;
 }
 
-function loadModelChain(document: SemanticDiagnosticsDocument, ast: JsonDocumentNode): LoadedModel[] {
-  const models: LoadedModel[] = [{
-    ast,
-    fileName: document.fileName,
-    source: modelSourceForFile(document.fileName)
-  }];
-  const visited = new Set([pathKey(document.fileName)]);
-
-  while (models.length <= 11) {
-    const current = models[models.length - 1];
-    const parent = stringValue(getObjectMember(current.ast.body, "parent")?.value);
-    if (!parent) {
-      break;
-    }
-
-    const parentUri = generateRedirectPath(parent, { fileName: current.fileName }, "models", current.source, "json");
-    if (!parentUri) {
-      break;
-    }
-
-    const key = pathKey(parentUri.fsPath);
-    if (visited.has(key)) {
-      break;
-    }
-    visited.add(key);
-
-    try {
-      const parentAst = parseJsonAst(fs.readFileSync(parentUri.fsPath, "utf8"));
-      if (!parentAst) {
-        break;
-      }
-      models.push({
-        ast: parentAst,
-        fileName: parentUri.fsPath,
-        source: modelSourceForFile(parentUri.fsPath)
-      });
-    } catch {
-      break;
-    }
-  }
-
-  return models;
+function loadModelChain(document: SemanticDiagnosticsDocument, ast: JsonDocumentNode): CachedModelDocument[] {
+  return workspaceResourceCache.getModelParentChain(document, ast, getResourceConfiguration());
 }
 
-function getTextureVariableCycleDiagnostics(chain: LoadedModel[]): vscode.Diagnostic[] {
+function getTextureVariableCycleDiagnostics(chain: CachedModelDocument[]): vscode.Diagnostic[] {
   const diagnostics: vscode.Diagnostic[] = [];
   const variables = new Map<string, TextureVariable>();
 
@@ -509,11 +452,6 @@ function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number
   return -1;
 }
 
-function pathKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
 function isTextResourceDocument(fileName: string): boolean {
   return /[\\/]assets[\\/][^\\/]+[\\/]texts[\\/](?:splashes|end|postcredits)\.txt$/i.test(fileName);
 }
@@ -522,4 +460,11 @@ function severityToDiagnosticSeverity(severity: NonJsonIssueSeverity): vscode.Di
   return severity === "information"
     ? vscode.DiagnosticSeverity.Information
     : vscode.DiagnosticSeverity.Warning;
+}
+
+function getResourceConfiguration() {
+  return {
+    defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
+    resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+  };
 }

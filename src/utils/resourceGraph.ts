@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { createResourcePathResolver, generateRedirectPath, type ResourcePathResolver } from "./pathGenerator";
 import {
   getResourceReferences,
@@ -557,10 +557,8 @@ async function collectResourceReferenceUrisInRoot(directory: string): Promise<vs
 }
 
 async function collectResourceReferenceUrisInto(directory: string, uris: vscode.Uri[]): Promise<void> {
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(directory, { withFileTypes: true });
-  } catch {
+  const entries = await workspaceResourceCache.getDirectoryEntries(directory);
+  if (!entries) {
     return;
   }
 

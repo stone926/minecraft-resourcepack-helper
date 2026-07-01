@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { arrayElements, JsonAstNode, memberName, objectMembers, parseJsonAst, stringValue } from '../utils/jsonAst';
+import { workspaceResourceCache } from '../services/workspaceResourceCache';
+import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from '../utils/jsonAst';
 import { isInArea } from '../utils/locationChecker';
 import { resolveTextureVariableDefinition } from '../utils/modelTexture';
 
 export default (document: vscode.TextDocument, position: vscode.Position) => {
-  const ast = parseJsonAst(document.getText());
+  const ast = workspaceResourceCache.getJsonAst(document);
   if (!ast) {
     return null;
   }
