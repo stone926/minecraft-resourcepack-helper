@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft item model definition",
+  "description": "Defines model, display and override rules for items.",
+  "additionalProperties": true,
+  "properties": {
+    "__comment": {
+      "description": "Comment",
+      "type": "string"
+    },
+    "parent": {
+      "title": "Parent",
+      "description": "Inherit from another model file, specified as a namespace ID. When both parent and elements are set, this model's elements will override the parent model's elements.",
+      "type": "string"
+    },
+    "display": {
+      "title": "Display",
+      "$ref": "./models-block.json#/definitions/positionProps"
+    },
+    "textures": {
+      "type": "object",
+      "title": "Textures",
+      "description": "Defines the block particle texture and texture variables used by the model. Values can be a texture file path (namespace ID) or another texture variable.",
+      "properties": {
+        "__comment": {
+          "type": "string",
+          "description": "Comment"
+        },
+        "particle": {
+          "title": "Particle",
+          "description": "The particle texture for the block. Also used when the player is inside a nether portal. Note: block breaking particles for non-model-rendered blocks may be hardcoded.",
+          "$ref": "./models-block.json#/definitions/textureReference"
+        }
+      },
+      "patternProperties": {
+        "^layer[0-9]{1,}$": {
+          "description": "Used only to specify item icons in the inventory. Multiple layers are allowed (e.g. spawn eggs), but the number of possible layers per item is hardcoded. Must be used with builtin/generated.",
+          "$ref": "./models-block.json#/definitions/textureReference"
+        }
+      },
+      "additionalProperties": {
+        "description": "Defines a texture variable and assigns a texture.",
+        "$ref": "./models-block.json#/definitions/textureReference"
+      }
+    },
+    "elements": {
+      "title": "Elements",
+      "description": "Lists all elements of the model. These elements can only be cuboids. When both parent and elements are set, this model's elements will override the parent model's elements.",
+      "type": "array",
+      "minimum": 1,
+      "items": {
+        "$ref": "./models-block.json#/definitions/element"
+      }
+    },
+    "gui_light": {
+      "title": "GUI Light",
+      "description": "Used only in GUIs. Can be front or side. When set to side, the model is rendered as a cuboid. When set to front, the model is rendered as a flat texture filling the entire slot.",
+      "type": "string",
+      "enum": ["side", "front"]
+    },
+    "overrides": {
+      "title": "Overrides",
+      "description": "Specifies different models to override based on item predicate conditions. Deprecated since Java Edition 1.21.4 in favor of item model mappings in assets/<namespace>/items/*.json.",
+      "deprecationMessage": "models/item overrides are deprecated in Java Edition 1.21.4+. Use item model mappings in the items directory instead.",
+      "type": "array",
+      "minimum": 1,
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["predicate", "model"],
+        "properties": {
+          "__comment": {
+            "type": "string",
+            "description": "Comment"
+          },
+          "predicate": {
+            "title": "Predicate",
+            "description": "Specifies the condition.",
+            "type": "object",
+            "properties": {
+              "__comment": {
+                "type": "string",
+                "description": "Comment"
+              },
+              "angle": {
+                "title": "Angle",
+                "description": "Determines the compass angle, expressed as a decimal value less than 1.",
+                "type": "number"
+              },
+              "blocking": {
+                "title": "Blocking",
+                "description": "Determines whether the shield is in blocking state. 1 when blocking.",
+                "type": "number",
+                "enum": [0, 1]
+              },
+              "broken": {
+                "title": "Broken",
+                "description": "Determines whether the elytra is broken. 1 when broken.",
+                "type": "number",
+                "enum": [0, 1]
+              },
+              "cast": {
+                "title": "Cast",
+                "description": "Determines whether the fishing rod has been cast. 1 when cast.",
+                "type": "number",
+                "enum": [0, 1]
+              },
+              "cooldown": {
+                "title": "Cooldown",
+                "description": "Determines the remaining cooldown time of an ender pearl/chorus fruit, expressed as a decimal value between 0 and 1.",
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "damage": {
+                "title": "Damage value",
+                "description": "Determines the damage level of a durable item, expressed as a decimal value between 0 and 1.",
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "damaged": {
+                "title": "Damaged",
+                "description": "Determines whether a durable item is damaged. 1 when damaged. If the item has the Unbreakable tag, this value is 0 and the damage value can be non-zero.",
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "lefthanded": {
+                "title": "Left-handed",
+                "description": "Specifies the model used by left-handed players, affecting its appearance in the inventory and when held or worn.",
+                "type": "number",
+                "enum": [0, 1]
+              },
+              "pull": {
+                "title": "Pull",
+                "description": "Determines how far the bow has been pulled, expressed as a decimal value between 0 and 1. 0 when not pulled, 1 when fully pulled.",
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "pulling": {
+                "title": "Pulling",
+                "description": "Determines whether the bow is being pulled. 1 when pulled.",
+                "type": "number",
+                "enum": [0, 1]
+              },
+              "throwing": {
+                "title": "Throwing",
+                "description": "Used for tridents to determine whether the trident is about to be thrown. 1 when ready to throw.",
+                "type": "number",
+                "enum": [0, 1]
+              },
+              "time": {
+                "title": "Time",
+                "description": "Determines the clock time, expressed as a decimal value between 0 and 1.",
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "custom_model_data": {
+                "title": "Custom model data",
+                "description": "Used for items with custom models, expressed as an integer.",
+                "type": "integer"
+              }
+            }
+          },
+          "model": {
+            "title": "Model",
+            "description": "The path to the model file to use when the condition is met, specified as a namespace ID.",
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

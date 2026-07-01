@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "array",
+  "title": "Minecraft credits",
+  "description": "Defines the sections, disciplines, titles, and names for the Minecraft credits.",
+  "items": {
+    "$ref": "#/definitions/section"
+  },
+  "definitions": {
+    "section": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["section", "disciplines"],
+      "properties": {
+        "section": {
+          "type": "string",
+          "title": "Section"
+        },
+        "disciplines": {
+          "type": "array",
+          "title": "Disciplines",
+          "items": {
+            "$ref": "#/definitions/discipline"
+          }
+        }
+      }
+    },
+    "discipline": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["discipline", "titles"],
+      "properties": {
+        "discipline": {
+          "type": "string",
+          "title": "Discipline name"
+        },
+        "titles": {
+          "type": "array",
+          "title": "Titles",
+          "items": {
+            "$ref": "#/definitions/title"
+          }
+        }
+      }
+    },
+    "title": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["title", "names"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "title": "Title name"
+        },
+        "names": {
+          "type": "array",
+          "title": "Names",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

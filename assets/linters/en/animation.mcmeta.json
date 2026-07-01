@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Animation metadata",
+  "description": "Contains animated texture metadata for a PNG texture file.",
+  "additionalProperties": false,
+  "required": ["animation"],
+  "properties": {
+    "animation": {
+      "additionalProperties": false,
+      "description": "Contains the animated texture data.",
+      "properties": {
+        "interpolate": {
+          "type": "boolean",
+          "description": "If true, the game will generate frames with display time greater than 1 between frames. Defaults to false."
+        },
+        "frametime": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sets the time increment for each frame per game tick. Defaults to 1."
+        },
+        "frames": {
+          "type": "array",
+          "description": "A list of frames. The display order defaults from top to bottom.",
+          "items": {
+            "oneOf": [
+              { "type": "integer", "minimum": 0, "description": "The position of the frame to start playing. The topmost frame is 0." },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "index": { "type": "integer", "minimum": 0, "description": "The position of the frame to start playing. The topmost frame is 0." },
+                  "time": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Display time for this frame (in ticks), overriding the global frametime above."
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The width of the frame, measured in direct proportion rather than pixels. Unused in vanilla but can be used by mods for non-square frames."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The height of the frame, measured in direct proportion rather than pixels. Unused in vanilla but can be used by mods for non-square frames."
+        }
+      }
+    }
+  }
+}

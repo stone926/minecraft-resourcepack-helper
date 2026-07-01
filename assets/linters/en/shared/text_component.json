@@ -1,0 +1,624 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "title": "Text component",
+  "description": "Defines a Minecraft raw JSON text component with formatting, interaction events, and content types.",
+  "$ref": "#/definitions/text_component",
+  "definitions": {
+    "text_component": {
+      "oneOf": [
+      {
+        "type": [
+          "boolean",
+          "string",
+          "number"
+        ],
+        "title": "Equivalent to {\"text\":\"Value\"}"
+      },
+      {
+        "$ref": "#/definitions/text_object"
+      },
+      {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/text_component"
+        },
+        "title": "Equivalent to firstItem with \"extra\": [nextItems]"
+      }]
+    },
+    "text_object": {
+      "type": "object",
+      "oneOf": [
+      {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "The direct text to apply"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "not": {
+          "required": [
+            "translate",
+            "with",
+            "score",
+            "selector",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "translate": {
+            "type": "string",
+            "parser": "TranslateKey",
+            "title": "The translation string to translate"
+          },
+          "with": {
+            "type": "array",
+            "title": "Replacements",
+            "description": "Extra items to apply in place of %s and %{x}$s in the translation string. These items inherit from the base component in styling, such as text colour and italics",
+            "items": {
+              "$ref": "#/definitions/text_component"
+            }
+          }
+        },
+        "required": [
+          "translate"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "score",
+            "selector",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "score": {
+            "title": "A score to display",
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "parser": "Entity",
+                "params": {
+                  "amount": "single",
+                  "type": "entities",
+                  "isScoreHolder": true
+                },
+                "title": "Entity selector whose score to show"
+              },
+              "objective": {
+                "type": "string",
+                "parser": "Objective",
+                "title": "Objective to show score from"
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "string",
+                  "boolean"
+                ],
+                "title": "A default when score not found",
+                "description": "Will be converted to a string if needed"
+              }
+            },
+            "required": [
+              "name",
+              "objective"
+            ]
+          }
+        },
+        "required": [
+          "score"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "translate",
+            "with",
+            "selector",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "selector": {
+            "type": "string",
+            "parser": "Entity",
+            "params": {
+              "amount": "multiple",
+              "type": "entities"
+            },
+            "title": "An entity to mention",
+            "description": "If there are multiple, they will be comma separated until the last value with an 'and'"
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "translate",
+            "with",
+            "score",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "keybind": {
+            "type": "string",
+            "title": "The name of the keybind to show",
+            "pattern": "^key\\."
+          }
+        },
+        "required": [
+          "keybind"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "translate",
+            "with",
+            "score",
+            "selector",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "nbt": {
+            "type": "string",
+            "parser": "NbtPath",
+            "title": "The NBT Path"
+          },
+          "interpret": {
+            "type": "boolean",
+            "title": "Whether contents of selected tags should be interpreted as chat components"
+          }
+        },
+        "required": [
+          "nbt"
+        ],
+        "oneOf": [
+        {
+          "properties": {
+            "block": {
+              "type": "string",
+              "parser": "Vector",
+              "params": {
+                "dimension": 3
+              },
+              "title": "The coordinates of the block which uses the same format as /setblock"
+            }
+          },
+          "required": [
+            "block"
+          ],
+          "not": {
+            "required": [
+              "entity",
+              "storage"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "entity": {
+              "type": "string",
+              "parser": "Entity",
+              "params": {
+                "amount": "single",
+                "type": "entities"
+              },
+              "title": "The target selector"
+            }
+          },
+          "required": [
+            "entity"
+          ],
+          "not": {
+            "required": [
+              "block",
+              "storage"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "storage": {
+              "type": "string",
+              "parser": "Identity",
+              "params": {
+                "registry": "$storages"
+              },
+              "title": "The namespaced ID of the storage"
+            }
+          },
+          "required": [
+            "storage"
+          ],
+          "not": {
+            "required": [
+              "block",
+              "entity"
+            ]
+          }
+        }],
+        "not": {
+          "required": [
+            "score",
+            "selector",
+            "text",
+            "translate",
+            "with"
+          ]
+        }
+      }],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "text",
+            "translatable",
+            "score",
+            "selector",
+            "keybind",
+            "nbt"
+          ],
+          "title": "Component type",
+          "description": "Specifies the type of text component (1.21.5+ format)"
+        },
+        "text": {},
+        "translate": {},
+        "with": {},
+        "score": {},
+        "selector": {},
+        "keybind": {},
+        "nbt": {},
+        "entity": {},
+        "storage": {},
+        "block": {},
+        "interpret": {},
+        "extra": {
+          "type": "array",
+          "$ref": "#/definitions/text_component",
+          "title": "Additional items to add",
+          "description": "These items inherit from the base component in styling, such as text colour and italics"
+        },
+        "color": {
+          "title": "The colour of the text",
+          "oneOf": [
+          {
+            "enum": [
+              "black",
+              "dark_blue",
+              "dark_green",
+              "dark_aqua",
+              "dark_red",
+              "dark_purple",
+              "gold",
+              "gray",
+              "dark_gray",
+              "blue",
+              "green",
+              "aqua",
+              "red",
+              "light_purple",
+              "yellow",
+              "white"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "#[0-9a-f]{1,6}"
+          }]
+        },
+        "font": {
+          "title": "The font to use",
+          "description": "A namespace ID pointing to a font definition in font/",
+          "type": "string"
+        },
+        "shadow_color": {
+          "title": "Shadow colour",
+          "description": "Text shadow colour in ARGB format as a packed integer",
+          "type": "integer"
+        },
+        "bold": {
+          "title": "Whether to have the text bold",
+          "type": "boolean"
+        },
+        "italic": {
+          "title": "Whether to have the text in italics",
+          "type": "boolean"
+        },
+        "underlined": {
+          "title": "Whether to have the text underlined",
+          "type": "boolean"
+        },
+        "strikethrough": {
+          "title": "Whether to have the text strikethroughed",
+          "type": "boolean"
+        },
+        "obfuscated": {
+          "title": "Whether to have the text obfuscated",
+          "description": "This makes the text cycle through characters with the same width",
+          "type": "boolean"
+        },
+        "insertion": {
+          "title": "Insertion text",
+          "description": "When the player SHIFT-clicks on a section of text, what to add to their chat window",
+          "type": "string"
+        },
+        "click_event": {
+          "type": "object",
+          "title": "Action on click",
+          "description": "Action to perform when this text is left clicked on",
+          "additionalProperties": false,
+          "properties": {
+            "action": {},
+            "value": {}
+          },
+          "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "open_url"
+                ],
+                "description": "Opens the web address in value"
+              },
+              "value": {
+                "type": "string",
+                "title": "The URL of the web page"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "run_command"
+                ],
+                "description": "Runs the command in value"
+              },
+              "value": {
+                "type": "string",
+                "parser": "Command",
+                "params": {
+                  "leadingSlash": true
+                },
+                "title": "The command to run"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "change_page"
+                ],
+                "description": "Changes the book page"
+              },
+              "value": {
+                "type": "string",
+                "title": "The page number"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "suggest_command"
+                ],
+                "description": "Replaces the player's chat window with value"
+              },
+              "value": {
+                "type": "string",
+                "parser": "Command",
+                "params": {
+                  "leadingSlash": true
+                },
+                "title": "The command to suggest"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "open_file"
+                ],
+                "description": "Opens the file at the given path on the client"
+              },
+              "value": {
+                "type": "string",
+                "title": "The file path to open"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "copy_to_clipboard"
+                ],
+                "description": "Copies value to the player's clipboard"
+              },
+              "value": {
+                "type": "string",
+                "title": "The text to copy"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_dialog"
+                ],
+                "description": "Shows a dialog with additional chat component"
+              },
+              "value": {
+                "$ref": "#/definitions/text_component",
+                "title": "The dialog content as a chat component"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "custom"
+                ],
+                "description": "Custom click event handled by data-driven components"
+              },
+              "value": {
+                "type": "string",
+                "title": "The custom value string"
+              }
+            }
+          }],
+          "required": [
+            "action",
+            "value"
+          ]
+        },
+        "hover_event": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What to show upon a hover",
+          "properties": {
+            "action": {},
+            "contents": {},
+            "value": {}
+          },
+          "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_text"
+                ]
+              },
+              "contents": {
+                "$ref": "#/definitions/text_component"
+              },
+              "value": {
+                "$ref": "#/definitions/text_component"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_entity"
+                ]
+              },
+              "contents": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "parser": "Uuid"
+                  },
+                  "name": {
+                    "$ref": "#/definitions/text_component"
+                  },
+                  "type": {
+                    "type": "string",
+                    "parser": "Identity",
+                    "params": {
+                      "registry": "minecraft:entity_type"
+                    }
+                  }
+                }
+              },
+              "value": {
+                "type": "string",
+                "parser": "Nbt",
+                "params": {
+                  "type": "Compound",
+                  "category": "minecraft:entity",
+                  "id": "spgoding:i-am-guaranteed-not-to-exist"
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_item"
+                ]
+              },
+              "contents": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "parser": "Identity",
+                    "params": {
+                      "registry": "minecraft:item"
+                    }
+                  },
+                  "count": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 64
+                  },
+                  "tag": {
+                    "type": "string",
+                    "parser": "Nbt",
+                    "params": {
+                      "type": "Compound",
+                      "category": "minecraft:item",
+                      "id": [
+                      {
+                        "Child": "id"
+                      }]
+                    }
+                  }
+                }
+              },
+              "value": {
+                "type": "string",
+                "parser": "Nbt",
+                "params": {
+                  "type": "Compound",
+                  "category": "minecraft:item",
+                  "id": "spgoding:i-am-guaranteed-not-to-exist"
+                }
+              }
+            }
+          }],
+          "required": [
+            "action"
+          ]
+        }
+      }
+    }
+  }
+}

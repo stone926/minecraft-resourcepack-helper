@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft font definition",
+  "description": "Defines a list of font providers.",
+  "additionalProperties": true,
+  "required": ["providers"],
+  "properties": {
+    "providers": {
+      "type": "array",
+      "title": "Font providers",
+      "items": {
+        "$ref": "#/definitions/provider"
+      }
+    }
+  },
+  "definitions": {
+    "provider": {
+      "oneOf": [
+        { "$ref": "#/definitions/bitmapProvider" },
+        { "$ref": "#/definitions/spaceProvider" },
+        { "$ref": "#/definitions/ttfProvider" },
+        { "$ref": "#/definitions/unihexProvider" },
+        { "$ref": "#/definitions/referenceProvider" },
+        { "$ref": "#/definitions/legacyUnicodeProvider" }
+      ]
+    },
+    "providerBase": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Provider type",
+          "enum": ["bitmap", "ttf", "space", "unihex", "reference", "legacy_unicode"]
+        },
+        "id": {
+          "type": "string",
+          "title": "Reference font",
+          "description": "The font definition referenced by a reference provider."
+        },
+        "file": {
+          "type": "string",
+          "title": "Font or texture file",
+          "description": "Points to a PNG under textures for bitmap providers, or a TTF/OTF file under font for ttf providers. Resource paths should typically include the file extension."
+        },
+        "hex_file": {
+          "type": "string",
+          "title": "Unihex file",
+          "description": "Points to a ZIP archive under font containing .hex files for unihex providers. Resource paths should typically include the file extension."
+        },
+        "template": {
+          "type": "string",
+          "title": "Legacy Unicode template",
+          "description": "PNG page template for legacy_unicode providers. Must contain %s. This provider has been removed from modern versions."
+        },
+        "sizes": {
+          "type": "string",
+          "title": "Legacy Unicode width file",
+          "description": "Glyph width binary file for legacy_unicode providers, typically glyph_sizes.bin."
+        },
+        "chars": {
+          "type": "array",
+          "title": "Character grid",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ascent": {
+          "type": "number",
+          "title": "Ascent"
+        },
+        "height": {
+          "type": "number",
+          "title": "Character height"
+        },
+        "size": {
+          "type": "number",
+          "title": "Font size"
+        },
+        "oversample": {
+          "type": "number",
+          "title": "Oversample"
+        },
+        "shift": {
+          "type": "array",
+          "title": "Shift",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
+          }
+        },
+        "skip": {
+          "title": "Skip characters",
+          "description": "Characters to exclude from glyph allocation in ttf providers. Can be a string or an array of strings.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "advances": {
+          "type": "object",
+          "title": "Character advances",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "filter": {
+          "type": "object",
+          "title": "Filter",
+          "additionalProperties": true,
+          "properties": {
+            "uniform": {
+              "type": "boolean",
+              "title": "Monospace font filter"
+            },
+            "jp": {
+              "type": "boolean",
+              "title": "Japanese glyph variant filter"
+            }
+          }
+        },
+        "size_overrides": {
+          "type": "array",
+          "title": "Unihex size overrides",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "from": {
+                "type": "string",
+                "title": "Start character"
+              },
+              "to": {
+                "type": "string",
+                "title": "End character"
+              },
+              "left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 32,
+                "title": "Left boundary"
+              },
+              "right": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 32,
+                "title": "Right boundary"
+              },
+              "ranges": {
+                "type": "array",
+                "title": "Unicode ranges",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "bitmapProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "file", "chars", "ascent"],
+          "properties": {
+            "type": {
+              "enum": ["bitmap"]
+            }
+          }
+        }
+      ]
+    },
+    "spaceProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "advances"],
+          "properties": {
+            "type": {
+              "enum": ["space"]
+            }
+          }
+        }
+      ]
+    },
+    "ttfProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "file"],
+          "properties": {
+            "type": {
+              "enum": ["ttf"]
+            }
+          }
+        }
+      ]
+    },
+    "unihexProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "hex_file"],
+          "properties": {
+            "type": {
+              "enum": ["unihex"]
+            }
+          }
+        }
+      ]
+    },
+    "referenceProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "id"],
+          "properties": {
+            "type": {
+              "enum": ["reference"]
+            }
+          }
+        }
+      ]
+    },
+    "legacyUnicodeProvider": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/providerBase"
+        },
+        {
+          "type": "object",
+          "deprecationMessage": "The legacy_unicode provider has been removed from modern Java Edition font systems and is only retained for legacy compatibility.",
+          "required": ["type", "template", "sizes"],
+          "properties": {
+            "type": {
+              "enum": ["legacy_unicode"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft post effect definition",
+  "description": "Defines post-processing render targets and pass lists.",
+  "additionalProperties": true,
+  "properties": {
+    "targets": {
+      "type": "object",
+      "title": "Render targets",
+      "additionalProperties": {
+        "$ref": "#/definitions/target"
+      }
+    },
+    "passes": {
+      "type": "array",
+      "title": "Post-processing passes",
+      "items": {
+        "$ref": "#/definitions/pass"
+      }
+    }
+  },
+  "definitions": {
+    "target": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Width"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Height"
+        },
+        "persistent": {
+          "type": "boolean",
+          "title": "Persistent",
+          "description": "When true, this render target is not cleared between frames. Defaults to false."
+        },
+        "clear_color": {
+          "title": "Clear color",
+          "description": "The color used when the render target is created or cleared. Can be an ARGB decimal color or a [R, G, B, A] float array.",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "pass": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "vertex_shader": {
+          "type": "string",
+          "title": "Vertex shader",
+          "description": "Vertex shader resource path. Resolves to a .vsh file under shaders."
+        },
+        "fragment_shader": {
+          "type": "string",
+          "title": "Fragment shader",
+          "description": "Fragment shader resource path. Resolves to a .fsh file under shaders."
+        },
+        "inputs": {
+          "type": "array",
+          "title": "Inputs",
+          "items": {
+            "$ref": "#/definitions/input"
+          }
+        },
+        "output": {
+          "type": "string",
+          "title": "Output target"
+        },
+        "uniforms": {
+          "type": "object",
+          "title": "Uniform configuration",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/uniform"
+            }
+          }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sampler_name": {
+          "type": "string",
+          "title": "Sampler name"
+        },
+        "target": {
+          "type": "string",
+          "title": "Input target",
+          "description": "Name of a render target defined in the targets section, or a builtin target (minecraft:main, minecraft:depth, minecraft:translucent, minecraft:translucent_depth, minecraft:emissive, minecraft:emissive_depth, minecraft:outline, minecraft:particles, minecraft:particles_depth, minecraft:weather, minecraft:clouds)."
+        },
+        "use_depth_buffer": {
+          "type": "boolean",
+          "title": "Use depth buffer",
+          "description": "When true, samples from the target's depth texture. Defaults to false."
+        },
+        "location": {
+          "type": "string",
+          "title": "Input texture",
+          "description": "Input texture resource path. Resolves to textures/effect."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Texture width"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Texture height"
+        },
+        "bilinear": {
+          "type": "boolean",
+          "title": "Bilinear filtering"
+        }
+      }
+    },
+    "uniform": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Name"
+        },
+        "type": {
+          "type": "string",
+          "title": "Type",
+          "enum": ["float", "int", "ivec3", "vec2", "vec3", "vec4", "matrix4x4"]
+        },
+        "value": {
+          "title": "Value",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -49,71 +49,71 @@
     "jsonValidation": [
       {
         "fileMatch": "**/pack.mcmeta",
-        "url": "./assets/linters/pack.mcmeta.json"
+        "url": "%schema.packMcmeta.url%"
       },
       {
         "fileMatch": "**/blockstates/*.json",
-        "url": "./assets/linters/blockstates.json"
+        "url": "%schema.blockstates.url%"
       },
       {
         "fileMatch": "**/models/**/*.json",
-        "url": "./assets/linters/models-block.json"
+        "url": "%schema.modelsBlock.url%"
       },
       {
         "fileMatch": "**/models/item/**/*.json",
-        "url": "./assets/linters/models-item.json"
+        "url": "%schema.modelsItem.url%"
       },
       {
         "fileMatch": "**/particles/**/*.json",
-        "url": "./assets/linters/particles.json"
+        "url": "%schema.particles.url%"
       },
       {
         "fileMatch": "**/items/**/*.json",
-        "url": "./assets/linters/items.json"
+        "url": "%schema.items.url%"
       },
       {
         "fileMatch": "**/atlases/**/*.json",
-        "url": "./assets/linters/atlases.json"
+        "url": "%schema.atlases.url%"
       },
       {
         "fileMatch": "**/equipment/**/*.json",
-        "url": "./assets/linters/equipment.json"
+        "url": "%schema.equipment.url%"
       },
       {
         "fileMatch": "**/font/**/*.json",
-        "url": "./assets/linters/font.json"
+        "url": "%schema.font.url%"
       },
       {
         "fileMatch": "**/waypoint_style/**/*.json",
-        "url": "./assets/linters/waypoint-style.json"
+        "url": "%schema.waypointStyle.url%"
       },
       {
         "fileMatch": "**/post_effect/**/*.json",
-        "url": "./assets/linters/post-effect.json"
+        "url": "%schema.postEffect.url%"
       },
       {
         "fileMatch": "**/assets/*/sounds.json",
-        "url": "./assets/linters/sounds.json"
+        "url": "%schema.sounds.url%"
       },
       {
         "fileMatch": "**/assets/*/lang/*.json",
-        "url": "./assets/linters/lang.json"
+        "url": "%schema.lang.url%"
       },
       {
         "fileMatch": "**/assets/*/texts/credits.json",
-        "url": "./assets/linters/credits.json"
+        "url": "%schema.credits.url%"
       },
       {
         "fileMatch": "**/assets/*/gpu_warnlist.json",
-        "url": "./assets/linters/gpu-warnlist.json"
+        "url": "%schema.gpuWarnlist.url%"
       },
       {
         "fileMatch": "**/assets/*/regional_compliancies.json",
-        "url": "./assets/linters/regional-compliancies.json"
+        "url": "%schema.regionalCompliancies.url%"
       },
       {
         "fileMatch": "**/textures/**/*.png.mcmeta",
-        "url": "./assets/linters/png.mcmeta.json"
+        "url": "%schema.pngMcmeta.url%"
       }
     ],
     "commands": [

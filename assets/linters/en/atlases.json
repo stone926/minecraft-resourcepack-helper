@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft atlas definition",
+  "description": "Defines the list of sources for a texture atlas. Resource paths are relative to assets/<namespace>/textures.",
+  "additionalProperties": true,
+  "required": ["sources"],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "title": "Atlas sources",
+      "description": "Lists the texture sources added to the atlas in order.",
+      "items": {
+        "$ref": "#/definitions/source"
+      }
+    }
+  },
+  "definitions": {
+    "resourceLocation": {
+      "type": "string",
+      "description": "Minecraft resource path, e.g. minecraft:block/stone. When the namespace is omitted, minecraft is assumed."
+    },
+    "source": {
+      "oneOf": [
+        { "$ref": "#/definitions/directorySource" },
+        { "$ref": "#/definitions/singleSource" },
+        { "$ref": "#/definitions/filterSource" },
+        { "$ref": "#/definitions/unstitchSource" },
+        { "$ref": "#/definitions/palettedPermutationsSource" }
+      ]
+    },
+    "sourceBase": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Source type",
+          "description": "Atlas source type.",
+          "enum": [
+            "directory",
+            "single",
+            "paletted_permutations",
+            "filter",
+            "unstitch",
+            "minecraft:directory",
+            "minecraft:single",
+            "minecraft:paletted_permutations",
+            "minecraft:filter",
+            "minecraft:unstitch"
+          ]
+        },
+        "source": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "Source directory",
+          "description": "The texture directory read by the directory source."
+        },
+        "prefix": {
+          "type": "string",
+          "title": "Prefix",
+          "description": "The resource path prefix added to sprites from a directory source."
+        },
+        "pattern": {
+          "type": "object",
+          "title": "Filter pattern",
+          "description": "Namespace and path regex used by the filter source to remove sprites already added to the atlas.",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "format": "regex"
+            },
+            "path": {
+              "type": "string",
+              "format": "regex"
+            }
+          }
+        },
+        "resource": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "Single texture",
+          "description": "The texture read by single or unstitch sources."
+        },
+        "sprite": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "Sprite name",
+          "description": "The sprite name used when writing to the atlas by a single source."
+        },
+        "divisor_x": {
+          "type": "number",
+          "title": "Horizontal unit divisor",
+          "description": "The unit used to convert region x coordinates in unstitch sources."
+        },
+        "divisor_y": {
+          "type": "number",
+          "title": "Vertical unit divisor",
+          "description": "The unit used to convert region y coordinates in unstitch sources."
+        },
+        "regions": {
+          "type": "array",
+          "title": "Slice regions",
+          "description": "Rectangular regions copied from the source image by unstitch sources.",
+          "items": {
+            "$ref": "#/definitions/unstitchRegion"
+          }
+        },
+        "palette_key": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "Palette key",
+          "description": "The base palette texture used by paletted_permutations."
+        },
+        "separator": {
+          "type": "string",
+          "title": "Separator",
+          "description": "The separator used when generating sprite names from the base texture and variant name in paletted_permutations. Defaults to _."
+        },
+        "permutations": {
+          "type": "object",
+          "title": "Palette variants",
+          "description": "Maps palette names to texture paths.",
+          "additionalProperties": {
+            "$ref": "#/definitions/resourceLocation"
+          }
+        },
+        "textures": {
+          "type": "array",
+          "title": "Textures",
+          "description": "The set of textures to which the palette permutations are applied.",
+          "items": {
+            "$ref": "#/definitions/resourceLocation"
+          }
+        }
+      }
+    },
+    "directorySource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "source"],
+          "properties": {
+            "type": {
+              "enum": ["directory", "minecraft:directory"]
+            }
+          }
+        }
+      ]
+    },
+    "singleSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "resource"],
+          "properties": {
+            "type": {
+              "enum": ["single", "minecraft:single"]
+            }
+          }
+        }
+      ]
+    },
+    "filterSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "pattern"],
+          "properties": {
+            "type": {
+              "enum": ["filter", "minecraft:filter"]
+            }
+          }
+        }
+      ]
+    },
+    "unstitchSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "resource", "regions"],
+          "properties": {
+            "type": {
+              "enum": ["unstitch", "minecraft:unstitch"]
+            }
+          }
+        }
+      ]
+    },
+    "palettedPermutationsSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
+        {
+          "type": "object",
+          "required": ["type", "textures", "palette_key", "permutations"],
+          "properties": {
+            "type": {
+              "enum": ["paletted_permutations", "minecraft:paletted_permutations"]
+            }
+          }
+        }
+      ]
+    },
+    "unstitchRegion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sprite", "x", "y", "width", "height"],
+      "properties": {
+        "sprite": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "Sprite name"
+        },
+        "x": {
+          "type": "number",
+          "title": "X coordinate"
+        },
+        "y": {
+          "type": "number",
+          "title": "Y coordinate"
+        },
+        "width": {
+          "type": "number",
+          "title": "Width"
+        },
+        "height": {
+          "type": "number",
+          "title": "Height"
+        }
+      }
+    }
+  }
+}

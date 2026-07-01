@@ -14,5 +14,22 @@
   "command.title.openResourceGraphModelPreview": "McResHelper: 从资源图打开模型预览",
   "command.title.openUnsupportedModelPreviewResource": "McResHelper: 此资源暂不支持模型预览",
   "viewContainer.title.resources": "Minecraft 资源",
-  "view.name.resourceGraph": "资源关系"
+  "view.name.resourceGraph": "资源关系",
+  "schema.packMcmeta.url": "./assets/linters/zh-cn/pack.mcmeta.json",
+  "schema.blockstates.url": "./assets/linters/zh-cn/blockstates.json",
+  "schema.modelsBlock.url": "./assets/linters/zh-cn/models-block.json",
+  "schema.modelsItem.url": "./assets/linters/zh-cn/models-item.json",
+  "schema.particles.url": "./assets/linters/zh-cn/particles.json",
+  "schema.items.url": "./assets/linters/zh-cn/items.json",
+  "schema.atlases.url": "./assets/linters/zh-cn/atlases.json",
+  "schema.equipment.url": "./assets/linters/zh-cn/equipment.json",
+  "schema.font.url": "./assets/linters/zh-cn/font.json",
+  "schema.waypointStyle.url": "./assets/linters/zh-cn/waypoint-style.json",
+  "schema.postEffect.url": "./assets/linters/zh-cn/post-effect.json",
+  "schema.sounds.url": "./assets/linters/zh-cn/sounds.json",
+  "schema.lang.url": "./assets/linters/zh-cn/lang.json",
+  "schema.credits.url": "./assets/linters/zh-cn/credits.json",
+  "schema.gpuWarnlist.url": "./assets/linters/zh-cn/gpu-warnlist.json",
+  "schema.regionalCompliancies.url": "./assets/linters/zh-cn/regional-compliancies.json",
+  "schema.pngMcmeta.url": "./assets/linters/zh-cn/png.mcmeta.json"
 }

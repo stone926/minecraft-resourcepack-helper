@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft font definition",
+  "description": "定义字体 provider 列表。",
+  "additionalProperties": true,
+  "required": ["providers"],
+  "properties": {
+    "providers": {
+      "type": "array",
+      "title": "providers 字体来源",
+      "items": {
+        "$ref": "#/definitions/provider"
+      }
+    }
+  },
+  "definitions": {
+    "provider": {
+      "oneOf": [
+        { "$ref": "#/definitions/bitmapProvider" },
+        { "$ref": "#/definitions/spaceProvider" },
+        { "$ref": "#/definitions/ttfProvider" },
+        { "$ref": "#/definitions/unihexProvider" },
+        { "$ref": "#/definitions/referenceProvider" },
+        { "$ref": "#/definitions/legacyUnicodeProvider" }
+      ]
+    },
+    "providerBase": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type provider 类型",
+          "enum": ["bitmap", "ttf", "space", "unihex", "reference", "legacy_unicode"]
+        },
+        "id": {
+          "type": "string",
+          "title": "id 引用字体",
+          "description": "reference provider 引用的字体定义。"
+        },
+        "file": {
+          "type": "string",
+          "title": "file 字体或贴图文件",
+          "description": "bitmap provider 指向 textures 下的 PNG；ttf provider 指向 font 下的 TTF/OTF 文件。资源路径通常应包含文件扩展名。"
+        },
+        "hex_file": {
+          "type": "string",
+          "title": "hex_file Unihex 文件",
+          "description": "unihex provider 指向 font 下包含 .hex 文件的 ZIP 归档。资源路径通常应包含文件扩展名。"
+        },
+        "template": {
+          "type": "string",
+          "title": "template Legacy Unicode 模板",
+          "description": "legacy_unicode provider 的 PNG 页模板，必须包含 %s。该 provider 已从现代版本移除。"
+        },
+        "sizes": {
+          "type": "string",
+          "title": "sizes Legacy Unicode 宽度文件",
+          "description": "legacy_unicode provider 的字形宽度二进制文件，通常为 glyph_sizes.bin。"
+        },
+        "chars": {
+          "type": "array",
+          "title": "chars 字符网格",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ascent": {
+          "type": "number",
+          "title": "ascent 上升高度"
+        },
+        "height": {
+          "type": "number",
+          "title": "height 字符高度"
+        },
+        "size": {
+          "type": "number",
+          "title": "size 字号"
+        },
+        "oversample": {
+          "type": "number",
+          "title": "oversample 过采样"
+        },
+        "shift": {
+          "type": "array",
+          "title": "shift 位移",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
+          }
+        },
+        "skip": {
+          "title": "skip 跳过字符",
+          "description": "ttf provider 中不分配字形的字符，可为字符串或字符串数组。",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "advances": {
+          "type": "object",
+          "title": "advances 字符宽度",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "filter": {
+          "type": "object",
+          "title": "filter 过滤条件",
+          "additionalProperties": true,
+          "properties": {
+            "uniform": {
+              "type": "boolean",
+              "title": "uniform 等宽字体过滤"
+            },
+            "jp": {
+              "type": "boolean",
+              "title": "jp 日文字形变体过滤"
+            }
+          }
+        },
+        "size_overrides": {
+          "type": "array",
+          "title": "size_overrides Unihex 宽度覆盖",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "from": {
+                "type": "string",
+                "title": "from 起始字符"
+              },
+              "to": {
+                "type": "string",
+                "title": "to 结束字符"
+              },
+              "left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 32,
+                "title": "left 左边界"
+              },
+              "right": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 32,
+                "title": "right 右边界"
+              },
+              "ranges": {
+                "type": "array",
+                "title": "ranges Unicode 区块",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "bitmapProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "file", "chars", "ascent"],
+          "properties": {
+            "type": {
+              "enum": ["bitmap"]
+            }
+          }
+        }
+      ]
+    },
+    "spaceProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "advances"],
+          "properties": {
+            "type": {
+              "enum": ["space"]
+            }
+          }
+        }
+      ]
+    },
+    "ttfProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "file"],
+          "properties": {
+            "type": {
+              "enum": ["ttf"]
+            }
+          }
+        }
+      ]
+    },
+    "unihexProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "hex_file"],
+          "properties": {
+            "type": {
+              "enum": ["unihex"]
+            }
+          }
+        }
+      ]
+    },
+    "referenceProvider": {
+      "allOf": [
+        { "$ref": "#/definitions/providerBase" },
+        {
+          "type": "object",
+          "required": ["type", "id"],
+          "properties": {
+            "type": {
+              "enum": ["reference"]
+            }
+          }
+        }
+      ]
+    },
+    "legacyUnicodeProvider": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/providerBase"
+        },
+        {
+          "type": "object",
+          "deprecationMessage": "legacy_unicode provider 已从现代 Java 版字体系统移除，仅作为旧版本兼容。",
+          "required": ["type", "template", "sizes"],
+          "properties": {
+            "type": {
+              "enum": ["legacy_unicode"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

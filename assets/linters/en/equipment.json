@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft equipment definition",
+  "description": "Defines textures used for equipment rendering layers.",
+  "additionalProperties": true,
+  "required": ["layers"],
+  "properties": {
+    "layers": {
+      "type": "object",
+      "title": "Layers",
+      "description": "Keys are equipment preset model types, such as humanoid, humanoid_leggings, wings, wolf_body, llama_body.",
+      "properties": {
+        "humanoid": {
+          "$ref": "#/definitions/layerList",
+          "description": "Head, chest, and feet armor model for humanoid entities."
+        },
+        "humanoid_leggings": {
+          "$ref": "#/definitions/layerList",
+          "description": "Leg armor model for humanoid entities."
+        },
+        "humanoid_baby": {
+          "$ref": "#/definitions/layerList",
+          "description": "Armor model for baby humanoid entities."
+        },
+        "wings": {
+          "$ref": "#/definitions/layerList",
+          "description": "Wing model for players, player models, and armor stands."
+        },
+        "wolf_body": {
+          "$ref": "#/definitions/layerList",
+          "description": "Body armor model for wolves."
+        },
+        "horse_body": {
+          "$ref": "#/definitions/layerList",
+          "description": "Body armor model for horses, skeleton horses, and zombie horses."
+        },
+        "llama_body": {
+          "$ref": "#/definitions/layerList",
+          "description": "Body armor model for llamas and trader llamas."
+        },
+        "happy_ghast_body": {
+          "$ref": "#/definitions/layerList",
+          "description": "Body armor model for happy ghasts."
+        },
+        "nautilus_body": {
+          "$ref": "#/definitions/layerList",
+          "description": "Body armor model for nautiluses and zombie nautiluses."
+        },
+        "pig_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for pigs."
+        },
+        "strider_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for striders."
+        },
+        "camel_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for camels."
+        },
+        "camel_husk_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for camel husks."
+        },
+        "horse_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for horses."
+        },
+        "donkey_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for donkeys."
+        },
+        "mule_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for mules."
+        },
+        "skeleton_horse_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for skeleton horses."
+        },
+        "zombie_horse_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for zombie horses."
+        },
+        "nautilus_saddle": {
+          "$ref": "#/definitions/layerList",
+          "description": "Saddle model for nautiluses and zombie nautiluses."
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/layerList"
+      }
+    }
+  },
+  "definitions": {
+    "layerList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/layer"
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["texture"],
+      "properties": {
+        "texture": {
+          "type": "string",
+          "title": "Texture",
+          "description": "Equipment layer texture path. Resolves to textures/entity/equipment/<layer>."
+        },
+        "dyeable": {
+          "type": "object",
+          "title": "Dyeable",
+          "description": "Color configuration for dyeable equipment.",
+          "additionalProperties": true,
+          "properties": {
+            "color_when_undyed": {
+              "type": "integer",
+              "title": "Undyed color",
+              "description": "The decimal RGB color value used when undyed."
+            }
+          }
+        },
+        "use_player_texture": {
+          "type": "boolean",
+          "title": "Use player cape texture",
+          "description": "Available for the wings preset model. When true, uses the player's cape texture for wing rendering. Defaults to false."
+        }
+      }
+    }
+  }
+}

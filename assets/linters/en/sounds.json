@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft sounds definition",
+  "description": "Defines sound events and their playable sound files within a namespace.",
+  "additionalProperties": {
+    "$ref": "#/definitions/soundEvent"
+  },
+  "definitions": {
+    "resourceLocation": {
+      "type": "string",
+      "description": "Minecraft resource path. Sound files resolve to assets/<namespace>/sounds/<path>.ogg."
+    },
+    "soundEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replace": {
+          "type": "boolean",
+          "title": "Replace lower-priority definitions",
+          "description": "When true, replaces the same-named sound event from lower-priority resource packs; otherwise merges with lower-priority definitions."
+        },
+        "subtitle": {
+          "type": "string",
+          "title": "Subtitle key",
+          "description": "The localization key for the subtitle displayed when this sound event is played."
+        },
+        "sounds": {
+          "type": "array",
+          "title": "Sound list",
+          "description": "Sound files or sound event references that this event can randomly select from.",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/resourceLocation"
+              },
+              {
+                "$ref": "#/definitions/sound"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "sound": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/resourceLocation",
+          "title": "Sound file or event"
+        },
+        "type": {
+          "type": "string",
+          "title": "Target type",
+          "description": "file for a sound file, event for another sound event.",
+          "enum": ["file", "event"]
+        },
+        "weight": {
+          "type": "integer",
+          "title": "Weight",
+          "minimum": 1,
+          "default": 1
+        },
+        "attenuation_distance": {
+          "type": "integer",
+          "title": "Attenuation distance",
+          "minimum": 1,
+          "default": 16
+        },
+        "pitch": {
+          "type": "number",
+          "title": "Pitch",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "volume": {
+          "type": "number",
+          "title": "Volume",
+          "exclusiveMinimum": 0,
+          "default": 1
+        },
+        "preload": {
+          "type": "boolean",
+          "title": "Preload",
+          "default": false
+        },
+        "stream": {
+          "type": "boolean",
+          "title": "Stream",
+          "default": false
+        }
+      }
+    }
+  }
+}

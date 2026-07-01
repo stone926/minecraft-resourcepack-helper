@@ -15,9 +15,15 @@ interface JsonValidationEntry {
 
 type JsonObject = Record<string, unknown>;
 
+const EN_LINTER = path.join(process.cwd(), "assets", "linters", "en");
+const ZH_LINTER = path.join(process.cwd(), "assets", "linters", "zh-cn");
+
 describe("schema assets", () => {
-  it("parses every bundled JSON schema asset", () => {
-    for (const file of collectJsonFiles(path.join(process.cwd(), "assets", "linters"))) {
+  it("parses every bundled JSON schema asset in both locales", () => {
+    for (const file of [
+      ...collectJsonFiles(EN_LINTER),
+      ...collectJsonFiles(ZH_LINTER),
+    ]) {
       assert.doesNotThrow(() => JSON.parse(fs.readFileSync(file, "utf8")), file);
     }
   });
@@ -26,29 +32,70 @@ describe("schema assets", () => {
     const misspelledKeywords = new Set(["miximum"]);
     const findings: string[] = [];
 
-    for (const file of collectJsonFiles(path.join(process.cwd(), "assets", "linters"))) {
-      findMisspelledSchemaKeywords(readJsonFile<unknown>(file), path.relative(process.cwd(), file), misspelledKeywords, findings);
+    for (const file of [
+      ...collectJsonFiles(EN_LINTER),
+      ...collectJsonFiles(ZH_LINTER),
+    ]) {
+      findMisspelledSchemaKeywords(
+        readJsonFile<unknown>(file),
+        path.relative(process.cwd(), file),
+        misspelledKeywords,
+        findings
+      );
     }
 
     assert.deepStrictEqual(findings, []);
   });
 
-  it("ships every local schema referenced by package.json jsonValidation", () => {
+  it("has identical file sets in en/ and zh-cn/ locale directories", () => {
+    const enFiles = collectJsonFiles(EN_LINTER)
+      .map(f => path.relative(EN_LINTER, f))
+      .sort();
+    const zhFiles = collectJsonFiles(ZH_LINTER)
+      .map(f => path.relative(ZH_LINTER, f))
+      .sort();
+    assert.deepStrictEqual(enFiles, zhFiles);
+  });
+
+  it("ships every local schema referenced by package.json jsonValidation for both locales", () => {
     const packageJson = readJsonFile<PackageJson>(path.join(process.cwd(), "package.json"));
     const validations = packageJson.contributes?.jsonValidation ?? [];
-    const localUrls = validations
-      .map(validation => validation.url)
-      .filter((url): url is string => url !== undefined && url.startsWith("./"));
 
-    assert.ok(localUrls.length > 0, "package.json should contribute local JSON schemas");
+    assert.ok(validations.length > 0, "package.json should contribute jsonValidation entries");
 
-    for (const url of localUrls) {
-      assert.ok(fs.existsSync(path.join(process.cwd(), url)), url);
+    for (const validation of validations) {
+      const url = validation.url;
+      assert.ok(url !== undefined, "jsonValidation entry must have a url");
+      assert.match(String(url), /^%schema\.\w+\.url%$/,
+        `jsonValidation url should use placeholder format, got: ${url}`);
+    }
+
+    const packageNlsEn = readJsonFile<JsonObject>(path.join(process.cwd(), "package.nls.json"));
+    const packageNlsZh = readJsonFile<JsonObject>(path.join(process.cwd(), "package.nls.zh-cn.json"));
+
+    for (const validation of validations) {
+      const placeholder = validation.url!;
+      const nlsKey = placeholder.replace(/^%|%$/g, "");
+      assert.ok(Object.hasOwn(packageNlsEn, nlsKey),
+        `package.nls.json missing key: ${nlsKey}`);
+      assert.ok(Object.hasOwn(packageNlsZh, nlsKey),
+        `package.nls.zh-cn.json missing key: ${nlsKey}`);
+
+      const enUrl = String(packageNlsEn[nlsKey]);
+      const zhUrl = String(packageNlsZh[nlsKey]);
+      assert.ok(enUrl.startsWith("./assets/linters/en/"),
+        `EN schema URL should point to assets/linters/en/, got: ${enUrl}`);
+      assert.ok(zhUrl.startsWith("./assets/linters/zh-cn/"),
+        `ZH schema URL should point to assets/linters/zh-cn/, got: ${zhUrl}`);
+      assert.ok(fs.existsSync(path.join(process.cwd(), enUrl)),
+        `EN schema file missing: ${enUrl}`);
+      assert.ok(fs.existsSync(path.join(process.cwd(), zhUrl)),
+        `ZH schema file missing: ${zhUrl}`);
     }
   });
 
   it("applies pack.mcmeta language code length constraints to language keys", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "pack.mcmeta.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "pack.mcmeta.json"));
 
     const languagePropertyNames = getObjectAt(schema, ["properties", "language", "propertyNames"]);
     assert.strictEqual(languagePropertyNames.minLength, 1);
@@ -59,7 +106,7 @@ describe("schema assets", () => {
   });
 
   it("allows modern block model element rotation syntax", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "models-block.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "models-block.json"));
     const angle = getObjectAt(schema, ["definitions", "angle"]);
 
     assert.strictEqual(angle.multipleOf, undefined);
@@ -85,7 +132,7 @@ describe("schema assets", () => {
   });
 
   it("allows z-axis rotation in blockstate model entries", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "blockstates.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "blockstates.json"));
 
     for (const definition of ["model", "model+weight"]) {
       const zRotation = getObjectAt(schema, ["definitions", definition, "properties", "z"]);
@@ -94,7 +141,7 @@ describe("schema assets", () => {
   });
 
   it("covers current waypoint style distance fields", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "waypoint-style.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "waypoint-style.json"));
     const properties = getObjectAt(schema, ["properties"]);
 
     for (const distanceField of ["near_distance", "far_distance"]) {
@@ -106,7 +153,7 @@ describe("schema assets", () => {
   });
 
   it("covers current equipment layer fields and preset layer names", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "equipment.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "equipment.json"));
     const layerProperties = getObjectAt(schema, ["definitions", "layer", "properties"]);
     const usePlayerTexture = getObjectAt(layerProperties, ["use_player_texture"]);
     assert.strictEqual(usePlayerTexture.type, "boolean");
@@ -138,29 +185,31 @@ describe("schema assets", () => {
     }
   });
 
-  it("covers current PNG texture metadata enum values", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "png.mcmeta.json"));
+  it("covers current PNG texture metadata enum values in both locales", () => {
+    for (const locale of ["en", "zh-cn"]) {
+      const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", locale, "png.mcmeta.json"));
 
-    const mipmaps = getObjectAt(schema, ["properties", "texture", "properties", "mipmaps"]);
-    assert.strictEqual(mipmaps.type, "array");
-    assert.strictEqual(getObjectAt(mipmaps, ["items"]).type, "integer");
+      const mipmaps = getObjectAt(schema, ["properties", "texture", "properties", "mipmaps"]);
+      assert.strictEqual(mipmaps.type, "array");
+      assert.strictEqual(getObjectAt(mipmaps, ["items"]).type, "integer");
 
-    const darkenedCutoutMipmap = getObjectAt(schema, ["properties", "texture", "properties", "darkened_cutout_mipmap"]);
-    assert.strictEqual(darkenedCutoutMipmap.type, "boolean");
+      const darkenedCutoutMipmap = getObjectAt(schema, ["properties", "texture", "properties", "darkened_cutout_mipmap"]);
+      assert.strictEqual(darkenedCutoutMipmap.type, "boolean");
 
-    const mipmapStrategy = getObjectAt(schema, ["properties", "texture", "properties", "mipmap_strategy"]);
-    assert.deepStrictEqual(mipmapStrategy.enum, ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"]);
+      const mipmapStrategy = getObjectAt(schema, ["properties", "texture", "properties", "mipmap_strategy"]);
+      assert.deepStrictEqual(mipmapStrategy.enum, ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"]);
 
-    const villagerHat = getObjectAt(schema, ["properties", "villager", "properties", "hat"]);
-    assert.deepStrictEqual(villagerHat.enum, ["none", "partial", "full"]);
+      const villagerHat = getObjectAt(schema, ["properties", "villager", "properties", "hat"]);
+      assert.deepStrictEqual(villagerHat.enum, ["none", "partial", "full"]);
 
-    const legacyVillagerSchema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "villager.mcmeta.json"));
-    const legacyVillagerHat = getObjectAt(legacyVillagerSchema, ["properties", "villager", "properties", "hat"]);
-    assert.deepStrictEqual(legacyVillagerHat.enum, ["none", "partial", "full"]);
+      const legacyVillagerSchema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", locale, "villager.mcmeta.json"));
+      const legacyVillagerHat = getObjectAt(legacyVillagerSchema, ["properties", "villager", "properties", "hat"]);
+      assert.deepStrictEqual(legacyVillagerHat.enum, ["none", "partial", "full"]);
+    }
   });
 
   it("requires GUI scaling fields by scaling type", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "png.mcmeta.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "png.mcmeta.json"));
     const scaling = getObjectAt(schema, ["properties", "gui", "properties", "scaling"]);
     assert.strictEqual(getArrayProperty(scaling, "oneOf").length, 3);
 
@@ -177,7 +226,7 @@ describe("schema assets", () => {
   });
 
   it("covers current post effect target and input fields", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "post-effect.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "post-effect.json"));
 
     const targetProperties = getObjectAt(schema, ["definitions", "target", "properties"]);
     for (const property of ["width", "height", "persistent", "clear_color"]) {
@@ -194,18 +243,18 @@ describe("schema assets", () => {
   });
 
   it("covers current warning and compliance metadata constraints", () => {
-    const gpuWarnlist = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "gpu-warnlist.json"));
+    const gpuWarnlist = readJsonFile<JsonObject>(path.join(EN_LINTER, "gpu-warnlist.json"));
     assert.deepStrictEqual(gpuWarnlist.required, ["renderer", "version", "vendor"]);
 
     const regionalCompliances = readJsonFile<JsonObject>(
-      path.join(process.cwd(), "assets", "linters", "regional-compliancies.json")
+      path.join(EN_LINTER, "regional-compliancies.json")
     );
     const propertyNames = getObjectAt(regionalCompliances, ["propertyNames"]);
     assert.strictEqual(propertyNames.pattern, "^[A-Z]{3}$");
   });
 
   it("constrains standalone animation texture metadata", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "animation.mcmeta.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "animation.mcmeta.json"));
     const animationProperties = getObjectAt(schema, ["properties", "animation", "properties"]);
 
     const frametime = getObjectAt(animationProperties, ["frametime"]);
@@ -226,7 +275,7 @@ describe("schema assets", () => {
   });
 
   it("marks legacy item model overrides and lefthanded predicates correctly", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "models-item.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "models-item.json"));
     const overrides = getObjectAt(schema, ["properties", "overrides"]);
     assert.match(String(overrides.description), /1\.21\.4/);
     assert.match(String(overrides.deprecationMessage), /items/);
@@ -240,7 +289,7 @@ describe("schema assets", () => {
   });
 
   it("separates current item model top-level and special model types", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "items.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "items.json"));
 
     const topLevelTypes = getStringArrayProperty(getObjectAt(schema, ["definitions", "topLevelType"]), "enum");
     for (const type of [
@@ -286,7 +335,7 @@ describe("schema assets", () => {
   });
 
   it("covers current item model property groups and special fields", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "items.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "items.json"));
 
     const conditionProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "conditionProperty", "properties", "type"]), "enum");
     assert.ok(conditionProperties.includes("minecraft:keybind_down"));
@@ -330,11 +379,11 @@ describe("schema assets", () => {
     const packageJson = readJsonFile<PackageJson>(path.join(process.cwd(), "package.json"));
     const validations = packageJson.contributes?.jsonValidation ?? [];
     assert.ok(validations.some(validation =>
-      validation.url === "./assets/linters/models-block.json" &&
+      String(validation.url).includes("modelsBlock") &&
       validation.fileMatch === "**/models/**/*.json"
     ));
 
-    const atlasSchema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "atlases.json"));
+    const atlasSchema = readJsonFile<JsonObject>(path.join(EN_LINTER, "atlases.json"));
     const sourceBranches = getArrayProperty(getObjectAt(atlasSchema, ["definitions", "source"]), "oneOf");
     assert.strictEqual(sourceBranches.length, 5);
 
@@ -346,7 +395,7 @@ describe("schema assets", () => {
   });
 
   it("uses 88.0 pack defaults and constrains overlay directories", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "pack.mcmeta.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "pack.mcmeta.json"));
     const snippets = getArrayProperty(schema, "defaultSnippets");
     const snippet = assertJsonObjectValue(snippets[0], "defaultSnippets[0]");
     const body = getObjectAt(snippet, ["body", "pack"]);
@@ -358,7 +407,7 @@ describe("schema assets", () => {
   });
 
   it("splits font providers by type with modern ranges", () => {
-    const schema = readJsonFile<JsonObject>(path.join(process.cwd(), "assets", "linters", "font.json"));
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "font.json"));
     const providerBranches = getArrayProperty(getObjectAt(schema, ["definitions", "provider"]), "oneOf");
     assert.strictEqual(providerBranches.length, 6);
 
@@ -375,6 +424,31 @@ describe("schema assets", () => {
     const left = getObjectAt(schema, ["definitions", "providerBase", "properties", "size_overrides", "items", "properties", "left"]);
     assert.strictEqual(left.minimum, 0);
     assert.strictEqual(left.maximum, 32);
+  });
+
+  it("zh-cn schemas have matching structure with en schemas", () => {
+    const enFiles = collectJsonFiles(EN_LINTER);
+    for (const enFile of enFiles) {
+      const relPath = path.relative(EN_LINTER, enFile);
+      const zhFile = path.join(ZH_LINTER, relPath);
+      assert.ok(fs.existsSync(zhFile), `missing ZH file: ${relPath}`);
+
+      const enSchema = readJsonFile<JsonObject>(enFile);
+      const zhSchema = readJsonFile<JsonObject>(zhFile);
+
+      assert.strictEqual(typeof enSchema.type, typeof zhSchema.type);
+      assert.strictEqual(enSchema.type, zhSchema.type);
+      assert.deepStrictEqual(enSchema.required, zhSchema.required);
+      assert.strictEqual(
+        Boolean(enSchema.additionalProperties),
+        Boolean(zhSchema.additionalProperties)
+      );
+
+      assert.ok(enSchema.title, `EN schema missing title: ${relPath}`);
+      assert.ok(zhSchema.title, `ZH schema missing title: ${relPath}`);
+      assert.ok(enSchema.description, `EN schema missing description: ${relPath}`);
+      assert.ok(zhSchema.description, `ZH schema missing description: ${relPath}`);
+    }
   });
 });
 

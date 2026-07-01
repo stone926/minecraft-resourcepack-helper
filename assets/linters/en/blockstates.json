@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft block state definition",
+  "description": "Defines the mapping between block states and models.",
+  "oneOf": [
+  {
+    "properties": {
+      "variants": {
+        "type": "object",
+        "title": "Variants",
+        "description": "Maps block state combinations to models.",
+        "additionalProperties": {
+          "$ref": "#/definitions/modelprops"
+        }
+      }
+    },
+    "required": ["variants"]
+  },
+  {
+    "properties": {
+      "multipart": {
+        "title": "Multipart",
+        "type": "array",
+        "description": "An alternative to variants, combines models based on block state properties.",
+        "items": {
+          "type": "object",
+          "required": ["apply"],
+          "additionalProperties": false,
+          "properties": {
+            "when": {
+              "description": "Lists the conditions that must be met for the model to be used. When not set, the model is always used.",
+              "oneOf": [
+                {
+                  "$ref": "#/definitions/condition"
+                },
+                {
+                  "type": "array",
+                  "description": "Array of conditions treated as OR: the model is applied when any condition matches.",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/definitions/condition"
+                  }
+                }
+              ]
+            },
+            "apply": {
+              "description": "Specifies the model to use and its properties. Can be a single model or a list of models. When a list is used, the game randomly selects one model from the list.",
+              "$ref": "#/definitions/modelprops"
+            }
+          }
+        }
+      }
+    },
+    "required": ["multipart"]
+  }],
+  "definitions": {
+    "face": {
+      "type": "string",
+      "enum": [
+        "down",
+        "up",
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    },
+    "degree": {
+      "type": "number",
+      "enum": [0, 90, 180, 270]
+    },
+    "model": {
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "minItems": 1,
+      "properties": {
+        "model": {
+          "type": "string",
+          "title": "Model",
+          "description": "Specifies the path to the model file, as a namespace ID."
+        },
+        "x": {
+          "$ref": "#/definitions/degree",
+          "title": "X rotation",
+          "description": "Rotation of the model around the X axis, in increments of 90 degrees."
+        },
+        "y": {
+          "$ref": "#/definitions/degree",
+          "title": "Y rotation",
+          "description": "Rotation of the model around the Y axis, in increments of 90 degrees."
+        },
+        "z": {
+          "$ref": "#/definitions/degree",
+          "title": "Z rotation",
+          "description": "Rotation of the model around the Z axis, in increments of 90 degrees."
+        },
+        "uvlock": {
+          "type": "boolean",
+          "title": "UV lock",
+          "description": "Can be true or false (default). When set to true, the texture's rotation is locked, so the texture will not rotate with the block when using the x, y, and z tags above."
+        }
+      }
+    },
+    "model+weight": {
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "minItems": 1,
+      "properties": {
+        "model": {
+          "type": "string",
+          "title": "Model",
+          "description": "Specifies the path to the model file, as a namespace ID."
+        },
+        "x": {
+          "$ref": "#/definitions/degree",
+          "title": "X rotation",
+          "description": "Rotation of the model around the X axis, in increments of 90 degrees."
+        },
+        "y": {
+          "$ref": "#/definitions/degree",
+          "title": "Y rotation",
+          "description": "Rotation of the model around the Y axis, in increments of 90 degrees."
+        },
+        "z": {
+          "$ref": "#/definitions/degree",
+          "title": "Z rotation",
+          "description": "Rotation of the model around the Z axis, in increments of 90 degrees."
+        },
+        "uvlock": {
+          "type": "boolean",
+          "title": "UV lock",
+          "description": "Can be true or false (default). When set to true, the texture's rotation is locked, so the texture will not rotate with the block when using the x, y, and z tags above."
+        },
+        "weight": {
+          "type": "integer",
+          "default": 1,
+          "title": "Weight",
+          "description": "Sets the probability of this model being selected. Defaults to 1 (100%). When multiple models are used for the same variant, each model's selection probability is its weight divided by the sum of all model weights."
+        }
+      }
+    },
+    "modelprops": {
+      "oneOf": [
+      {
+        "$ref": "#/definitions/model",
+        "description": "Key is a comma-separated list of block state values (e.g. facing=east,half=lower)."
+      },
+      {
+        "type": "array",
+        "description": "Key is a comma-separated list of block state values (e.g. facing=east,half=lower). Different tags specify different models; the game randomly selects one model from the list.",
+        "items": {
+          "$ref": "#/definitions/model+weight"
+        }
+      }]
+    },
+    "condition": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "OR": {
+          "description": "Matches if any of the conditions in this list return true. Cannot be combined with other individual conditions.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        "AND": {
+          "description": "Matches if all of the conditions in this list return true. Cannot be combined with other individual conditions.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/conditionValue"
+      }
+    },
+    "conditionValue": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Block state value. Multiple values can be separated with |. A ! prefix indicates negation, e.g. !true|side.",
+          "pattern": "^!?[^|]+(?:\\|!?[^|]+)*$"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  }
+}

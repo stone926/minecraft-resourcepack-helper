@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft waypoint style definition",
+  "description": "Defines distance thresholds and sprite lists for locator bar waypoints.",
+  "additionalProperties": true,
+  "required": ["sprites"],
+  "properties": {
+    "near_distance": {
+      "type": "number",
+      "title": "Near distance threshold",
+      "description": "The maximum distance at which the first sprite in sprites is used. Defaults to 128.",
+      "minimum": 0,
+      "maximum": 60000000
+    },
+    "far_distance": {
+      "type": "number",
+      "title": "Far distance threshold",
+      "description": "The minimum distance at which the last sprite in sprites is used. Defaults to 332. Value should be greater than near_distance.",
+      "minimum": 0,
+      "maximum": 60000000
+    },
+    "sprites": {
+      "type": "array",
+      "title": "Sprites",
+      "description": "Locator bar dot sprite paths. Resolves to textures/gui/sprites/hud/locator_bar_dot.",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

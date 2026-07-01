@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Villager texture metadata",
+  "description": "Contains villager and zombie villager texture rendering settings.",
+  "additionalProperties": false,
+  "required": ["villager"],
+  "properties": {
+    "villager": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Contains the texture data.",
+      "properties": {
+        "hat": {
+          "type": "string",
+          "enum": ["none", "partial", "full"],
+          "description": "How the villager hat layer is rendered. Defaults to none when no metadata is present."
+        }
+      }
+    }
+  }
+}

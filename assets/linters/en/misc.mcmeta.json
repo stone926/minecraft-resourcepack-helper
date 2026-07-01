@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Misc texture metadata",
+  "description": "Contains texture sampling metadata for various resource types such as misc textures.",
+  "additionalProperties": false,
+  "required": ["texture"],
+  "properties": {
+    "texture": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Contains the texture data.",
+      "properties": {
+        "blur": { "type": "boolean", "description": "Specifies whether the texture blurs when viewed up close. Defaults to false." },
+        "clamp": { "type": "boolean", "description": "Specifies whether the texture is stretched instead of tiled. Defaults to false." },
+        "mipmaps": { "type": "integer", "description": "Custom mipmap value for the texture." }
+      }
+    }
+  }
+}

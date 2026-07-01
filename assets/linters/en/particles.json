@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft particle definition",
+  "description": "Defines the list of textures available for a particle.",
+  "additionalProperties": true,
+  "required": ["textures"],
+  "properties": {
+    "textures": {
+      "type": "array",
+      "title": "Particle textures",
+      "description": "Texture paths randomly used by the particle. Resolves to textures/particle.",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

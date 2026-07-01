@@ -1,0 +1,577 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "title": "文本组件",
+  "description": "定义 Minecraft 原始 JSON 文本组件，包含格式、交互事件和内容类型。",
+  "$ref": "#/definitions/text_component",
+  "definitions": {
+    "text_component": {
+      "title": "文本组件",
+      "oneOf": [
+      {
+        "type": [
+          "boolean",
+          "string",
+          "number"
+        ],
+        "title": "等效于 {\"text\":\"值\"}"
+      },
+      {
+        "$ref": "#/definitions/text_object"
+      },
+      {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/text_component"
+        },
+        "title": "等效于第一个元素带 \"extra\": [后续元素]"
+      }]
+    },
+    "text_object": {
+      "type": "object",
+      "oneOf": [
+      {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "直接显示的文本"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "not": {
+          "required": [
+            "translate",
+            "with",
+            "score",
+            "selector",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "translate": {
+            "type": "string",
+            "title": "翻译标识符"
+          },
+          "with": {
+            "type": "array",
+            "title": "翻译参数",
+            "description": "替换翻译文本中 %s 和 %{x}$s 的参数列表。这些参数会继承基础组件的样式，如文本颜色和斜体",
+            "items": {
+              "$ref": "#/definitions/text_component"
+            }
+          }
+        },
+        "required": [
+          "translate"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "score",
+            "selector",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "score": {
+            "title": "计分项文本",
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "title": "计分项持有者",
+                "description": "用于获取分数的实体选择器"
+              },
+              "objective": {
+                "type": "string",
+                "title": "记分板对象名称"
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "string",
+                  "boolean"
+                ],
+                "title": "未找到分数时的默认值",
+                "description": "需要时会转换为字符串"
+              }
+            },
+            "required": [
+              "name",
+              "objective"
+            ]
+          }
+        },
+        "required": [
+          "score"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "translate",
+            "with",
+            "selector",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "selector": {
+            "type": "string",
+            "title": "实体选择器",
+            "description": "显示实体名称的选择器。多个实体会以逗号分隔，最后一个用\"和\"连接"
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "translate",
+            "with",
+            "score",
+            "keybind",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "keybind": {
+            "type": "string",
+            "title": "按键绑定",
+            "pattern": "^key\\.",
+            "description": "要显示的按键绑定名称，必须以 key. 开头"
+          }
+        },
+        "required": [
+          "keybind"
+        ],
+        "not": {
+          "required": [
+            "text",
+            "translate",
+            "with",
+            "score",
+            "selector",
+            "nbt",
+            "interpret"
+          ]
+        }
+      },
+      {
+        "properties": {
+          "nbt": {
+            "type": "string",
+            "title": "NBT 路径"
+          },
+          "interpret": {
+            "type": "boolean",
+            "title": "是否将 NBT 内容解析为文本组件"
+          }
+        },
+        "required": [
+          "nbt"
+        ],
+        "oneOf": [
+        {
+          "properties": {
+            "block": {
+              "type": "string",
+              "title": "方块坐标",
+              "description": "使用与 /setblock 相同格式的方块坐标"
+            }
+          },
+          "required": [
+            "block"
+          ],
+          "not": {
+            "required": [
+              "entity",
+              "storage"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "entity": {
+              "type": "string",
+              "title": "目标实体选择器"
+            }
+          },
+          "required": [
+            "entity"
+          ],
+          "not": {
+            "required": [
+              "block",
+              "storage"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "storage": {
+              "type": "string",
+              "title": "存储命名空间ID"
+            }
+          },
+          "required": [
+            "storage"
+          ],
+          "not": {
+            "required": [
+              "block",
+              "entity"
+            ]
+          }
+        }],
+        "not": {
+          "required": [
+            "score",
+            "selector",
+            "text",
+            "translate",
+            "with"
+          ]
+        }
+      }],
+      "additionalProperties": false,
+      "properties": {
+        "text": {},
+        "translate": {},
+        "with": {},
+        "score": {},
+        "selector": {},
+        "keybind": {},
+        "nbt": {},
+        "entity": {},
+        "storage": {},
+        "block": {},
+        "interpret": {},
+        "type": {
+          "type": "string",
+          "title": "类型",
+          "description": "文本组件的内容类型",
+          "enum": ["text", "translatable", "score", "selector", "keybind", "nbt"]
+        },
+        "font": {
+          "type": "string",
+          "title": "字体",
+          "description": "文本组件使用的字体资源路径，例如 minecraft:default"
+        },
+        "color": {
+          "title": "文本颜色",
+          "description": "文本的显示颜色",
+          "oneOf": [
+          {
+            "enum": [
+              "black",
+              "dark_blue",
+              "dark_green",
+              "dark_aqua",
+              "dark_red",
+              "dark_purple",
+              "gold",
+              "gray",
+              "dark_gray",
+              "blue",
+              "green",
+              "aqua",
+              "red",
+              "light_purple",
+              "yellow",
+              "white"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "#[0-9a-fA-F]{1,6}",
+            "description": "十六进制颜色值，格式为 #RRGGBB"
+          }]
+        },
+        "shadow_color": {
+          "title": "阴影颜色",
+          "description": "文本阴影的颜色，格式为十进制 ARGB 整数",
+          "type": "integer"
+        },
+        "bold": {
+          "title": "粗体",
+          "description": "文本是否以粗体显示",
+          "type": "boolean"
+        },
+        "italic": {
+          "title": "斜体",
+          "description": "文本是否以斜体显示",
+          "type": "boolean"
+        },
+        "underlined": {
+          "title": "下划线",
+          "description": "文本是否带有下划线",
+          "type": "boolean"
+        },
+        "strikethrough": {
+          "title": "删除线",
+          "description": "文本是否带有删除线",
+          "type": "boolean"
+        },
+        "obfuscated": {
+          "title": "乱码",
+          "description": "文本是否以乱码字符显示，字符会以相同宽度不断循环变化",
+          "type": "boolean"
+        },
+        "insertion": {
+          "title": "插入文本",
+          "description": "当玩家按住 Shift 点击文本时，插入到聊天输入框中的文本",
+          "type": "string"
+        },
+        "click_event": {
+          "type": "object",
+          "title": "点击事件",
+          "description": "左键点击此文本时执行的操作",
+          "additionalProperties": false,
+          "properties": {
+            "action": {},
+            "value": {}
+          },
+          "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "open_url"
+                ],
+                "description": "打开 value 中的网页链接"
+              },
+              "value": {
+                "type": "string",
+                "title": "网页 URL"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "run_command"
+                ],
+                "description": "运行 value 中的命令"
+              },
+              "value": {
+                "type": "string",
+                "title": "要运行的命令"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "suggest_command"
+                ],
+                "description": "将 value 中的内容填入玩家的聊天输入框"
+              },
+              "value": {
+                "type": "string",
+                "title": "建议的命令"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "change_page"
+                ],
+                "description": "切换书页到指定页"
+              },
+              "value": {
+                "type": "string",
+                "title": "页码"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "open_file"
+                ],
+                "description": "打开 value 中的文件路径"
+              },
+              "value": {
+                "type": "string",
+                "title": "文件路径"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "copy_to_clipboard"
+                ],
+                "description": "将 value 复制到剪贴板"
+              },
+              "value": {
+                "type": "string",
+                "title": "要复制的内容"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_dialog"
+                ],
+                "description": "显示对话框"
+              },
+              "value": {
+                "$ref": "#/definitions/text_component",
+                "title": "对话框内容"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "custom"
+                ],
+                "description": "自定义点击事件"
+              },
+              "value": {
+                "type": "string",
+                "title": "自定义事件值"
+              }
+            }
+          }],
+          "required": [
+            "action",
+            "value"
+          ]
+        },
+        "hover_event": {
+          "type": "object",
+          "title": "悬停事件",
+          "description": "鼠标悬停在此文本上时显示的内容",
+          "additionalProperties": false,
+          "properties": {
+            "action": {},
+            "contents": {},
+            "value": {}
+          },
+          "oneOf": [
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_text"
+                ],
+                "description": "显示文本组件"
+              },
+              "contents": {
+                "$ref": "#/definitions/text_component"
+              },
+              "value": {
+                "$ref": "#/definitions/text_component"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_entity"
+                ],
+                "description": "显示实体信息"
+              },
+              "contents": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "title": "实体 UUID"
+                  },
+                  "name": {
+                    "$ref": "#/definitions/text_component",
+                    "title": "实体名称"
+                  },
+                  "type": {
+                    "type": "string",
+                    "title": "实体类型",
+                    "description": "实体类型的命名空间ID，例如 minecraft:creeper"
+                  }
+                }
+              },
+              "value": {
+                "type": "string",
+                "title": "SNBT 实体数据"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
+                  "show_item"
+                ],
+                "description": "显示物品信息"
+              },
+              "contents": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "title": "物品命名空间ID"
+                  },
+                  "count": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 64,
+                    "title": "物品数量"
+                  },
+                  "tag": {
+                    "type": "string",
+                    "title": "物品 NBT 数据"
+                  }
+                }
+              },
+              "value": {
+                "type": "string",
+                "title": "SNBT 物品数据"
+              }
+            }
+          }],
+          "required": [
+            "action"
+          ]
+        },
+        "extra": {
+          "type": "array",
+          "title": "附加文本",
+          "description": "附加的文本组件列表。这些组件会继承基础组件的样式，如文本颜色和斜体",
+          "items": {
+            "$ref": "#/definitions/text_component"
+          }
+        }
+      }
+    }
+  }
+}

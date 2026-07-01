@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Resource pack metadata",
+  "description": "Metadata for a Minecraft resource pack.",
+  "additionalProperties": true,
+  "required": ["pack"],
+  "defaultSnippets": [
+    {
+      "label": "Quick generate pack.mcmeta",
+      "prefix": "pack",
+      "body": {
+        "pack": {
+          "description": "${1:${TM_DIRECTORY/(?:.*[\\\\/])?([^\\\\/]*)/$1/}}: $2",
+          "min_format": [88, 0],
+          "max_format": [88, 0]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "pack": {
+      "type": "object",
+      "title": "Pack info",
+      "description": "Basic resource pack information. Modern versions should use min_format/max_format; pack_format is kept for backward compatibility.",
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "$ref": "./shared/text_component.json#",
+          "title": "Description",
+          "description": "The description text or text component shown in the resource pack list."
+        },
+        "min_format": {
+          "$ref": "#/definitions/formatVersion",
+          "title": "Minimum pack format",
+          "description": "The minimum pack format version this pack is compatible with. Minor version can be written as [major, minor], e.g. [88, 0]."
+        },
+        "max_format": {
+          "$ref": "#/definitions/formatVersion",
+          "title": "Maximum pack format",
+          "description": "The maximum pack format version this pack is compatible with. Minor version can be written as [major, minor], e.g. [88, 0]."
+        },
+        "pack_format": {
+          "$ref": "#/definitions/legacyFormatVersion",
+          "title": "Legacy pack format",
+          "description": "Legacy pack format field, retained for compatibility in modern versions."
+        },
+        "supported_formats": {
+          "title": "Legacy supported formats",
+          "description": "Legacy pack format range field, retained for compatibility in modern versions.",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/legacyFormatVersion"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/definitions/legacyFormatVersion"
+              }
+            },
+            {
+              "$ref": "#/definitions/formatRangeObject"
+            }
+          ]
+        },
+        "features": {
+          "type": "object",
+          "title": "Experimental features",
+          "description": "Declares the experimental feature flags enabled by this pack.",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "array",
+              "title": "Enabled features",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["description", "min_format", "max_format"]
+        },
+        {
+          "required": ["description", "pack_format"]
+        }
+      ]
+    },
+    "filter": {
+      "type": "object",
+      "title": "Filter lower-priority resources",
+      "description": "Specifies resources to block from lower-priority resource packs.",
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "format": "regex",
+                "description": "The namespace to match; matches all namespaces when omitted."
+              },
+              "path": {
+                "type": "string",
+                "format": "regex",
+                "description": "The resource path regex to match; matches all paths when omitted."
+              }
+            }
+          }
+        }
+      }
+    },
+    "overlays": {
+      "type": "object",
+      "title": "Overlay packs",
+      "description": "Defines overlay resource pack directories that apply at different format versions.",
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "type": "array",
+          "description": "List of overlay directories. The game reads them from bottom to top.",
+          "items": {
+            "$ref": "#/definitions/overlayEntry"
+          }
+        }
+      }
+    },
+    "language": {
+      "type": "object",
+      "title": "Additional languages",
+      "description": "Adds additional languages to the language menu.",
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 16,
+        "description": "Language code must be 1 to 16 characters long."
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/language"
+      }
+    }
+  },
+  "definitions": {
+    "legacyFormatVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "formatVersion": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/legacyFormatVersion"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ]
+    },
+    "formatRangeObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_inclusive", "max_inclusive"],
+      "properties": {
+        "min_inclusive": {
+          "$ref": "#/definitions/legacyFormatVersion",
+          "description": "The minimum major format version included in the range."
+        },
+        "max_inclusive": {
+          "$ref": "#/definitions/legacyFormatVersion",
+          "description": "The maximum major format version included in the range."
+        }
+      }
+    },
+    "overlayEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory"],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]+$",
+          "description": "Overlay directory relative to the resource pack root. Can only contain a-z, 0-9, underscores, and hyphens."
+        },
+        "min_format": {
+          "$ref": "#/definitions/formatVersion",
+          "description": "The minimum format version this overlay is active for."
+        },
+        "max_format": {
+          "$ref": "#/definitions/formatVersion",
+          "description": "The maximum format version this overlay is active for."
+        },
+        "formats": {
+          "description": "Legacy overlay format range field, retained for compatibility in modern versions.",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/legacyFormatVersion"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/definitions/legacyFormatVersion"
+              }
+            },
+            {
+              "$ref": "#/definitions/formatRangeObject"
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["min_format", "max_format"]
+        },
+        {
+          "required": ["formats"]
+        }
+      ]
+    },
+    "language": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "region"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The full name of the language."
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The country or region name."
+        },
+        "bidirectional": {
+          "type": "boolean",
+          "description": "When true, the language is displayed right-to-left.",
+          "default": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "title": "Minecraft language file",
+  "description": "Defines localization key to display text mappings, or language key renaming/removal rules.",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/translations"
+    },
+    {
+      "$ref": "#/definitions/deprecated"
+    }
+  ],
+  "definitions": {
+    "translations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "description": "The text for this localization key."
+      }
+    },
+    "deprecated": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "removed": {
+          "type": "array",
+          "title": "Removed keys",
+          "items": {
+            "type": "string"
+          }
+        },
+        "renamed": {
+          "type": "object",
+          "title": "Renamed keys",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

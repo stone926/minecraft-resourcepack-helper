@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft regional compliancies",
+  "description": "Defines timed compliance notices keyed by ISO 3166-1 alpha-3 three-letter region codes.",
+  "propertyNames": {
+    "pattern": "^[A-Z]{3}$",
+    "description": "ISO 3166-1 alpha-3 three-letter uppercase region code."
+  },
+  "additionalProperties": {
+    "type": "array",
+    "items": {
+      "$ref": "#/definitions/compliance"
+    }
+  },
+  "definitions": {
+    "compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["period", "title", "message"],
+      "properties": {
+        "delay": {
+          "type": "integer",
+          "title": "Initial delay",
+          "minimum": 0,
+          "default": 0
+        },
+        "period": {
+          "type": "integer",
+          "title": "Period",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "title": "Title localization key"
+        },
+        "message": {
+          "type": "string",
+          "title": "Message localization key"
+        }
+      }
+    }
+  }
+}

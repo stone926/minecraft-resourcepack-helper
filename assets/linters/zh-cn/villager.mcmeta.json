@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft 村民纹理元数据",
+  "description": "定义村民纹理的帽子渲染方式。",
+  "additionalProperties": false,
+  "required": ["villager"],
+  "properties": {
+    "villager": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "包含了纹理的数据",
+      "properties": {
+        "hat": {
+          "type": "string",
+          "enum": ["none", "partial", "full"],
+          "description": "村民纹理帽子的渲染方式。不存在元数据时默认为 none。"
+        }
+      }
+    }
+  }
+}

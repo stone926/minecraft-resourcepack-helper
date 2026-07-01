@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft PNG 纹理元数据",
+  "description": "用于 assets/<namespace>/textures 下 PNG 纹理的元数据。",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "anyOf": [
+    { "required": ["animation"] },
+    { "required": ["texture"] },
+    { "required": ["gui"] },
+    { "required": ["villager"] }
+  ],
+  "properties": {
+    "animation": {
+      "type": "object",
+      "title": "animation 动态纹理",
+      "description": "动态纹理元数据。",
+      "additionalProperties": false,
+      "properties": {
+        "interpolate": {
+          "type": "boolean",
+          "description": "游戏是否应在帧之间插值过渡。"
+        },
+        "frametime": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "每帧默认显示时间，单位为游戏刻。"
+        },
+        "frames": {
+          "type": "array",
+          "description": "按播放顺序排列的帧列表。",
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "description": "帧索引，从 0 开始。"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["index"],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "帧索引，从 0 开始。"
+                  },
+                  "time": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "此帧的显示时间，单位为游戏刻。"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "帧宽度比率。"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "帧高度比率。"
+        }
+      }
+    },
+    "texture": {
+      "type": "object",
+      "title": "texture 纹理采样",
+      "description": "纹理采样元数据。",
+      "additionalProperties": false,
+      "properties": {
+        "blur": {
+          "type": "boolean",
+          "description": "近距观察时是否模糊纹理。"
+        },
+        "clamp": {
+          "type": "boolean",
+          "description": "是否裁剪纹理坐标而非平铺。"
+        },
+        "mipmaps": {
+          "type": "array",
+          "description": "自定义 mipmap 级别。",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "mipmap_strategy": {
+          "type": "string",
+          "enum": ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"],
+          "description": "mipmap 生成策略，默认为 auto。"
+        },
+        "darkened_cutout_mipmap": {
+          "type": "boolean",
+          "description": "cutout mipmap 是否变暗。"
+        },
+        "alpha_cutoff_bias": {
+          "type": "number",
+          "description": "mipmap 生成时应用于 alpha 截断的偏移值。"
+        }
+      }
+    },
+    "gui": {
+      "type": "object",
+      "title": "gui GUI 精灵图",
+      "description": "GUI 精灵图元数据。",
+      "additionalProperties": false,
+      "properties": {
+        "scaling": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/stretchScaling"
+            },
+            {
+              "$ref": "#/definitions/tileScaling"
+            },
+            {
+              "$ref": "#/definitions/nineSliceScaling"
+            }
+          ],
+          "title": "scaling 缩放",
+          "description": "GUI 精灵图缩放配置。"
+        }
+      }
+    },
+    "villager": {
+      "type": "object",
+      "title": "villager 村民纹理",
+      "description": "村民和僵尸村民纹理元数据。",
+      "additionalProperties": false,
+      "properties": {
+        "hat": {
+          "type": "string",
+          "enum": ["none", "partial", "full"],
+          "description": "村民帽子层的渲染方式。默认为 none。"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "scalingBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["nine_slice", "stretch", "tile"],
+          "description": "此 GUI 精灵图的缩放策略。"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "源精灵图宽度。"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "源精灵图高度。"
+        },
+        "border": {
+          "description": "九宫格边框大小。",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "left": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "top": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "right": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "bottom": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "stretch_inner": {
+          "type": "boolean",
+          "description": "九宫格精灵图中心区域是否拉伸。"
+        }
+      }
+    },
+    "stretchScaling": {
+      "allOf": [
+        { "$ref": "#/definitions/scalingBase" },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stretch"
+            }
+          }
+        }
+      ]
+    },
+    "tileScaling": {
+      "allOf": [
+        { "$ref": "#/definitions/scalingBase" },
+        {
+          "type": "object",
+          "required": ["width", "height"],
+          "properties": {
+            "type": {
+              "const": "tile"
+            }
+          }
+        }
+      ]
+    },
+    "nineSliceScaling": {
+      "allOf": [
+        { "$ref": "#/definitions/scalingBase" },
+        {
+          "type": "object",
+          "required": ["width", "height", "border"],
+          "properties": {
+            "type": {
+              "const": "nine_slice"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

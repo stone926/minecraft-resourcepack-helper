@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "title": "Minecraft GPU warnlist",
+  "description": "Defines lists of renderer/version/vendor regex patterns that trigger a graphics environment warning.",
+  "additionalProperties": false,
+  "required": ["renderer", "version", "vendor"],
+  "properties": {
+    "renderer": {
+      "$ref": "#/definitions/regexList",
+      "title": "Renderer match"
+    },
+    "version": {
+      "$ref": "#/definitions/regexList",
+      "title": "Version match"
+    },
+    "vendor": {
+      "$ref": "#/definitions/regexList",
+      "title": "Vendor match"
+    }
+  },
+  "definitions": {
+    "regexList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Java regular expression."
+      }
+    }
+  }
+}
