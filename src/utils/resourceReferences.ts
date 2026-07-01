@@ -1,4 +1,3 @@
-import type { Position } from "vscode";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "./jsonAst";
 import { AstLocation, isInArea } from "./locationChecker";
@@ -28,7 +27,12 @@ export interface ResourceReferenceDocument {
   getText(): string;
 }
 
-type ResourceReferenceDocumentKind =
+export interface ResourceReferencePosition {
+  line: number;
+  character: number;
+}
+
+export type ResourceReferenceDocumentKind =
   | "blockstates"
   | "modelsBlock"
   | "modelsItem"
@@ -103,7 +107,7 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
   return references;
 }
 
-export function findResourceReferenceAtPosition(document: ResourceReferenceDocument, position: Position): ResourceReference | null {
+export function findResourceReferenceAtPosition(document: ResourceReferenceDocument, position: ResourceReferencePosition): ResourceReference | null {
   const line = position.line + 1;
   const character = position.character + 1;
 
@@ -167,6 +171,10 @@ function getReferencesForDocumentKind(ast: JsonDocumentNode, documentKind: Resou
   }
 
   return getSoundReferences(ast);
+}
+
+export function getResourceReferencesForAst(ast: JsonDocumentNode, documentKind: ResourceReferenceDocumentKind): ResourceReference[] {
+  return getReferencesForDocumentKind(ast, documentKind);
 }
 
 function getBlockstateReferences(ast: JsonDocumentNode): ResourceReference[] {
@@ -720,7 +728,7 @@ function findLineIndex(lineStarts: number[], offset: number): number {
   return 0;
 }
 
-function getResourceReferenceDocumentKind(fileName: string): ResourceReferenceDocumentKind | null {
+export function getResourceReferenceDocumentKind(fileName: string): ResourceReferenceDocumentKind | null {
   for (const { kind, pattern } of resourceReferenceDocumentPatterns) {
     if (pattern.test(fileName)) {
       return kind;

@@ -1,6 +1,10 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getResourceReferences, ResourceReferenceDocument } from "../../utils/resourceReferences";
+import {
+  findResourceReferenceAtPosition,
+  getResourceReferences,
+  ResourceReferenceDocument
+} from "../../utils/resourceReferences";
 
 describe("resource references", () => {
   it("skips unrelated JSON documents without reading their contents", () => {
@@ -119,6 +123,35 @@ describe("resource references", () => {
         ["texture", "#all", "textures", "models/block", "png"]
       ]
     );
+  });
+
+  it("keeps empty model texture references findable for completion", () => {
+    const text = [
+      "{",
+      "  \"parent\": \"minecraft:block/cube_all\",",
+      "  \"textures\": {",
+      "    \"side\": \"\"",
+      "  }",
+      "}"
+    ].join("\n");
+    const document = createTextDocument(
+      path.join("pack", "assets", "minecraft", "models", "block", "empty_texture.json"),
+      text,
+      "json"
+    );
+
+    const references = getResourceReferences(document);
+    const referenceAtBlankValue = findResourceReferenceAtPosition(document, { line: 3, character: 13 });
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:block/cube_all", "models", "models/block", "json"],
+        ["texture", "", "textures", "models/block", "png"]
+      ]
+    );
+    assert.strictEqual(referenceAtBlankValue?.kind, "texture");
+    assert.strictEqual(referenceAtBlankValue.value, "");
   });
 
   it("extracts references from models outside block and item folders", () => {
@@ -614,9 +647,9 @@ function createJsonDocument(fileName: string, value: unknown): ResourceReference
   };
 }
 
-function createTextDocument(fileName: string, text: string): ResourceReferenceDocument {
+function createTextDocument(fileName: string, text: string, languageId = "plaintext"): ResourceReferenceDocument {
   return {
-    languageId: "plaintext",
+    languageId,
     fileName,
     getText: () => text
   };

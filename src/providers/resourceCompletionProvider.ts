@@ -2,38 +2,46 @@ import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import {
+  inferIncompleteResourceCompletionContext,
+  ResourceCompletionTextRange
+} from "../utils/resourceCompletionContext";
+import {
+  buildResourceCompletionValue,
+  getAssetsRootCandidates,
+  parsePartialResourcePath,
+  PartialResourcePath,
+  shouldCompleteNamespaces,
+  splitResourcePath
+} from "../utils/resourceCompletionPaths";
 import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
 import { getDocumentResourceRootCandidates } from "../utils/resourceLocation";
 import { rangeInsideString } from "../utils/resourceRange";
 
-interface PartialResourcePath {
-  namespace: string;
-  explicitNamespace: boolean;
-  directory: string;
-  prefix: string;
+interface ResourceCompletionContext {
+  reference: ResourceReference;
+  replacementRange: vscode.Range;
+  includeQuotes: boolean;
 }
+
+const namespacePattern = /^[a-z0-9_.-]+$/;
 
 const resourceCompletionProvider: vscode.CompletionItemProvider = {
   async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
-    const reference = findResourceReferenceAtPosition(document, position);
-    if (!reference || reference.value.startsWith("#")) {
+    const context = getResourceCompletionContext(document, position);
+    if (!context || context.reference.value.startsWith("#")) {
       return null;
     }
 
-    const replacementRange = rangeInsideString(reference.valueNode);
-    if (!replacementRange) {
-      return null;
-    }
-
-    const partialPath = parsePartialResourcePath(reference.value);
+    const partialPath = parsePartialResourcePath(context.reference.value);
     const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
     const resourcePackRoots = vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? [];
     const roots = getDocumentResourceRootCandidates(
       document.fileName,
-      reference.source,
+      context.reference.source,
       defaultAssetsPath,
       partialPath.namespace,
-      reference.target,
+      context.reference.target,
       {
         pathExists: fileName => workspaceResourceCache.getPathExists(fileName),
         getPackRoot: fileName => workspaceResourceCache.getPackRoot(fileName),
@@ -41,7 +49,7 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
         resourcePackRoots
       }
     );
-    const items = await collectCompletionItems(roots, partialPath, reference, replacementRange);
+    const items = await collectCompletionItems(roots, partialPath, context);
 
     return items.length > 0 ? items : null;
   }
@@ -49,13 +57,40 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
 
 export default resourceCompletionProvider;
 
+function getResourceCompletionContext(document: vscode.TextDocument, position: vscode.Position): ResourceCompletionContext | null {
+  const reference = findResourceReferenceAtPosition(document, position);
+  if (reference) {
+    const replacementRange = rangeInsideString(reference.valueNode);
+    return replacementRange ? { reference, replacementRange, includeQuotes: false } : null;
+  }
+
+  const inferredContext = inferIncompleteResourceCompletionContext(document, position);
+  if (!inferredContext) {
+    return null;
+  }
+
+  return {
+    reference: inferredContext.reference,
+    replacementRange: rangeFromTextRange(inferredContext.replacementRange),
+    includeQuotes: inferredContext.includeQuotes
+  };
+}
+
+function rangeFromTextRange(range: ResourceCompletionTextRange): vscode.Range {
+  return new vscode.Range(
+    new vscode.Position(range.start.line, range.start.character),
+    new vscode.Position(range.end.line, range.end.character)
+  );
+}
+
 async function collectCompletionItems(
   roots: string[],
   partialPath: PartialResourcePath,
-  reference: ResourceReference,
-  replacementRange: vscode.Range
+  context: ResourceCompletionContext
 ): Promise<vscode.CompletionItem[]> {
   const itemsByInsertText = new Map<string, vscode.CompletionItem>();
+
+  await collectNamespaceCompletionItems(itemsByInsertText, roots, partialPath, context);
 
   for (const root of roots) {
     const directoryPath = path.join(root, ...splitResourcePath(partialPath.directory));
@@ -65,16 +100,16 @@ async function collectCompletionItems(
     }
 
     for (const entry of entries) {
-      if (!isCompletableEntry(entry, reference)) {
+      if (!isCompletableEntry(entry, context.reference)) {
         continue;
       }
 
-      const label = entry.isDirectory() ? entry.name : stripExtension(entry.name, reference.extension);
+      const label = entry.isDirectory() ? entry.name : stripExtension(entry.name, context.reference.extension);
       if (!label.startsWith(partialPath.prefix)) {
         continue;
       }
 
-      const insertText = buildInsertText(partialPath, label, entry.isDirectory());
+      const insertText = buildResourceCompletionValue(partialPath, label, entry.isDirectory());
       if (itemsByInsertText.has(insertText)) {
         continue;
       }
@@ -83,8 +118,8 @@ async function collectCompletionItems(
         label,
         entry.isDirectory() ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File
       );
-      item.range = replacementRange;
-      item.insertText = insertText;
+      item.range = context.replacementRange;
+      item.insertText = buildCompletionInsertText(insertText, context.includeQuotes, entry.isDirectory());
       if (entry.isDirectory()) {
         item.command = { command: "editor.action.triggerSuggest", title: vscode.l10n.t("Suggest") };
       }
@@ -95,38 +130,52 @@ async function collectCompletionItems(
   return [...itemsByInsertText.values()].sort((left, right) => left.label.toString().localeCompare(right.label.toString()));
 }
 
-function parsePartialResourcePath(value: string): PartialResourcePath {
-  const namespaceSeparator = value.indexOf(":");
-  const explicitNamespace = namespaceSeparator >= 0;
-  const namespace = explicitNamespace ? value.slice(0, namespaceSeparator) || "minecraft" : "minecraft";
-  const resourcePath = explicitNamespace ? value.slice(namespaceSeparator + 1) : value;
-  const slashIndex = Math.max(resourcePath.lastIndexOf("/"), resourcePath.lastIndexOf("\\"));
-
-  if (slashIndex < 0) {
-    return {
-      namespace,
-      explicitNamespace,
-      directory: "",
-      prefix: resourcePath
-    };
+async function collectNamespaceCompletionItems(
+  itemsByInsertText: Map<string, vscode.CompletionItem>,
+  roots: string[],
+  partialPath: PartialResourcePath,
+  context: ResourceCompletionContext
+): Promise<void> {
+  if (!shouldCompleteNamespaces(partialPath)) {
+    return;
   }
 
-  return {
-    namespace,
-    explicitNamespace,
-    directory: resourcePath.slice(0, slashIndex),
-    prefix: resourcePath.slice(slashIndex + 1)
-  };
+  for (const assetsRoot of getAssetsRootCandidates(roots, partialPath.namespace, context.reference.target)) {
+    const entries = await workspaceResourceCache.getDirectoryEntries(assetsRoot);
+    if (!entries) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !namespacePattern.test(entry.name)) {
+        continue;
+      }
+
+      const label = `${entry.name}:`;
+      if (!label.startsWith(partialPath.prefix) || itemsByInsertText.has(label)) {
+        continue;
+      }
+
+      const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Module);
+      item.range = context.replacementRange;
+      item.insertText = buildCompletionInsertText(label, context.includeQuotes, true);
+      item.command = { command: "editor.action.triggerSuggest", title: vscode.l10n.t("Suggest") };
+      itemsByInsertText.set(label, item);
+    }
+  }
 }
 
-function buildInsertText(partialPath: PartialResourcePath, label: string, isDirectory: boolean): string {
-  const namespacePrefix = partialPath.explicitNamespace || partialPath.namespace !== "minecraft" ? `${partialPath.namespace}:` : "";
-  const directoryPrefix = partialPath.directory.length > 0 ? `${partialPath.directory.replaceAll("\\", "/")}/` : "";
-  return `${namespacePrefix}${directoryPrefix}${label}${isDirectory ? "/" : ""}`;
+function buildCompletionInsertText(value: string, includeQuotes: boolean, keepCursorInsideQuotes: boolean): string | vscode.SnippetString {
+  if (!includeQuotes) {
+    return value;
+  }
+
+  const escapedValue = escapeSnippet(value);
+  return new vscode.SnippetString(keepCursorInsideQuotes ? `"${escapedValue}$0"` : `"${escapedValue}"$0`);
 }
 
-function splitResourcePath(value: string): string[] {
-  return value.split(/[\\/]+/).filter(Boolean);
+function escapeSnippet(value: string): string {
+  return value.replace(/[\\$}]/g, "\\$&");
 }
 
 function stripExtension(fileName: string, extension: string | null): string {
