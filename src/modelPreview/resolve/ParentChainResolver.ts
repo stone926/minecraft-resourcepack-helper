@@ -10,6 +10,7 @@ import type {
   ResolvedModel,
   ResolvedTextureSlot
 } from "../model/ModelDocument";
+import { lm } from "../../i18n/messages";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { collectModelJsonLocations } from "../model/ModelJsonLocations";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
@@ -54,12 +55,12 @@ export class ParentChainResolver {
     throwIfCancellationRequested(this.cancellationToken);
     const key = fileNameKey(fileName);
     if (visited.has(key)) {
-      this.issues.error("Parent model cycle detected", fileName);
+      this.issues.error(lm("Parent model cycle detected"), fileName);
       return [];
     }
 
     if (depth > maxParentDepth) {
-      this.issues.error(`Parent model depth exceeds ${maxParentDepth}`, fileName);
+      this.issues.error(lm("Parent model depth exceeds {0}", maxParentDepth), fileName);
       return [];
     }
 
@@ -85,7 +86,7 @@ export class ParentChainResolver {
 
     const parentFile = resolveModelFileName(parent, fileName, this.fileSystem, this.configuration);
     if (!parentFile) {
-      this.issues.warning(`Parent model not found: ${parent}`, fileName, document.data.parentRange);
+      this.issues.warning(lm("Parent model not found: {0}", parent), fileName, document.data.parentRange);
       return [node];
     }
 
@@ -113,7 +114,7 @@ export class ParentChainResolver {
     try {
       text = await this.fileSystem.readTextFile(fileName);
     } catch {
-      this.issues.error("Model JSON could not be read", fileName);
+      this.issues.error(lm("Model JSON could not be read"), fileName);
       return { fileName, text: "", data: null };
     }
 
@@ -128,7 +129,7 @@ export class ParentChainResolver {
         locations
       };
     } catch (error) {
-      this.issues.error("Model JSON could not be parsed", fileName, rangeFromJsonParseError(text, error));
+      this.issues.error(lm("Model JSON could not be parsed"), fileName, rangeFromJsonParseError(text, error));
       return { fileName, text, data: null };
     }
   }

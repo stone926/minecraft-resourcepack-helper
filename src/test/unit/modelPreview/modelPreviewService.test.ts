@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { getDefaultUv, getFaceUvs } from "../../../modelPreview/bake/DefaultUv";
-import type { PreviewFace, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";
+import type { PreviewFace, PreviewIssue, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";
 import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
 import { ModelPreviewCancellationSource } from "../../../modelPreview/service/ModelPreviewCancellation";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
@@ -84,7 +84,7 @@ describe("model preview service", () => {
       assert.strictEqual(preview.materials.length, 1);
       assert.strictEqual(preview.materials[0].transparent, true);
       assert.ok(preview.dependencies.some(dependency => dependency.kind === "textureMetadata"));
-      assert.ok(preview.issues.some(issue => issue.severity === "info" && issue.message.includes("Animated texture metadata")));
+      assert.ok(preview.issues.some(issue => issue.severity === "info" && issueMessageKey(issue).includes("Animated texture metadata")));
     } finally {
       removeTempDirectory(root);
     }
@@ -112,10 +112,10 @@ describe("model preview service", () => {
 
       assert.strictEqual(preview.meshes.length, 1);
       assert.strictEqual(preview.materials[0].fallback, "missing");
-      assert.ok(preview.issues.some(issue => issue.severity === "warning" && issue.message.includes("Parent model not found")));
-      assert.ok(preview.issues.some(issue => issue.severity === "warning" && issue.message.includes("Texture variable not found")));
-      assert.ok(preview.issues.find(issue => issue.message.includes("Parent model not found"))?.range);
-      assert.ok(preview.issues.find(issue => issue.message.includes("Texture variable not found"))?.range);
+      assert.ok(preview.issues.some(issue => issue.severity === "warning" && issueMessageKey(issue).includes("Parent model not found")));
+      assert.ok(preview.issues.some(issue => issue.severity === "warning" && issueMessageKey(issue).includes("Texture variable not found")));
+      assert.ok(preview.issues.find(issue => issueMessageKey(issue).includes("Parent model not found"))?.range);
+      assert.ok(preview.issues.find(issue => issueMessageKey(issue).includes("Texture variable not found"))?.range);
     } finally {
       removeTempDirectory(root);
     }
@@ -133,7 +133,7 @@ describe("model preview service", () => {
 
       assert.ok(invalidPreview.issues.some(issue =>
         issue.severity === "error" &&
-        issue.message.includes("could not be parsed") &&
+        issueMessageKey(issue).includes("could not be parsed") &&
         !!issue.range
       ));
 
@@ -154,7 +154,7 @@ describe("model preview service", () => {
 
       assert.ok(outOfRangePreview.issues.some(issue =>
         issue.severity === "warning" &&
-        issue.message.includes("outside Minecraft's supported") &&
+        issueMessageKey(issue).includes("outside Minecraft's supported") &&
         !!issue.range
       ));
     } finally {
@@ -187,7 +187,7 @@ describe("model preview service", () => {
 
       const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/block/a.json"));
 
-      assert.ok(preview.issues.some(issue => issue.severity === "error" && issue.message.includes("Parent model cycle")));
+      assert.ok(preview.issues.some(issue => issue.severity === "error" && issueMessageKey(issue).includes("Parent model cycle")));
     } finally {
       removeTempDirectory(root);
     }
@@ -681,6 +681,10 @@ function createTempDirectory(): string {
 
 function removeTempDirectory(root: string): void {
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+function issueMessageKey(issue: PreviewIssue): string {
+  return issue.message.message;
 }
 
 function faceFrontNormal(face: PreviewFace): PreviewVec3 {

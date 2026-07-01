@@ -1,4 +1,5 @@
 import type { PreviewDirection, PreviewVec3 } from "../ir/PreviewDocument";
+import { lm } from "../../i18n/messages";
 import type { ModelPreviewFileSystem, RawElement, RawFace, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
@@ -106,7 +107,7 @@ async function readTextureAlphaMask(
     // Fall through to the same approximation as an unsupported PNG layout.
   }
 
-  issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+  issues.info(lm("Generated item side extrusion is approximated because texture pixels could not be decoded"), textureFileName);
   return null;
 }
 

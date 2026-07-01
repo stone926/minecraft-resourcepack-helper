@@ -1,3 +1,5 @@
+import type { LocalizedMessage } from "../../i18n/messages";
+
 export type PreviewVec2 = [number, number];
 export type PreviewVec3 = [number, number, number];
 
@@ -69,9 +71,17 @@ export interface PreviewRange {
 
 export interface PreviewIssue {
   severity: "error" | "warning" | "info";
-  message: string;
+  message: LocalizedMessage;
   resourceUri?: string;
   range?: PreviewRange;
+}
+
+export interface WebviewModelPreviewDocument extends Omit<ModelPreviewDocument, "issues"> {
+  issues: WebviewPreviewIssue[];
+}
+
+export interface WebviewPreviewIssue extends Omit<PreviewIssue, "message"> {
+  message: string;
 }
 
 export function emptyBounds(): PreviewBounds {

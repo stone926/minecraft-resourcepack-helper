@@ -1,4 +1,5 @@
 import type { PreviewBounds, PreviewDirection, PreviewMesh, PreviewVec3 } from "../ir/PreviewDocument";
+import { lm } from "../../i18n/messages";
 import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { fileUriString } from "../resolve/ResourceDependencyResolver";
@@ -42,7 +43,7 @@ export class CuboidBaker {
     });
 
     if (meshes.length === 0) {
-      this.issues.error("Model has no renderable geometry", model.fileName);
+      this.issues.error(lm("Model has no renderable geometry"), model.fileName);
     }
 
     return {
@@ -64,13 +65,13 @@ export class CuboidBaker {
     };
 
     if (!from || !to) {
-      this.issues.warning("Element is missing from/to coordinates", resolvedElement.sourceModelFileName, element.range);
+      this.issues.warning(lm("Element is missing from/to coordinates"), resolvedElement.sourceModelFileName, element.range);
       return previewMesh;
     }
 
     if (hasOutOfRangeCoordinate(from) || hasOutOfRangeCoordinate(to)) {
       this.issues.warning(
-        "Element from/to coordinates are outside Minecraft's supported -16..32 range",
+        lm("Element from/to coordinates are outside Minecraft's supported -16..32 range"),
         resolvedElement.sourceModelFileName,
         element.fromRange ?? element.toRange ?? element.range
       );
@@ -92,7 +93,7 @@ export class CuboidBaker {
       }
 
       if (!face.texture) {
-        this.issues.warning(`Face ${direction} is missing texture`, resolvedElement.sourceModelFileName, face.textureRange ?? face.range);
+        this.issues.warning(lm("Face {0} is missing texture", direction), resolvedElement.sourceModelFileName, face.textureRange ?? face.range);
         continue;
       }
 
@@ -121,7 +122,7 @@ export class CuboidBaker {
     }
 
     if (element.rotation?.rescale) {
-      this.issues.info("Element rotation rescale is approximated in preview", resolvedElement.sourceModelFileName, element.rotation.rescaleRange);
+      this.issues.info(lm("Element rotation rescale is approximated in preview"), resolvedElement.sourceModelFileName, element.rotation.rescaleRange);
     }
 
     return previewMesh;

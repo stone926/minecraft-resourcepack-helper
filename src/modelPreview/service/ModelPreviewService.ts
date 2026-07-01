@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { lm } from "../../i18n/messages";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
@@ -158,7 +159,7 @@ export class ModelPreviewService {
     if (cached) {
       const alphaMask = await cached;
       if (!alphaMask) {
-        issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+        issues.info(lm("Generated item side extrusion is approximated because texture pixels could not be decoded"), textureFileName);
       }
       return alphaMask;
     }
@@ -169,7 +170,7 @@ export class ModelPreviewService {
       const alphaMask = readPngAlphaMask(bytes);
       this.cache.setTextureAlphaMask(textureFileName, version, Promise.resolve(alphaMask));
       if (!alphaMask) {
-        issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+        issues.info(lm("Generated item side extrusion is approximated because texture pixels could not be decoded"), textureFileName);
       }
       return alphaMask;
     } catch (error) {
@@ -178,7 +179,7 @@ export class ModelPreviewService {
       }
     }
 
-    issues.info("Generated item side extrusion is approximated because texture pixels could not be decoded", textureFileName);
+    issues.info(lm("Generated item side extrusion is approximated because texture pixels could not be decoded"), textureFileName);
     return null;
   }
 

@@ -1,4 +1,5 @@
 import type { PreviewMaterial, PreviewRange } from "../ir/PreviewDocument";
+import { lm } from "../../i18n/messages";
 import type {
   ModelPreviewConfiguration,
   ModelPreviewFileSystem,
@@ -69,13 +70,13 @@ export class TextureReferenceResolver {
 
     const slotName = textureReference.slice(1);
     if (visitedSlots.has(slotName)) {
-      this.issues.warning(`Texture variable cycle detected: ${textureReference}`, sourceModelFileName, referenceRange);
+      this.issues.warning(lm("Texture variable cycle detected: {0}", textureReference), sourceModelFileName, referenceRange);
       return missingMaterial(textureReference);
     }
 
     const slot = this.model.textures[slotName];
     if (!slot) {
-      this.issues.warning(`Texture variable not found: ${textureReference}`, sourceModelFileName, referenceRange);
+      this.issues.warning(lm("Texture variable not found: {0}", textureReference), sourceModelFileName, referenceRange);
       return missingMaterial(textureReference);
     }
 
@@ -95,7 +96,7 @@ export class TextureReferenceResolver {
     }
 
     if (!isTextureObject(value) || !value.sprite) {
-      this.issues.warning("Texture object is missing sprite", sourceModelFileName, valueRange);
+      this.issues.warning(lm("Texture object is missing sprite"), sourceModelFileName, valueRange);
       return missingMaterial("missing-object-sprite");
     }
 
@@ -110,7 +111,7 @@ export class TextureReferenceResolver {
   ): TextureMaterialResolution {
     const textureFile = resolveTextureFileName(textureResource, sourceModelFileName, this.fileSystem, this.configuration);
     if (!textureFile) {
-      this.issues.warning(`Texture not found: ${textureResource}`, sourceModelFileName, referenceRange);
+      this.issues.warning(lm("Texture not found: {0}", textureResource), sourceModelFileName, referenceRange);
       return missingMaterial(textureResource);
     }
 
@@ -118,7 +119,7 @@ export class TextureReferenceResolver {
     const metadataFileName = `${textureFile.fileName}.mcmeta`;
     if (this.fileSystem.fileExists(metadataFileName)) {
       dependencies.push({ fileName: metadataFileName, kind: "textureMetadata" });
-      this.issues.info("Animated texture metadata is detected; MVP previews the first loaded PNG frame", metadataFileName);
+      this.issues.info(lm("Animated texture metadata is detected; MVP previews the first loaded PNG frame"), metadataFileName);
     }
 
     const normalizedKey = fileNameKey(textureFile.fileName);
