@@ -10,6 +10,15 @@ const DETAILS_STACKED_QUERY = "(max-width: 780px)";
 const MISSING_TEXTURE_SIZE = 16;
 const MISSING_TEXTURE_MAGENTA = [248, 0, 248];
 const MISSING_TEXTURE_BLACK = [0, 0, 0];
+const l10n = Object.freeze(globalThis.__MC_RES_HELPER_L10N__ ?? {});
+
+function t(key, ...args) {
+  const message = l10n[key] ?? key;
+  return message.replace(/\{(\d+)\}/g, (match, index) => {
+    const value = args[Number(index)];
+    return value === undefined ? match : String(value);
+  });
+}
 
 class PreviewApp {
   constructor() {
@@ -37,7 +46,7 @@ class PreviewApp {
     this.addDomListener(document.getElementById("viewPreset"), "change", event => this.renderer.setViewPreset(event.target.value));
     this.addDomListener(document.getElementById("cameraMode"), "click", event => {
       const mode = this.renderer.toggleCameraMode();
-      event.currentTarget.textContent = mode === "perspective" ? "Persp" : "Ortho";
+      event.currentTarget.textContent = mode === "perspective" ? t("Persp") : t("Ortho");
     });
     this.addDomListener(document.getElementById("displayMode"), "change", event => this.renderer.setDisplayMode(event.target.value));
     this.addDomListener(document.getElementById("showGrid"), "change", event => this.renderer.setGridVisible(event.target.checked));
@@ -119,7 +128,7 @@ class PreviewApp {
     const width = Number(this.exportWidth.value);
     const height = Number(this.exportHeight.value);
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 8192 || height > 8192) {
-      this.exportError.textContent = "Width and height must be 1-8192 px.";
+      this.exportError.textContent = t("Width and height must be 1-8192 px.");
       return null;
     }
 
@@ -140,14 +149,14 @@ class PreviewApp {
   renderIssues(issues) {
     this.issues.replaceChildren();
     if (!issues || issues.length === 0) {
-      this.issues.appendChild(createListItem("No issues", "issue-info"));
+      this.issues.appendChild(createListItem(t("No issues"), "issue-info"));
       return;
     }
 
     for (const issue of issues) {
       const item = document.createElement("li");
       item.className = `issue-${issue.severity}`;
-      const text = `${issue.severity}: ${issue.message}`;
+      const text = `${t(issue.severity)}: ${issue.message}`;
       if (issue.resourceUri) {
         item.appendChild(createResourceButton(text, issue.resourceUri, issue.range));
         item.title = issue.resourceUri;
@@ -164,7 +173,7 @@ class PreviewApp {
       const item = document.createElement("li");
       const kind = document.createElement("span");
       kind.className = "dependency-kind";
-      kind.textContent = `${dependency.kind}: `;
+      kind.textContent = `${dependencyKindLabel(dependency.kind)}: `;
       item.appendChild(kind);
       item.appendChild(createResourceButton(formatDependencyUri(dependency.uri), dependency.uri));
       item.title = dependency.uri;
@@ -504,7 +513,7 @@ class PreviewRenderer {
       appendCacheBust(uri),
       () => this.requestRender(),
       undefined,
-      error => vscode.postMessage({ type: "renderIssue", message: `Texture load failed: ${String(error)}` })
+      error => vscode.postMessage({ type: "renderIssue", code: "Texture load failed: {0}", args: [String(error)] })
     );
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = THREE.NearestFilter;
@@ -594,12 +603,12 @@ class PreviewRenderer {
 
   async capture(options) {
     if (this.disposed) {
-      throw new Error("Renderer has been disposed");
+      throw new Error(t("Renderer has been disposed"));
     }
 
     await Promise.allSettled(this.texturePromises);
     if (this.disposed) {
-      throw new Error("Renderer has been disposed");
+      throw new Error(t("Renderer has been disposed"));
     }
 
     const originalGrid = this.grid.visible;
@@ -895,6 +904,21 @@ function formatDependencyUri(uri) {
     return decodeURIComponent(new URL(uri).pathname).replace(/^\/([A-Za-z]:\/)/, "$1");
   } catch {
     return uri;
+  }
+}
+
+function dependencyKindLabel(kind) {
+  switch (kind) {
+    case "model":
+      return t("model");
+    case "texture":
+      return t("texture");
+    case "textureMetadata":
+      return t("texture metadata");
+    case "configuration":
+      return t("configuration");
+    default:
+      return kind;
   }
 }
 

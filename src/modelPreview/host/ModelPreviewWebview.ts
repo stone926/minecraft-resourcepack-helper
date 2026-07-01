@@ -1,7 +1,9 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import type { ModelPreviewDocument, PreviewMaterial } from "../ir/PreviewDocument";
+import { modelPreviewWebviewMessages } from "../../i18n/messages";
+import { localize } from "../../i18n/runtime";
+import type { ModelPreviewDocument, PreviewMaterial, WebviewModelPreviewDocument } from "../ir/PreviewDocument";
 
 export class ModelPreviewWebview {
   constructor(
@@ -14,51 +16,54 @@ export class ModelPreviewWebview {
     const nonce = createNonce();
     const mainScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "main.js"));
     const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "styles.css"));
+    const l10n = createWebviewL10nDictionary();
+    const text = (key: string) => escapeHtml(l10n[key] ?? key);
+    const attr = (key: string) => escapeAttribute(l10n[key] ?? key);
 
     webview.html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="${escapeAttribute(vscode.env.language)}">
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; connect-src ${webview.cspSource};">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${stylesUri}">
-  <title>Model Preview</title>
+  <title>${text("Model Preview")}</title>
 </head>
 <body>
   <div id="app">
     <header class="toolbar" role="toolbar">
-      <button id="resetView" title="Reset view">Reset</button>
-      <button id="refreshPreview" title="Refresh preview">Refresh</button>
-      <select id="viewPreset" title="View preset">
-        <option value="default">3/4</option>
-        <option value="front">Front</option>
-        <option value="back">Back</option>
-        <option value="left">Left</option>
-        <option value="right">Right</option>
-        <option value="top">Top</option>
-        <option value="bottom">Bottom</option>
+      <button id="resetView" title="${attr("Reset view")}">${text("Reset")}</button>
+      <button id="refreshPreview" title="${attr("Refresh preview")}">${text("Refresh")}</button>
+      <select id="viewPreset" title="${attr("View preset")}">
+        <option value="default">${text("3/4")}</option>
+        <option value="front">${text("Front")}</option>
+        <option value="back">${text("Back")}</option>
+        <option value="left">${text("Left")}</option>
+        <option value="right">${text("Right")}</option>
+        <option value="top">${text("Top")}</option>
+        <option value="bottom">${text("Bottom")}</option>
       </select>
-      <button id="cameraMode" title="Perspective / orthographic">Persp</button>
-      <select id="displayMode" title="Display mode">
-        <option value="textured">Texture</option>
-        <option value="solid">Solid</option>
-        <option value="wireframe">Wire</option>
+      <button id="cameraMode" title="${attr("Perspective / orthographic")}">${text("Persp")}</button>
+      <select id="displayMode" title="${attr("Display mode")}">
+        <option value="textured">${text("Texture")}</option>
+        <option value="solid">${text("Solid")}</option>
+        <option value="wireframe">${text("Wire")}</option>
       </select>
-      <label><input id="showGrid" type="checkbox" checked> Grid</label>
-      <label><input id="showAxes" type="checkbox" checked> Axes</label>
-      <button id="exportImage" title="Export PNG">Export</button>
+      <label><input id="showGrid" type="checkbox" checked> ${text("Grid")}</label>
+      <label><input id="showAxes" type="checkbox" checked> ${text("Axes")}</label>
+      <button id="exportImage" title="${attr("Export PNG")}">${text("Export")}</button>
     </header>
     <main id="previewLayout" class="preview-layout">
       <section class="viewport">
         <canvas id="previewCanvas"></canvas>
       </section>
-      <div id="detailsResizer" class="details-resizer" role="separator" aria-label="Resize details panel" aria-controls="detailsPanel" aria-orientation="vertical" tabindex="0"></div>
+      <div id="detailsResizer" class="details-resizer" role="separator" aria-label="${attr("Resize details panel")}" aria-controls="detailsPanel" aria-orientation="vertical" tabindex="0"></div>
       <aside id="detailsPanel" class="details">
         <section class="details-section" data-details-section>
           <h2>
             <button class="details-toggle" type="button" data-details-toggle aria-expanded="true" aria-controls="issuesBody">
               <span class="details-caret" aria-hidden="true"></span>
-              <span>Issues</span>
+              <span>${text("Issues")}</span>
             </button>
           </h2>
           <div id="issuesBody" class="details-body">
@@ -69,7 +74,7 @@ export class ModelPreviewWebview {
           <h2>
             <button class="details-toggle" type="button" data-details-toggle aria-expanded="true" aria-controls="dependenciesBody">
               <span class="details-caret" aria-hidden="true"></span>
-              <span>Dependencies</span>
+              <span>${text("Dependencies")}</span>
             </button>
           </h2>
           <div id="dependenciesBody" class="details-body">
@@ -81,32 +86,39 @@ export class ModelPreviewWebview {
     <dialog id="exportDialog" class="export-dialog">
       <form id="exportForm" method="dialog">
         <div class="export-grid">
-          <label for="exportWidth">Width</label>
+          <label for="exportWidth">${text("Width")}</label>
           <input id="exportWidth" type="number" min="1" max="8192" step="1">
-          <label for="exportHeight">Height</label>
+          <label for="exportHeight">${text("Height")}</label>
           <input id="exportHeight" type="number" min="1" max="8192" step="1">
-          <label for="exportTransparent">Transparent</label>
+          <label for="exportTransparent">${text("Transparent")}</label>
           <input id="exportTransparent" type="checkbox">
-          <label for="exportBackground">Background</label>
+          <label for="exportBackground">${text("Background")}</label>
           <input id="exportBackground" type="color" value="#1e1e1e">
         </div>
         <p id="exportError" class="export-error" role="alert"></p>
         <div class="export-actions">
-          <button id="exportCancel" value="cancel" type="button">Cancel</button>
-          <button id="exportConfirm" value="default" type="submit">Export</button>
+          <button id="exportCancel" value="cancel" type="button">${text("Cancel")}</button>
+          <button id="exportConfirm" value="default" type="submit">${text("Export")}</button>
         </div>
       </form>
     </dialog>
   </div>
+  <script nonce="${nonce}">
+    globalThis.__MC_RES_HELPER_L10N__ = ${escapeScriptJson(l10n)};
+  </script>
   <script type="module" nonce="${nonce}" src="${mainScriptUri}"></script>
 </body>
 </html>`;
   }
 
-  toWebviewDocument(document: ModelPreviewDocument): ModelPreviewDocument {
+  toWebviewDocument(document: ModelPreviewDocument): WebviewModelPreviewDocument {
     return {
       ...document,
-      materials: document.materials.map(material => this.toWebviewMaterial(material))
+      materials: document.materials.map(material => this.toWebviewMaterial(material)),
+      issues: document.issues.map(issue => ({
+        ...issue,
+        message: localize(issue.message)
+      }))
     };
   }
 
@@ -125,6 +137,10 @@ export class ModelPreviewWebview {
       textureUri: this.panel.webview.asWebviewUri(uri).toString()
     };
   }
+}
+
+function createWebviewL10nDictionary(): Record<string, string> {
+  return Object.fromEntries(modelPreviewWebviewMessages.map(message => [message.message, localize(message)]));
 }
 
 export function getModelPreviewLocalResourceRoots(extensionUri: vscode.Uri, modelFileName?: string): vscode.Uri[] {
@@ -178,6 +194,23 @@ function uniqueRoots(roots: vscode.Uri[]): vscode.Uri[] {
     seen.add(key);
     return true;
   });
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value)
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeScriptJson(value: unknown): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
 function createNonce(): string {

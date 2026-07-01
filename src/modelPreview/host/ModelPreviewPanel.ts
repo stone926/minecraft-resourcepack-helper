@@ -1,5 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { lm } from "../../i18n/messages";
+import { localize } from "../../i18n/runtime";
 import type { PreviewRange } from "../ir/PreviewDocument";
 import { ModelPreviewService } from "../service/ModelPreviewService";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
@@ -97,7 +99,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
 
     for (const pending of this.pendingScreenshots.values()) {
       clearTimeout(pending.timer);
-      pending.reject(new Error("Model preview panel was closed"));
+      pending.reject(new Error(localize(lm("Model preview panel was closed"))));
     }
     this.pendingScreenshots.clear();
     this.disposables.forEach(disposable => disposable.dispose());
@@ -117,7 +119,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
     const result = new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingScreenshots.delete(requestId);
-        reject(new Error("Model preview screenshot timed out"));
+        reject(new Error(localize(lm("Model preview screenshot timed out"))));
       }, 10000);
       this.pendingScreenshots.set(requestId, { resolve, reject, timer });
     });
@@ -128,7 +130,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
       if (pending) {
         clearTimeout(pending.timer);
         this.pendingScreenshots.delete(requestId);
-        pending.reject(new Error("Model preview webview is not available"));
+        pending.reject(new Error(localize(lm("Model preview webview is not available"))));
       }
     }
     return result;
@@ -249,7 +251,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
     }
 
     if (message.type === "renderIssue") {
-      void vscode.window.showWarningMessage(message.message);
+      void vscode.window.showWarningMessage(localize(lm(message.code, ...(message.args ?? []))));
       return;
     }
 
@@ -345,7 +347,7 @@ function defaultScreenshotFileName(modelFileName: string): string {
 function decodePngDataUri(dataUri: string): Uint8Array {
   const match = /^data:image\/png;base64,(.+)$/.exec(dataUri);
   if (!match) {
-    throw new Error("Invalid PNG data URI");
+    throw new Error(localize(lm("Invalid PNG data URI")));
   }
 
   return Buffer.from(match[1], "base64");
