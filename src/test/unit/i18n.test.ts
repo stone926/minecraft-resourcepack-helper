@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { errorMsg, promptMsg } from "../../commands/constants";
+import type { LocalizedMessage } from "../../i18n/messages";
 
 interface PackageJson {
   displayName?: string;
@@ -46,6 +47,37 @@ describe("i18n", () => {
     assert.deepStrictEqual(extraKeys(defaultBundle, runtimeKeys), []);
     assert.deepStrictEqual(Object.keys(zhBundle).sort(), Object.keys(defaultBundle).sort());
   });
+
+  it("rejects runtime l10n calls that cannot be collected statically", () => {
+    assert.deepStrictEqual(collectNonStaticL10nCalls(), []);
+  });
+
+  it("keeps model preview webview UI strings behind l10n helpers", () => {
+    const webviewSource = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
+    const scriptSource = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+
+    assert.ok(webviewSource.includes("__MC_RES_HELPER_L10N__"), "webview HTML should inject the host l10n dictionary");
+    assert.strictEqual(webviewSource.includes('<html lang="en">'), false, "webview language should follow VS Code");
+    for (const htmlText of [
+      ">Model Preview<",
+      ">Reset<",
+      ">Refresh<",
+      ">Issues<",
+      ">Dependencies<",
+      ">Cancel<",
+      "title=\"Reset view\"",
+      "aria-label=\"Resize details panel\""
+    ]) {
+      assert.strictEqual(webviewSource.includes(htmlText), false, `webview HTML should not hardcode ${htmlText}`);
+    }
+
+    assert.ok(scriptSource.includes('t("No issues")'), "empty issue state should use the webview l10n helper");
+    assert.ok(scriptSource.includes('t("Persp")'), "perspective camera label should use the webview l10n helper");
+    assert.ok(scriptSource.includes('t("Ortho")'), "orthographic camera label should use the webview l10n helper");
+    assert.ok(scriptSource.includes('code: "Texture load failed: {0}"'), "render issues should send stable message codes to the host");
+    assert.strictEqual(scriptSource.includes("Texture load failed: ${"), false, "render issues should not build user text with templates");
+    assert.strictEqual(scriptSource.includes('textContent = "Width and height must be 1-8192 px."'), false, "export validation should not hardcode UI text");
+  });
 });
 
 function assertIsPackageNlsReference(value: string | undefined, label: string): void {
@@ -81,19 +113,41 @@ function collectPackageNlsKeysInto(value: unknown, keys: Set<string>): void {
 
 function collectRuntimeL10nKeys(): Set<string> {
   const keys = new Set<string>([
-    ...Object.values(errorMsg),
-    ...Object.values(promptMsg)
+    ...Object.values(errorMsg).map(messageKey),
+    ...Object.values(promptMsg).map(messageKey)
   ]);
 
   for (const file of collectTypeScriptFiles(path.join(process.cwd(), "src"))) {
     const source = fs.readFileSync(file, "utf8");
-    const literalCalls = source.matchAll(/vscode\.l10n\.t\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g);
-    for (const match of literalCalls) {
+    for (const match of source.matchAll(/vscode\.l10n\.t\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) {
+      keys.add(unescapeStringLiteral(match[2]));
+    }
+    for (const match of source.matchAll(/\blm\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) {
+      keys.add(unescapeStringLiteral(match[2]));
+    }
+    for (const match of source.matchAll(/\blocalize\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) {
       keys.add(unescapeStringLiteral(match[2]));
     }
   }
 
   return keys;
+}
+
+function collectNonStaticL10nCalls(): string[] {
+  const calls: string[] = [];
+  const root = path.join(process.cwd(), "src");
+  for (const file of collectTypeScriptFiles(root)) {
+    if (path.relative(root, file).replaceAll(path.sep, "/") === "i18n/runtime.ts") {
+      continue;
+    }
+
+    const source = fs.readFileSync(file, "utf8");
+    for (const match of source.matchAll(/vscode\.l10n\.t\(\s*([^"'`{])/g)) {
+      const index = match.index ?? 0;
+      calls.push(`${path.relative(process.cwd(), file)}:${lineNumberAt(source, index)}`);
+    }
+  }
+  return calls.sort();
 }
 
 function collectTypeScriptFiles(root: string): string[] {
@@ -121,6 +175,14 @@ function extraKeys(bundle: Record<string, string>, expectedKeys: Set<string>): s
 
 function readJsonFile<T>(file: string): T {
   return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+}
+
+function messageKey(value: string | LocalizedMessage): string {
+  return typeof value === "string" ? value : value.message;
+}
+
+function lineNumberAt(source: string, index: number): number {
+  return source.slice(0, index).split(/\r\n|\n|\r/).length;
 }
 
 function unescapeStringLiteral(value: string): string {
