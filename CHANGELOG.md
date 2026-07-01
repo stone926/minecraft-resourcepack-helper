@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.1] - 2026-07-01
+
+- test: cover resource completion paths (5211173)
+- fix: preserve namespace completion filtering (ebc4cc5)
+- fix: use fresh references for resource completion (f94fdd2)
+- fix: retrigger resource completion after namespaces (0af7878)
+- fix: filter invalid namespace completion roots (5fb3487)
+- fix: complete resource paths while editing models (2b2e4e5)
+- docs: update i18n user notes (63bcc3d)
+- feat: localize model preview webview (86b535c)
+- feat: localize model preview issues (5c3cfbf)
+- feat: localize runtime diagnostics (ab4c2d7)
+- test: strengthen i18n coverage (f0be937)
+
 ## [2.3.0] - 2026-07-01
 
 - fix: linter translation and alingment (49e3ce3)
