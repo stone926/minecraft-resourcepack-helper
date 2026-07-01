@@ -26,6 +26,7 @@ interface ResourceCompletionContext {
 }
 
 const namespacePattern = /^[a-z0-9_.-]+$/;
+export const triggerResourceCompletionCommand = "McResHelper.triggerResourceCompletion";
 
 const resourceCompletionProvider: vscode.CompletionItemProvider = {
   async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
@@ -122,7 +123,7 @@ async function collectCompletionItems(
       item.range = context.replacementRange;
       item.insertText = buildCompletionInsertText(insertText, context.includeQuotes, entry.isDirectory());
       if (entry.isDirectory()) {
-        item.command = { command: "editor.action.triggerSuggest", title: vscode.l10n.t("Suggest") };
+        item.command = createTriggerSuggestCommand();
       }
       itemsByInsertText.set(insertText, item);
     }
@@ -164,10 +165,14 @@ async function collectNamespaceCompletionItems(
       const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Module);
       item.range = context.replacementRange;
       item.insertText = buildCompletionInsertText(label, context.includeQuotes, true);
-      item.command = { command: "editor.action.triggerSuggest", title: vscode.l10n.t("Suggest") };
+      item.command = createTriggerSuggestCommand();
       itemsByInsertText.set(label, item);
     }
   }
+}
+
+function createTriggerSuggestCommand(): vscode.Command {
+  return { command: triggerResourceCompletionCommand, title: vscode.l10n.t("Suggest") };
 }
 
 function buildCompletionInsertText(value: string, includeQuotes: boolean, keepCursorInsideQuotes: boolean): string | vscode.SnippetString {

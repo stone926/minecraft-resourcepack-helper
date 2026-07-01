@@ -7,7 +7,7 @@ import createNewResourcePack from './commands/createNewResourcePack';
 import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
 import { applyDecoration, disposeDecoration, updateDecoration } from './decorator/textureVarDecorator';
 import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
-import resourceCompletionProvider from './providers/resourceCompletionProvider';
+import resourceCompletionProvider, { triggerResourceCompletionCommand } from './providers/resourceCompletionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { getResourceGraphNodeUri, ResourceGraphTreeProvider } from './views/resourceGraphTree';
 import { isResourceGraphDocumentPath } from './utils/resourceGraph';
@@ -109,6 +109,11 @@ export function activate(context: vscode.ExtensionContext) {
     "McResHelper.showWorkspaceResourceCacheStats",
     () => vscode.window.showInformationMessage(JSON.stringify(workspaceResourceCache.getStats()))
   ));
+  context.subscriptions.push(vscode.commands.registerCommand(triggerResourceCompletionCommand, () => {
+    setTimeout(() => {
+      void vscode.commands.executeCommand("editor.action.triggerSuggest");
+    }, 0);
+  }));
 
   const resourceGraphTreeProvider = new ResourceGraphTreeProvider();
   context.subscriptions.push(resourceGraphTreeProvider);

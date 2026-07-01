@@ -27,6 +27,15 @@ describe("resource completion paths", () => {
     );
   });
 
+  it("builds root directory completion values after a namespace", () => {
+    const partialPath = parsePartialResourcePath("minecraft:");
+
+    assert.strictEqual(
+      buildResourceCompletionValue(partialPath, "block", true),
+      "minecraft:block/"
+    );
+  });
+
   it("detects namespace completion positions before a resource path starts", () => {
     assert.strictEqual(shouldCompleteNamespaces(parsePartialResourcePath("")), true);
     assert.strictEqual(shouldCompleteNamespaces(parsePartialResourcePath("mine")), true);
