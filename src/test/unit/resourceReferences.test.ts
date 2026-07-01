@@ -154,6 +154,36 @@ describe("resource references", () => {
     assert.strictEqual(referenceAtBlankValue.value, "");
   });
 
+  it("finds explicit namespace model texture references from cached references", () => {
+    const { document, position, getTextCallCount } = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "models", "block", "explicit_namespace_texture.json"),
+      [
+        "{",
+        "  \"parent\": \"minecraft:block/cube_all\",",
+        "  \"textures\": {",
+        "    \"all\": \"minecraft:|\"",
+        "  }",
+        "}"
+      ].join("\n"),
+      "json",
+      1
+    );
+
+    const references = getResourceReferences(document);
+    const referenceAtNamespace = findResourceReferenceAtPosition(document, position);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["model", "minecraft:block/cube_all", "models", "models/block", "json"],
+        ["texture", "minecraft:", "textures", "models/block", "png"]
+      ]
+    );
+    assert.strictEqual(referenceAtNamespace?.kind, "texture");
+    assert.strictEqual(referenceAtNamespace.value, "minecraft:");
+    assert.strictEqual(getTextCallCount(), 1);
+  });
+
   it("extracts references from models outside block and item folders", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "models", "custom", "machine.json"),
@@ -652,5 +682,41 @@ function createTextDocument(fileName: string, text: string, languageId = "plaint
     languageId,
     fileName,
     getText: () => text
+  };
+}
+
+function createMarkedTextDocument(
+  fileName: string,
+  markedText: string,
+  languageId: string,
+  version: number
+): {
+    document: ResourceReferenceDocument;
+    position: { line: number; character: number };
+    getTextCallCount: () => number;
+  } {
+  const markerOffset = markedText.indexOf("|");
+  assert.notStrictEqual(markerOffset, -1);
+
+  const text = `${markedText.slice(0, markerOffset)}${markedText.slice(markerOffset + 1)}`;
+  const textBeforeMarker = markedText.slice(0, markerOffset);
+  const linesBeforeMarker = textBeforeMarker.split("\n");
+  let getTextCallCount = 0;
+
+  return {
+    document: {
+      languageId,
+      fileName,
+      version,
+      getText: () => {
+        getTextCallCount++;
+        return text;
+      }
+    },
+    position: {
+      line: linesBeforeMarker.length - 1,
+      character: linesBeforeMarker[linesBeforeMarker.length - 1].length
+    },
+    getTextCallCount: () => getTextCallCount
   };
 }

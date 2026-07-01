@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
 import {
+  buildResourceCompletionText,
   buildResourceCompletionValue,
   filterExistingResourceRoots,
   getAssetsRootCandidates,
@@ -33,6 +34,47 @@ describe("resource completion paths", () => {
     assert.strictEqual(
       buildResourceCompletionValue(partialPath, "block", true),
       "minecraft:block/"
+    );
+  });
+
+  it("uses full explicit namespace completion text for VS Code filtering", () => {
+    const partialPath = parsePartialResourcePath("minecraft:");
+
+    assert.deepStrictEqual(
+      buildResourceCompletionText(partialPath, "block", true),
+      {
+        value: "minecraft:block/",
+        filterText: "minecraft:block/"
+      }
+    );
+  });
+
+  it("uses full nested explicit namespace completion text for VS Code filtering", () => {
+    const partialPath = parsePartialResourcePath("minecraft:block/cu");
+
+    assert.deepStrictEqual(
+      buildResourceCompletionText(partialPath, "cut_copper", false),
+      {
+        value: "minecraft:block/cut_copper",
+        filterText: "minecraft:block/cut_copper"
+      }
+    );
+  });
+
+  it("keeps implicit minecraft completion text relative to the namespace root", () => {
+    assert.deepStrictEqual(
+      buildResourceCompletionText(parsePartialResourcePath(""), "block", true),
+      {
+        value: "block/",
+        filterText: "block/"
+      }
+    );
+    assert.deepStrictEqual(
+      buildResourceCompletionText(parsePartialResourcePath("block/cu"), "cut_copper", false),
+      {
+        value: "block/cut_copper",
+        filterText: "block/cut_copper"
+      }
     );
   });
 

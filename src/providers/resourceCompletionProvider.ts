@@ -7,7 +7,7 @@ import {
   ResourceCompletionTextRange
 } from "../utils/resourceCompletionContext";
 import {
-  buildResourceCompletionValue,
+  buildResourceCompletionText,
   filterExistingResourceRoots,
   getAssetsRootCandidates,
   parsePartialResourcePath,
@@ -111,8 +111,8 @@ async function collectCompletionItems(
         continue;
       }
 
-      const insertText = buildResourceCompletionValue(partialPath, label, entry.isDirectory());
-      if (itemsByInsertText.has(insertText)) {
+      const completionText = buildResourceCompletionText(partialPath, label, entry.isDirectory());
+      if (itemsByInsertText.has(completionText.value)) {
         continue;
       }
 
@@ -121,12 +121,12 @@ async function collectCompletionItems(
         entry.isDirectory() ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File
       );
       item.range = context.replacementRange;
-      item.filterText = insertText;
-      item.insertText = buildCompletionInsertText(insertText, context.includeQuotes, entry.isDirectory());
+      item.filterText = completionText.filterText;
+      item.insertText = buildCompletionInsertText(completionText.value, context.includeQuotes, entry.isDirectory());
       if (entry.isDirectory()) {
         item.command = createTriggerSuggestCommand();
       }
-      itemsByInsertText.set(insertText, item);
+      itemsByInsertText.set(completionText.value, item);
     }
   }
 

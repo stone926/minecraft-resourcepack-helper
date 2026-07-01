@@ -7,6 +7,11 @@ export interface PartialResourcePath {
   prefix: string;
 }
 
+export interface ResourceCompletionText {
+  value: string;
+  filterText: string;
+}
+
 export function parsePartialResourcePath(value: string): PartialResourcePath {
   const namespaceSeparator = value.indexOf(":");
   const explicitNamespace = namespaceSeparator >= 0;
@@ -35,6 +40,18 @@ export function buildResourceCompletionValue(partialPath: PartialResourcePath, l
   const namespacePrefix = partialPath.explicitNamespace || partialPath.namespace !== "minecraft" ? `${partialPath.namespace}:` : "";
   const directoryPrefix = partialPath.directory.length > 0 ? `${partialPath.directory.replaceAll("\\", "/")}/` : "";
   return `${namespacePrefix}${directoryPrefix}${label}${isDirectory ? "/" : ""}`;
+}
+
+export function buildResourceCompletionText(
+  partialPath: PartialResourcePath,
+  label: string,
+  isDirectory: boolean
+): ResourceCompletionText {
+  const value = buildResourceCompletionValue(partialPath, label, isDirectory);
+  return {
+    value,
+    filterText: value
+  };
 }
 
 export function shouldCompleteNamespaces(partialPath: PartialResourcePath): boolean {
