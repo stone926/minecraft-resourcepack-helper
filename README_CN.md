@@ -20,6 +20,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 - Minecraft 资源活动栏视图展示当前文件引用、入站引用、子模型，以及方块状态 -> 模型 -> 纹理关系。
 - 为支持的资源包文件提供 JSON Schema 校验，包括资源包元数据、模型、物品定义、粒子、纹理图集、装备、字体、声音、语言文件、credits、GPU 警告列表、区域合规文件和 PNG 纹理元数据。
 - 额外语义检查覆盖 `pack.mcmeta`、`pack.png`、colormap PNG 尺寸、`sounds.json`、后处理 target，以及 `assets/<namespace>/texts/{splashes,end,postcredits}.txt`。
+- 扩展命令、运行时提示、诊断、资源关系图标签、模型预览问题和模型预览 webview 控件均覆盖英文与简体中文本地化。
 - 提供创建现代资源包脚手架的命令，包含常用命名空间目录和 `min_format`/`max_format` 资源包元数据。
 
 ## 快速开始

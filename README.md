@@ -20,6 +20,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 - Minecraft Resources activity bar view for current-file references, incoming references, child models, and blockstate -> model -> texture relationships.
 - JSON schema validation for supported resource pack files, including pack metadata, models, item definitions, particles, atlases, equipment, fonts, sounds, language files, credits, GPU warnlists, regional compliancies, and PNG texture metadata.
 - Extra semantic checks for `pack.mcmeta`, `pack.png`, colormap PNG sizes, `sounds.json`, post-effect targets, and `assets/<namespace>/texts/{splashes,end,postcredits}.txt`.
+- English and Simplified Chinese localization for extension commands, runtime prompts, diagnostics, resource graph labels, model preview issues, and model preview webview controls.
 - Commands for scaffolding a modern resource pack with namespace folders and `min_format`/`max_format` pack metadata.
 
 ## Quick Start
