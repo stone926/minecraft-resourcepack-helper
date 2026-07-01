@@ -15,7 +15,7 @@ import {
   shouldCompleteNamespaces,
   splitResourcePath
 } from "../utils/resourceCompletionPaths";
-import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
+import { findFreshResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
 import { getDocumentResourceRootCandidates } from "../utils/resourceLocation";
 import { rangeInsideString } from "../utils/resourceRange";
 
@@ -60,7 +60,7 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
 export default resourceCompletionProvider;
 
 function getResourceCompletionContext(document: vscode.TextDocument, position: vscode.Position): ResourceCompletionContext | null {
-  const reference = findResourceReferenceAtPosition(document, position);
+  const reference = findFreshResourceReferenceAtPosition(document, position);
   if (reference) {
     const replacementRange = rangeInsideString(reference.valueNode);
     return replacementRange ? { reference, replacementRange, includeQuotes: false } : null;
