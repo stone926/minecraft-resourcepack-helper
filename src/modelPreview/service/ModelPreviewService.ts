@@ -1,8 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
+import { getCitPathCandidates, isCitPropertiesFileName, type CitResourceType } from "../../utils/citPaths";
+import { parseCitProperties, type CitPropertyEntry } from "../../utils/citPropertiesParser";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
-import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency } from "../model/ModelDocument";
+import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { CuboidBaker } from "../bake/CuboidBaker";
 import { createGeneratedItemElements } from "../bake/GeneratedItemModel";
@@ -62,15 +64,27 @@ export class ModelPreviewService {
     throwIfCancellationRequested(cancellationToken);
     const issues = new ModelIssueCollector();
     const configuration = this.getConfiguration();
-    const model = await this.resolveModel(fileName, configuration, issues, cancellationToken);
+    const model = isCitPropertiesFileName(fileName)
+      ? await this.resolveCitPreviewModel(fileName, configuration, issues, cancellationToken)
+      : await this.resolveModel(fileName, configuration, issues, cancellationToken);
     throwIfCancellationRequested(cancellationToken);
 
+    return this.createPreviewDocumentFromModel(fileName, model, configuration, issues, cancellationToken);
+  }
+
+  private async createPreviewDocumentFromModel(
+    sourceFileName: string,
+    model: ResolvedModel | null,
+    configuration: ModelPreviewConfiguration,
+    issues: ModelIssueCollector,
+    cancellationToken?: ModelPreviewCancellationToken
+  ): Promise<ModelPreviewDocument> {
     if (!model) {
       return {
         version: 1,
-        sourceUri: fileUriString(fileName),
-        resourceId: path.basename(fileName, path.extname(fileName)),
-        title: path.basename(fileName),
+        sourceUri: fileUriString(sourceFileName),
+        resourceId: path.basename(sourceFileName, path.extname(sourceFileName)),
+        title: path.basename(sourceFileName),
         bounds: { min: [0, 0, 0], max: [0, 0, 0] },
         meshes: [],
         materials: [],
@@ -102,15 +116,16 @@ export class ModelPreviewService {
     throwIfCancellationRequested(cancellationToken);
 
     const dependencies = [
+      { fileName: sourceFileName, kind: "model" as const },
       ...model.dependencies,
       ...textureResolver.allDependencies()
     ];
 
     return {
       version: 1,
-      sourceUri: fileUriString(model.fileName),
+      sourceUri: fileUriString(sourceFileName),
       resourceId: model.resourceId,
-      title: path.basename(model.fileName),
+      title: path.basename(sourceFileName),
       bounds: bakeResult.bounds,
       meshes: bakeResult.meshes,
       materials: textureResolver.allMaterials(),
@@ -118,6 +133,82 @@ export class ModelPreviewService {
       dependencies: toPreviewDependencies(dependencies, true),
       issues: issues.all()
     };
+  }
+
+  private async resolveCitPreviewModel(
+    fileName: string,
+    configuration: ModelPreviewConfiguration,
+    issues: ModelIssueCollector,
+    cancellationToken?: ModelPreviewCancellationToken
+  ): Promise<ResolvedModel | null> {
+    let text: string;
+    try {
+      text = await this.fileSystem.readTextFile(fileName);
+    } catch {
+      issues.error(lm("CIT properties could not be read"), fileName);
+      return null;
+    }
+
+    throwIfCancellationRequested(cancellationToken);
+    const entries = parseCitProperties(text);
+    const citType = getCitType(entries);
+    if (citType === "item") {
+      return this.resolveItemCitPreviewModel(fileName, entries, configuration, issues, cancellationToken);
+    }
+
+    const textureEntry = findPreviewTextureEntry(entries, citType);
+    if (!textureEntry) {
+      issues.warning(lm("CIT preview requires a texture property"), fileName);
+      return null;
+    }
+
+    if (citType === "enchantment") {
+      const blend = entries.find(entry => entry.key === "blend")?.value;
+      if (blend) {
+        issues.info(lm("CIT enchantment preview approximates blend mode: {0}", blend), fileName, toPreviewRange(textureEntry.valueRange));
+      }
+    }
+
+    return createGeneratedCitModel(fileName, textureEntry.value, `cit-${citType}`);
+  }
+
+  private async resolveItemCitPreviewModel(
+    fileName: string,
+    entries: CitPropertyEntry[],
+    configuration: ModelPreviewConfiguration,
+    issues: ModelIssueCollector,
+    cancellationToken?: ModelPreviewCancellationToken
+  ): Promise<ResolvedModel | null> {
+    const modelEntry = entries.find(entry => entry.key === "model");
+    const textureEntry = entries.find(entry => entry.key === "texture");
+    const explicitModel = modelEntry ? resolveCitAsset(fileName, modelEntry.value, "models", this.fileSystem) : null;
+    const autoModel = !modelEntry && !textureEntry ? resolveCitAsset(fileName, path.basename(fileName, path.extname(fileName)), "models", this.fileSystem) : null;
+    const modelFileName = explicitModel ?? autoModel;
+
+    if (modelFileName) {
+      const model = await this.resolveModel(modelFileName, configuration, issues, cancellationToken);
+      if (!model) {
+        return null;
+      }
+      if (textureEntry) {
+        return overrideModelTextures(model, fileName, textureEntry.value);
+      }
+      return model;
+    }
+
+    if (modelEntry && !explicitModel) {
+      issues.warning(lm("CIT model not found: {0}", modelEntry.value), fileName, toPreviewRange(modelEntry.valueRange));
+    }
+
+    const textureValue = textureEntry?.value ?? (
+      !modelEntry ? path.basename(fileName, path.extname(fileName)) : null
+    );
+    if (!textureValue) {
+      issues.warning(lm("CIT preview requires model or texture"), fileName);
+      return null;
+    }
+
+    return createGeneratedCitModel(fileName, textureValue, "cit-item");
   }
 
   private async resolveModel(
@@ -212,6 +303,110 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
   return [...previewDependencies.values()];
 }
 
+function createGeneratedCitModel(fileName: string, texture: string, resourceId: string): ResolvedModel {
+  return {
+    fileName,
+    resourceId,
+    parent: "minecraft:item/generated",
+    generatedItem: true,
+    textures: {
+      layer0: {
+        name: "layer0",
+        value: texture,
+        sourceModelFileName: fileName
+      }
+    },
+    elements: [],
+    display: {},
+    dependencies: [{ fileName, kind: "model" }]
+  };
+}
+
+function overrideModelTextures(model: ResolvedModel, sourceModelFileName: string, texture: string): ResolvedModel {
+  const textures = Object.fromEntries(Object.keys(model.textures).map(name => [
+    name,
+    {
+      name,
+      value: texture,
+      sourceModelFileName
+    }
+  ]));
+
+  if (Object.keys(textures).length === 0) {
+    textures.layer0 = {
+      name: "layer0",
+      value: texture,
+      sourceModelFileName
+    };
+  }
+
+  return {
+    ...model,
+    textures
+  };
+}
+
+function resolveCitAsset(
+  sourceFileName: string,
+  value: string,
+  resourceType: CitResourceType,
+  fileSystem: ModelPreviewFileSystem
+): string | null {
+  const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? getPackRootFromAssetsPath(sourceFileName);
+  if (!packRoot) {
+    return null;
+  }
+
+  for (const candidate of getCitPathCandidates(sourceFileName, packRoot, value, resourceType)) {
+    if (fileSystem.fileExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getCitType(entries: CitPropertyEntry[]): "item" | "armor" | "elytra" | "enchantment" {
+  const value = entries.find(entry => entry.key === "type")?.value.trim();
+  return value === "armor" || value === "elytra" || value === "enchantment" ? value : "item";
+}
+
+function findPreviewTextureEntry(
+  entries: CitPropertyEntry[],
+  citType: "armor" | "elytra" | "enchantment"
+): CitPropertyEntry | null {
+  if (citType === "armor") {
+    return entries.find(entry => entry.key.startsWith("texture.")) ?? null;
+  }
+
+  return entries.find(entry => entry.key === "texture") ?? null;
+}
+
+function toPreviewRange(location: CitPropertyEntry["valueRange"]) {
+  return {
+    start: {
+      line: location.start.line - 1,
+      character: location.start.column
+    },
+    end: {
+      line: location.end.line - 1,
+      character: location.end.column
+    }
+  };
+}
+
+function getPackRootFromAssetsPath(fileName: string): string | null {
+  const normalizedPath = path.normalize(fileName);
+  const parsedPath = path.parse(normalizedPath);
+  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
+  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  if (assetsIndex < 0) {
+    return null;
+  }
+
+  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
+}
+
 const nodeFileSystem: ModelPreviewFileSystem = {
   readTextFile: fileName => fs.promises.readFile(fileName, "utf8"),
   readBinaryFile: fileName => fs.promises.readFile(fileName),
@@ -231,4 +426,14 @@ function getConfigurationKey(configuration: ModelPreviewConfiguration): string {
     defaultAssetsPath: configuration.defaultAssetsPath ?? null,
     resourcePackRoots: configuration.resourcePackRoots ?? []
   });
+}
+
+function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index--) {
+    if (predicate(values[index])) {
+      return index;
+    }
+  }
+
+  return -1;
 }

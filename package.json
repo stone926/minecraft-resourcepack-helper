@@ -153,6 +153,16 @@
         "command": "McResHelper.openUnsupportedModelPreviewResource",
         "title": "%command.title.openUnsupportedModelPreviewResource%",
         "icon": "$(circle-slash)"
+      },
+      {
+        "command": "McResHelper.createCitTemplate",
+        "title": "%command.title.createCitTemplate%",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "McResHelper.generateCitForCurrentItem",
+        "title": "%command.title.generateCitForCurrentItem%",
+        "icon": "$(wand)"
       }
     ],
     "viewsContainers": {
@@ -178,6 +188,11 @@
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
+        },
+        {
+          "command": "McResHelper.openModelPreview",
+          "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:citresewn|optifine[\\\\/]cit|mcpatcher[\\\\/]cit)(?:[\\\\/]|$)/",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -187,8 +202,18 @@
           "group": "navigation"
         },
         {
+          "command": "McResHelper.openModelPreview",
+          "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:citresewn|optifine[\\\\/]cit|mcpatcher[\\\\/]cit)(?:[\\\\/]|$)/",
+          "group": "navigation"
+        },
+        {
           "command": "McResHelper.exportModelPreviewImage",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
+          "group": "navigation"
+        },
+        {
+          "command": "McResHelper.generateCitForCurrentItem",
+          "when": "resourceExtname =~ /\\.(json|png)$/ && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:items|models[\\\\/]item|textures[\\\\/]item)(?:[\\\\/]|$)/",
           "group": "navigation"
         }
       ],
@@ -203,6 +228,11 @@
         {
           "command": "McResHelper.openResourceGraphModelPreview",
           "when": "view == McResHelper.resourceGraph && viewItem == modelResource",
+          "group": "inline"
+        },
+        {
+          "command": "McResHelper.openResourceGraphModelPreview",
+          "when": "view == McResHelper.resourceGraph && viewItem == citPreviewResource",
           "group": "inline"
         },
         {

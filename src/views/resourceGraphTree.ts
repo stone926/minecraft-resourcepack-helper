@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { isCitPropertiesFileName } from "../utils/citPaths";
 import {
   isResourceGraphDocumentPath,
   isModelDocumentPath,
@@ -541,6 +542,10 @@ function getResourceIcon(fileName: string): vscode.ThemeIcon {
 function getResourceContextValue(fileName: string): string | undefined {
   if (isModelDocumentPath(fileName)) {
     return "modelResource";
+  }
+
+  if (isCitPropertiesFileName(fileName)) {
+    return "citPreviewResource";
   }
 
   if (isUnsupportedPreviewResourcePath(fileName)) {

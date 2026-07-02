@@ -23,7 +23,7 @@ export function resolveModelPreviewTarget(uri?: vscode.Uri): vscode.Uri | null {
   }
 
   if (target.scheme !== "file" || !isModelPreviewFileName(target.fsPath)) {
-    void vscode.window.showErrorMessage(vscode.l10n.t("Selected file is not a Minecraft model JSON"));
+    void vscode.window.showErrorMessage(vscode.l10n.t("Selected file is not a Minecraft model JSON or CIT properties file"));
     return null;
   }
 

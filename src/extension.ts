@@ -4,11 +4,14 @@ import textureVarDefinitionProvider from './providers/textureVarDefinitionProvid
 import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
 import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
+import createCitTemplateCommand from './commands/createCitTemplate';
+import generateCitForCurrentItemCommand from './commands/generateCitForCurrentItem';
 import { applyDecoration, disposeDecoration, updateDecoration } from './decorator/textureVarDecorator';
 import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider, { triggerResourceCompletionCommand } from './providers/resourceCompletionProvider';
 import citCompletionProvider from './providers/citCompletionProvider';
 import citHoverProvider from './providers/citHoverProvider';
+import citCodeActionProvider, { createMissingCitResource, createMissingCitResourceCommand } from './providers/citCodeActionProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { getResourceGraphNodeUri, ResourceGraphTreeProvider } from './views/resourceGraphTree';
 import { isResourceGraphDocumentPath } from './utils/resourceGraph';
@@ -18,7 +21,7 @@ import { openModelPreviewCommand } from './modelPreview/commands/openModelPrevie
 import { captureModelPreviewImageCommand, exportModelPreviewImageCommand } from './modelPreview/commands/exportModelPreviewImage';
 import { workspaceResourceCache } from './services/workspaceResourceCache';
 
-const jsonResourceReferenceSelectors: vscode.DocumentSelector = [
+const jsonResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { language: "json", pattern: "**/blockstates/*.json" },
   { language: "json", pattern: "**/models/**/*.json" },
   { language: "json", pattern: "**/particles/**/*.json" },
@@ -31,14 +34,14 @@ const jsonResourceReferenceSelectors: vscode.DocumentSelector = [
   { language: "json", pattern: "**/assets/*/sounds.json" }
 ];
 
-const shaderResourceReferenceSelectors: vscode.DocumentSelector = [
+const shaderResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { pattern: "**/assets/*/shaders/core/**/*.vsh" },
   { pattern: "**/assets/*/shaders/core/**/*.fsh" },
   { pattern: "**/assets/*/shaders/post/**/*.vsh" },
   { pattern: "**/assets/*/shaders/post/**/*.fsh" }
 ];
 
-const citResourceReferenceSelectors: vscode.DocumentSelector = [
+const citResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { pattern: "**/assets/*/citresewn/*.properties" },
   { pattern: "**/assets/*/citresewn/**/*.properties" },
   { pattern: "**/assets/*/optifine/cit.properties" },
@@ -47,14 +50,14 @@ const citResourceReferenceSelectors: vscode.DocumentSelector = [
   { pattern: "**/assets/*/mcpatcher/cit/**/*.properties" }
 ];
 
-const citModelResourceReferenceSelectors: vscode.DocumentSelector = [
+const citModelResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { language: "json", pattern: "**/assets/*/citresewn/*.json" },
   { language: "json", pattern: "**/assets/*/citresewn/**/*.json" },
   { language: "json", pattern: "**/assets/*/optifine/cit/**/*.json" },
   { language: "json", pattern: "**/assets/*/mcpatcher/cit/**/*.json" }
 ];
 
-const resourceReferenceSelectors: vscode.DocumentSelector = [
+const resourceReferenceSelectors: vscode.DocumentFilter[] = [
   ...jsonResourceReferenceSelectors,
   ...shaderResourceReferenceSelectors,
   ...citResourceReferenceSelectors,
@@ -98,9 +101,21 @@ export function activate(context: vscode.ExtensionContext) {
     citHoverProvider
   ));
 
+  context.subscriptions.push(vscode.languages.registerCodeActionsProvider(
+    [
+      ...citResourceReferenceSelectors,
+      ...citModelResourceReferenceSelectors
+    ],
+    citCodeActionProvider,
+    { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+  ));
+
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot));
+  context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createCitTemplate", createCitTemplateCommand));
+  context.subscriptions.push(vscode.commands.registerCommand("McResHelper.generateCitForCurrentItem", generateCitForCurrentItemCommand));
+  context.subscriptions.push(vscode.commands.registerCommand(createMissingCitResourceCommand, createMissingCitResource));
 
   const modelPreviewService = new ModelPreviewService({
     fileSystem: new ModelPreviewHostFileSystem(),

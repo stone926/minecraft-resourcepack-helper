@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { isCitPropertiesFileName } from "../../utils/citPaths";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
 import { isModelPreviewFileName } from "./modelPreviewFiles";
 
@@ -12,15 +13,28 @@ export class ModelPreviewWatcher implements vscode.Disposable {
     private readonly updateTargetFromActiveEditor: (uri: vscode.Uri) => void
   ) {
     this.watchWorkspaceFiles("**/assets/*/models/**/*.json");
+    this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.json");
+    this.watchWorkspaceFiles("**/assets/*/optifine/cit/**/*.json");
+    this.watchWorkspaceFiles("**/assets/*/mcpatcher/cit/**/*.json");
     this.watchWorkspaceFiles("**/assets/*/textures/**/*.png");
+    this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.png");
+    this.watchWorkspaceFiles("**/assets/*/optifine/cit/**/*.png");
+    this.watchWorkspaceFiles("**/assets/*/mcpatcher/cit/**/*.png");
     this.watchWorkspaceFiles("**/assets/*/textures/**/*.png.mcmeta");
+    this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.properties");
+    this.watchWorkspaceFiles("**/assets/*/optifine/cit/**/*.properties");
+    this.watchWorkspaceFiles("**/assets/*/mcpatcher/cit/**/*.properties");
 
     this.disposables.push(vscode.workspace.onDidChangeTextDocument(event => {
       if (event.document.uri.scheme !== "file" || !isModelPreviewFileName(event.document.fileName)) {
         return;
       }
 
-      if (!this.tracker.hasFile(event.document.fileName) || !isJsonComplete(event.document.getText())) {
+      if (!this.tracker.hasFile(event.document.fileName)) {
+        return;
+      }
+
+      if (!isCitPropertiesFileName(event.document.fileName) && !isJsonComplete(event.document.getText())) {
         return;
       }
 

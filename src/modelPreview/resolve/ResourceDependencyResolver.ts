@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../utils/citPaths";
 import { getDocumentResourceRootCandidates, parseResourceLocation } from "../../utils/resourceLocation";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 
@@ -35,6 +36,11 @@ export function resolveResourceFileName(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): ResolvedResourceFile | null {
+  const citResourceType = getCitResourceType(target, extension);
+  if (citResourceType && (isCitModelFileName(sourceFileName) || isCitPropertiesFileName(sourceFileName))) {
+    return resolveCitResourceFileName(resourcePath, sourceFileName, citResourceType, fileSystem);
+  }
+
   const location = parseResourceLocation(resourcePath, extension);
   if (!location.isValid) {
     return null;
@@ -61,6 +67,29 @@ export function resolveResourceFileName(
       return {
         fileName: candidate,
         resourceId: `${location.namespace}:${stripExtension(location.resourcePath.replaceAll(path.sep, "/"))}`
+      };
+    }
+  }
+
+  return null;
+}
+
+function resolveCitResourceFileName(
+  resourcePath: string,
+  sourceFileName: string,
+  resourceType: CitResourceType,
+  fileSystem: ModelPreviewFileSystem
+): ResolvedResourceFile | null {
+  const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? getPackRootFromAssetsPath(sourceFileName);
+  if (!packRoot) {
+    return null;
+  }
+
+  for (const candidate of getCitPathCandidates(sourceFileName, packRoot, resourcePath, resourceType)) {
+    if (fileSystem.fileExists(candidate)) {
+      return {
+        fileName: candidate,
+        resourceId: resourceIdFromFileName(candidate)
       };
     }
   }
@@ -111,6 +140,44 @@ function getAssetResource(fileName: string): { namespace: string; resourcePath: 
     namespace: segments[assetsIndex + 1],
     resourcePath: segments.slice(assetsIndex + 2).join("/")
   };
+}
+
+function resourceIdFromFileName(fileName: string): string {
+  const assetResource = getAssetResource(fileName);
+  if (!assetResource) {
+    return path.basename(fileName, path.extname(fileName));
+  }
+
+  const resourcePath = assetResource.resourcePath.replaceAll("\\", "/");
+  const typedPrefix = resourcePath.startsWith("models/")
+    ? "models/"
+    : resourcePath.startsWith("textures/")
+      ? "textures/"
+      : "";
+  const rawPath = typedPrefix ? resourcePath.slice(typedPrefix.length) : resourcePath;
+  return `${assetResource.namespace}:${stripExtension(rawPath)}`;
+}
+
+function getCitResourceType(target: string, extension: string | null): CitResourceType | null {
+  if (target === "models" && extension === "json") {
+    return "models";
+  }
+  if (target === "textures" && extension === "png") {
+    return "textures";
+  }
+  return null;
+}
+
+function getPackRootFromAssetsPath(fileName: string): string | null {
+  const normalizedPath = path.normalize(fileName);
+  const parsedPath = path.parse(normalizedPath);
+  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
+  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  if (assetsIndex < 0) {
+    return null;
+  }
+
+  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
 }
 
 function stripExtension(value: string): string {

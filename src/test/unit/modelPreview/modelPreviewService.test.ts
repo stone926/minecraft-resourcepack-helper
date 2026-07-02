@@ -286,6 +286,98 @@ describe("model preview service", () => {
     }
   });
 
+  it("previews CIT item texture-only properties as generated item models", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const properties = path.join(pack, "assets/minecraft/citresewn/cit/stick.properties");
+      writeFile(pack, "assets/minecraft/citresewn/cit/stick.properties", [
+        "type=item",
+        "items=stick",
+        "texture=./stick"
+      ].join("\n"));
+      writeFile(pack, "assets/minecraft/citresewn/cit/stick.png", createRgbaPng(2, 2, () => 255));
+
+      const preview = await createService().getPreviewDocument(properties);
+
+      assert.ok(preview.meshes.length > 0);
+      assert.match(preview.materials[0].textureUri ?? "", /stick\.png$/);
+      assert.ok(preview.dependencies.some(dependency => dependency.uri.endsWith("stick.properties")));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("previews CIT item model plus texture replacement", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const properties = path.join(pack, "assets/minecraft/optifine/cit/custom.properties");
+      writeFile(pack, "assets/minecraft/optifine/cit/custom.properties", [
+        "type=item",
+        "items=stick",
+        "model=./custom_model",
+        "texture=./replacement"
+      ].join("\n"));
+      writeJson(pack, "assets/minecraft/optifine/cit/custom_model.json", {
+        parent: "minecraft:item/generated",
+        textures: {
+          layer0: "./original"
+        }
+      });
+      writeFile(pack, "assets/minecraft/optifine/cit/original.png", createRgbaPng(2, 2, () => 255));
+      writeFile(pack, "assets/minecraft/optifine/cit/replacement.png", createRgbaPng(2, 2, () => 255));
+
+      const preview = await createService().getPreviewDocument(properties);
+
+      assert.ok(preview.meshes.length > 0);
+      assert.match(preview.materials[0].textureUri ?? "", /replacement\.png$/);
+      assert.strictEqual(preview.materials.some(material => /original\.png/.test(material.textureUri ?? "")), false);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("previews armor, elytra, and enchantment CIT textures", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const cases = [
+        {
+          file: "armor.properties",
+          properties: ["type=armor", "items=diamond_helmet", "texture.layer_1=./armor"].join("\n"),
+          texture: "armor.png"
+        },
+        {
+          file: "elytra.properties",
+          properties: ["type=elytra", "texture=./elytra"].join("\n"),
+          texture: "elytra.png"
+        },
+        {
+          file: "glint.properties",
+          properties: ["type=enchantment", "texture=./glint", "blend=add"].join("\n"),
+          texture: "glint.png"
+        }
+      ];
+
+      for (const item of cases) {
+        const properties = path.join(pack, "assets/minecraft/citresewn/cit", item.file);
+        writeFile(pack, `assets/minecraft/citresewn/cit/${item.file}`, item.properties);
+        writeFile(pack, `assets/minecraft/citresewn/cit/${item.texture}`, createRgbaPng(2, 2, () => 255));
+
+        const preview = await createService().getPreviewDocument(properties);
+
+        assert.ok(preview.meshes.length > 0, item.file);
+        assert.match(preview.materials[0].textureUri ?? "", new RegExp(item.texture.replace(".", "\\.")));
+      }
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
   it("extrudes item/generated sides from opaque texture transitions", async () => {
     const root = createTempDirectory();
 
