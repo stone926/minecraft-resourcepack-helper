@@ -17,16 +17,27 @@
       "valueType": "integer",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["cit_weight", "citWeight"],
       "default": "0",
       "singleton": true,
       "title": "Weight",
       "description": "Chooses the winning CIT when multiple files match the same item."
+    },
+    "cit_fallback": {
+      "valueType": "string",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "aliases": ["citFallback"],
+      "singleton": true,
+      "title": "Fallback CIT",
+      "description": "Identifies the legacy root CIT that should be removed when this CIT loads successfully."
     },
     "items": {
       "valueType": "resourceList",
       "resourceKind": "item",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["matchItems"],
       "separator": "space",
       "singleton": true,
       "title": "Items",
@@ -36,6 +47,7 @@
       "valueType": "range",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["stack_size", "amount"],
       "singleton": true,
       "minimum": 1,
       "title": "Stack size",
@@ -45,6 +57,7 @@
       "valueType": "range",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["damage_mask"],
       "singleton": true,
       "minimum": 0,
       "allowPercent": true,
@@ -62,7 +75,7 @@
     },
     "hand": {
       "valueType": "enum",
-      "enum": ["main", "off"],
+      "enum": ["main", "mainhand", "main_hand", "off", "offhand", "off_hand", "any", "either", "*"],
       "scope": ["cit"],
       "appliesTo": ["base"],
       "singleton": true,
@@ -74,6 +87,7 @@
       "resourceKind": "enchantment",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["enchantmentIDs"],
       "separator": "space",
       "singleton": true,
       "title": "Enchantments",
@@ -83,6 +97,7 @@
       "valueType": "rangeList",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["enchantment_levels"],
       "separator": "space",
       "singleton": true,
       "minimum": 1,
@@ -96,8 +111,28 @@
       "scope": ["cit"],
       "appliesTo": ["base"],
       "repeatable": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "Minecraft 1.21+ moved item data from NBT to data components; prefer component.* or components.* for new CIT rules.",
       "title": "NBT match",
-      "description": "Matches the specified NBT path against a literal, pattern, or regular expression."
+      "description": "Legacy match against the specified NBT path using a literal, pattern, or regular expression."
+    },
+    "component.*": {
+      "valueType": "nbtMatch",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "repeatable": true,
+      "completion": "component.",
+      "title": "Component match",
+      "description": "Matches the specified 1.21+ item data component path against a literal, pattern, or regular expression."
+    },
+    "components.*": {
+      "valueType": "nbtMatch",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "repeatable": true,
+      "completion": "components.",
+      "title": "Components match",
+      "description": "Alias for component.* matching of 1.21+ item data component paths."
     }
   },
   "rules": [

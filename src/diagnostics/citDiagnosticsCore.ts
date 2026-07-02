@@ -1,7 +1,8 @@
 import * as path from "node:path";
 import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "../utils/citPaths";
-import { parseCitProperties, type CitPropertyEntry } from "../utils/citPropertiesParser";
+import { parseCitPropertiesDocument, type CitPropertyEntry } from "../utils/citPropertiesParser";
 import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "../utils/citLanguage";
+import { stripDefaultCitNamespace } from "../utils/citKeys";
 import { citSpecService } from "../services/citSpecService";
 import { citResourceIdService, type CitResourceIds } from "../services/citResourceIdService";
 import type { AstLocation } from "../utils/locationChecker";
@@ -32,16 +33,23 @@ export function getCitDiagnostics(
     return [];
   }
 
-  const entries = parseCitProperties(document.getText());
+  const parseResult = parseCitPropertiesDocument(document.getText());
+  const entries = parseResult.entries;
   const spec = getEffectiveSpec(document.fileName, entries, options.locale);
   const allCitSpec = citSpecService.getAllCitSpec(options.locale);
   const globalSpec = citSpecService.getGlobalSpec(options.locale);
-  const diagnostics: CitDiagnostic[] = [];
+  const diagnostics: CitDiagnostic[] = parseResult.errors.map(error =>
+    createDiagnostic(error.range, error.message, "warning")
+  );
   const seenSingletonKeys = new Map<string, CitPropertyEntry>();
   const globalFile = isCitGlobalPropertiesFileName(document.fileName);
   const citType = getCitType(entries);
 
   for (const entry of entries) {
+    if (entry.hasSyntaxError) {
+      continue;
+    }
+
     const lookup = citSpecService.lookupKey(spec, entry.key);
     if (!lookup) {
       const knownCit = citSpecService.lookupKey(allCitSpec, entry.key);
@@ -91,6 +99,7 @@ export function getCitDiagnostics(
 
     diagnostics.push(...validateValue(entry, lookup.spec));
     diagnostics.push(...validateResourceIds(entry, lookup.spec, options.resourceIds));
+    diagnostics.push(...validateRuntimeStatus(entry, lookup.spec));
   }
 
   if (!globalFile) {
@@ -150,7 +159,7 @@ function validateItemCitRules(
   entries: CitPropertyEntry[],
   resourceIds: CitResourceIds | undefined
 ): CitDiagnostic[] {
-  if (entries.some(entry => entry.key === "items")) {
+  if (entries.some(entry => isItemsKey(entry.key))) {
     return [];
   }
 
@@ -168,11 +177,11 @@ function validateItemCitRules(
 
 function validateElytraCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
   const diagnostics: CitDiagnostic[] = [];
-  const items = entries.find(entry => entry.key === "items");
+  const items = entries.find(entry => isItemsKey(entry.key));
   if (items) {
     diagnostics.push(createDiagnostic(items.keyRange, `items is ignored for type=elytra; the target is minecraft:elytra.`, "information"));
   }
-  if (!entries.some(entry => entry.key === "texture")) {
+  if (!entries.some(entry => stripDefaultCitNamespace(entry.key) === "texture")) {
     diagnostics.push(createDiagnostic(
       entries[0]?.keyRange ?? { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
       `type=elytra should declare texture.`,
@@ -183,7 +192,7 @@ function validateElytraCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
 }
 
 function validateArmorCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
-  const items = entries.find(entry => entry.key === "items");
+  const items = entries.find(entry => isItemsKey(entry.key));
   if (!items) {
     return [];
   }
@@ -196,6 +205,19 @@ function validateArmorCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
       `Item '${citResourceIdService.normalizeItemId(value)}' is not an armor item.`,
       "warning"
     ));
+}
+
+function validateRuntimeStatus(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
+  if (spec.runtimeStatus !== "legacy") {
+    return [];
+  }
+
+  const note = spec.runtimeNote ? ` ${spec.runtimeNote}` : "";
+  return [createDiagnostic(
+    entry.keyRange,
+    `CIT key '${entry.key}' has runtime status '${spec.runtimeStatus}'.${note}`,
+    "warning"
+  )];
 }
 
 function validateValue(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
@@ -310,8 +332,9 @@ function validateBlendFunc(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): C
 }
 
 function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
-  if (!/^nbt\.[A-Za-z0-9_.*-]+(?:\.[A-Za-z0-9_.*-]+)*$/.test(entry.key)) {
-    return [createDiagnostic(entry.keyRange, `NBT key must include a valid path after 'nbt.'.`, "warning")];
+  const normalizedKey = stripDefaultCitNamespace(entry.key);
+  if (!/^(?:nbt|component|components)\.[A-Za-z0-9_.*:~-]+(?:\.[A-Za-z0-9_.*:~-]+)*$/.test(normalizedKey)) {
+    return [createDiagnostic(entry.keyRange, `CIT component/NBT key must include a valid path after its prefix.`, "warning")];
   }
 
   const regexPrefix = /^(?:regex|iregex):/.exec(entry.value);
@@ -324,7 +347,7 @@ function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
     }
   }
 
-  if (/^nbt\.display\.(?:Name|Lore\.(?:\d+|\*))$/.test(entry.key)) {
+  if (/^nbt\.display\.(?:Name|Lore\.(?:\d+|\*))$/.test(normalizedKey)) {
     const value = entry.value.replace(/^(?:regex|iregex|pattern|ipattern):/, "");
     if (value.trim().startsWith("{") || value.trim().startsWith("[")) {
       try {
@@ -336,6 +359,11 @@ function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
   }
 
   return [];
+}
+
+function isItemsKey(key: string): boolean {
+  const normalizedKey = stripDefaultCitNamespace(key);
+  return normalizedKey === "items" || normalizedKey === "matchItems";
 }
 
 function isValidRangeToken(token: string, spec: ResolvedCitSpecKey): boolean {

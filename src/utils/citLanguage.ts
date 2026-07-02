@@ -1,4 +1,5 @@
 import { isCitGlobalPropertiesFileName } from "./citPaths";
+import { stripDefaultCitNamespace } from "./citKeys";
 import {
   findCitPropertyEntryAtPosition,
   findPropertySeparator,
@@ -49,6 +50,8 @@ export interface CitHoverInfo {
   defaultValue?: string;
   aliases: string[];
   citResewnOnly: boolean;
+  runtimeStatus?: string;
+  runtimeNote?: string;
 }
 
 export interface CitResourceCompletionData {
@@ -126,12 +129,14 @@ export function getCitHoverInfo(
     appliesTo: lookup.spec.appliesTo ?? [],
     defaultValue: lookup.spec.default,
     aliases: lookup.spec.aliases ?? [],
-    citResewnOnly: lookup.spec.citResewnOnly ?? false
+    citResewnOnly: lookup.spec.citResewnOnly ?? false,
+    runtimeStatus: lookup.spec.runtimeStatus,
+    runtimeNote: lookup.spec.runtimeNote
   };
 }
 
 export function getCitType(entries: CitPropertyEntry[]): CitType {
-  const explicitType = entries.find(entry => entry.key === "type")?.value.trim();
+  const explicitType = entries.find(entry => stripDefaultCitNamespace(entry.key) === "type")?.value.trim();
   return citTypes.has(explicitType as CitType) ? explicitType as CitType : "item";
 }
 
@@ -208,7 +213,7 @@ function getKeyCompletionCandidates(
 
   return citSpecService.getKeyCompletions(spec)
     .filter(key => key.key.startsWith(normalizedPrefix))
-    .filter(key => !usedSingletonKeys.has(key.key))
+    .filter(key => !usedSingletonKeys.has(key.canonicalKey ?? key.key))
     .map(key => {
       const patternKey = key.key.endsWith(".");
       return {

@@ -44,8 +44,66 @@ describe("CIT diagnostics", () => {
     ].join("\n"));
 
     assert.ok(diagnostics.some(message => message.includes("Invalid boolean value 'yes'")));
-    assert.ok(diagnostics.some(message => message.includes("Value must be at least 0")));
+    assert.ok(diagnostics.some(message => message.includes("Value must be greater than 0")));
     assert.ok(diagnostics.some(message => message.includes("Invalid regular expression")));
+  });
+
+  it("recognizes CIT Resewn aliases and modern component keys", () => {
+    const diagnostics = getMessages([
+      "cit_weight=10",
+      "matchItems=minecraft:stick",
+      "stack_size=1-3",
+      "damage_mask=255",
+      "enchantmentIDs=minecraft:sharpness",
+      "enchantment_levels=1-5",
+      "hand=main_hand",
+      "component.minecraft:custom_name=pattern:*Blade*"
+    ].join("\n"), undefined, {
+      items: ["minecraft:stick"],
+      enchantments: ["minecraft:sharpness"]
+    });
+
+    assert.strictEqual(diagnostics.some(message => message.includes("Unknown CIT key")), false);
+    assert.strictEqual(diagnostics.some(message => message.includes("requires items")), false);
+  });
+
+  it("recognizes default-namespaced keys without changing their raw display", () => {
+    const globalFile = path.join("pack", "assets", "minecraft", "citresewn", "cit.properties");
+    const diagnostics = getMessages("citresewn:root_fallback=true", globalFile);
+
+    assert.strictEqual(diagnostics.some(message => message.includes("Unknown CIT key")), false);
+    assert.strictEqual(diagnostics.some(message => message.includes("root_fallback")), false);
+  });
+
+  it("warns for legacy NBT and currently unported enchantment keys", () => {
+    const diagnostics = getMessages([
+      "type=enchantment",
+      "texture=./glint",
+      "nbt.display.Name=pattern:*Blade*",
+      "blend=add"
+    ].join("\n"));
+
+    assert.ok(diagnostics.some(message => message.includes("nbt.display.Name") && message.includes("runtime status 'legacy'")));
+    assert.ok(diagnostics.some(message => message.includes("blend") && message.includes("not ported yet")));
+  });
+
+  it("reports missing CIT property separators", () => {
+    const diagnostics = getMessages("items minecraft_stick");
+
+    assert.ok(diagnostics.some(message => message.includes("Missing CIT property separator")));
+  });
+
+  it("reports malformed keys containing separators as syntax errors", () => {
+    const diagnostics = getMessages([
+      "bad key=minecraft:stick",
+      "=minecraft:stick",
+      "items minecraft:stick"
+    ].join("\n"));
+
+    assert.ok(diagnostics.some(message => message.includes("cannot contain whitespace")));
+    assert.ok(diagnostics.some(message => message.includes("cannot be empty")));
+    assert.strictEqual(diagnostics.some(message => message.includes("Unknown CIT key 'bad key'")), false);
+    assert.strictEqual(diagnostics.some(message => message.includes("Unknown CIT key 'items minecraft'")), false);
   });
 
   it("validates item and enchantment ids", () => {

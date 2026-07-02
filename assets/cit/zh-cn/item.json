@@ -8,6 +8,7 @@
       "assetKind": "texture",
       "scope": ["cit"],
       "appliesTo": ["item"],
+      "aliases": ["tile"],
       "singleton": true,
       "patternKey": "texture.*",
       "title": "纹理",
@@ -34,6 +35,16 @@
       "completion": "texture.",
       "title": "子纹理键",
       "description": "按子键替换模型 override 纹理或 layer 纹理。"
+    },
+    "tile.*": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "repeatable": true,
+      "completion": "tile.",
+      "title": "tile 子纹理键",
+      "description": "texture.* 的 legacy 别名，用于按子键替换纹理。"
     },
     "model.*": {
       "valueType": "asset",

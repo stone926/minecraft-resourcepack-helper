@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { stripDefaultCitNamespace } from "../utils/citKeys";
 import { isCitGlobalPropertiesFileName } from "../utils/citPaths";
 import type {
   CitSpecFragment,
@@ -81,20 +82,27 @@ export class CitSpecService {
   }
 
   lookupKey(spec: ResolvedCitSpec, key: string): CitSpecLookupResult | null {
-    const exact = spec.keys.get(key);
-    if (exact) {
-      return { spec: exact, matchedBy: "key" };
+    const lookupKeys = getLookupKeys(key);
+    for (const lookupKey of lookupKeys) {
+      const exact = spec.keys.get(lookupKey);
+      if (exact) {
+        return { spec: exact, matchedBy: "key" };
+      }
     }
 
     for (const candidate of spec.keys.values()) {
-      if (candidate.aliases?.includes(key)) {
-        return { spec: candidate, matchedBy: "alias" };
+      for (const lookupKey of lookupKeys) {
+        if (candidate.aliases?.includes(lookupKey)) {
+          return { spec: candidate, matchedBy: "alias" };
+        }
       }
     }
 
     for (const pattern of spec.patterns) {
-      if (matchesPattern(key, pattern.key)) {
-        return { spec: pattern, matchedBy: "pattern" };
+      for (const lookupKey of lookupKeys) {
+        if (matchesPattern(lookupKey, pattern.key)) {
+          return { spec: pattern, matchedBy: "pattern" };
+        }
       }
     }
 
@@ -105,6 +113,13 @@ export class CitSpecService {
     const completions = new Map<string, ResolvedCitSpecKey>();
     for (const key of spec.keys.values()) {
       completions.set(key.key, key);
+      for (const alias of key.aliases ?? []) {
+        completions.set(alias, {
+          ...key,
+          key: alias,
+          canonicalKey: key.key
+        });
+      }
     }
     for (const pattern of spec.patterns) {
       completions.set(pattern.completion ?? pattern.key, {
@@ -147,6 +162,11 @@ export class CitSpecService {
     }
     return "en";
   }
+}
+
+function getLookupKeys(key: string): string[] {
+  const normalized = stripDefaultCitNamespace(key);
+  return normalized === key ? [key] : [key, normalized];
 }
 
 export const citSpecService = new CitSpecService();

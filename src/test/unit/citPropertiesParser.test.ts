@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { parseCitProperties } from "../../utils/citPropertiesParser";
+import { parseCitProperties, parseCitPropertiesDocument } from "../../utils/citPropertiesParser";
 
 describe("CIT properties parser", () => {
   it("returns key, value, and ranges for property entries", () => {
@@ -31,5 +31,58 @@ describe("CIT properties parser", () => {
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(entries[0].key, "nbt.display.Name=json");
     assert.strictEqual(entries[0].value, "regex:foo=bar");
+  });
+
+  it("keeps namespaced keys when equals is used as the separator", () => {
+    const entries = parseCitProperties("citresewn:root_fallback=true");
+
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0].key, "citresewn:root_fallback");
+    assert.strictEqual(entries[0].value, "true");
+  });
+
+  it("supports colon separators when equals is absent", () => {
+    const entries = parseCitProperties("texture: ./textures/sword");
+
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0].key, "texture");
+    assert.strictEqual(entries[0].value, "./textures/sword");
+  });
+
+  it("supports multiline continuations and unicode escapes", () => {
+    const entries = parseCitProperties([
+      "nbt.display.Name=regex:foo\\",
+      "  \\u0041bar"
+    ].join("\n"));
+
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0].rawValue, "regex:foo\\n\\u0041bar");
+    assert.strictEqual(entries[0].value, "regex:foo\nAbar");
+    assert.deepStrictEqual(entries[0].valueRange.end, { line: 2, column: 11 });
+  });
+
+  it("reports missing separators and invalid unicode escapes", () => {
+    const result = parseCitPropertiesDocument([
+      "items minecraft_stick",
+      "nbt.display.Name=\\u12G4"
+    ].join("\n"));
+
+    assert.strictEqual(result.entries.length, 1);
+    assert.strictEqual(result.errors.length, 2);
+    assert.ok(result.errors.some(error => error.message.includes("Missing CIT property separator")));
+    assert.ok(result.errors.some(error => error.message.includes("Invalid unicode escape")));
+  });
+
+  it("reports malformed keys even when equals or colon separators are present", () => {
+    const result = parseCitPropertiesDocument([
+      "bad key=minecraft:stick",
+      "=minecraft:stick",
+      "items minecraft:stick"
+    ].join("\n"));
+
+    assert.strictEqual(result.entries.length, 3);
+    assert.strictEqual(result.entries.every(entry => entry.hasSyntaxError), true);
+    assert.ok(result.errors.some(error => error.message.includes("cannot contain whitespace")));
+    assert.ok(result.errors.some(error => error.message.includes("cannot be empty")));
   });
 });

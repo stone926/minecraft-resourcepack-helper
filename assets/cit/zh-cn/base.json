@@ -17,16 +17,27 @@
       "valueType": "integer",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["cit_weight", "citWeight"],
       "default": "0",
       "singleton": true,
       "title": "权重",
       "description": "当多个 CIT 匹配同一物品时，决定优先使用哪一个。"
+    },
+    "cit_fallback": {
+      "valueType": "string",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "aliases": ["citFallback"],
+      "singleton": true,
+      "title": "后备 CIT",
+      "description": "指定此 CIT 成功加载后应移除的 legacy root CIT。"
     },
     "items": {
       "valueType": "resourceList",
       "resourceKind": "item",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["matchItems"],
       "separator": "space",
       "singleton": true,
       "title": "物品",
@@ -36,6 +47,7 @@
       "valueType": "range",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["stack_size", "amount"],
       "singleton": true,
       "minimum": 1,
       "title": "堆叠数量",
@@ -45,6 +57,7 @@
       "valueType": "range",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["damage_mask"],
       "singleton": true,
       "minimum": 0,
       "allowPercent": true,
@@ -62,7 +75,7 @@
     },
     "hand": {
       "valueType": "enum",
-      "enum": ["main", "off"],
+      "enum": ["main", "mainhand", "main_hand", "off", "offhand", "off_hand", "any", "either", "*"],
       "scope": ["cit"],
       "appliesTo": ["base"],
       "singleton": true,
@@ -74,6 +87,7 @@
       "resourceKind": "enchantment",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["enchantmentIDs"],
       "separator": "space",
       "singleton": true,
       "title": "附魔",
@@ -83,6 +97,7 @@
       "valueType": "rangeList",
       "scope": ["cit"],
       "appliesTo": ["base"],
+      "aliases": ["enchantment_levels"],
       "separator": "space",
       "singleton": true,
       "minimum": 1,
@@ -96,8 +111,28 @@
       "scope": ["cit"],
       "appliesTo": ["base"],
       "repeatable": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "Minecraft 1.21+ 已将物品数据从 NBT 迁移到数据组件；新 CIT 规则优先使用 component.* 或 components.*。",
       "title": "NBT 匹配",
-      "description": "按指定 NBT 路径匹配字面值、通配模式或正则表达式。"
+      "description": "legacy 规则：按指定 NBT 路径匹配字面值、通配模式或正则表达式。"
+    },
+    "component.*": {
+      "valueType": "nbtMatch",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "repeatable": true,
+      "completion": "component.",
+      "title": "组件匹配",
+      "description": "按指定的 1.21+ 物品数据组件路径匹配字面值、通配模式或正则表达式。"
+    },
+    "components.*": {
+      "valueType": "nbtMatch",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "repeatable": true,
+      "completion": "components.",
+      "title": "组件匹配",
+      "description": "component.* 的别名，用于匹配 1.21+ 物品数据组件路径。"
     }
   },
   "rules": [

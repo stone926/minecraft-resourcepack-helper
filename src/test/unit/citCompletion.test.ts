@@ -13,7 +13,11 @@ describe("CIT completion and hover", () => {
     const labels = result?.candidates.map(candidate => candidate.label) ?? [];
 
     assert.ok(labels.includes("items"));
+    assert.ok(labels.includes("matchItems"));
+    assert.ok(labels.includes("component."));
+    assert.ok(labels.includes("components."));
     assert.ok(labels.includes("texture"));
+    assert.ok(labels.includes("tile."));
     assert.ok(labels.includes("model."));
   });
 
@@ -67,6 +71,17 @@ describe("CIT completion and hover", () => {
     assert.strictEqual(hover?.title, "Hand");
     assert.strictEqual(hover?.valueType, "enum");
     assert.deepStrictEqual(hover?.appliesTo, ["base"]);
+  });
+
+  it("returns legacy status for NBT hover but not component hover", () => {
+    const nbtDocument = createMarkedDocument("nbt.display.Name|=pattern:*Blade*");
+    const nbtHover = getCitHoverInfo(nbtDocument.document, nbtDocument.position, "en");
+
+    const componentDocument = createMarkedDocument("component.minecraft:custom_name|=pattern:*Blade*");
+    const componentHover = getCitHoverInfo(componentDocument.document, componentDocument.position, "en");
+
+    assert.strictEqual(nbtHover?.runtimeStatus, "legacy");
+    assert.strictEqual(componentHover?.runtimeStatus, undefined);
   });
 });
 

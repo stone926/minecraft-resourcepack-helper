@@ -111,7 +111,7 @@ function readJsonFile<T>(file: string): T {
   return JSON.parse(fs.readFileSync(file, "utf8")) as T;
 }
 
-const localizedKeys = new Set(["title", "description"]);
+const localizedKeys = new Set(["title", "description", "runtimeNote"]);
 
 function compareStructures(en: unknown, zh: unknown, location: string): void {
   if (typeof en !== typeof zh) {

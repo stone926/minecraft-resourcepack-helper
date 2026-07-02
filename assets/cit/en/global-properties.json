@@ -39,6 +39,14 @@
       "singleton": true,
       "title": "Fade",
       "description": "Controls how long CIT enchantments fade when method is cycle."
+    },
+    "root_fallback": {
+      "valueType": "boolean",
+      "scope": ["global"],
+      "default": "false",
+      "singleton": true,
+      "title": "Root fallback",
+      "description": "When true, CITs in the citresewn root automatically fall back to matching optifine or mcpatcher root CITs unless an explicit fallback is set."
     }
   },
   "patterns": {},

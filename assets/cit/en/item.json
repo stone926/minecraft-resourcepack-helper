@@ -8,6 +8,7 @@
       "assetKind": "texture",
       "scope": ["cit"],
       "appliesTo": ["item"],
+      "aliases": ["tile"],
       "singleton": true,
       "patternKey": "texture.*",
       "title": "Texture",
@@ -34,6 +35,16 @@
       "completion": "texture.",
       "title": "Texture sub key",
       "description": "Replaces a model override texture or layer texture by sub key."
+    },
+    "tile.*": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "repeatable": true,
+      "completion": "tile.",
+      "title": "Tile texture sub key",
+      "description": "Legacy alias for texture.* replacement by sub key."
     },
     "model.*": {
       "valueType": "asset",

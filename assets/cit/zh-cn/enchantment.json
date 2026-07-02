@@ -26,7 +26,7 @@
       "valueType": "number",
       "scope": ["cit"],
       "appliesTo": ["enchantment"],
-      "default": "0.0",
+      "default": "1.0",
       "singleton": true,
       "title": "速度",
       "description": "乘算附魔光效滚动速度。"
@@ -35,16 +35,16 @@
       "valueType": "number",
       "scope": ["cit"],
       "appliesTo": ["enchantment"],
-      "default": "0.0",
+      "default": "10.0",
       "singleton": true,
       "title": "旋转",
       "description": "按角度旋转光效纹理和滚动方向。"
     },
     "duration": {
-      "valueType": "nonNegativeNumber",
+      "valueType": "positiveNumber",
       "scope": ["cit"],
       "appliesTo": ["enchantment"],
-      "default": "0.0",
+      "default": "1.0",
       "singleton": true,
       "title": "持续时间",
       "description": "当全局 method 为 cycle 时，控制此光效停留多久。"
@@ -56,6 +56,8 @@
       "appliesTo": ["enchantment"],
       "default": "add",
       "singleton": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 接受此 key，但运行时会提示 blend 尚未移植。",
       "title": "混合模式",
       "description": "为光效纹理设置命名或自定义 OpenGL 混合函数。"
     },
@@ -76,6 +78,8 @@
       "default": "false",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 接受此 key，但运行时会提示 blur 尚未移植。",
       "title": "模糊",
       "description": "控制纹理应用前是否进行模糊处理。"
     },
@@ -86,6 +90,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 接受此 key，但运行时会提示自定义光效颜色尚未移植。",
       "title": "红色倍率",
       "description": "乘算纹理红色通道。"
     },
@@ -96,6 +102,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 接受此 key，但运行时会提示自定义光效颜色尚未移植。",
       "title": "绿色倍率",
       "description": "乘算纹理绿色通道。"
     },
@@ -106,6 +114,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 接受此 key，但运行时会提示自定义光效颜色尚未移植。",
       "title": "蓝色倍率",
       "description": "乘算纹理蓝色通道。"
     },
@@ -116,6 +126,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 接受此 key，但运行时会提示自定义光效颜色尚未移植。",
       "title": "透明度倍率",
       "description": "乘算纹理 alpha 通道。"
     }

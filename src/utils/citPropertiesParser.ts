@@ -9,6 +9,18 @@ export interface CitPropertyEntry {
   valueRange: AstLocation;
   fullRange: AstLocation;
   line: number;
+  hasSyntaxError?: boolean;
+}
+
+export interface CitPropertySyntaxError {
+  message: string;
+  range: AstLocation;
+  line: number;
+}
+
+export interface CitPropertiesParseResult {
+  entries: CitPropertyEntry[];
+  errors: CitPropertySyntaxError[];
 }
 
 export interface CitPropertiesPosition {
@@ -16,72 +28,72 @@ export interface CitPropertiesPosition {
   character: number;
 }
 
-export function parseCitProperties(text: string): CitPropertyEntry[] {
-  const entries: CitPropertyEntry[] = [];
-  const lines = text.split(/\r\n|\n|\r/);
+interface LogicalCharacterLocation {
+  line: number;
+  column: number;
+}
 
-  lines.forEach((line, index) => {
-    const entry = parseCitPropertyLine(line, index + 1);
+interface LogicalCitPropertyLine {
+  text: string;
+  locations: LogicalCharacterLocation[];
+  startLine: number;
+  startColumn: number;
+}
+
+export function parseCitProperties(text: string): CitPropertyEntry[] {
+  return parseCitPropertiesDocument(text).entries;
+}
+
+export function parseCitPropertiesDocument(text: string): CitPropertiesParseResult {
+  const entries: CitPropertyEntry[] = [];
+  const errors: CitPropertySyntaxError[] = [];
+
+  for (const logicalLine of getLogicalLines(text)) {
+    const entry = parseLogicalCitPropertyLine(logicalLine, errors);
     if (entry) {
       entries.push(entry);
     }
-  });
+  }
 
-  return entries;
+  return { entries, errors };
 }
 
 export function parseCitPropertyLine(line: string, lineNumber: number): CitPropertyEntry | null {
-  const contentStart = firstNonWhitespaceIndex(line);
-  if (contentStart === line.length || line[contentStart] === "#" || line[contentStart] === "!") {
-    return null;
-  }
-
-  const separatorIndex = findPropertySeparator(line, contentStart);
-  if (separatorIndex < 0) {
-    return null;
-  }
-
-  const keyEnd = trimEndIndex(line, separatorIndex);
-  const valueStart = firstNonWhitespaceIndex(line, separatorIndex + 1);
-  const valueEnd = trimEndIndex(line, line.length);
-  const rawKey = line.slice(contentStart, keyEnd);
-  const rawValue = line.slice(valueStart, Math.max(valueStart, valueEnd));
-
-  return {
-    key: unescapeProperty(rawKey),
-    value: unescapeProperty(rawValue),
-    rawKey,
-    rawValue,
-    keyRange: createLocation(lineNumber, contentStart, keyEnd),
-    valueRange: createLocation(lineNumber, valueStart, valueStart + rawValue.length),
-    fullRange: createLocation(lineNumber, contentStart, valueStart + rawValue.length),
-    line: lineNumber
-  };
+  return parseLogicalCitPropertyLine(createSingleLogicalLine(line, lineNumber), []);
 }
 
 export function findCitPropertyEntryAtPosition(
   entries: CitPropertyEntry[],
   position: CitPropertiesPosition
 ): CitPropertyEntry | null {
-  const line = position.line + 1;
-  const character = position.character;
-
-  return entries.find(entry =>
-    entry.line === line &&
-    character >= entry.fullRange.start.column &&
-    character <= entry.fullRange.end.column
-  ) ?? null;
+  return entries.find(entry => isPositionInLocation(position, entry.fullRange)) ?? null;
 }
 
 export function isPositionInLocation(position: CitPropertiesPosition, location: AstLocation): boolean {
   const line = position.line + 1;
   const character = position.character;
-  return line === location.start.line &&
-    character >= location.start.column &&
-    character <= location.end.column;
+  if (line < location.start.line || line > location.end.line) {
+    return false;
+  }
+  if (line === location.start.line && character < location.start.column) {
+    return false;
+  }
+  if (line === location.end.line && character > location.end.column) {
+    return false;
+  }
+  return true;
 }
 
 export function findPropertySeparator(line: string, start = 0): number {
+  const equalsIndex = findUnescapedSeparator(line, "=", start);
+  if (equalsIndex >= 0) {
+    return equalsIndex;
+  }
+
+  return findUnescapedSeparator(line, ":", start);
+}
+
+function findUnescapedSeparator(line: string, separator: "=" | ":", start: number): number {
   let escaping = false;
   for (let index = start; index < line.length; index++) {
     const character = line[index];
@@ -89,7 +101,7 @@ export function findPropertySeparator(line: string, start = 0): number {
       escaping = false;
     } else if (character === "\\") {
       escaping = true;
-    } else if (character === "=" || character === ":") {
+    } else if (character === separator) {
       return index;
     }
   }
@@ -117,22 +129,213 @@ export function trimEndIndex(value: string, end: number): number {
   return 0;
 }
 
-function unescapeProperty(value: string): string {
-  let result = "";
-  let escaping = false;
+function parseLogicalCitPropertyLine(
+  logicalLine: LogicalCitPropertyLine,
+  errors: CitPropertySyntaxError[]
+): CitPropertyEntry | null {
+  const line = logicalLine.text;
+  const contentStart = firstNonWhitespaceIndex(line);
+  if (contentStart === line.length || line[contentStart] === "#" || line[contentStart] === "!") {
+    return null;
+  }
 
-  for (const character of value) {
-    if (escaping) {
-      result += unescapeCharacter(character);
-      escaping = false;
-    } else if (character === "\\") {
-      escaping = true;
+  const separatorIndex = findPropertySeparator(line, contentStart);
+  if (separatorIndex < 0) {
+    errors.push({
+      message: "Missing CIT property separator '=' or ':'.",
+      range: createLogicalLocation(logicalLine, contentStart, line.length),
+      line: locationAtLogicalOffset(logicalLine, contentStart).line
+    });
+    return null;
+  }
+
+  const keyEnd = trimEndIndex(line, separatorIndex);
+  const valueStart = firstNonWhitespaceIndex(line, separatorIndex + 1);
+  const valueEnd = trimEndIndex(line, line.length);
+  const rawKey = line.slice(contentStart, keyEnd);
+  const rawValue = line.slice(valueStart, Math.max(valueStart, valueEnd));
+  const keyRange = createLogicalLocation(logicalLine, contentStart, keyEnd);
+  const keyErrorStart = errors.length;
+  const key = unescapeProperty(rawKey, logicalLine, contentStart, errors);
+  validatePropertyKey(key, keyRange, errors);
+  const hasSyntaxError = errors.length > keyErrorStart;
+
+  return {
+    key,
+    value: unescapeProperty(rawValue, logicalLine, valueStart, errors),
+    rawKey,
+    rawValue,
+    keyRange,
+    valueRange: createLogicalLocation(logicalLine, valueStart, valueStart + rawValue.length),
+    fullRange: createLogicalLocation(logicalLine, contentStart, valueStart + rawValue.length),
+    line: locationAtLogicalOffset(logicalLine, contentStart).line,
+    ...(hasSyntaxError ? { hasSyntaxError } : {})
+  };
+}
+
+function validatePropertyKey(
+  key: string,
+  range: AstLocation,
+  errors: CitPropertySyntaxError[]
+): void {
+  if (key.length === 0) {
+    errors.push({
+      message: "CIT property key cannot be empty.",
+      range,
+      line: range.start.line
+    });
+    return;
+  }
+
+  if (/\s/.test(key)) {
+    errors.push({
+      message: "CIT property key cannot contain whitespace.",
+      range,
+      line: range.start.line
+    });
+  }
+}
+
+function getLogicalLines(text: string): LogicalCitPropertyLine[] {
+  const lines = text.split(/\r\n|\n|\r/);
+  const logicalLines: LogicalCitPropertyLine[] = [];
+  let current: LogicalCitPropertyLine | null = null;
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const physicalLine = index + 1;
+    const startColumn: number = current ? firstNonWhitespaceIndex(line) : 0;
+    if (!current && isIgnorablePhysicalLine(line)) {
+      logicalLines.push(createSingleLogicalLine(line, physicalLine));
+      continue;
+    }
+    if (current && isCommentLine(line, startColumn)) {
+      continue;
+    }
+
+    const continued = hasLineContinuation(line);
+    const endColumn = continued ? line.length - 1 : line.length;
+    const segment = line.slice(startColumn, Math.max(startColumn, endColumn));
+
+    if (!current) {
+      current = {
+        text: "",
+        locations: [],
+        startLine: physicalLine,
+        startColumn
+      };
     } else {
-      result += character;
+      appendLogicalSegment(current, "\\n", physicalLine, startColumn);
+    }
+
+    appendLogicalSegment(current, segment, physicalLine, startColumn);
+
+    if (!continued) {
+      logicalLines.push(current);
+      current = null;
     }
   }
 
-  return escaping ? `${result}\\` : result;
+  if (current) {
+    const last = current.locations[current.locations.length - 1] ?? {
+      line: current.startLine,
+      column: current.startColumn
+    };
+    appendLogicalSegment(current, "\\n", last.line, last.column + 1);
+    logicalLines.push(current);
+  }
+
+  return logicalLines;
+}
+
+function appendLogicalSegment(
+  logicalLine: LogicalCitPropertyLine,
+  segment: string,
+  physicalLine: number,
+  startColumn: number
+): void {
+  logicalLine.text += segment;
+  for (let index = 0; index < segment.length; index++) {
+    logicalLine.locations.push({ line: physicalLine, column: startColumn + index });
+  }
+}
+
+function hasLineContinuation(line: string): boolean {
+  let backslashes = 0;
+  for (let index = line.length - 1; index >= 0 && line[index] === "\\"; index--) {
+    backslashes++;
+  }
+  return backslashes % 2 === 1;
+}
+
+function isCommentLine(line: string, startColumn: number): boolean {
+  return line[startColumn] === "#" || line[startColumn] === "!";
+}
+
+function isIgnorablePhysicalLine(line: string): boolean {
+  const contentStart = firstNonWhitespaceIndex(line);
+  return contentStart === line.length || isCommentLine(line, contentStart);
+}
+
+function createSingleLogicalLine(line: string, lineNumber: number): LogicalCitPropertyLine {
+  const logicalLine: LogicalCitPropertyLine = {
+    text: line,
+    locations: [],
+    startLine: lineNumber,
+    startColumn: 0
+  };
+  appendLogicalSegment(logicalLine, line, lineNumber, 0);
+  return logicalLine;
+}
+
+function unescapeProperty(
+  value: string,
+  logicalLine: LogicalCitPropertyLine,
+  baseOffset: number,
+  errors: CitPropertySyntaxError[]
+): string {
+  let result = "";
+
+  for (let index = 0; index < value.length; index++) {
+    const character = value[index];
+    if (character !== "\\") {
+      result += character;
+      continue;
+    }
+
+    const escaped = value[index + 1];
+    if (escaped === undefined) {
+      result += "\\";
+      continue;
+    }
+
+    if (escaped === "u") {
+      const unicode = value.slice(index + 2, index + 6);
+      if (/^[0-9a-fA-F]{4}$/.test(unicode)) {
+        result += String.fromCharCode(Number.parseInt(unicode, 16));
+        index += 5;
+        continue;
+      }
+
+      errors.push({
+        message: "Invalid unicode escape in CIT property; expected \\uXXXX.",
+        range: createLogicalLocation(
+          logicalLine,
+          baseOffset + index,
+          Math.min(baseOffset + index + 6, baseOffset + value.length)
+        ),
+        line: locationAtLogicalOffset(logicalLine, baseOffset + index).line
+      });
+      result += "u";
+      index++;
+      continue;
+    }
+
+    result += unescapeCharacter(escaped);
+    index++;
+  }
+
+  return result;
 }
 
 function unescapeCharacter(character: string): string {
@@ -155,9 +358,23 @@ function isWhitespace(value: string): boolean {
   return value === " " || value === "\t" || value === "\f";
 }
 
-function createLocation(line: number, startColumn: number, endColumn: number): AstLocation {
+function createLogicalLocation(logicalLine: LogicalCitPropertyLine, startOffset: number, endOffset: number): AstLocation {
   return {
-    start: { line, column: startColumn },
-    end: { line, column: endColumn }
+    start: locationAtLogicalOffset(logicalLine, startOffset),
+    end: locationAtLogicalOffset(logicalLine, endOffset)
   };
+}
+
+function locationAtLogicalOffset(logicalLine: LogicalCitPropertyLine, offset: number): LogicalCharacterLocation {
+  if (logicalLine.locations.length === 0) {
+    return { line: logicalLine.startLine, column: logicalLine.startColumn };
+  }
+
+  const boundedOffset = Math.max(0, Math.min(offset, logicalLine.locations.length));
+  if (boundedOffset < logicalLine.locations.length) {
+    return logicalLine.locations[boundedOffset];
+  }
+
+  const last = logicalLine.locations[logicalLine.locations.length - 1];
+  return { line: last.line, column: last.column + 1 };
 }

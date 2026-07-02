@@ -2,6 +2,7 @@ export type CitType = "item" | "armor" | "elytra" | "enchantment";
 export type CitSpecScope = "cit" | "global";
 export type CitAssetKind = "texture" | "model";
 export type CitResourceKind = "item" | "enchantment";
+export type CitRuntimeStatus = "supported" | "legacy";
 export type CitValueType =
   | "asset"
   | "blendFunc"
@@ -38,6 +39,8 @@ export interface CitSpecKey {
   minimum?: number;
   maximum?: number;
   allowPercent?: boolean;
+  runtimeStatus?: CitRuntimeStatus;
+  runtimeNote?: string;
 }
 
 export interface CitSpecRule {
@@ -61,6 +64,7 @@ export interface CitSpecFragment {
 export interface ResolvedCitSpecKey extends CitSpecKey {
   key: string;
   pattern?: string;
+  canonicalKey?: string;
 }
 
 export interface ResolvedCitSpec {

@@ -31,6 +31,12 @@ function toMarkdown(info: CitHoverInfo): vscode.MarkdownString {
   if (info.citResewnOnly) {
     markdown.appendMarkdown("\n\nCIT Resewn only.");
   }
+  if (info.runtimeStatus) {
+    markdown.appendMarkdown(`\n\nRuntime status: \`${info.runtimeStatus}\``);
+  }
+  if (info.runtimeNote) {
+    markdown.appendMarkdown(`\n\n${info.runtimeNote}`);
+  }
   return markdown;
 }
 

@@ -26,7 +26,7 @@
       "valueType": "number",
       "scope": ["cit"],
       "appliesTo": ["enchantment"],
-      "default": "0.0",
+      "default": "1.0",
       "singleton": true,
       "title": "Speed",
       "description": "Multiplies the glint scroll speed."
@@ -35,16 +35,16 @@
       "valueType": "number",
       "scope": ["cit"],
       "appliesTo": ["enchantment"],
-      "default": "0.0",
+      "default": "10.0",
       "singleton": true,
       "title": "Rotation",
       "description": "Rotates the glint texture and scroll direction in degrees."
     },
     "duration": {
-      "valueType": "nonNegativeNumber",
+      "valueType": "positiveNumber",
       "scope": ["cit"],
       "appliesTo": ["enchantment"],
-      "default": "0.0",
+      "default": "1.0",
       "singleton": true,
       "title": "Duration",
       "description": "Controls how long this glint pauses when global method is cycle."
@@ -56,6 +56,8 @@
       "appliesTo": ["enchantment"],
       "default": "add",
       "singleton": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 accepts this key but logs that blend is not ported yet.",
       "title": "Blend",
       "description": "Sets a named or custom OpenGL blend function for the glint texture."
     },
@@ -76,6 +78,8 @@
       "default": "false",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 accepts this key but logs that blur is not ported yet.",
       "title": "Blur",
       "description": "Controls whether the texture is blurred before being applied."
     },
@@ -86,6 +90,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 accepts this key but logs that custom glint colors are not ported yet.",
       "title": "Red multiplier",
       "description": "Multiplies the texture's red channel."
     },
@@ -96,6 +102,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 accepts this key but logs that custom glint colors are not ported yet.",
       "title": "Green multiplier",
       "description": "Multiplies the texture's green channel."
     },
@@ -106,6 +114,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 accepts this key but logs that custom glint colors are not ported yet.",
       "title": "Blue multiplier",
       "description": "Multiplies the texture's blue channel."
     },
@@ -116,6 +126,8 @@
       "default": "1.0",
       "singleton": true,
       "citResewnOnly": true,
+      "runtimeStatus": "legacy",
+      "runtimeNote": "CIT Resewn Continuation 1.21.11 accepts this key but logs that custom glint colors are not ported yet.",
       "title": "Alpha multiplier",
       "description": "Multiplies the texture's alpha channel."
     }
