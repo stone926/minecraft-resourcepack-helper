@@ -15,7 +15,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 ## 功能亮点
 
 - 为方块状态、方块/物品模型、现代物品模型定义、粒子、纹理图集、装备、字体、路径点样式、后处理、声音和着色器导入提供跳转定义和资源路径补全。
-- 为 OptiFine CIT `.properties` 中的纹理和模型路径提供跳转定义支持。
+- 为 CIT `.properties` 中的纹理和模型路径提供跳转定义、补全、缺失资源诊断和资源关系图支持。
 - 缺失资源诊断会按当前资源包、资源包 overlays 和 filters、配置的低优先级资源包、原版资源逐级解析。
 - 模型纹理变量支持：跳转到 `#texture` 定义、追踪父模型继承的变量、高亮未定义变量，并提示循环变量引用或过深的父模型链。
 - Minecraft 资源活动栏视图展示当前文件引用、入站引用、模型继承、子模型，以及方块状态 -> 模型 -> 纹理关系。
@@ -74,7 +74,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 - `assets/<namespace>/post_effect/**/*.json`：后处理着色器引用和 effect 纹理。
 - `assets/<namespace>/sounds.json`：声音文件引用和声音事件检查。
 - `assets/<namespace>/shaders/{core,post}/**/*.{vsh,fsh}`：`#moj_import` 着色器 include 引用。
-- OptiFine CIT `.properties`：纹理和模型路径跳转支持。
+- CIT `.properties`：纹理和模型路径跳转、补全、缺失资源诊断和资源关系图支持。
 
 ## 诊断与校验
 

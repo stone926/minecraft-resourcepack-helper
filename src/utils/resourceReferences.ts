@@ -1,4 +1,6 @@
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { getCitPropertyReferences } from "./citProperties";
+import { isCitPropertiesFileName } from "./citPaths";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "./jsonAst";
 import { AstLocation, isInArea } from "./locationChecker";
 
@@ -10,15 +12,18 @@ export interface ResourceReference {
   extension: string | null;
   kind: ResourceReferenceKind;
   relationship?: ResourceReferenceRelationship;
+  resolveMode?: ResourceReferenceResolveMode;
 }
 
 export interface ResourceReferenceValueNode {
   loc?: AstLocation | null;
   valueLoc?: AstLocation | null;
+  hitLoc?: AstLocation | null;
 }
 
 type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "fontFile" | "shader" | "sound";
 export type ResourceReferenceRelationship = "modelParent";
+export type ResourceReferenceResolveMode = "cit";
 
 export interface ResourceReferenceDocument {
   languageId: string;
@@ -46,7 +51,8 @@ export type ResourceReferenceDocumentKind =
   | "postEffect"
   | "sounds"
   | "shaderCore"
-  | "shaderPost";
+  | "shaderPost"
+  | "citProperties";
 
 interface CachedResourceReferences {
   fileName: string;
@@ -56,7 +62,8 @@ interface CachedResourceReferences {
 
 const resourceReferenceDocumentPatterns: Array<{
   kind: ResourceReferenceDocumentKind;
-  pattern: RegExp;
+  pattern?: RegExp;
+  matches?: (fileName: string) => boolean;
 }> = [
   { kind: "blockstates", pattern: /[\\/]blockstates[\\/].+\.json$/i },
   { kind: "modelsBlock", pattern: /[\\/]models[\\/]block[\\/].+\.json$/i },
@@ -71,7 +78,8 @@ const resourceReferenceDocumentPatterns: Array<{
   { kind: "postEffect", pattern: /[\\/]post_effect[\\/].+\.json$/i },
   { kind: "sounds", pattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i },
   { kind: "shaderCore", pattern: /[\\/]shaders[\\/]core[\\/].+\.(?:vsh|fsh)$/i },
-  { kind: "shaderPost", pattern: /[\\/]shaders[\\/]post[\\/].+\.(?:vsh|fsh)$/i }
+  { kind: "shaderPost", pattern: /[\\/]shaders[\\/]post[\\/].+\.(?:vsh|fsh)$/i },
+  { kind: "citProperties", matches: isCitPropertiesFileName }
 ];
 
 const resourceReferenceCache = new WeakMap<ResourceReferenceDocument, CachedResourceReferences>();
@@ -82,7 +90,7 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return [];
   }
 
-  if (document.languageId !== "json" && !isShaderDocumentKind(documentKind)) {
+  if (documentKind !== "citProperties" && document.languageId !== "json" && !isShaderDocumentKind(documentKind)) {
     return [];
   }
 
@@ -93,6 +101,12 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
 
   if (isShaderDocumentKind(documentKind)) {
     const references = getShaderReferences(document.getText(), getShaderDocumentSource(documentKind));
+    setCachedResourceReferences(document, references);
+    return references;
+  }
+
+  if (documentKind === "citProperties") {
+    const references = getCitPropertyReferences(document.getText(), document.fileName);
     setCachedResourceReferences(document, references);
     return references;
   }
@@ -112,13 +126,13 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
   const character = position.character + 1;
 
   return getResourceReferences(document).find(reference =>
-    isInArea(line, character, reference.valueNode.valueLoc ?? reference.valueNode.loc)
+    isInArea(line, character, reference.valueNode.hitLoc ?? reference.valueNode.valueLoc ?? reference.valueNode.loc)
   ) ?? null;
 }
 
 export function isResourceReferenceDocument(document: ResourceReferenceDocument): boolean {
   const kind = getResourceReferenceDocumentKind(document.fileName);
-  return kind !== null && (document.languageId === "json" || isShaderDocumentKind(kind));
+  return kind !== null && (document.languageId === "json" || isShaderDocumentKind(kind) || kind === "citProperties");
 }
 
 export function isResourceReferenceFileName(fileName: string): boolean {
@@ -729,8 +743,8 @@ function findLineIndex(lineStarts: number[], offset: number): number {
 }
 
 export function getResourceReferenceDocumentKind(fileName: string): ResourceReferenceDocumentKind | null {
-  for (const { kind, pattern } of resourceReferenceDocumentPatterns) {
-    if (pattern.test(fileName)) {
+  for (const { kind, pattern, matches } of resourceReferenceDocumentPatterns) {
+    if (pattern?.test(fileName) || matches?.(fileName)) {
       return kind;
     }
   }

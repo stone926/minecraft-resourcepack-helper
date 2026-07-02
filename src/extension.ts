@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import citDefinitionProvider from './providers/citDefinitionProvider';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
 import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
@@ -37,9 +36,19 @@ const shaderResourceReferenceSelectors: vscode.DocumentSelector = [
   { pattern: "**/assets/*/shaders/post/**/*.fsh" }
 ];
 
+const citResourceReferenceSelectors: vscode.DocumentSelector = [
+  { language: "properties", pattern: "**/assets/*/citresewn/*.properties" },
+  { language: "properties", pattern: "**/assets/*/citresewn/**/*.properties" },
+  { language: "properties", pattern: "**/assets/*/optifine/cit.properties" },
+  { language: "properties", pattern: "**/assets/*/optifine/cit/**/*.properties" },
+  { language: "properties", pattern: "**/assets/*/mcpatcher/cit.properties" },
+  { language: "properties", pattern: "**/assets/*/mcpatcher/cit/**/*.properties" }
+];
+
 const resourceReferenceSelectors: vscode.DocumentSelector = [
   ...jsonResourceReferenceSelectors,
-  ...shaderResourceReferenceSelectors
+  ...shaderResourceReferenceSelectors,
+  ...citResourceReferenceSelectors
 ];
 
 export function activate(context: vscode.ExtensionContext) {
@@ -63,12 +72,9 @@ export function activate(context: vscode.ExtensionContext) {
     '"',
     '<',
     '/',
-    ':'
+    ':',
+    '='
   ));
-
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider('properties', {
-    provideDefinition: citDefinitionProvider
-  }));
 
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack));
@@ -201,9 +207,27 @@ export function activate(context: vscode.ExtensionContext) {
   }
   for (const pattern of [
     "**/assets/*/textures/**/*.png",
+    "**/assets/*/citresewn/*.png",
+    "**/assets/*/citresewn/**/*.png",
+    "**/assets/*/optifine/cit/**/*.png",
+    "**/assets/*/mcpatcher/cit/**/*.png",
     "**/assets/*/textures/**/*.png.mcmeta",
     "**/pack.mcmeta",
     "**/pack.png"
+  ]) {
+    registerResourceWatcher(context, pattern, uri => {
+      invalidateResourcePath(uri);
+      refreshOpenResourceDiagnosticsSoon();
+      resourceGraphTreeProvider.refreshSoon();
+    });
+  }
+  for (const pattern of [
+    "**/assets/*/citresewn/*.properties",
+    "**/assets/*/citresewn/**/*.properties",
+    "**/assets/*/optifine/cit.properties",
+    "**/assets/*/optifine/cit/**/*.properties",
+    "**/assets/*/mcpatcher/cit.properties",
+    "**/assets/*/mcpatcher/cit/**/*.properties"
   ]) {
     registerResourceWatcher(context, pattern, uri => {
       invalidateResourcePath(uri);

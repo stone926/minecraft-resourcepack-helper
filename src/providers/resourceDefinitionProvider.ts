@@ -1,5 +1,5 @@
 import { Location, Position, TextDocument } from "vscode";
-import { generateRedirectPath } from "../utils/pathGenerator";
+import { generateReferenceRedirectPath } from "../utils/pathGenerator";
 import { findResourceReferenceAtPosition } from "../utils/resourceReferences";
 
 export default (document: TextDocument, position: Position) => {
@@ -8,6 +8,6 @@ export default (document: TextDocument, position: Position) => {
     return null;
   }
 
-  const path = generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension);
+  const path = generateReferenceRedirectPath(reference, document);
   return path ? new Location(path, new Position(0, 0)) : null;
 };

@@ -2,6 +2,11 @@ import * as path from "node:path";
 
 export type CitResourceType = "textures" | "models";
 
+export interface CitDocumentInfo {
+  namespace: string;
+  source: string;
+}
+
 export function getCitResourceType(key: string): CitResourceType | null {
   if (/^texture(\.|$)/.test(key)) {
     return "textures";
@@ -12,6 +17,38 @@ export function getCitResourceType(key: string): CitResourceType | null {
   }
 
   return null;
+}
+
+export function isCitPropertiesFileName(fileName: string): boolean {
+  return getCitDocumentInfo(fileName) !== null && path.extname(fileName).toLowerCase() === ".properties";
+}
+
+export function getCitDocumentSource(fileName: string): string {
+  return getCitDocumentInfo(fileName)?.source ?? "citresewn";
+}
+
+export function getCitDocumentNamespace(fileName: string): string {
+  return getCitDocumentInfo(fileName)?.namespace ?? "minecraft";
+}
+
+export function getCitDocumentInfo(fileName: string): CitDocumentInfo | null {
+  const normalizedPath = path.normalize(fileName);
+  const segments = normalizedPath.split(path.sep).filter(Boolean);
+  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  if (assetsIndex < 0 || segments.length <= assetsIndex + 3) {
+    return null;
+  }
+
+  const namespace = segments[assetsIndex + 1];
+  const relativeSegments = segments.slice(assetsIndex + 2, -1);
+  if (!isCitRelativePath(relativeSegments, segments[segments.length - 1])) {
+    return null;
+  }
+
+  return {
+    namespace,
+    source: relativeSegments.join("/")
+  };
 }
 
 export function getCitPathCandidates(
@@ -26,7 +63,7 @@ export function getCitPathCandidates(
   }
 
   if (path.isAbsolute(cleanValue)) {
-    return [withExtension(cleanValue, resourceType)];
+    return [path.normalize(withExtension(cleanValue, resourceType))];
   }
 
   const documentDirectory = path.dirname(documentFileName);
@@ -44,6 +81,12 @@ export function getCitPathCandidates(
       packRoot,
       "assets",
       resourceLocation.namespace,
+      withExtension(resourceLocation.resourcePath, resourceType)
+    ));
+    candidates.push(path.join(
+      packRoot,
+      "assets",
+      resourceLocation.namespace,
       resourceType,
       withExtension(resourceLocation.resourcePath, resourceType)
     ));
@@ -51,7 +94,13 @@ export function getCitPathCandidates(
   }
 
   candidates.push(path.join(documentDirectory, withExtension(normalizedValue, resourceType)));
-  candidates.push(path.join(packRoot, "assets", "minecraft", resourceType, withExtension(normalizedValue, resourceType)));
+  if (!isForcedRelativePath(normalizedValue)) {
+    const namespace = getCitDocumentNamespace(documentFileName);
+    if (containsPathSeparator(normalizedValue)) {
+      candidates.push(path.join(packRoot, "assets", namespace, withExtension(normalizedValue, resourceType)));
+    }
+    candidates.push(path.join(packRoot, "assets", namespace, resourceType, withExtension(normalizedValue, resourceType)));
+  }
   return unique(candidates);
 }
 
@@ -81,6 +130,44 @@ function withExtension(value: string, resourceType: CitResourceType): string {
 function startsWithPathSegment(value: string, segment: string): boolean {
   const [firstSegment] = value.split(path.sep);
   return firstSegment?.toLowerCase() === segment.toLowerCase();
+}
+
+function isForcedRelativePath(value: string): boolean {
+  return value === "." ||
+    value === ".." ||
+    value.startsWith(`.${path.sep}`) ||
+    value.startsWith(`..${path.sep}`);
+}
+
+function containsPathSeparator(value: string): boolean {
+  return value.includes(path.sep);
+}
+
+function isCitRelativePath(segments: string[], fileName: string): boolean {
+  if (segments.length === 0) {
+    return false;
+  }
+
+  const [root, second] = segments.map(segment => segment.toLowerCase());
+  if (root === "citresewn") {
+    return true;
+  }
+
+  if (root !== "optifine" && root !== "mcpatcher") {
+    return false;
+  }
+
+  return second === "cit" || (segments.length === 1 && fileName.toLowerCase() === "cit.properties");
+}
+
+function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index--) {
+    if (predicate(values[index])) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function unique(values: string[]): string[] {

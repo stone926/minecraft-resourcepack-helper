@@ -2,7 +2,11 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { createResourcePathResolver, generateRedirectPath, type ResourcePathResolver } from "./pathGenerator";
+import {
+  createResourceReferencePathResolver,
+  generateReferenceRedirectPath,
+  type ResourceReferencePathResolver
+} from "./pathGenerator";
 import {
   getResourceReferences,
   isResourceReferenceFileName,
@@ -78,7 +82,7 @@ export class ResourceGraphWorkspaceCache {
 export class ResourceGraphIndex {
   private readonly incomingReferencesByTarget = new Map<string, Promise<ResolvedResourceReference[]>>();
   private readonly referencesByDocument = new Map<string, ResolvedReferencesCacheEntry>();
-  private resourcePathResolver: ResourcePathResolver | null = null;
+  private resourcePathResolver: ResourceReferencePathResolver | null = null;
   private childModelReferencesByParent: Promise<ReadonlyMap<string, ResolvedResourceReference[]>> | null = null;
 
   constructor(private readonly workspaceCache: ResourceGraphWorkspaceCache = new ResourceGraphWorkspaceCache()) { }
@@ -178,9 +182,9 @@ export class ResourceGraphIndex {
     return uniqueResolvedReferences(references);
   }
 
-  private getResourcePathResolver(): ResourcePathResolver {
+  private getResourcePathResolver(): ResourceReferencePathResolver {
     if (!this.resourcePathResolver) {
-      this.resourcePathResolver = createResourcePathResolver();
+      this.resourcePathResolver = createResourceReferencePathResolver();
     }
 
     return this.resourcePathResolver;
@@ -266,6 +270,8 @@ function getPossibleReferencePaths(resourcePath: string): Set<string> {
   const paths = new Set<string>();
   const normalizedResourcePath = resourcePath.replaceAll("\\", "/");
   const pathWithoutExtension = stripExtension(normalizedResourcePath);
+  const basenameWithoutExtension = path.posix.basename(pathWithoutExtension);
+  const basename = path.posix.basename(normalizedResourcePath);
   const targetRoots = [
     "",
     "models",
@@ -288,6 +294,13 @@ function getPossibleReferencePaths(resourcePath: string): Set<string> {
 
   for (const targetRoot of targetRoots) {
     addReferencePathForTargetRoot(paths, normalizedResourcePath, pathWithoutExtension, targetRoot);
+  }
+
+  if (basenameWithoutExtension.length > 0) {
+    paths.add(basenameWithoutExtension);
+  }
+  if (basename.length > 0) {
+    paths.add(basename);
   }
 
   addEquipmentReferencePath(paths, normalizedResourcePath, pathWithoutExtension);
@@ -349,6 +362,12 @@ function addSearchValues(values: Set<string>, namespace: string, rawPath: string
   const normalizedPath = rawPath.replaceAll("\\", "/");
   addJsonStringValues(values, `${namespace}:${normalizedPath}`);
   addJsonStringValues(values, `${namespace.toLowerCase()}:${normalizedPath.toLowerCase()}`);
+  values.add(`${namespace}:${normalizedPath}`);
+  values.add(`${namespace.toLowerCase()}:${normalizedPath.toLowerCase()}`);
+  values.add(`assets/${namespace}/${normalizedPath}`);
+  values.add(`assets/${namespace.toLowerCase()}/${normalizedPath.toLowerCase()}`);
+  values.add(normalizedPath);
+  values.add(normalizedPath.toLowerCase());
 
   if (namespace === "minecraft") {
     addJsonStringValues(values, normalizedPath);
@@ -382,14 +401,14 @@ function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number
 
 function resolveDocumentReferences(
   document: ResourceGraphDocument,
-  resolveResourcePath: ResourcePathResolver = generateRedirectPath
+  resolveResourcePath: ResourceReferencePathResolver = generateReferenceRedirectPath
 ): ResolvedResourceReference[] {
   return getResourceReferences(document).map(reference => ({
     reference,
     sourceUri: document.uri,
     targetUri: reference.value.startsWith("#")
       ? null
-      : resolveResourcePath(reference.value, document, reference.target, reference.source, reference.extension)
+      : resolveResourcePath(reference, document)
   }));
 }
 
@@ -476,6 +495,7 @@ async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
   const urisByKey = new Map<string, vscode.Uri>();
   const workspaceUris = [
     ...(await vscode.workspace.findFiles("**/assets/**/*.json", "**/node_modules/**")),
+    ...(await vscode.workspace.findFiles("**/assets/**/*.properties", "**/node_modules/**")),
     ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.vsh", "**/node_modules/**")),
     ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.fsh", "**/node_modules/**")),
     ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.glsl", "**/node_modules/**"))

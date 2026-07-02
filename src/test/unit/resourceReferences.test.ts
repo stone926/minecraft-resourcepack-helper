@@ -396,6 +396,61 @@ describe("resource references", () => {
     );
   });
 
+  it("extracts CIT texture and model references from properties files", () => {
+    const { document, position } = createMarkedTextDocument(
+      path.join("pack", "assets", "custom", "citresewn", "cit", "swords", "emerald.properties"),
+      [
+        "# example CIT",
+        "type=item",
+        "items=minecraft:diamond_sword",
+        "texture.layer0 = ./textures/emerald|_sword",
+        "model.bow_pulling_2=custom:item/emerald_bow"
+      ].join("\n"),
+      "properties",
+      1
+    );
+
+    const references = getResourceReferences(document);
+    const referenceAtTexture = findResourceReferenceAtPosition(document, position);
+
+    assert.deepStrictEqual(
+      references.map(reference => [
+        reference.kind,
+        reference.value,
+        reference.target,
+        reference.source,
+        reference.extension,
+        reference.resolveMode ?? null
+      ]),
+      [
+        ["texture", "./textures/emerald_sword", "textures", "citresewn/cit/swords", "png", "cit"],
+        ["model", "custom:item/emerald_bow", "models", "citresewn/cit/swords", "json", "cit"]
+      ]
+    );
+    assert.strictEqual(referenceAtTexture?.value, "./textures/emerald_sword");
+  });
+
+  it("keeps empty CIT asset references findable for completion", () => {
+    const { document, position } = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "optifine", "cit", "swords", "empty.properties"),
+      "texture=|",
+      "properties",
+      1
+    );
+
+    const references = getResourceReferences(document);
+    const referenceAtBlankValue = findResourceReferenceAtPosition(document, position);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension, reference.resolveMode ?? null]),
+      [
+        ["texture", "", "textures", "optifine/cit/swords", "png", "cit"]
+      ]
+    );
+    assert.strictEqual(referenceAtBlankValue?.kind, "texture");
+    assert.strictEqual(referenceAtBlankValue.value, "");
+  });
+
   it("extracts model and base model references from item model definitions", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "items", "shield.json"),

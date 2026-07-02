@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 import { lm } from "../i18n/messages";
 import { localize } from "../i18n/runtime";
-import { createResourcePathResolver } from "../utils/pathGenerator";
+import { createResourceReferencePathResolver } from "../utils/pathGenerator";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
 import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
 
-const resolveResourcePath = createResourcePathResolver();
+const resolveResourcePath = createResourceReferencePathResolver();
 
 export function refreshResourceDiagnostics(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
   if (!isResourceReferenceDocument(document) && !isSemanticDiagnosticsDocument(document)) {
@@ -21,7 +21,7 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
       continue;
     }
 
-    const resolvedUri = resolveResourcePath(reference.value, document, reference.target, reference.source, reference.extension);
+    const resolvedUri = resolveResourcePath(reference, document);
     const range = rangeInsideString(reference.valueNode);
     if (!resolvedUri && range) {
       diagnostics.push(new vscode.Diagnostic(

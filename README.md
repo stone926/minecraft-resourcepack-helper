@@ -15,7 +15,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 ## Highlights
 
 - Go to Definition and resource path completion for blockstates, block/item models, modern item model definitions, particles, atlases, equipment, fonts, waypoint styles, post effects, sounds, and shader imports.
-- Go to Definition support for OptiFine CIT `.properties` texture and model paths.
+- Go to Definition, completion, missing-resource diagnostics, and resource graph support for CIT `.properties` texture and model paths.
 - Missing resource diagnostics that resolve through the current pack, pack overlays and filters, configured lower-priority packs, and vanilla assets.
 - Model texture variable support: jump to `#texture` definitions, follow variables inherited from parent models, highlight undefined variables, and report cyclic texture variables or too-deep parent chains.
 - A Minecraft Resources activity bar view for current-file references, incoming references, model inheritance, child models, and blockstate -> model -> texture relationships.
@@ -74,7 +74,7 @@ Current scope: model preview supports Minecraft model JSON resources only. Some 
 - `assets/<namespace>/post_effect/**/*.json`: post-effect shader references and effect textures.
 - `assets/<namespace>/sounds.json`: sound file references and sound event sanity checks.
 - `assets/<namespace>/shaders/{core,post}/**/*.{vsh,fsh}`: `#moj_import` shader include references.
-- OptiFine CIT `.properties`: texture and model path definition support.
+- CIT `.properties`: texture and model path definition, completion, missing-resource diagnostics, and resource graph support.
 
 ## Diagnostics And Validation
 

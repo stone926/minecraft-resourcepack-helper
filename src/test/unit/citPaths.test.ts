@@ -1,6 +1,12 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getCitPathCandidates, getCitResourceType } from "../../utils/citPaths";
+import {
+  getCitDocumentNamespace,
+  getCitDocumentSource,
+  getCitPathCandidates,
+  getCitResourceType,
+  isCitPropertiesFileName
+} from "../../utils/citPaths";
 
 describe("OptiFine CIT path utilities", () => {
   const packRoot = path.join("workspace", "pack");
@@ -29,6 +35,7 @@ describe("OptiFine CIT path utilities", () => {
     assert.deepStrictEqual(
       getCitPathCandidates(documentFileName, packRoot, "custom:item/diamond_sword", "models"),
       [
+        path.join(packRoot, "assets", "custom", "item", "diamond_sword.json"),
         path.join(packRoot, "assets", "custom", "models", "item", "diamond_sword.json")
       ]
     );
@@ -41,5 +48,25 @@ describe("OptiFine CIT path utilities", () => {
         path.join(packRoot, "assets", "custom", "textures", "item", "diamond_sword.png")
       ]
     );
+  });
+
+  it("resolves namespace-relative CIT asset paths in the document namespace", () => {
+    const customDocument = path.join(packRoot, "assets", "custom", "citresewn", "cit", "stick.properties");
+
+    assert.deepStrictEqual(
+      getCitPathCandidates(customDocument, packRoot, "citresewn/cit/item_textures/stick", "textures"),
+      [
+        path.join(packRoot, "assets", "custom", "citresewn", "cit", "citresewn", "cit", "item_textures", "stick.png"),
+        path.join(packRoot, "assets", "custom", "citresewn", "cit", "item_textures", "stick.png"),
+        path.join(packRoot, "assets", "custom", "textures", "citresewn", "cit", "item_textures", "stick.png")
+      ]
+    );
+  });
+
+  it("detects CIT document namespace and source roots", () => {
+    assert.strictEqual(isCitPropertiesFileName(documentFileName), true);
+    assert.strictEqual(isCitPropertiesFileName(path.join(packRoot, "assets", "minecraft", "models", "item", "stick.properties")), false);
+    assert.strictEqual(getCitDocumentNamespace(documentFileName), "minecraft");
+    assert.strictEqual(getCitDocumentSource(documentFileName), ["optifine", "cit", "swords"].join("/"));
   });
 });

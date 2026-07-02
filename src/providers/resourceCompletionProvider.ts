@@ -2,6 +2,7 @@ import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { getCitDocumentNamespace } from "../utils/citPaths";
 import {
   inferIncompleteResourceCompletionContext,
   ResourceCompletionTextRange
@@ -36,13 +37,14 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
     }
 
     const partialPath = parsePartialResourcePath(context.reference.value);
+    const lookupNamespace = getCompletionLookupNamespace(document.fileName, context.reference, partialPath);
     const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
     const resourcePackRoots = vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? [];
     const roots = getDocumentResourceRootCandidates(
       document.fileName,
       context.reference.source,
       defaultAssetsPath,
-      partialPath.namespace,
+      lookupNamespace,
       context.reference.target,
       {
         pathExists: fileName => workspaceResourceCache.getPathExists(fileName),
@@ -51,6 +53,9 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
         resourcePackRoots
       }
     );
+    if (context.reference.resolveMode === "cit" && shouldCompleteCitLocalPath(context.reference.value)) {
+      roots.unshift(path.dirname(document.fileName));
+    }
     const items = await collectCompletionItems(roots, partialPath, context);
 
     return items.length > 0 ? items : null;
@@ -83,6 +88,35 @@ function rangeFromTextRange(range: ResourceCompletionTextRange): vscode.Range {
     new vscode.Position(range.start.line, range.start.character),
     new vscode.Position(range.end.line, range.end.character)
   );
+}
+
+function getCompletionLookupNamespace(
+  fileName: string,
+  reference: ResourceReference,
+  partialPath: PartialResourcePath
+): string {
+  if (reference.resolveMode === "cit" && !partialPath.explicitNamespace) {
+    return getCitDocumentNamespace(fileName);
+  }
+
+  return partialPath.namespace;
+}
+
+function shouldCompleteCitLocalPath(value: string): boolean {
+  const cleanValue = value.trim();
+  if (cleanValue.length === 0) {
+    return true;
+  }
+
+  return !path.isAbsolute(cleanValue) &&
+    !cleanValue.includes(":") &&
+    !startsWithPathSegment(cleanValue, "assets");
+}
+
+function startsWithPathSegment(value: string, segment: string): boolean {
+  const normalizedValue = value.replace(/[\\/]+/g, path.sep);
+  const [firstSegment] = normalizedValue.split(path.sep);
+  return firstSegment?.toLowerCase() === segment.toLowerCase();
 }
 
 async function collectCompletionItems(
