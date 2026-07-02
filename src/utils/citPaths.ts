@@ -23,6 +23,24 @@ export function isCitPropertiesFileName(fileName: string): boolean {
   return getCitDocumentInfo(fileName) !== null && path.extname(fileName).toLowerCase() === ".properties";
 }
 
+export function isCitGlobalPropertiesFileName(fileName: string): boolean {
+  const normalizedPath = path.normalize(fileName);
+  const segments = normalizedPath.split(path.sep).filter(Boolean);
+  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  if (assetsIndex < 0 || segments.length <= assetsIndex + 3) {
+    return false;
+  }
+
+  const namespace = segments[assetsIndex + 1].toLowerCase();
+  const relativePath = segments.slice(assetsIndex + 2).map(segment => segment.toLowerCase()).join("/");
+
+  return namespace === "minecraft" && (
+    relativePath === "citresewn/cit.properties" ||
+    relativePath === "optifine/cit.properties" ||
+    relativePath === "mcpatcher/cit.properties"
+  );
+}
+
 export function getCitDocumentSource(fileName: string): string {
   return getCitDocumentInfo(fileName)?.source ?? "citresewn";
 }

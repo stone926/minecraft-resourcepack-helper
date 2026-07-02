@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "id": "enchantment",
+  "scope": "cit",
+  "keys": {
+    "texture": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "singleton": true,
+      "title": "附魔光效纹理",
+      "description": "使用解析到的纹理替换此附魔光效层。"
+    },
+    "layer": {
+      "valueType": "integer",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0",
+      "singleton": true,
+      "minimum": 0,
+      "title": "层级",
+      "description": "控制此光效层的渲染顺序。"
+    },
+    "speed": {
+      "valueType": "number",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0.0",
+      "singleton": true,
+      "title": "速度",
+      "description": "乘算附魔光效滚动速度。"
+    },
+    "rotation": {
+      "valueType": "number",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0.0",
+      "singleton": true,
+      "title": "旋转",
+      "description": "按角度旋转光效纹理和滚动方向。"
+    },
+    "duration": {
+      "valueType": "nonNegativeNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0.0",
+      "singleton": true,
+      "title": "持续时间",
+      "description": "当全局 method 为 cycle 时，控制此光效停留多久。"
+    },
+    "blend": {
+      "valueType": "blendFunc",
+      "enum": ["replace", "glint", "alpha", "add", "subtract", "multiply", "dodge", "burn", "screen", "overlay"],
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "add",
+      "singleton": true,
+      "title": "混合模式",
+      "description": "为光效纹理设置命名或自定义 OpenGL 混合函数。"
+    },
+    "useGlint": {
+      "valueType": "boolean",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "false",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "使用默认光效",
+      "description": "控制物品上是否显示默认附魔光效。"
+    },
+    "blur": {
+      "valueType": "boolean",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "false",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "模糊",
+      "description": "控制纹理应用前是否进行模糊处理。"
+    },
+    "r": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "红色倍率",
+      "description": "乘算纹理红色通道。"
+    },
+    "g": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "绿色倍率",
+      "description": "乘算纹理绿色通道。"
+    },
+    "b": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "蓝色倍率",
+      "description": "乘算纹理蓝色通道。"
+    },
+    "a": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "透明度倍率",
+      "description": "乘算纹理 alpha 通道。"
+    }
+  },
+  "patterns": {},
+  "rules": []
+}

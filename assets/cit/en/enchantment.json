@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "id": "enchantment",
+  "scope": "cit",
+  "keys": {
+    "texture": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "singleton": true,
+      "title": "Glint texture",
+      "description": "Replaces this enchantment glint layer with the resolved texture."
+    },
+    "layer": {
+      "valueType": "integer",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0",
+      "singleton": true,
+      "minimum": 0,
+      "title": "Layer",
+      "description": "Controls this glint layer's render order."
+    },
+    "speed": {
+      "valueType": "number",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0.0",
+      "singleton": true,
+      "title": "Speed",
+      "description": "Multiplies the glint scroll speed."
+    },
+    "rotation": {
+      "valueType": "number",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0.0",
+      "singleton": true,
+      "title": "Rotation",
+      "description": "Rotates the glint texture and scroll direction in degrees."
+    },
+    "duration": {
+      "valueType": "nonNegativeNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "0.0",
+      "singleton": true,
+      "title": "Duration",
+      "description": "Controls how long this glint pauses when global method is cycle."
+    },
+    "blend": {
+      "valueType": "blendFunc",
+      "enum": ["replace", "glint", "alpha", "add", "subtract", "multiply", "dodge", "burn", "screen", "overlay"],
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "add",
+      "singleton": true,
+      "title": "Blend",
+      "description": "Sets a named or custom OpenGL blend function for the glint texture."
+    },
+    "useGlint": {
+      "valueType": "boolean",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "false",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "Use default glint",
+      "description": "Controls whether the default enchantment glint is shown on the item."
+    },
+    "blur": {
+      "valueType": "boolean",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "false",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "Blur",
+      "description": "Controls whether the texture is blurred before being applied."
+    },
+    "r": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "Red multiplier",
+      "description": "Multiplies the texture's red channel."
+    },
+    "g": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "Green multiplier",
+      "description": "Multiplies the texture's green channel."
+    },
+    "b": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "Blue multiplier",
+      "description": "Multiplies the texture's blue channel."
+    },
+    "a": {
+      "valueType": "positiveNumber",
+      "scope": ["cit"],
+      "appliesTo": ["enchantment"],
+      "default": "1.0",
+      "singleton": true,
+      "citResewnOnly": true,
+      "title": "Alpha multiplier",
+      "description": "Multiplies the texture's alpha channel."
+    }
+  },
+  "patterns": {},
+  "rules": []
+}

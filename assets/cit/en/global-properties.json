@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "global-properties",
+  "scope": "global",
+  "globalPriority": [
+    "citresewn/cit.properties",
+    "optifine/cit.properties",
+    "mcpatcher/cit.properties"
+  ],
+  "keys": {
+    "useGlint": {
+      "valueType": "boolean",
+      "scope": ["global"],
+      "default": "true",
+      "singleton": true,
+      "title": "Use default glint",
+      "description": "If false, removes the default glint texture from every item."
+    },
+    "cap": {
+      "valueType": "positiveInteger",
+      "scope": ["global"],
+      "singleton": true,
+      "title": "Layer cap",
+      "description": "Controls the maximum allowed CIT enchantment layers per item."
+    },
+    "method": {
+      "valueType": "enum",
+      "enum": ["average", "layered", "cycle"],
+      "scope": ["global"],
+      "default": "average",
+      "singleton": true,
+      "title": "Method",
+      "description": "Determines how visibility is controlled for CIT enchantments."
+    },
+    "fade": {
+      "valueType": "nonNegativeNumber",
+      "scope": ["global"],
+      "default": "0.5",
+      "singleton": true,
+      "title": "Fade",
+      "description": "Controls how long CIT enchantments fade when method is cycle."
+    }
+  },
+  "patterns": {},
+  "rules": []
+}

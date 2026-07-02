@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "id": "base",
+  "scope": "cit",
+  "keys": {
+    "type": {
+      "valueType": "enum",
+      "enum": ["item", "armor", "elytra", "enchantment"],
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "default": "item",
+      "singleton": true,
+      "title": "CIT 类型",
+      "description": "选择此 properties 文件描述的 CIT 效果类型。"
+    },
+    "weight": {
+      "valueType": "integer",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "default": "0",
+      "singleton": true,
+      "title": "权重",
+      "description": "当多个 CIT 匹配同一物品时，决定优先使用哪一个。"
+    },
+    "items": {
+      "valueType": "resourceList",
+      "resourceKind": "item",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "separator": "space",
+      "singleton": true,
+      "title": "物品",
+      "description": "要求物品匹配列出的任一物品 ID。"
+    },
+    "stackSize": {
+      "valueType": "range",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "minimum": 1,
+      "title": "堆叠数量",
+      "description": "要求物品堆叠数量匹配整数或整数范围。"
+    },
+    "damage": {
+      "valueType": "range",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "minimum": 0,
+      "allowPercent": true,
+      "title": "耐久损伤",
+      "description": "要求物品耐久损伤匹配整数、范围、百分比或百分比范围。"
+    },
+    "damageMask": {
+      "valueType": "integer",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "minimum": 0,
+      "title": "耐久掩码",
+      "description": "在匹配 damage 前对物品耐久应用二进制掩码。"
+    },
+    "hand": {
+      "valueType": "enum",
+      "enum": ["main", "off"],
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "title": "手持位置",
+      "description": "要求物品位于主手或副手。"
+    },
+    "enchantments": {
+      "valueType": "resourceList",
+      "resourceKind": "enchantment",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "separator": "space",
+      "singleton": true,
+      "title": "附魔",
+      "description": "要求物品拥有列出的任一附魔 ID。"
+    },
+    "enchantmentLevels": {
+      "valueType": "rangeList",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "separator": "space",
+      "singleton": true,
+      "minimum": 1,
+      "title": "附魔等级",
+      "description": "要求附魔等级匹配列出的某个等级或范围。"
+    }
+  },
+  "patterns": {
+    "nbt.*": {
+      "valueType": "nbtMatch",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "repeatable": true,
+      "title": "NBT 匹配",
+      "description": "按指定 NBT 路径匹配字面值、通配模式或正则表达式。"
+    }
+  },
+  "rules": [
+    {
+      "id": "itemRequiresItemsOrFilename",
+      "type": "requiresAny",
+      "when": { "citType": "item" },
+      "keys": ["items"],
+      "or": ["filenameItemId"]
+    }
+  ]
+}

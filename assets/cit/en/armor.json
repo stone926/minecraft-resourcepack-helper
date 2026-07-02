@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "armor",
+  "scope": "cit",
+  "keys": {},
+  "patterns": {
+    "texture.*": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["armor"],
+      "repeatable": true,
+      "completion": "texture.",
+      "title": "Armor texture layer",
+      "description": "Replaces the armor texture layer with the resolved texture."
+    }
+  },
+  "rules": []
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "armor",
+  "scope": "cit",
+  "keys": {},
+  "patterns": {
+    "texture.*": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["armor"],
+      "repeatable": true,
+      "completion": "texture.",
+      "title": "盔甲纹理层",
+      "description": "使用解析到的纹理替换盔甲纹理层。"
+    }
+  },
+  "rules": []
+}

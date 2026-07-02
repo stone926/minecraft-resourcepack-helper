@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "elytra",
+  "scope": "cit",
+  "keys": {
+    "texture": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["elytra"],
+      "singleton": true,
+      "title": "鞘翅纹理",
+      "description": "使用解析到的纹理替换鞘翅纹理。"
+    }
+  },
+  "patterns": {},
+  "rules": []
+}

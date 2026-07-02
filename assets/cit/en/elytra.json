@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "elytra",
+  "scope": "cit",
+  "keys": {
+    "texture": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["elytra"],
+      "singleton": true,
+      "title": "Elytra texture",
+      "description": "Replaces the elytra texture with the resolved texture."
+    }
+  },
+  "patterns": {},
+  "rules": []
+}

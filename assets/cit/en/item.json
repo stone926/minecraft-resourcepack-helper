@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "id": "item",
+  "scope": "cit",
+  "keys": {
+    "texture": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "singleton": true,
+      "patternKey": "texture.*",
+      "title": "Texture",
+      "description": "Replaces the item model with one generated from the resolved texture."
+    },
+    "model": {
+      "valueType": "asset",
+      "assetKind": "model",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "singleton": true,
+      "patternKey": "model.*",
+      "title": "Model",
+      "description": "Replaces the item model with the resolved model JSON."
+    }
+  },
+  "patterns": {
+    "texture.*": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "repeatable": true,
+      "completion": "texture.",
+      "title": "Texture sub key",
+      "description": "Replaces a model override texture or layer texture by sub key."
+    },
+    "model.*": {
+      "valueType": "asset",
+      "assetKind": "model",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "repeatable": true,
+      "completion": "model.",
+      "title": "Model sub key",
+      "description": "Replaces a model override by sub key."
+    }
+  },
+  "rules": []
+}

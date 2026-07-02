@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "global-properties",
+  "scope": "global",
+  "globalPriority": [
+    "citresewn/cit.properties",
+    "optifine/cit.properties",
+    "mcpatcher/cit.properties"
+  ],
+  "keys": {
+    "useGlint": {
+      "valueType": "boolean",
+      "scope": ["global"],
+      "default": "true",
+      "singleton": true,
+      "title": "使用默认光效",
+      "description": "若为 false，则从所有物品上移除默认附魔光效纹理。"
+    },
+    "cap": {
+      "valueType": "positiveInteger",
+      "scope": ["global"],
+      "singleton": true,
+      "title": "层数上限",
+      "description": "控制每个物品允许的最大 CIT 附魔光效层数。"
+    },
+    "method": {
+      "valueType": "enum",
+      "enum": ["average", "layered", "cycle"],
+      "scope": ["global"],
+      "default": "average",
+      "singleton": true,
+      "title": "方法",
+      "description": "决定 CIT 附魔光效的可见性控制方式。"
+    },
+    "fade": {
+      "valueType": "nonNegativeNumber",
+      "scope": ["global"],
+      "default": "0.5",
+      "singleton": true,
+      "title": "淡入淡出",
+      "description": "当 method 为 cycle 时，控制 CIT 附魔之间的过渡时长。"
+    }
+  },
+  "patterns": {},
+  "rules": []
+}

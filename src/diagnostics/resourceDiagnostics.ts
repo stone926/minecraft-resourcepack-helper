@@ -4,6 +4,7 @@ import { localize } from "../i18n/runtime";
 import { createResourceReferencePathResolver } from "../utils/pathGenerator";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
+import { getCitDiagnostics } from "./citDiagnostics";
 import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
 
 const resolveResourcePath = createResourceReferencePathResolver();
@@ -14,7 +15,10 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
     return;
   }
 
-  const diagnostics: vscode.Diagnostic[] = getSemanticResourceDiagnostics(document);
+  const diagnostics: vscode.Diagnostic[] = [
+    ...getSemanticResourceDiagnostics(document),
+    ...getCitDiagnostics(document)
+  ];
 
   for (const reference of getResourceReferences(document)) {
     if (reference.value.length === 0 || reference.value.startsWith("#")) {

@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "id": "base",
+  "scope": "cit",
+  "keys": {
+    "type": {
+      "valueType": "enum",
+      "enum": ["item", "armor", "elytra", "enchantment"],
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "default": "item",
+      "singleton": true,
+      "title": "CIT type",
+      "description": "Selects which CIT effect type this properties file describes."
+    },
+    "weight": {
+      "valueType": "integer",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "default": "0",
+      "singleton": true,
+      "title": "Weight",
+      "description": "Chooses the winning CIT when multiple files match the same item."
+    },
+    "items": {
+      "valueType": "resourceList",
+      "resourceKind": "item",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "separator": "space",
+      "singleton": true,
+      "title": "Items",
+      "description": "Requires the item to match one of the listed item ids."
+    },
+    "stackSize": {
+      "valueType": "range",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "minimum": 1,
+      "title": "Stack size",
+      "description": "Requires the item stack size to match an integer or integer range."
+    },
+    "damage": {
+      "valueType": "range",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "minimum": 0,
+      "allowPercent": true,
+      "title": "Damage",
+      "description": "Requires the item damage to match an integer, range, percentage, or percentage range."
+    },
+    "damageMask": {
+      "valueType": "integer",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "minimum": 0,
+      "title": "Damage mask",
+      "description": "Applies a binary mask to item damage before matching damage."
+    },
+    "hand": {
+      "valueType": "enum",
+      "enum": ["main", "off"],
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "singleton": true,
+      "title": "Hand",
+      "description": "Requires the item to be held in the main hand or off hand."
+    },
+    "enchantments": {
+      "valueType": "resourceList",
+      "resourceKind": "enchantment",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "separator": "space",
+      "singleton": true,
+      "title": "Enchantments",
+      "description": "Requires the item to have at least one of the listed enchantment ids."
+    },
+    "enchantmentLevels": {
+      "valueType": "rangeList",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "separator": "space",
+      "singleton": true,
+      "minimum": 1,
+      "title": "Enchantment levels",
+      "description": "Requires an enchantment level to match one of the listed levels or ranges."
+    }
+  },
+  "patterns": {
+    "nbt.*": {
+      "valueType": "nbtMatch",
+      "scope": ["cit"],
+      "appliesTo": ["base"],
+      "repeatable": true,
+      "title": "NBT match",
+      "description": "Matches the specified NBT path against a literal, pattern, or regular expression."
+    }
+  },
+  "rules": [
+    {
+      "id": "itemRequiresItemsOrFilename",
+      "type": "requiresAny",
+      "when": { "citType": "item" },
+      "keys": ["items"],
+      "or": ["filenameItemId"]
+    }
+  ]
+}

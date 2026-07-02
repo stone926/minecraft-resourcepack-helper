@@ -7,6 +7,8 @@ import createNewResourcePackRoot from './commands/createNewResourcePackRoot';
 import { applyDecoration, disposeDecoration, updateDecoration } from './decorator/textureVarDecorator';
 import resourceDefinitionProvider from './providers/resourceDefinitionProvider';
 import resourceCompletionProvider, { triggerResourceCompletionCommand } from './providers/resourceCompletionProvider';
+import citCompletionProvider from './providers/citCompletionProvider';
+import citHoverProvider from './providers/citHoverProvider';
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { getResourceGraphNodeUri, ResourceGraphTreeProvider } from './views/resourceGraphTree';
 import { isResourceGraphDocumentPath } from './utils/resourceGraph';
@@ -74,6 +76,18 @@ export function activate(context: vscode.ExtensionContext) {
     '/',
     ':',
     '='
+  ));
+
+  context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
+    citResourceReferenceSelectors,
+    citCompletionProvider,
+    '=',
+    '.'
+  ));
+
+  context.subscriptions.push(vscode.languages.registerHoverProvider(
+    citResourceReferenceSelectors,
+    citHoverProvider
   ));
 
   context.subscriptions.push(vscode.commands.registerCommand('McResHelper.openDefaultMcAssetsPath', openDefaultMcAssetsPath));

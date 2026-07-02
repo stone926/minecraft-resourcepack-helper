@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "id": "item",
+  "scope": "cit",
+  "keys": {
+    "texture": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "singleton": true,
+      "patternKey": "texture.*",
+      "title": "纹理",
+      "description": "用解析到的纹理生成模型并替换物品模型。"
+    },
+    "model": {
+      "valueType": "asset",
+      "assetKind": "model",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "singleton": true,
+      "patternKey": "model.*",
+      "title": "模型",
+      "description": "使用解析到的模型 JSON 替换物品模型。"
+    }
+  },
+  "patterns": {
+    "texture.*": {
+      "valueType": "asset",
+      "assetKind": "texture",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "repeatable": true,
+      "completion": "texture.",
+      "title": "子纹理键",
+      "description": "按子键替换模型 override 纹理或 layer 纹理。"
+    },
+    "model.*": {
+      "valueType": "asset",
+      "assetKind": "model",
+      "scope": ["cit"],
+      "appliesTo": ["item"],
+      "repeatable": true,
+      "completion": "model.",
+      "title": "子模型键",
+      "description": "按子键替换模型 override。"
+    }
+  },
+  "rules": []
+}
