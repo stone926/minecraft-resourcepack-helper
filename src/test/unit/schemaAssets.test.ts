@@ -300,13 +300,18 @@ describe("schema assets", () => {
       "minecraft:range_dispatch",
       "minecraft:empty",
       "minecraft:bundle/selected_item",
-      "minecraft:selected_item",
       "minecraft:special"
     ]) {
       assert.ok(topLevelTypes.includes(type), `top-level type ${type}`);
     }
 
-    for (const type of ["minecraft:banner", "minecraft:bed", "minecraft:standing_sign", "minecraft:hanging_sign"]) {
+    for (const type of [
+      "minecraft:banner",
+      "minecraft:bed",
+      "minecraft:selected_item",
+      "minecraft:standing_sign",
+      "minecraft:hanging_sign"
+    ]) {
       assert.strictEqual(topLevelTypes.includes(type), false, `top-level enum should not contain ${type}`);
     }
 
@@ -337,23 +342,33 @@ describe("schema assets", () => {
   it("covers current item model property groups and special fields", () => {
     const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "items.json"));
 
-    const conditionProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "conditionProperty", "properties", "type"]), "enum");
+    const conditionProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "conditionPropertyType"]), "enum");
     assert.ok(conditionProperties.includes("minecraft:keybind_down"));
     assert.strictEqual(conditionProperties.includes("minecraft:block_state"), false);
 
-    const selectProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "selectProperty", "properties", "type"]), "enum");
+    const conditionItemProperties = getObjectAt(
+      getArrayProperty(getObjectAt(schema, ["definitions", "conditionItemModel"]), "allOf")[1] as JsonObject,
+      ["properties"]
+    );
+    assert.strictEqual(getObjectAt(conditionItemProperties, ["property"]).$ref, "#/definitions/conditionPropertyType");
+    assert.strictEqual(getObjectAt(conditionItemProperties, ["value"]).oneOf, undefined);
+
+    const selectProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "selectPropertyType"]), "enum");
     assert.ok(selectProperties.includes("minecraft:block_state"));
     assert.strictEqual(selectProperties.includes("minecraft:damage"), false);
 
-    const rangeProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "rangeDispatchProperty", "properties", "type"]), "enum");
+    const rangeProperties = getStringArrayProperty(getObjectAt(schema, ["definitions", "rangeDispatchPropertyType"]), "enum");
     assert.ok(rangeProperties.includes("minecraft:use_duration"));
     assert.strictEqual(rangeProperties.includes("minecraft:selected"), false);
+
+    const selectWhen = getObjectAt(schema, ["definitions", "selectCase", "properties", "when"]);
+    assert.strictEqual(selectWhen.oneOf, undefined);
 
     const specialItemModel = getObjectAt(schema, ["definitions", "specialItemModel"]);
     const specialItemModelParts = getArrayProperty(specialItemModel, "allOf");
     const specialItemModelShape = assertJsonObjectValue(specialItemModelParts[1], "specialItemModel.allOf[1]");
     const specialRequired = getStringArrayProperty(specialItemModelShape, "required");
-    assert.strictEqual(specialRequired.includes("base"), false);
+    assert.ok(specialRequired.includes("base"));
 
     const bannerAttachment = getObjectAt(schema, ["definitions", "bannerSpecialModel", "properties", "attachment"]);
     assert.deepStrictEqual(bannerAttachment.enum, ["ground", "wall"]);
@@ -373,6 +388,37 @@ describe("schema assets", () => {
     const headProperties = getObjectAt(schema, ["definitions", "headSpecialModel", "properties"]);
     assert.ok(Object.hasOwn(headProperties, "texture"));
     assert.ok(Object.hasOwn(headProperties, "animation"));
+  });
+
+  it("aligns item model tints and transformations with current wiki format", () => {
+    const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "items.json"));
+
+    const tintBranches = getArrayProperty(getObjectAt(schema, ["definitions", "tint"]), "oneOf");
+    assert.strictEqual(tintBranches.length, 8);
+
+    const constantTintRequired = getStringArrayProperty(getObjectAt(schema, ["definitions", "constantTint"]), "required");
+    assert.deepStrictEqual(constantTintRequired, ["type", "value"]);
+
+    const grassTintRequired = getStringArrayProperty(getObjectAt(schema, ["definitions", "grassTint"]), "required");
+    assert.deepStrictEqual(grassTintRequired, ["type", "temperature", "downfall"]);
+
+    const colorValueBranches = getArrayProperty(getObjectAt(schema, ["definitions", "colorValue"]), "oneOf");
+    const colorArrayBranch = assertJsonObjectValue(colorValueBranches[1], "colorValue.oneOf[1]");
+    const colorArrayItem = getObjectAt(colorArrayBranch, ["items"]);
+    assert.strictEqual(colorArrayItem.minimum, 0);
+    assert.strictEqual(colorArrayItem.maximum, 1);
+
+    const transformationObject = getObjectAt(schema, ["definitions", "transformationObject"]);
+    assert.deepStrictEqual(
+      getStringArrayProperty(transformationObject, "required"),
+      ["left_rotation", "right_rotation", "scale", "translation"]
+    );
+
+    const leftRotation = getObjectAt(transformationObject, ["properties", "left_rotation"]);
+    assert.strictEqual(leftRotation.$ref, "#/definitions/rotation");
+
+    const axisAngleRequired = getStringArrayProperty(getObjectAt(schema, ["definitions", "axisAngleRotation"]), "required");
+    assert.deepStrictEqual(axisAngleRequired, ["angle", "axis"]);
   });
 
   it("registers generic model schemas and strict atlas source branches", () => {

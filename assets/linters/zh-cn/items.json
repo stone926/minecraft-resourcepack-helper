@@ -40,7 +40,6 @@
         "minecraft:range_dispatch",
         "minecraft:empty",
         "minecraft:bundle/selected_item",
-        "minecraft:selected_item",
         "minecraft:special",
         "model",
         "composite",
@@ -49,7 +48,6 @@
         "range_dispatch",
         "empty",
         "bundle/selected_item",
-        "selected_item",
         "special"
       ]
     },
@@ -135,6 +133,32 @@
           "type": "object",
           "additionalProperties": true,
           "required": ["type", "property", "on_true", "on_false"],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:component", "component"] }
+                }
+              },
+              "then": { "required": ["predicate", "value"] }
+            },
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:has_component", "has_component"] }
+                }
+              },
+              "then": { "required": ["component"] }
+            },
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:keybind_down", "keybind_down"] }
+                }
+              },
+              "then": { "required": ["keybind"] }
+            }
+          ],
           "properties": {
             "type": {
               "type": "string",
@@ -142,8 +166,34 @@
               "enum": ["minecraft:condition", "condition"]
             },
             "property": {
-              "$ref": "#/definitions/conditionProperty",
+              "$ref": "#/definitions/conditionPropertyType",
               "title": "property 布尔属性"
+            },
+            "component": {
+              "type": "string",
+              "title": "component 组件"
+            },
+            "ignore_default": {
+              "type": "boolean",
+              "title": "ignore_default 忽略默认组件"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "index 索引"
+            },
+            "keybind": {
+              "type": "string",
+              "title": "keybind 按键绑定"
+            },
+            "predicate": {
+              "type": "string",
+              "title": "predicate 谓词",
+              "description": "数据组件谓词类型（用于 minecraft:component 属性）。"
+            },
+            "value": {
+              "title": "value 比较值",
+              "description": "与谓词匹配的值（用于 minecraft:component 属性）。"
             },
             "on_true": {
               "$ref": "#/definitions/itemModel",
@@ -164,6 +214,32 @@
           "type": "object",
           "additionalProperties": true,
           "required": ["type", "property", "cases"],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:block_state", "block_state"] }
+                }
+              },
+              "then": { "required": ["block_state_property"] }
+            },
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:component", "component"] }
+                }
+              },
+              "then": { "required": ["component"] }
+            },
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:local_time", "local_time"] }
+                }
+              },
+              "then": { "required": ["pattern"] }
+            }
+          ],
           "properties": {
             "type": {
               "type": "string",
@@ -171,8 +247,33 @@
               "enum": ["minecraft:select", "select"]
             },
             "property": {
-              "$ref": "#/definitions/selectProperty",
+              "$ref": "#/definitions/selectPropertyType",
               "title": "property 枚举属性"
+            },
+            "component": {
+              "type": "string",
+              "title": "component 组件"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "index 索引"
+            },
+            "block_state_property": {
+              "type": "string",
+              "title": "block_state_property 方块状态属性"
+            },
+            "locale": {
+              "type": "string",
+              "title": "locale 本地化"
+            },
+            "time_zone": {
+              "type": "string",
+              "title": "time_zone 时区"
+            },
+            "pattern": {
+              "type": "string",
+              "title": "pattern 格式"
             },
             "cases": {
               "type": "array",
@@ -196,6 +297,24 @@
           "type": "object",
           "additionalProperties": true,
           "required": ["type", "property", "entries"],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:compass", "compass"] }
+                }
+              },
+              "then": { "required": ["target"] }
+            },
+            {
+              "if": {
+                "properties": {
+                  "property": { "enum": ["minecraft:time", "time"] }
+                }
+              },
+              "then": { "required": ["source"] }
+            }
+          ],
           "properties": {
             "type": {
               "type": "string",
@@ -203,8 +322,40 @@
               "enum": ["minecraft:range_dispatch", "range_dispatch"]
             },
             "property": {
-              "$ref": "#/definitions/rangeDispatchProperty",
+              "$ref": "#/definitions/rangeDispatchPropertyType",
               "title": "property 数值属性"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "index 索引"
+            },
+            "normalize": {
+              "type": "boolean",
+              "title": "normalize 归一化"
+            },
+            "wobble": {
+              "type": "boolean",
+              "title": "wobble 摆动"
+            },
+            "remaining": {
+              "type": "boolean",
+              "title": "remaining 剩余时长"
+            },
+            "period": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "title": "period 周期"
+            },
+            "target": {
+              "type": "string",
+              "title": "target 指南针目标",
+              "enum": ["spawn", "lodestone", "recovery", "none"]
+            },
+            "source": {
+              "type": "string",
+              "title": "source 来源",
+              "enum": ["daytime", "moon_phase", "random"]
             },
             "entries": {
               "type": "array",
@@ -232,7 +383,7 @@
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["type", "model"],
+          "required": ["type", "base", "model"],
           "properties": {
             "type": {
               "type": "string",
@@ -260,12 +411,7 @@
         "type": {
           "type": "string",
           "title": "type 选中物品",
-          "enum": [
-            "minecraft:bundle/selected_item",
-            "minecraft:selected_item",
-            "bundle/selected_item",
-            "selected_item"
-          ]
+          "enum": ["minecraft:bundle/selected_item", "bundle/selected_item"]
         }
       }
     },
@@ -281,197 +427,86 @@
         }
       }
     },
-    "conditionProperty": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "minecraft:broken",
-            "minecraft:bundle/has_selected_item",
-            "minecraft:carried",
-            "minecraft:component",
-            "minecraft:custom_model_data",
-            "minecraft:damaged",
-            "minecraft:extended_view",
-            "minecraft:fishing_rod/cast",
-            "minecraft:has_component",
-            "minecraft:keybind_down",
-            "minecraft:selected",
-            "minecraft:using_item",
-            "minecraft:view_entity",
-            "broken",
-            "bundle/has_selected_item",
-            "carried",
-            "component",
-            "custom_model_data",
-            "damaged",
-            "extended_view",
-            "fishing_rod/cast",
-            "has_component",
-            "keybind_down",
-            "selected",
-            "using_item",
-            "view_entity"
-          ]
-        },
-        "component": {
-          "type": "string",
-          "title": "component 组件"
-        },
-        "ignore_default": {
-          "type": "boolean",
-          "title": "ignore_default 忽略默认组件"
-        },
-        "index": {
-          "type": "integer",
-          "minimum": 0,
-          "title": "index 索引"
-        },
-        "keybind": {
-          "type": "string",
-          "title": "keybind 按键绑定"
-        },
-        "predicate": {
-          "type": "string",
-          "title": "predicate 谓词"
-        },
-        "value": {
-          "title": "value 比较值",
-          "oneOf": [
-            { "type": "string" },
-            { "type": "number" },
-            { "type": "boolean" }
-          ]
-        }
-      }
+    "conditionPropertyType": {
+      "type": "string",
+      "enum": [
+        "minecraft:broken",
+        "minecraft:bundle/has_selected_item",
+        "minecraft:carried",
+        "minecraft:component",
+        "minecraft:custom_model_data",
+        "minecraft:damaged",
+        "minecraft:extended_view",
+        "minecraft:fishing_rod/cast",
+        "minecraft:has_component",
+        "minecraft:keybind_down",
+        "minecraft:selected",
+        "minecraft:using_item",
+        "minecraft:view_entity",
+        "broken",
+        "bundle/has_selected_item",
+        "carried",
+        "component",
+        "custom_model_data",
+        "damaged",
+        "extended_view",
+        "fishing_rod/cast",
+        "has_component",
+        "keybind_down",
+        "selected",
+        "using_item",
+        "view_entity"
+      ]
     },
-    "selectProperty": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "minecraft:block_state",
-            "minecraft:charge_type",
-            "minecraft:component",
-            "minecraft:context_dimension",
-            "minecraft:context_entity_type",
-            "minecraft:custom_model_data",
-            "minecraft:display_context",
-            "minecraft:local_time",
-            "minecraft:main_hand",
-            "minecraft:trim_material",
-            "block_state",
-            "charge_type",
-            "component",
-            "context_dimension",
-            "context_entity_type",
-            "custom_model_data",
-            "display_context",
-            "local_time",
-            "main_hand",
-            "trim_material"
-          ]
-        },
-        "component": {
-          "type": "string",
-          "title": "component 组件"
-        },
-        "index": {
-          "type": "integer",
-          "minimum": 0,
-          "title": "index 索引"
-        },
-        "block_state_property": {
-          "type": "string",
-          "title": "block_state_property 方块状态属性"
-        },
-        "locale": {
-          "type": "string",
-          "title": "locale 本地化"
-        },
-        "time_zone": {
-          "type": "string",
-          "title": "time_zone 时区"
-        },
-        "pattern": {
-          "type": "string",
-          "title": "pattern 格式"
-        }
-      }
+    "selectPropertyType": {
+      "type": "string",
+      "enum": [
+        "minecraft:block_state",
+        "minecraft:charge_type",
+        "minecraft:component",
+        "minecraft:context_dimension",
+        "minecraft:context_entity_type",
+        "minecraft:custom_model_data",
+        "minecraft:display_context",
+        "minecraft:local_time",
+        "minecraft:main_hand",
+        "minecraft:trim_material",
+        "block_state",
+        "charge_type",
+        "component",
+        "context_dimension",
+        "context_entity_type",
+        "custom_model_data",
+        "display_context",
+        "local_time",
+        "main_hand",
+        "trim_material"
+      ]
     },
-    "rangeDispatchProperty": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "minecraft:bundle/fullness",
-            "minecraft:compass",
-            "minecraft:cooldown",
-            "minecraft:count",
-            "minecraft:crossbow/pull",
-            "minecraft:custom_model_data",
-            "minecraft:damage",
-            "minecraft:time",
-            "minecraft:use_cycle",
-            "minecraft:use_duration",
-            "bundle/fullness",
-            "compass",
-            "cooldown",
-            "count",
-            "crossbow/pull",
-            "custom_model_data",
-            "damage",
-            "time",
-            "use_cycle",
-            "use_duration"
-          ]
-        },
-        "index": {
-          "type": "integer",
-          "minimum": 0,
-          "title": "index 索引"
-        },
-        "normalize": {
-          "type": "boolean",
-          "title": "normalize 归一化"
-        },
-        "wobble": {
-          "type": "boolean",
-          "title": "wobble 摆动"
-        },
-        "remaining": {
-          "type": "boolean",
-          "title": "remaining 剩余时长"
-        },
-        "period": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "title": "period 周期"
-        },
-        "component": {
-          "type": "string",
-          "title": "component 组件"
-        },
-        "target": {
-          "type": "string",
-          "title": "target 指南针目标",
-          "enum": ["spawn", "lodestone", "recovery", "none"]
-        },
-        "source": {
-          "type": "string",
-          "title": "source 来源",
-          "enum": ["daytime", "moon_phase", "random"]
-        }
-      }
+    "rangeDispatchPropertyType": {
+      "type": "string",
+      "enum": [
+        "minecraft:bundle/fullness",
+        "minecraft:compass",
+        "minecraft:cooldown",
+        "minecraft:count",
+        "minecraft:crossbow/pull",
+        "minecraft:custom_model_data",
+        "minecraft:damage",
+        "minecraft:time",
+        "minecraft:use_cycle",
+        "minecraft:use_duration",
+        "bundle/fullness",
+        "compass",
+        "cooldown",
+        "count",
+        "crossbow/pull",
+        "custom_model_data",
+        "damage",
+        "time",
+        "use_cycle",
+        "use_duration"
+      ]
     },
     "rangeEntry": {
       "type": "object",
@@ -494,18 +529,7 @@
       "required": ["when", "model"],
       "properties": {
         "when": {
-          "title": "when 匹配值",
-          "oneOf": [
-            { "type": "string" },
-            { "type": "number" },
-            { "type": "boolean" },
-            {
-              "type": "array",
-              "items": {
-                "type": ["string", "number", "boolean"]
-              }
-            }
-          ]
+          "title": "when 匹配值"
         },
         "model": {
           "$ref": "#/definitions/itemModel",
@@ -514,38 +538,74 @@
       }
     },
     "tint": {
+      "oneOf": [
+        { "$ref": "#/definitions/constantTint" },
+        { "$ref": "#/definitions/dyeTint" },
+        { "$ref": "#/definitions/fireworkTint" },
+        { "$ref": "#/definitions/grassTint" },
+        { "$ref": "#/definitions/mapColorTint" },
+        { "$ref": "#/definitions/potionTint" },
+        { "$ref": "#/definitions/teamTint" },
+        { "$ref": "#/definitions/customModelDataTint" }
+      ]
+    },
+    "constantTint": {
       "type": "object",
       "additionalProperties": true,
+      "required": ["type", "value"],
       "properties": {
         "type": {
           "type": "string",
           "title": "type 着色类型",
-          "enum": [
-            "minecraft:constant",
-            "minecraft:custom_model_data",
-            "minecraft:dye",
-            "minecraft:firework",
-            "minecraft:grass",
-            "minecraft:map_color",
-            "minecraft:potion",
-            "minecraft:team",
-            "constant",
-            "custom_model_data",
-            "dye",
-            "firework",
-            "grass",
-            "map_color",
-            "potion",
-            "team"
-          ]
-        },
-        "default": {
-          "$ref": "#/definitions/colorValue",
-          "title": "default 默认颜色"
+          "enum": ["minecraft:constant", "constant"]
         },
         "value": {
           "$ref": "#/definitions/colorValue",
           "title": "value 固定颜色"
+        }
+      }
+    },
+    "dyeTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "default"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:dye", "dye"]
+        },
+        "default": {
+          "$ref": "#/definitions/colorValue",
+          "title": "default 默认颜色"
+        }
+      }
+    },
+    "fireworkTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "default"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:firework", "firework"]
+        },
+        "default": {
+          "$ref": "#/definitions/colorValue",
+          "title": "default 默认颜色"
+        }
+      }
+    },
+    "grassTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "temperature", "downfall"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:grass", "grass"]
         },
         "temperature": {
           "type": "number",
@@ -558,11 +618,75 @@
           "minimum": 0,
           "maximum": 1,
           "title": "downfall 降水"
+        }
+      }
+    },
+    "mapColorTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "default"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:map_color", "map_color"]
+        },
+        "default": {
+          "$ref": "#/definitions/colorValue",
+          "title": "default 默认颜色"
+        }
+      }
+    },
+    "potionTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "default"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:potion", "potion"]
+        },
+        "default": {
+          "$ref": "#/definitions/colorValue",
+          "title": "default 默认颜色"
+        }
+      }
+    },
+    "teamTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "default"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:team", "team"]
+        },
+        "default": {
+          "$ref": "#/definitions/colorValue",
+          "title": "default 默认颜色"
+        }
+      }
+    },
+    "customModelDataTint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "default"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "type 着色类型",
+          "enum": ["minecraft:custom_model_data", "custom_model_data"]
         },
         "index": {
           "type": "integer",
           "minimum": 0,
           "title": "index 索引"
+        },
+        "default": {
+          "$ref": "#/definitions/colorValue",
+          "title": "default 默认颜色"
         }
       }
     },
@@ -846,7 +970,9 @@
           "minItems": 3,
           "maxItems": 3,
           "items": {
-            "type": "number"
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         }
       ]
@@ -883,13 +1009,14 @@
       "additionalProperties": {
         "$ref": "#/definitions/vector"
       },
+      "required": ["left_rotation", "right_rotation", "scale", "translation"],
       "properties": {
         "left_rotation": {
-          "$ref": "#/definitions/quaternion",
+          "$ref": "#/definitions/rotation",
           "title": "left_rotation 左旋转"
         },
         "right_rotation": {
-          "$ref": "#/definitions/quaternion",
+          "$ref": "#/definitions/rotation",
           "title": "right_rotation 右旋转"
         },
         "scale": {
@@ -925,6 +1052,27 @@
       "items": {
         "type": "number"
       }
+    },
+    "axisAngleRotation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["angle", "axis"],
+      "properties": {
+        "angle": {
+          "type": "number",
+          "title": "angle 角度"
+        },
+        "axis": {
+          "$ref": "#/definitions/vector3",
+          "title": "axis 轴"
+        }
+      }
+    },
+    "rotation": {
+      "oneOf": [
+        { "$ref": "#/definitions/quaternion" },
+        { "$ref": "#/definitions/axisAngleRotation" }
+      ]
     },
     "vector": {
       "type": "array",
