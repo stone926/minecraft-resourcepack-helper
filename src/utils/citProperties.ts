@@ -45,7 +45,7 @@ function getCitPropertyReference(line: string, lineNumber: number, source: strin
     valueNode: {
       loc: createLocation(lineNumber, contentStart, valueStart + value.length),
       valueLoc,
-      hitLoc: createLocation(lineNumber, valueStart, Math.max(valueStart + value.length, valueStart + 1))
+      hitLoc: createLocation(lineNumber, valueStart + 1, Math.max(valueStart + value.length + 1, valueStart + 1))
     },
     target: resourceType,
     source,

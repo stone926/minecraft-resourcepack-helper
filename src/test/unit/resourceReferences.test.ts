@@ -451,6 +451,20 @@ describe("resource references", () => {
     assert.strictEqual(referenceAtBlankValue.value, "");
   });
 
+  it("finds CIT asset references when the cursor is at the end of the value", () => {
+    const { document, position } = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "optifine", "cit", "axolotl_bucket", "purple_small.properties"),
+      "model=minecraft:item/axolotl_bucket/purple_s|",
+      "properties",
+      1
+    );
+
+    const referenceAtValueEnd = findResourceReferenceAtPosition(document, position);
+
+    assert.strictEqual(referenceAtValueEnd?.kind, "model");
+    assert.strictEqual(referenceAtValueEnd.value, "minecraft:item/axolotl_bucket/purple_s");
+  });
+
   it("extracts model and base model references from item model definitions", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "items", "shield.json"),
