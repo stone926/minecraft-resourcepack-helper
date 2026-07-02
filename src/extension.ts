@@ -47,10 +47,18 @@ const citResourceReferenceSelectors: vscode.DocumentSelector = [
   { pattern: "**/assets/*/mcpatcher/cit/**/*.properties" }
 ];
 
+const citModelResourceReferenceSelectors: vscode.DocumentSelector = [
+  { language: "json", pattern: "**/assets/*/citresewn/*.json" },
+  { language: "json", pattern: "**/assets/*/citresewn/**/*.json" },
+  { language: "json", pattern: "**/assets/*/optifine/cit/**/*.json" },
+  { language: "json", pattern: "**/assets/*/mcpatcher/cit/**/*.json" }
+];
+
 const resourceReferenceSelectors: vscode.DocumentSelector = [
   ...jsonResourceReferenceSelectors,
   ...shaderResourceReferenceSelectors,
-  ...citResourceReferenceSelectors
+  ...citResourceReferenceSelectors,
+  ...citModelResourceReferenceSelectors
 ];
 
 export function activate(context: vscode.ExtensionContext) {

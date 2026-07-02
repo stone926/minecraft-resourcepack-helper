@@ -23,6 +23,10 @@ export function isCitPropertiesFileName(fileName: string): boolean {
   return getCitDocumentInfo(fileName) !== null && path.extname(fileName).toLowerCase() === ".properties";
 }
 
+export function isCitModelFileName(fileName: string): boolean {
+  return getCitDocumentInfo(fileName) !== null && path.extname(fileName).toLowerCase() === ".json";
+}
+
 export function isCitGlobalPropertiesFileName(fileName: string): boolean {
   const normalizedPath = path.normalize(fileName);
   const segments = normalizedPath.split(path.sep).filter(Boolean);
@@ -120,6 +124,17 @@ export function getCitPathCandidates(
     candidates.push(path.join(packRoot, "assets", namespace, resourceType, withExtension(normalizedValue, resourceType)));
   }
   return unique(candidates);
+}
+
+export function getCitAutoDiscoveryPathCandidates(
+  documentFileName: string,
+  packRoot: string,
+  value: string
+): string[] {
+  return [
+    ...getCitPathCandidates(documentFileName, packRoot, value, "models"),
+    ...getCitPathCandidates(documentFileName, packRoot, value, "textures")
+  ];
 }
 
 function parseCitResourceLocation(value: string): { namespace: string; resourcePath: string } | null {

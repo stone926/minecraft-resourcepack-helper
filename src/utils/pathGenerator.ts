@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Uri, workspace } from "vscode";
-import { getCitPathCandidates, type CitResourceType } from "./citPaths";
+import { getCitAutoDiscoveryPathCandidates, getCitPathCandidates, type CitResourceType } from "./citPaths";
 import { findPackRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "./resourceLocation";
 import { workspaceResourceCache, type WorkspaceResourceCache } from "../services/workspaceResourceCache";
 import type { ResourceReference } from "./resourceReferences";
@@ -117,6 +117,10 @@ function generateCitRedirectPath(
   document: ResourcePathDocument,
   options: ResourcePathResolverOptions
 ): Uri | null {
+  if (reference.origin === "citAutoDiscovery") {
+    return generateCitAutoDiscoveryRedirectPath(reference, document, options);
+  }
+
   const resourceType = getCitResourceTypeFromReference(reference);
   if (!resourceType) {
     return null;
@@ -136,6 +140,27 @@ function generateCitRedirectPath(
 
   if (shouldTryCitTypedResourceFallback(reference.value)) {
     return generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension, options);
+  }
+
+  return null;
+}
+
+function generateCitAutoDiscoveryRedirectPath(
+  reference: ResourceReference,
+  document: ResourcePathDocument,
+  options: ResourcePathResolverOptions
+): Uri | null {
+  const cache = shouldUseWorkspaceCache(options) ? (options.cache ?? workspaceResourceCache) : null;
+  const pathExists = options.pathExists ?? (fileName => cache ? cache.getPathExists(fileName) : fs.existsSync(fileName));
+  const packRoot = getCitPackRoot(document.fileName, options, cache, pathExists);
+  if (!packRoot) {
+    return null;
+  }
+
+  for (const candidate of getCitAutoDiscoveryPathCandidates(document.fileName, packRoot, reference.value)) {
+    if (pathExists(candidate)) {
+      return Uri.file(candidate);
+    }
   }
 
   return null;

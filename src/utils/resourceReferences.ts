@@ -1,6 +1,6 @@
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getCitPropertyReferences } from "./citProperties";
-import { isCitPropertiesFileName } from "./citPaths";
+import { getCitDocumentSource, isCitModelFileName, isCitPropertiesFileName } from "./citPaths";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "./jsonAst";
 import { AstLocation, isInArea } from "./locationChecker";
 
@@ -13,6 +13,8 @@ export interface ResourceReference {
   kind: ResourceReferenceKind;
   relationship?: ResourceReferenceRelationship;
   resolveMode?: ResourceReferenceResolveMode;
+  origin?: ResourceReferenceOrigin;
+  synthetic?: boolean;
 }
 
 export interface ResourceReferenceValueNode {
@@ -24,6 +26,7 @@ export interface ResourceReferenceValueNode {
 type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "fontFile" | "shader" | "sound";
 export type ResourceReferenceRelationship = "modelParent";
 export type ResourceReferenceResolveMode = "cit";
+export type ResourceReferenceOrigin = "citAutoDiscovery";
 
 export interface ResourceReferenceDocument {
   languageId: string;
@@ -52,6 +55,7 @@ export type ResourceReferenceDocumentKind =
   | "sounds"
   | "shaderCore"
   | "shaderPost"
+  | "citModel"
   | "citProperties";
 
 interface CachedResourceReferences {
@@ -79,6 +83,7 @@ const resourceReferenceDocumentPatterns: Array<{
   { kind: "sounds", pattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i },
   { kind: "shaderCore", pattern: /[\\/]shaders[\\/]core[\\/].+\.(?:vsh|fsh)$/i },
   { kind: "shaderPost", pattern: /[\\/]shaders[\\/]post[\\/].+\.(?:vsh|fsh)$/i },
+  { kind: "citModel", matches: isCitModelFileName },
   { kind: "citProperties", matches: isCitPropertiesFileName }
 ];
 
@@ -90,7 +95,12 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return [];
   }
 
-  if (documentKind !== "citProperties" && document.languageId !== "json" && !isShaderDocumentKind(documentKind)) {
+  if (
+    documentKind !== "citProperties" &&
+    documentKind !== "citModel" &&
+    document.languageId !== "json" &&
+    !isShaderDocumentKind(documentKind)
+  ) {
     return [];
   }
 
@@ -116,7 +126,7 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return [];
   }
 
-  const references = getReferencesForDocumentKind(ast, documentKind);
+  const references = getReferencesForDocumentKind(ast, documentKind, document.fileName);
   setCachedResourceReferences(document, references);
   return references;
 }
@@ -126,20 +136,25 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
   const character = position.character + 1;
 
   return getResourceReferences(document).find(reference =>
+    !reference.synthetic &&
     isInArea(line, character, reference.valueNode.hitLoc ?? reference.valueNode.valueLoc ?? reference.valueNode.loc)
   ) ?? null;
 }
 
 export function isResourceReferenceDocument(document: ResourceReferenceDocument): boolean {
   const kind = getResourceReferenceDocumentKind(document.fileName);
-  return kind !== null && (document.languageId === "json" || isShaderDocumentKind(kind) || kind === "citProperties");
+  return kind !== null && (document.languageId === "json" || isShaderDocumentKind(kind) || kind === "citProperties" || kind === "citModel");
 }
 
 export function isResourceReferenceFileName(fileName: string): boolean {
   return getResourceReferenceDocumentKind(fileName) !== null;
 }
 
-function getReferencesForDocumentKind(ast: JsonDocumentNode, documentKind: ResourceReferenceDocumentKind): ResourceReference[] {
+function getReferencesForDocumentKind(
+  ast: JsonDocumentNode,
+  documentKind: ResourceReferenceDocumentKind,
+  fileName = ""
+): ResourceReference[] {
   if (documentKind === "blockstates") {
     return getBlockstateReferences(ast);
   }
@@ -154,6 +169,10 @@ function getReferencesForDocumentKind(ast: JsonDocumentNode, documentKind: Resou
 
   if (documentKind === "models") {
     return getModelReferences(ast, "models");
+  }
+
+  if (documentKind === "citModel") {
+    return getCitModelReferences(ast, fileName);
   }
 
   if (documentKind === "particles") {
@@ -253,6 +272,24 @@ function getItemModelReferences(ast: JsonDocumentNode): ResourceReference[] {
   }
 
   return references;
+}
+
+function getCitModelReferences(ast: JsonDocumentNode, fileName: string): ResourceReference[] {
+  const source = getCitDocumentSource(fileName);
+  const references = getModelReferences(ast, source);
+
+  for (const item of objectMembers(ast.body)) {
+    if (memberName(item) === "overrides") {
+      for (const overrideEntry of arrayElements(item.value)) {
+        pushModelPropertyReferences(references, overrideEntry, source);
+      }
+    }
+  }
+
+  return references.map(reference => ({
+    ...reference,
+    resolveMode: "cit" as const
+  }));
 }
 
 function getParticleReferences(ast: JsonDocumentNode): ResourceReference[] {

@@ -5,6 +5,7 @@ import {
   getResourceReferences,
   ResourceReferenceDocument
 } from "../../utils/resourceReferences";
+import { getCitAutoDiscoveryPathCandidates } from "../../utils/citPaths";
 
 describe("resource references", () => {
   it("skips unrelated JSON documents without reading their contents", () => {
@@ -463,6 +464,74 @@ describe("resource references", () => {
 
     assert.strictEqual(referenceAtValueEnd?.kind, "model");
     assert.strictEqual(referenceAtValueEnd.value, "minecraft:item/axolotl_bucket/purple_s");
+  });
+
+  it("adds synthetic CIT auto-discovery references for item CIT without explicit assets", () => {
+    const document = createTextDocument(
+      path.join("pack", "assets", "minecraft", "citresewn", "cit", "stuff", "my_cool_stick.properties"),
+      [
+        "type=item",
+        "items=stick",
+        "nbt.CustomModelData=1"
+      ].join("\n"),
+      "properties"
+    );
+
+    const references = getResourceReferences(document);
+    const referenceAtDocumentStart = findResourceReferenceAtPosition(document, { line: 0, character: 0 });
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.extension, reference.origin ?? null, reference.synthetic ?? false]),
+      [
+        ["model", "my_cool_stick", "models", "json", "citAutoDiscovery", true]
+      ]
+    );
+    assert.strictEqual(referenceAtDocumentStart, null);
+  });
+
+  it("orders CIT auto-discovery model candidates before texture candidates", () => {
+    const documentFileName = path.join("pack", "assets", "minecraft", "citresewn", "cit", "stuff", "my_cool_stick.properties");
+
+    const candidates = getCitAutoDiscoveryPathCandidates(documentFileName, "pack", "my_cool_stick");
+
+    assert.deepStrictEqual(candidates.slice(0, 2), [
+      path.join("pack", "assets", "minecraft", "citresewn", "cit", "stuff", "my_cool_stick.json"),
+      path.join("pack", "assets", "minecraft", "models", "my_cool_stick.json")
+    ]);
+    assert.ok(candidates.indexOf(path.join("pack", "assets", "minecraft", "citresewn", "cit", "stuff", "my_cool_stick.json")) <
+      candidates.indexOf(path.join("pack", "assets", "minecraft", "citresewn", "cit", "stuff", "my_cool_stick.png")));
+  });
+
+  it("extracts CIT local model JSON references with CIT resolve mode", () => {
+    const { document, position } = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "optifine", "cit", "swords", "emerald.json"),
+      [
+        "{",
+        "  \"parent\": \"./base\",",
+        "  \"textures\": {",
+        "    \"layer0\": \"./textures/emerald|\"",
+        "  },",
+        "  \"overrides\": [",
+        "    { \"predicate\": { \"pulling\": 1 }, \"model\": \"./pulling\" }",
+        "  ]",
+        "}"
+      ].join("\n"),
+      "json",
+      1
+    );
+
+    const references = getResourceReferences(document);
+    const referenceAtTexture = findResourceReferenceAtPosition(document, position);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension, reference.relationship ?? null, reference.resolveMode ?? null]),
+      [
+        ["model", "./base", "models", "optifine/cit/swords", "json", "modelParent", "cit"],
+        ["texture", "./textures/emerald", "textures", "optifine/cit/swords", "png", null, "cit"],
+        ["model", "./pulling", "models", "optifine/cit/swords", "json", null, "cit"]
+      ]
+    );
+    assert.strictEqual(referenceAtTexture?.value, "./textures/emerald");
   });
 
   it("extracts model and base model references from item model definitions", () => {

@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { isCitPropertiesFileName } from "./citPaths";
 import {
   createResourceReferencePathResolver,
   generateReferenceRedirectPath,
@@ -421,7 +422,7 @@ async function collectResourceDocuments(
   for (const document of vscode.workspace.textDocuments) {
     if (
       isResourceReferenceFileName(document.fileName) &&
-      (!search || search.matchesText(document.getText()))
+      (!search || search.matchesText(document.getText()) || isCitPropertiesFileName(document.fileName))
     ) {
       documentsByKey.set(resourceUriKey(document.uri), document);
     }
@@ -479,7 +480,7 @@ async function loadResourceGraphDocumentIfMatching(
   const bytes = await vscode.workspace.fs.readFile(uri);
   const text = Buffer.from(bytes).toString("utf8");
 
-  if (search && !search.matchesText(text)) {
+  if (search && !search.matchesText(text) && !isCitPropertiesFileName(uri.fsPath)) {
     return null;
   }
 
