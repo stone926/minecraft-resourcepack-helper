@@ -3,6 +3,7 @@ import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "../utils
 import { parseCitProperties, type CitPropertyEntry } from "../utils/citPropertiesParser";
 import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "../utils/citLanguage";
 import { citSpecService } from "../services/citSpecService";
+import { citResourceIdService, type CitResourceIds } from "../services/citResourceIdService";
 import type { AstLocation } from "../utils/locationChecker";
 import type { ResolvedCitSpecKey } from "../utils/citSpecTypes";
 
@@ -17,6 +18,7 @@ export interface CitDiagnostic {
 export interface CitDiagnosticsOptions {
   locale?: string;
   fileExists?: (fileName: string) => boolean;
+  resourceIds?: CitResourceIds;
 }
 
 const integerPattern = /^-?\d+$/;
@@ -88,6 +90,11 @@ export function getCitDiagnostics(
     }
 
     diagnostics.push(...validateValue(entry, lookup.spec));
+    diagnostics.push(...validateResourceIds(entry, lookup.spec, options.resourceIds));
+  }
+
+  if (!globalFile) {
+    diagnostics.push(...validateCitTypeRules(document.fileName, entries, citType, options.resourceIds));
   }
 
   if (globalFile) {
@@ -95,6 +102,100 @@ export function getCitDiagnostics(
   }
 
   return diagnostics;
+}
+
+function validateResourceIds(
+  entry: CitPropertyEntry,
+  spec: ResolvedCitSpecKey,
+  resourceIds: CitResourceIds | undefined
+): CitDiagnostic[] {
+  if (spec.valueType !== "resourceList" || !spec.resourceKind || !resourceIds) {
+    return [];
+  }
+
+  const known = new Set(spec.resourceKind === "item" ? resourceIds.items : resourceIds.enchantments);
+  return entry.value.trim().split(/\s+/)
+    .filter(Boolean)
+    .map(value => spec.resourceKind === "item"
+      ? citResourceIdService.normalizeItemId(value)
+      : citResourceIdService.normalizeEnchantmentId(value))
+    .filter(value => !known.has(value))
+    .map(value => createDiagnostic(
+      entry.valueRange,
+      `Unknown ${spec.resourceKind} id '${value}'.`,
+      "warning"
+    ));
+}
+
+function validateCitTypeRules(
+  fileName: string,
+  entries: CitPropertyEntry[],
+  citType: string,
+  resourceIds: CitResourceIds | undefined
+): CitDiagnostic[] {
+  if (citType === "item") {
+    return validateItemCitRules(fileName, entries, resourceIds);
+  }
+  if (citType === "elytra") {
+    return validateElytraCitRules(entries);
+  }
+  if (citType === "armor") {
+    return validateArmorCitRules(entries);
+  }
+  return [];
+}
+
+function validateItemCitRules(
+  fileName: string,
+  entries: CitPropertyEntry[],
+  resourceIds: CitResourceIds | undefined
+): CitDiagnostic[] {
+  if (entries.some(entry => entry.key === "items")) {
+    return [];
+  }
+
+  const inferredItem = inferItemIdFromFileName(fileName);
+  if (resourceIds && inferredItem && new Set(resourceIds.items).has(inferredItem)) {
+    return [];
+  }
+
+  return [createDiagnostic(
+    entries[0]?.keyRange ?? { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
+    `type=item requires items unless the file name is a valid item id.`,
+    "warning"
+  )];
+}
+
+function validateElytraCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
+  const diagnostics: CitDiagnostic[] = [];
+  const items = entries.find(entry => entry.key === "items");
+  if (items) {
+    diagnostics.push(createDiagnostic(items.keyRange, `items is ignored for type=elytra; the target is minecraft:elytra.`, "information"));
+  }
+  if (!entries.some(entry => entry.key === "texture")) {
+    diagnostics.push(createDiagnostic(
+      entries[0]?.keyRange ?? { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
+      `type=elytra should declare texture.`,
+      "warning"
+    ));
+  }
+  return diagnostics;
+}
+
+function validateArmorCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
+  const items = entries.find(entry => entry.key === "items");
+  if (!items) {
+    return [];
+  }
+
+  return items.value.trim().split(/\s+/)
+    .filter(Boolean)
+    .filter(value => !citResourceIdService.isArmorItem(value))
+    .map(value => createDiagnostic(
+      items.valueRange,
+      `Item '${citResourceIdService.normalizeItemId(value)}' is not an armor item.`,
+      "warning"
+    ));
 }
 
 function validateValue(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
@@ -267,6 +368,14 @@ function isBlendParameter(value: string): boolean {
   return integerPattern.test(value) ||
     /^0x[0-9a-f]+$/i.test(value) ||
     /^GL_[A-Z0-9_]+$/.test(value);
+}
+
+function inferItemIdFromFileName(fileName: string): string | null {
+  const basename = path.basename(fileName, path.extname(fileName));
+  if (!/^[a-z0-9_.-]+$/.test(basename)) {
+    return null;
+  }
+  return `minecraft:${basename}`;
 }
 
 function requiresValue(spec: ResolvedCitSpecKey): boolean {

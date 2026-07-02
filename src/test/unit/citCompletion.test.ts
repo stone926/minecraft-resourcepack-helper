@@ -31,7 +31,8 @@ describe("CIT completion and hover", () => {
   });
 
   it("completes enum and boolean values", () => {
-    const typeValue = getCitCompletionResult(createMarkedDocument("type=e|").document, createMarkedDocument("type=e|").position, "en");
+    const typeDocument = createMarkedDocument("type=e|");
+    const typeValue = getCitCompletionResult(typeDocument.document, typeDocument.position, "en");
     assert.deepStrictEqual(typeValue?.candidates.map(candidate => candidate.label), ["elytra", "enchantment"]);
 
     const { document, position } = createMarkedDocument([
@@ -41,6 +42,21 @@ describe("CIT completion and hover", () => {
     const booleanValue = getCitCompletionResult(document, position, "en");
 
     assert.deepStrictEqual(booleanValue?.candidates.map(candidate => candidate.label), ["true", "false"]);
+  });
+
+  it("completes item and enchantment ids", () => {
+    const itemDocument = createMarkedDocument("items=minecraft:d|");
+    const itemResult = getCitCompletionResult(itemDocument.document, itemDocument.position, "en", {
+      items: ["minecraft:diamond_sword", "minecraft:stick"]
+    });
+
+    const enchantmentDocument = createMarkedDocument("enchantments=minecraft:s|");
+    const enchantmentResult = getCitCompletionResult(enchantmentDocument.document, enchantmentDocument.position, "en", {
+      enchantments: ["minecraft:sharpness", "minecraft:unbreaking"]
+    });
+
+    assert.deepStrictEqual(itemResult?.candidates.map(candidate => candidate.label), ["minecraft:diamond_sword"]);
+    assert.deepStrictEqual(enchantmentResult?.candidates.map(candidate => candidate.label), ["minecraft:sharpness"]);
   });
 
   it("returns hover content from the spec", () => {
