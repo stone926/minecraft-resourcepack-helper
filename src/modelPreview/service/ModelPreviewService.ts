@@ -141,6 +141,10 @@ export class ModelPreviewService {
     issues: ModelIssueCollector,
     cancellationToken?: ModelPreviewCancellationToken
   ): Promise<ResolvedModel | null> {
+    // CIT preview is intentionally an asset preview. It resolves the primary
+    // model/texture enough for authoring feedback, but does not emulate runtime
+    // condition matching, item-state submodels, glint layers, or equipment-layer
+    // selection.
     let text: string;
     try {
       text = await this.fileSystem.readTextFile(fileName);

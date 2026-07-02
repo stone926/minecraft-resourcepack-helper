@@ -59,7 +59,9 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 - 可点击的问题与依赖列表，用于跳转到相关文件或配置。
 - PNG 导出，可自定义宽高，选择透明背景或指定背景色。
 
-当前范围：模型预览目前只支持 Minecraft 模型 JSON 资源。部分视觉效果会使用近似处理，包括无法解码纹理像素时的 generated 物品侧面挤出、动画纹理只显示已加载 PNG 的第一帧，以及元素 rotation `rescale`。
+当前范围：模型预览支持 Minecraft 模型 JSON 资源和 CIT `.properties` 资源预览。部分视觉效果会使用近似处理，包括无法解码纹理像素时的 generated 物品侧面挤出、动画纹理只显示已加载 PNG 的第一帧，以及元素 rotation `rescale`。
+
+CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它会尽量解析主 `model` 或 `texture` 并渲染对应模型/纹理，但不会完整执行所有匹配分支或渲染层行为。尤其是 `texture.*`、`tile.*`、`model.*` 状态变体、物品条件匹配、附魔 glint 层、blend 行为以及盔甲/equipment layer 选择，可能与游戏中的 CIT Resewn 结果不同。
 
 ## 支持的引用
 

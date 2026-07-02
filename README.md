@@ -59,7 +59,9 @@ Preview controls include:
 - Clickable Issues and Dependencies lists for related files and configuration.
 - PNG export with custom width and height, transparent background, or a selected background color.
 
-Current scope: model preview supports Minecraft model JSON resources only. Some visual details are approximated, including generated item side extrusion when texture pixels cannot be decoded, animated textures where only the first loaded PNG frame is shown, and element rotation `rescale`.
+Current scope: model preview supports Minecraft model JSON resources and CIT `.properties` asset previews. Some visual details are approximated, including generated item side extrusion when texture pixels cannot be decoded, animated textures where only the first loaded PNG frame is shown, and element rotation `rescale`.
+
+CIT `.properties` preview is an asset preview, not a full CIT runtime simulation. It resolves the main `model` or `texture` and renders the resulting model/texture where possible, but it does not evaluate every matching branch or render-layer behavior. In particular, `texture.*`, `tile.*`, `model.*` state variants, item condition matching, enchantment glint layers, blend behavior, and armor/equipment layer selection may differ from the in-game CIT Resewn result.
 
 ## Supported References
 

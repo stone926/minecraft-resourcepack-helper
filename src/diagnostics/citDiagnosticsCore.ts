@@ -142,6 +142,8 @@ function validateCitTypeRules(
   citType: string,
   resourceIds: CitResourceIds | undefined
 ): CitDiagnostic[] {
+  // assets/cit rules are merged into the spec for metadata and future use, but
+  // diagnostics execute these type-specific rules explicitly today.
   if (citType === "item") {
     return validateItemCitRules(fileName, entries, resourceIds);
   }
