@@ -37,12 +37,12 @@ const shaderResourceReferenceSelectors: vscode.DocumentSelector = [
 ];
 
 const citResourceReferenceSelectors: vscode.DocumentSelector = [
-  { language: "properties", pattern: "**/assets/*/citresewn/*.properties" },
-  { language: "properties", pattern: "**/assets/*/citresewn/**/*.properties" },
-  { language: "properties", pattern: "**/assets/*/optifine/cit.properties" },
-  { language: "properties", pattern: "**/assets/*/optifine/cit/**/*.properties" },
-  { language: "properties", pattern: "**/assets/*/mcpatcher/cit.properties" },
-  { language: "properties", pattern: "**/assets/*/mcpatcher/cit/**/*.properties" }
+  { pattern: "**/assets/*/citresewn/*.properties" },
+  { pattern: "**/assets/*/citresewn/**/*.properties" },
+  { pattern: "**/assets/*/optifine/cit.properties" },
+  { pattern: "**/assets/*/optifine/cit/**/*.properties" },
+  { pattern: "**/assets/*/mcpatcher/cit.properties" },
+  { pattern: "**/assets/*/mcpatcher/cit/**/*.properties" }
 ];
 
 const resourceReferenceSelectors: vscode.DocumentSelector = [
