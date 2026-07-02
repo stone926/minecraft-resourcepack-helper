@@ -109,9 +109,9 @@ Example:
 
 ```json
 {
-  "McResHelper.defaultMcAssetsPath": "E:/.minecraft/my_test/26.2/assets/minecraft",
+  "McResHelper.defaultMcAssetsPath": "C:/.minecraft/my_test/26.2/assets/minecraft",
   "McResHelper.resourcePackLoadOrder": [
-    "E:/.minecraft/resourcepacks/base_pack"
+    "C:/.minecraft/resourcepacks/base_pack"
   ],
   "McResHelper.tipColorForUndefinedTextureVariables": "Chartreuse"
 }
