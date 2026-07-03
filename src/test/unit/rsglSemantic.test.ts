@@ -1,0 +1,88 @@
+import * as assert from "node:assert";
+import * as path from "node:path";
+import { parseRsgl } from "../../rsgl/parser";
+import { bindRsglModule, bindRsglProgram } from "../../rsgl/semantic";
+
+describe("RSGL semantic model", () => {
+  it("builds symbols, references, imports, and output resource previews", () => {
+    const module = parseRsgl([
+      "target java format [88, 0]",
+      "namespace minecraft",
+      "import { woods as woodTable } from \"./woods.rsgl\"",
+      "let id: ResourceId = minecraft:block/acacia_planks",
+      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "  model block id {",
+      "    parent minecraft:block/cube_all",
+      "    textures { all: texture }",
+      "  }",
+      "}",
+      "model block acacia_planks {",
+      "  parent minecraft:block/cube_all",
+      "  textures { all: id }",
+      "}"
+    ].join("\n"));
+
+    const model = bindRsglModule(module, { fileName: path.join("pack", "main.rsgl") });
+
+    assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(model.namespace, "minecraft");
+    assert.ok(model.symbols.some(symbol => symbol.kind === "template" && symbol.name === "cube"));
+    assert.ok(model.symbols.some(symbol => symbol.kind === "variable" && symbol.name === "id"));
+    assert.strictEqual(model.imports[0].source, "./woods.rsgl");
+    assert.deepStrictEqual(model.imports[0].namedImports.map(item => item.local), ["woodTable"]);
+    assert.ok(model.references.some(reference => reference.name === "id" && reference.symbol?.kind === "variable"));
+    assert.ok(model.outputResources.some(resource => resource.kind === "model" && resource.id === "acacia_planks"));
+  });
+
+  it("reports duplicate symbols, undefined symbols, and simple type mismatches", () => {
+    const module = parseRsgl([
+      "let count: Number = \"many\"",
+      "let count = 2",
+      "model block example {",
+      "  textures { all: missingTexture }",
+      "}"
+    ].join("\n"));
+
+    const model = bindRsglModule(module);
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.typeMismatch"));
+    assert.ok(codes.includes("rsgl.duplicateSymbol"));
+    assert.ok(codes.includes("rsgl.undefinedSymbol"));
+  });
+
+  it("checks builtin template signatures", () => {
+    const module = parseRsgl([
+      "blockstate minecraft:bad_stairs {",
+      "  use stairs(base: minecraft:block/base)",
+      "}"
+    ].join("\n"));
+
+    const model = bindRsglModule(module);
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.missingArgument"));
+  });
+
+  it("builds an import graph and reports missing imports", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const woodsFile = path.resolve("pack", "woods.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { woods } from \"./woods.rsgl\"",
+          "import \"./missing.rsgl\""
+        ].join("\n"))
+      },
+      {
+        fileName: woodsFile,
+        module: parseRsgl("table woods { acacia: minecraft:block/acacia_planks }")
+      }
+    ]);
+
+    assert.ok(program.importGraph.edges.some(edge => edge.from === mainFile && edge.to === woodsFile));
+    assert.ok(program.importGraph.missing.some(missing => missing.source === "./missing.rsgl"));
+    assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
+  });
+});

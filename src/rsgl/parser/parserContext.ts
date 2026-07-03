@@ -1,4 +1,4 @@
-import { RsglDiagnostic, RsglStatement, RsglToken, TextRange } from "./types";
+import { RsglDiagnostic, RsglToken, TextRange } from "./types";
 
 export class ParserContext {
   protected readonly diagnostics: RsglDiagnostic[];
@@ -94,30 +94,6 @@ export class ParserContext {
     severity: RsglDiagnostic["severity"] = "error"
   ): void {
     this.diagnostics.push({ code, message, severity, range });
-  }
-
-  protected createStatement(
-    kind: RsglStatement["kind"],
-    keyword: string,
-    startToken: RsglToken,
-    endToken: RsglToken
-  ): RsglStatement {
-    const start = startToken.offset;
-    const leadingStart = startToken.leadingTrivia.length > 0
-      ? startToken.leadingTrivia[0].offset
-      : start;
-    return {
-      kind,
-      keyword,
-      range: {
-        start,
-        end: tokenRange(endToken).end
-      },
-      fullRange: {
-        start: leadingStart,
-        end: tokenRange(endToken).end
-      }
-    };
   }
 
   protected matchText(text: string): boolean {

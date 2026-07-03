@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { parseRsgl, RsglDiagnostic, TextRange } from "./parser";
+import { bindRsglModule } from "./semantic";
 
 export const rsglLanguageId = "rsgl";
 export const rsglDocumentSelector: vscode.DocumentSelector = [{ language: rsglLanguageId }];
@@ -11,7 +12,8 @@ export function refreshRsglDiagnostics(document: vscode.TextDocument, collection
   }
 
   const parsed = parseRsgl(document.getText());
-  collection.set(document.uri, parsed.diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
+  const semanticModel = bindRsglModule(parsed, { fileName: document.uri.fsPath || document.fileName });
+  collection.set(document.uri, semanticModel.diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
 }
 
 function toVscodeDiagnostic(document: vscode.TextDocument, diagnostic: RsglDiagnostic): vscode.Diagnostic {

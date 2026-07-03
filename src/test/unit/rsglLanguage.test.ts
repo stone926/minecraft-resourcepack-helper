@@ -65,6 +65,74 @@ describe("RSGL language", () => {
       "ResourceDecl",
       "SugarDecl"
     ]);
+
+    const model = module.statements[3];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    assert.strictEqual(model.resourceKind, "model");
+    assert.strictEqual(model.subtype?.text, "block");
+    assert.strictEqual(model.body.statements[0].kind, "PropertyStmt");
+  });
+
+  it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
+    const module = parseRsgl([
+      "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",
+      "let powered = state.powered ? 1..4 : [0, 1]"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const frames = module.statements[0];
+    assert.strictEqual(frames.kind, "LetDecl");
+    assert.strictEqual(frames.value.kind, "CallExpr");
+    const template = frames.value.args[0].value;
+    assert.strictEqual(template.kind, "TemplateStringExpr");
+    assert.strictEqual(template.parts.some(part => part.kind === "expression" && part.expression.kind === "CallExpr"), true);
+
+    const powered = module.statements[1];
+    assert.strictEqual(powered.kind, "LetDecl");
+    assert.strictEqual(powered.value.kind, "ConditionalExpr");
+    assert.strictEqual(powered.value.condition.kind, "MemberExpr");
+    assert.strictEqual(powered.value.whenTrue.kind, "RangeExpr");
+    assert.strictEqual(powered.value.whenFalse.kind, "ListExpr");
+  });
+
+  it("keeps state key and model apply sugar as expression AST nodes", () => {
+    const module = parseRsgl([
+      "blockstate minecraft:example {",
+      "  variants {",
+      "    [facing=west half=bottom] -> @block/example y=90 uvlock",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const blockstate = module.statements[0];
+    assert.strictEqual(blockstate.kind, "ResourceDecl");
+    const variants = blockstate.body.statements[0];
+    assert.strictEqual(variants.kind, "VariantsSection");
+    assert.strictEqual(variants.entries[0].state.kind, "StateKeySugar");
+    assert.strictEqual(variants.entries[0].value.kind, "ModelApplySugar");
+    assert.strictEqual(variants.entries[0].value.properties.length, 2);
+  });
+
+  it("parses multipart entries with structured when/apply nodes", () => {
+    const module = parseRsgl([
+      "blockstate minecraft:oak_fence {",
+      "  multipart {",
+      "    apply { model: minecraft:block/oak_fence_post }",
+      "    when { north: true } apply { model: minecraft:block/oak_fence_side }",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const blockstate = module.statements[0];
+    assert.strictEqual(blockstate.kind, "ResourceDecl");
+    const multipart = blockstate.body.statements[0];
+    assert.strictEqual(multipart.kind, "MultipartSection");
+    assert.strictEqual(multipart.entries.length, 2);
+    assert.strictEqual(multipart.entries[0].when, undefined);
+    assert.strictEqual(multipart.entries[1].when?.kind, "ObjectExpr");
+    assert.strictEqual(multipart.entries[1].apply.kind, "ObjectExpr");
   });
 
   it("recovers from syntax errors and reports actionable diagnostics", () => {
