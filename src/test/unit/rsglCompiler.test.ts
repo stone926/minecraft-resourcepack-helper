@@ -1,5 +1,6 @@
 import * as assert from "node:assert";
-import { compileRsglModule, stableJsonStringify } from "../../rsgl/compiler";
+import * as path from "node:path";
+import { compileRsglModule, compileRsglProgram, stableJsonStringify } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 
 describe("RSGL compiler", () => {
@@ -157,6 +158,63 @@ describe("RSGL compiler", () => {
         }
       }
     });
+  });
+
+  it("expands templates imported from another RSGL file", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { cube as cubeModel } from \"./templates.rsgl\"",
+          "use cubeModel(stone, texture: minecraft:block/stone)"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "template cube(id: ResourceId, texture: TextureId = id) {",
+          "  model block id {",
+          "    parent minecraft:block/cube_all",
+          "    textures { all: texture }",
+          "  }",
+          "}"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/models/block/stone.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/stone"
+      }
+    });
+    const mapping = result.units[0].sourceMap.mappings[0];
+    assert.strictEqual(mapping.sourceFile, templatesFile);
+    assert.strictEqual(mapping.reason, "template");
+    assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use cubeModel"]);
+  });
+
+  it("reports output conflicts across compiled RSGL files", () => {
+    const firstFile = path.resolve("pack", "first.rsgl");
+    const secondFile = path.resolve("pack", "second.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: firstFile,
+        module: parseRsgl("cube_all [stone]")
+      },
+      {
+        fileName: secondFile,
+        module: parseRsgl("model block stone { parent minecraft:block/cube_all }")
+      }
+    ]);
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.outputConflict"));
   });
 
   it("reports output path conflicts", () => {

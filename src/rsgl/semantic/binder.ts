@@ -17,6 +17,8 @@ import {
   TopLevelStatementNode
 } from "../parser";
 import { createBuiltinSymbols } from "./builtins";
+import { validateResolvedImportCalls } from "./importValidation";
+import { formatType, isAssignable } from "./typeRelations";
 import {
   anyType,
   booleanType,
@@ -55,9 +57,11 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   const models = files.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
   const importGraph = buildImportGraph(files, models, resolver);
   const importDiagnostics = resolveProgramImports(models, importGraph);
+  const importedCallDiagnostics = models.flatMap(validateResolvedImportCalls);
   const diagnostics = [
     ...models.flatMap(model => model.diagnostics),
     ...importDiagnostics,
+    ...importedCallDiagnostics,
     ...importGraph.missing.map(missing => diagnostic(
       "rsgl.missingImport",
       `RSGL import not found: ${missing.source}`,
@@ -407,6 +411,9 @@ class RsglBinder {
 
     const symbol = lookup(scope, callee.name.text);
     if (!symbol?.signature) {
+      if (symbol?.kind === "import") {
+        return anyType;
+      }
       for (const arg of args) {
         this.checkExpression(arg.value, scope);
       }
@@ -613,32 +620,6 @@ function lookup(scope: RsglScope, name: string): RsglSymbol | undefined {
     current = current.parent;
   }
   return undefined;
-}
-
-function isAssignable(expected: RsglType, actual: RsglType): boolean {
-  if (expected.kind === "Unknown" || expected.kind === "Any" || actual.kind === "Unknown" || actual.kind === "Any") {
-    return true;
-  }
-  if (expected.kind === actual.kind) {
-    return true;
-  }
-  if (expected.kind === "Json") {
-    return true;
-  }
-  if (expected.kind === "ResourceId" && (actual.kind === "ModelId" || actual.kind === "TextureId" || actual.kind === "String")) {
-    return true;
-  }
-  if ((expected.kind === "ModelId" || expected.kind === "TextureId") && actual.kind === "ResourceId") {
-    return true;
-  }
-  return false;
-}
-
-function formatType(type: RsglType): string {
-  if (type.kind === "List") {
-    return `List<${formatType(type.elementType ?? unknownType)}>`;
-  }
-  return type.kind;
 }
 
 function objectKeyName(property: ObjectPropertyNode): string | null {

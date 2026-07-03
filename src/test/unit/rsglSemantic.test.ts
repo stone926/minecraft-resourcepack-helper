@@ -132,4 +132,28 @@ describe("RSGL semantic model", () => {
 
     assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImportedSymbol"));
   });
+
+  it("checks resolved imported template call signatures", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { cube } from \"./templates.rsgl\"",
+          "use cube()"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "template cube(id: ResourceId) {",
+          "  model block id { parent minecraft:block/cube_all }",
+          "}"
+        ].join("\n"))
+      }
+    ]);
+
+    assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingArgument"));
+  });
 });

@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import {
   BlockNode,
   ExprNode,
@@ -8,7 +9,13 @@ import {
   TemplateDeclNode,
   TopLevelStatementNode
 } from "../parser";
-import { bindRsglModule } from "../semantic";
+import {
+  bindRsglModule,
+  bindRsglProgram,
+  RsglProgram,
+  RsglSemanticModel,
+  RsglSourceFile
+} from "../semantic";
 import {
   childEvaluationContext,
   EvaluationContext,
@@ -34,9 +41,22 @@ export interface RsglCompileOptions extends RsglResourceValidationOptions {
   namespace?: string;
 }
 
+export interface RsglProgramCompileOptions extends RsglResourceValidationOptions {
+  entryFileName?: string;
+  namespace?: string;
+}
+
 interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
+  externalTemplates?: RsglTemplateDefinition[];
+  detectOutputConflicts?: boolean;
+}
+
+interface RsglTemplateDefinition {
+  name: string;
+  node: TemplateDeclNode;
+  fileName: string;
 }
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
@@ -56,10 +76,46 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   };
 }
 
+export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
+  const program = bindRsglProgram(files);
+  const selectedModels = selectProgramModels(program, options.entryFileName);
+  const units: ResourceUnit[] = [];
+  const diagnostics: RsglCompileDiagnostic[] = [
+    ...program.diagnostics.map(diagnostic => ({ ...diagnostic }))
+  ];
+
+  if (options.entryFileName && selectedModels.length === 0) {
+    diagnostics.push({
+      code: "rsgl.compileMissingEntry",
+      message: `RSGL entry file not found: ${options.entryFileName}.`,
+      range: { start: 0, end: 1 },
+      severity: "error"
+    });
+  }
+
+  for (const model of selectedModels) {
+    const compiler = new RsglCompiler(model.module, {
+      fileName: model.fileName,
+      namespace: options.namespace ?? model.namespace ?? "minecraft",
+      externalTemplates: collectImportedTemplates(model, program),
+      detectOutputConflicts: false
+    });
+    const result = compiler.compile();
+    units.push(...result.units);
+    diagnostics.push(...result.diagnostics);
+  }
+
+  diagnostics.push(
+    ...detectOutputConflicts(units),
+    ...validateResourceUnits(units, options)
+  );
+  return { units, diagnostics };
+}
+
 class RsglCompiler {
   private readonly units: ResourceUnit[] = [];
   private readonly diagnostics: RsglCompileDiagnostic[] = [];
-  private readonly templates = new Map<string, TemplateDeclNode>();
+  private readonly templates = new Map<string, RsglTemplateDefinition>();
 
   public constructor(
     private readonly module: RsglModule,
@@ -67,16 +123,25 @@ class RsglCompiler {
   ) { }
 
   public compile(): RsglCompileResult {
+    for (const template of this.options.externalTemplates ?? []) {
+      this.templates.set(template.name, template);
+    }
     for (const statement of this.module.statements) {
       if (statement.kind === "TemplateDecl" && statement.name) {
-        this.templates.set(statement.name.text, statement);
+        this.templates.set(statement.name.text, {
+          name: statement.name.text,
+          node: statement,
+          fileName: this.options.fileName
+        });
       }
     }
     const context = this.createRootContext();
     for (const statement of this.module.statements) {
       this.compileStatement(statement, context);
     }
-    this.detectOutputConflicts();
+    if (this.options.detectOutputConflicts ?? true) {
+      this.diagnostics.push(...detectOutputConflicts(this.units));
+    }
     return { units: this.units, diagnostics: this.diagnostics };
   }
 
@@ -132,7 +197,7 @@ class RsglCompiler {
       outputPath,
       content: resourceBodyToObject(statement.body, context),
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, "direct")
+      sourceMap: this.sourceMap(outputPath, statement, context)
     };
   }
 
@@ -154,7 +219,7 @@ class RsglCompiler {
       outputPath,
       content: { ...body, model: normalizeJsonValue(model) },
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, "direct")
+      sourceMap: this.sourceMap(outputPath, statement, context)
     };
   }
 
@@ -194,7 +259,7 @@ class RsglCompiler {
       outputPath,
       content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, "direct")
+      sourceMap: this.sourceMap(outputPath, statement, context)
     };
   }
 
@@ -212,7 +277,7 @@ class RsglCompiler {
       outputPath,
       content: resourceBodyToObject(statement.body, context),
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, "direct")
+      sourceMap: this.sourceMap(outputPath, statement, context)
     };
   }
 
@@ -225,8 +290,9 @@ class RsglCompiler {
           this.staticText(entry.id, context) ?? "",
           entry.target ? (this.staticText(entry.target, context) ?? undefined) : undefined,
           this.options.namespace,
-          this.options.fileName,
-          entry.range
+          context.sourceFile ?? this.options.fileName,
+          entry.range,
+          context.expansionStack ?? []
         ));
       }
     } else if (statement.sugarKind === "batchItemModel") {
@@ -235,8 +301,9 @@ class RsglCompiler {
           this.staticText(entry.id, context) ?? "",
           entry.target ? (this.staticText(entry.target, context) ?? undefined) : undefined,
           this.options.namespace,
-          this.options.fileName,
-          entry.range
+          context.sourceFile ?? this.options.fileName,
+          entry.range,
+          context.expansionStack ?? []
         ));
       }
     }
@@ -249,18 +316,18 @@ class RsglCompiler {
       return;
     }
     if (statement.sugarName.text === "stairs") {
-      this.pushUnit(createStairsBlockstate(idValue, this.options.namespace, this.options.fileName, statement.range));
+      this.pushUnit(createStairsBlockstate(idValue, this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "slab") {
       const double = statement.options.find(option => option.name.text === "double")?.value;
       if (!double) {
         this.error("rsgl.slabMissingDouble", "slab sugar requires an explicit double model.", statement.range);
         return;
       }
-      this.pushUnit(createSlabBlockstate(idValue, this.staticText(double, context) ?? "", this.options.namespace, this.options.fileName, statement.range));
+      this.pushUnit(createSlabBlockstate(idValue, this.staticText(double, context) ?? "", this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "fence") {
-      this.pushUnit(createFenceBlockstate(idValue, this.options.namespace, this.options.fileName, statement.range));
+      this.pushUnit(createFenceBlockstate(idValue, this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "wall") {
-      this.pushUnit(createWallBlockstate(idValue, this.options.namespace, this.options.fileName, statement.range));
+      this.pushUnit(createWallBlockstate(idValue, this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     }
   }
 
@@ -290,7 +357,7 @@ class RsglCompiler {
     }
     const values: Record<string, EvaluationValue> = {};
     const positional = expression.args.filter(arg => !arg.name);
-    for (const [index, parameter] of template.parameters.entries()) {
+    for (const [index, parameter] of template.node.parameters.entries()) {
       const name = parameter.name?.text;
       if (!name) {
         continue;
@@ -304,7 +371,15 @@ class RsglCompiler {
         this.error("rsgl.compileMissingArgument", `Missing template argument '${name}'.`, expression.range);
       }
     }
-    this.compileBlock(template.body, childEvaluationContext(context, values));
+    const templateContext = childEvaluationContext(context, values, {
+      sourceFile: template.fileName,
+      mappingReason: "template",
+      expansionStack: [
+        ...(context.expansionStack ?? []),
+        { label: `use ${expression.callee.name.text}`, sourceRange: expression.range }
+      ]
+    });
+    this.compileBlock(template.node.body, templateContext);
   }
 
   private compileForStmt(statement: Extract<TopLevelStatementNode, { kind: "ForStmt" }>, context: EvaluationContext): void {
@@ -327,7 +402,16 @@ class RsglCompiler {
           bindings[binding.text] = entries[index]?.[1];
         });
       }
-      this.compileBlock(statement.body as BlockNode, childEvaluationContext(context, bindings));
+      const loopReason = context.mappingReason === "direct" || !context.mappingReason
+        ? "loop"
+        : context.mappingReason;
+      this.compileBlock(statement.body as BlockNode, childEvaluationContext(context, bindings, {
+        mappingReason: loopReason,
+        expansionStack: [
+          ...(context.expansionStack ?? []),
+          { label: "for", sourceRange: statement.range }
+        ]
+      }));
     }
   }
 
@@ -345,7 +429,10 @@ class RsglCompiler {
   private createRootContext(): EvaluationContext {
     return {
       namespace: this.options.namespace,
-      variables: new Map<string, EvaluationValue>()
+      variables: new Map<string, EvaluationValue>(),
+      sourceFile: this.options.fileName,
+      mappingReason: "direct",
+      expansionStack: []
     };
   }
 
@@ -355,27 +442,15 @@ class RsglCompiler {
     }
   }
 
-  private detectOutputConflicts(): void {
-    const seen = new Map<string, ResourceUnit>();
-    for (const unit of this.units) {
-      const existing = seen.get(unit.outputPath);
-      if (existing) {
-        this.error("rsgl.outputConflict", `Multiple RSGL resources emit ${unit.outputPath}.`, unit.sourceMap.mappings[0].sourceRange);
-      } else {
-        seen.set(unit.outputPath, unit);
-      }
-    }
-  }
-
-  private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, reason: "direct" | "builtin") {
+  private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, context: EvaluationContext) {
     return {
       generatedFile: outputPath,
       mappings: [{
         generatedPath: "",
-        sourceFile: this.options.fileName,
+        sourceFile: context.sourceFile ?? this.options.fileName,
         sourceRange: node.range,
-        reason,
-        expansionStack: []
+        reason: context.mappingReason ?? "direct",
+        expansionStack: context.expansionStack ?? []
       }]
     };
   }
@@ -387,4 +462,68 @@ class RsglCompiler {
 
 function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
   return value === undefined ? null : value;
+}
+
+function selectProgramModels(program: RsglProgram, entryFileName: string | undefined): RsglSemanticModel[] {
+  if (!entryFileName) {
+    return program.models;
+  }
+  const normalizedEntry = normalizeFileName(entryFileName);
+  return program.models.filter(model => normalizeFileName(model.fileName) === normalizedEntry);
+}
+
+function collectImportedTemplates(model: RsglSemanticModel, program: RsglProgram): RsglTemplateDefinition[] {
+  const modelsByFile = new Map(program.models.map(item => [normalizeFileName(item.fileName), item]));
+  const currentFile = normalizeFileName(model.fileName);
+  const templates: RsglTemplateDefinition[] = [];
+
+  for (const record of model.imports) {
+    const targetFile = record.resolvedFileName
+      ? normalizeFileName(record.resolvedFileName)
+      : program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === record.source)?.to;
+    const targetModel = targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
+    if (!targetModel) {
+      continue;
+    }
+
+    for (const item of record.namedImports) {
+      const exported = targetModel.symbols.find(symbol => symbol.name === item.imported);
+      if (isTemplateDeclNode(exported?.node)) {
+        templates.push({
+          name: item.local,
+          node: exported.node,
+          fileName: targetModel.fileName
+        });
+      }
+    }
+  }
+
+  return templates;
+}
+
+function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
+  const diagnostics: RsglCompileDiagnostic[] = [];
+  const seen = new Map<string, ResourceUnit>();
+  for (const unit of units) {
+    const existing = seen.get(unit.outputPath);
+    if (existing) {
+      diagnostics.push({
+        code: "rsgl.outputConflict",
+        message: `Multiple RSGL resources emit ${unit.outputPath}.`,
+        range: unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 },
+        severity: "error"
+      });
+    } else {
+      seen.set(unit.outputPath, unit);
+    }
+  }
+  return diagnostics;
+}
+
+function normalizeFileName(fileName: string): string {
+  return path.normalize(fileName);
+}
+
+function isTemplateDeclNode(node: unknown): node is TemplateDeclNode {
+  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "TemplateDecl");
 }

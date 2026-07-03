@@ -4,13 +4,16 @@ import {
   ResourceBodyNode,
   ResourceStatementNode
 } from "../parser";
-import { JsonValue } from "./ir";
+import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 
 export type EvaluationValue = JsonValue | undefined;
 
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
+  sourceFile?: string;
+  mappingReason?: RsglMapping["reason"];
+  expansionStack?: ExpansionFrame[];
 }
 
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
@@ -110,10 +113,17 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
   return undefined;
 }
 
-export function childEvaluationContext(context: EvaluationContext, values: Record<string, EvaluationValue>): EvaluationContext {
+export function childEvaluationContext(
+  context: EvaluationContext,
+  values: Record<string, EvaluationValue>,
+  metadata: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack">> = {}
+): EvaluationContext {
   return {
     namespace: context.namespace,
-    variables: new Map([...context.variables, ...Object.entries(values)])
+    variables: new Map([...context.variables, ...Object.entries(values)]),
+    sourceFile: metadata.sourceFile ?? context.sourceFile,
+    mappingReason: metadata.mappingReason ?? context.mappingReason,
+    expansionStack: metadata.expansionStack ?? context.expansionStack
   };
 }
 

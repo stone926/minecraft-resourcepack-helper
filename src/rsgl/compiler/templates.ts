@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { JsonValue, ResourceUnit } from "./ir";
+import { ExpansionFrame, JsonValue, ResourceUnit } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 
 const facings = ["north", "east", "south", "west"] as const;
@@ -23,7 +23,13 @@ const stairsYaw: Record<string, Record<string, Record<string, number>>> = {
   }
 };
 
-export function createStairsBlockstate(idValue: string, namespace: string, sourceFile: string, sourceRange: { start: number; end: number }): ResourceUnit | null {
+export function createStairsBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
     return null;
@@ -48,7 +54,7 @@ export function createStairsBlockstate(idValue: string, namespace: string, sourc
       }
     }
   }
-  return blockstateUnit(idValue, namespace, { variants }, sourceFile, sourceRange, "builtin");
+  return blockstateUnit(idValue, namespace, { variants }, sourceFile, sourceRange, "builtin", expansionStack);
 }
 
 export function createSlabBlockstate(
@@ -56,7 +62,8 @@ export function createSlabBlockstate(
   doubleModel: string,
   namespace: string,
   sourceFile: string,
-  sourceRange: { start: number; end: number }
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
 ): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
@@ -68,10 +75,16 @@ export function createSlabBlockstate(
       "type=top": { model: `${id.namespace}:block/${id.path}_top` },
       "type=double": { model: doubleModel.includes(":") ? doubleModel : `${namespace}:${doubleModel}` }
     }
-  }, sourceFile, sourceRange, "builtin");
+  }, sourceFile, sourceRange, "builtin", expansionStack);
 }
 
-export function createFenceBlockstate(idValue: string, namespace: string, sourceFile: string, sourceRange: { start: number; end: number }): ResourceUnit | null {
+export function createFenceBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
     return null;
@@ -89,10 +102,16 @@ export function createFenceBlockstate(idValue: string, namespace: string, source
     }
     multipart.push({ when: { [facing]: true }, apply });
   });
-  return blockstateUnit(idValue, namespace, { multipart }, sourceFile, sourceRange, "builtin");
+  return blockstateUnit(idValue, namespace, { multipart }, sourceFile, sourceRange, "builtin", expansionStack);
 }
 
-export function createWallBlockstate(idValue: string, namespace: string, sourceFile: string, sourceRange: { start: number; end: number }): ResourceUnit | null {
+export function createWallBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
     return null;
@@ -110,10 +129,17 @@ export function createWallBlockstate(idValue: string, namespace: string, sourceF
       multipart.push({ when: { [facing]: height }, apply });
     }
   });
-  return blockstateUnit(idValue, namespace, { multipart }, sourceFile, sourceRange, "builtin");
+  return blockstateUnit(idValue, namespace, { multipart }, sourceFile, sourceRange, "builtin", expansionStack);
 }
 
-export function createCubeAllModel(idValue: string, textureValue: string | undefined, namespace: string, sourceFile: string, sourceRange: { start: number; end: number }): ResourceUnit | null {
+export function createCubeAllModel(
+  idValue: string,
+  textureValue: string | undefined,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
     return null;
@@ -128,11 +154,18 @@ export function createCubeAllModel(idValue: string, textureValue: string | undef
       textures: { all: texture }
     },
     mergePolicy: { kind: "errorOnConflict" },
-    sourceMap: sourceMap(resourceOutputPath("model", { namespace: id.namespace, path: `block/${id.path}` }), sourceFile, sourceRange, "builtin")
+    sourceMap: sourceMap(resourceOutputPath("model", { namespace: id.namespace, path: `block/${id.path}` }), sourceFile, sourceRange, "builtin", expansionStack)
   };
 }
 
-export function createItemMapping(idValue: string, modelValue: string | undefined, namespace: string, sourceFile: string, sourceRange: { start: number; end: number }): ResourceUnit | null {
+export function createItemMapping(
+  idValue: string,
+  modelValue: string | undefined,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
     return null;
@@ -149,7 +182,7 @@ export function createItemMapping(idValue: string, modelValue: string | undefine
       }
     },
     mergePolicy: { kind: "errorOnConflict" },
-    sourceMap: sourceMap(resourceOutputPath("item", id), sourceFile, sourceRange, "builtin")
+    sourceMap: sourceMap(resourceOutputPath("item", id), sourceFile, sourceRange, "builtin", expansionStack)
   };
 }
 
@@ -159,7 +192,8 @@ function blockstateUnit(
   content: JsonValue,
   sourceFile: string,
   sourceRange: { start: number; end: number },
-  reason: "direct" | "builtin"
+  reason: "direct" | "builtin",
+  expansionStack: ExpansionFrame[] = []
 ): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
@@ -172,7 +206,7 @@ function blockstateUnit(
     outputPath,
     content,
     mergePolicy: { kind: "errorOnConflict" },
-    sourceMap: sourceMap(outputPath, sourceFile, sourceRange, reason)
+    sourceMap: sourceMap(outputPath, sourceFile, sourceRange, reason, expansionStack)
   };
 }
 
@@ -183,7 +217,13 @@ function normalizeResourceValue(value: string, namespace: string, defaultFolder:
   return `${namespace}:${value.includes("/") ? value : `${defaultFolder}/${value}`}`;
 }
 
-function sourceMap(outputPath: string, sourceFile: string, sourceRange: { start: number; end: number }, reason: "direct" | "builtin") {
+function sourceMap(
+  outputPath: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  reason: "direct" | "builtin",
+  expansionStack: ExpansionFrame[] = []
+) {
   return {
     generatedFile: outputPath,
     mappings: [{
@@ -191,7 +231,7 @@ function sourceMap(outputPath: string, sourceFile: string, sourceRange: { start:
       sourceFile,
       sourceRange,
       reason,
-      expansionStack: reason === "builtin" ? [{ label: "builtin template", sourceRange }] : []
+      expansionStack: reason === "builtin" ? [...expansionStack, { label: "builtin template", sourceRange }] : expansionStack
     }]
   };
 }

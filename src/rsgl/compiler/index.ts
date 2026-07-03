@@ -1,5 +1,5 @@
-export { compileRsglModule } from "./compiler";
-export type { RsglCompileOptions } from "./compiler";
+export { compileRsglModule, compileRsglProgram } from "./compiler";
+export type { RsglCompileOptions, RsglProgramCompileOptions } from "./compiler";
 export { stableJsonStringify, orderJsonValue } from "./emit";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
 export { validateResourceUnits } from "./validation";
