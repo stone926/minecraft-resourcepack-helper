@@ -20,11 +20,10 @@ import {
   childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
-  evaluateExpression,
-  findResourceStatement,
-  resourceBodyToObject
+  evaluateExpression
 } from "./evaluate";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
+import { findResourceStatement, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
   createCubeAllModel,
@@ -195,7 +194,7 @@ class RsglCompiler {
       id: modelId,
       kind: "model",
       outputPath,
-      content: resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context),
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
@@ -208,7 +207,7 @@ class RsglCompiler {
       this.error("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
       return null;
     }
-    const body = resourceBodyToObject(statement.body, context);
+    const body = this.resourceBodyToObject(statement.body, context);
     const model = typeof body.model === "string"
       ? { type: "minecraft:model", model: body.model }
       : body.model;
@@ -275,7 +274,7 @@ class RsglCompiler {
       id,
       kind: statement.resourceKind as ResourceUnit["kind"],
       outputPath,
-      content: resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context),
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
@@ -440,6 +439,12 @@ class RsglCompiler {
     if (unit) {
       this.units.push(unit);
     }
+  }
+
+  private resourceBodyToObject(body: ResourceDeclNode["body"], context: EvaluationContext): Record<string, JsonValue> {
+    return resourceBodyToObject(body, context, {
+      onError: (code, message, range) => this.error(code, message, range)
+    });
   }
 
   private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, context: EvaluationContext) {

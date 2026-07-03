@@ -160,6 +160,46 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("expands for and if statements inside resource bodies", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block layered {",
+      "  parent minecraft:block/cube_all",
+      "  if true {",
+      "    ambientocclusion false",
+      "  } else {",
+      "    ambientocclusion true",
+      "  }",
+      "  textures {",
+      "    for layer in [{ key: \"layer0\", tex: minecraft:block/stone }, { key: \"layer1\", tex: minecraft:block/dirt }] {",
+      "      raw_json { [layer.key]: layer.tex }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      ambientocclusion: false,
+      textures: {
+        layer0: "minecraft:block/stone",
+        layer1: "minecraft:block/dirt"
+      }
+    });
+  });
+
+  it("reports non-finite loops inside resource bodies", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block bad {",
+      "  for item in { key: \"value\" } {",
+      "    parent minecraft:block/cube_all",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.compileNonFiniteLoop"));
+  });
+
   it("expands templates imported from another RSGL file", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");

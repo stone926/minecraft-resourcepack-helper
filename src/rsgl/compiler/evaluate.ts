@@ -1,8 +1,6 @@
 import {
   ExprNode,
-  ObjectPropertyNode,
-  ResourceBodyNode,
-  ResourceStatementNode
+  ObjectPropertyNode
 } from "../parser";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 
@@ -125,26 +123,6 @@ export function childEvaluationContext(
     mappingReason: metadata.mappingReason ?? context.mappingReason,
     expansionStack: metadata.expansionStack ?? context.expansionStack
   };
-}
-
-export function resourceBodyToObject(body: ResourceBodyNode, context: EvaluationContext): Record<string, JsonValue> {
-  const result: Record<string, JsonValue> = {};
-  for (const statement of body.statements) {
-    if (statement.kind === "PropertyStmt") {
-      result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-    } else if (statement.kind === "SectionStmt") {
-      if (statement.body) {
-        result[statement.name.text] = resourceBodyToObject(statement.body, context);
-      } else if (statement.value) {
-        result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-      }
-    }
-  }
-  return result;
-}
-
-export function findResourceStatement(body: ResourceBodyNode, kind: ResourceStatementNode["kind"]): ResourceStatementNode | undefined {
-  return body.statements.find(statement => statement.kind === kind);
 }
 
 function evaluateObjectProperties(properties: ObjectPropertyNode[], context: EvaluationContext): Record<string, JsonValue> {
