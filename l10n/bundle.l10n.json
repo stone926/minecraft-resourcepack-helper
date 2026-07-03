@@ -37,6 +37,7 @@
   "Invalid sounds[].{0}; Minecraft ignores the whole sounds.json when name, volume, or pitch is invalid.": "Invalid sounds[].{0}; Minecraft ignores the whole sounds.json when name, volume, or pitch is invalid.",
   "Issues": "Issues",
   "Left": "Left",
+  "McResHelper RSGL": "McResHelper RSGL",
   "McResHelper resources": "McResHelper resources",
   "McResHelper: No open folder, failed to create resource pack": "McResHelper: No open folder, failed to create resource pack",
   "McResHelper: pack.mcmeta or pack.png already exists in the current folder": "McResHelper: pack.mcmeta or pack.png already exists in the current folder",

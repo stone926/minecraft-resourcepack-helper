@@ -25,6 +25,7 @@
     "type": "git"
   },
   "activationEvents": [
+    "onLanguage:rsgl",
     "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
@@ -40,10 +41,28 @@
   "contributes": {
     "languages": [
       {
+        "id": "rsgl",
+        "aliases": [
+          "RSGL",
+          "rsgl"
+        ],
+        "extensions": [
+          ".rsgl"
+        ],
+        "configuration": "./language-configuration/rsgl.json"
+      },
+      {
         "id": "json",
         "extensions": [
           ".mcmeta"
         ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rsgl",
+        "scopeName": "source.rsgl",
+        "path": "./syntaxes/rsgl.tmLanguage.json"
       }
     ],
     "jsonValidation": [

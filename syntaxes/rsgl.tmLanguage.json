@@ -1,0 +1,154 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "RSGL",
+  "scopeName": "source.rsgl",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#resourceLocations"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#properties"
+    },
+    {
+      "include": "#operators"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.rsgl",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.rsgl",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.rsgl",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.rsgl",
+              "match": "\\\\(?:[nrt\"\\\\]|u[0-9A-Fa-f]{4})"
+            }
+          ]
+        },
+        {
+          "name": "string.template.rsgl",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "name": "constant.character.escape.rsgl",
+              "match": "\\\\(?:[nrt`\\\\]|u[0-9A-Fa-f]{4})"
+            },
+            {
+              "name": "meta.embedded.expression.rsgl",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "patterns": [
+                {
+                  "include": "$self"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "resourceLocations": {
+      "patterns": [
+        {
+          "name": "entity.name.resource-location.rsgl",
+          "match": "\\b[a-z0-9_.-]+:[a-z0-9_./-]+\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.rsgl",
+          "match": "\\b0[xX][0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.rsgl",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.rsgl",
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|from|as)\\b"
+        },
+        {
+          "name": "storage.type.rsgl",
+          "match": "\\b(?:target|namespace|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|pack)\\b"
+        },
+        {
+          "name": "support.type.sugar.rsgl",
+          "match": "\\b(?:stairs|slab|fence|wall|pane|cube_all|item_generated|wood_family|block_family)\\b"
+        },
+        {
+          "name": "constant.language.rsgl",
+          "match": "\\b(?:true|false|null)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.rsgl",
+          "match": "\\b(?:cubeAll|itemGenerated|randomVariants|raw_json|product|seq|pad|yaw|glob|model_path|texture_path)\\b"
+        },
+        {
+          "name": "support.constant.rsgl",
+          "match": "\\b(?:HORIZONTAL|DIRECTIONS|STAIR_SHAPES|COLORS_16)\\b"
+        }
+      ]
+    },
+    "properties": {
+      "patterns": [
+        {
+          "name": "variable.other.property.rsgl",
+          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|model|x|y|z|uvlock|weight|texture|generate|double)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.rsgl",
+          "match": "->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!]"
+        },
+        {
+          "name": "keyword.operator.model-apply.rsgl",
+          "match": "@"
+        }
+      ]
+    }
+  }
+}
