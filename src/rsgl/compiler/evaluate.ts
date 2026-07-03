@@ -73,6 +73,30 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     }
     return values;
   }
+  if (expression.kind === "CallExpr") {
+    return evaluateCallExpression(expression.callee, expression.args.map(arg => ({
+      name: arg.name?.text,
+      value: evaluateExpression(arg.value, context)
+    })), context);
+  }
+  if (expression.kind === "MemberExpr") {
+    const objectValue = evaluateExpression(expression.object, context);
+    if (objectValue && typeof objectValue === "object" && !Array.isArray(objectValue)) {
+      return objectValue[expression.property.text] as EvaluationValue;
+    }
+    return undefined;
+  }
+  if (expression.kind === "IndexExpr") {
+    const objectValue = evaluateExpression(expression.object, context);
+    const indexValue = evaluateExpression(expression.index, context);
+    if (Array.isArray(objectValue) && typeof indexValue === "number") {
+      return objectValue[indexValue] as EvaluationValue;
+    }
+    if (objectValue && typeof objectValue === "object" && !Array.isArray(objectValue)) {
+      return objectValue[String(indexValue)] as EvaluationValue;
+    }
+    return undefined;
+  }
   if (expression.kind === "ConditionalExpr") {
     return evaluateExpression(truthy(evaluateExpression(expression.condition, context)) ? expression.whenTrue : expression.whenFalse, context);
   }
@@ -84,6 +108,13 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     return expression.operator === "!" ? !truthy(value) : -Number(value);
   }
   return undefined;
+}
+
+export function childEvaluationContext(context: EvaluationContext, values: Record<string, EvaluationValue>): EvaluationContext {
+  return {
+    namespace: context.namespace,
+    variables: new Map([...context.variables, ...Object.entries(values)])
+  };
 }
 
 export function resourceBodyToObject(body: ResourceBodyNode, context: EvaluationContext): Record<string, JsonValue> {
@@ -161,6 +192,71 @@ function evaluateBinaryExpression(operator: string, left: EvaluationValue, right
     return truthy(left) || truthy(right);
   }
   return undefined;
+}
+
+function evaluateCallExpression(
+  callee: ExprNode,
+  args: Array<{ name?: string; value: EvaluationValue }>,
+  context: EvaluationContext
+): EvaluationValue {
+  if (callee.kind !== "IdentifierExpr") {
+    return undefined;
+  }
+
+  if (callee.name.text === "product") {
+    const source = normalizeJsonValue(args[0]?.value);
+    return source && typeof source === "object" && !Array.isArray(source) ? product(source as Record<string, JsonValue>) : [];
+  }
+  if (callee.name.text === "pad") {
+    const value = String(args[0]?.value ?? "");
+    const width = Number(args[1]?.value ?? 0);
+    return value.padStart(width, "0");
+  }
+  if (callee.name.text === "seq") {
+    const pattern = String(args[0]?.value ?? "");
+    return expandSequence(pattern, context);
+  }
+
+  return undefined;
+}
+
+function product(source: Record<string, JsonValue>): JsonValue[] {
+  const entries = Object.entries(source).map(([key, value]) => ({
+    key,
+    values: Array.isArray(value) ? value : [value]
+  }));
+  let results: Record<string, JsonValue>[] = [{}];
+  for (const entry of entries) {
+    const next: Record<string, JsonValue>[] = [];
+    for (const result of results) {
+      for (const value of entry.values) {
+        next.push({ ...result, [entry.key]: value });
+      }
+    }
+    results = next;
+  }
+  return results;
+}
+
+function expandSequence(pattern: string, context: EvaluationContext): string[] {
+  const match = /\{(-?\d+)\.\.(-?\d+)\}/.exec(pattern);
+  if (!match) {
+    return [pattern];
+  }
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const width = match[1].startsWith("0") || match[2].startsWith("0") ? Math.max(match[1].length, match[2].length) : 0;
+  const values = evaluateExpression({
+    kind: "RangeExpr",
+    startExpr: { kind: "NumberLiteral", value: start, raw: String(start), range: { start: 0, end: 0 }, fullRange: { start: 0, end: 0 } },
+    endExpr: { kind: "NumberLiteral", value: end, raw: String(end), range: { start: 0, end: 0 }, fullRange: { start: 0, end: 0 } },
+    inclusive: true,
+    range: { start: 0, end: 0 },
+    fullRange: { start: 0, end: 0 }
+  }, context);
+  return Array.isArray(values)
+    ? values.map(value => pattern.replace(match[0], String(value).padStart(width, "0")))
+    : [pattern];
 }
 
 function truthy(value: EvaluationValue): boolean {

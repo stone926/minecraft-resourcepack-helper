@@ -85,4 +85,51 @@ describe("RSGL semantic model", () => {
     assert.ok(program.importGraph.missing.some(missing => missing.source === "./missing.rsgl"));
     assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
   });
+
+  it("resolves named imports to target module symbols and signatures", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { cube } from \"./templates.rsgl\"",
+          "use cube(id: minecraft:block/stone)"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "template cube(id: ResourceId) {",
+          "  model block id { parent minecraft:block/cube_all }",
+          "}"
+        ].join("\n"))
+      }
+    ]);
+
+    const mainModel = program.models.find(model => model.fileName === mainFile);
+    const importedCube = mainModel?.scope.symbols.get("cube");
+
+    assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(importedCube?.kind, "import");
+    assert.strictEqual(importedCube?.type.kind, "Function");
+    assert.strictEqual(importedCube?.signature?.parameters[0].name, "id");
+  });
+
+  it("reports named imports that are not exported by the target module", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl("import { missing } from \"./templates.rsgl\"")
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl("let existing = 1")
+      }
+    ]);
+
+    assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImportedSymbol"));
+  });
 });

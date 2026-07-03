@@ -94,6 +94,71 @@ describe("RSGL compiler", () => {
     ]);
   });
 
+  it("expands local templates with positional, named, and default arguments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "  model block id {",
+      "    parent minecraft:block/cube_all",
+      "    textures { all: texture }",
+      "  }",
+      "}",
+      "use cube(stone, texture: minecraft:block/stone)"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/models/block/stone.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/stone"
+      }
+    });
+  });
+
+  it("expands finite for loops over lists", () => {
+    const result = compileRsglModule(parseRsgl([
+      "for block in [minecraft:stone, minecraft:dirt] {",
+      "  cube_all [block]",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/models/block/dirt.json",
+      "assets/minecraft/models/block/stone.json"
+    ]);
+  });
+
+  it("expands product loops and template string interpolation", () => {
+    const result = compileRsglModule(parseRsgl([
+      "for state in product({ facing: [north, east], powered: [false, true] }) {",
+      "  blockstate `lamp_${state.facing}_${state.powered}` {",
+      "    variants {",
+      "      {} -> { model: `minecraft:block/lamp_${state.facing}` }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/blockstates/lamp_east_false.json",
+      "assets/minecraft/blockstates/lamp_east_true.json",
+      "assets/minecraft/blockstates/lamp_north_false.json",
+      "assets/minecraft/blockstates/lamp_north_true.json"
+    ]);
+    const emptyVariantKey = "";
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("lamp_east_true.json"))?.content, {
+      variants: {
+        [emptyVariantKey]: {
+          model: "minecraft:block/lamp_east"
+        }
+      }
+    });
+  });
+
   it("reports output path conflicts", () => {
     const result = compileRsglModule(parseRsgl([
       "cube_all [stone]",

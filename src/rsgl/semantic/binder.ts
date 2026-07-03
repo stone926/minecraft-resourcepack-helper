@@ -54,8 +54,10 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   const resolver = options.resolver ?? createDefaultResolver(files);
   const models = files.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
   const importGraph = buildImportGraph(files, models, resolver);
+  const importDiagnostics = resolveProgramImports(models, importGraph);
   const diagnostics = [
     ...models.flatMap(model => model.diagnostics),
+    ...importDiagnostics,
     ...importGraph.missing.map(missing => diagnostic(
       "rsgl.missingImport",
       `RSGL import not found: ${missing.source}`,
@@ -395,24 +397,27 @@ class RsglBinder {
 
   private checkCallExpression(callee: ExprNode, args: ArgumentNode[], scope: RsglScope): RsglType {
     const calleeType = this.checkExpression(callee, scope);
-    for (const arg of args) {
-      this.checkExpression(arg.value, scope);
-    }
 
     if (callee.kind !== "IdentifierExpr") {
+      for (const arg of args) {
+        this.checkExpression(arg.value, scope);
+      }
       return calleeType.kind === "Function" ? anyType : unknownType;
     }
 
     const symbol = lookup(scope, callee.name.text);
     if (!symbol?.signature) {
+      for (const arg of args) {
+        this.checkExpression(arg.value, scope);
+      }
       return symbol?.type ?? unknownType;
     }
 
-    this.checkArguments(symbol.signature, args);
+    this.checkArguments(symbol.signature, args, scope);
     return symbol.signature.returnType;
   }
 
-  private checkArguments(signature: RsglSignature, args: ArgumentNode[]): void {
+  private checkArguments(signature: RsglSignature, args: ArgumentNode[], scope: RsglScope): void {
     const namedArgs = new Map(args.filter(arg => arg.name).map(arg => [arg.name!.text, arg]));
     const positionalArgs = args.filter(arg => !arg.name);
 
@@ -424,7 +429,9 @@ class RsglBinder {
         }
         return;
       }
-      const actualType = inferLiteralType(arg.value);
+      const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId" || parameter.type.kind === "TextureId"
+        ? this.checkResourceIdExpression(arg.value, scope)
+        : this.checkExpression(arg.value, scope);
       this.checkAssignable(parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
     });
   }
@@ -476,7 +483,7 @@ class RsglBinder {
     this.imports.push(record);
 
     if (statement.defaultName) {
-      this.defineIdentifier(scope, statement.defaultName, "import", anyType, statement);
+      this.defineIdentifier(scope, statement.defaultName, "import", { kind: "Object" }, statement);
     }
     for (const specifier of statement.namedImports) {
       this.defineIdentifier(scope, specifier.local, "import", anyType, specifier);
@@ -545,6 +552,47 @@ class RsglBinder {
       this.symbols.push(symbol);
     }
   }
+}
+
+function resolveProgramImports(models: RsglSemanticModel[], importGraph: RsglImportGraph): RsglDiagnostic[] {
+  const diagnostics: RsglDiagnostic[] = [];
+  const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
+
+  for (const edge of importGraph.edges) {
+    const sourceModel = modelsByFile.get(edge.from);
+    const targetModel = modelsByFile.get(edge.to);
+    if (!sourceModel || !targetModel) {
+      continue;
+    }
+
+    const record = sourceModel.imports.find(item =>
+      item.source === edge.source &&
+      normalizeFileName(item.resolvedFileName ?? edge.to) === edge.to
+    );
+    if (!record) {
+      continue;
+    }
+
+    for (const item of record.namedImports) {
+      const exported = targetModel.symbols.find(symbol => symbol.name === item.imported);
+      const localSymbol = sourceModel.scope.symbols.get(item.local);
+      if (!exported) {
+        diagnostics.push(diagnostic(
+          "rsgl.missingImportedSymbol",
+          `RSGL module '${record.source}' does not export '${item.imported}'.`,
+          item.range
+        ));
+        continue;
+      }
+      if (localSymbol) {
+        localSymbol.type = exported.type;
+        localSymbol.signature = exported.signature;
+        localSymbol.node = exported.node;
+      }
+    }
+  }
+
+  return diagnostics;
 }
 
 function createScope(kind: RsglScope["kind"], parent?: RsglScope): RsglScope {
