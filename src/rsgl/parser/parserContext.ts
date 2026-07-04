@@ -96,6 +96,19 @@ export class ParserContext {
     this.diagnostics.push({ code, message, severity, range });
   }
 
+  protected mark(): number {
+    return this.offset;
+  }
+
+  protected ensureProgress(mark: number, message: string): void {
+    if (this.offset !== mark || this.isAtEnd()) {
+      return;
+    }
+
+    this.addDiagnosticAtCurrent("rsgl.parserRecovery", message);
+    this.advance();
+  }
+
   protected matchText(text: string): boolean {
     if (this.current().text !== text) {
       return false;

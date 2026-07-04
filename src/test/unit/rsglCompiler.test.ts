@@ -973,6 +973,41 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("reports recursive template expansion during compilation", () => {
+    const result = compileRsglModule(parseRsgl([
+      "template a() {",
+      "  use b()",
+      "}",
+      "template b() {",
+      "  use a()",
+      "}",
+      "use a()"
+    ].join("\n")));
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateRecursion"));
+    assert.deepStrictEqual(result.units, []);
+  });
+
+  it("does not generate resources from modules with syntax errors", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block valid {",
+      "  parent minecraft:block/cube_all",
+      "}",
+      "blockstate minecraft:legacy {",
+      "  variants {",
+      "    `age=${age}` {",
+      "      @minecraft:block/crop",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.deepStrictEqual(result.units, []);
+    assert.ok(codes.includes("rsgl.expectedToken"));
+    assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
+  });
+
   it("expands local resource body fragments", () => {
     const result = compileRsglModule(parseRsgl([
       "fragment cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) {",
@@ -1787,7 +1822,7 @@ describe("RSGL compiler", () => {
   it("reports non-finite loops inside resource bodies", () => {
     const result = compileRsglModule(parseRsgl([
       "model block bad {",
-      "  for item in { key: \"value\" } {",
+      "  for item in 1 {",
       "    parent minecraft:block/cube_all",
       "  }",
       "}"
@@ -2773,9 +2808,9 @@ describe("RSGL compiler", () => {
       "  }",
       "}",
       "pack {",
-      "  pack { description \"Generated\" }",
+      "  pack { description: \"Generated\" }",
       "  overlays {",
-      "    entries [",
+      "    entries: [",
       "      { directory: \"Bad/Overlay\", min_format: [90, 0], max_format: [89, 0] },",
       "      { directory: \"future\", min_format: [90, 0], max_format: [91, 0] }",
       "    ]",

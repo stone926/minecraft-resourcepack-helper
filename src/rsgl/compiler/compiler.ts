@@ -131,6 +131,11 @@ type FragmentExpansion = {
 };
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
+  const syntaxDiagnostics = moduleSyntaxDiagnostics(module, options.fileName);
+  if (hasErrors(syntaxDiagnostics)) {
+    return { units: [], diagnostics: syntaxDiagnostics };
+  }
+
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
   const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";
   const rawJsonDiagnostics: RsglCompileDiagnostic[] = [];
@@ -179,6 +184,11 @@ export function loadRsglSourceFilesFromFile(entryFileName: string, options: Rsgl
 }
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
+  const syntaxDiagnostics = files.flatMap(file => moduleSyntaxDiagnostics(file.module, file.fileName));
+  if (hasErrors(syntaxDiagnostics)) {
+    return { units: [], diagnostics: syntaxDiagnostics };
+  }
+
   const program = bindRsglProgram(files);
   const units: ResourceUnit[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
@@ -798,6 +808,11 @@ class RsglCompiler {
     if (!template) {
       return;
     }
+    const recursionLabel = `use ${expression.callee.name.text}`;
+    if ((context.expansionStack ?? []).some(frame => frame.label === recursionLabel)) {
+      this.error("rsgl.templateRecursion", `Template '${template.name}' cannot recursively expand itself.`, expression.range);
+      return;
+    }
     const templateBaseContext = this.createTemplateBaseContext(template);
     const values: Record<string, EvaluationValue> = {};
     const parameters = template.node.parameters
@@ -840,7 +855,7 @@ class RsglCompiler {
       mappingReason: "template",
       expansionStack: [
         ...(context.expansionStack ?? []),
-        { label: `use ${expression.callee.name.text}`, sourceRange: expression.range }
+        { label: recursionLabel, sourceRange: expression.range }
       ]
     });
     this.compileBlock(template.node.body, templateContext);
@@ -1351,6 +1366,20 @@ function createCompileGlobLoader(fallbackFileName: string, diagnostics: RsglComp
 
 function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
+}
+
+function moduleSyntaxDiagnostics(module: RsglModule, fileName: string | undefined): RsglCompileDiagnostic[] {
+  return module.diagnostics.map(diagnostic => ({
+    code: diagnostic.code,
+    message: diagnostic.message,
+    range: diagnostic.range,
+    severity: diagnostic.severity,
+    fileName
+  }));
+}
+
+function hasErrors(diagnostics: RsglCompileDiagnostic[]): boolean {
+  return diagnostics.some(diagnostic => diagnostic.severity === "error");
 }
 
 function isItemModelStatement(statement: ResourceStatementNode): statement is

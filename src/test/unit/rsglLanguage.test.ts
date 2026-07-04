@@ -419,6 +419,49 @@ describe("RSGL language", () => {
     assert.ok(codes.includes("rsgl.expectedClosingBrace"));
   });
 
+  it("recovers from blockstate entry blocks that are missing separators", () => {
+    const module = parseRsgl([
+      "blockstate minecraft:legacy_variants {",
+      "  variants {",
+      "    `age=${age}` {",
+      "      @`minecraft:block/crop_${age}`",
+      "    }",
+      "  }",
+      "}",
+      "blockstate minecraft:legacy_multipart {",
+      "  multipart {",
+      "    {",
+      "      @minecraft:block/base",
+      "    }",
+      "    when { distance: 1 } {",
+      "      @minecraft:block/distance_1",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    const codes = module.diagnostics.map(diagnostic => diagnostic.code);
+    assert.strictEqual(module.statements.length, 2);
+    assert.ok(codes.filter(code => code === "rsgl.expectedToken").length >= 3);
+  });
+
+  it("recovers from common incomplete editor states", () => {
+    const snippets = [
+      "template cube(",
+      "model block stone {\n  textures {\n    all:",
+      "blockstate minecraft:crop {\n  variants {\n    `age=0` {",
+      "item bow {\n  select property minecraft:potion_contents {\n    case",
+      "let values = [north,",
+      "let table = { key:"
+    ];
+
+    for (const snippet of snippets) {
+      const module = parseRsgl(snippet);
+      assert.ok(module.diagnostics.some(diagnostic => diagnostic.severity === "error"));
+      assert.strictEqual(module.eof.kind, "endOfFile");
+    }
+  });
+
   it("provides top-level and block-aware completion candidates", () => {
     const topLevel = getRsglCompletionCandidates("", 0);
     assert.ok(topLevel.some(candidate => candidate.label === "target"));

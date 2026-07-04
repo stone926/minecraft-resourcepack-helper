@@ -93,6 +93,7 @@ class RsglParser extends ParserContext {
   public parseModule(): RsglModule {
     const statements: TopLevelStatementNode[] = [];
     while (!this.isAtEnd()) {
+      const mark = this.mark();
       if (this.current().text === "}") {
         const token = this.advance();
         this.addDiagnostic("rsgl.unexpectedClosingBrace", "Unexpected closing brace.", tokenRange(token));
@@ -100,6 +101,7 @@ class RsglParser extends ParserContext {
       }
 
       statements.push(this.parseTopLevelStatement());
+      this.ensureProgress(mark, "Unable to parse top-level statement; skipping token.");
     }
 
     const eof = this.current();
@@ -269,6 +271,7 @@ class RsglParser extends ParserContext {
     const specifiers: ImportSpecifierNode[] = [];
     this.matchText("{");
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       const start = this.current();
       const imported = this.parseIdentifier("Expected import name.");
       let local = imported;
@@ -282,6 +285,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(start, this.previousOr(start))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse import specifier; skipping token.");
     }
     this.expectText("}", "Expected '}' after import list.");
     return specifiers;
@@ -329,6 +333,7 @@ class RsglParser extends ParserContext {
     const specifiers: ExportSpecifierNode[] = [];
     this.matchText("{");
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       const start = this.current();
       const local = this.parseIdentifier("Expected export name.");
       let exported = local;
@@ -342,6 +347,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(start, this.previousOr(start))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse export specifier; skipping token.");
     }
     this.expectText("}", "Expected '}' after export list.");
     return specifiers;
@@ -424,6 +430,7 @@ class RsglParser extends ParserContext {
     const parameters: ParameterNode[] = [];
     this.matchText("(");
     while (!this.isAtEnd() && this.current().text !== ")") {
+      const mark = this.mark();
       const start = this.current();
       const name = this.parseIdentifier("Expected parameter name.");
       const typeAnnotation = this.matchText(":") ? this.parseType() : undefined;
@@ -436,6 +443,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(start, this.previousOr(start))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse parameter; skipping token.");
     }
     this.expectText(")", "Expected ')' after parameters.");
     return parameters;
@@ -487,12 +495,14 @@ class RsglParser extends ParserContext {
     } else {
       id = this.parseExpression({ stopTexts: ["{", "["] });
       while (!this.isAtEnd() && !this.isLineBoundaryOr("}", "{", "[")) {
+        const mark = this.mark();
         const option = this.parseSugarOption();
         if (option) {
           options.push(option);
         } else {
           break;
         }
+        this.ensureProgress(mark, "Unable to parse sugar option; skipping token.");
       }
       if (this.current().text === "{") {
         body = this.parseResourceBody(start.text);
@@ -520,6 +530,7 @@ class RsglParser extends ParserContext {
     }
 
     while (!this.isAtEnd() && this.current().text !== "]") {
+      const mark = this.mark();
       const start = this.current();
       const id = this.parseExpression({ stopTexts: ["->", ",", "]"] });
       const target = this.matchText("->") ? this.parseExpression({ stopTexts: [",", "]"] }) : undefined;
@@ -530,6 +541,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(start, this.previousOr(start))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse batch entry; skipping token.");
     }
     this.expectText("]", "Expected ']' after batch declaration.");
     return entries;
@@ -567,11 +579,13 @@ class RsglParser extends ParserContext {
     const start = this.advance();
     const bindings: IdentifierNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "in" && this.current().text !== "{") {
+      const mark = this.mark();
       const binding = this.parseIdentifier("Expected loop binding.");
       if (binding) {
         bindings.push(binding);
       }
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse loop binding; skipping token.");
     }
     this.expectText("in", "Expected 'in' in for statement.");
     const iterable = this.parseExpression({ stopTexts: ["{"] });
@@ -611,7 +625,9 @@ class RsglParser extends ParserContext {
 
     const statements: TopLevelStatementNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       statements.push(this.parseTopLevelStatement());
+      this.ensureProgress(mark, "Unable to parse block statement; skipping token.");
     }
     this.expectText("}", "Expected '}' after block.");
     return {
@@ -643,6 +659,7 @@ class RsglParser extends ParserContext {
     const statements: ResourceStatementNode[] = [];
     const seenBlockstateSections = new Set<string>();
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       if (this.current().text === "variants") {
         if (owner === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "variants");
@@ -656,6 +673,8 @@ class RsglParser extends ParserContext {
       } else {
         statements.push(this.parseResourceStatement());
       }
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse resource statement; skipping token.");
     }
 
     this.expectText("}", "Expected '}' after resource body.");
@@ -678,7 +697,10 @@ class RsglParser extends ParserContext {
 
     const statements: VariantSectionStatementNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       statements.push(this.parseVariantSectionStatement());
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse variant statement; skipping token.");
     }
     this.expectText("}", "Expected '}' after variants body.");
     return {
@@ -714,7 +736,10 @@ class RsglParser extends ParserContext {
 
     const statements: MultipartSectionStatementNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       statements.push(this.parseMultipartSectionStatement());
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse multipart statement; skipping token.");
     }
     this.expectText("}", "Expected '}' after multipart body.");
     return {
@@ -866,7 +891,10 @@ class RsglParser extends ParserContext {
     const entries: VariantSectionStatementNode[] = [];
     this.expectText("{", "Expected variants body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       entries.push(this.parseVariantSectionStatement());
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse variant entry; skipping token.");
     }
     this.expectText("}", "Expected '}' after variants.");
     return {
@@ -880,10 +908,12 @@ class RsglParser extends ParserContext {
   private parseVariantEntry(): VariantEntryNode {
     const start = this.current();
     const state = this.parseExpression({ stopTexts: ["->"] });
-    this.expectText("->", "Expected '->' in variant entry.");
-    const value = this.current().text === "random"
-      ? this.parseRandomApply()
-      : this.parseExpression({ stopTexts: [] });
+    const hasArrow = this.expectText("->", "Expected '->' in variant entry.");
+    const value = hasArrow
+      ? this.current().text === "random"
+        ? this.parseRandomApply()
+        : this.parseExpression({ stopTexts: [] })
+      : this.recoverMalformedEntryValue();
     return {
       kind: "VariantEntry",
       keyword: "variant",
@@ -898,7 +928,10 @@ class RsglParser extends ParserContext {
     const entries: MultipartSectionStatementNode[] = [];
     this.expectText("{", "Expected multipart body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       entries.push(this.parseMultipartSectionStatement());
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse multipart entry; skipping token.");
     }
     this.expectText("}", "Expected '}' after multipart.");
     return {
@@ -915,10 +948,12 @@ class RsglParser extends ParserContext {
     if (this.matchText("when")) {
       when = this.parseExpression({ stopTexts: ["apply"] });
     }
-    this.expectText("apply", "Expected 'apply' in multipart entry.");
-    const apply = this.current().text === "random"
-      ? this.parseRandomApply()
-      : this.parseExpression({ stopTexts: [] });
+    const hasApply = this.expectText("apply", "Expected 'apply' in multipart entry.");
+    const apply = hasApply
+      ? this.current().text === "random"
+        ? this.parseRandomApply()
+        : this.parseExpression({ stopTexts: [] })
+      : this.recoverMalformedEntryValue();
     return {
       kind: "MultipartEntry",
       keyword: "multipartEntry",
@@ -936,6 +971,7 @@ class RsglParser extends ParserContext {
 
     if (this.matchText("{")) {
       while (!this.isAtEnd() && this.current().text !== "}") {
+        const mark = this.mark();
         if (this.current().text === "frames") {
           frames = this.parseItemRangeFrames();
         } else if (this.current().text === "fallback") {
@@ -945,6 +981,7 @@ class RsglParser extends ParserContext {
           this.addDiagnosticAtCurrent("rsgl.unexpectedItemRangeStatement", "Expected 'frames' or 'fallback' in item range body.");
           this.recoverToLineEnd();
         }
+        this.ensureProgress(mark, "Unable to parse item range statement; skipping token.");
       }
       this.expectText("}", "Expected '}' after item range body.");
     } else {
@@ -983,6 +1020,7 @@ class RsglParser extends ParserContext {
 
     if (this.matchText("{")) {
       while (!this.isAtEnd() && this.current().text !== "}") {
+        const mark = this.mark();
         if (this.current().text === "case") {
           cases.push(this.parseItemSelectCase());
         } else if (this.current().text === "fallback") {
@@ -992,6 +1030,7 @@ class RsglParser extends ParserContext {
           this.addDiagnosticAtCurrent("rsgl.unexpectedItemSelectStatement", "Expected 'case' or 'fallback' in item select body.");
           this.recoverToLineEnd();
         }
+        this.ensureProgress(mark, "Unable to parse item select statement; skipping token.");
       }
       this.expectText("}", "Expected '}' after item select body.");
     } else {
@@ -1030,6 +1069,7 @@ class RsglParser extends ParserContext {
 
     if (this.matchText("{")) {
       while (!this.isAtEnd() && this.current().text !== "}") {
+        const mark = this.mark();
         if (this.current().text === "on_true") {
           this.advance();
           onTrue = this.parseExpression({ stopTexts: [] });
@@ -1040,6 +1080,7 @@ class RsglParser extends ParserContext {
           this.addDiagnosticAtCurrent("rsgl.unexpectedItemConditionStatement", "Expected 'on_true' or 'on_false' in item condition body.");
           this.recoverToLineEnd();
         }
+        this.ensureProgress(mark, "Unable to parse item condition statement; skipping token.");
       }
       this.expectText("}", "Expected '}' after item condition body.");
     } else {
@@ -1063,6 +1104,7 @@ class RsglParser extends ParserContext {
 
     if (this.matchText("{")) {
       while (!this.isAtEnd() && this.current().text !== "}") {
+        const mark = this.mark();
         if (this.current().text === "model") {
           this.advance();
           models.push(this.parseExpression({ stopTexts: [] }));
@@ -1070,6 +1112,7 @@ class RsglParser extends ParserContext {
           this.addDiagnosticAtCurrent("rsgl.unexpectedItemCompositeStatement", "Expected 'model' in item composite body.");
           this.recoverToLineEnd();
         }
+        this.ensureProgress(mark, "Unable to parse item composite statement; skipping token.");
       }
       this.expectText("}", "Expected '}' after item composite body.");
     } else {
@@ -1124,10 +1167,12 @@ class RsglParser extends ParserContext {
     const property = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
     const options = [];
     while (!this.isAtEnd() && this.current().text !== "{") {
+      const mark = this.mark();
       const start = this.current();
       const name = this.parseIdentifier(`Expected item ${owner} option name.`);
       if (!name) {
         this.recoverToLineEnd();
+        this.ensureProgress(mark, `Unable to parse item ${owner} option; skipping token.`);
         continue;
       }
       const value = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
@@ -1137,6 +1182,7 @@ class RsglParser extends ParserContext {
         value,
         ...this.nodeRanges(start, this.previousOr(start))
       });
+      this.ensureProgress(mark, `Unable to parse item ${owner} option; skipping token.`);
     }
     return { property, options };
   }
@@ -1322,6 +1368,7 @@ class RsglParser extends ParserContext {
     const args: ArgumentNode[] = [];
     this.matchText("(");
     while (!this.isAtEnd() && this.current().text !== ")") {
+      const mark = this.mark();
       const argStart = this.current();
       let name: IdentifierNode | undefined;
       if ((this.current().kind === "identifier" || this.current().kind === "keyword") && this.peekText(1) === ":") {
@@ -1336,6 +1383,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(argStart, this.previousOr(argStart))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse argument; skipping token.");
     }
     this.expectText(")", "Expected ')' after arguments.");
     const end = this.previousOr(this.current());
@@ -1390,11 +1438,13 @@ class RsglParser extends ParserContext {
     const properties: ObjectPropertyNode[] = [];
     this.expectText("{", "Expected object body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       const property = this.parseObjectProperty();
       if (property) {
         properties.push(property);
       }
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse object property; skipping token.");
     }
     this.expectText("}", "Expected '}' after object.");
     return {
@@ -1445,8 +1495,10 @@ class RsglParser extends ParserContext {
     const elements: ExprNode[] = [];
     this.expectText("[", "Expected list body.");
     while (!this.isAtEnd() && this.current().text !== "]") {
+      const mark = this.mark();
       elements.push(this.parseExpression({ stopTexts: [",", "]"] }));
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse list element; skipping token.");
     }
     this.expectText("]", "Expected ']' after list.");
     return {
@@ -1461,6 +1513,7 @@ class RsglParser extends ParserContext {
     const entries: ObjectPropertyNode[] = [];
     this.expectText("[", "Expected state key sugar.");
     while (!this.isAtEnd() && this.current().text !== "]") {
+      const mark = this.mark();
       const keyStart = this.current();
       const key = this.parsePropertyKey();
       if (!key) {
@@ -1475,6 +1528,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(keyStart, this.previousOr(keyStart))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse state key entry; skipping token.");
     }
     this.expectText("]", "Expected ']' after state key sugar.");
     return {
@@ -1555,8 +1609,10 @@ class RsglParser extends ParserContext {
       this.addDiagnosticAtCurrent("rsgl.expectedRandomList", "Expected '[' after random.");
     }
     while (!this.isAtEnd() && this.current().text !== "]") {
+      const mark = this.mark();
       entries.push(this.parseExpression({ stopTexts: [",", "]"] }));
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse random entry; skipping token.");
     }
     this.expectText("]", "Expected ']' after random model list.");
     return {
@@ -1572,6 +1628,7 @@ class RsglParser extends ParserContext {
     const arms: MatchArmNode[] = [];
     this.expectText("{", "Expected match body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
       const armStart = this.current();
       const patterns: ExprNode[] = [];
       patterns.push(this.parseExpression({ stopTexts: ["|", "->"] }));
@@ -1587,6 +1644,7 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(armStart, this.previousOr(armStart))
       });
       this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse match arm; skipping token.");
     }
     this.expectText("}", "Expected '}' after match.");
     return {
@@ -1666,8 +1724,10 @@ class RsglParser extends ParserContext {
     if (this.matchText("<")) {
       const args: TypeNode[] = [];
       while (!this.isAtEnd() && this.current().text !== ">") {
+        const mark = this.mark();
         args.push(this.parseType());
         this.consumeOptionalSeparator();
+        this.ensureProgress(mark, "Unable to parse type argument; skipping token.");
       }
       this.expectText(">", "Expected '>' after generic type arguments.");
       return {
@@ -1806,6 +1866,16 @@ class RsglParser extends ParserContext {
     }
     this.addDiagnosticAtCurrent(expectedTokenDiagnosticCode(text), message);
     return false;
+  }
+
+  private recoverMalformedEntryValue(): ExprNode {
+    const value = this.missingExprAt(this.current());
+    if (this.current().text === "{") {
+      this.consumeBalancedBlock("Expected '}' after malformed entry block.");
+    } else {
+      this.recoverToLineEnd();
+    }
+    return value;
   }
 
   private recoverToLineEnd(): void {
