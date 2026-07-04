@@ -3,14 +3,16 @@ import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { ExpansionFrame, JsonValue, ResourceUnit, RsglMapping } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
+  createDoorBlockstate,
   createFenceBlockstate,
   createFenceGateBlockstate,
   createItemMapping,
   createSlabBlockstate,
-  createStairsBlockstate
+  createStairsBlockstate,
+  createTrapdoorBlockstate
 } from "./templates";
 
-type SupportedFamilyMember = "planks" | "slab" | "stairs" | "fence" | "fence_gate";
+type SupportedFamilyMember = "planks" | "slab" | "stairs" | "fence" | "fence_gate" | "door" | "trapdoor";
 
 export interface RsglFamilySugarOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -98,6 +100,36 @@ function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContex
       createCubeModel(family, `${id}_inventory`, "minecraft:block/fence_inventory", { texture: family.texture }),
       createFenceBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
       createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_inventory`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "door") {
+    const id = `${family.baseName}_door`;
+    const textures = doorTextures(family);
+    return compact([
+      createCubeModel(family, `${id}_bottom_left`, "minecraft:block/door_bottom_left", textures),
+      createCubeModel(family, `${id}_bottom_left_open`, "minecraft:block/door_bottom_left_open", textures),
+      createCubeModel(family, `${id}_bottom_right`, "minecraft:block/door_bottom_right", textures),
+      createCubeModel(family, `${id}_bottom_right_open`, "minecraft:block/door_bottom_right_open", textures),
+      createCubeModel(family, `${id}_top_left`, "minecraft:block/door_top_left", textures),
+      createCubeModel(family, `${id}_top_left_open`, "minecraft:block/door_top_left_open", textures),
+      createCubeModel(family, `${id}_top_right`, "minecraft:block/door_top_right", textures),
+      createCubeModel(family, `${id}_top_right_open`, "minecraft:block/door_top_right_open", textures),
+      createDoorBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemModel(family, id, "minecraft:item/generated", { layer0: `${family.namespace}:item/${id}` }),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:item/${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "trapdoor") {
+    const id = `${family.baseName}_trapdoor`;
+    const textures = { texture: `${family.namespace}:block/${id}` };
+    return compact([
+      createCubeModel(family, `${id}_bottom`, "minecraft:block/template_orientable_trapdoor_bottom", textures),
+      createCubeModel(family, `${id}_top`, "minecraft:block/template_orientable_trapdoor_top", textures),
+      createCubeModel(family, `${id}_open`, "minecraft:block/template_orientable_trapdoor_open", textures),
+      createTrapdoorBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_bottom`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
     ]);
   }
 
@@ -190,6 +222,35 @@ function slabTextures(texture: string): Record<string, JsonValue> {
   };
 }
 
+function doorTextures(family: FamilyContext): Record<string, JsonValue> {
+  return {
+    bottom: `${family.namespace}:block/${family.baseName}_door_bottom`,
+    top: `${family.namespace}:block/${family.baseName}_door_top`
+  };
+}
+
+function createItemModel(
+  family: FamilyContext,
+  path: string,
+  parent: string,
+  textures: Record<string, JsonValue>
+): ResourceUnit | null {
+  const id = parseResourceId(`${family.namespace}:${path}`, family.namespace);
+  if (!id) {
+    return null;
+  }
+  const modelId = { namespace: id.namespace, path: `item/${id.path}` };
+  const outputPath = resourceOutputPath("model", modelId);
+  return {
+    id: modelId,
+    kind: "model",
+    outputPath,
+    content: { parent, textures },
+    mergePolicy: { kind: "errorOnConflict" },
+    sourceMap: familySourceMap(outputPath, family)
+  };
+}
+
 function familySourceMap(outputPath: string, family: FamilyContext) {
   const mapping: RsglMapping = {
     generatedPath: "",
@@ -217,7 +278,13 @@ function normalizeResourceValue(value: string, namespace: string, defaultFolder:
 }
 
 function isSupportedFamilyMember(value: string): value is SupportedFamilyMember {
-  return value === "planks" || value === "slab" || value === "stairs" || value === "fence" || value === "fence_gate";
+  return value === "planks"
+    || value === "slab"
+    || value === "stairs"
+    || value === "fence"
+    || value === "fence_gate"
+    || value === "door"
+    || value === "trapdoor";
 }
 
 function compact<T>(values: Array<T | null>): T[] {

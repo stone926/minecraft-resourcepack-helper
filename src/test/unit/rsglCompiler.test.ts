@@ -279,11 +279,81 @@ describe("RSGL compiler", () => {
     const result = compileRsglModule(parseRsgl([
       "wood_family acacia {",
       "  texture minecraft:block/acacia_planks",
-      "  generate [door]",
+      "  generate [pane]",
       "}"
     ].join("\n")));
 
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedFamilyMember"));
+  });
+
+  it("lowers door and trapdoor family members", () => {
+    const result = compileRsglModule(parseRsgl([
+      "wood_family acacia {",
+      "  generate [door, trapdoor]",
+      "}"
+    ].join("\n")));
+    const outputPaths = result.units.map(unit => unit.outputPath).sort();
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(outputPaths.length, 16);
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_door.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_trapdoor.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_door.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_trapdoor.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_door.json"));
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_door_bottom_left.json"))?.content, {
+      parent: "minecraft:block/door_bottom_left",
+      textures: {
+        bottom: "minecraft:block/acacia_door_bottom",
+        top: "minecraft:block/acacia_door_top"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_trapdoor_open.json"))?.content, {
+      parent: "minecraft:block/template_orientable_trapdoor_open",
+      textures: {
+        texture: "minecraft:block/acacia_trapdoor"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/acacia_door.json"))?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/acacia_door"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_door.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:item/acacia_door"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_trapdoor.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:block/acacia_trapdoor_bottom"
+      }
+    });
+
+    const doorVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_door.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(doorVariants).length, 32);
+    assert.deepStrictEqual(doorVariants["facing=east,half=lower,hinge=right,open=true"], {
+      model: "minecraft:block/acacia_door_bottom_right_open",
+      y: 270
+    });
+    assert.deepStrictEqual(doorVariants["facing=north,half=upper,hinge=left,open=true"], {
+      model: "minecraft:block/acacia_door_top_left_open"
+    });
+
+    const trapdoorVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_trapdoor.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(trapdoorVariants).length, 16);
+    assert.deepStrictEqual(trapdoorVariants["facing=east,half=top,open=true"], {
+      model: "minecraft:block/acacia_trapdoor_open",
+      x: 180,
+      y: 270
+    });
+    assert.deepStrictEqual(trapdoorVariants["facing=north,half=bottom,open=false"], {
+      model: "minecraft:block/acacia_trapdoor_bottom"
+    });
   });
 
   it("lowers item range and select fragments", () => {
@@ -791,6 +861,25 @@ describe("RSGL compiler", () => {
       "    wall: minecraft:block/acacia_fence_gate_wall,",
       "    wallOpen: minecraft:block/acacia_fence_gate_wall_open",
       "  )",
+      "}",
+      "blockstate acacia_door {",
+      "  use door(",
+      "    bottomLeft: minecraft:block/acacia_door_bottom_left,",
+      "    bottomLeftOpen: minecraft:block/acacia_door_bottom_left_open,",
+      "    bottomRight: minecraft:block/acacia_door_bottom_right,",
+      "    bottomRightOpen: minecraft:block/acacia_door_bottom_right_open,",
+      "    topLeft: minecraft:block/acacia_door_top_left,",
+      "    topLeftOpen: minecraft:block/acacia_door_top_left_open,",
+      "    topRight: minecraft:block/acacia_door_top_right,",
+      "    topRightOpen: minecraft:block/acacia_door_top_right_open",
+      "  )",
+      "}",
+      "blockstate acacia_trapdoor {",
+      "  use trapdoor(",
+      "    bottom: minecraft:block/acacia_trapdoor_bottom,",
+      "    top: minecraft:block/acacia_trapdoor_top,",
+      "    open: minecraft:block/acacia_trapdoor_open",
+      "  )",
       "}"
     ].join("\n")));
 
@@ -798,9 +887,13 @@ describe("RSGL compiler", () => {
     const stairs = result.units.find(unit => unit.outputPath.endsWith("acacia_stairs.json"));
     const fence = result.units.find(unit => unit.outputPath.endsWith("oak_fence.json"));
     const fenceGate = result.units.find(unit => unit.outputPath.endsWith("acacia_fence_gate.json"));
+    const door = result.units.find(unit => unit.outputPath.endsWith("acacia_door.json"));
+    const trapdoor = result.units.find(unit => unit.outputPath.endsWith("acacia_trapdoor.json"));
     assert.ok(stairs);
     assert.ok(fence);
     assert.ok(fenceGate);
+    assert.ok(door);
+    assert.ok(trapdoor);
     const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
     assert.strictEqual(Object.keys(variants).length, 40);
     assert.deepStrictEqual(variants["facing=east,half=bottom,shape=straight"], {
@@ -820,6 +913,19 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(fenceGateVariants["facing=west,in_wall=false,open=true"], {
       model: "minecraft:block/acacia_fence_gate_open",
       uvlock: true,
+      y: 90
+    });
+    const doorVariants = (door.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(doorVariants).length, 32);
+    assert.deepStrictEqual(doorVariants["facing=south,half=upper,hinge=left,open=true"], {
+      model: "minecraft:block/acacia_door_top_left_open",
+      y: 180
+    });
+    const trapdoorVariants = (trapdoor.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(trapdoorVariants).length, 16);
+    assert.deepStrictEqual(trapdoorVariants["facing=west,half=top,open=true"], {
+      model: "minecraft:block/acacia_trapdoor_open",
+      x: 180,
       y: 90
     });
   });

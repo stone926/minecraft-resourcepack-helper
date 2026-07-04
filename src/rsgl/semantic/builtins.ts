@@ -87,6 +87,21 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "wall", type: modelIdType, optional: false },
       { name: "wallOpen", type: modelIdType, optional: false }
     ], jsonType),
+    builtinFunction("door", [
+      { name: "bottomLeft", type: modelIdType, optional: false },
+      { name: "bottomLeftOpen", type: modelIdType, optional: false },
+      { name: "bottomRight", type: modelIdType, optional: false },
+      { name: "bottomRightOpen", type: modelIdType, optional: false },
+      { name: "topLeft", type: modelIdType, optional: false },
+      { name: "topLeftOpen", type: modelIdType, optional: false },
+      { name: "topRight", type: modelIdType, optional: false },
+      { name: "topRightOpen", type: modelIdType, optional: false }
+    ], jsonType),
+    builtinFunction("trapdoor", [
+      { name: "bottom", type: modelIdType, optional: false },
+      { name: "top", type: modelIdType, optional: false },
+      { name: "open", type: modelIdType, optional: false }
+    ], jsonType),
     builtinFunction("wall", [
       { name: "post", type: modelIdType, optional: false },
       { name: "side", type: modelIdType, optional: false },

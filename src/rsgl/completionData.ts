@@ -140,7 +140,7 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
   },
   {
     label: "wood_family",
-    insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate]\n}",
+    insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, door, trapdoor]\n}",
     detail: "Wood family sugar",
     kind: "snippet"
   }
@@ -174,6 +174,8 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "slab", detail: "Builtin slab blockstate template", kind: "function" },
   { label: "fence", detail: "Builtin fence blockstate template", kind: "function" },
   { label: "fenceGate", detail: "Builtin fence gate blockstate template", kind: "function" },
+  { label: "door", detail: "Builtin door blockstate template", kind: "function" },
+  { label: "trapdoor", detail: "Builtin trapdoor blockstate template", kind: "function" },
   { label: "wall", detail: "Builtin wall blockstate template", kind: "function" },
   { label: "pane", detail: "Builtin pane blockstate template", kind: "function" },
   { label: "randomVariants", detail: "Builtin random variants helper", kind: "function" },

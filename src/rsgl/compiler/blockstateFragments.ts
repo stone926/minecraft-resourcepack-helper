@@ -10,10 +10,12 @@ import {
 } from "./evaluate";
 import { JsonValue } from "./ir";
 import {
+  createDoorBlockstateContent,
   createFenceBlockstateContent,
   createFenceGateBlockstateContent,
   createSlabBlockstateContent,
   createStairsBlockstateContent,
+  createTrapdoorBlockstateContent,
   createWallBlockstateContent
 } from "./templates";
 
@@ -63,6 +65,25 @@ export function compileBlockstateUseFragment(
       open: requiredModelArgument(expression, "open", 1, context, options),
       wall: requiredModelArgument(expression, "wall", 2, context, options),
       wallOpen: requiredModelArgument(expression, "wallOpen", 3, context, options)
+    });
+  }
+  if (expression.callee.name.text === "door") {
+    return createDoorBlockstateContent({
+      bottomLeft: requiredModelArgument(expression, "bottomLeft", 0, context, options),
+      bottomLeftOpen: requiredModelArgument(expression, "bottomLeftOpen", 1, context, options),
+      bottomRight: requiredModelArgument(expression, "bottomRight", 2, context, options),
+      bottomRightOpen: requiredModelArgument(expression, "bottomRightOpen", 3, context, options),
+      topLeft: requiredModelArgument(expression, "topLeft", 4, context, options),
+      topLeftOpen: requiredModelArgument(expression, "topLeftOpen", 5, context, options),
+      topRight: requiredModelArgument(expression, "topRight", 6, context, options),
+      topRightOpen: requiredModelArgument(expression, "topRightOpen", 7, context, options)
+    });
+  }
+  if (expression.callee.name.text === "trapdoor") {
+    return createTrapdoorBlockstateContent({
+      bottom: requiredModelArgument(expression, "bottom", 0, context, options),
+      top: requiredModelArgument(expression, "top", 1, context, options),
+      open: requiredModelArgument(expression, "open", 2, context, options)
     });
   }
   if (expression.callee.name.text === "wall") {

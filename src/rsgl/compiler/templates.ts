@@ -31,6 +31,23 @@ export interface FenceGateBlockstateModels {
   wallOpen: string;
 }
 
+export interface DoorBlockstateModels {
+  bottomLeft: string;
+  bottomLeftOpen: string;
+  bottomRight: string;
+  bottomRightOpen: string;
+  topLeft: string;
+  topLeftOpen: string;
+  topRight: string;
+  topRightOpen: string;
+}
+
+export interface TrapdoorBlockstateModels {
+  bottom: string;
+  top: string;
+  open: string;
+}
+
 export interface WallBlockstateModels {
   post: string;
   side: string;
@@ -55,6 +72,41 @@ const stairsYaw: Record<string, Record<string, Record<string, number>>> = {
 };
 
 const fenceGateYaw: Record<string, number> = {
+  north: 180,
+  east: 270,
+  south: 0,
+  west: 90
+};
+
+const doorClosedYaw: Record<string, number> = {
+  north: 270,
+  east: 0,
+  south: 90,
+  west: 180
+};
+
+const doorOpenLeftYaw: Record<string, number> = {
+  north: 0,
+  east: 90,
+  south: 180,
+  west: 270
+};
+
+const doorOpenRightYaw: Record<string, number> = {
+  north: 180,
+  east: 270,
+  south: 0,
+  west: 90
+};
+
+const trapdoorClosedYaw: Record<string, number> = {
+  north: 0,
+  east: 90,
+  south: 180,
+  west: 270
+};
+
+const trapdoorTopOpenYaw: Record<string, number> = {
   north: 180,
   east: 270,
   south: 0,
@@ -205,6 +257,90 @@ export function createFenceGateBlockstateContent(models: FenceGateBlockstateMode
   return { variants };
 }
 
+export function createDoorBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createDoorBlockstateContent({
+    bottomLeft: `${id.namespace}:block/${id.path}_bottom_left`,
+    bottomLeftOpen: `${id.namespace}:block/${id.path}_bottom_left_open`,
+    bottomRight: `${id.namespace}:block/${id.path}_bottom_right`,
+    bottomRightOpen: `${id.namespace}:block/${id.path}_bottom_right_open`,
+    topLeft: `${id.namespace}:block/${id.path}_top_left`,
+    topLeftOpen: `${id.namespace}:block/${id.path}_top_left_open`,
+    topRight: `${id.namespace}:block/${id.path}_top_right`,
+    topRightOpen: `${id.namespace}:block/${id.path}_top_right_open`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createDoorBlockstateContent(models: DoorBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const facing of facings) {
+    for (const half of ["lower", "upper"] as const) {
+      for (const hinge of ["left", "right"] as const) {
+        for (const open of [false, true]) {
+          const entry: Record<string, JsonValue> = {
+            model: doorModel(models, half, hinge, open)
+          };
+          const y = doorYaw(facing, hinge, open);
+          if (y !== 0) {
+            entry.y = y;
+          }
+          variants[`facing=${facing},half=${half},hinge=${hinge},open=${open}`] = entry;
+        }
+      }
+    }
+  }
+  return { variants };
+}
+
+export function createTrapdoorBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createTrapdoorBlockstateContent({
+    bottom: `${id.namespace}:block/${id.path}_bottom`,
+    top: `${id.namespace}:block/${id.path}_top`,
+    open: `${id.namespace}:block/${id.path}_open`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createTrapdoorBlockstateContent(models: TrapdoorBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const facing of facings) {
+    for (const half of halves) {
+      for (const open of [false, true]) {
+        const entry: Record<string, JsonValue> = {
+          model: open ? models.open : (half === "top" ? models.top : models.bottom)
+        };
+        if (open && half === "top") {
+          entry.x = 180;
+        }
+        const y = open && half === "top" ? trapdoorTopOpenYaw[facing] : trapdoorClosedYaw[facing];
+        if (y !== 0) {
+          entry.y = y;
+        }
+        variants[`facing=${facing},half=${half},open=${open}`] = entry;
+      }
+    }
+  }
+  return { variants };
+}
+
 export function createWallBlockstate(
   idValue: string,
   namespace: string,
@@ -340,6 +476,26 @@ function fenceGateModel(models: FenceGateBlockstateModels, inWall: boolean, open
     return open ? models.wallOpen : models.wall;
   }
   return open ? models.open : models.base;
+}
+
+function doorModel(models: DoorBlockstateModels, half: "lower" | "upper", hinge: "left" | "right", open: boolean): string {
+  if (half === "lower" && hinge === "left") {
+    return open ? models.bottomLeftOpen : models.bottomLeft;
+  }
+  if (half === "lower") {
+    return open ? models.bottomRightOpen : models.bottomRight;
+  }
+  if (hinge === "left") {
+    return open ? models.topLeftOpen : models.topLeft;
+  }
+  return open ? models.topRightOpen : models.topRight;
+}
+
+function doorYaw(facing: string, hinge: "left" | "right", open: boolean): number {
+  if (!open) {
+    return doorClosedYaw[facing];
+  }
+  return hinge === "left" ? doorOpenLeftYaw[facing] : doorOpenRightYaw[facing];
 }
 
 function sourceMap(
