@@ -3,10 +3,13 @@ import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { arrayElements, memberName, objectMembers, type JsonAstNode } from "../utils/jsonAst";
 import type {
   JsonValue,
+  ResourceId,
+  RsglBlockstateSchema,
   RsglResourceContentKind,
   RsglResourceExistenceKind,
   RsglResourceValidationOptions
 } from "./compiler";
+import { inferBlockstateSchemaFromContent } from "./compiler";
 
 interface RsglWorkspaceValidationOptions {
   sourceFileName: string;
@@ -23,13 +26,14 @@ type ResourceTarget = {
 
 export function createRsglWorkspaceValidationOptions(
   options: RsglWorkspaceValidationOptions
-): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata"> {
+): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata" | "blockstateSchema"> {
   const cache = options.cache ?? workspaceResourceCache;
   return {
     resourceExists: (kind, id) => resourceExists(cache, options, kind, id),
     resourceContent: (kind, id) => resourceContent(cache, options, kind, id),
     textureMetadata: id => textureMetadata(cache, options, id),
-    soundMetadata: id => soundMetadata(cache, options, id)
+    soundMetadata: id => soundMetadata(cache, options, id),
+    blockstateSchema: id => blockstateSchema(cache, options, id)
   };
 }
 
@@ -80,6 +84,23 @@ function soundMetadata(
 ): { codec?: string; channels?: number; sampleRate?: number; durationSeconds?: number } | null {
   const fileName = resolveResource(cache, options, id, resourceTarget("sound"));
   return fileName ? cache.getOggMetadata(fileName) : null;
+}
+
+function blockstateSchema(
+  cache: WorkspaceResourceCache,
+  options: RsglWorkspaceValidationOptions,
+  id: ResourceId
+): RsglBlockstateSchema | null {
+  const fileName = resolveResource(cache, options, `${id.namespace}:${id.path}`, {
+    target: "blockstates",
+    extension: "json",
+    directory: false
+  });
+  if (!fileName) {
+    return null;
+  }
+  const ast = cache.getJsonFileAst(fileName);
+  return inferBlockstateSchemaFromContent(ast ? astNodeToJsonValue(ast.body) : undefined);
 }
 
 function resolveResource(

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../rsgl/compiler";
+import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, inferBlockstateSchemaFromContent, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl/workspaceValidation";
 
@@ -2938,6 +2938,27 @@ describe("RSGL compiler", () => {
     );
   });
 
+  it("infers blockstate schemas from existing JSON content", () => {
+    assert.deepStrictEqual(inferBlockstateSchemaFromContent({
+      variants: {
+        ["facing=north,lit=true"]: { model: "minecraft:block/lamp" },
+        ["facing=south,lit=false"]: { model: "minecraft:block/lamp" }
+      },
+      multipart: [
+        { when: { north: true }, apply: { model: "minecraft:block/fence" } },
+        { when: { ["OR"]: [{ side: "east|west" }, { side: "!north" }] }, apply: { model: "minecraft:block/fence" } }
+      ]
+    }), {
+      properties: {
+        facing: ["north", "south"],
+        lit: ["false", "true"],
+        north: ["true"],
+        side: ["east", "north", "west"]
+      }
+    });
+    assert.strictEqual(inferBlockstateSchemaFromContent({ variants: { [""]: { model: "minecraft:block/stone" } } }), null);
+  });
+
   it("maps blockstate validation diagnostics to generated entry source ranges", () => {
     const result = compileRsglModule(parseRsgl([
       "blockstate lamp {",
@@ -3651,6 +3672,42 @@ describe("RSGL compiler", () => {
 
       assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidSoundMetadata"));
       assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.soundNotFound"), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("infers blockstate schemas through the workspace validation adapter", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const sourceFile = path.join(packRoot, "main.rsgl");
+    const blockstateFile = path.join(packRoot, "assets", "minecraft", "blockstates", "lamp.json");
+    try {
+      fs.mkdirSync(path.dirname(blockstateFile), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(blockstateFile, JSON.stringify({
+        variants: {
+          ["facing=north,lit=true"]: { model: "minecraft:block/lamp" },
+          ["facing=south,lit=false"]: { model: "minecraft:block/lamp" }
+        }
+      }));
+      fs.writeFileSync(sourceFile, [
+        "blockstate lamp {",
+        "  variants {",
+        "    [facing=up lit=true extra=true] -> { model: minecraft:block/lamp }",
+        "  }",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        cache: new WorkspaceResourceCache()
+      }));
+
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidBlockstateStateSchemaValue"));
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unknownBlockstateStateProperty"));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

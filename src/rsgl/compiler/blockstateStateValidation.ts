@@ -43,6 +43,26 @@ export function validateBlockstateStateDomains(
   validateInferredStateDomains(domains, unit, diagnostics);
 }
 
+export function inferBlockstateSchemaFromContent(content: JsonValue | undefined): RsglBlockstateSchema | null {
+  const object = asObject(content);
+  if (!object) {
+    return null;
+  }
+
+  const domains = new Map<string, StateDomain>();
+  collectSchemaVariantDomains(asObject(object.variants), domains);
+  collectSchemaMultipartDomains(Array.isArray(object.multipart) ? object.multipart : [], domains);
+  if (domains.size === 0) {
+    return null;
+  }
+
+  const properties: Record<string, string[]> = {};
+  for (const [name, domain] of [...domains].sort(([left], [right]) => left.localeCompare(right))) {
+    properties[name] = [...domain.values].sort();
+  }
+  return { properties };
+}
+
 function collectVariantStateDomains(
   variants: Record<string, JsonValue> | undefined,
   domains: Map<string, StateDomain>,
@@ -66,6 +86,20 @@ function collectVariantStateDomains(
   }
 }
 
+function collectSchemaVariantDomains(
+  variants: Record<string, JsonValue> | undefined,
+  domains: Map<string, StateDomain>
+): void {
+  if (!variants) {
+    return;
+  }
+  for (const key of Object.keys(variants)) {
+    for (const assignment of parseVariantStateAssignments(key)) {
+      addStateDomainValue(domains, assignment.name, assignment.value);
+    }
+  }
+}
+
 function collectMultipartStateDomains(
   multipart: JsonValue[],
   domains: Map<string, StateDomain>,
@@ -77,6 +111,41 @@ function collectMultipartStateDomains(
     const condition = asObject(asObject(entry)?.when);
     if (condition) {
       collectWhenStateDomains(condition, domains, unit, diagnostics, rangeForGeneratedPath(unit, options, appendGeneratedPath("/multipart", String(index))), options.schema);
+    }
+  }
+}
+
+function collectSchemaMultipartDomains(
+  multipart: JsonValue[],
+  domains: Map<string, StateDomain>
+): void {
+  for (const entry of multipart) {
+    const condition = asObject(asObject(entry)?.when);
+    if (condition) {
+      collectSchemaWhenStateDomains(condition, domains);
+    }
+  }
+}
+
+function collectSchemaWhenStateDomains(
+  condition: Record<string, JsonValue>,
+  domains: Map<string, StateDomain>
+): void {
+  for (const [key, value] of Object.entries(condition)) {
+    if (key === "OR" || key === "AND") {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const nested = asObject(item);
+          if (nested) {
+            collectSchemaWhenStateDomains(nested, domains);
+          }
+        }
+      }
+      continue;
+    }
+
+    for (const term of parseSchemaWhenStateTerms(value)) {
+      addStateDomainValue(domains, key, term);
     }
   }
 }
@@ -234,6 +303,19 @@ function parseWhenStateTerms(
   reportDuplicateWhenTerms(terms, diagnostics, range);
   reportTautologicalWhenTerms(terms, diagnostics, range);
   return terms;
+}
+
+function parseSchemaWhenStateTerms(value: JsonValue): string[] {
+  if (typeof value === "boolean" || typeof value === "number") {
+    return [String(value)];
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+  return value.split("|")
+    .filter(part => part.length > 0)
+    .map(part => part.startsWith("!") ? part.slice(1) : part)
+    .filter(part => part.length > 0);
 }
 
 function reportDuplicateWhenTerms(
