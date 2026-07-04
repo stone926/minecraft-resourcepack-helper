@@ -105,6 +105,25 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "fallback", type: resourceIdType, optional: true },
       { name: "component", type: resourceIdType, optional: true }
     ], jsonType),
+    builtinFunction("atlasDirectory", [
+      { name: "source", type: stringType, optional: false },
+      { name: "prefix", type: stringType, optional: true }
+    ], jsonType),
+    builtinFunction("particlesSeq", [
+      { name: "pattern", type: jsonType, optional: false }
+    ], jsonType),
+    builtinFunction("mcmetaAnimation", [
+      { name: "frametime", type: numberType, optional: true },
+      { name: "interpolate", type: booleanType, optional: true },
+      { name: "frames", type: jsonType, optional: true }
+    ], jsonType),
+    builtinFunction("equipmentLayers", [
+      { name: "texture", type: textureIdType, optional: false },
+      { name: "layers", type: jsonType, optional: false },
+      { name: "dyeable", type: booleanType, optional: true },
+      { name: "color", type: numberType, optional: true },
+      { name: "use_player_texture", type: booleanType, optional: true }
+    ], jsonType),
     builtinFunction("model_path", [{ name: "id", type: modelIdType, optional: false }], stringType),
     builtinFunction("texture_path", [{ name: "id", type: textureIdType, optional: false }], stringType),
     builtinValue("index", numberType)

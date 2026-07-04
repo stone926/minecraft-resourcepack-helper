@@ -4,6 +4,7 @@ import {
   TextRange
 } from "../parser";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
+import { expandSequencePattern } from "./sequences";
 
 export type EvaluationValue = JsonValue | undefined;
 export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange) => EvaluationValue;
@@ -258,7 +259,7 @@ function evaluateCallExpression(
   }
   if (callee.name.text === "seq") {
     const pattern = String(args[0]?.value ?? "");
-    return expandSequence(pattern, context);
+    return expandSequencePattern(pattern);
   }
   if (callee.name.text === "yaw") {
     return horizontalYaw[String(args[0]?.value)] ?? 0;
@@ -310,27 +311,6 @@ function product(source: Record<string, JsonValue>): JsonValue[] {
     results = next;
   }
   return results;
-}
-
-function expandSequence(pattern: string, context: EvaluationContext): string[] {
-  const match = /\{(-?\d+)\.\.(-?\d+)\}/.exec(pattern);
-  if (!match) {
-    return [pattern];
-  }
-  const start = Number(match[1]);
-  const end = Number(match[2]);
-  const width = match[1].startsWith("0") || match[2].startsWith("0") ? Math.max(match[1].length, match[2].length) : 0;
-  const values = evaluateExpression({
-    kind: "RangeExpr",
-    startExpr: { kind: "NumberLiteral", value: start, raw: String(start), range: { start: 0, end: 0 }, fullRange: { start: 0, end: 0 } },
-    endExpr: { kind: "NumberLiteral", value: end, raw: String(end), range: { start: 0, end: 0 }, fullRange: { start: 0, end: 0 } },
-    inclusive: true,
-    range: { start: 0, end: 0 },
-    fullRange: { start: 0, end: 0 }
-  }, context);
-  return Array.isArray(values)
-    ? values.map(value => pattern.replace(match[0], String(value).padStart(width, "0")))
-    : [pattern];
 }
 
 function compareValues(left: EvaluationValue, right: EvaluationValue): number {

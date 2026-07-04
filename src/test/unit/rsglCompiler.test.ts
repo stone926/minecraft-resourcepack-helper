@@ -323,6 +323,81 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers generic JSON resource fragments", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "atlas minecraft:blocks {",
+      "  use atlasDirectory(source: \"block\", prefix: \"block/\")",
+      "  use atlasDirectory(source: \"item\", prefix: \"item/\")",
+      "}",
+      "particles explosion {",
+      "  use particlesSeq(\"minecraft:particle/explosion_{00..02}\")",
+      "}",
+      "mcmeta \"assets/minecraft/textures/block/high_light.png\" {",
+      "  use mcmetaAnimation(frametime: 5, interpolate: true)",
+      "}",
+      "equipment iron {",
+      "  use equipmentLayers(texture: minecraft:iron, layers: [\"humanoid\", \"humanoid_leggings\"])",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/atlases/blocks.json",
+      "assets/minecraft/equipment/iron.json",
+      "assets/minecraft/particles/explosion.json",
+      "assets/minecraft/textures/block/high_light.png.mcmeta"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "atlas")?.content, {
+      sources: [
+        { type: "minecraft:directory", source: "block", prefix: "block/" },
+        { type: "minecraft:directory", source: "item", prefix: "item/" }
+      ]
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "particles")?.content, {
+      textures: [
+        "minecraft:particle/explosion_00",
+        "minecraft:particle/explosion_01",
+        "minecraft:particle/explosion_02"
+      ]
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "mcmeta")?.content, {
+      animation: {
+        frametime: 5,
+        interpolate: true
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "equipment")?.content, {
+      layers: {
+        humanoid: [{ texture: "minecraft:iron" }],
+        ["humanoid_leggings"]: [{ texture: "minecraft:iron" }]
+      }
+    });
+    assert.ok(checkedResources.includes("texture:minecraft:particle/explosion_00"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/iron"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/iron"));
+  });
+
+  it("reports invalid generic JSON resource fragment arguments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "particles explosion {",
+      "  use particlesSeq({ bad: true })",
+      "}",
+      "equipment iron {",
+      "  use equipmentLayers(texture: minecraft:iron, layers: 1)",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidParticlesSeqArgument"));
+    assert.ok(codes.includes("rsgl.invalidEquipmentLayersArgument"));
+  });
+
   it("expands local templates with positional, named, and default arguments", () => {
     const result = compileRsglModule(parseRsgl([
       "template cube(id: ResourceId, texture: TextureId = id) {",
@@ -1289,6 +1364,16 @@ describe("RSGL compiler", () => {
       "mcmeta \"assets/minecraft/textures/block/missing_anim.png\" {",
       "  animation { frametime 2 }",
       "}",
+      "particles missing_particles {",
+      "  textures [minecraft:particle/missing_particle]",
+      "}",
+      "equipment missing_equipment {",
+      "  layers {",
+      "    humanoid [",
+      "      { texture: minecraft:missing_equipment }",
+      "    ]",
+      "  }",
+      "}",
       "pack {",
       "  pack { description \"Generated\" }",
       "  overlays {",
@@ -1324,6 +1409,8 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_palette_key"));
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_permutation"));
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_anim"));
+    assert.ok(checkedResources.includes("texture:minecraft:particle/missing_particle"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/missing_equipment"));
   });
 });
 

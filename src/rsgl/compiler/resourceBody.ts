@@ -49,7 +49,7 @@ function applyResourceStatement(
   } else if (statement.kind === "IfStmt") {
     const selectedBody = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
     if (selectedBody?.kind === "ResourceBody") {
-      mergeObject(result, resourceBodyToObject(selectedBody, context, options));
+      mergeResourceObject(result, resourceBodyToObject(selectedBody, context, options));
     }
   } else if (statement.kind === "ForStmt") {
     applyForStatement(result, statement, context, options);
@@ -58,10 +58,15 @@ function applyResourceStatement(
     if (isJsonObject(value)) {
       mergeObject(result, value);
     }
+  } else if (statement.kind === "AppendStmt") {
+    const value = normalizeJsonValue(evaluateExpression(statement.value, context));
+    if (isJsonObject(value)) {
+      mergeResourceObject(result, value);
+    }
   } else if (statement.kind === "UseDecl") {
     const fragment = options.onUseFragment?.(statement, context);
     if (fragment) {
-      mergeObject(result, fragment);
+      mergeResourceObject(result, fragment);
     }
   }
 }
@@ -83,7 +88,7 @@ function applyForStatement(
   for (const value of iterable) {
     const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
     const loopContext = createLoopContext(context, bindings, statement.range);
-    mergeObject(result, resourceBodyToObject(statement.body, loopContext, options));
+    mergeResourceObject(result, resourceBodyToObject(statement.body, loopContext, options));
   }
 }
 
@@ -93,10 +98,23 @@ function mergeObject(target: Record<string, JsonValue>, source: Record<string, J
   }
 }
 
+function mergeResourceObject(target: Record<string, JsonValue>, source: Record<string, JsonValue>): void {
+  for (const [key, value] of Object.entries(source)) {
+    const existing = target[key];
+    if (Array.isArray(existing) && Array.isArray(value)) {
+      target[key] = [...existing, ...value];
+    } else if (isJsonObject(existing) && isJsonObject(value)) {
+      mergeResourceObject(existing, value);
+    } else {
+      target[key] = value;
+    }
+  }
+}
+
 function normalizeJsonValue(value: EvaluationValue): JsonValue {
   return value === undefined ? null : value;
 }
 
-function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
+function isJsonObject(value: unknown): value is Record<string, JsonValue> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

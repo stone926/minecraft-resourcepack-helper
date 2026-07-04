@@ -55,6 +55,9 @@ describe("RSGL semantic model", () => {
     const module = parseRsgl([
       "blockstate minecraft:bad_stairs {",
       "  use stairs(base: minecraft:block/base)",
+      "}",
+      "equipment minecraft:bad_equipment {",
+      "  use equipmentLayers(texture: minecraft:iron)",
       "}"
     ].join("\n"));
 
@@ -62,6 +65,7 @@ describe("RSGL semantic model", () => {
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.ok(codes.includes("rsgl.missingArgument"));
+    assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 3);
   });
 
   it("builds an import graph and reports missing imports", () => {

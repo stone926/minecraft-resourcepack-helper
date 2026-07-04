@@ -49,6 +49,7 @@ import {
 import { compileFamilySugar } from "./familySugar";
 import { compileItemUseFragment } from "./itemFragments";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
+import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
 import { createFileRawJsonLoader } from "./rawJson";
@@ -513,7 +514,7 @@ class RsglCompiler {
       id,
       kind: statement.resourceKind as ResourceUnit["kind"],
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions(statement.resourceKind as JsonResourceFragmentKind)),
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
@@ -583,7 +584,7 @@ class RsglCompiler {
       id: target.id,
       kind: "mcmeta",
       outputPath: target.outputPath,
-      content: this.resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions("mcmeta")),
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(target.outputPath, statement, context)
     };
@@ -869,6 +870,14 @@ class RsglCompiler {
   private itemFragmentOptions() {
     return {
       onError: (code: string, message: string, range: { start: number; end: number }) => this.error(code, message, range)
+    };
+  }
+
+  private jsonResourceFragmentOptions(kind: JsonResourceFragmentKind): ResourceBodyCompileOptions {
+    return {
+      onUseFragment: (useStatement, fragmentContext) => compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
+        onError: (code, message, range) => this.error(code, message, range)
+      })
     };
   }
 

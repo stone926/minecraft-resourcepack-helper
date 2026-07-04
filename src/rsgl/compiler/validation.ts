@@ -36,6 +36,10 @@ export function validateResourceUnits(
       validateAtlasUnit(unit, options, diagnostics);
     } else if (unit.kind === "mcmeta") {
       validateMcmetaUnit(unit, options, diagnostics);
+    } else if (unit.kind === "particles") {
+      validateParticlesUnit(unit, options, diagnostics);
+    } else if (unit.kind === "equipment") {
+      validateEquipmentUnit(unit, options, diagnostics);
     } else if (unit.kind === "pack") {
       validatePackUnit(unit, options, diagnostics);
     }
@@ -396,6 +400,46 @@ function validateMcmetaUnit(
   }
 }
 
+function validateParticlesUnit(
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const namespace = unit.id?.namespace ?? "minecraft";
+  const content = asObject(unit.content);
+  const textures = Array.isArray(content?.textures) ? content.textures : [];
+  for (const texture of textures) {
+    if (typeof texture === "string") {
+      checkResourceExists("texture", textureIdInFolder(texture, namespace, "particle"), unit, undefined, options, diagnostics);
+    }
+  }
+}
+
+function validateEquipmentUnit(
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const namespace = unit.id?.namespace ?? "minecraft";
+  const content = asObject(unit.content);
+  const layers = asObject(content?.layers);
+  if (!layers) {
+    return;
+  }
+
+  for (const [layerName, layerEntries] of Object.entries(layers)) {
+    if (!Array.isArray(layerEntries)) {
+      continue;
+    }
+    for (const layerEntry of layerEntries) {
+      const texture = asObject(layerEntry)?.texture;
+      if (typeof texture === "string") {
+        checkResourceExists("texture", textureIdInFolder(texture, namespace, `entity/equipment/${layerName}`), unit, undefined, options, diagnostics);
+      }
+    }
+  }
+}
+
 function validatePackUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
@@ -562,6 +606,19 @@ function modelKey(unit: ResourceUnit): string | null {
 
 function qualifyResourceId(value: string, defaultNamespace: string): string {
   return value.includes(":") ? value : `${defaultNamespace}:${value}`;
+}
+
+function textureIdInFolder(value: string, defaultNamespace: string, folder: string): string {
+  const id = parseResourceId(value, defaultNamespace);
+  const path = id.path.startsWith(`${folder}/`) ? id.path : `${folder}/${id.path}`;
+  return `${id.namespace}:${path}`;
+}
+
+function parseResourceId(value: string, defaultNamespace: string): { namespace: string; path: string } {
+  const separator = value.indexOf(":");
+  return separator >= 0
+    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
+    : { namespace: defaultNamespace, path: value };
 }
 
 function stringValues(value: JsonValue | undefined): string[] {
