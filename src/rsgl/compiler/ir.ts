@@ -15,6 +15,7 @@ export type ResourceKind =
   | "mcmeta"
   | "particles"
   | "equipment"
+  | "font"
   | "pack"
   | "lang"
   | "sounds"

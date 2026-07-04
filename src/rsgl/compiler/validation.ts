@@ -1,10 +1,11 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { validateFontMetadata } from "./fontValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
 
-export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound";
+export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile";
 export type RsglResourceContentKind = "model";
 
 export interface RsglTextureMetadata {
@@ -146,6 +147,11 @@ export function validateResourceUnits(
       .filter(unit => unit.kind === "model" && unit.id)
       .map(unit => [`${unit.id!.namespace}:${unit.id!.path}`, unit])
   );
+  const generatedFonts = new Set(
+    units
+      .filter(unit => unit.kind === "font" && unit.id)
+      .map(unit => `${unit.id!.namespace}:${unit.id!.path}`)
+  );
   const modelResolver = createModelResolver(generatedModels, options);
 
   for (const unit of units) {
@@ -168,6 +174,8 @@ export function validateResourceUnits(
       validateParticlesUnit(unit, options, diagnostics);
     } else if (unit.kind === "equipment") {
       validateEquipmentUnit(unit, options, diagnostics);
+    } else if (unit.kind === "font") {
+      validateFontUnit(unit, generatedFonts, options, diagnostics);
     } else if (unit.kind === "pack") {
       validatePackUnit(unit, options, diagnostics);
     }
@@ -1288,6 +1296,15 @@ function validateEquipmentUnit(
   }
 }
 
+function validateFontUnit(
+  unit: ResourceUnit,
+  generatedFonts: Set<string>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  validateFontMetadata(unit, generatedFonts, options, diagnostics);
+}
+
 function validatePackUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
@@ -1506,6 +1523,12 @@ function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
   if (kind === "texture") {
     return "rsgl.textureNotFound";
   }
+  if (kind === "font") {
+    return "rsgl.fontNotFound";
+  }
+  if (kind === "fontFile") {
+    return "rsgl.fontFileNotFound";
+  }
   return "rsgl.soundNotFound";
 }
 
@@ -1518,6 +1541,12 @@ function resourceLabel(kind: RsglResourceExistenceKind): string {
   }
   if (kind === "texture") {
     return "Texture";
+  }
+  if (kind === "font") {
+    return "Font";
+  }
+  if (kind === "fontFile") {
+    return "Font file";
   }
   return "Sound";
 }

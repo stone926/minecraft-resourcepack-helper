@@ -85,6 +85,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "font",
+    insertText: "font ${1:default} {\n  providers [\n    { type: bitmap, file: ${2:minecraft:font/ascii.png}, ascent: ${3:7}, chars: [\"${4:abcdef}\"] }\n  ]\n}",
+    detail: "Font provider resource",
+    kind: "snippet"
+  },
+  {
     label: "pack",
     insertText: "pack {\n  description \"${1:Generated pack}\"\n  min_format [${2:88}, ${3:0}]\n  max_format [${2:88}, ${3:0}]\n}",
     detail: "pack.mcmeta resource",

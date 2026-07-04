@@ -47,7 +47,13 @@ const enumConstants = [
   "sign",
   "hanging_sign",
   "boat",
-  "chest_boat"
+  "chest_boat",
+  "bitmap",
+  "space",
+  "ttf",
+  "unihex",
+  "reference",
+  "legacy_unicode"
 ];
 
 export function createBuiltinSymbols(): RsglSymbol[] {

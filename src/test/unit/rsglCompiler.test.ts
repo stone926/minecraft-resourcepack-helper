@@ -836,6 +836,15 @@ describe("RSGL compiler", () => {
       "}",
       "equipment iron {",
       "  use equipmentLayers(texture: minecraft:iron, layers: [\"humanoid\", \"humanoid_leggings\"])",
+      "}",
+      "font default {",
+      "  providers [",
+      "    { type: reference, id: minecraft:include/space },",
+      "    { type: bitmap, file: minecraft:font/ascii.png, ascent: 7, chars: [\"abc\"] }",
+      "  ]",
+      "}",
+      "font include/space {",
+      "  providers [{ type: space, advances: { \" \": 4 } }]",
       "}"
     ].join("\n")), {
       resourceExists: (kind, id) => {
@@ -848,6 +857,8 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
       "assets/minecraft/atlases/blocks.json",
       "assets/minecraft/equipment/iron.json",
+      "assets/minecraft/font/default.json",
+      "assets/minecraft/font/include/space.json",
       "assets/minecraft/particles/explosion.json",
       "assets/minecraft/textures/block/high_light.png.mcmeta"
     ]);
@@ -876,9 +887,17 @@ describe("RSGL compiler", () => {
         ["humanoid_leggings"]: [{ texture: "minecraft:iron" }]
       }
     });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "assets/minecraft/font/default.json")?.content, {
+      providers: [
+        { type: "reference", id: "minecraft:include/space" },
+        { type: "bitmap", file: "minecraft:font/ascii.png", ascent: 7, chars: ["abc"] }
+      ]
+    });
     assert.ok(checkedResources.includes("texture:minecraft:particle/explosion_00"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/iron"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/iron"));
+    assert.ok(checkedResources.includes("texture:minecraft:font/ascii.png"));
+    assert.strictEqual(checkedResources.includes("font:minecraft:include/space"), false);
   });
 
   it("expands mcmeta glob targets relative to the resource pack root", () => {
@@ -1794,6 +1813,42 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidSoundEntry"));
     assert.ok(codes.includes("rsgl.soundNotFound"));
     assert.ok(checkedResources.includes("sound:custom:entity/example/valid"));
+  });
+
+  it("validates font provider resources", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "font invalid {",
+      "  providers [",
+      "    1,",
+      "    { type: unknown },",
+      "    { type: bitmap },",
+      "    { type: bitmap, file: minecraft:font/missing.png, chars: [1], ascent: \"bad\", shift: [0, 999], filter: { uniform: \"yes\" } },",
+      "    { type: reference, id: minecraft:missing_font },",
+      "    { type: ttf, file: example:missing.ttf, skip: [1] },",
+      "    { type: unihex, hex_file: example:missing.hex, size_overrides: [{ left: -1, right: 33, ranges: [1] }] },",
+      "    { type: space, advances: { \" \": \"wide\" } }",
+      "  ]",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidFontProvider"));
+    assert.ok(codes.includes("rsgl.invalidFontProviderType"));
+    assert.ok(codes.includes("rsgl.missingFontProviderField"));
+    assert.ok(codes.includes("rsgl.invalidFontProviderField"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(codes.includes("rsgl.fontNotFound"));
+    assert.ok(codes.includes("rsgl.fontFileNotFound"));
+    assert.ok(checkedResources.includes("texture:minecraft:font/missing.png"));
+    assert.ok(checkedResources.includes("font:minecraft:missing_font"));
+    assert.ok(checkedResources.includes("fontFile:example:missing.ttf"));
+    assert.ok(checkedResources.includes("fontFile:example:missing.hex"));
   });
 
   it("validates pack metadata formats and filters", () => {

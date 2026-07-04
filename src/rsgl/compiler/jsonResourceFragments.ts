@@ -10,7 +10,7 @@ import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evalua
 import { JsonValue } from "./ir";
 import { expandSequencePattern } from "./sequences";
 
-export type JsonResourceFragmentKind = "atlas" | "particles" | "equipment" | "mcmeta";
+export type JsonResourceFragmentKind = "atlas" | "particles" | "equipment" | "font" | "mcmeta";
 
 export interface RsglJsonResourceFragmentOptions {
   onError?: (code: string, message: string, range: TextRange) => void;

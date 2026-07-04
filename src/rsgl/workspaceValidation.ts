@@ -99,6 +99,12 @@ function resourceTarget(kind: RsglResourceExistenceKind | RsglResourceContentKin
   if (kind === "texture") {
     return { target: "textures", extension: "png", directory: false };
   }
+  if (kind === "font") {
+    return { target: "font", extension: "json", directory: false };
+  }
+  if (kind === "fontFile") {
+    return { target: "font", extension: null, directory: false };
+  }
   return { target: "sounds", extension: "ogg", directory: false };
 }
 

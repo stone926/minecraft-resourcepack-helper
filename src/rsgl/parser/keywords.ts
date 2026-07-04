@@ -15,6 +15,7 @@ export const topLevelKeywords = [
   "mcmeta",
   "particles",
   "equipment",
+  "font",
   "pack",
   "lang",
   "sounds",
@@ -41,6 +42,7 @@ export const resourceKeywords = [
   "mcmeta",
   "particles",
   "equipment",
+  "font",
   "pack",
   "lang",
   "sounds"
