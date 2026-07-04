@@ -141,12 +141,13 @@ describe("RSGL compiler", () => {
     }
   });
 
-  it("lowers stairs, slab, fence, and wall sugar to blockstates", () => {
+  it("lowers conventional blockstate sugar to blockstates", () => {
     const result = compileRsglModule(parseRsgl([
       "stairs acacia_stairs",
       "slab acacia_slab double minecraft:block/acacia_planks",
       "fence oak_fence",
-      "wall cobblestone_wall"
+      "wall cobblestone_wall",
+      "pane glass_pane"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -154,6 +155,7 @@ describe("RSGL compiler", () => {
       "assets/minecraft/blockstates/acacia_slab.json",
       "assets/minecraft/blockstates/acacia_stairs.json",
       "assets/minecraft/blockstates/cobblestone_wall.json",
+      "assets/minecraft/blockstates/glass_pane.json",
       "assets/minecraft/blockstates/oak_fence.json"
     ]);
 
@@ -163,6 +165,12 @@ describe("RSGL compiler", () => {
     assert.strictEqual(Object.keys(variants).length, 40);
     assert.deepStrictEqual(variants["facing=east,half=bottom,shape=straight"], {
       model: "minecraft:block/acacia_stairs"
+    });
+    const pane = result.units.find(unit => unit.outputPath.endsWith("glass_pane.json"));
+    assert.ok(pane);
+    assert.deepStrictEqual((pane.content as { multipart: unknown[] }).multipart[8], {
+      when: { west: false },
+      apply: { model: "minecraft:block/glass_pane_noside", y: 270 }
     });
   });
 
@@ -913,6 +921,15 @@ describe("RSGL compiler", () => {
       "    open: minecraft:block/acacia_trapdoor_open",
       "  )",
       "}",
+      "blockstate glass_pane {",
+      "  use pane(",
+      "    post: minecraft:block/glass_pane_post,",
+      "    side: minecraft:block/glass_pane_side,",
+      "    sideAlt: minecraft:block/glass_pane_side_alt,",
+      "    noSide: minecraft:block/glass_pane_noside,",
+      "    noSideAlt: minecraft:block/glass_pane_noside_alt",
+      "  )",
+      "}",
       "blockstate oak_leaves {",
       "  use randomVariants(",
       "    state: { persistent: false },",
@@ -930,12 +947,14 @@ describe("RSGL compiler", () => {
     const fenceGate = result.units.find(unit => unit.outputPath.endsWith("acacia_fence_gate.json"));
     const door = result.units.find(unit => unit.outputPath.endsWith("acacia_door.json"));
     const trapdoor = result.units.find(unit => unit.outputPath.endsWith("acacia_trapdoor.json"));
+    const pane = result.units.find(unit => unit.outputPath.endsWith("glass_pane.json"));
     const leaves = result.units.find(unit => unit.outputPath.endsWith("oak_leaves.json"));
     assert.ok(stairs);
     assert.ok(fence);
     assert.ok(fenceGate);
     assert.ok(door);
     assert.ok(trapdoor);
+    assert.ok(pane);
     assert.ok(leaves);
     const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
     assert.strictEqual(Object.keys(variants).length, 40);
@@ -970,6 +989,19 @@ describe("RSGL compiler", () => {
       model: "minecraft:block/acacia_trapdoor_open",
       x: 180,
       y: 90
+    });
+    assert.deepStrictEqual(pane.content, {
+      multipart: [
+        { apply: { model: "minecraft:block/glass_pane_post" } },
+        { when: { north: true }, apply: { model: "minecraft:block/glass_pane_side" } },
+        { when: { east: true }, apply: { model: "minecraft:block/glass_pane_side", y: 90 } },
+        { when: { south: true }, apply: { model: "minecraft:block/glass_pane_side_alt" } },
+        { when: { west: true }, apply: { model: "minecraft:block/glass_pane_side_alt", y: 90 } },
+        { when: { north: false }, apply: { model: "minecraft:block/glass_pane_noside" } },
+        { when: { east: false }, apply: { model: "minecraft:block/glass_pane_noside_alt" } },
+        { when: { south: false }, apply: { model: "minecraft:block/glass_pane_noside_alt", y: 90 } },
+        { when: { west: false }, apply: { model: "minecraft:block/glass_pane_noside", y: 270 } }
+      ]
     });
     assert.deepStrictEqual(leaves.content, {
       variants: {

@@ -54,6 +54,14 @@ export interface WallBlockstateModels {
   sideTall: string;
 }
 
+export interface PaneBlockstateModels {
+  post: string;
+  side: string;
+  sideAlt: string;
+  noSide: string;
+  noSideAlt: string;
+}
+
 const stairsYaw: Record<string, Record<string, Record<string, number>>> = {
   bottom: {
     straight: { north: 270, east: 0, south: 90, west: 180 },
@@ -373,6 +381,41 @@ export function createWallBlockstateContent(models: WallBlockstateModels): Recor
       multipart.push({ when: { [facing]: height }, apply });
     }
   });
+  return { multipart };
+}
+
+export function createPaneBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createPaneBlockstateContent({
+    post: `${id.namespace}:block/${id.path}_post`,
+    side: `${id.namespace}:block/${id.path}_side`,
+    sideAlt: `${id.namespace}:block/${id.path}_side_alt`,
+    noSide: `${id.namespace}:block/${id.path}_noside`,
+    noSideAlt: `${id.namespace}:block/${id.path}_noside_alt`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createPaneBlockstateContent(models: PaneBlockstateModels): Record<string, JsonValue> {
+  const multipart: JsonValue[] = [
+    { apply: { model: models.post } },
+    { when: { north: true }, apply: { model: models.side } },
+    { when: { east: true }, apply: { model: models.side, y: 90 } },
+    { when: { south: true }, apply: { model: models.sideAlt } },
+    { when: { west: true }, apply: { model: models.sideAlt, y: 90 } },
+    { when: { north: false }, apply: { model: models.noSide } },
+    { when: { east: false }, apply: { model: models.noSideAlt } },
+    { when: { south: false }, apply: { model: models.noSideAlt, y: 90 } },
+    { when: { west: false }, apply: { model: models.noSide, y: 270 } }
+  ];
   return { multipart };
 }
 

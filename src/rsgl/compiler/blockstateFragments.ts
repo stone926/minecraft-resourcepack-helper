@@ -14,6 +14,7 @@ import {
   createDoorBlockstateContent,
   createFenceBlockstateContent,
   createFenceGateBlockstateContent,
+  createPaneBlockstateContent,
   createSlabBlockstateContent,
   createStairsBlockstateContent,
   createTrapdoorBlockstateContent,
@@ -97,6 +98,15 @@ export function compileBlockstateUseFragment(
       post: requiredModelArgument(expression, "post", 0, context, options),
       side: requiredModelArgument(expression, "side", 1, context, options),
       sideTall: requiredModelArgument(expression, "sideTall", 2, context, options)
+    });
+  }
+  if (expression.callee.name.text === "pane") {
+    return createPaneBlockstateContent({
+      post: requiredModelArgument(expression, "post", 0, context, options),
+      side: requiredModelArgument(expression, "side", 1, context, options),
+      sideAlt: requiredModelArgument(expression, "sideAlt", 2, context, options),
+      noSide: requiredModelArgument(expression, "noSide", 3, context, options),
+      noSideAlt: requiredModelArgument(expression, "noSideAlt", 4, context, options)
     });
   }
   if (expression.callee.name.text === "randomVariants") {

@@ -139,6 +139,18 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "wall",
+    insertText: "wall ${1:cobblestone_wall}",
+    detail: "Conventional wall blockstate sugar",
+    kind: "snippet"
+  },
+  {
+    label: "pane",
+    insertText: "pane ${1:glass_pane}",
+    detail: "Conventional pane blockstate sugar",
+    kind: "snippet"
+  },
+  {
     label: "wood_family",
     insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, door, trapdoor]\n}",
     detail: "Wood family sugar",

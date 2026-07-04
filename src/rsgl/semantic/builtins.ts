@@ -107,6 +107,13 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "side", type: modelIdType, optional: false },
       { name: "sideTall", type: modelIdType, optional: false }
     ], jsonType),
+    builtinFunction("pane", [
+      { name: "post", type: modelIdType, optional: false },
+      { name: "side", type: modelIdType, optional: false },
+      { name: "sideAlt", type: modelIdType, optional: false },
+      { name: "noSide", type: modelIdType, optional: false },
+      { name: "noSideAlt", type: modelIdType, optional: false }
+    ], jsonType),
     builtinFunction("randomVariants", [
       { name: "models", type: { kind: "List", elementType: jsonType }, optional: false },
       { name: "state", type: jsonType, optional: true }

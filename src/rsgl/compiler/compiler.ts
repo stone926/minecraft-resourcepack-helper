@@ -65,6 +65,7 @@ import {
   createCubeAllModel,
   createFenceBlockstate,
   createItemMapping,
+  createPaneBlockstate,
   createSlabBlockstate,
   createStairsBlockstate,
   createWallBlockstate
@@ -687,6 +688,8 @@ class RsglCompiler {
       this.pushUnit(createFenceBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "wall") {
       this.pushUnit(createWallBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
+    } else if (statement.sugarName.text === "pane") {
+      this.pushUnit(createPaneBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     }
   }
 
