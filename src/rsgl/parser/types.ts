@@ -458,6 +458,8 @@ export type ResourceStatementNode =
   | SectionStmtNode
   | VariantsSectionNode
   | MultipartSectionNode
+  | ItemRangeStmtNode
+  | ItemSelectStmtNode
   | VariantEntryNode
   | MultipartEntryNode
   | UseDeclNode
@@ -506,6 +508,40 @@ export interface MultipartEntryNode extends StatementNodeBase {
 }
 
 export type MultipartSectionStatementNode = MultipartEntryNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+
+export interface ItemOptionNode extends RsglNode {
+  kind: "ItemOption";
+  name: IdentifierNode;
+  value: ExprNode;
+}
+
+export interface ItemRangeFramesNode extends RsglNode {
+  kind: "ItemRangeFrames";
+  frames: ExprNode;
+  model: ExprNode;
+}
+
+export interface ItemRangeStmtNode extends StatementNodeBase {
+  kind: "ItemRangeStmt";
+  property: ExprNode;
+  options: ItemOptionNode[];
+  frames?: ItemRangeFramesNode;
+  fallback?: ExprNode;
+}
+
+export interface ItemSelectCaseNode extends RsglNode {
+  kind: "ItemSelectCase";
+  when: ExprNode;
+  model: ExprNode;
+}
+
+export interface ItemSelectStmtNode extends StatementNodeBase {
+  kind: "ItemSelectStmt";
+  property: ExprNode;
+  options: ItemOptionNode[];
+  cases: ItemSelectCaseNode[];
+  fallback?: ExprNode;
+}
 
 export interface RawJsonStmtNode extends StatementNodeBase {
   kind: "RawJsonStmt";

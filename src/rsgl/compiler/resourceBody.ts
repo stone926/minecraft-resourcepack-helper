@@ -14,6 +14,7 @@ import { createLoopBindings, createLoopContext } from "./looping";
 export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
   onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
+  onSpecialStatement?: (statement: ResourceStatementNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
 }
 
 export function resourceBodyToObject(
@@ -65,6 +66,11 @@ function applyResourceStatement(
     }
   } else if (statement.kind === "UseDecl") {
     const fragment = options.onUseFragment?.(statement, context);
+    if (fragment) {
+      mergeResourceObject(result, fragment);
+    }
+  } else {
+    const fragment = options.onSpecialStatement?.(statement, context);
     if (fragment) {
       mergeResourceObject(result, fragment);
     }

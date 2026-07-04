@@ -93,6 +93,26 @@ class ResolvedImportCallValidator {
       this.validateMultipartStatements(statement.entries);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
+    } else if (statement.kind === "ItemRangeStmt") {
+      this.validateExpression(statement.property);
+      statement.options.forEach(option => this.validateExpression(option.value));
+      if (statement.frames) {
+        this.validateExpression(statement.frames.frames);
+        this.validateExpression(statement.frames.model);
+      }
+      if (statement.fallback) {
+        this.validateExpression(statement.fallback);
+      }
+    } else if (statement.kind === "ItemSelectStmt") {
+      this.validateExpression(statement.property);
+      statement.options.forEach(option => this.validateExpression(option.value));
+      statement.cases.forEach(item => {
+        this.validateExpression(item.when);
+        this.validateExpression(item.model);
+      });
+      if (statement.fallback) {
+        this.validateExpression(statement.fallback);
+      }
     } else if (statement.kind === "ForStmt") {
       this.validateExpression(statement.iterable);
       this.validateBody(statement.body);

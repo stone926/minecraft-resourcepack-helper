@@ -75,6 +75,8 @@ export const rsglKeywords = new Set<string>([
   "raw_json",
   "override",
   "append",
+  "range",
+  "select",
   "else",
   "in",
   "true",

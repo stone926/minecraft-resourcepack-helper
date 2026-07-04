@@ -132,6 +132,34 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(fragment.body.statements.map(statement => statement.kind), ["PropertyStmt", "SectionStmt"]);
   });
 
+  it("parses item range and select statements", () => {
+    const module = parseRsgl([
+      "item compass {",
+      "  range property minecraft:compass target spawn wobble true {",
+      "    frames 0..2 model `minecraft:item/compass_${pad(index, 2)}`",
+      "    fallback minecraft:item/compass_00",
+      "  }",
+      "}",
+      "item potion {",
+      "  select property minecraft:potion_contents component minecraft:potion_contents {",
+      "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
+      "    fallback minecraft:item/potion",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const compass = module.statements[0];
+    const potion = module.statements[1];
+    assert.strictEqual(compass.kind, "ResourceDecl");
+    assert.strictEqual(potion.kind, "ResourceDecl");
+    if (compass.kind !== "ResourceDecl" || potion.kind !== "ResourceDecl") {
+      throw new Error("Expected item resource declarations.");
+    }
+    assert.deepStrictEqual(compass.body.statements.map(statement => statement.kind), ["ItemRangeStmt"]);
+    assert.deepStrictEqual(potion.body.statements.map(statement => statement.kind), ["ItemSelectStmt"]);
+  });
+
   it("parses overlay declarations", () => {
     const module = parseRsgl([
       "overlay \"future\" format [90, 0]..[91, 0] {",

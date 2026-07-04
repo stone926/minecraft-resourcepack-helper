@@ -58,7 +58,7 @@ import {
 import { createFileGlobLoader } from "./fileGlob";
 import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
-import { compileItemUseFragment } from "./itemFragments";
+import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
@@ -362,11 +362,7 @@ class RsglCompiler {
       this.error("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
       return null;
     }
-    const body = this.resourceBodyToObject(statement.body, context, {
-      onUseFragment: (useStatement, fragmentContext) =>
-        compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions())
-        ?? this.compileResourceBodyFragment(useStatement, fragmentContext, "item")
-    });
+    const body = this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions("item"));
     const model = typeof body.model === "string"
       ? { type: "minecraft:model", model: body.model }
       : body.model;
@@ -1165,18 +1161,28 @@ class RsglCompiler {
 
   private resourceBodyFragmentOptions(kind?: "item" | JsonResourceFragmentKind): ResourceBodyCompileOptions {
     return {
-      onUseFragment: (useStatement, fragmentContext) => this.compileResourceBodyFragment(useStatement, fragmentContext, kind)
+      onUseFragment: (useStatement, fragmentContext) => {
+        if (kind === "item") {
+          return compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions())
+            ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
+        }
+        if (kind) {
+          return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
+            onError: (code, message, range) => this.error(code, message, range)
+          })
+            ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
+        }
+        return this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
+      },
+      onSpecialStatement: (statement, fragmentContext) =>
+        kind === "item" && (statement.kind === "ItemRangeStmt" || statement.kind === "ItemSelectStmt")
+          ? compileItemSpecialStatement(statement, fragmentContext, this.itemFragmentOptions())
+          : undefined
     };
   }
 
   private jsonResourceFragmentOptions(kind: JsonResourceFragmentKind): ResourceBodyCompileOptions {
-    return {
-      onUseFragment: (useStatement, fragmentContext) =>
-        compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
-          onError: (code, message, range) => this.error(code, message, range)
-        })
-        ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind)
-    };
+    return this.resourceBodyFragmentOptions(kind);
   }
 
   private blockstateFragmentOptions(): RsglBlockstateFragmentOptions {

@@ -464,11 +464,97 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers item range and select statements", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item compass {",
+      "  range property minecraft:compass target spawn wobble true {",
+      "    frames 0..2 model `minecraft:item/compass_${pad(index, 2)}`",
+      "    fallback minecraft:item/compass_00",
+      "  }",
+      "}",
+      "item potion {",
+      "  select property minecraft:potion_contents component minecraft:potion_contents {",
+      "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
+      "    case \"minecraft:strong_healing\" -> minecraft:item/potion_strong_healing",
+      "    fallback minecraft:item/potion",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("compass.json"))?.content, {
+      model: {
+        type: "minecraft:range_dispatch",
+        property: "minecraft:compass",
+        target: "spawn",
+        wobble: true,
+        entries: [
+          { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
+          { threshold: 1, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } },
+          { threshold: 2, model: { type: "minecraft:model", model: "minecraft:item/compass_02" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/compass_00"
+        }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("potion.json"))?.content, {
+      model: {
+        type: "minecraft:select",
+        property: "minecraft:potion_contents",
+        component: "minecraft:potion_contents",
+        cases: [
+          { when: "minecraft:healing", model: { type: "minecraft:model", model: "minecraft:item/potion_healing" } },
+          { when: "minecraft:strong_healing", model: { type: "minecraft:model", model: "minecraft:item/potion_strong_healing" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/potion"
+        }
+      }
+    });
+  });
+
+  it("lowers item statements inside user fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "fragment compassModel(frames: Json = 0..1) {",
+      "  range property minecraft:compass target spawn {",
+      "    frames frames model `minecraft:item/compass_${pad(index, 2)}`",
+      "    fallback minecraft:item/compass_00",
+      "  }",
+      "}",
+      "item compass {",
+      "  use compassModel()",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      model: {
+        type: "minecraft:range_dispatch",
+        property: "minecraft:compass",
+        target: "spawn",
+        entries: [
+          { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
+          { threshold: 1, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/compass_00"
+        }
+      }
+    });
+  });
+
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
+      "fragment atlasSource(source: String, prefix: String) {",
+      "  use atlasDirectory(source: source, prefix: prefix)",
+      "}",
       "atlas minecraft:blocks {",
-      "  use atlasDirectory(source: \"block\", prefix: \"block/\")",
+      "  use atlasSource(\"block\", \"block/\")",
       "  use atlasDirectory(source: \"item\", prefix: \"item/\")",
       "}",
       "particles explosion {",

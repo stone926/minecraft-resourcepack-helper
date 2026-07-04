@@ -54,6 +54,9 @@ const resourceBodySectionKeywords = new Set([
   "raw"
 ]);
 
+const itemRangeOptionKeywords = ["component", "source", "target", "wobble", "scale"];
+const itemSelectOptionKeywords = ["component"];
+
 const binaryPrecedence = new Map<string, number>([
   ["||", 2],
   ["&&", 3],
@@ -754,6 +757,12 @@ class RsglParser extends ParserContext {
     if (token.text === "append") {
       return this.parseRawLikeStmt("AppendStmt");
     }
+    if (token.text === "range") {
+      return this.parseItemRangeStmt();
+    }
+    if (token.text === "select") {
+      return this.parseItemSelectStmt();
+    }
     if (resourceBodySectionKeywords.has(token.text)) {
       return this.parseSectionStmt();
     }
@@ -901,6 +910,122 @@ class RsglParser extends ParserContext {
       apply,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseItemRangeStmt(): ResourceStatementNode {
+    const start = this.advance();
+    const { property, options } = this.parseItemModelStatementHeader("range", itemRangeOptionKeywords);
+    let frames: ReturnType<typeof this.parseItemRangeFrames> | undefined;
+    let fallback: ExprNode | undefined;
+
+    if (this.matchText("{")) {
+      while (!this.isAtEnd() && this.current().text !== "}") {
+        if (this.current().text === "frames") {
+          frames = this.parseItemRangeFrames();
+        } else if (this.current().text === "fallback") {
+          this.advance();
+          fallback = this.parseExpression({ stopTexts: [] });
+        } else {
+          this.addDiagnosticAtCurrent("rsgl.unexpectedItemRangeStatement", "Expected 'frames' or 'fallback' in item range body.");
+          this.recoverToLineEnd();
+        }
+      }
+      this.expectText("}", "Expected '}' after item range body.");
+    } else {
+      this.addDiagnosticAtCurrent("rsgl.expectedItemRangeBody", "Expected item range body.");
+    }
+
+    return {
+      kind: "ItemRangeStmt",
+      keyword: start.text,
+      property,
+      options,
+      frames,
+      fallback,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemRangeFrames() {
+    const start = this.advance();
+    const frames = this.parseExpression({ stopTexts: ["model"] });
+    this.expectText("model", "Expected 'model' in item range frames clause.");
+    const model = this.parseExpression({ stopTexts: [] });
+    return {
+      kind: "ItemRangeFrames" as const,
+      frames,
+      model,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemSelectStmt(): ResourceStatementNode {
+    const start = this.advance();
+    const { property, options } = this.parseItemModelStatementHeader("select", itemSelectOptionKeywords);
+    const cases: ReturnType<typeof this.parseItemSelectCase>[] = [];
+    let fallback: ExprNode | undefined;
+
+    if (this.matchText("{")) {
+      while (!this.isAtEnd() && this.current().text !== "}") {
+        if (this.current().text === "case") {
+          cases.push(this.parseItemSelectCase());
+        } else if (this.current().text === "fallback") {
+          this.advance();
+          fallback = this.parseExpression({ stopTexts: [] });
+        } else {
+          this.addDiagnosticAtCurrent("rsgl.unexpectedItemSelectStatement", "Expected 'case' or 'fallback' in item select body.");
+          this.recoverToLineEnd();
+        }
+      }
+      this.expectText("}", "Expected '}' after item select body.");
+    } else {
+      this.addDiagnosticAtCurrent("rsgl.expectedItemSelectBody", "Expected item select body.");
+    }
+
+    return {
+      kind: "ItemSelectStmt",
+      keyword: start.text,
+      property,
+      options,
+      cases,
+      fallback,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemSelectCase() {
+    const start = this.advance();
+    const when = this.parseExpression({ stopTexts: ["->"] });
+    this.expectText("->", "Expected '->' in item select case.");
+    const model = this.parseExpression({ stopTexts: [] });
+    return {
+      kind: "ItemSelectCase" as const,
+      when,
+      model,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemModelStatementHeader(owner: "range" | "select", optionKeywords: string[]) {
+    this.expectText("property", `Expected 'property' in item ${owner} statement.`);
+    const property = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
+    const options = [];
+    while (!this.isAtEnd() && this.current().text !== "{") {
+      const start = this.current();
+      const name = this.parseIdentifier(`Expected item ${owner} option name.`);
+      if (!name) {
+        this.recoverToLineEnd();
+        continue;
+      }
+      const value = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
+      options.push({
+        kind: "ItemOption" as const,
+        name,
+        value,
+        ...this.nodeRanges(start, this.previousOr(start))
+      });
+    }
+    return { property, options };
   }
 
   protected parseExpression(options: ExpressionOptions = {}, minPrecedence = 0): ExprNode {

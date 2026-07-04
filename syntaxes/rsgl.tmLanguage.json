@@ -102,7 +102,7 @@
       "patterns": [
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|range|select)\\b"
         },
         {
           "name": "storage.type.rsgl",
@@ -122,7 +122,7 @@
       "patterns": [
         {
           "name": "support.function.rsgl",
-          "match": "\\b(?:cubeAll|itemGenerated|randomVariants|raw_json|product|seq|pad|yaw|glob|model_path|texture_path)\\b"
+          "match": "\\b(?:cubeAll|itemGenerated|itemRangeFrames|itemSelectCases|randomVariants|raw_json|product|seq|pad|yaw|glob|model_path|texture_path)\\b"
         },
         {
           "name": "support.constant.rsgl",
@@ -134,7 +134,7 @@
       "patterns": [
         {
           "name": "variable.other.property.rsgl",
-          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|model|x|y|z|uvlock|weight|texture|generate|double)\\b"
+          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|property|frames|source|target|wobble|scale|component|model|x|y|z|uvlock|weight|texture|generate|double)\\b"
         }
       ]
     },

@@ -298,6 +298,26 @@ class RsglBinder {
       this.checkMultipartStatements(statement.entries, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
+    } else if (statement.kind === "ItemRangeStmt") {
+      this.checkExpression(statement.property, scope);
+      statement.options.forEach(option => this.checkExpression(option.value, scope));
+      if (statement.frames) {
+        this.checkExpression(statement.frames.frames, scope);
+        this.checkExpression(statement.frames.model, scope);
+      }
+      if (statement.fallback) {
+        this.checkExpression(statement.fallback, scope);
+      }
+    } else if (statement.kind === "ItemSelectStmt") {
+      this.checkExpression(statement.property, scope);
+      statement.options.forEach(option => this.checkExpression(option.value, scope));
+      statement.cases.forEach(item => {
+        this.checkExpression(item.when, scope);
+        this.checkExpression(item.model, scope);
+      });
+      if (statement.fallback) {
+        this.checkExpression(statement.fallback, scope);
+      }
     } else if (statement.kind === "ForStmt") {
       this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
     } else if (statement.kind === "IfStmt") {
