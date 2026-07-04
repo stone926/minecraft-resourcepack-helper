@@ -2223,6 +2223,67 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("maps imported resource body fragment fields to definition files", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "namespace app",
+          "import { modelFields, textureLayer } from \"./fragments.rsgl\"",
+          "model block mapped {",
+          "  use modelFields(minecraft:block/cube_all)",
+          "  textures {",
+          "    use textureLayer(\"layer/zero\", minecraft:block/stone)",
+          "  }",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "namespace library",
+          "fragment modelFields(parentModel: ModelId) {",
+          "  parent parentModel",
+          "}",
+          "fragment textureLayer(key: String, texture: TextureId) {",
+          "  raw_json { [key]: texture }",
+          "}",
+          "export { modelFields, textureLayer }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        ["layer/zero"]: "minecraft:block/stone"
+      }
+    });
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/parent",
+      "/textures",
+      "/textures/layer~1zero"
+    ]);
+
+    const parentMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/parent");
+    assert.strictEqual(parentMapping?.sourceFile, fragmentsFile);
+    assert.strictEqual(parentMapping?.reason, "template");
+    assert.deepStrictEqual(parentMapping?.expansionStack.map(frame => frame.label), ["fragment modelFields"]);
+
+    const texturesMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures");
+    assert.strictEqual(texturesMapping?.sourceFile, mainFile);
+    assert.strictEqual(texturesMapping?.reason, "direct");
+
+    const layerMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/layer~1zero");
+    assert.strictEqual(layerMapping?.sourceFile, fragmentsFile);
+    assert.strictEqual(layerMapping?.reason, "template");
+    assert.deepStrictEqual(layerMapping?.expansionStack.map(frame => frame.label), ["fragment textureLayer"]);
+  });
+
   it("preserves imported fragment environments inside resource body loops", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");

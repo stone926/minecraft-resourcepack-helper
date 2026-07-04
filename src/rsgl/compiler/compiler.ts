@@ -71,7 +71,7 @@ import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./json
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
 import { createFileRawJsonLoader } from "./rawJson";
-import { ResourceBodyCompileOptions, resourceBodyToObject } from "./resourceBody";
+import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
 import {
@@ -881,11 +881,20 @@ class RsglCompiler {
     useStatement: Extract<ResourceStatementNode, { kind: "UseDecl" }>,
     context: RsglCompileContext,
     kind?: "item" | JsonResourceFragmentKind
-  ): Record<string, JsonValue> | undefined {
+  ): ResourceBodyFragment | undefined {
     const expansion = this.createFragmentExpansion(useStatement, context);
-    return expansion
-      ? this.resourceBodyToObject(expansion.definition.node.body, expansion.context, this.resourceBodyFragmentOptions(kind))
-      : undefined;
+    if (!expansion) {
+      return undefined;
+    }
+    const body = this.resourceBodyToObjectWithRawMappings(
+      expansion.definition.node.body,
+      expansion.context,
+      this.resourceBodyFragmentOptions(kind)
+    );
+    return {
+      content: body.content,
+      mappings: body.mappings
+    };
   }
 
   private compileBlockstateUse(
@@ -1196,12 +1205,26 @@ class RsglCompiler {
     context: RsglCompileContext,
     options: ResourceBodyCompileOptions = {}
   ): { content: Record<string, JsonValue>; mappings: RsglMapping[] } {
-    const mappings: RsglMapping[] = [];
+    const bodyWithRawMappings = this.resourceBodyToObjectWithRawMappings(body, context, options);
+    return {
+      content: bodyWithRawMappings.content,
+      mappings: bodyWithRawMappings.mappings.map(mapping =>
+        this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context)
+      )
+    };
+  }
+
+  private resourceBodyToObjectWithRawMappings(
+    body: ResourceDeclNode["body"],
+    context: RsglCompileContext,
+    options: ResourceBodyCompileOptions = {}
+  ): { content: Record<string, JsonValue>; mappings: ResourceBodyMapping[] } {
+    const mappings: ResourceBodyMapping[] = [];
     const content = resourceBodyToObject(body, context, {
       ...options,
       onError: (code, message, range) => this.error(code, message, range),
       onMapping: mapping => {
-        mappings.push(this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context));
+        mappings.push(mapping);
         options.onMapping?.(mapping);
       }
     });
@@ -1218,13 +1241,13 @@ class RsglCompiler {
     return {
       onUseFragment: (useStatement, fragmentContext) => {
         if (kind === "item") {
-          return compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions())
+          return createResourceBodyFragment(compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions()))
             ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
         }
         if (kind) {
-          return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
+          return createResourceBodyFragment(compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
             onError: (code, message, range) => this.error(code, message, range)
-          })
+          }))
             ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
         }
         return this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
@@ -1353,6 +1376,10 @@ function prefixSourceMappings(mappings: RsglMapping[], pathPrefix: string): Rsgl
     ...mapping,
     generatedPath: mapping.generatedPath ? `${pathPrefix}${mapping.generatedPath}` : pathPrefix
   }));
+}
+
+function createResourceBodyFragment(content: Record<string, JsonValue> | undefined): ResourceBodyFragment | undefined {
+  return content ? { content } : undefined;
 }
 
 function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {

@@ -14,9 +14,14 @@ import { createLoopBindings, createLoopContext } from "./looping";
 
 export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
-  onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
+  onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => ResourceBodyFragment | undefined;
   onSpecialStatement?: (statement: ResourceStatementNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
   onMapping?: (mapping: ResourceBodyMapping) => void;
+}
+
+export interface ResourceBodyFragment {
+  content: Record<string, JsonValue>;
+  mappings?: ResourceBodyMapping[];
 }
 
 export interface ResourceBodyMapping {
@@ -91,8 +96,8 @@ function applyResourceStatement(
   } else if (statement.kind === "UseDecl") {
     const fragment = options.onUseFragment?.(statement, context);
     if (fragment) {
-      mergeResourceObject(result, fragment);
-      emitObjectMappings(options, path, fragment, statement.range, context);
+      mergeResourceObject(result, fragment.content);
+      emitFragmentMappings(options, path, fragment, statement.range, context);
     }
   } else {
     const fragment = options.onSpecialStatement?.(statement, context);
@@ -101,6 +106,27 @@ function applyResourceStatement(
       emitObjectMappings(options, path, fragment, statement.range, context);
     }
   }
+}
+
+function emitFragmentMappings(
+  options: ResourceBodyCompileOptions,
+  path: string,
+  fragment: ResourceBodyFragment,
+  fallbackRange: TextRange,
+  fallbackContext: EvaluationContext
+): void {
+  if (fragment.mappings?.length) {
+    for (const mapping of fragment.mappings) {
+      emitMapping(
+        options,
+        joinGeneratedPath(path, mapping.generatedPath),
+        mapping.sourceRange,
+        mapping.context
+      );
+    }
+    return;
+  }
+  emitObjectMappings(options, path, fragment.content, fallbackRange, fallbackContext);
 }
 
 function applyForStatement(
@@ -148,6 +174,16 @@ function emitMapping(
 
 function appendPath(path: string, segment: string): string {
   return `${path}/${escapeJsonPointerSegment(segment)}`;
+}
+
+function joinGeneratedPath(path: string, generatedPath: string): string {
+  if (!path) {
+    return generatedPath;
+  }
+  if (!generatedPath) {
+    return path;
+  }
+  return `${path}${generatedPath.startsWith("/") ? generatedPath : `/${generatedPath}`}`;
 }
 
 function escapeJsonPointerSegment(segment: string): string {
