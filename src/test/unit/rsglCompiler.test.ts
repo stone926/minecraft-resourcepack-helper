@@ -2358,10 +2358,16 @@ describe("RSGL compiler", () => {
         fileName: mainFile,
         module: parseRsgl([
           "namespace app",
-          "import { lampFacing } from \"./fragments.rsgl\"",
+          "import { connectedPane, lampFacing } from \"./fragments.rsgl\"",
           "blockstate lamp {",
           "  variants {",
           "    use lampFacing()",
+          "  }",
+          "}",
+          "blockstate pane {",
+          "  multipart {",
+          "    apply { model: minecraft:block/pane_post }",
+          "    use connectedPane()",
           "  }",
           "}"
         ].join("\n"))
@@ -2376,20 +2382,61 @@ describe("RSGL compiler", () => {
           "    { facing: north } -> { model: modelId }",
           "  }",
           "}",
-          "export { lampFacing }"
+          "fragment connectedPane(side: ModelId = block/pane_side) {",
+          "  multipart {",
+          "    for facing in [north, east] {",
+          "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
+          "    }",
+          "  }",
+          "}",
+          "export { connectedPane, lampFacing }"
         ].join("\n"))
       }
     ], { entryFileName: mainFile });
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
-      "assets/app/blockstates/lamp.json"
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/app/blockstates/lamp.json",
+      "assets/app/blockstates/pane.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+
+    const lamp = result.units.find(unit => unit.outputPath.endsWith("lamp.json"));
+    assert.deepStrictEqual(lamp?.content, {
       variants: {
         ["facing=north"]: { model: "library:block/lamp" }
       }
     });
+    assert.deepStrictEqual(lamp?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/variants",
+      "/variants/facing=north"
+    ]);
+    const lampVariant = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north");
+    assert.strictEqual(lampVariant?.sourceFile, fragmentsFile);
+    assert.strictEqual(lampVariant?.reason, "template");
+    assert.deepStrictEqual(lampVariant?.expansionStack.map(frame => frame.label), ["fragment lampFacing"]);
+
+    const pane = result.units.find(unit => unit.outputPath.endsWith("pane.json"));
+    assert.deepStrictEqual(pane?.content, {
+      multipart: [
+        { apply: { model: "minecraft:block/pane_post" } },
+        { apply: { model: "library:block/pane_side", y: 0 }, when: { north: true } },
+        { apply: { model: "library:block/pane_side", y: 90 }, when: { east: true } }
+      ]
+    });
+    assert.deepStrictEqual(pane?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/multipart",
+      "/multipart/0",
+      "/multipart/1",
+      "/multipart/2"
+    ]);
+    const paneFragmentMappings = pane?.sourceMap.mappings.filter(mapping =>
+      mapping.generatedPath === "/multipart/1" || mapping.generatedPath === "/multipart/2"
+    ) ?? [];
+    assert.deepStrictEqual(paneFragmentMappings.map(mapping => mapping.sourceFile), [fragmentsFile, fragmentsFile]);
+    assert.deepStrictEqual(paneFragmentMappings.map(mapping => mapping.reason), ["template", "template"]);
+    assert.ok(paneFragmentMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "fragment connectedPane")));
   });
 
   it("expands imported templates with their definition-file closure", () => {

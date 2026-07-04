@@ -964,6 +964,7 @@ class RsglCompiler {
     if (Array.isArray(content.multipart)) {
       fragment.multipart = content.multipart;
     }
+    fragment.mappings = body.mappings;
     return fragment;
   }
 
@@ -973,6 +974,9 @@ class RsglCompiler {
     context: RsglCompileContext,
     multipartOffset: number
   ): RsglMapping[] {
+    if (fragment.mappings?.length) {
+      return offsetMultipartMappings(fragment.mappings, multipartOffset);
+    }
     return [
       ...this.blockstateFragmentVariantMappings(fragment, sourceRange, context, true),
       ...this.blockstateFragmentMultipartMappings(fragment, sourceRange, context, multipartOffset, true)
@@ -985,6 +989,9 @@ class RsglCompiler {
     context: RsglCompileContext,
     includeSection = false
   ): RsglMapping[] {
+    if (fragment.mappings?.length) {
+      return fragment.mappings.filter(mapping => isVariantEntryPath(mapping.generatedPath));
+    }
     if (!fragment.variants) {
       return [];
     }
@@ -1002,6 +1009,9 @@ class RsglCompiler {
     offset: number,
     includeSection = false
   ): RsglMapping[] {
+    if (fragment.mappings?.length) {
+      return offsetMultipartMappings(fragment.mappings.filter(mapping => isMultipartEntryPath(mapping.generatedPath)), offset);
+    }
     if (!fragment.multipart) {
       return [];
     }
@@ -1520,6 +1530,14 @@ function offsetMultipartPath(pathValue: string, offset: number): string {
     return pathValue;
   }
   return `/multipart/${Number(match[1]) + offset}${match[2] ?? ""}`;
+}
+
+function isVariantEntryPath(pathValue: string): boolean {
+  return pathValue.startsWith("/variants/");
+}
+
+function isMultipartEntryPath(pathValue: string): boolean {
+  return /^\/multipart\/\d+(?:\/|$)/.test(pathValue);
 }
 
 function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {

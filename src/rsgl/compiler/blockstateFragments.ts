@@ -9,7 +9,7 @@ import {
   evaluateExpression
 } from "./evaluate";
 import { blockstateVariantKey } from "./blockstateKeys";
-import { JsonValue } from "./ir";
+import { JsonValue, RsglMapping } from "./ir";
 import {
   createAxisRotatedBlockstateContent,
   createDoorBlockstateContent,
@@ -26,6 +26,7 @@ import {
 export interface RsglBlockstateFragment {
   variants?: Record<string, JsonValue>;
   multipart?: JsonValue[];
+  mappings?: RsglMapping[];
 }
 
 export interface RsglBlockstateValueFragment {
