@@ -4,6 +4,8 @@ import {
   BlockNode,
   ExprNode,
   IdentifierNode,
+  MultipartBodyNode,
+  MultipartSectionStatementNode,
   ObjectExprNode,
   ObjectPropertyNode,
   ResourceBodyNode,
@@ -14,7 +16,9 @@ import {
   RsglNode,
   SugarDeclNode,
   TemplateDeclNode,
-  TopLevelStatementNode
+  TopLevelStatementNode,
+  VariantBodyNode,
+  VariantSectionStatementNode
 } from "../parser";
 import { createBuiltinSymbols } from "./builtins";
 import { validateResolvedImportCalls } from "./importValidation";
@@ -46,6 +50,8 @@ import {
 
 const resourceLocationPattern = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
 const resourcePathPattern = /^[a-z0-9_./-]+$/;
+
+type CheckableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
 export function bindRsglModule(module: RsglModule, options: RsglBindOptions = {}): RsglSemanticModel {
   const binder = new RsglBinder(module, options.fileName ?? "<anonymous>", options);
@@ -217,12 +223,16 @@ class RsglBinder {
     }
   }
 
-  private checkBody(body: ResourceBodyNode | BlockNode, scope: RsglScope): void {
+  private checkBody(body: CheckableBody, scope: RsglScope): void {
     if (body.kind === "ResourceBody") {
       this.checkResourceBody(body, scope);
-    } else {
+    } else if (body.kind === "Block") {
       this.predeclareTopLevel(body.statements, scope);
       this.checkTopLevelStatements(body.statements, scope);
+    } else if (body.kind === "VariantBody") {
+      this.checkVariantBody(body, scope);
+    } else {
+      this.checkMultipartBody(body, scope);
     }
   }
 
@@ -244,17 +254,9 @@ class RsglBinder {
         this.checkResourceBody(statement.body, createChildScope(scope, "block"));
       }
     } else if (statement.kind === "VariantsSection") {
-      for (const entry of statement.entries) {
-        this.checkExpression(entry.state, scope);
-        this.checkExpression(entry.value, scope);
-      }
+      this.checkVariantStatements(statement.entries, scope);
     } else if (statement.kind === "MultipartSection") {
-      for (const entry of statement.entries) {
-        if (entry.when) {
-          this.checkExpression(entry.when, scope);
-        }
-        this.checkExpression(entry.apply, scope);
-      }
+      this.checkMultipartStatements(statement.entries, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
@@ -273,7 +275,7 @@ class RsglBinder {
   private checkForStatement(
     bindings: IdentifierNode[],
     iterable: ExprNode,
-    body: ResourceBodyNode | BlockNode,
+    body: CheckableBody,
     scope: RsglScope
   ): void {
     this.checkExpression(iterable, scope);
@@ -282,6 +284,58 @@ class RsglBinder {
       this.defineIdentifier(loopScope, binding, "variable", anyType, binding);
     }
     this.checkBody(body, loopScope);
+  }
+
+  private checkVariantBody(body: VariantBodyNode, scope: RsglScope): void {
+    this.checkVariantStatements(body.statements, scope);
+  }
+
+  private checkVariantStatements(statements: VariantSectionStatementNode[], scope: RsglScope): void {
+    for (const statement of statements) {
+      this.checkVariantStatement(statement, scope);
+    }
+  }
+
+  private checkVariantStatement(statement: VariantSectionStatementNode, scope: RsglScope): void {
+    if (statement.kind === "VariantEntry") {
+      this.checkExpression(statement.state, scope);
+      this.checkExpression(statement.value, scope);
+    } else if (statement.kind === "ForStmt") {
+      this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
+    } else if (statement.kind === "IfStmt") {
+      this.checkExpression(statement.condition, scope);
+      this.checkBody(statement.thenBody, createChildScope(scope, "block"));
+      if (statement.elseBody) {
+        this.checkBody(statement.elseBody, createChildScope(scope, "block"));
+      }
+    }
+  }
+
+  private checkMultipartBody(body: MultipartBodyNode, scope: RsglScope): void {
+    this.checkMultipartStatements(body.statements, scope);
+  }
+
+  private checkMultipartStatements(statements: MultipartSectionStatementNode[], scope: RsglScope): void {
+    for (const statement of statements) {
+      this.checkMultipartStatement(statement, scope);
+    }
+  }
+
+  private checkMultipartStatement(statement: MultipartSectionStatementNode, scope: RsglScope): void {
+    if (statement.kind === "MultipartEntry") {
+      if (statement.when) {
+        this.checkExpression(statement.when, scope);
+      }
+      this.checkExpression(statement.apply, scope);
+    } else if (statement.kind === "ForStmt") {
+      this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
+    } else if (statement.kind === "IfStmt") {
+      this.checkExpression(statement.condition, scope);
+      this.checkBody(statement.thenBody, createChildScope(scope, "block"));
+      if (statement.elseBody) {
+        this.checkBody(statement.elseBody, createChildScope(scope, "block"));
+      }
+    }
   }
 
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {

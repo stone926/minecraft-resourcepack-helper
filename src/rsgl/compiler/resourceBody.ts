@@ -3,12 +3,12 @@ import {
   ResourceStatementNode
 } from "../parser";
 import {
-  childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
   evaluateExpression
 } from "./evaluate";
 import { JsonValue } from "./ir";
+import { createLoopBindings, createLoopContext } from "./looping";
 
 export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
@@ -75,33 +75,9 @@ function applyForStatement(
   }
   for (const value of iterable) {
     const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-    const loopReason = context.mappingReason === "direct" || !context.mappingReason ? "loop" : context.mappingReason;
-    const loopContext = childEvaluationContext(context, bindings, {
-      mappingReason: loopReason,
-      expansionStack: [
-        ...(context.expansionStack ?? []),
-        { label: "for", sourceRange: statement.range }
-      ]
-    });
+    const loopContext = createLoopContext(context, bindings, statement.range);
     mergeObject(result, resourceBodyToObject(statement.body, loopContext, options));
   }
-}
-
-function createLoopBindings(names: string[], value: EvaluationValue): Record<string, EvaluationValue> {
-  const bindings: Record<string, EvaluationValue> = {};
-  if (names.length <= 1) {
-    if (names[0]) {
-      bindings[names[0]] = value;
-    }
-    return bindings;
-  }
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const entries = Object.entries(value as Record<string, JsonValue>);
-    names.forEach((name, index) => {
-      bindings[name] = entries[index]?.[1];
-    });
-  }
-  return bindings;
 }
 
 function mergeObject(target: Record<string, JsonValue>, source: Record<string, JsonValue>): void {

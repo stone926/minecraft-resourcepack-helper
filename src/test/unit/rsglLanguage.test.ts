@@ -109,9 +109,14 @@ describe("RSGL language", () => {
     assert.strictEqual(blockstate.kind, "ResourceDecl");
     const variants = blockstate.body.statements[0];
     assert.strictEqual(variants.kind, "VariantsSection");
-    assert.strictEqual(variants.entries[0].state.kind, "StateKeySugar");
-    assert.strictEqual(variants.entries[0].value.kind, "ModelApplySugar");
-    assert.strictEqual(variants.entries[0].value.properties.length, 2);
+    const entry = variants.entries[0];
+    assert.strictEqual(entry.kind, "VariantEntry");
+    if (entry.kind !== "VariantEntry") {
+      throw new Error("Expected variant entry.");
+    }
+    assert.strictEqual(entry.state.kind, "StateKeySugar");
+    assert.strictEqual(entry.value.kind, "ModelApplySugar");
+    assert.strictEqual(entry.value.properties.length, 2);
   });
 
   it("parses multipart entries with structured when/apply nodes", () => {
@@ -130,9 +135,58 @@ describe("RSGL language", () => {
     const multipart = blockstate.body.statements[0];
     assert.strictEqual(multipart.kind, "MultipartSection");
     assert.strictEqual(multipart.entries.length, 2);
-    assert.strictEqual(multipart.entries[0].when, undefined);
-    assert.strictEqual(multipart.entries[1].when?.kind, "ObjectExpr");
-    assert.strictEqual(multipart.entries[1].apply.kind, "ObjectExpr");
+    const firstEntry = multipart.entries[0];
+    const secondEntry = multipart.entries[1];
+    assert.strictEqual(firstEntry.kind, "MultipartEntry");
+    assert.strictEqual(secondEntry.kind, "MultipartEntry");
+    if (firstEntry.kind !== "MultipartEntry" || secondEntry.kind !== "MultipartEntry") {
+      throw new Error("Expected multipart entries.");
+    }
+    assert.strictEqual(firstEntry.when, undefined);
+    assert.strictEqual(secondEntry.when?.kind, "ObjectExpr");
+    assert.strictEqual(secondEntry.apply.kind, "ObjectExpr");
+  });
+
+  it("parses control flow inside blockstate sections", () => {
+    const module = parseRsgl([
+      "blockstate minecraft:lamp {",
+      "  variants {",
+      "    for state in product({ facing: [north, east], powered: [false, true] }) {",
+      "      [facing=state.facing powered=state.powered] -> { model: `minecraft:block/lamp_${state.facing}` }",
+      "    }",
+      "  }",
+      "}",
+      "blockstate minecraft:fence {",
+      "  multipart {",
+      "    if true {",
+      "      apply { model: minecraft:block/fence_post }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const lamp = module.statements[0];
+    assert.strictEqual(lamp.kind, "ResourceDecl");
+    const variants = lamp.body.statements[0];
+    assert.strictEqual(variants.kind, "VariantsSection");
+    const forEntry = variants.entries[0];
+    assert.strictEqual(forEntry.kind, "ForStmt");
+    if (forEntry.kind !== "ForStmt") {
+      throw new Error("Expected for statement.");
+    }
+    assert.strictEqual(forEntry.body.kind, "VariantBody");
+
+    const fence = module.statements[1];
+    assert.strictEqual(fence.kind, "ResourceDecl");
+    const multipart = fence.body.statements[0];
+    assert.strictEqual(multipart.kind, "MultipartSection");
+    const ifEntry = multipart.entries[0];
+    assert.strictEqual(ifEntry.kind, "IfStmt");
+    if (ifEntry.kind !== "IfStmt") {
+      throw new Error("Expected if statement.");
+    }
+    assert.strictEqual(ifEntry.thenBody.kind, "MultipartBody");
   });
 
   it("recovers from syntax errors and reports actionable diagnostics", () => {

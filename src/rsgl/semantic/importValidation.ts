@@ -2,11 +2,15 @@ import {
   ArgumentNode,
   BlockNode,
   ExprNode,
+  MultipartBodyNode,
+  MultipartSectionStatementNode,
   ObjectPropertyNode,
   ResourceBodyNode,
   ResourceStatementNode,
   RsglDiagnostic,
-  TopLevelStatementNode
+  TopLevelStatementNode,
+  VariantBodyNode,
+  VariantSectionStatementNode
 } from "../parser";
 import {
   anyType,
@@ -20,6 +24,8 @@ import {
   unknownType
 } from "./types";
 import { formatType, isAssignable } from "./typeRelations";
+
+type ValidatableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
 export function validateResolvedImportCalls(model: RsglSemanticModel): RsglDiagnostic[] {
   const validator = new ResolvedImportCallValidator(model);
@@ -79,17 +85,9 @@ class ResolvedImportCallValidator {
         this.validateBody(statement.body);
       }
     } else if (statement.kind === "VariantsSection") {
-      statement.entries.forEach(entry => {
-        this.validateExpression(entry.state);
-        this.validateExpression(entry.value);
-      });
+      this.validateVariantStatements(statement.entries);
     } else if (statement.kind === "MultipartSection") {
-      statement.entries.forEach(entry => {
-        if (entry.when) {
-          this.validateExpression(entry.when);
-        }
-        this.validateExpression(entry.apply);
-      });
+      this.validateMultipartStatements(statement.entries);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
@@ -126,11 +124,65 @@ class ResolvedImportCallValidator {
     }
   }
 
-  private validateBody(body: ResourceBodyNode | BlockNode): void {
+  private validateBody(body: ValidatableBody): void {
     if (body.kind === "Block") {
       body.statements.forEach(statement => this.validateTopLevelStatement(statement));
-    } else {
+    } else if (body.kind === "ResourceBody") {
       body.statements.forEach(statement => this.validateResourceStatement(statement));
+    } else if (body.kind === "VariantBody") {
+      this.validateVariantBody(body);
+    } else {
+      this.validateMultipartBody(body);
+    }
+  }
+
+  private validateVariantBody(body: VariantBodyNode): void {
+    this.validateVariantStatements(body.statements);
+  }
+
+  private validateVariantStatements(statements: VariantSectionStatementNode[]): void {
+    statements.forEach(statement => this.validateVariantStatement(statement));
+  }
+
+  private validateVariantStatement(statement: VariantSectionStatementNode): void {
+    if (statement.kind === "VariantEntry") {
+      this.validateExpression(statement.state);
+      this.validateExpression(statement.value);
+    } else if (statement.kind === "ForStmt") {
+      this.validateExpression(statement.iterable);
+      this.validateBody(statement.body);
+    } else if (statement.kind === "IfStmt") {
+      this.validateExpression(statement.condition);
+      this.validateBody(statement.thenBody);
+      if (statement.elseBody) {
+        this.validateBody(statement.elseBody);
+      }
+    }
+  }
+
+  private validateMultipartBody(body: MultipartBodyNode): void {
+    this.validateMultipartStatements(body.statements);
+  }
+
+  private validateMultipartStatements(statements: MultipartSectionStatementNode[]): void {
+    statements.forEach(statement => this.validateMultipartStatement(statement));
+  }
+
+  private validateMultipartStatement(statement: MultipartSectionStatementNode): void {
+    if (statement.kind === "MultipartEntry") {
+      if (statement.when) {
+        this.validateExpression(statement.when);
+      }
+      this.validateExpression(statement.apply);
+    } else if (statement.kind === "ForStmt") {
+      this.validateExpression(statement.iterable);
+      this.validateBody(statement.body);
+    } else if (statement.kind === "IfStmt") {
+      this.validateExpression(statement.condition);
+      this.validateBody(statement.thenBody);
+      if (statement.elseBody) {
+        this.validateBody(statement.elseBody);
+      }
     }
   }
 

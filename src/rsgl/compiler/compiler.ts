@@ -2,12 +2,17 @@ import * as path from "node:path";
 import {
   BlockNode,
   ExprNode,
+  ForStmtNode,
   LetDeclNode,
+  MultipartBodyNode,
+  MultipartSectionStatementNode,
   ResourceDeclNode,
   RsglModule,
   SugarDeclNode,
   TemplateDeclNode,
-  TopLevelStatementNode
+  TopLevelStatementNode,
+  VariantBodyNode,
+  VariantSectionStatementNode
 } from "../parser";
 import {
   bindRsglModule,
@@ -23,6 +28,7 @@ import {
   evaluateExpression
 } from "./evaluate";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
+import { createLoopBindings, createLoopContext } from "./looping";
 import { findResourceStatement, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
@@ -157,9 +163,13 @@ class RsglCompiler {
       this.compileForStmt(statement, context);
     } else if (statement.kind === "IfStmt") {
       if (evaluateExpression(statement.condition, context)) {
-        this.compileBlock(statement.thenBody as BlockNode, context);
+        if (statement.thenBody.kind === "Block") {
+          this.compileBlock(statement.thenBody, context);
+        }
       } else if (statement.elseBody) {
-        this.compileBlock(statement.elseBody as BlockNode, context);
+        if (statement.elseBody.kind === "Block") {
+          this.compileBlock(statement.elseBody, context);
+        }
       }
     }
   }
@@ -233,23 +243,10 @@ class RsglCompiler {
     const multipart = findResourceStatement(statement.body, "MultipartSection");
     const content: Record<string, JsonValue> = {};
     if (variants?.kind === "VariantsSection") {
-      const entries: Record<string, JsonValue> = {};
-      for (const entry of variants.entries) {
-        const state = this.variantKey(normalizeJsonValue(evaluateExpression(entry.state, context)));
-        entries[state] = normalizeJsonValue(evaluateExpression(entry.value, context));
-      }
-      content.variants = entries;
+      content.variants = this.compileVariantEntries(variants.entries, context);
     }
     if (multipart?.kind === "MultipartSection") {
-      content.multipart = multipart.entries.map(entry => {
-        const value: Record<string, JsonValue> = {
-          apply: normalizeJsonValue(evaluateExpression(entry.apply, context))
-        };
-        if (entry.when) {
-          value.when = normalizeJsonValue(evaluateExpression(entry.when, context));
-        }
-        return value;
-      });
+      content.multipart = this.compileMultipartEntries(multipart.entries, context);
     }
     const outputPath = resourceOutputPath("blockstate", id);
     return {
@@ -260,6 +257,111 @@ class RsglCompiler {
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
+  }
+
+  private compileVariantEntries(
+    statements: VariantSectionStatementNode[],
+    context: EvaluationContext
+  ): Record<string, JsonValue> {
+    const entries: Record<string, JsonValue> = {};
+    for (const statement of statements) {
+      this.compileVariantStatement(statement, context, entries);
+    }
+    return entries;
+  }
+
+  private compileVariantBody(
+    body: VariantBodyNode,
+    context: EvaluationContext,
+    entries: Record<string, JsonValue>
+  ): void {
+    for (const statement of body.statements) {
+      this.compileVariantStatement(statement, context, entries);
+    }
+  }
+
+  private compileVariantStatement(
+    statement: VariantSectionStatementNode,
+    context: EvaluationContext,
+    entries: Record<string, JsonValue>
+  ): void {
+    if (statement.kind === "VariantEntry") {
+      const state = this.variantKey(normalizeJsonValue(evaluateExpression(statement.state, context)));
+      entries[state] = normalizeJsonValue(evaluateExpression(statement.value, context));
+    } else if (statement.kind === "ForStmt") {
+      const iterable = evaluateExpression(statement.iterable, context);
+      if (!Array.isArray(iterable)) {
+        this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+        return;
+      }
+      if (statement.body.kind !== "VariantBody") {
+        return;
+      }
+      for (const value of iterable) {
+        const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
+        this.compileVariantBody(statement.body, createLoopContext(context, bindings, statement.range), entries);
+      }
+    } else if (statement.kind === "IfStmt") {
+      const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
+      if (body?.kind === "VariantBody") {
+        this.compileVariantBody(body, context, entries);
+      }
+    }
+  }
+
+  private compileMultipartEntries(
+    statements: MultipartSectionStatementNode[],
+    context: EvaluationContext
+  ): JsonValue[] {
+    const entries: JsonValue[] = [];
+    for (const statement of statements) {
+      this.compileMultipartStatement(statement, context, entries);
+    }
+    return entries;
+  }
+
+  private compileMultipartBody(
+    body: MultipartBodyNode,
+    context: EvaluationContext,
+    entries: JsonValue[]
+  ): void {
+    for (const statement of body.statements) {
+      this.compileMultipartStatement(statement, context, entries);
+    }
+  }
+
+  private compileMultipartStatement(
+    statement: MultipartSectionStatementNode,
+    context: EvaluationContext,
+    entries: JsonValue[]
+  ): void {
+    if (statement.kind === "MultipartEntry") {
+      const value: Record<string, JsonValue> = {
+        apply: normalizeJsonValue(evaluateExpression(statement.apply, context))
+      };
+      if (statement.when) {
+        value.when = normalizeJsonValue(evaluateExpression(statement.when, context));
+      }
+      entries.push(value);
+    } else if (statement.kind === "ForStmt") {
+      const iterable = evaluateExpression(statement.iterable, context);
+      if (!Array.isArray(iterable)) {
+        this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+        return;
+      }
+      if (statement.body.kind !== "MultipartBody") {
+        return;
+      }
+      for (const value of iterable) {
+        const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
+        this.compileMultipartBody(statement.body, createLoopContext(context, bindings, statement.range), entries);
+      }
+    } else if (statement.kind === "IfStmt") {
+      const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
+      if (body?.kind === "MultipartBody") {
+        this.compileMultipartBody(body, context, entries);
+      }
+    }
   }
 
   private compileGenericJsonResource(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
@@ -381,36 +483,19 @@ class RsglCompiler {
     this.compileBlock(template.node.body, templateContext);
   }
 
-  private compileForStmt(statement: Extract<TopLevelStatementNode, { kind: "ForStmt" }>, context: EvaluationContext): void {
+  private compileForStmt(statement: ForStmtNode, context: EvaluationContext): void {
     const iterable = evaluateExpression(statement.iterable, context);
     const values = Array.isArray(iterable) ? iterable : [];
     if (!Array.isArray(iterable)) {
       this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
       return;
     }
+    if (statement.body.kind !== "Block") {
+      return;
+    }
     for (const value of values) {
-      const bindings: Record<string, EvaluationValue> = {};
-      if (statement.bindings.length <= 1) {
-        const name = statement.bindings[0]?.text;
-        if (name) {
-          bindings[name] = value;
-        }
-      } else if (value && typeof value === "object" && !Array.isArray(value)) {
-        const entries = Object.entries(value as Record<string, JsonValue>);
-        statement.bindings.forEach((binding, index) => {
-          bindings[binding.text] = entries[index]?.[1];
-        });
-      }
-      const loopReason = context.mappingReason === "direct" || !context.mappingReason
-        ? "loop"
-        : context.mappingReason;
-      this.compileBlock(statement.body as BlockNode, childEvaluationContext(context, bindings, {
-        mappingReason: loopReason,
-        expansionStack: [
-          ...(context.expansionStack ?? []),
-          { label: "for", sourceRange: statement.range }
-        ]
-      }));
+      const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
+      this.compileBlock(statement.body, createLoopContext(context, bindings, statement.range));
     }
   }
 

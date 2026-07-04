@@ -290,6 +290,16 @@ export interface ResourceBodyNode extends RsglNode {
   statements: ResourceStatementNode[];
 }
 
+export interface VariantBodyNode extends RsglNode {
+  kind: "VariantBody";
+  statements: VariantSectionStatementNode[];
+}
+
+export interface MultipartBodyNode extends RsglNode {
+  kind: "MultipartBody";
+  statements: MultipartSectionStatementNode[];
+}
+
 export interface TargetDeclNode extends StatementNodeBase {
   kind: "TargetDecl";
   edition: IdentifierNode | null;
@@ -399,14 +409,14 @@ export interface ForStmtNode extends StatementNodeBase {
   kind: "ForStmt";
   bindings: IdentifierNode[];
   iterable: ExprNode;
-  body: BlockNode | ResourceBodyNode;
+  body: BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
 }
 
 export interface IfStmtNode extends StatementNodeBase {
   kind: "IfStmt";
   condition: ExprNode;
-  thenBody: BlockNode | ResourceBodyNode;
-  elseBody?: BlockNode | ResourceBodyNode;
+  thenBody: BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
+  elseBody?: BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
 }
 
 export interface UnknownStmtNode extends StatementNodeBase {
@@ -443,7 +453,7 @@ export interface SectionStmtNode extends StatementNodeBase {
 
 export interface VariantsSectionNode extends StatementNodeBase {
   kind: "VariantsSection";
-  entries: VariantEntryNode[];
+  entries: VariantSectionStatementNode[];
 }
 
 export interface VariantEntryNode extends StatementNodeBase {
@@ -452,9 +462,11 @@ export interface VariantEntryNode extends StatementNodeBase {
   value: ExprNode;
 }
 
+export type VariantSectionStatementNode = VariantEntryNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+
 export interface MultipartSectionNode extends StatementNodeBase {
   kind: "MultipartSection";
-  entries: MultipartEntryNode[];
+  entries: MultipartSectionStatementNode[];
 }
 
 export interface MultipartEntryNode extends StatementNodeBase {
@@ -462,6 +474,8 @@ export interface MultipartEntryNode extends StatementNodeBase {
   when?: ExprNode;
   apply: ExprNode;
 }
+
+export type MultipartSectionStatementNode = MultipartEntryNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
 
 export interface RawJsonStmtNode extends StatementNodeBase {
   kind: "RawJsonStmt";

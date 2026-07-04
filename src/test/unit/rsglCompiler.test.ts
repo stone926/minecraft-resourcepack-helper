@@ -188,6 +188,90 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("expands for statements inside blockstate variants", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate lamp {",
+      "  variants {",
+      "    for state in product({ facing: [north, east], powered: [false, true] }) {",
+      "      [facing=state.facing powered=state.powered] -> { model: `minecraft:block/lamp_${state.facing}` }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const expectedVariants = {
+      ["facing=east,powered=false"]: {
+        model: "minecraft:block/lamp_east"
+      },
+      ["facing=east,powered=true"]: {
+        model: "minecraft:block/lamp_east"
+      },
+      ["facing=north,powered=false"]: {
+        model: "minecraft:block/lamp_north"
+      },
+      ["facing=north,powered=true"]: {
+        model: "minecraft:block/lamp_north"
+      }
+    };
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: expectedVariants
+    });
+  });
+
+  it("expands for and if statements inside blockstate multipart sections", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate oak_fence {",
+      "  multipart {",
+      "    apply { model: minecraft:block/oak_fence_post }",
+      "    for side in [north, east] {",
+      "      when { [side]: true } apply { model: `minecraft:block/oak_fence_side_${side}` }",
+      "    }",
+      "    if false {",
+      "      apply { model: minecraft:block/unused }",
+      "    } else {",
+      "      when { west: true } apply { model: minecraft:block/oak_fence_side_west }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      multipart: [
+        {
+          apply: {
+            model: "minecraft:block/oak_fence_post"
+          }
+        },
+        {
+          apply: {
+            model: "minecraft:block/oak_fence_side_north"
+          },
+          when: {
+            north: true
+          }
+        },
+        {
+          apply: {
+            model: "minecraft:block/oak_fence_side_east"
+          },
+          when: {
+            east: true
+          }
+        },
+        {
+          apply: {
+            model: "minecraft:block/oak_fence_side_west"
+          },
+          when: {
+            west: true
+          }
+        }
+      ]
+    });
+  });
+
   it("reports non-finite loops inside resource bodies", () => {
     const result = compileRsglModule(parseRsgl([
       "model block bad {",

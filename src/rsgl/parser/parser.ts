@@ -10,11 +10,15 @@ import {
   BlockNode,
   BooleanLiteralNode,
   ExprNode,
+  ForStmtNode,
   IdentifierNode,
   IfStmtNode,
   ImportSpecifierNode,
   MatchArmNode,
   ModelApplySugarNode,
+  MultipartBodyNode,
+  MultipartEntryNode,
+  MultipartSectionStatementNode,
   NumberLiteralNode,
   ObjectExprNode,
   ObjectPropertyNode,
@@ -34,7 +38,10 @@ import {
   TemplateStringPart,
   TopLevelStatementNode,
   TypeNode,
-  UseDeclNode
+  UseDeclNode,
+  VariantBodyNode,
+  VariantEntryNode,
+  VariantSectionStatementNode
 } from "./types";
 
 const resourceBodySectionKeywords = new Set([
@@ -63,7 +70,7 @@ const binaryPrecedence = new Map<string, number>([
   ["..", 7]
 ]);
 
-type BodyMode = "topLevel" | "resource";
+type BodyMode = "topLevel" | "resource" | "variants" | "multipart";
 
 interface ExpressionOptions {
   stopTexts?: readonly string[];
@@ -442,7 +449,7 @@ class RsglParser extends ParserContext {
     };
   }
 
-  private parseForStmt(mode: BodyMode): TopLevelStatementNode & ResourceStatementNode {
+  private parseForStmt(mode: BodyMode): ForStmtNode {
     const start = this.advance();
     const bindings: IdentifierNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "in" && this.current().text !== "{") {
@@ -454,9 +461,7 @@ class RsglParser extends ParserContext {
     }
     this.expectText("in", "Expected 'in' in for statement.");
     const iterable = this.parseExpression({ stopTexts: ["{"] });
-    const body = mode === "resource"
-      ? this.parseResourceBody("for")
-      : this.parseBlock();
+    const body = this.parseBodyForMode(mode, "for");
     return {
       kind: "ForStmt",
       keyword: start.text,
@@ -470,11 +475,9 @@ class RsglParser extends ParserContext {
   private parseIfStmt(mode: BodyMode): IfStmtNode {
     const start = this.advance();
     const condition = this.parseExpression({ stopTexts: ["{"] });
-    const thenBody = mode === "resource"
-      ? this.parseResourceBody("if")
-      : this.parseBlock();
+    const thenBody = this.parseBodyForMode(mode, "if");
     const elseBody = this.matchText("else")
-      ? (mode === "resource" ? this.parseResourceBody("else") : this.parseBlock())
+      ? this.parseBodyForMode(mode, "else")
       : undefined;
     return {
       kind: "IfStmt",
@@ -502,6 +505,19 @@ class RsglParser extends ParserContext {
       statements,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseBodyForMode(mode: BodyMode, owner: string): BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode {
+    if (mode === "resource") {
+      return this.parseResourceBody(owner);
+    }
+    if (mode === "variants") {
+      return this.parseVariantBody();
+    }
+    if (mode === "multipart") {
+      return this.parseMultipartBody();
+    }
+    return this.parseBlock();
   }
 
   private parseResourceBody(owner: string): ResourceBodyNode {
@@ -534,6 +550,72 @@ class RsglParser extends ParserContext {
       statements,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseVariantBody(): VariantBodyNode {
+    const start = this.current();
+    if (!this.matchText("{")) {
+      return {
+        kind: "VariantBody",
+        statements: [],
+        ...this.nodeRanges(start, start)
+      };
+    }
+
+    const statements: VariantSectionStatementNode[] = [];
+    while (!this.isAtEnd() && this.current().text !== "}") {
+      statements.push(this.parseVariantSectionStatement());
+    }
+    this.expectText("}", "Expected '}' after variants body.");
+    return {
+      kind: "VariantBody",
+      statements,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseVariantSectionStatement(): VariantSectionStatementNode {
+    const token = this.current();
+    if (token.text === "for") {
+      return this.parseForStmt("variants");
+    }
+    if (token.text === "if") {
+      return this.parseIfStmt("variants");
+    }
+    return this.parseVariantEntry();
+  }
+
+  private parseMultipartBody(): MultipartBodyNode {
+    const start = this.current();
+    if (!this.matchText("{")) {
+      return {
+        kind: "MultipartBody",
+        statements: [],
+        ...this.nodeRanges(start, start)
+      };
+    }
+
+    const statements: MultipartSectionStatementNode[] = [];
+    while (!this.isAtEnd() && this.current().text !== "}") {
+      statements.push(this.parseMultipartSectionStatement());
+    }
+    this.expectText("}", "Expected '}' after multipart body.");
+    return {
+      kind: "MultipartBody",
+      statements,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseMultipartSectionStatement(): MultipartSectionStatementNode {
+    const token = this.current();
+    if (token.text === "for") {
+      return this.parseForStmt("multipart");
+    }
+    if (token.text === "if") {
+      return this.parseIfStmt("multipart");
+    }
+    return this.parseMultipartEntry();
   }
 
   private parseResourceStatement(): ResourceStatementNode {
@@ -626,21 +708,21 @@ class RsglParser extends ParserContext {
 
   private parseVariantsSection(): ResourceStatementNode {
     const start = this.advance();
-    const entries: ResourceStatementNode[] = [];
+    const entries: VariantSectionStatementNode[] = [];
     this.expectText("{", "Expected variants body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
-      entries.push(this.parseVariantEntry());
+      entries.push(this.parseVariantSectionStatement());
     }
     this.expectText("}", "Expected '}' after variants.");
     return {
       kind: "VariantsSection",
       keyword: start.text,
-      entries: entries.filter((entry): entry is Extract<ResourceStatementNode, { kind: "VariantEntry" }> => entry.kind === "VariantEntry"),
+      entries,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
 
-  private parseVariantEntry(): ResourceStatementNode {
+  private parseVariantEntry(): VariantEntryNode {
     const start = this.current();
     const state = this.parseExpression({ stopTexts: ["->"] });
     this.expectText("->", "Expected '->' in variant entry.");
@@ -658,21 +740,21 @@ class RsglParser extends ParserContext {
 
   private parseMultipartSection(): ResourceStatementNode {
     const start = this.advance();
-    const entries: ResourceStatementNode[] = [];
+    const entries: MultipartSectionStatementNode[] = [];
     this.expectText("{", "Expected multipart body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
-      entries.push(this.parseMultipartEntry());
+      entries.push(this.parseMultipartSectionStatement());
     }
     this.expectText("}", "Expected '}' after multipart.");
     return {
       kind: "MultipartSection",
       keyword: start.text,
-      entries: entries.filter((entry): entry is Extract<ResourceStatementNode, { kind: "MultipartEntry" }> => entry.kind === "MultipartEntry"),
+      entries,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
 
-  private parseMultipartEntry(): ResourceStatementNode {
+  private parseMultipartEntry(): MultipartEntryNode {
     const start = this.current();
     let when: ExprNode | undefined;
     if (this.matchText("when")) {
