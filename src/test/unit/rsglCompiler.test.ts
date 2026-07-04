@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { compileRsglModule, compileRsglProgram, stableJsonStringify } from "../../rsgl/compiler";
+import { compileRsglModule, compileRsglProgram, emitRsglFiles, stableJsonStringify } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 
 describe("RSGL compiler", () => {
@@ -47,6 +47,54 @@ describe("RSGL compiler", () => {
         model: "minecraft:item/diamond"
       }
     });
+  });
+
+  it("emits deterministic files with source maps and manifest", () => {
+    const result = compileRsglModule(parseRsgl([
+      "namespace minecraft",
+      "model block stone {",
+      "  parent minecraft:block/cube_all",
+      "  textures { all: minecraft:block/stone }",
+      "}"
+    ].join("\n")), { fileName: path.resolve("pack", "main.rsgl") });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
+    assert.deepStrictEqual(files.map(file => file.outputPath), [
+      "assets/minecraft/models/block/stone.json",
+      "assets/minecraft/models/block/stone.json.rsgl.map",
+      "rsgl.manifest.json"
+    ]);
+
+    assert.strictEqual(files[0].content, [
+      "{",
+      "  \"parent\": \"minecraft:block/cube_all\",",
+      "  \"textures\": {",
+      "    \"all\": \"minecraft:block/stone\"",
+      "  }",
+      "}",
+      ""
+    ].join("\n"));
+
+    const sourceMap = JSON.parse(files[1].content) as {
+      version?: number;
+      generatedFile?: string;
+      mappings?: Array<{ sourceFile?: string; reason?: string }>;
+    };
+    assert.strictEqual(sourceMap.version, 1);
+    assert.strictEqual(sourceMap.generatedFile, "assets/minecraft/models/block/stone.json");
+    assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
+    assert.strictEqual(sourceMap.mappings?.[0]?.reason, "direct");
+
+    const manifest = JSON.parse(files[2].content) as {
+      files?: Array<{ outputPath?: string; sourceMap?: string }>;
+    };
+    assert.deepStrictEqual(manifest.files, [{
+      outputPath: "assets/minecraft/models/block/stone.json",
+      kind: "model",
+      id: "minecraft:block/stone",
+      sourceMap: "assets/minecraft/models/block/stone.json.rsgl.map"
+    }]);
   });
 
   it("lowers stairs, slab, fence, and wall sugar to blockstates", () => {
