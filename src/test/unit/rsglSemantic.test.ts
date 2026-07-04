@@ -51,6 +51,15 @@ describe("RSGL semantic model", () => {
     assert.ok(codes.includes("rsgl.undefinedSymbol"));
   });
 
+  it("reports template string interpolation diagnostics at embedded expression ranges", () => {
+    const source = "let label = `minecraft:block/${missing.value}`";
+    const model = bindRsglModule(parseRsgl(source));
+    const diagnostic = model.diagnostics.find(item => item.code === "rsgl.undefinedSymbol");
+
+    assert.ok(diagnostic);
+    assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "missing");
+  });
+
   it("checks builtin template signatures", () => {
     const module = parseRsgl([
       "blockstate minecraft:bad_stairs {",

@@ -1682,9 +1682,87 @@ class StandaloneExpressionParser extends RsglParser {
 }
 
 function offsetExpressionRanges<T extends ExprNode>(expression: T, offset: number): T {
-  expression.range = { start: expression.range.start + offset, end: expression.range.end + offset };
-  expression.fullRange = { start: expression.fullRange.start + offset, end: expression.fullRange.end + offset };
+  offsetNodeRange(expression, offset);
+  if (expression.kind === "IdentifierExpr") {
+    offsetNodeRange(expression.name, offset);
+  } else if (expression.kind === "TemplateStringExpr") {
+    for (const part of expression.parts) {
+      part.range = offsetRange(part.range, offset);
+      if (part.kind === "expression") {
+        offsetExpressionRanges(part.expression, offset);
+      }
+    }
+  } else if (expression.kind === "ListExpr") {
+    expression.elements.forEach(element => offsetExpressionRanges(element, offset));
+  } else if (expression.kind === "ObjectExpr") {
+    expression.properties.forEach(property => offsetObjectPropertyRange(property, offset));
+  } else if (expression.kind === "RangeExpr") {
+    offsetExpressionRanges(expression.startExpr, offset);
+    offsetExpressionRanges(expression.endExpr, offset);
+  } else if (expression.kind === "CallExpr") {
+    offsetExpressionRanges(expression.callee, offset);
+    for (const arg of expression.args) {
+      offsetNodeRange(arg, offset);
+      if (arg.name) {
+        offsetNodeRange(arg.name, offset);
+      }
+      offsetExpressionRanges(arg.value, offset);
+    }
+  } else if (expression.kind === "MemberExpr") {
+    offsetExpressionRanges(expression.object, offset);
+    offsetNodeRange(expression.property, offset);
+  } else if (expression.kind === "IndexExpr") {
+    offsetExpressionRanges(expression.object, offset);
+    offsetExpressionRanges(expression.index, offset);
+  } else if (expression.kind === "UnaryExpr") {
+    offsetExpressionRanges(expression.operand, offset);
+  } else if (expression.kind === "BinaryExpr") {
+    offsetExpressionRanges(expression.left, offset);
+    offsetExpressionRanges(expression.right, offset);
+  } else if (expression.kind === "ConditionalExpr") {
+    offsetExpressionRanges(expression.condition, offset);
+    offsetExpressionRanges(expression.whenTrue, offset);
+    offsetExpressionRanges(expression.whenFalse, offset);
+  } else if (expression.kind === "MatchExpr") {
+    offsetExpressionRanges(expression.expression, offset);
+    for (const arm of expression.arms) {
+      offsetNodeRange(arm, offset);
+      arm.patterns.forEach(pattern => offsetExpressionRanges(pattern, offset));
+      offsetExpressionRanges(arm.value, offset);
+    }
+  } else if (expression.kind === "StateKeySugar") {
+    expression.entries.forEach(entry => offsetObjectPropertyRange(entry, offset));
+  } else if (expression.kind === "ModelApplySugar") {
+    offsetExpressionRanges(expression.model, offset);
+    for (const property of expression.properties) {
+      offsetNodeRange(property, offset);
+      offsetNodeRange(property.name, offset);
+      offsetExpressionRanges(property.value, offset);
+    }
+  } else if (expression.kind === "RandomApply") {
+    expression.entries.forEach(entry => offsetExpressionRanges(entry, offset));
+  }
   return expression;
+}
+
+function offsetObjectPropertyRange(property: ObjectPropertyNode, offset: number): void {
+  offsetNodeRange(property, offset);
+  if (property.key.kind === "DynamicKey") {
+    offsetNodeRange(property.key, offset);
+    offsetExpressionRanges(property.key.expression, offset);
+  } else {
+    offsetNodeRange(property.key, offset);
+  }
+  offsetExpressionRanges(property.value, offset);
+}
+
+function offsetNodeRange(node: RsglNode, offset: number): void {
+  node.range = offsetRange(node.range, offset);
+  node.fullRange = offsetRange(node.fullRange, offset);
+}
+
+function offsetRange(range: { start: number; end: number }, offset: number) {
+  return { start: range.start + offset, end: range.end + offset };
 }
 
 function findTemplateExpressionEnd(content: string, start: number): number {

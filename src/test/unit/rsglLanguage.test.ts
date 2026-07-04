@@ -121,10 +121,11 @@ describe("RSGL language", () => {
   });
 
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
-    const module = parseRsgl([
+    const source = [
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",
       "let powered = state.powered ? 1..4 : [0, 1]"
-    ].join("\n"));
+    ].join("\n");
+    const module = parseRsgl(source);
 
     assert.deepStrictEqual(module.diagnostics, []);
     const frames = module.statements[0];
@@ -133,6 +134,18 @@ describe("RSGL language", () => {
     const template = frames.value.args[0].value;
     assert.strictEqual(template.kind, "TemplateStringExpr");
     assert.strictEqual(template.parts.some(part => part.kind === "expression" && part.expression.kind === "CallExpr"), true);
+    const interpolation = template.parts.find(part => part.kind === "expression");
+    assert.ok(interpolation?.kind === "expression");
+    assert.strictEqual(interpolation.expression.kind, "CallExpr");
+    if (interpolation.expression.kind !== "CallExpr") {
+      throw new Error("Expected template interpolation call expression.");
+    }
+    const callee = interpolation.expression.callee;
+    const indexArg = interpolation.expression.args[0].value;
+    assert.strictEqual(callee.kind, "IdentifierExpr");
+    assert.strictEqual(indexArg.kind, "IdentifierExpr");
+    assert.strictEqual(source.slice(callee.range.start, callee.range.end), "pad");
+    assert.strictEqual(source.slice(indexArg.range.start, indexArg.range.end), "index");
 
     const powered = module.statements[1];
     assert.strictEqual(powered.kind, "LetDecl");
