@@ -73,11 +73,7 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
       `RSGL import not found: ${missing.source}`,
       missing.range
     )),
-    ...importGraph.cycles.flatMap(cycle => cycle.map(fileName => diagnostic(
-      "rsgl.importCycle",
-      `RSGL import cycle includes ${fileName}.`,
-      { start: 0, end: 1 }
-    )))
+    ...importCycleDiagnostics(importGraph)
   ];
 
   return { files, models, importGraph, diagnostics };
@@ -701,6 +697,18 @@ function expressionToStaticText(expression: ExprNode): string | undefined {
 
 function diagnostic(code: string, message: string, range: { start: number; end: number }, severity: RsglDiagnostic["severity"] = "error"): RsglDiagnostic {
   return { code, message, range, severity };
+}
+
+function importCycleDiagnostics(importGraph: RsglImportGraph): RsglDiagnostic[] {
+  return importGraph.cycles.flatMap(cycle => cycle.map((fileName, index) => {
+    const nextFileName = cycle[(index + 1) % cycle.length];
+    const edge = importGraph.edges.find(item => item.from === fileName && item.to === nextFileName);
+    return diagnostic(
+      "rsgl.importCycle",
+      `RSGL import cycle includes ${fileName}.`,
+      edge?.range ?? { start: 0, end: 1 }
+    );
+  }));
 }
 
 function createDefaultResolver(files: RsglSourceFile[]) {

@@ -86,6 +86,35 @@ describe("RSGL semantic model", () => {
     assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
   });
 
+  it("reports import cycles at the import source range", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const cycleFile = path.resolve("pack", "cycle.rsgl");
+    const mainModule = parseRsgl([
+      "let marker = 1",
+      "import \"./cycle.rsgl\""
+    ].join("\n"));
+    const cycleModule = parseRsgl("import \"./main.rsgl\"");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: mainModule
+      },
+      {
+        fileName: cycleFile,
+        module: cycleModule
+      }
+    ]);
+
+    const mainImport = mainModule.statements.find(statement => statement.kind === "ImportDecl");
+    const cycleDiagnostic = program.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.importCycle"
+      && diagnostic.range.start === mainImport?.source?.range.start
+      && diagnostic.range.end === mainImport.source.range.end
+    );
+
+    assert.ok(cycleDiagnostic);
+  });
+
   it("resolves named imports to target module symbols and signatures", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");
