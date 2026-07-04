@@ -77,6 +77,7 @@
   "Please input the name of your resource pack": "Please input the name of your resource pack",
   "Please input the namespace of your resource pack": "Please input the namespace of your resource pack",
   "Please input the target resource pack format": "Please input the target resource pack format",
+  "Previewing RSGL resource pack build": "Previewing RSGL resource pack build",
   "Post effect input target '{0}' is not declared in targets.": "Post effect input target '{0}' is not declared in targets.",
   "Post effect output target '{0}' is not declared in targets.": "Post effect output target '{0}' is not declared in targets.",
   "Post effect pass input target must not be the same as its output target.": "Post effect pass input target must not be the same as its output target.",

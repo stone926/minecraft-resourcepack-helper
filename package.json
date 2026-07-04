@@ -27,6 +27,7 @@
   "activationEvents": [
     "onLanguage:rsgl",
     "onCommand:McResHelper.buildRsglResourcePack",
+    "onCommand:McResHelper.previewRsglResourcePackBuild",
     "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
@@ -188,6 +189,11 @@
         "command": "McResHelper.buildRsglResourcePack",
         "title": "%command.title.buildRsglResourcePack%",
         "icon": "$(play)"
+      },
+      {
+        "command": "McResHelper.previewRsglResourcePackBuild",
+        "title": "%command.title.previewRsglResourcePackBuild%",
+        "icon": "$(diff)"
       }
     ],
     "viewsContainers": {
@@ -215,6 +221,11 @@
           "group": "navigation"
         },
         {
+          "command": "McResHelper.previewRsglResourcePackBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@1"
+        },
+        {
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
@@ -230,6 +241,11 @@
           "command": "McResHelper.buildRsglResourcePack",
           "when": "resourceLangId == rsgl",
           "group": "navigation"
+        },
+        {
+          "command": "McResHelper.previewRsglResourcePackBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@1"
         },
         {
           "command": "McResHelper.openModelPreview",

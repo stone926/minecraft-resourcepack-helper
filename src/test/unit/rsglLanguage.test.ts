@@ -21,6 +21,7 @@ describe("RSGL language", () => {
 
     assert.ok(packageJson.activationEvents?.includes("onLanguage:rsgl"));
     assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePack"));
+    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackBuild"));
     const language = packageJson.contributes?.languages?.find(entry => entry.id === "rsgl");
     assert.ok(language);
     assert.ok(language.extensions?.includes(".rsgl"));
@@ -38,11 +39,20 @@ describe("RSGL language", () => {
     assert.ok(packageJson.contributes?.commands?.some(command =>
       command.command === "McResHelper.buildRsglResourcePack" && command.icon === "$(play)"
     ));
+    assert.ok(packageJson.contributes?.commands?.some(command =>
+      command.command === "McResHelper.previewRsglResourcePackBuild" && command.icon === "$(diff)"
+    ));
     assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
       item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
     ));
+    assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
+      item.command === "McResHelper.previewRsglResourcePackBuild" && item.when === "resourceLangId == rsgl"
+    ));
     assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
       item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
+    ));
+    assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
+      item.command === "McResHelper.previewRsglResourcePackBuild" && item.when === "resourceLangId == rsgl"
     ));
   });
 

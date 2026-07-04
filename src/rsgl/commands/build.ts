@@ -1,11 +1,12 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
-import { buildRsglResourcePack } from "../build";
+import { buildRsglResourcePack, previewRsglResourcePackBuild } from "../build";
 import { rsglLanguageId } from "../diagnostics";
 import { createRsglWorkspaceValidationOptions } from "../workspaceValidation";
 
 export const buildRsglResourcePackCommand = "McResHelper.buildRsglResourcePack";
+export const previewRsglResourcePackBuildCommand = "McResHelper.previewRsglResourcePackBuild";
 
 export async function buildActiveRsglResourcePack(uri?: vscode.Uri): Promise<void> {
   const document = await resolveRsglDocument(uri);
@@ -52,6 +53,52 @@ export async function buildActiveRsglResourcePack(uri?: vscode.Uri): Promise<voi
     summary.update,
     summary.unchanged
   ));
+}
+
+export async function previewActiveRsglResourcePackBuild(uri?: vscode.Uri): Promise<void> {
+  const document = await resolveRsglDocument(uri);
+  if (!document) {
+    await vscode.window.showErrorMessage(vscode.l10n.t("Open an RSGL file before building."));
+    return;
+  }
+
+  if (document.isDirty) {
+    const saved = await document.save();
+    if (!saved) {
+      await vscode.window.showErrorMessage(vscode.l10n.t("Save the RSGL file before building."));
+      return;
+    }
+  }
+
+  const outputRoot = await resolveOutputRoot(document.fileName);
+  if (!outputRoot) {
+    return;
+  }
+
+  const result = await vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: vscode.l10n.t("Previewing RSGL resource pack build"),
+    cancellable: false
+  }, () => Promise.resolve(previewRsglResourcePackBuild(document.fileName, {
+    outputRoot,
+    ...createRsglWorkspaceValidationOptions({
+      sourceFileName: document.fileName,
+      defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
+      resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+    })
+  })));
+
+  const errors = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
+  if (errors.length > 0) {
+    await vscode.window.showErrorMessage(vscode.l10n.t("RSGL build failed with {0} error(s).", errors.length));
+    return;
+  }
+
+  const preview = await vscode.workspace.openTextDocument({
+    language: "markdown",
+    content: result.preview ?? ""
+  });
+  await vscode.window.showTextDocument(preview, { preview: true });
 }
 
 async function resolveRsglDocument(uri: vscode.Uri | undefined): Promise<vscode.TextDocument | null> {

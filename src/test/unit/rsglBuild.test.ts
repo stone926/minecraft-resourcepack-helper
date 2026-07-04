@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildRsglResourcePack } from "../../rsgl/build";
+import { buildRsglResourcePack, previewRsglResourcePackBuild } from "../../rsgl/build";
 
 describe("RSGL build", () => {
   it("writes emitted resources with source maps and a manifest", () => {
@@ -50,6 +50,42 @@ describe("RSGL build", () => {
       assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.undefinedSymbol"));
       assert.strictEqual(result.plan, undefined);
       assert.strictEqual(fs.existsSync(outputRoot), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("previews planned changes without writing output files", () => {
+    const root = createTempDirectory();
+    const entry = path.join(root, "src", "main.rsgl");
+    const outputRoot = path.join(root, "pack");
+    const modelPath = path.join(outputRoot, "assets", "minecraft", "models", "block", "stone.json");
+
+    try {
+      fs.mkdirSync(path.dirname(entry), { recursive: true });
+      fs.writeFileSync(entry, [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/stone }",
+        "}"
+      ].join("\n"));
+      buildRsglResourcePack(entry, { outputRoot });
+      const previousModel = fs.readFileSync(modelPath, "utf8");
+
+      fs.writeFileSync(entry, [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/granite }",
+        "}"
+      ].join("\n"));
+      const preview = previewRsglResourcePackBuild(entry, { outputRoot });
+
+      assert.deepStrictEqual(preview.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(preview.plan?.summary, { create: 0, update: 2, unchanged: 1 });
+      assert.ok(preview.preview?.includes("# RSGL Build Preview"));
+      assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json (+1 -1)"));
+      assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json.rsgl.map"));
+      assert.strictEqual(fs.readFileSync(modelPath, "utf8"), previousModel);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
