@@ -81,6 +81,12 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "post", type: modelIdType, optional: false },
       { name: "side", type: modelIdType, optional: false }
     ], jsonType),
+    builtinFunction("fenceGate", [
+      { name: "base", type: modelIdType, optional: false },
+      { name: "open", type: modelIdType, optional: false },
+      { name: "wall", type: modelIdType, optional: false },
+      { name: "wallOpen", type: modelIdType, optional: false }
+    ], jsonType),
     builtinFunction("wall", [
       { name: "post", type: modelIdType, optional: false },
       { name: "side", type: modelIdType, optional: false },

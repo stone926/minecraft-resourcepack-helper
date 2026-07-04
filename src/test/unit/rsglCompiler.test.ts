@@ -191,20 +191,26 @@ describe("RSGL compiler", () => {
     const result = compileRsglModule(parseRsgl([
       "wood_family acacia {",
       "  texture minecraft:block/acacia_planks",
-      "  generate [planks, slab, stairs, fence]",
+      "  generate [planks, slab, stairs, fence, fence_gate]",
       "}"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
       "assets/minecraft/blockstates/acacia_fence.json",
+      "assets/minecraft/blockstates/acacia_fence_gate.json",
       "assets/minecraft/blockstates/acacia_planks.json",
       "assets/minecraft/blockstates/acacia_slab.json",
       "assets/minecraft/blockstates/acacia_stairs.json",
       "assets/minecraft/items/acacia_fence.json",
+      "assets/minecraft/items/acacia_fence_gate.json",
       "assets/minecraft/items/acacia_planks.json",
       "assets/minecraft/items/acacia_slab.json",
       "assets/minecraft/items/acacia_stairs.json",
+      "assets/minecraft/models/block/acacia_fence_gate.json",
+      "assets/minecraft/models/block/acacia_fence_gate_open.json",
+      "assets/minecraft/models/block/acacia_fence_gate_wall.json",
+      "assets/minecraft/models/block/acacia_fence_gate_wall_open.json",
       "assets/minecraft/models/block/acacia_fence_inventory.json",
       "assets/minecraft/models/block/acacia_fence_post.json",
       "assets/minecraft/models/block/acacia_fence_side.json",
@@ -242,6 +248,29 @@ describe("RSGL compiler", () => {
       model: {
         type: "minecraft:model",
         model: "minecraft:block/acacia_fence_inventory"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_fence_gate_wall_open.json"))?.content, {
+      parent: "minecraft:block/template_fence_gate_wall_open",
+      textures: {
+        texture: "minecraft:block/acacia_planks"
+      }
+    });
+    const fenceGateVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_fence_gate.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(fenceGateVariants).length, 16);
+    assert.deepStrictEqual(fenceGateVariants["facing=east,in_wall=true,open=true"], {
+      model: "minecraft:block/acacia_fence_gate_wall_open",
+      uvlock: true,
+      y: 270
+    });
+    assert.deepStrictEqual(fenceGateVariants["facing=south,in_wall=false,open=false"], {
+      model: "minecraft:block/acacia_fence_gate",
+      uvlock: true
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_fence_gate.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:block/acacia_fence_gate"
       }
     });
   });
@@ -754,14 +783,24 @@ describe("RSGL compiler", () => {
       "  multipart {",
       "    use fence(post: minecraft:block/oak_fence_post, side: minecraft:block/oak_fence_side)",
       "  }",
+      "}",
+      "blockstate acacia_fence_gate {",
+      "  use fenceGate(",
+      "    base: minecraft:block/acacia_fence_gate,",
+      "    open: minecraft:block/acacia_fence_gate_open,",
+      "    wall: minecraft:block/acacia_fence_gate_wall,",
+      "    wallOpen: minecraft:block/acacia_fence_gate_wall_open",
+      "  )",
       "}"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
     const stairs = result.units.find(unit => unit.outputPath.endsWith("acacia_stairs.json"));
     const fence = result.units.find(unit => unit.outputPath.endsWith("oak_fence.json"));
+    const fenceGate = result.units.find(unit => unit.outputPath.endsWith("acacia_fence_gate.json"));
     assert.ok(stairs);
     assert.ok(fence);
+    assert.ok(fenceGate);
     const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
     assert.strictEqual(Object.keys(variants).length, 40);
     assert.deepStrictEqual(variants["facing=east,half=bottom,shape=straight"], {
@@ -775,6 +814,13 @@ describe("RSGL compiler", () => {
         { when: { south: true }, apply: { model: "minecraft:block/oak_fence_side", y: 180, uvlock: true } },
         { when: { west: true }, apply: { model: "minecraft:block/oak_fence_side", y: 270, uvlock: true } }
       ]
+    });
+    const fenceGateVariants = (fenceGate.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(fenceGateVariants).length, 16);
+    assert.deepStrictEqual(fenceGateVariants["facing=west,in_wall=false,open=true"], {
+      model: "minecraft:block/acacia_fence_gate_open",
+      uvlock: true,
+      y: 90
     });
   });
 

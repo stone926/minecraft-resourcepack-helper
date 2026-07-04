@@ -11,6 +11,7 @@ import {
 import { JsonValue } from "./ir";
 import {
   createFenceBlockstateContent,
+  createFenceGateBlockstateContent,
   createSlabBlockstateContent,
   createStairsBlockstateContent,
   createWallBlockstateContent
@@ -54,6 +55,14 @@ export function compileBlockstateUseFragment(
     return createFenceBlockstateContent({
       post: requiredModelArgument(expression, "post", 0, context, options),
       side: requiredModelArgument(expression, "side", 1, context, options)
+    });
+  }
+  if (expression.callee.name.text === "fenceGate") {
+    return createFenceGateBlockstateContent({
+      base: requiredModelArgument(expression, "base", 0, context, options),
+      open: requiredModelArgument(expression, "open", 1, context, options),
+      wall: requiredModelArgument(expression, "wall", 2, context, options),
+      wallOpen: requiredModelArgument(expression, "wallOpen", 3, context, options)
     });
   }
   if (expression.callee.name.text === "wall") {

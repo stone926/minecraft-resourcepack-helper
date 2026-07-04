@@ -4,12 +4,13 @@ import { ExpansionFrame, JsonValue, ResourceUnit, RsglMapping } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
   createFenceBlockstate,
+  createFenceGateBlockstate,
   createItemMapping,
   createSlabBlockstate,
   createStairsBlockstate
 } from "./templates";
 
-type SupportedFamilyMember = "planks" | "slab" | "stairs" | "fence";
+type SupportedFamilyMember = "planks" | "slab" | "stairs" | "fence" | "fence_gate";
 
 export interface RsglFamilySugarOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -89,13 +90,25 @@ function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContex
     ]);
   }
 
-  const id = `${family.baseName}_fence`;
+  if (member === "fence") {
+    const id = `${family.baseName}_fence`;
+    return compact([
+      createCubeModel(family, `${id}_post`, "minecraft:block/fence_post", { texture: family.texture }),
+      createCubeModel(family, `${id}_side`, "minecraft:block/fence_side", { texture: family.texture }),
+      createCubeModel(family, `${id}_inventory`, "minecraft:block/fence_inventory", { texture: family.texture }),
+      createFenceBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_inventory`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  const id = `${family.baseName}_fence_gate`;
   return compact([
-    createCubeModel(family, `${id}_post`, "minecraft:block/fence_post", { texture: family.texture }),
-    createCubeModel(family, `${id}_side`, "minecraft:block/fence_side", { texture: family.texture }),
-    createCubeModel(family, `${id}_inventory`, "minecraft:block/fence_inventory", { texture: family.texture }),
-    createFenceBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
-    createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_inventory`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    createCubeModel(family, id, "minecraft:block/template_fence_gate", { texture: family.texture }),
+    createCubeModel(family, `${id}_open`, "minecraft:block/template_fence_gate_open", { texture: family.texture }),
+    createCubeModel(family, `${id}_wall`, "minecraft:block/template_fence_gate_wall", { texture: family.texture }),
+    createCubeModel(family, `${id}_wall_open`, "minecraft:block/template_fence_gate_wall_open", { texture: family.texture }),
+    createFenceGateBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+    createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
   ]);
 }
 
@@ -204,7 +217,7 @@ function normalizeResourceValue(value: string, namespace: string, defaultFolder:
 }
 
 function isSupportedFamilyMember(value: string): value is SupportedFamilyMember {
-  return value === "planks" || value === "slab" || value === "stairs" || value === "fence";
+  return value === "planks" || value === "slab" || value === "stairs" || value === "fence" || value === "fence_gate";
 }
 
 function compact<T>(values: Array<T | null>): T[] {

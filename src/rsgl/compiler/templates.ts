@@ -24,6 +24,13 @@ export interface FenceBlockstateModels {
   side: string;
 }
 
+export interface FenceGateBlockstateModels {
+  base: string;
+  open: string;
+  wall: string;
+  wallOpen: string;
+}
+
 export interface WallBlockstateModels {
   post: string;
   side: string;
@@ -45,6 +52,13 @@ const stairsYaw: Record<string, Record<string, Record<string, number>>> = {
     outer_left: { north: 270, east: 0, south: 90, west: 180 },
     outer_right: { north: 0, east: 90, south: 180, west: 270 }
   }
+};
+
+const fenceGateYaw: Record<string, number> = {
+  north: 180,
+  east: 270,
+  south: 0,
+  west: 90
 };
 
 export function createStairsBlockstate(
@@ -150,6 +164,45 @@ export function createFenceBlockstateContent(models: FenceBlockstateModels): Rec
     multipart.push({ when: { [facing]: true }, apply });
   });
   return { multipart };
+}
+
+export function createFenceGateBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createFenceGateBlockstateContent({
+    base: `${id.namespace}:block/${id.path}`,
+    open: `${id.namespace}:block/${id.path}_open`,
+    wall: `${id.namespace}:block/${id.path}_wall`,
+    wallOpen: `${id.namespace}:block/${id.path}_wall_open`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createFenceGateBlockstateContent(models: FenceGateBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const facing of facings) {
+    for (const inWall of [false, true]) {
+      for (const open of [false, true]) {
+        const entry: Record<string, JsonValue> = {
+          model: fenceGateModel(models, inWall, open),
+          uvlock: true
+        };
+        const y = fenceGateYaw[facing];
+        if (y !== 0) {
+          entry.y = y;
+        }
+        variants[`facing=${facing},in_wall=${inWall},open=${open}`] = entry;
+      }
+    }
+  }
+  return { variants };
 }
 
 export function createWallBlockstate(
@@ -280,6 +333,13 @@ function stairsModelForShape(models: StairsBlockstateModels, shape: string): str
     return models.outer;
   }
   return models.base;
+}
+
+function fenceGateModel(models: FenceGateBlockstateModels, inWall: boolean, open: boolean): string {
+  if (inWall) {
+    return open ? models.wallOpen : models.wall;
+  }
+  return open ? models.open : models.base;
 }
 
 function sourceMap(
