@@ -1,8 +1,10 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   BlockNode,
   ExprNode,
   ForStmtNode,
+  ImportDeclNode,
   LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
@@ -13,7 +15,8 @@ import {
   TemplateDeclNode,
   TopLevelStatementNode,
   VariantBodyNode,
-  VariantSectionStatementNode
+  VariantSectionStatementNode,
+  parseRsgl
 } from "../parser";
 import {
   bindRsglModule,
@@ -55,6 +58,12 @@ export interface RsglProgramCompileOptions extends RsglResourceValidationOptions
   namespace?: string;
 }
 
+export interface RsglFileLoadOptions {
+  encoding?: BufferEncoding;
+}
+
+export interface RsglFileCompileOptions extends Omit<RsglProgramCompileOptions, "entryFileName">, RsglFileLoadOptions { }
+
 interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
@@ -91,6 +100,37 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
       ...validateResourceUnits(merged.units, options)
     ]
   };
+}
+
+export function compileRsglFile(entryFileName: string, options: RsglFileCompileOptions = {}): RsglCompileResult {
+  const { encoding, ...compileOptions } = options;
+  const resolvedEntryFileName = path.resolve(entryFileName);
+  const files = loadRsglSourceFilesFromFile(resolvedEntryFileName, { encoding });
+  return compileRsglProgram(files, { ...compileOptions, entryFileName: resolvedEntryFileName });
+}
+
+export function loadRsglSourceFilesFromFile(entryFileName: string, options: RsglFileLoadOptions = {}): RsglSourceFile[] {
+  const encoding = options.encoding ?? "utf8";
+  const files: RsglSourceFile[] = [];
+  const visited = new Set<string>();
+
+  const visit = (fileName: string): void => {
+    const normalizedFileName = normalizeFileName(path.resolve(fileName));
+    if (visited.has(normalizedFileName) || !fs.existsSync(normalizedFileName)) {
+      return;
+    }
+
+    visited.add(normalizedFileName);
+    const module = parseRsgl(fs.readFileSync(normalizedFileName, encoding));
+    files.push({ fileName: normalizedFileName, module });
+
+    for (const source of collectRelativeImportSources(module)) {
+      visit(path.resolve(path.dirname(normalizedFileName), source));
+    }
+  };
+
+  visit(entryFileName);
+  return files;
 }
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
@@ -794,8 +834,19 @@ function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
   return diagnostics;
 }
 
+function collectRelativeImportSources(module: RsglModule): string[] {
+  return module.statements
+    .filter(isImportDeclNode)
+    .map(statement => statement.source?.value)
+    .filter((source): source is string => Boolean(source && source.startsWith(".")));
+}
+
 function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
+}
+
+function isImportDeclNode(node: unknown): node is ImportDeclNode {
+  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ImportDecl");
 }
 
 function isTemplateDeclNode(node: unknown): node is TemplateDeclNode {
