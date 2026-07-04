@@ -85,6 +85,9 @@ describe("RSGL build", () => {
       assert.ok(preview.preview?.includes("# RSGL Build Preview"));
       assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json (+1 -1)"));
       assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json.rsgl.map"));
+      assert.ok(preview.preview?.includes("```diff"));
+      assert.ok(preview.preview?.includes('-    "all": "minecraft:block/stone"'));
+      assert.ok(preview.preview?.includes('+    "all": "minecraft:block/granite"'));
       assert.strictEqual(fs.readFileSync(modelPath, "utf8"), previousModel);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
