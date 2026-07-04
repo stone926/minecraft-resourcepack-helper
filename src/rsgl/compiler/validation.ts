@@ -128,7 +128,9 @@ function validateItemUnit(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  validateItemModelDefinition(asObject(unit.content)?.model, unit, generatedModels, options, diagnostics);
+  const content = asObject(unit.content);
+  validateItemTopLevelFields(content, unit, diagnostics);
+  validateItemModelDefinition(content?.model, unit, generatedModels, options, diagnostics);
 }
 
 function validateModelUnit(
@@ -465,6 +467,7 @@ function validateItemModelDefinition(
     return;
   }
 
+  validateItemTransformation(model, unit, diagnostics);
   validateItemTints(model, unit, diagnostics);
   const type = itemModelType(model.type);
   if (type === "model") {
@@ -660,6 +663,26 @@ function validateItemSpecial(
   }
 }
 
+function validateItemTopLevelFields(
+  content: Record<string, JsonValue> | null,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!content) {
+    return;
+  }
+  validateBooleanField(content, "hand_animation_on_swap", "rsgl.invalidItemTopLevelField", unit, diagnostics);
+  validateBooleanField(content, "oversized_in_gui", "rsgl.invalidItemTopLevelField", unit, diagnostics);
+  if ("swap_animation_scale" in content && (typeof content.swap_animation_scale !== "number" || !Number.isFinite(content.swap_animation_scale))) {
+    diagnostics.push({
+      code: "rsgl.invalidItemTopLevelField",
+      message: "Item top-level field 'swap_animation_scale' must be a finite number.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
 function validateSpecialModelShape(
   specialModel: Record<string, JsonValue>,
   unit: ResourceUnit,
@@ -712,6 +735,46 @@ function validateSpecialModelShape(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   }
+}
+
+function validateItemTransformation(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!("transformation" in model)) {
+    return;
+  }
+  const transformation = model.transformation;
+  if (Array.isArray(transformation)) {
+    validateNumericArray(transformation, 16, "rsgl.invalidItemTransformation", "Item transformation matrix must contain 16 numbers.", unit, diagnostics);
+    return;
+  }
+  const object = asObject(transformation);
+  if (!object) {
+    diagnostics.push({
+      code: "rsgl.invalidItemTransformation",
+      message: "Item transformation must be a matrix array or transformation object.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+
+  for (const field of ["left_rotation", "right_rotation", "scale", "translation"]) {
+    if (!(field in object)) {
+      diagnostics.push({
+        code: "rsgl.missingItemTransformationField",
+        message: `Item transformation must define '${field}'.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+  }
+  validateRotationValue(object.left_rotation, "left_rotation", unit, diagnostics);
+  validateRotationValue(object.right_rotation, "right_rotation", unit, diagnostics);
+  validateNumericArray(object.scale, 3, "rsgl.invalidItemTransformation", "Item transformation 'scale' must contain 3 numbers.", unit, diagnostics);
+  validateNumericArray(object.translation, 3, "rsgl.invalidItemTransformation", "Item transformation 'translation' must contain 3 numbers.", unit, diagnostics);
 }
 
 function validateItemTints(
@@ -787,6 +850,44 @@ function validateTintValue(
   }
 }
 
+function validateRotationValue(
+  value: JsonValue | undefined,
+  field: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (Array.isArray(value)) {
+    validateNumericArray(value, 4, "rsgl.invalidItemTransformation", `Item transformation '${field}' quaternion must contain 4 numbers.`, unit, diagnostics);
+    return;
+  }
+  const object = asObject(value);
+  if (!object || typeof object.angle !== "number" || !Number.isFinite(object.angle) || !isNumericArray(object.axis, 3)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemTransformation",
+      message: `Item transformation '${field}' must be a quaternion or axis-angle rotation.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateBooleanField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (field in object && typeof object[field] !== "boolean") {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' must be a boolean.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
 function validateNumberInRange(
   object: Record<string, JsonValue>,
   field: string,
@@ -808,6 +909,30 @@ function validateNumberInRange(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   }
+}
+
+function validateNumericArray(
+  value: JsonValue | undefined,
+  length: number,
+  code: string,
+  message: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!isNumericArray(value, length)) {
+    diagnostics.push({
+      code,
+      message,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function isNumericArray(value: JsonValue | undefined, length: number): boolean {
+  return Array.isArray(value)
+    && value.length === length
+    && value.every(item => typeof item === "number" && Number.isFinite(item));
 }
 
 function isColorValue(value: JsonValue | undefined): boolean {

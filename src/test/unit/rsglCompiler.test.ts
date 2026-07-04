@@ -2645,6 +2645,44 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemTint"));
   });
 
+  it("validates item top-level fields and transformations", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item invalid_top_level {",
+      "  raw_json {",
+      "    hand_animation_on_swap: \"yes\",",
+      "    oversized_in_gui: 1,",
+      "    swap_animation_scale: \"large\",",
+      "    model: { type: minecraft:model, model: minecraft:item/base }",
+      "  }",
+      "}",
+      "item invalid_matrix {",
+      "  raw_json {",
+      "    model: { type: minecraft:model, model: minecraft:item/base, transformation: [1, 0, 0] }",
+      "  }",
+      "}",
+      "item invalid_transform_object {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:model,",
+      "      model: minecraft:item/base,",
+      "      transformation: {",
+      "        left_rotation: { angle: 45, axis: [0, 1] },",
+      "        scale: [1, 1, 1],",
+      "        translation: [0, 0, \"bad\"]",
+      "      }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidItemTopLevelField"));
+    assert.ok(codes.includes("rsgl.invalidItemTransformation"));
+    assert.ok(codes.includes("rsgl.missingItemTransformationField"));
+  });
+
   it("validates generated model parent chains and texture variables", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
