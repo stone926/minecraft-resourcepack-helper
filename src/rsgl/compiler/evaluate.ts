@@ -8,6 +8,7 @@ import { expandSequencePattern } from "./sequences";
 
 export type EvaluationValue = JsonValue | undefined;
 export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange) => EvaluationValue;
+export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
 
 export interface EvaluationContext {
   namespace: string;
@@ -16,6 +17,7 @@ export interface EvaluationContext {
   mappingReason?: RsglMapping["reason"];
   expansionStack?: ExpansionFrame[];
   rawJsonLoader?: RawJsonLoader;
+  globLoader?: RawGlobLoader;
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -161,7 +163,8 @@ export function childEvaluationContext(
     sourceFile: metadata.sourceFile ?? context.sourceFile,
     mappingReason: metadata.mappingReason ?? context.mappingReason,
     expansionStack: metadata.expansionStack ?? context.expansionStack,
-    rawJsonLoader: context.rawJsonLoader
+    rawJsonLoader: context.rawJsonLoader,
+    globLoader: context.globLoader
   };
 }
 
@@ -247,6 +250,10 @@ function evaluateCallExpression(
   if (callee.name.text === "raw_json") {
     const request = args[0]?.value;
     return typeof request === "string" ? context.rawJsonLoader?.(request, context, range) : undefined;
+  }
+  if (callee.name.text === "glob") {
+    const pattern = args[0]?.value;
+    return typeof pattern === "string" ? context.globLoader?.(pattern, context, range) ?? [] : [];
   }
   if (callee.name.text === "product") {
     const source = normalizeJsonValue(args[0]?.value);

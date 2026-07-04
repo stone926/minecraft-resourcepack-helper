@@ -13,6 +13,7 @@ import {
 import {
   EvaluationContext,
   EvaluationValue,
+  RawGlobLoader,
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
@@ -46,6 +47,7 @@ export interface RsglExternalValueDefinition {
 
 export interface RsglCompileEnvironmentOptions {
   rawJsonLoader?: RawJsonLoader;
+  globLoader?: RawGlobLoader;
 }
 
 export function createStandaloneCompileEnvironment(
@@ -215,7 +217,8 @@ function evaluateLocalEnvironmentValues(
     sourceFile: model.fileName,
     mappingReason: "direct",
     expansionStack: [],
-    rawJsonLoader: options.rawJsonLoader
+    rawJsonLoader: options.rawJsonLoader,
+    globLoader: options.globLoader
   };
 
   for (const statement of model.module.statements) {

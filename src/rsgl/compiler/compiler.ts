@@ -47,9 +47,11 @@ import {
   childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
+  RawGlobLoader,
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
+import { createFileGlobLoader } from "./fileGlob";
 import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
 import { compileItemUseFragment } from "./itemFragments";
@@ -98,6 +100,7 @@ interface RsglCompilerOptions {
   externalValues?: RsglExternalValueDefinition[];
   environment?: RsglModuleCompileEnvironment;
   rawJsonLoader?: RawJsonLoader;
+  globLoader?: RawGlobLoader;
   targetPackFormat?: RsglTargetPackFormat;
 }
 
@@ -114,17 +117,19 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";
   const rawJsonDiagnostics: RsglCompileDiagnostic[] = [];
   const rawJsonLoader = createCompileRawJsonLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
+  const globLoader = createCompileGlobLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
   const target = resolveTargetPackFormat([{ module, namespace }]);
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
     namespace,
-    { rawJsonLoader }
+    { rawJsonLoader, globLoader }
   );
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
     namespace,
     environment,
     rawJsonLoader,
+    globLoader,
     targetPackFormat: target.targetPackFormat
   });
   const result = compiler.compile();
@@ -162,7 +167,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     ...program.diagnostics.map(diagnostic => ({ ...diagnostic }))
   ];
   const rawJsonLoader = createCompileRawJsonLoader(options.entryFileName ?? "<anonymous>", diagnostics);
-  const environments = createProgramCompileEnvironments(program, options.namespace, { rawJsonLoader });
+  const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
+  const environments = createProgramCompileEnvironments(program, options.namespace, { rawJsonLoader, globLoader });
   const selectedModels = selectProgramModels(program, options.entryFileName);
   const target = resolveTargetPackFormat(selectedModels.map(model => ({
     module: model.module,
@@ -189,6 +195,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       externalValues: mapToExternalValues(environment.importedValues),
       environment,
       rawJsonLoader,
+      globLoader,
       targetPackFormat: target.targetPackFormat
     });
     const result = compiler.compile();
@@ -288,7 +295,9 @@ class RsglCompiler {
     } else if (statement.resourceKind === "sounds") {
       this.pushUnit(this.compileSounds(statement, context));
     } else if (statement.resourceKind === "mcmeta") {
-      this.pushUnit(this.compileMcmeta(statement, context));
+      for (const unit of this.compileMcmeta(statement, context)) {
+        this.pushUnit(unit);
+      }
     }
   }
 
@@ -614,25 +623,56 @@ class RsglCompiler {
     };
   }
 
-  private compileMcmeta(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
-    const idValue = statement.id ? this.staticText(statement.id, context) : null;
-    if (!idValue || !statement.id) {
+  private compileMcmeta(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit[] {
+    const targetValues = this.mcmetaTargetValues(statement, context);
+    if (!targetValues) {
+      return [];
+    }
+    const content = this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions("mcmeta"));
+    const units: ResourceUnit[] = [];
+    for (const idValue of targetValues) {
+      const target = this.mcmetaTarget(idValue, context.namespace);
+      if (!target) {
+        this.error("rsgl.compileInvalidResourceId", `Invalid mcmeta target '${idValue}'.`, statement.id?.range ?? statement.range);
+        continue;
+      }
+      units.push({
+        id: target.id,
+        kind: "mcmeta",
+        outputPath: target.outputPath,
+        content,
+        mergePolicy: { kind: "errorOnConflict" },
+        sourceMap: this.sourceMap(target.outputPath, statement, context)
+      });
+    }
+    return units;
+  }
+
+  private mcmetaTargetValues(statement: ResourceDeclNode, context: RsglCompileContext): string[] | null {
+    if (!statement.id) {
       this.error("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
       return null;
     }
-    const target = this.mcmetaTarget(idValue, context.namespace);
-    if (!target) {
-      this.error("rsgl.compileInvalidResourceId", `Invalid mcmeta target '${idValue}'.`, statement.id.range);
-      return null;
+    const value = evaluateExpression(statement.id, context);
+    if (Array.isArray(value)) {
+      const targets: string[] = [];
+      for (const item of value) {
+        if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+          targets.push(String(item));
+        } else {
+          this.error("rsgl.compileInvalidResourceId", "Mcmeta glob results must be static path strings.", statement.id.range);
+        }
+      }
+      if (targets.length === 0) {
+        this.error("rsgl.mcmetaGlobNoMatches", "mcmeta glob did not match any target PNG files.", statement.id.range);
+      }
+      return targets;
     }
-    return {
-      id: target.id,
-      kind: "mcmeta",
-      outputPath: target.outputPath,
-      content: this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions("mcmeta")),
-      mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(target.outputPath, statement, context)
-    };
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return [String(value)];
+    }
+    this.error("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
+    return null;
   }
 
   private compileSugarDecl(statement: SugarDeclNode, context: RsglCompileContext): void {
@@ -879,6 +919,7 @@ class RsglCompiler {
       mappingReason: "direct",
       expansionStack: [],
       rawJsonLoader: this.options.rawJsonLoader,
+      globLoader: this.options.globLoader,
       templates: this.templates
     };
   }
@@ -891,6 +932,7 @@ class RsglCompiler {
       mappingReason: "template",
       expansionStack: [],
       rawJsonLoader: this.options.rawJsonLoader,
+      globLoader: this.options.globLoader,
       templates: template.templates
     };
   }
@@ -1092,6 +1134,13 @@ function packFormatMetadata(target: RsglTargetPackFormat): Record<string, JsonVa
 
 function createCompileRawJsonLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawJsonLoader {
   return createFileRawJsonLoader({
+    fallbackFileName,
+    onError: (code, message, range) => diagnostics.push({ code, message, range, severity: "error" })
+  });
+}
+
+function createCompileGlobLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawGlobLoader {
+  return createFileGlobLoader({
     fallbackFileName,
     onError: (code, message, range) => diagnostics.push({ code, message, range, severity: "error" })
   });

@@ -522,6 +522,60 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/iron"));
   });
 
+  it("expands mcmeta glob targets relative to the resource pack root", () => {
+    const root = createTempDir();
+    try {
+      const rsglDir = path.join(root, "rsgl");
+      const textureDir = path.join(root, "assets", "minecraft", "textures", "block");
+      fs.mkdirSync(rsglDir, { recursive: true });
+      fs.mkdirSync(textureDir, { recursive: true });
+      fs.writeFileSync(path.join(root, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(textureDir, "glow_0.png"), "");
+      fs.writeFileSync(path.join(textureDir, "glow_1.png"), "");
+      fs.writeFileSync(path.join(textureDir, "other.png"), "");
+
+      const mainFile = path.join(rsglDir, "main.rsgl");
+      fs.writeFileSync(mainFile, [
+        "mcmeta glob(\"assets/minecraft/textures/block/glow_*.png\") {",
+        "  use mcmetaAnimation(frametime: 3)",
+        "}"
+      ].join("\n"));
+      const checkedResources: string[] = [];
+      const result = compileRsglFile(mainFile, {
+        resourceExists: (kind, id) => {
+          checkedResources.push(`${kind}:${id}`);
+          return true;
+        }
+      });
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+        "assets/minecraft/textures/block/glow_0.png.mcmeta",
+        "assets/minecraft/textures/block/glow_1.png.mcmeta"
+      ]);
+      for (const unit of result.units) {
+        assert.deepStrictEqual(unit.content, {
+          animation: {
+            frametime: 3
+          }
+        });
+      }
+      assert.ok(checkedResources.includes("texture:minecraft:block/glow_0"));
+      assert.ok(checkedResources.includes("texture:minecraft:block/glow_1"));
+
+      fs.writeFileSync(mainFile, [
+        "mcmeta glob(\"assets/minecraft/textures/block/missing_*.png\") {",
+        "  animation { frametime 1 }",
+        "}"
+      ].join("\n"));
+      const empty = compileRsglFile(mainFile);
+
+      assert.ok(empty.diagnostics.some(diagnostic => diagnostic.code === "rsgl.mcmetaGlobNoMatches"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reports invalid generic JSON resource fragment arguments", () => {
     const result = compileRsglModule(parseRsgl([
       "particles explosion {",
