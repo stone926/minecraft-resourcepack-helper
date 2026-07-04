@@ -1468,8 +1468,8 @@ class RsglCompiler {
       mergePolicy: { kind: "mergeObject" },
       sourceMap: {
         generatedFile: outputPath,
-        mappings: this.overlayEntries.map(item => ({
-          generatedPath: "overlays.entries",
+        mappings: this.overlayEntries.map((item, index) => ({
+          generatedPath: appendGeneratedPath("/overlays/entries", String(index)),
           sourceFile: item.context.sourceFile ?? this.options.fileName,
           sourceRange: item.source.range,
           reason: item.context.mappingReason ?? "direct",

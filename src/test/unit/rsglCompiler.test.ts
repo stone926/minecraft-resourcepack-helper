@@ -2186,6 +2186,28 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("reports duplicate overlay directories at the duplicate overlay declaration", () => {
+    const source = [
+      "overlay \"future\" {",
+      "  model block stone { parent minecraft:block/cube_all }",
+      "}",
+      "overlay \"future\" {",
+      "  item stone { model minecraft:block/stone }",
+      "}"
+    ].join("\n");
+    const secondOverlayStart = source.indexOf("overlay \"future\"", source.indexOf("overlay \"future\"") + 1);
+    const result = compileRsglModule(parseRsgl(source));
+    const duplicate = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.duplicateOverlayDirectory");
+    const pack = result.units.find(unit => unit.outputPath === "pack.mcmeta");
+
+    assert.ok(duplicate);
+    assert.strictEqual(duplicate.range.start, secondOverlayStart);
+    assert.deepStrictEqual(pack?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "/overlays/entries/0",
+      "/overlays/entries/1"
+    ]);
+  });
+
   it("reports non-finite loops inside resource bodies", () => {
     const result = compileRsglModule(parseRsgl([
       "model block bad {",

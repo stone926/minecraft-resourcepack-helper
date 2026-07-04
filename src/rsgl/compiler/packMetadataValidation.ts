@@ -248,10 +248,12 @@ function validatePackOverlays(
   }
 
   const entries = overlays.entries as JsonValue[];
-  for (const entry of entries) {
+  const directories = new Set<string>();
+  for (const [index, entry] of entries.entries()) {
+    const entryPath = overlayEntryPath(index);
     const overlay = asObject(entry);
     if (!overlay) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayEntry", "Overlay entries must be objects.");
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayEntry", "Overlay entries must be objects.", "error", entryPath);
       continue;
     }
     if (typeof overlay.directory !== "string" || !/^[a-z0-9_-]+$/.test(overlay.directory)) {
@@ -259,10 +261,23 @@ function validatePackOverlays(
         diagnostics,
         unit,
         "rsgl.invalidOverlayDirectory",
-        "Overlay directory must contain only lowercase letters, numbers, '_' or '-'."
+        "Overlay directory must contain only lowercase letters, numbers, '_' or '-'.",
+        "error",
+        entryPath
       );
+    } else if (directories.has(overlay.directory)) {
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.duplicateOverlayDirectory",
+        `Overlay directory '${overlay.directory}' is declared more than once.`,
+        "error",
+        entryPath
+      );
+    } else {
+      directories.add(overlay.directory);
     }
-    validateOverlayRange(overlay, unit, options, diagnostics);
+    validateOverlayRange(overlay, unit, options, diagnostics, entryPath);
   }
 }
 
@@ -270,7 +285,8 @@ function validateOverlayRange(
   overlay: Record<string, JsonValue>,
   unit: ResourceUnit,
   options: PackMetadataValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const hasMin = Object.hasOwn(overlay, "min_format");
   const hasMax = Object.hasOwn(overlay, "max_format");
@@ -280,24 +296,24 @@ function validateOverlayRange(
   const legacyFormats = hasFormats ? legacyFormatRangeValue(overlay.formats) : null;
 
   if (hasMin && min === null) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay min_format must be a non-negative integer or [major, minor] tuple.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay min_format must be a non-negative integer or [major, minor] tuple.", "error", generatedPath);
   }
   if (hasMax && max === null) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay max_format must be a non-negative integer or [major, minor] tuple.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay max_format must be a non-negative integer or [major, minor] tuple.", "error", generatedPath);
   }
   if (hasMin !== hasMax) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay min_format and max_format must be used together.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay min_format and max_format must be used together.", "error", generatedPath);
   }
   if (hasFormats && legacyFormats === null) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay formats must be a positive integer, range tuple, or range object.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay formats must be a positive integer, range tuple, or range object.", "error", generatedPath);
   }
 
   const hasValidRange = min !== null && max !== null && comparePackFormats(min, max) <= 0;
   if (min && max && !hasValidRange) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay min_format must not be greater than max_format.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay min_format must not be greater than max_format.", "error", generatedPath);
   }
   if (legacyFormats && legacyFormats.min > legacyFormats.max) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay formats minimum must not be greater than maximum.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay formats minimum must not be greater than maximum.", "error", generatedPath);
   }
 
   const target = targetPackFormatValue(options);
@@ -306,10 +322,10 @@ function validateOverlayRange(
   }
 
   if (hasValidRange && (comparePackFormats(target, min) < 0 || comparePackFormats(target, max) > 0)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format range does not include the compile target pack format.", "warning");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format range does not include the compile target pack format.", "warning", generatedPath);
   } else if (!hasValidRange && legacyFormats && legacyFormats.min <= legacyFormats.max) {
     if (target.major >= modernPackFormatBoundary || target.major < legacyFormats.min || target.major > legacyFormats.max) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay legacy formats do not include the compile target pack format.", "warning");
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay legacy formats do not include the compile target pack format.", "warning", generatedPath);
     }
   }
 }
@@ -389,14 +405,28 @@ function pushUnitDiagnostic(
   unit: ResourceUnit,
   code: string,
   message: string,
-  severity: RsglCompileDiagnostic["severity"] = "error"
+  severity: RsglCompileDiagnostic["severity"] = "error",
+  generatedPath?: string
 ): void {
   diagnostics.push({
     code,
     message,
     severity,
-    range: unit.sourceMap.mappings[0].sourceRange
+    range: generatedPath ? sourceRangeForGeneratedPath(unit, generatedPath) : unitRange(unit)
   });
+}
+
+function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): RsglCompileDiagnostic["range"] {
+  return unit.sourceMap.mappings.find(mapping => mapping.generatedPath === generatedPath)?.sourceRange
+    ?? unitRange(unit);
+}
+
+function unitRange(unit: ResourceUnit): RsglCompileDiagnostic["range"] {
+  return unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 };
+}
+
+function overlayEntryPath(index: number): string {
+  return `/overlays/entries/${index}`;
 }
 
 function asObject(value: unknown): Record<string, JsonValue> | null {
