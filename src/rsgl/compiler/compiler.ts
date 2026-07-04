@@ -46,6 +46,7 @@ import {
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
+import { compileFamilySugar } from "./familySugar";
 import { compileItemUseFragment } from "./itemFragments";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
@@ -591,6 +592,12 @@ class RsglCompiler {
   private compileSugarDecl(statement: SugarDeclNode, context: RsglCompileContext): void {
     if (statement.sugarKind === "conventionalBlockstate") {
       this.compileConventionalBlockstateSugar(statement, context);
+    } else if (statement.sugarKind === "family") {
+      for (const unit of compileFamilySugar(statement, context, {
+        onError: (code, message, range) => this.error(code, message, range)
+      })) {
+        this.pushUnit(unit);
+      }
     } else if (statement.sugarKind === "batchModel") {
       for (const entry of statement.entries) {
         this.pushUnit(createCubeAllModel(

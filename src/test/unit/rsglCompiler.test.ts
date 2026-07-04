@@ -187,6 +187,76 @@ describe("RSGL compiler", () => {
     ]);
   });
 
+  it("lowers wood family sugar to linked resources", () => {
+    const result = compileRsglModule(parseRsgl([
+      "wood_family acacia {",
+      "  texture minecraft:block/acacia_planks",
+      "  generate [planks, slab, stairs, fence]",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/blockstates/acacia_fence.json",
+      "assets/minecraft/blockstates/acacia_planks.json",
+      "assets/minecraft/blockstates/acacia_slab.json",
+      "assets/minecraft/blockstates/acacia_stairs.json",
+      "assets/minecraft/items/acacia_fence.json",
+      "assets/minecraft/items/acacia_planks.json",
+      "assets/minecraft/items/acacia_slab.json",
+      "assets/minecraft/items/acacia_stairs.json",
+      "assets/minecraft/models/block/acacia_fence_inventory.json",
+      "assets/minecraft/models/block/acacia_fence_post.json",
+      "assets/minecraft/models/block/acacia_fence_side.json",
+      "assets/minecraft/models/block/acacia_planks.json",
+      "assets/minecraft/models/block/acacia_slab.json",
+      "assets/minecraft/models/block/acacia_slab_top.json",
+      "assets/minecraft/models/block/acacia_stairs.json",
+      "assets/minecraft/models/block/acacia_stairs_inner.json",
+      "assets/minecraft/models/block/acacia_stairs_outer.json"
+    ]);
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_planks.json"))?.content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/acacia_planks"
+      }
+    });
+    const defaultVariantKey = "";
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_planks.json"))?.content, {
+      variants: {
+        [defaultVariantKey]: {
+          model: "minecraft:block/acacia_planks"
+        }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_stairs_inner.json"))?.content, {
+      parent: "minecraft:block/inner_stairs",
+      textures: {
+        bottom: "minecraft:block/acacia_planks",
+        top: "minecraft:block/acacia_planks",
+        side: "minecraft:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_fence.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:block/acacia_fence_inventory"
+      }
+    });
+  });
+
+  it("reports unsupported family members", () => {
+    const result = compileRsglModule(parseRsgl([
+      "wood_family acacia {",
+      "  texture minecraft:block/acacia_planks",
+      "  generate [door]",
+      "}"
+    ].join("\n")));
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedFamilyMember"));
+  });
+
   it("lowers item range and select fragments", () => {
     const result = compileRsglModule(parseRsgl([
       "table potionCases {",
