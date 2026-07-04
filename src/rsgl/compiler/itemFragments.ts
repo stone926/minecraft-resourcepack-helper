@@ -5,8 +5,11 @@ import {
   IdentifierExprNode,
   ItemCompositeStmtNode,
   ItemConditionStmtNode,
+  ItemEmptyStmtNode,
   ItemRangeStmtNode,
+  ItemSelectedItemStmtNode,
   ItemSelectStmtNode,
+  ItemSpecialStmtNode,
   TextRange,
   UseDeclNode
 } from "../parser";
@@ -45,7 +48,14 @@ export function compileItemUseFragment(
 }
 
 export function compileItemSpecialStatement(
-  statement: ItemRangeStmtNode | ItemSelectStmtNode | ItemConditionStmtNode | ItemCompositeStmtNode,
+  statement:
+    | ItemRangeStmtNode
+    | ItemSelectStmtNode
+    | ItemConditionStmtNode
+    | ItemCompositeStmtNode
+    | ItemEmptyStmtNode
+    | ItemSelectedItemStmtNode
+    | ItemSpecialStmtNode,
   context: EvaluationContext,
   options: RsglItemFragmentOptions = {}
 ): Record<string, JsonValue> | undefined {
@@ -61,7 +71,17 @@ export function compileItemSpecialStatement(
     const model = compileItemConditionStatement(statement, context, options);
     return model ? { model } : undefined;
   }
-  const model = compileItemCompositeStatement(statement, context, options);
+  if (statement.kind === "ItemCompositeStmt") {
+    const model = compileItemCompositeStatement(statement, context, options);
+    return model ? { model } : undefined;
+  }
+  if (statement.kind === "ItemEmptyStmt") {
+    return { model: { type: "minecraft:empty" } };
+  }
+  if (statement.kind === "ItemSelectedItemStmt") {
+    return { model: { type: "minecraft:bundle/selected_item" } };
+  }
+  const model = compileItemSpecialStatementNode(statement, context, options);
   return model ? { model } : undefined;
 }
 
@@ -291,6 +311,26 @@ function compileItemCompositeStatement(
   return {
     type: "minecraft:composite",
     models
+  };
+}
+
+function compileItemSpecialStatementNode(
+  statement: ItemSpecialStmtNode,
+  context: EvaluationContext,
+  options: RsglItemFragmentOptions
+): JsonValue | undefined {
+  const base = expressionString(statement.base, context, "base", options);
+  const model = normalizeJsonValue(evaluateExpression(statement.model, context));
+  if (!base || !isJsonObject(model)) {
+    if (!isJsonObject(model)) {
+      options.onError?.("rsgl.invalidItemSpecialModel", "Item special model must evaluate to an object.", statement.model.range);
+    }
+    return undefined;
+  }
+  return {
+    type: "minecraft:special",
+    base: normalizeModelId(base, context.namespace),
+    model
   };
 }
 

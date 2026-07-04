@@ -442,6 +442,11 @@ function validateItemModelDefinition(
     return;
   }
 
+  if (type === "special") {
+    validateItemSpecial(model, unit, generatedModels, options, diagnostics);
+    return;
+  }
+
   validateNestedItemModels(model, unit, generatedModels, options, diagnostics);
 }
 
@@ -569,6 +574,44 @@ function validateItemCondition(
   }
 }
 
+function validateItemSpecial(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (typeof model.base === "string") {
+    checkResourceExists("model", model.base, unit, generatedModels, options, diagnostics);
+  } else {
+    diagnostics.push({
+      code: "rsgl.invalidItemSpecialBase",
+      message: "Item special model must define a base model id.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+
+  const specialModel = asObject(model.model);
+  if (!specialModel) {
+    diagnostics.push({
+      code: "rsgl.invalidItemSpecialModel",
+      message: "Item special model must define a model object.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+
+  const texture = typeof specialModel.texture === "string" ? specialModel.texture : null;
+  if (texture) {
+    const target = itemSpecialTextureId(itemModelType(specialModel.type), texture, unit.id?.namespace ?? "minecraft");
+    if (target) {
+      checkResourceExists("texture", target, unit, generatedModels, options, diagnostics);
+    }
+  }
+}
+
 function validateNestedItemModels(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
@@ -584,6 +627,23 @@ function validateNestedItemModels(
   if ("fallback" in model) {
     validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
   }
+}
+
+function itemSpecialTextureId(type: string | null, texture: string, defaultNamespace: string): string | null {
+  if (type === "chest") {
+    return textureIdInFolder(texture, defaultNamespace, "entity/chest");
+  }
+  if (type === "shulker_box") {
+    return textureIdInFolder(texture, defaultNamespace, "entity/shulker");
+  }
+  if (type === "head") {
+    return textureIdInFolder(texture, defaultNamespace, "entity");
+  }
+  if (type === "copper_golem_statue") {
+    const id = parseResourceId(texture, defaultNamespace);
+    return `${id.namespace}:${id.path.replace(/^textures\//, "").replace(/\.png$/, "")}`;
+  }
+  return null;
 }
 
 function validateSoundsUnit(

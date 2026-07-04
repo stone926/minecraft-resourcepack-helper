@@ -188,6 +188,32 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(layered.body.statements.map(statement => statement.kind), ["ItemCompositeStmt"]);
   });
 
+  it("parses item special, empty, and selected item statements", () => {
+    const module = parseRsgl([
+      "item shield {",
+      "  special base minecraft:item/shield model { type: minecraft:shield }",
+      "}",
+      "item hidden {",
+      "  empty",
+      "}",
+      "item bundle {",
+      "  selected_item",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const [shield, hidden, bundle] = module.statements;
+    assert.strictEqual(shield.kind, "ResourceDecl");
+    assert.strictEqual(hidden.kind, "ResourceDecl");
+    assert.strictEqual(bundle.kind, "ResourceDecl");
+    if (shield.kind !== "ResourceDecl" || hidden.kind !== "ResourceDecl" || bundle.kind !== "ResourceDecl") {
+      throw new Error("Expected item resource declarations.");
+    }
+    assert.deepStrictEqual(shield.body.statements.map(statement => statement.kind), ["ItemSpecialStmt"]);
+    assert.deepStrictEqual(hidden.body.statements.map(statement => statement.kind), ["ItemEmptyStmt"]);
+    assert.deepStrictEqual(bundle.body.statements.map(statement => statement.kind), ["ItemSelectedItemStmt"]);
+  });
+
   it("parses overlay declarations", () => {
     const module = parseRsgl([
       "overlay \"future\" format [90, 0]..[91, 0] {",

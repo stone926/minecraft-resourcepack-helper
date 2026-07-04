@@ -770,6 +770,15 @@ class RsglParser extends ParserContext {
     if (token.text === "composite") {
       return this.parseItemCompositeStmt();
     }
+    if (token.text === "empty") {
+      return this.parseItemEmptyStmt();
+    }
+    if (token.text === "selected_item") {
+      return this.parseItemSelectedItemStmt();
+    }
+    if (token.text === "special") {
+      return this.parseItemSpecialStmt();
+    }
     if (resourceBodySectionKeywords.has(token.text)) {
       return this.parseSectionStmt();
     }
@@ -1071,6 +1080,41 @@ class RsglParser extends ParserContext {
       kind: "ItemCompositeStmt",
       keyword: start.text,
       models,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemEmptyStmt(): ResourceStatementNode {
+    const start = this.advance();
+    return {
+      kind: "ItemEmptyStmt",
+      keyword: start.text,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemSelectedItemStmt(): ResourceStatementNode {
+    const start = this.advance();
+    return {
+      kind: "ItemSelectedItemStmt",
+      keyword: start.text,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemSpecialStmt(): ResourceStatementNode {
+    const start = this.advance();
+    this.expectText("base", "Expected 'base' in item special statement.");
+    const base = this.parseExpression({ stopTexts: ["model"] });
+    this.expectText("model", "Expected 'model' in item special statement.");
+    const model = this.current().text === "{"
+      ? this.parseObjectExpression()
+      : this.parseExpression({ stopTexts: [] });
+    return {
+      kind: "ItemSpecialStmt",
+      keyword: start.text,
+      base,
+      model,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }

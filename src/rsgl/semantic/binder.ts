@@ -329,6 +329,9 @@ class RsglBinder {
       }
     } else if (statement.kind === "ItemCompositeStmt") {
       statement.models.forEach(model => this.checkExpression(model, scope));
+    } else if (statement.kind === "ItemSpecialStmt") {
+      this.checkExpression(statement.base, scope);
+      this.checkExpression(statement.model, scope);
     } else if (statement.kind === "ForStmt") {
       this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
     } else if (statement.kind === "IfStmt") {

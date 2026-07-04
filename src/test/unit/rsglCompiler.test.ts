@@ -585,6 +585,54 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers item special, empty, and selected item statements", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "item shield {",
+      "  special base minecraft:item/shield model { type: minecraft:shield }",
+      "}",
+      "item chest {",
+      "  special base minecraft:item/chest model { type: minecraft:chest, texture: \"christmas\" }",
+      "}",
+      "item hidden {",
+      "  empty",
+      "}",
+      "item bundle {",
+      "  selected_item",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("shield.json"))?.content, {
+      model: {
+        type: "minecraft:special",
+        base: "minecraft:item/shield",
+        model: { type: "minecraft:shield" }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("chest.json"))?.content, {
+      model: {
+        type: "minecraft:special",
+        base: "minecraft:item/chest",
+        model: { type: "minecraft:chest", texture: "christmas" }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("hidden.json"))?.content, {
+      model: { type: "minecraft:empty" }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("bundle.json"))?.content, {
+      model: { type: "minecraft:bundle/selected_item" }
+    });
+    assert.ok(checkedResources.includes("model:minecraft:item/shield"));
+    assert.ok(checkedResources.includes("model:minecraft:item/chest"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/chest/christmas"));
+  });
+
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
@@ -2298,6 +2346,39 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.itemModelMissingFallback"));
     assert.ok(codes.includes("rsgl.invalidItemSelectCase"));
     assert.ok(codes.includes("rsgl.invalidItemConditionBranch"));
+  });
+
+  it("validates item special model resources and shape", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "item broken_special {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:special,",
+      "      base: minecraft:item/missing_base,",
+      "      model: { type: minecraft:chest, texture: \"missing\" }",
+      "    }",
+      "  }",
+      "}",
+      "item invalid_special {",
+      "  raw_json {",
+      "    model: { type: minecraft:special, base: 1, model: \"not_an_object\" }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.modelNotFound"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(codes.includes("rsgl.invalidItemSpecialBase"));
+    assert.ok(codes.includes("rsgl.invalidItemSpecialModel"));
+    assert.ok(checkedResources.includes("model:minecraft:item/missing_base"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/chest/missing"));
   });
 
   it("validates generated model parent chains and texture variables", () => {

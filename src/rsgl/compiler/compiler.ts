@@ -5,8 +5,11 @@ import {
   ForStmtNode,
   ItemCompositeStmtNode,
   ItemConditionStmtNode,
+  ItemEmptyStmtNode,
   ItemRangeStmtNode,
+  ItemSelectedItemStmtNode,
   ItemSelectStmtNode,
+  ItemSpecialStmtNode,
   LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
@@ -1350,9 +1353,19 @@ function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
 }
 
-function isItemModelStatement(statement: ResourceStatementNode): statement is ItemRangeStmtNode | ItemSelectStmtNode | ItemConditionStmtNode | ItemCompositeStmtNode {
+function isItemModelStatement(statement: ResourceStatementNode): statement is
+  | ItemRangeStmtNode
+  | ItemSelectStmtNode
+  | ItemConditionStmtNode
+  | ItemCompositeStmtNode
+  | ItemEmptyStmtNode
+  | ItemSelectedItemStmtNode
+  | ItemSpecialStmtNode {
   return statement.kind === "ItemRangeStmt"
     || statement.kind === "ItemSelectStmt"
     || statement.kind === "ItemConditionStmt"
-    || statement.kind === "ItemCompositeStmt";
+    || statement.kind === "ItemCompositeStmt"
+    || statement.kind === "ItemEmptyStmt"
+    || statement.kind === "ItemSelectedItemStmt"
+    || statement.kind === "ItemSpecialStmt";
 }

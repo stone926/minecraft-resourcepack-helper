@@ -102,7 +102,7 @@
       "patterns": [
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|range|select|condition|composite)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|range|select|condition|composite|empty|selected_item|special)\\b"
         },
         {
           "name": "storage.type.rsgl",
@@ -134,7 +134,7 @@
       "patterns": [
         {
           "name": "variable.other.property.rsgl",
-          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|model|x|y|z|uvlock|weight|texture|generate|double)\\b"
+          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|base|model|x|y|z|uvlock|weight|texture|generate|double)\\b"
         }
       ]
     },

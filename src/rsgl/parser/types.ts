@@ -462,6 +462,9 @@ export type ResourceStatementNode =
   | ItemSelectStmtNode
   | ItemConditionStmtNode
   | ItemCompositeStmtNode
+  | ItemEmptyStmtNode
+  | ItemSelectedItemStmtNode
+  | ItemSpecialStmtNode
   | VariantEntryNode
   | MultipartEntryNode
   | UseDeclNode
@@ -556,6 +559,20 @@ export interface ItemConditionStmtNode extends StatementNodeBase {
 export interface ItemCompositeStmtNode extends StatementNodeBase {
   kind: "ItemCompositeStmt";
   models: ExprNode[];
+}
+
+export interface ItemEmptyStmtNode extends StatementNodeBase {
+  kind: "ItemEmptyStmt";
+}
+
+export interface ItemSelectedItemStmtNode extends StatementNodeBase {
+  kind: "ItemSelectedItemStmt";
+}
+
+export interface ItemSpecialStmtNode extends StatementNodeBase {
+  kind: "ItemSpecialStmt";
+  base: ExprNode;
+  model: ExprNode;
 }
 
 export interface RawJsonStmtNode extends StatementNodeBase {

@@ -124,6 +124,9 @@ class ResolvedImportCallValidator {
       }
     } else if (statement.kind === "ItemCompositeStmt") {
       statement.models.forEach(model => this.validateExpression(model));
+    } else if (statement.kind === "ItemSpecialStmt") {
+      this.validateExpression(statement.base);
+      this.validateExpression(statement.model);
     } else if (statement.kind === "ForStmt") {
       this.validateExpression(statement.iterable);
       this.validateBody(statement.body);
