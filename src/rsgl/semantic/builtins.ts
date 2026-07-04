@@ -36,6 +36,8 @@ const enumConstants = [
   "daytime",
   "moon_phase",
   "planks",
+  "cube",
+  "cube_all",
   "slab",
   "stairs",
   "fence",
@@ -79,6 +81,12 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     builtinFunction("itemGenerated", [
       { name: "id", type: resourceIdType, optional: false },
       { name: "texture", type: textureIdType, optional: true }
+    ], jsonType),
+    builtinFunction("blockFamily", [
+      { name: "base", type: resourceIdType, optional: false },
+      { name: "texture", type: textureIdType, optional: true },
+      { name: "variants", type: { kind: "List", elementType: stringType }, optional: true },
+      { name: "itemModels", type: booleanType, optional: true }
     ], jsonType),
     builtinFunction("stairs", [
       { name: "base", type: modelIdType, optional: false },

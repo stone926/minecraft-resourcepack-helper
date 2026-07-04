@@ -182,6 +182,16 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers stairs sugar custom model patterns", () => {
+    const result = compileRsglModule(parseRsgl("stairs acacia_stairs models \"minecraft:block/stair/{id}\""));
+    const variants = (result.units[0].content as { variants: Record<string, Record<string, unknown>> }).variants;
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(variants["facing=east,half=bottom,shape=straight"].model, "minecraft:block/stair/acacia_stairs");
+    assert.strictEqual(variants["facing=east,half=bottom,shape=inner_left"].model, "minecraft:block/stair/acacia_stairs_inner");
+    assert.strictEqual(variants["facing=east,half=bottom,shape=outer_left"].model, "minecraft:block/stair/acacia_stairs_outer");
+  });
+
   it("lowers cube_all and items model batch sugar", () => {
     const result = compileRsglModule(parseRsgl([
       "cube_all [",
@@ -233,6 +243,41 @@ describe("RSGL compiler", () => {
         model: "minecraft:item/diamond"
       }
     });
+  });
+
+  it("lowers blockFamily builtin use to linked resources", () => {
+    const result = compileRsglModule(parseRsgl([
+      "use blockFamily(",
+      "  base: minecraft:acacia,",
+      "  texture: minecraft:block/acacia_planks,",
+      "  variants: [cube, slab, stairs],",
+      "  itemModels: true",
+      ")"
+    ].join("\n")));
+    const outputPaths = result.units.map(unit => unit.outputPath).sort();
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(outputPaths.length, 12);
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_planks.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_slab.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_stairs.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_planks.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/block/acacia_stairs_inner.json"));
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_planks.json"))?.content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_planks.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings[0].expansionStack.map(frame => frame.label), [
+      "blockFamily acacia"
+    ]);
   });
 
   it("lowers wood family sugar to linked resources", () => {

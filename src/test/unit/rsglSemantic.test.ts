@@ -72,14 +72,15 @@ describe("RSGL semantic model", () => {
       "}",
       "equipment minecraft:bad_equipment {",
       "  use equipmentLayers(texture: minecraft:iron)",
-      "}"
+      "}",
+      "use blockFamily(texture: minecraft:block/oak_planks)"
     ].join("\n"));
 
     const model = bindRsglModule(module);
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.ok(codes.includes("rsgl.missingArgument"));
-    assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 3);
+    assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 4);
   });
 
   it("reports unknown, duplicate, and excessive template call arguments", () => {

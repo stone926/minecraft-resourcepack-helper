@@ -119,6 +119,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, door, trapdoor, button, pressure_plate, sign, hanging_sign, boat, chest_boat]\n}",
     detail: "Wood family sugar",
     kind: "snippet"
+  },
+  {
+    label: "block_family",
+    insertText: "block_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, door, trapdoor, button, pressure_plate, sign, hanging_sign, boat, chest_boat]\n}",
+    detail: "Block family sugar",
+    kind: "snippet"
   }
 ];
 
@@ -147,6 +153,12 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "cubeAll", detail: "Builtin block cube model template", kind: "function" },
   { label: "itemGenerated", detail: "Builtin generated item template", kind: "function" },
+  {
+    label: "blockFamily",
+    insertText: "blockFamily(base: ${1:minecraft:acacia}, texture: ${2:minecraft:block/acacia_planks}, variants: [${3:cube, slab, stairs}], itemModels: true)",
+    detail: "Builtin linked block family template",
+    kind: "function"
+  },
   { label: "itemRangeFrames", detail: "Builtin range_dispatch item helper", kind: "function" },
   { label: "itemSelectCases", detail: "Builtin select item helper", kind: "function" },
   { label: "atlasDirectory", detail: "Builtin atlas directory source helper", kind: "function" },

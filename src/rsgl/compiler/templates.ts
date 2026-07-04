@@ -186,13 +186,14 @@ export function createStairsBlockstate(
   namespace: string,
   sourceFile: string,
   sourceRange: { start: number; end: number },
-  expansionStack: ExpansionFrame[] = []
+  expansionStack: ExpansionFrame[] = [],
+  models?: StairsBlockstateModels
 ): ResourceUnit | null {
   const id = parseResourceId(idValue, namespace);
   if (!id) {
     return null;
   }
-  return blockstateUnit(idValue, namespace, createStairsBlockstateContent({
+  return blockstateUnit(idValue, namespace, createStairsBlockstateContent(models ?? {
     base: `${id.namespace}:block/${id.path}`,
     inner: `${id.namespace}:block/${id.path}_inner`,
     outer: `${id.namespace}:block/${id.path}_outer`

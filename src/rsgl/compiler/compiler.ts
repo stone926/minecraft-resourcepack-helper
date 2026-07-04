@@ -825,7 +825,14 @@ class RsglCompiler {
       return;
     }
     if (statement.sugarName.text === "stairs") {
-      this.pushUnit(createStairsBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
+      this.pushUnit(createStairsBlockstate(
+        idValue,
+        context.namespace,
+        context.sourceFile ?? this.options.fileName,
+        statement.range,
+        context.expansionStack ?? [],
+        this.stairsSugarModels(statement, idValue, context)
+      ));
     } else if (statement.sugarName.text === "slab") {
       const double = statement.options.find(option => option.name.text === "double")?.value;
       if (!double) {
@@ -840,6 +847,24 @@ class RsglCompiler {
     } else if (statement.sugarName.text === "pane") {
       this.pushUnit(createPaneBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     }
+  }
+
+  private stairsSugarModels(statement: SugarDeclNode, idValue: string, context: RsglCompileContext): { base: string; inner: string; outer: string } | undefined {
+    const models = statement.options.find(option => option.name.text === "models")?.value;
+    const pattern = models ? this.staticText(models, context) : null;
+    if (!pattern) {
+      return undefined;
+    }
+    const id = parseResourceId(idValue, context.namespace);
+    if (!id) {
+      return undefined;
+    }
+    const baseName = id.path;
+    return {
+      base: pattern.replaceAll("{id}", baseName),
+      inner: pattern.replaceAll("{id}", `${baseName}_inner`),
+      outer: pattern.replaceAll("{id}", `${baseName}_outer`)
+    };
   }
 
   private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {

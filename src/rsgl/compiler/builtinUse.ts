@@ -6,6 +6,7 @@ import {
   TextRange
 } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
+import { compileBlockFamilyUse } from "./familySugar";
 import { ExpansionFrame, ResourceUnit } from "./ir";
 import {
   createCubeAllModel,
@@ -50,6 +51,12 @@ export function compileBuiltinUse(
       createGeneratedItemModel(id, texture ?? undefined, context.namespace, options.sourceFile, call.range, options.expansionStack),
       createItemMapping(id, undefined, context.namespace, options.sourceFile, call.range, options.expansionStack)
     ]);
+  }
+
+  if (call.callee.name.text === "blockFamily") {
+    return compileBlockFamilyUse(call, context, {
+      onError: options.onError
+    });
   }
 
   return null;

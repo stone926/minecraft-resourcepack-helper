@@ -710,7 +710,8 @@ class RsglBinder {
   }
 
   private define(scope: RsglScope, symbol: RsglSymbol): void {
-    if (scope.symbols.has(symbol.name) && symbol.kind !== "builtin") {
+    const existing = scope.symbols.get(symbol.name);
+    if (existing && existing.kind !== "builtin" && symbol.kind !== "builtin") {
       this.diagnostics.push(diagnostic("rsgl.duplicateSymbol", `Duplicate RSGL symbol '${symbol.name}'.`, symbol.range ?? symbol.node?.range ?? { start: 0, end: 1 }));
       return;
     }

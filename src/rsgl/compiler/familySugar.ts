@@ -1,6 +1,6 @@
-import { ExprNode, SugarDeclNode, TextRange } from "../parser";
+import { ArgumentNode, CallExprNode, ExprNode, SugarDeclNode, TextRange } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
-import { ExpansionFrame, JsonValue, ResourceUnit, RsglMapping } from "./ir";
+import { ExpansionFrame, JsonValue, ResourceId, ResourceUnit, RsglMapping } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
   createButtonBlockstate,
@@ -71,12 +71,49 @@ export function compileFamilySugar(
     ]
   };
 
+  return compileFamilyMembers(familyMembers(statement, context), family, options);
+}
+
+export function compileBlockFamilyUse(
+  call: CallExprNode,
+  context: EvaluationContext,
+  options: RsglFamilySugarOptions = {}
+): ResourceUnit[] {
+  const base = requiredResourceArgument(call, "base", 0, context, options);
+  if (!base) {
+    return [];
+  }
+
+  const texture = optionalResourceArgument(call, "texture", 1, context, "block")
+    ?? `${base.namespace}:block/${base.path}_planks`;
+  const members = blockFamilyMembers(call, context, options);
+  const family: FamilyContext = {
+    baseName: base.path,
+    namespace: base.namespace,
+    texture,
+    hangingSignParticle: defaultHangingSignParticle(base.namespace, base.path),
+    sourceFile: context.sourceFile ?? "<anonymous>",
+    sourceRange: call.range,
+    expansionStack: [
+      ...(context.expansionStack ?? []),
+      { label: `blockFamily ${base.path}`, sourceRange: call.range }
+    ]
+  };
+  const units = compileFamilyMembers(members, family, options);
+  return blockFamilyItemModels(call, context) ? units : units.filter(unit => !isFamilyItemUnit(unit));
+}
+
+function compileFamilyMembers(
+  members: string[],
+  family: FamilyContext,
+  options: RsglFamilySugarOptions
+): ResourceUnit[] {
   const units: ResourceUnit[] = [];
-  for (const member of familyMembers(statement, context)) {
+  for (const member of members) {
     if (isSupportedFamilyMember(member)) {
       units.push(...compileFamilyMember(member, family));
     } else {
-      options.onError?.("rsgl.unsupportedFamilyMember", `Family member '${member}' is not supported yet.`, statement.range);
+      options.onError?.("rsgl.unsupportedFamilyMember", `Family member '${member}' is not supported yet.`, family.sourceRange);
     }
   }
   return units;
@@ -291,6 +328,76 @@ function familyMembers(statement: SugarDeclNode, context: EvaluationContext): st
   return ["planks"];
 }
 
+function blockFamilyMembers(
+  call: CallExprNode,
+  context: EvaluationContext,
+  options: RsglFamilySugarOptions
+): string[] {
+  const variants = findArgument(call, "variants", 2);
+  if (!variants) {
+    return ["planks"];
+  }
+  const value = evaluateExpression(variants.value, context);
+  if (!Array.isArray(value)) {
+    options.onError?.("rsgl.invalidBuiltinUseArgument", "blockFamily variants must evaluate to a list.", variants.value.range);
+    return [];
+  }
+  return value.map(item => normalizeFamilyMember(String(item)));
+}
+
+function normalizeFamilyMember(value: string): string {
+  if (value === "cube" || value === "cube_all") {
+    return "planks";
+  }
+  return value;
+}
+
+function blockFamilyItemModels(call: CallExprNode, context: EvaluationContext): boolean {
+  const itemModels = findArgument(call, "itemModels", 3);
+  if (!itemModels) {
+    return true;
+  }
+  return evaluateExpression(itemModels.value, context) !== false;
+}
+
+function requiredResourceArgument(
+  call: CallExprNode,
+  name: string,
+  positionalIndex: number,
+  context: EvaluationContext,
+  options: RsglFamilySugarOptions
+): ResourceId | null {
+  const argument = findArgument(call, name, positionalIndex);
+  if (!argument) {
+    options.onError?.("rsgl.compileMissingArgument", `Missing blockFamily argument '${name}'.`, call.range);
+    return null;
+  }
+  const value = staticText(argument.value, context);
+  const id = value ? parseResourceId(value, context.namespace) : null;
+  if (!id) {
+    options.onError?.("rsgl.compileMissingResourceId", `blockFamily argument '${name}' must be a static resource id.`, argument.value.range);
+    return null;
+  }
+  return id;
+}
+
+function optionalResourceArgument(
+  call: CallExprNode,
+  name: string,
+  positionalIndex: number,
+  context: EvaluationContext,
+  defaultFolder: string
+): string | null {
+  const argument = findArgument(call, name, positionalIndex);
+  const value = argument ? staticText(argument.value, context) : null;
+  return value ? normalizeResourceValue(value, context.namespace, defaultFolder) : null;
+}
+
+function findArgument(call: CallExprNode, name: string, positionalIndex: number): ArgumentNode | undefined {
+  return call.args.find(arg => arg.name?.text === name)
+    ?? call.args.filter(arg => !arg.name)[positionalIndex];
+}
+
 function textureValue(statement: SugarDeclNode, context: EvaluationContext, baseName: string): string {
   return propertyResourceValue(statement, context, "texture", `${context.namespace}:block/${baseName}_planks`, "block");
 }
@@ -418,6 +525,10 @@ function isSupportedFamilyMember(value: string): value is SupportedFamilyMember 
     || value === "hanging_sign"
     || value === "boat"
     || value === "chest_boat";
+}
+
+function isFamilyItemUnit(unit: ResourceUnit): boolean {
+  return unit.kind === "item" || (unit.kind === "model" && unit.id?.path.startsWith("item/") === true);
 }
 
 function compact<T>(values: Array<T | null>): T[] {
