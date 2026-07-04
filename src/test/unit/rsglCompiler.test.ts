@@ -1274,6 +1274,44 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
   });
 
+  it("uses RSGL target declarations for version-gated validation", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format [74, 0]",
+      "blockstate rotated {",
+      "  variants {",
+      "    {} -> { model: minecraft:block/rotated, z: 90 }",
+      "  }",
+      "}",
+      "overlay \"future\" format [90, 0]..[91, 0] {",
+      "  model block rotated { parent minecraft:block/cube_all }",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
+    assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
+  });
+
+  it("reports invalid and conflicting RSGL target formats", () => {
+    const invalid = compileRsglModule(parseRsgl("target java format \"newest\""));
+    assert.ok(invalid.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidTargetFormat"));
+
+    const firstFile = path.resolve("pack", "first.rsgl");
+    const secondFile = path.resolve("pack", "second.rsgl");
+    const conflicting = compileRsglProgram([
+      {
+        fileName: firstFile,
+        module: parseRsgl("target java format [88, 0]")
+      },
+      {
+        fileName: secondFile,
+        module: parseRsgl("target java format [89, 0]")
+      }
+    ]);
+
+    assert.ok(conflicting.diagnostics.some(diagnostic => diagnostic.code === "rsgl.conflictingTargetFormat"));
+  });
+
   it("validates item model condition trees", () => {
     const result = compileRsglModule(parseRsgl([
       "item broken_compass {",

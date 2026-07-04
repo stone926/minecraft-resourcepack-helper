@@ -55,6 +55,7 @@ import { mergeResourceUnits } from "./merge";
 import { createFileRawJsonLoader } from "./rawJson";
 import { ResourceBodyCompileOptions, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
+import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
 import {
   createCubeAllModel,
   createFenceBlockstate,
@@ -99,30 +100,34 @@ type RsglCompileContext = EvaluationContext & {
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
+  const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";
   const rawJsonDiagnostics: RsglCompileDiagnostic[] = [];
   const rawJsonLoader = createCompileRawJsonLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
-    options.namespace ?? semanticModel.namespace ?? "minecraft",
+    namespace,
     { rawJsonLoader }
   );
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
-    namespace: options.namespace ?? semanticModel.namespace ?? "minecraft",
+    namespace,
     environment,
     rawJsonLoader
   });
   const result = compiler.compile();
   const merged = mergeResourceUnits(result.units);
+  const target = resolveTargetPackFormat([{ module, namespace }]);
+  const validationOptions = withTargetPackFormat(options, target.targetPackFormat);
   return {
     units: merged.units,
     diagnostics: [
       ...semanticModel.diagnostics.map(diagnostic => ({ ...diagnostic })),
+      ...target.diagnostics,
       ...rawJsonDiagnostics,
       ...result.diagnostics,
       ...merged.diagnostics,
       ...detectOutputConflicts(merged.units),
-      ...validateResourceUnits(merged.units, options)
+      ...validateResourceUnits(merged.units, validationOptions)
     ]
   };
 }
@@ -158,11 +163,12 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   }
 
   for (const model of selectedModels) {
+    const namespace = options.namespace ?? model.namespace ?? "minecraft";
     const environment = environments.get(normalizeFileName(model.fileName))
-      ?? createStandaloneCompileEnvironment(model, options.namespace ?? model.namespace ?? "minecraft");
+      ?? createStandaloneCompileEnvironment(model, namespace);
     const compiler = new RsglCompiler(model.module, {
       fileName: model.fileName,
-      namespace: options.namespace ?? model.namespace ?? "minecraft",
+      namespace,
       externalTemplates: Array.from(environment.importedTemplates.values()),
       externalValues: mapToExternalValues(environment.importedValues),
       environment,
@@ -174,10 +180,16 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   }
 
   const merged = mergeResourceUnits(units);
+  const target = resolveTargetPackFormat(selectedModels.map(model => ({
+    module: model.module,
+    namespace: options.namespace ?? model.namespace ?? "minecraft"
+  })));
+  const validationOptions = withTargetPackFormat(options, target.targetPackFormat);
   diagnostics.push(
+    ...target.diagnostics,
     ...merged.diagnostics,
     ...detectOutputConflicts(merged.units),
-    ...validateResourceUnits(merged.units, options)
+    ...validateResourceUnits(merged.units, validationOptions)
   );
   return { units: merged.units, diagnostics };
 }
@@ -1002,6 +1014,15 @@ function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
     }
   }
   return diagnostics;
+}
+
+function withTargetPackFormat<T extends RsglResourceValidationOptions>(
+  options: T,
+  targetPackFormat: RsglTargetPackFormat | undefined
+): T {
+  return options.targetPackFormat || !targetPackFormat
+    ? options
+    : { ...options, targetPackFormat };
 }
 
 function createCompileRawJsonLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawJsonLoader {
