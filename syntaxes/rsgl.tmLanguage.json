@@ -106,7 +106,7 @@
         },
         {
           "name": "storage.type.rsgl",
-          "match": "\\b(?:target|namespace|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|pack)\\b"
+          "match": "\\b(?:target|namespace|let|table|template|fragment|model|blockstate|item|atlas|mcmeta|particles|equipment|pack)\\b"
         },
         {
           "name": "support.type.sugar.rsgl",

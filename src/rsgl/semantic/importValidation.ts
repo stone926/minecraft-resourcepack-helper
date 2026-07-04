@@ -54,6 +54,8 @@ class ResolvedImportCallValidator {
       this.validateExpression(statement.value);
     } else if (statement.kind === "TemplateDecl") {
       this.validateBody(statement.body);
+    } else if (statement.kind === "FragmentDecl") {
+      this.validateBody(statement.body);
     } else if (statement.kind === "ResourceDecl") {
       if (statement.id) {
         this.validateExpression(statement.id);

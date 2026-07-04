@@ -158,13 +158,11 @@ export function childEvaluationContext(
   metadata: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack">> = {}
 ): EvaluationContext {
   return {
-    namespace: context.namespace,
+    ...context,
     variables: new Map([...context.variables, ...Object.entries(values)]),
     sourceFile: metadata.sourceFile ?? context.sourceFile,
     mappingReason: metadata.mappingReason ?? context.mappingReason,
     expansionStack: metadata.expansionStack ?? context.expansionStack,
-    rawJsonLoader: context.rawJsonLoader,
-    globLoader: context.globLoader
   };
 }
 

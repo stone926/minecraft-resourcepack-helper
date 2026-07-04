@@ -61,6 +61,7 @@ export type TopLevelStatementNode =
   | LetDeclNode
   | TableDeclNode
   | TemplateDeclNode
+  | FragmentDeclNode
   | ResourceDeclNode
   | SugarDeclNode
   | OverlayDeclNode
@@ -372,6 +373,13 @@ export interface TemplateDeclNode extends StatementNodeBase {
   name: IdentifierNode | null;
   parameters: ParameterNode[];
   body: BlockNode;
+}
+
+export interface FragmentDeclNode extends StatementNodeBase {
+  kind: "FragmentDecl";
+  name: IdentifierNode | null;
+  parameters: ParameterNode[];
+  body: ResourceBodyNode;
 }
 
 export type ResourceKind =

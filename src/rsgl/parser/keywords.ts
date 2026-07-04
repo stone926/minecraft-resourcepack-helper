@@ -7,6 +7,7 @@ export const topLevelKeywords = [
   "let",
   "table",
   "template",
+  "fragment",
   "model",
   "blockstate",
   "item",

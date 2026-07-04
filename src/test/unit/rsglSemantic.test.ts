@@ -16,6 +16,10 @@ describe("RSGL semantic model", () => {
       "    textures { all: texture }",
       "  }",
       "}",
+      "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "  parent parentModel",
+      "  textures { all: texture }",
+      "}",
       "model block acacia_planks {",
       "  parent minecraft:block/cube_all",
       "  textures { all: id }",
@@ -27,6 +31,7 @@ describe("RSGL semantic model", () => {
     assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.strictEqual(model.namespace, "minecraft");
     assert.ok(model.symbols.some(symbol => symbol.kind === "template" && symbol.name === "cube"));
+    assert.ok(model.symbols.some(symbol => symbol.kind === "fragment" && symbol.name === "cubeFields"));
     assert.ok(model.symbols.some(symbol => symbol.kind === "variable" && symbol.name === "id"));
     assert.strictEqual(model.imports[0].source, "./woods.rsgl");
     assert.deepStrictEqual(model.imports[0].namedImports.map(item => item.local), ["woodTable"]);
@@ -237,6 +242,39 @@ describe("RSGL semantic model", () => {
 
     assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.strictEqual(importedCube?.signature?.parameters[0].name, "id");
+  });
+
+  it("resolves imported fragment signatures", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { cubeFields } from \"./fragments.rsgl\"",
+          "model block stone {",
+          "  use cubeFields(parentModel: minecraft:block/cube_all)",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+          "  parent parentModel",
+          "  textures { all: texture }",
+          "}"
+        ].join("\n"))
+      }
+    ]);
+
+    const mainModel = program.models.find(model => model.fileName === mainFile);
+    const importedFragment = mainModel?.scope.symbols.get("cubeFields");
+    const codes = program.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.strictEqual(importedFragment?.kind, "import");
+    assert.strictEqual(importedFragment?.signature?.parameters[0].name, "parentModel");
+    assert.ok(codes.includes("rsgl.missingArgument"));
   });
 
   it("resolves export-star re-exports", () => {

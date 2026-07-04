@@ -28,8 +28,10 @@ import {
 } from "../semantic";
 import {
   RsglExternalValueDefinition,
+  RsglFragmentDefinition,
   RsglModuleCompileEnvironment,
   RsglTemplateDefinition,
+  createFragmentDefinition,
   createProgramCompileEnvironments,
   createStandaloneCompileEnvironment,
   createTemplateDefinition,
@@ -97,6 +99,7 @@ interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
   externalTemplates?: RsglTemplateDefinition[];
+  externalFragments?: RsglFragmentDefinition[];
   externalValues?: RsglExternalValueDefinition[];
   environment?: RsglModuleCompileEnvironment;
   rawJsonLoader?: RawJsonLoader;
@@ -106,6 +109,7 @@ interface RsglCompilerOptions {
 
 type RsglCompileContext = EvaluationContext & {
   templates?: Map<string, RsglTemplateDefinition>;
+  fragments?: Map<string, RsglFragmentDefinition>;
 };
 
 type TemplateCallParameter = RsglCallableParameter & {
@@ -193,6 +197,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       fileName: model.fileName,
       namespace,
       externalTemplates: Array.from(environment.importedTemplates.values()),
+      externalFragments: Array.from(environment.importedFragments.values()),
       externalValues: mapToExternalValues(environment.importedValues),
       environment,
       rawJsonLoader,
@@ -219,6 +224,7 @@ class RsglCompiler {
   private readonly units: ResourceUnit[] = [];
   private readonly diagnostics: RsglCompileDiagnostic[] = [];
   private readonly templates = new Map<string, RsglTemplateDefinition>();
+  private readonly fragments = new Map<string, RsglFragmentDefinition>();
   private readonly overlayEntries: Array<{ entry: Record<string, JsonValue>; source: OverlayDeclNode; context: RsglCompileContext }> = [];
 
   public constructor(
@@ -230,6 +236,9 @@ class RsglCompiler {
     for (const template of this.options.externalTemplates ?? []) {
       this.templates.set(template.name, template);
     }
+    for (const fragment of this.options.externalFragments ?? []) {
+      this.fragments.set(fragment.name, fragment);
+    }
     for (const statement of this.module.statements) {
       if (statement.kind === "TemplateDecl" && statement.name) {
         const template = this.options.environment?.allTemplates.get(statement.name.text)
@@ -239,9 +248,22 @@ class RsglCompiler {
             this.options.fileName,
             this.options.namespace,
             new Map(),
-            this.templates
+            this.templates,
+            this.fragments
           );
         this.templates.set(statement.name.text, template);
+      } else if (statement.kind === "FragmentDecl" && statement.name) {
+        const fragment = this.options.environment?.allFragments.get(statement.name.text)
+          ?? createFragmentDefinition(
+            statement.name.text,
+            statement,
+            this.options.fileName,
+            this.options.namespace,
+            new Map(),
+            this.templates,
+            this.fragments
+          );
+        this.fragments.set(statement.name.text, fragment);
       }
     }
     const context = this.createRootContext();
@@ -320,7 +342,7 @@ class RsglCompiler {
       id: modelId,
       kind: "model",
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions()),
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
@@ -334,7 +356,9 @@ class RsglCompiler {
       return null;
     }
     const body = this.resourceBodyToObject(statement.body, context, {
-      onUseFragment: (useStatement, fragmentContext) => compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions())
+      onUseFragment: (useStatement, fragmentContext) =>
+        compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions())
+        ?? this.compileResourceBodyFragment(useStatement, fragmentContext, "item")
     });
     const model = typeof body.model === "string"
       ? { type: "minecraft:model", model: body.model }
@@ -560,7 +584,7 @@ class RsglCompiler {
 
   private compilePack(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit {
     const outputPath = "pack.mcmeta";
-    const body = this.resourceBodyToObject(statement.body, context);
+    const body = this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions());
     const content = this.packContentWithTargetMetadata(isJsonObject(body.pack) ? body : { pack: body });
     return {
       kind: "pack",
@@ -600,7 +624,7 @@ class RsglCompiler {
       id,
       kind: "lang",
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions()),
       mergePolicy: { kind: "mergeObject" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
@@ -618,7 +642,7 @@ class RsglCompiler {
       id,
       kind: "sounds",
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context),
+      content: this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions()),
       mergePolicy: { kind: "mergeObject" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
@@ -812,6 +836,98 @@ class RsglCompiler {
     this.compileBlock(template.node.body, templateContext);
   }
 
+  private compileResourceBodyFragment(
+    useStatement: Extract<ResourceStatementNode, { kind: "UseDecl" }>,
+    context: RsglCompileContext,
+    kind?: "item" | JsonResourceFragmentKind
+  ): Record<string, JsonValue> | undefined {
+    const expression = useStatement.expression;
+    if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+      return undefined;
+    }
+    const fragmentName = expression.callee.name.text;
+    const fragment = (context.fragments ?? this.fragments).get(fragmentName);
+    if (!fragment) {
+      return undefined;
+    }
+
+    const recursionKey = `fragment ${fragment.name}`;
+    if ((context.expansionStack ?? []).some(frame => frame.label === recursionKey)) {
+      this.error("rsgl.fragmentRecursion", `Fragment '${fragment.name}' cannot recursively expand itself.`, expression.range);
+      return undefined;
+    }
+
+    const fragmentBaseContext = this.createFragmentBaseContext(fragment);
+    const values = this.bindCallableValues(
+      fragment.node.parameters
+        .filter(parameter => parameter.name)
+        .map((parameter): TemplateCallParameter => ({
+          name: parameter.name!.text,
+          optional: Boolean(parameter.defaultValue),
+          node: parameter,
+          parameterNode: parameter
+        })),
+      expression,
+      context,
+      fragmentBaseContext,
+      "fragment"
+    );
+    if (!values) {
+      return undefined;
+    }
+
+    const fragmentContext = this.createChildContext(fragmentBaseContext, values, {
+      sourceFile: fragment.fileName,
+      mappingReason: "template",
+      expansionStack: [
+        ...(context.expansionStack ?? []),
+        { label: recursionKey, sourceRange: expression.range }
+      ]
+    });
+    return this.resourceBodyToObject(fragment.node.body, fragmentContext, this.resourceBodyFragmentOptions(kind));
+  }
+
+  private bindCallableValues(
+    parameters: TemplateCallParameter[],
+    expression: Extract<ExprNode, { kind: "CallExpr" }>,
+    callContext: RsglCompileContext,
+    definitionContext: RsglCompileContext,
+    label: "template" | "fragment"
+  ): Record<string, EvaluationValue> | null {
+    const values: Record<string, EvaluationValue> = {};
+    const binding = bindRsglArguments(parameters, expression.args, {
+      callRange: expression.range,
+      codes: {
+        duplicate: "rsgl.compileDuplicateArgument",
+        missing: "rsgl.compileMissingArgument",
+        tooMany: "rsgl.compileTooManyArguments",
+        unknown: "rsgl.compileUnknownArgument"
+      },
+      messages: {
+        duplicate: name => `Duplicate ${label} argument '${name}'.`,
+        missing: parameter => `Missing ${label} argument '${parameter.name}'.`,
+        tooMany: () => `Too many ${label} positional arguments.`,
+        unknown: name => `Unknown ${label} argument '${name}'.`
+      }
+    });
+    this.diagnostics.push(...binding.diagnostics);
+    if (binding.diagnostics.some(diagnostic => diagnostic.severity === "error")) {
+      return null;
+    }
+
+    const argsByParameter = new Map(binding.primaryAssignments.map(assignment => [assignment.parameter.name, assignment.arg]));
+    for (const parameter of parameters) {
+      const name = parameter.name;
+      const arg = argsByParameter.get(name);
+      if (arg) {
+        values[name] = evaluateExpression(arg.value, callContext);
+      } else if (parameter.parameterNode.defaultValue) {
+        values[name] = evaluateExpression(parameter.parameterNode.defaultValue, this.createChildContext(definitionContext, values));
+      }
+    }
+    return values;
+  }
+
   private compileForStmt(statement: ForStmtNode, context: RsglCompileContext): void {
     const iterable = evaluateExpression(statement.iterable, context);
     const values = Array.isArray(iterable) ? iterable : [];
@@ -921,7 +1037,8 @@ class RsglCompiler {
       expansionStack: [],
       rawJsonLoader: this.options.rawJsonLoader,
       globLoader: this.options.globLoader,
-      templates: this.templates
+      templates: this.templates,
+      fragments: this.fragments
     };
   }
 
@@ -934,7 +1051,22 @@ class RsglCompiler {
       expansionStack: [],
       rawJsonLoader: this.options.rawJsonLoader,
       globLoader: this.options.globLoader,
-      templates: template.templates
+      templates: template.templates,
+      fragments: template.fragments
+    };
+  }
+
+  private createFragmentBaseContext(fragment: RsglFragmentDefinition): RsglCompileContext {
+    return {
+      namespace: fragment.namespace,
+      variables: new Map(fragment.values),
+      sourceFile: fragment.fileName,
+      mappingReason: "template",
+      expansionStack: [],
+      rawJsonLoader: this.options.rawJsonLoader,
+      globLoader: this.options.globLoader,
+      templates: fragment.templates,
+      fragments: fragment.fragments
     };
   }
 
@@ -945,7 +1077,8 @@ class RsglCompiler {
   ): RsglCompileContext {
     return {
       ...childEvaluationContext(context, values, metadata),
-      templates: context.templates
+      templates: context.templates,
+      fragments: context.fragments
     };
   }
 
@@ -956,7 +1089,8 @@ class RsglCompiler {
   ): RsglCompileContext {
     return {
       ...createEvaluationLoopContext(context, bindings, sourceRange),
-      templates: context.templates
+      templates: context.templates,
+      fragments: context.fragments
     };
   }
 
@@ -983,11 +1117,19 @@ class RsglCompiler {
     };
   }
 
+  private resourceBodyFragmentOptions(kind?: "item" | JsonResourceFragmentKind): ResourceBodyCompileOptions {
+    return {
+      onUseFragment: (useStatement, fragmentContext) => this.compileResourceBodyFragment(useStatement, fragmentContext, kind)
+    };
+  }
+
   private jsonResourceFragmentOptions(kind: JsonResourceFragmentKind): ResourceBodyCompileOptions {
     return {
-      onUseFragment: (useStatement, fragmentContext) => compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
-        onError: (code, message, range) => this.error(code, message, range)
-      })
+      onUseFragment: (useStatement, fragmentContext) =>
+        compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
+          onError: (code, message, range) => this.error(code, message, range)
+        })
+        ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind)
     };
   }
 

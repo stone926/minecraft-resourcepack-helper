@@ -55,6 +55,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "fragment",
+    insertText: "fragment ${1:name}(${2:value}: ${3:Json}) {\n  ${4:key}: ${2:value}\n}",
+    detail: "Reusable resource body fragment",
+    kind: "snippet"
+  },
+  {
     label: "model block",
     insertText: "model block ${1:id} {\n  parent minecraft:block/${2:cube_all}\n  textures {\n    all: minecraft:block/${1:id}\n  }\n}",
     detail: "Block model resource",

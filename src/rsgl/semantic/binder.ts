@@ -4,6 +4,7 @@ import {
   BlockNode,
   CallExprNode,
   ExprNode,
+  FragmentDeclNode,
   IdentifierNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
@@ -139,6 +140,8 @@ class RsglBinder {
         this.defineIdentifier(scope, statement.name, "table", jsonType, statement);
       } else if (statement.kind === "TemplateDecl") {
         this.defineTemplate(scope, statement);
+      } else if (statement.kind === "FragmentDecl") {
+        this.defineFragment(scope, statement);
       } else if (statement.kind === "NamespaceDecl") {
         this.namespace = expressionToStaticText(statement.name) ?? this.namespace;
       } else if (statement.kind === "ResourceDecl") {
@@ -161,6 +164,8 @@ class RsglBinder {
         this.checkObject(statement.body, scope);
       } else if (statement.kind === "TemplateDecl") {
         this.checkTemplate(statement, scope);
+      } else if (statement.kind === "FragmentDecl") {
+        this.checkFragment(statement, scope);
       } else if (statement.kind === "ResourceDecl") {
         this.checkResourceDecl(statement, scope);
       } else if (statement.kind === "SugarDecl") {
@@ -189,8 +194,19 @@ class RsglBinder {
 
   private checkTemplate(statement: TemplateDeclNode, parentScope: RsglScope): void {
     const scope = createChildScope(parentScope, "template");
+    this.checkCallableParameters(statement.parameters, scope);
+    this.checkBody(statement.body, scope);
+  }
+
+  private checkFragment(statement: FragmentDeclNode, parentScope: RsglScope): void {
+    const scope = createChildScope(parentScope, "template");
+    this.checkCallableParameters(statement.parameters, scope);
+    this.checkResourceBody(statement.body, scope);
+  }
+
+  private checkCallableParameters(parameters: TemplateDeclNode["parameters"], scope: RsglScope): void {
     const seen = new Set<string>();
-    for (const parameter of statement.parameters) {
+    for (const parameter of parameters) {
       const name = identifierName(parameter.name);
       if (!name) {
         continue;
@@ -206,7 +222,6 @@ class RsglBinder {
         this.checkAssignable(expectedType, actualType, parameter.defaultValue);
       }
     }
-    this.checkBody(statement.body, scope);
   }
 
   private checkResourceDecl(statement: ResourceDeclNode, scope: RsglScope): void {
@@ -601,13 +616,21 @@ class RsglBinder {
   }
 
   private defineTemplate(scope: RsglScope, statement: TemplateDeclNode): void {
+    this.defineCallable(scope, statement, "template");
+  }
+
+  private defineFragment(scope: RsglScope, statement: FragmentDeclNode): void {
+    this.defineCallable(scope, statement, "fragment");
+  }
+
+  private defineCallable(scope: RsglScope, statement: TemplateDeclNode | FragmentDeclNode, kind: "template" | "fragment"): void {
     const name = identifierName(statement.name);
     if (!name) {
       return;
     }
     this.define(scope, {
       name,
-      kind: "template",
+      kind,
       type: { kind: "Function" },
       node: statement,
       range: statement.name?.range,

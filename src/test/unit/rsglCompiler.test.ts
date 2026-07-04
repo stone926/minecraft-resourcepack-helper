@@ -616,6 +616,29 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("expands local resource body fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "fragment cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) {",
+      "  parent parentModel",
+      "  textures { all: texture }",
+      "}",
+      "model block stone {",
+      "  use cubeFields(minecraft:block/cube_all)",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/models/block/stone.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/stone"
+      }
+    });
+  });
+
   it("reports invalid template call arguments during compilation", () => {
     const result = compileRsglModule(parseRsgl([
       "template cube(id: ResourceId, texture: TextureId = id) {",
@@ -635,6 +658,35 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.unknownArgument"));
     assert.ok(codes.includes("rsgl.tooManyArguments"));
     assert.ok(codes.includes("rsgl.duplicateArgument"));
+    assert.ok(codes.includes("rsgl.compileUnknownArgument"));
+    assert.ok(codes.includes("rsgl.compileTooManyArguments"));
+    assert.ok(codes.includes("rsgl.compileDuplicateArgument"));
+  });
+
+  it("reports invalid fragment call arguments during compilation", () => {
+    const result = compileRsglModule(parseRsgl([
+      "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "  parent parentModel",
+      "  textures { all: texture }",
+      "}",
+      "model block bad {",
+      "  use cubeFields()",
+      "  use cubeFields(",
+      "    minecraft:block/cube_all,",
+      "    minecraft:block/stone,",
+      "    minecraft:block/extra,",
+      "    texture: minecraft:block/dirt,",
+      "    extra: true",
+      "  )",
+      "}"
+    ].join("\n")));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.missingArgument"));
+    assert.ok(codes.includes("rsgl.unknownArgument"));
+    assert.ok(codes.includes("rsgl.tooManyArguments"));
+    assert.ok(codes.includes("rsgl.duplicateArgument"));
+    assert.ok(codes.includes("rsgl.compileMissingArgument"));
     assert.ok(codes.includes("rsgl.compileUnknownArgument"));
     assert.ok(codes.includes("rsgl.compileTooManyArguments"));
     assert.ok(codes.includes("rsgl.compileDuplicateArgument"));
@@ -1378,6 +1430,90 @@ describe("RSGL compiler", () => {
     assert.strictEqual(mapping.sourceFile, templatesFile);
     assert.strictEqual(mapping.reason, "template");
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use cubeModel"]);
+  });
+
+  it("expands imported resource body fragments with definition-file defaults", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "namespace app",
+          "import { cubeFields } from \"./fragments.rsgl\"",
+          "model block stone {",
+          "  parent minecraft:block/cube_all",
+          "  use cubeFields()",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "namespace library",
+          "let defaultTexture = block/stone",
+          "fragment cubeFields(texture: TextureId = defaultTexture) {",
+          "  textures { all: texture }",
+          "}",
+          "export { cubeFields }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/app/models/block/stone.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "library:block/stone"
+      }
+    });
+  });
+
+  it("preserves imported fragment environments inside resource body loops", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "namespace app",
+          "import { generatedLayers } from \"./fragments.rsgl\"",
+          "model item layered {",
+          "  use generatedLayers()",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "namespace library",
+          "fragment textureLayer(texture: TextureId) {",
+          "  textures { layer0: texture }",
+          "}",
+          "fragment generatedLayers(textures: Json = [block/stone, block/dirt]) {",
+          "  parent minecraft:item/generated",
+          "  for texture in textures {",
+          "    use textureLayer(texture)",
+          "  }",
+          "}",
+          "export { generatedLayers }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/app/models/item/layered.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "library:block/dirt"
+      }
+    });
   });
 
   it("expands imported templates with their definition-file closure", () => {

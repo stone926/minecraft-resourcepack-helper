@@ -138,6 +138,9 @@ class RsglParser extends ParserContext {
     if (keyword === "template") {
       return this.parseTemplateDecl();
     }
+    if (keyword === "fragment") {
+      return this.parseFragmentDecl();
+    }
     if (isResourceKeyword(keyword)) {
       return this.parseResourceDecl();
     }
@@ -385,6 +388,26 @@ class RsglParser extends ParserContext {
       : this.emptyBlockAt(this.current(), "Expected template body.");
     return {
       kind: "TemplateDecl",
+      keyword: start.text,
+      name,
+      parameters,
+      body,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseFragmentDecl(): TopLevelStatementNode {
+    const start = this.advance();
+    const name = this.parseIdentifier("Expected fragment name.");
+    const parameters = this.current().text === "(" ? this.parseParameters() : [];
+    if (parameters.length === 0 && this.previousOr(start) === start) {
+      this.addDiagnosticAtCurrent("rsgl.expectedParameters", "Expected fragment parameter list.");
+    }
+    const body = this.current().text === "{"
+      ? this.parseResourceBody("fragment")
+      : this.emptyResourceBodyAt(this.current(), "Expected fragment body.");
+    return {
+      kind: "FragmentDecl",
       keyword: start.text,
       name,
       parameters,

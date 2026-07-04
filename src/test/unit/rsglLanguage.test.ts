@@ -112,6 +112,26 @@ describe("RSGL language", () => {
     assert.strictEqual(exportAll.exportAll, true);
   });
 
+  it("parses resource body fragment declarations", () => {
+    const module = parseRsgl([
+      "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "  parent parentModel",
+      "  textures { all: texture }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.strictEqual(module.statements.length, 1);
+    const fragment = module.statements[0];
+    assert.strictEqual(fragment.kind, "FragmentDecl");
+    if (fragment.kind !== "FragmentDecl") {
+      throw new Error("Expected fragment declaration.");
+    }
+    assert.strictEqual(fragment.name?.text, "cubeFields");
+    assert.deepStrictEqual(fragment.parameters.map(parameter => parameter.name?.text), ["parentModel", "texture"]);
+    assert.deepStrictEqual(fragment.body.statements.map(statement => statement.kind), ["PropertyStmt", "SectionStmt"]);
+  });
+
   it("parses overlay declarations", () => {
     const module = parseRsgl([
       "overlay \"future\" format [90, 0]..[91, 0] {",
