@@ -175,6 +175,12 @@ class RsglBinder {
         }
       } else if (statement.kind === "TargetDecl") {
         this.checkExpression(statement.value, scope);
+      } else if (statement.kind === "OverlayDecl") {
+        this.checkExpression(statement.directory, scope);
+        if (statement.formatRange) {
+          this.checkOverlayFormatExpression(statement.formatRange, scope);
+        }
+        this.checkBody(statement.body, createChildScope(scope, "block"));
       }
     }
   }
@@ -207,6 +213,15 @@ class RsglBinder {
       this.validateResourceLocationLike(statement.id);
     }
     this.checkResourceBody(statement.body, createChildScope(scope, "block"));
+  }
+
+  private checkOverlayFormatExpression(expression: ExprNode, scope: RsglScope): void {
+    if (expression.kind === "RangeExpr") {
+      this.checkExpression(expression.startExpr, scope);
+      this.checkExpression(expression.endExpr, scope);
+      return;
+    }
+    this.checkExpression(expression, scope);
   }
 
   private checkSugarDecl(statement: SugarDeclNode, scope: RsglScope): void {

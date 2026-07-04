@@ -681,6 +681,74 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers overlay blocks to prefixed resources and pack metadata", () => {
+    const result = compileRsglModule(parseRsgl([
+      "pack {",
+      "  description \"Generated\"",
+      "}",
+      "overlay \"future\" format [90, 0]..[91, 0] {",
+      "  model block stone {",
+      "    parent minecraft:block/cube_all",
+      "    textures { all: minecraft:block/stone }",
+      "  }",
+      "  item stone {",
+      "    model minecraft:block/stone",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "future/assets/minecraft/items/stone.json",
+      "future/assets/minecraft/models/block/stone.json",
+      "pack.mcmeta"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "pack.mcmeta")?.content, {
+      pack: {
+        description: "Generated"
+      },
+      overlays: {
+        entries: [
+          {
+            directory: "future",
+            ["min_format"]: [90, 0],
+            ["max_format"]: [91, 0]
+          }
+        ]
+      }
+    });
+    const model = result.units.find(unit => unit.outputPath.endsWith("models/block/stone.json"));
+    assert.strictEqual(model?.sourceMap.generatedFile, "future/assets/minecraft/models/block/stone.json");
+    assert.deepStrictEqual(model?.sourceMap.mappings.map(mapping => mapping.expansionStack.map(frame => frame.label)), [
+      ["overlay future"]
+    ]);
+  });
+
+  it("keeps overlay resources separate from base resource conflicts", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block stone { parent minecraft:block/cube_all }",
+      "overlay \"future\" {",
+      "  model block stone { parent minecraft:block/cube_all }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/models/block/stone.json",
+      "future/assets/minecraft/models/block/stone.json",
+      "pack.mcmeta"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "pack.mcmeta")?.content, {
+      overlays: {
+        entries: [
+          {
+            directory: "future"
+          }
+        ]
+      }
+    });
+  });
+
   it("reports non-finite loops inside resource bodies", () => {
     const result = compileRsglModule(parseRsgl([
       "model block bad {",

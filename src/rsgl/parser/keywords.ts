@@ -3,6 +3,7 @@ export const topLevelKeywords = [
   "namespace",
   "import",
   "export",
+  "overlay",
   "let",
   "table",
   "template",

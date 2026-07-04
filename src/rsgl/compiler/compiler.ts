@@ -6,6 +6,7 @@ import {
   LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
+  OverlayDeclNode,
   ResourceBodyNode,
   ResourceDeclNode,
   ResourceStatementNode,
@@ -183,6 +184,7 @@ class RsglCompiler {
   private readonly units: ResourceUnit[] = [];
   private readonly diagnostics: RsglCompileDiagnostic[] = [];
   private readonly templates = new Map<string, RsglTemplateDefinition>();
+  private readonly overlayEntries: Array<{ entry: Record<string, JsonValue>; source: OverlayDeclNode; context: RsglCompileContext }> = [];
 
   public constructor(
     private readonly module: RsglModule,
@@ -211,6 +213,7 @@ class RsglCompiler {
     for (const statement of this.module.statements) {
       this.compileStatement(statement, context);
     }
+    this.pushOverlayPackUnit();
     return { units: this.units, diagnostics: this.diagnostics };
   }
 
@@ -225,6 +228,8 @@ class RsglCompiler {
       this.compileTableDecl(statement, context);
     } else if (statement.kind === "UseDecl") {
       this.compileUseDecl(statement.expression, context);
+    } else if (statement.kind === "OverlayDecl") {
+      this.compileOverlayDecl(statement, context);
     } else if (statement.kind === "ForStmt") {
       this.compileForStmt(statement, context);
     } else if (statement.kind === "IfStmt") {
@@ -521,7 +526,7 @@ class RsglCompiler {
       kind: "pack",
       outputPath,
       content,
-      mergePolicy: { kind: "errorOnConflict" },
+      mergePolicy: { kind: "mergeObject" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
   }
@@ -713,6 +718,43 @@ class RsglCompiler {
     }
   }
 
+  private compileOverlayDecl(statement: OverlayDeclNode, context: RsglCompileContext): void {
+    const directory = this.staticText(statement.directory, context);
+    if (!directory || !/^[a-z0-9_-]+$/.test(directory)) {
+      this.error("rsgl.invalidOverlayDirectory", "Overlay directory must contain only lowercase letters, numbers, '_' or '-'.", statement.directory.range);
+      return;
+    }
+
+    const entry: Record<string, JsonValue> = { directory };
+    if (statement.formatRange) {
+      const range = this.overlayFormatRange(statement.formatRange, context);
+      if (!range) {
+        this.error("rsgl.invalidOverlayFormatRange", "Overlay format must be a number, [major, minor], or [min]..[max] range.", statement.formatRange.range);
+        return;
+      }
+      entry.min_format = range.min;
+      entry.max_format = range.max;
+    }
+    this.overlayEntries.push({ entry, source: statement, context });
+
+    const startIndex = this.units.length;
+    const overlayContext = this.createChildContext(context, {}, {
+      expansionStack: [
+        ...(context.expansionStack ?? []),
+        { label: `overlay ${directory}`, sourceRange: statement.range }
+      ]
+    });
+    this.compileBlock(statement.body, overlayContext);
+    const overlayUnits = this.units.splice(startIndex);
+    for (const unit of overlayUnits) {
+      if (unit.outputPath === "pack.mcmeta") {
+        this.error("rsgl.overlayPackMcmetaUnsupported", "Overlay blocks cannot emit pack.mcmeta directly.", unit.sourceMap.mappings[0]?.sourceRange ?? statement.range);
+        continue;
+      }
+      this.units.push(prefixOverlayUnit(unit, directory));
+    }
+  }
+
   private staticText(expression: ExprNode, context: RsglCompileContext): string | null {
     const value = evaluateExpression(expression, context);
     return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
@@ -845,6 +887,54 @@ class RsglCompiler {
   private error(code: string, message: string, range: { start: number; end: number }): void {
     this.diagnostics.push({ code, message, range, severity: "error" });
   }
+
+  private overlayFormatRange(expression: ExprNode, context: RsglCompileContext): { min: JsonValue[]; max: JsonValue[] } | null {
+    if (expression.kind === "RangeExpr") {
+      const min = this.packFormatValue(expression.startExpr, context);
+      const max = this.packFormatValue(expression.endExpr, context);
+      return min && max ? { min, max } : null;
+    }
+    const value = this.packFormatValue(expression, context);
+    return value ? { min: value, max: value } : null;
+  }
+
+  private packFormatValue(expression: ExprNode, context: RsglCompileContext): JsonValue[] | null {
+    const value = evaluateExpression(expression, context);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return [value, 0];
+    }
+    if (Array.isArray(value) && typeof value[0] === "number") {
+      return [value[0], typeof value[1] === "number" ? value[1] : 0];
+    }
+    return null;
+  }
+
+  private pushOverlayPackUnit(): void {
+    if (this.overlayEntries.length === 0) {
+      return;
+    }
+    const outputPath = "pack.mcmeta";
+    this.units.push({
+      kind: "pack",
+      outputPath,
+      content: {
+        overlays: {
+          entries: this.overlayEntries.map(item => item.entry)
+        }
+      },
+      mergePolicy: { kind: "mergeObject" },
+      sourceMap: {
+        generatedFile: outputPath,
+        mappings: this.overlayEntries.map(item => ({
+          generatedPath: "overlays.entries",
+          sourceFile: item.context.sourceFile ?? this.options.fileName,
+          sourceRange: item.source.range,
+          reason: item.context.mappingReason ?? "direct",
+          expansionStack: item.context.expansionStack ?? []
+        }))
+      }
+    });
+  }
 }
 
 function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
@@ -853,6 +943,18 @@ function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
 
 function normalizeMcmetaOutputPath(outputPath: string): string {
   return outputPath.endsWith(".mcmeta") ? outputPath : `${outputPath}.mcmeta`;
+}
+
+function prefixOverlayUnit(unit: ResourceUnit, directory: string): ResourceUnit {
+  const outputPath = `${directory}/${unit.outputPath.replace(/\\/g, "/")}`;
+  return {
+    ...unit,
+    outputPath,
+    sourceMap: {
+      ...unit.sourceMap,
+      generatedFile: outputPath
+    }
+  };
 }
 
 function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {

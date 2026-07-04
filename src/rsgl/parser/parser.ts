@@ -126,6 +126,9 @@ class RsglParser extends ParserContext {
     if (keyword === "export") {
       return this.parseExportDecl();
     }
+    if (keyword === "overlay") {
+      return this.parseOverlayDecl();
+    }
     if (keyword === "let") {
       return this.parseLetDecl();
     }
@@ -198,6 +201,26 @@ class RsglParser extends ParserContext {
       kind: "NamespaceDecl",
       keyword: start.text,
       name,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseOverlayDecl(): TopLevelStatementNode {
+    const start = this.advance();
+    const directory = this.parseExpression({ stopTexts: ["format", "{"] });
+    let formatRange: ExprNode | undefined;
+    if (this.matchText("format")) {
+      formatRange = this.parseExpression({ stopTexts: ["{"] });
+    }
+    const body = this.current().text === "{"
+      ? this.parseBlock()
+      : this.emptyBlockAt(this.current(), "Expected overlay body.");
+    return {
+      kind: "OverlayDecl",
+      keyword: start.text,
+      directory,
+      formatRange,
+      body,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }

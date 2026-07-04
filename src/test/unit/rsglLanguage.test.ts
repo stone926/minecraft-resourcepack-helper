@@ -99,6 +99,27 @@ describe("RSGL language", () => {
     assert.strictEqual(exportAll.exportAll, true);
   });
 
+  it("parses overlay declarations", () => {
+    const module = parseRsgl([
+      "overlay \"future\" format [90, 0]..[91, 0] {",
+      "  model block stone {",
+      "    parent minecraft:block/cube_all",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.strictEqual(module.statements.length, 1);
+    const overlay = module.statements[0];
+    assert.strictEqual(overlay.kind, "OverlayDecl");
+    if (overlay.kind !== "OverlayDecl") {
+      throw new Error("Expected overlay declaration.");
+    }
+    assert.strictEqual(overlay.directory.kind, "StringLiteral");
+    assert.strictEqual(overlay.formatRange?.kind, "RangeExpr");
+    assert.deepStrictEqual(overlay.body.statements.map(statement => statement.kind), ["ResourceDecl"]);
+  });
+
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
     const module = parseRsgl([
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",

@@ -63,6 +63,7 @@ export type TopLevelStatementNode =
   | TemplateDeclNode
   | ResourceDeclNode
   | SugarDeclNode
+  | OverlayDeclNode
   | UseDeclNode
   | ForStmtNode
   | IfStmtNode
@@ -306,6 +307,13 @@ export interface TargetDeclNode extends StatementNodeBase {
   edition: IdentifierNode | null;
   selector: "format" | "mc" | null;
   value: ExprNode;
+}
+
+export interface OverlayDeclNode extends StatementNodeBase {
+  kind: "OverlayDecl";
+  directory: ExprNode;
+  formatRange?: ExprNode;
+  body: BlockNode;
 }
 
 export interface NamespaceDeclNode extends StatementNodeBase {

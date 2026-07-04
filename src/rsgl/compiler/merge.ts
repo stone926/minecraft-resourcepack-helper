@@ -62,7 +62,7 @@ function mergeObjectUnits(
   for (const unit of units) {
     for (const [key, value] of Object.entries(unit.content as Record<string, JsonValue>)) {
       const existing = seen.get(key);
-      if (existing) {
+      if (existing && !isPackOverlayMerge(units[0].kind, key, content[key], value)) {
         diagnostics.push({
           code: "rsgl.mergeKeyConflict",
           message: `Merged RSGL resource key '${key}' is overwritten in ${unit.outputPath}.`,
@@ -71,7 +71,7 @@ function mergeObjectUnits(
         });
       }
       seen.set(key, unit);
-      content[key] = value;
+      content[key] = mergeObjectField(units[0].kind, key, content[key], value);
     }
   }
 
@@ -82,6 +82,27 @@ function mergeObjectUnits(
       generatedFile: units[0].outputPath,
       mappings: units.flatMap(unit => unit.sourceMap.mappings)
     }
+  };
+}
+
+function isPackOverlayMerge(kind: ResourceUnit["kind"], key: string, existing: JsonValue | undefined, next: JsonValue): boolean {
+  return kind === "pack" && key === "overlays" && isJsonObject(existing) && isJsonObject(next);
+}
+
+function mergeObjectField(kind: ResourceUnit["kind"], key: string, existing: JsonValue | undefined, next: JsonValue): JsonValue {
+  if (kind === "pack" && key === "overlays" && isJsonObject(existing) && isJsonObject(next)) {
+    return mergePackOverlays(existing, next);
+  }
+  return next;
+}
+
+function mergePackOverlays(existing: Record<string, JsonValue>, next: Record<string, JsonValue>): Record<string, JsonValue> {
+  const existingEntries = Array.isArray(existing.entries) ? existing.entries : [];
+  const nextEntries = Array.isArray(next.entries) ? next.entries : [];
+  return {
+    ...existing,
+    ...next,
+    entries: [...existingEntries, ...nextEntries]
   };
 }
 
@@ -100,6 +121,6 @@ function mergeArrayUnits(units: ResourceUnit[]): ResourceUnit | null {
   };
 }
 
-function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
+function isJsonObject(value: unknown): value is Record<string, JsonValue> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

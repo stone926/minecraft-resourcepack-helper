@@ -97,6 +97,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "overlay",
+    insertText: "overlay \"${1:future}\" format [${2:89}, ${3:0}]..[${4:90}, ${5:0}] {\n  ${6}\n}",
+    detail: "Overlay output target",
+    kind: "snippet"
+  },
+  {
     label: "cube_all",
     insertText: "cube_all [\n  ${1:stone}\n]",
     detail: "Batch cube_all model sugar",
