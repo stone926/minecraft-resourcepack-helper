@@ -640,6 +640,9 @@ class RsglParser extends ParserContext {
 
   private parseVariantSectionStatement(): VariantSectionStatementNode {
     const token = this.current();
+    if (token.text === "use") {
+      return this.parseUseDecl();
+    }
     if (token.text === "for") {
       return this.parseForStmt("variants");
     }
@@ -673,6 +676,9 @@ class RsglParser extends ParserContext {
 
   private parseMultipartSectionStatement(): MultipartSectionStatementNode {
     const token = this.current();
+    if (token.text === "use") {
+      return this.parseUseDecl();
+    }
     if (token.text === "for") {
       return this.parseForStmt("multipart");
     }

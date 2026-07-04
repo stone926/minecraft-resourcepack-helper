@@ -364,6 +364,51 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("expands built-in blockstate fragments from use declarations", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate acacia_stairs {",
+      "  use stairs(base: minecraft:block/acacia_stairs, inner: minecraft:block/acacia_stairs_inner, outer: minecraft:block/acacia_stairs_outer)",
+      "}",
+      "blockstate oak_fence {",
+      "  multipart {",
+      "    use fence(post: minecraft:block/oak_fence_post, side: minecraft:block/oak_fence_side)",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const stairs = result.units.find(unit => unit.outputPath.endsWith("acacia_stairs.json"));
+    const fence = result.units.find(unit => unit.outputPath.endsWith("oak_fence.json"));
+    assert.ok(stairs);
+    assert.ok(fence);
+    const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(variants).length, 40);
+    assert.deepStrictEqual(variants["facing=east,half=bottom,shape=straight"], {
+      model: "minecraft:block/acacia_stairs"
+    });
+    assert.deepStrictEqual(fence.content, {
+      multipart: [
+        { apply: { model: "minecraft:block/oak_fence_post" } },
+        { when: { north: true }, apply: { model: "minecraft:block/oak_fence_side" } },
+        { when: { east: true }, apply: { model: "minecraft:block/oak_fence_side", y: 90, uvlock: true } },
+        { when: { south: true }, apply: { model: "minecraft:block/oak_fence_side", y: 180, uvlock: true } },
+        { when: { west: true }, apply: { model: "minecraft:block/oak_fence_side", y: 270, uvlock: true } }
+      ]
+    });
+  });
+
+  it("reports incompatible blockstate fragment use in section contexts", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate broken {",
+      "  variants {",
+      "    use fence(post: minecraft:block/fence_post, side: minecraft:block/fence_side)",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"));
+  });
+
   it("emits pack, lang, sounds, and mcmeta resources", () => {
     const result = compileRsglModule(parseRsgl([
       "pack {",

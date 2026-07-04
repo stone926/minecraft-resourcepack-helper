@@ -6,7 +6,9 @@ import {
   LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
+  ResourceBodyNode,
   ResourceDeclNode,
+  ResourceStatementNode,
   RsglModule,
   SugarDeclNode,
   TableDeclNode,
@@ -31,6 +33,12 @@ import {
   mapToExternalValues
 } from "./environment";
 import {
+  compileBlockstateUseFragment,
+  mergeBlockstateContent,
+  mergeBlockstateFragment,
+  RsglBlockstateFragmentOptions
+} from "./blockstateFragments";
+import {
   childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
@@ -39,7 +47,7 @@ import {
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
-import { findResourceStatement, resourceBodyToObject } from "./resourceBody";
+import { resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
   createCubeAllModel,
@@ -294,15 +302,7 @@ class RsglCompiler {
       this.error("rsgl.compileMissingResourceId", "Blockstate declaration requires a static id.", statement.range);
       return null;
     }
-    const variants = findResourceStatement(statement.body, "VariantsSection");
-    const multipart = findResourceStatement(statement.body, "MultipartSection");
-    const content: Record<string, JsonValue> = {};
-    if (variants?.kind === "VariantsSection") {
-      content.variants = this.compileVariantEntries(variants.entries, context);
-    }
-    if (multipart?.kind === "MultipartSection") {
-      content.multipart = this.compileMultipartEntries(multipart.entries, context);
-    }
+    const content = this.compileBlockstateBody(statement.body, context);
     const outputPath = resourceOutputPath("blockstate", id);
     return {
       id,
@@ -312,6 +312,53 @@ class RsglCompiler {
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };
+  }
+
+  private compileBlockstateBody(body: ResourceBodyNode, context: RsglCompileContext): Record<string, JsonValue> {
+    const content: Record<string, JsonValue> = {};
+    for (const statement of body.statements) {
+      this.compileBlockstateBodyStatement(statement, context, content);
+    }
+    return content;
+  }
+
+  private compileBlockstateBodyStatement(
+    statement: ResourceStatementNode,
+    context: RsglCompileContext,
+    content: Record<string, JsonValue>
+  ): void {
+    const fragmentOptions = this.blockstateFragmentOptions();
+    if (statement.kind === "VariantsSection") {
+      mergeBlockstateFragment(content, { variants: this.compileVariantEntries(statement.entries, context) }, statement.range, fragmentOptions);
+    } else if (statement.kind === "MultipartSection") {
+      mergeBlockstateFragment(content, { multipart: this.compileMultipartEntries(statement.entries, context) }, statement.range, fragmentOptions);
+    } else if (statement.kind === "UseDecl") {
+      mergeBlockstateFragment(content, compileBlockstateUseFragment(statement, context, fragmentOptions), statement.range, fragmentOptions);
+    } else if (statement.kind === "ForStmt") {
+      const iterable = evaluateExpression(statement.iterable, context);
+      if (!Array.isArray(iterable)) {
+        this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+        return;
+      }
+      if (statement.body.kind !== "ResourceBody") {
+        return;
+      }
+      for (const value of iterable) {
+        const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
+        const loopContent = this.compileBlockstateBody(statement.body, this.createLoopContext(context, bindings, statement.range));
+        mergeBlockstateContent(content, loopContent, statement.range, fragmentOptions);
+      }
+    } else if (statement.kind === "IfStmt") {
+      const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
+      if (body?.kind === "ResourceBody") {
+        mergeBlockstateContent(content, this.compileBlockstateBody(body, context), statement.range, fragmentOptions);
+      }
+    } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt") {
+      const value = normalizeJsonValue(evaluateExpression(statement.value, context));
+      if (isJsonObject(value)) {
+        mergeBlockstateContent(content, value, statement.range, fragmentOptions);
+      }
+    }
   }
 
   private compileVariantEntries(
@@ -343,6 +390,14 @@ class RsglCompiler {
     if (statement.kind === "VariantEntry") {
       const state = this.variantKey(normalizeJsonValue(evaluateExpression(statement.state, context)));
       entries[state] = normalizeJsonValue(evaluateExpression(statement.value, context));
+    } else if (statement.kind === "UseDecl") {
+      const fragment = compileBlockstateUseFragment(statement, context, this.blockstateFragmentOptions());
+      if (fragment.multipart) {
+        this.error("rsgl.incompatibleBlockstateFragment", "Multipart template fragments cannot be used inside a variants section.", statement.range);
+      }
+      if (fragment.variants) {
+        Object.assign(entries, fragment.variants);
+      }
     } else if (statement.kind === "ForStmt") {
       const iterable = evaluateExpression(statement.iterable, context);
       if (!Array.isArray(iterable)) {
@@ -398,6 +453,14 @@ class RsglCompiler {
         value.when = normalizeJsonValue(evaluateExpression(statement.when, context));
       }
       entries.push(value);
+    } else if (statement.kind === "UseDecl") {
+      const fragment = compileBlockstateUseFragment(statement, context, this.blockstateFragmentOptions());
+      if (fragment.variants) {
+        this.error("rsgl.incompatibleBlockstateFragment", "Variant template fragments cannot be used inside a multipart section.", statement.range);
+      }
+      if (fragment.multipart) {
+        entries.push(...fragment.multipart);
+      }
     } else if (statement.kind === "ForStmt") {
       const iterable = evaluateExpression(statement.iterable, context);
       if (!Array.isArray(iterable)) {
@@ -732,6 +795,12 @@ class RsglCompiler {
     return resourceBodyToObject(body, context, {
       onError: (code, message, range) => this.error(code, message, range)
     });
+  }
+
+  private blockstateFragmentOptions(): RsglBlockstateFragmentOptions {
+    return {
+      onError: (code, message, range) => this.error(code, message, range)
+    };
   }
 
   private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, context: RsglCompileContext) {

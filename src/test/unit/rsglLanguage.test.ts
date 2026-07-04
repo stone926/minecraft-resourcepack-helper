@@ -215,6 +215,39 @@ describe("RSGL language", () => {
     assert.strictEqual(ifEntry.thenBody.kind, "MultipartBody");
   });
 
+  it("parses use declarations inside blockstate sections", () => {
+    const module = parseRsgl([
+      "blockstate minecraft:stairs {",
+      "  variants {",
+      "    use stairs(base: minecraft:block/stairs, inner: minecraft:block/stairs_inner, outer: minecraft:block/stairs_outer)",
+      "  }",
+      "}",
+      "blockstate minecraft:fence {",
+      "  multipart {",
+      "    use fence(post: minecraft:block/fence_post, side: minecraft:block/fence_side)",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const stairs = module.statements[0];
+    const fence = module.statements[1];
+    assert.strictEqual(stairs.kind, "ResourceDecl");
+    assert.strictEqual(fence.kind, "ResourceDecl");
+    if (stairs.kind !== "ResourceDecl" || fence.kind !== "ResourceDecl") {
+      throw new Error("Expected blockstate resources.");
+    }
+    const variants = stairs.body.statements[0];
+    const multipart = fence.body.statements[0];
+    assert.strictEqual(variants.kind, "VariantsSection");
+    assert.strictEqual(multipart.kind, "MultipartSection");
+    if (variants.kind !== "VariantsSection" || multipart.kind !== "MultipartSection") {
+      throw new Error("Expected blockstate sections.");
+    }
+    assert.strictEqual(variants.entries[0].kind, "UseDecl");
+    assert.strictEqual(multipart.entries[0].kind, "UseDecl");
+  });
+
   it("recovers from syntax errors and reports actionable diagnostics", () => {
     const module = parseRsgl([
       "target java format [88, 0]",

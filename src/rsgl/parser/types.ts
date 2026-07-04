@@ -476,7 +476,7 @@ export interface VariantEntryNode extends StatementNodeBase {
   value: ExprNode;
 }
 
-export type VariantSectionStatementNode = VariantEntryNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+export type VariantSectionStatementNode = VariantEntryNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
 
 export interface MultipartSectionNode extends StatementNodeBase {
   kind: "MultipartSection";
@@ -489,7 +489,7 @@ export interface MultipartEntryNode extends StatementNodeBase {
   apply: ExprNode;
 }
 
-export type MultipartSectionStatementNode = MultipartEntryNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+export type MultipartSectionStatementNode = MultipartEntryNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
 
 export interface RawJsonStmtNode extends StatementNodeBase {
   kind: "RawJsonStmt";

@@ -6,6 +6,30 @@ const facings = ["north", "east", "south", "west"] as const;
 const halves = ["bottom", "top"] as const;
 const shapes = ["straight", "inner_left", "inner_right", "outer_left", "outer_right"] as const;
 
+export interface StairsBlockstateModels {
+  base: string;
+  inner: string;
+  outer: string;
+  uvlock?: boolean;
+}
+
+export interface SlabBlockstateModels {
+  bottom: string;
+  top: string;
+  double: string;
+}
+
+export interface FenceBlockstateModels {
+  post: string;
+  side: string;
+}
+
+export interface WallBlockstateModels {
+  post: string;
+  side: string;
+  sideTall: string;
+}
+
 const stairsYaw: Record<string, Record<string, Record<string, number>>> = {
   bottom: {
     straight: { north: 270, east: 0, south: 90, west: 180 },
@@ -34,12 +58,19 @@ export function createStairsBlockstate(
   if (!id) {
     return null;
   }
+  return blockstateUnit(idValue, namespace, createStairsBlockstateContent({
+    base: `${id.namespace}:block/${id.path}`,
+    inner: `${id.namespace}:block/${id.path}_inner`,
+    outer: `${id.namespace}:block/${id.path}_outer`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createStairsBlockstateContent(models: StairsBlockstateModels): Record<string, JsonValue> {
   const variants: Record<string, JsonValue> = {};
   for (const half of halves) {
     for (const shape of shapes) {
       for (const facing of facings) {
-        const modelKind = shape === "straight" ? "" : shape.startsWith("inner") ? "_inner" : "_outer";
-        const entry: Record<string, JsonValue> = { model: `${id.namespace}:block/${id.path}${modelKind}` };
+        const entry: Record<string, JsonValue> = { model: stairsModelForShape(models, shape) };
         if (half === "top") {
           entry.x = 180;
         }
@@ -47,14 +78,15 @@ export function createStairsBlockstate(
         if (y !== 0) {
           entry.y = y;
         }
-        if (entry.x || entry.y) {
+        const uvlock = models.uvlock ?? Boolean(entry.x || entry.y);
+        if (uvlock) {
           entry.uvlock = true;
         }
         variants[`facing=${facing},half=${half},shape=${shape}`] = entry;
       }
     }
   }
-  return blockstateUnit(idValue, namespace, { variants }, sourceFile, sourceRange, "builtin", expansionStack);
+  return { variants };
 }
 
 export function createSlabBlockstate(
@@ -69,13 +101,21 @@ export function createSlabBlockstate(
   if (!id) {
     return null;
   }
-  return blockstateUnit(idValue, namespace, {
+  return blockstateUnit(idValue, namespace, createSlabBlockstateContent({
+    bottom: `${id.namespace}:block/${id.path}`,
+    top: `${id.namespace}:block/${id.path}_top`,
+    double: doubleModel.includes(":") ? doubleModel : `${namespace}:${doubleModel}`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createSlabBlockstateContent(models: SlabBlockstateModels): Record<string, JsonValue> {
+  return {
     variants: {
-      "type=bottom": { model: `${id.namespace}:block/${id.path}` },
-      "type=top": { model: `${id.namespace}:block/${id.path}_top` },
-      "type=double": { model: doubleModel.includes(":") ? doubleModel : `${namespace}:${doubleModel}` }
+      "type=bottom": { model: models.bottom },
+      "type=top": { model: models.top },
+      "type=double": { model: models.double }
     }
-  }, sourceFile, sourceRange, "builtin", expansionStack);
+  };
 }
 
 export function createFenceBlockstate(
@@ -89,11 +129,18 @@ export function createFenceBlockstate(
   if (!id) {
     return null;
   }
+  return blockstateUnit(idValue, namespace, createFenceBlockstateContent({
+    post: `${id.namespace}:block/${id.path}_post`,
+    side: `${id.namespace}:block/${id.path}_side`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createFenceBlockstateContent(models: FenceBlockstateModels): Record<string, JsonValue> {
   const multipart: JsonValue[] = [
-    { apply: { model: `${id.namespace}:block/${id.path}_post` } }
+    { apply: { model: models.post } }
   ];
   facings.forEach((facing, index) => {
-    const apply: Record<string, JsonValue> = { model: `${id.namespace}:block/${id.path}_side` };
+    const apply: Record<string, JsonValue> = { model: models.side };
     if (index > 0) {
       apply.y = index * 90;
     }
@@ -102,7 +149,7 @@ export function createFenceBlockstate(
     }
     multipart.push({ when: { [facing]: true }, apply });
   });
-  return blockstateUnit(idValue, namespace, { multipart }, sourceFile, sourceRange, "builtin", expansionStack);
+  return { multipart };
 }
 
 export function createWallBlockstate(
@@ -116,12 +163,20 @@ export function createWallBlockstate(
   if (!id) {
     return null;
   }
+  return blockstateUnit(idValue, namespace, createWallBlockstateContent({
+    post: `${id.namespace}:block/${id.path}_post`,
+    side: `${id.namespace}:block/${id.path}_side`,
+    sideTall: `${id.namespace}:block/${id.path}_side_tall`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createWallBlockstateContent(models: WallBlockstateModels): Record<string, JsonValue> {
   const multipart: JsonValue[] = [
-    { when: { up: true }, apply: { model: `${id.namespace}:block/${id.path}_post` } }
+    { when: { up: true }, apply: { model: models.post } }
   ];
   facings.forEach((facing, index) => {
     for (const height of ["low", "tall"]) {
-      const apply: Record<string, JsonValue> = { model: `${id.namespace}:block/${id.path}_side${height === "tall" ? "_tall" : ""}` };
+      const apply: Record<string, JsonValue> = { model: height === "tall" ? models.sideTall : models.side };
       if (index > 0) {
         apply.y = index * 90;
         apply.uvlock = true;
@@ -129,7 +184,7 @@ export function createWallBlockstate(
       multipart.push({ when: { [facing]: height }, apply });
     }
   });
-  return blockstateUnit(idValue, namespace, { multipart }, sourceFile, sourceRange, "builtin", expansionStack);
+  return { multipart };
 }
 
 export function createCubeAllModel(
@@ -215,6 +270,16 @@ function normalizeResourceValue(value: string, namespace: string, defaultFolder:
     return value;
   }
   return `${namespace}:${value.includes("/") ? value : `${defaultFolder}/${value}`}`;
+}
+
+function stairsModelForShape(models: StairsBlockstateModels, shape: string): string {
+  if (shape.startsWith("inner")) {
+    return models.inner;
+  }
+  if (shape.startsWith("outer")) {
+    return models.outer;
+  }
+  return models.base;
 }
 
 function sourceMap(

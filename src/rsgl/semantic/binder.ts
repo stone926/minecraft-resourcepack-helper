@@ -307,6 +307,8 @@ class RsglBinder {
     if (statement.kind === "VariantEntry") {
       this.checkExpression(statement.state, scope);
       this.checkExpression(statement.value, scope);
+    } else if (statement.kind === "UseDecl") {
+      this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
       this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
     } else if (statement.kind === "IfStmt") {
@@ -334,6 +336,8 @@ class RsglBinder {
         this.checkExpression(statement.when, scope);
       }
       this.checkExpression(statement.apply, scope);
+    } else if (statement.kind === "UseDecl") {
+      this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
       this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
     } else if (statement.kind === "IfStmt") {
