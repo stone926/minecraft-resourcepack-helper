@@ -1,15 +1,23 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
-type ResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound";
+export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound";
+export type RsglResourceContentKind = "model";
 
 type TextureVariableResolution =
   | { kind: "resolved"; texture: string }
   | { kind: "missing" }
   | { kind: "cycle" };
 
+interface ModelDocument {
+  id: string;
+  namespace: string;
+  content: Record<string, JsonValue>;
+}
+
 export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
-  resourceExists?: (kind: ResourceExistenceKind, id: string) => boolean;
+  resourceExists?: (kind: RsglResourceExistenceKind, id: string) => boolean;
+  resourceContent?: (kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
 }
 
 export function validateResourceUnits(
@@ -22,10 +30,11 @@ export function validateResourceUnits(
       .filter(unit => unit.kind === "model" && unit.id)
       .map(unit => [`${unit.id!.namespace}:${unit.id!.path}`, unit])
   );
+  const modelResolver = createModelResolver(generatedModels, options);
 
   for (const unit of units) {
     if (unit.kind === "model") {
-      validateModelUnit(unit, generatedModels, options, diagnostics);
+      validateModelUnit(unit, generatedModels, modelResolver, options, diagnostics);
     } else if (unit.kind === "item") {
       validateItemUnit(unit, generatedModels, options, diagnostics);
     } else if (unit.kind === "blockstate") {
@@ -60,17 +69,13 @@ function validateItemUnit(
 function validateModelUnit(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
+  modelResolver: (id: string) => ModelDocument | undefined,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  validateGeneratedModelParentChain(unit, generatedModels, diagnostics);
+  validateModelParentChain(unit, modelResolver, generatedModels, options, diagnostics);
 
   const content = asObject(unit.content);
-  const parent = content ? content.parent : undefined;
-  if (typeof parent === "string") {
-    checkResourceExists("model", parent, unit, generatedModels, options, diagnostics);
-  }
-
   const textures = asObject(content?.textures);
   if (textures) {
     for (const value of Object.values(textures)) {
@@ -82,7 +87,7 @@ function validateModelUnit(
     }
   }
 
-  validateModelTextureVariables(unit, generatedModels, options, diagnostics);
+  validateModelTextureVariables(unit, modelResolver, generatedModels, options, diagnostics);
   validateModelElements(unit, diagnostics);
 }
 
@@ -167,43 +172,56 @@ function isValidFaceRotation(value: JsonValue | undefined): boolean {
   return value === 0 || value === 90 || value === 180 || value === 270;
 }
 
-function validateGeneratedModelParentChain(
+function validateModelParentChain(
   unit: ResourceUnit,
+  modelResolver: (id: string) => ModelDocument | undefined,
   generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  const root = modelDocumentFromUnit(unit);
+  if (!root) {
+    return;
+  }
+
   const seen = new Set<string>();
-  let current: ResourceUnit | undefined = unit;
+  let current: ModelDocument | undefined = root;
   while (current) {
-    const key = modelKey(current);
-    if (!key) {
-      return;
-    }
-    if (seen.has(key)) {
+    if (seen.has(current.id)) {
       diagnostics.push({
         code: "rsgl.modelParentCycle",
-        message: `Generated model parent chain contains a cycle at ${key}.`,
+        message: `Model parent chain contains a cycle at ${current.id}.`,
         severity: "error",
         range: unit.sourceMap.mappings[0].sourceRange
       });
       return;
     }
-    seen.add(key);
+    seen.add(current.id);
 
-    const parent = asObject(current.content)?.parent;
+    const parent = current.content.parent;
     if (typeof parent !== "string") {
       return;
     }
-    current = generatedModels.get(qualifyResourceId(parent, current.id?.namespace ?? "minecraft"));
+    const parentId = qualifyResourceId(parent, current.namespace);
+    current = modelResolver(parentId);
+    if (!current) {
+      checkResourceExists("model", parentId, unit, generatedModels, options, diagnostics);
+    }
   }
 }
 
 function validateModelTextureVariables(
   unit: ResourceUnit,
+  modelResolver: (id: string) => ModelDocument | undefined,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  const root = modelDocumentFromUnit(unit);
+  if (!root) {
+    return;
+  }
+
   const checked = new Set<string>();
   visitJson(unit.content, value => {
     const reference = textureVariableReference(value);
@@ -212,11 +230,11 @@ function validateModelTextureVariables(
     }
     checked.add(reference);
 
-    const resolution = resolveTextureVariable(unit, reference, generatedModels, new Set());
+    const resolution = resolveTextureVariable(root, reference, modelResolver, new Set());
     if (resolution.kind === "missing") {
       diagnostics.push({
         code: "rsgl.unresolvedTextureVariable",
-        message: `Texture variable '#${reference}' is not defined in the generated model parent chain.`,
+        message: `Texture variable '#${reference}' is not defined in the model parent chain.`,
         severity: "warning",
         range: unit.sourceMap.mappings[0].sourceRange
       });
@@ -735,7 +753,7 @@ function validatePackUnit(
 }
 
 function checkResourceExists(
-  kind: ResourceExistenceKind,
+  kind: RsglResourceExistenceKind,
   id: string,
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit> | undefined,
@@ -757,48 +775,94 @@ function checkResourceExists(
   });
 }
 
-function resolveTextureVariable(
-  unit: ResourceUnit,
-  name: string,
+function createModelResolver(
   generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions
+): (id: string) => ModelDocument | undefined {
+  const generatedDocuments = new Map<string, ModelDocument>();
+  const externalDocuments = new Map<string, ModelDocument | null>();
+
+  return id => {
+    const generated = generatedModels.get(id);
+    if (generated) {
+      let document = generatedDocuments.get(id);
+      if (!document) {
+        document = modelDocumentFromUnit(generated);
+        if (!document) {
+          return undefined;
+        }
+        generatedDocuments.set(id, document);
+      }
+      return document;
+    }
+
+    if (!options.resourceContent) {
+      return undefined;
+    }
+    if (!externalDocuments.has(id)) {
+      const content = options.resourceContent("model", id);
+      const contentObject = asObject(content);
+      externalDocuments.set(id, contentObject ? modelDocumentFromContent(id, contentObject) : null);
+    }
+    return externalDocuments.get(id) ?? undefined;
+  };
+}
+
+function modelDocumentFromUnit(unit: ResourceUnit): ModelDocument | undefined {
+  const id = modelKey(unit);
+  const content = asObject(unit.content);
+  return id && content ? modelDocumentFromContent(id, content) : undefined;
+}
+
+function modelDocumentFromContent(id: string, content: Record<string, JsonValue>): ModelDocument {
+  return {
+    id,
+    namespace: parseResourceId(id, "minecraft").namespace,
+    content
+  };
+}
+
+function resolveTextureVariable(
+  model: ModelDocument,
+  name: string,
+  modelResolver: (id: string) => ModelDocument | undefined,
   seen: Set<string>
 ): TextureVariableResolution {
-  const key = modelKey(unit);
-  const resolutionKey = `${key ?? unit.outputPath}#${name}`;
+  const resolutionKey = `${model.id}#${name}`;
   if (seen.has(resolutionKey)) {
     return { kind: "cycle" };
   }
   seen.add(resolutionKey);
 
-  const content = asObject(unit.content);
-  const textures = asObject(content?.textures);
+  const content = model.content;
+  const textures = asObject(content.textures);
   if (textures && Object.hasOwn(textures, name)) {
-    return resolveTextureValue(textures[name], unit, generatedModels, seen);
+    return resolveTextureValue(textures[name], model, modelResolver, seen);
   }
 
-  const parent = content?.parent;
-  const parentUnit = typeof parent === "string"
-    ? generatedModels.get(qualifyResourceId(parent, unit.id?.namespace ?? "minecraft"))
+  const parent = content.parent;
+  const parentModel = typeof parent === "string"
+    ? modelResolver(qualifyResourceId(parent, model.namespace))
     : undefined;
-  return parentUnit ? resolveTextureVariable(parentUnit, name, generatedModels, seen) : { kind: "missing" };
+  return parentModel ? resolveTextureVariable(parentModel, name, modelResolver, seen) : { kind: "missing" };
 }
 
 function resolveTextureValue(
   value: JsonValue | undefined,
-  unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
+  model: ModelDocument,
+  modelResolver: (id: string) => ModelDocument | undefined,
   seen: Set<string>
 ): TextureVariableResolution {
   if (typeof value === "string") {
     return value.startsWith("#")
-      ? resolveTextureVariable(unit, value.slice(1), generatedModels, seen)
+      ? resolveTextureVariable(model, value.slice(1), modelResolver, seen)
       : { kind: "resolved", texture: value };
   }
 
   const object = asObject(value);
   if (typeof object?.sprite === "string") {
     return object.sprite.startsWith("#")
-      ? resolveTextureVariable(unit, object.sprite.slice(1), generatedModels, seen)
+      ? resolveTextureVariable(model, object.sprite.slice(1), modelResolver, seen)
       : { kind: "resolved", texture: object.sprite };
   }
 
@@ -942,7 +1006,7 @@ function comparePackFormats(left: readonly [number, number], right: readonly [nu
   return left[0] === right[0] ? left[1] - right[1] : left[0] - right[0];
 }
 
-function resourceNotFoundCode(kind: ResourceExistenceKind): string {
+function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
   if (kind === "model") {
     return "rsgl.modelNotFound";
   }
@@ -955,7 +1019,7 @@ function resourceNotFoundCode(kind: ResourceExistenceKind): string {
   return "rsgl.soundNotFound";
 }
 
-function resourceLabel(kind: ResourceExistenceKind): string {
+function resourceLabel(kind: RsglResourceExistenceKind): string {
   if (kind === "model") {
     return "Model";
   }

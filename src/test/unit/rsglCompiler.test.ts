@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, loadRsglSourceFilesFromFile, stableJsonStringify, writeRsglFiles } from "../../rsgl/compiler";
+import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 
 describe("RSGL compiler", () => {
@@ -1931,6 +1931,58 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.unresolvedTextureVariable"));
     assert.ok(codes.includes("rsgl.textureVariableCycle"));
     assert.ok(codes.includes("rsgl.modelParentCycle"));
+  });
+
+  it("validates external model parent chains and texture variables", () => {
+    const checkedResources: string[] = [];
+    const loadedModels: string[] = [];
+    const externalModels = new Map<string, JsonValue>([
+      ["minecraft:block/external_child", {
+        parent: "minecraft:block/external_root",
+        textures: { alias: "#root" }
+      }],
+      ["minecraft:block/external_root", {
+        textures: { root: "minecraft:block/external_texture" }
+      }],
+      ["minecraft:block/external_cycle_a", {
+        parent: "minecraft:block/external_cycle_b"
+      }],
+      ["minecraft:block/external_cycle_b", {
+        parent: "minecraft:block/external_cycle_a"
+      }],
+      ["minecraft:block/external_missing_child", {
+        parent: "minecraft:block/external_missing_parent"
+      }]
+    ]);
+    const result = compileRsglModule(parseRsgl([
+      "model block child_external {",
+      "  parent minecraft:block/external_child",
+      "  textures { all: \"#alias\" }",
+      "}",
+      "model block cycle_external { parent minecraft:block/external_cycle_a }",
+      "model block missing_external { parent minecraft:block/external_missing_child }"
+    ].join("\n")), {
+      resourceContent: (kind, id) => {
+        assert.strictEqual(kind, "model");
+        loadedModels.push(id);
+        return externalModels.get(id);
+      },
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return !(kind === "model" && id === "minecraft:block/external_missing_parent");
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(loadedModels.includes("minecraft:block/external_child"));
+    assert.ok(loadedModels.includes("minecraft:block/external_root"));
+    assert.ok(loadedModels.includes("minecraft:block/external_cycle_a"));
+    assert.ok(loadedModels.includes("minecraft:block/external_cycle_b"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/external_texture"));
+    assert.ok(checkedResources.includes("model:minecraft:block/external_missing_parent"));
+    assert.ok(codes.includes("rsgl.modelParentCycle"));
+    assert.ok(codes.includes("rsgl.modelNotFound"));
+    assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
   });
 
   it("validates sound, atlas, mcmeta, and overlay resources", () => {
