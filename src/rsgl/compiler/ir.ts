@@ -1,4 +1,5 @@
 import { TextRange } from "../parser";
+import type { RsglResourceKind } from "../resourceKinds";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -7,21 +8,7 @@ export interface ResourceId {
   path: string;
 }
 
-export type ResourceKind =
-  | "blockstate"
-  | "model"
-  | "item"
-  | "atlas"
-  | "mcmeta"
-  | "particles"
-  | "equipment"
-  | "font"
-  | "waypoint_style"
-  | "post_effect"
-  | "pack"
-  | "lang"
-  | "sounds"
-  | "raw";
+export type ResourceKind = RsglResourceKind | "raw";
 
 export interface ResourceUnit {
   id?: ResourceId;

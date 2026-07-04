@@ -85,6 +85,7 @@ import {
 } from "./templates";
 import { RsglResourceValidationOptions, validateResourceUnits } from "./validation";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
+import { isRsglGenericJsonResourceKind } from "../resourceKinds";
 
 const namespacePattern = /^[a-z0-9_.-]+$/;
 
@@ -333,7 +334,7 @@ class RsglCompiler {
       this.pushUnit(this.compileItem(statement, context));
     } else if (statement.resourceKind === "blockstate") {
       this.pushUnit(this.compileBlockstate(statement, context));
-    } else if (statement.resourceKind === "atlas" || statement.resourceKind === "particles" || statement.resourceKind === "equipment" || statement.resourceKind === "font" || statement.resourceKind === "waypoint_style" || statement.resourceKind === "post_effect") {
+    } else if (isRsglGenericJsonResourceKind(statement.resourceKind)) {
       this.pushUnit(this.compileGenericJsonResource(statement, context));
     } else if (statement.resourceKind === "pack") {
       this.pushUnit(this.compilePack(statement, context));
@@ -585,18 +586,23 @@ class RsglCompiler {
   }
 
   private compileGenericJsonResource(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
+    const resourceKind = statement.resourceKind;
+    if (!isRsglGenericJsonResourceKind(resourceKind)) {
+      this.error("rsgl.invalidGenericJsonResource", `${resourceKind} is not a generic JSON resource kind.`, statement.range);
+      return null;
+    }
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
     const id = idValue ? parseResourceId(idValue, context.namespace) : null;
     if (!id || !statement.id) {
-      this.error("rsgl.compileMissingResourceId", `${statement.resourceKind} declaration requires a static id.`, statement.range);
+      this.error("rsgl.compileMissingResourceId", `${resourceKind} declaration requires a static id.`, statement.range);
       return null;
     }
-    const outputPath = resourceOutputPath(statement.resourceKind, id);
+    const outputPath = resourceOutputPath(resourceKind, id);
     return {
       id,
-      kind: statement.resourceKind as ResourceUnit["kind"],
+      kind: resourceKind,
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions(statement.resourceKind as JsonResourceFragmentKind)),
+      content: this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions(resourceKind)),
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context)
     };

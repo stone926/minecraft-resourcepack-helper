@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { getRsglCompletionCandidates } from "../../rsgl/completionData";
 import { formatRsglText } from "../../rsgl/formatterCore";
 import { lexRsgl, parseRsgl } from "../../rsgl/parser";
+import { resourceKeywords } from "../../rsgl/parser/keywords";
+import { rsglResourceKinds } from "../../rsgl/resourceKinds";
 
 describe("RSGL language", () => {
   it("contributes the rsgl language and bundled editor assets", () => {
@@ -28,7 +30,10 @@ describe("RSGL language", () => {
     const grammar = packageJson.contributes?.grammars?.find(entry => entry.language === "rsgl");
     assert.strictEqual(grammar?.scopeName, "source.rsgl");
     assert.ok(grammar.path);
-    assert.doesNotThrow(() => JSON.parse(fs.readFileSync(path.join(process.cwd(), grammar.path!), "utf8")));
+    const grammarJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), grammar.path!), "utf8")) as unknown;
+    for (const kind of rsglResourceKinds) {
+      assert.ok(JSON.stringify(grammarJson).includes(kind), `Expected RSGL grammar to include resource kind '${kind}'.`);
+    }
 
     assert.ok(packageJson.contributes?.commands?.some(command =>
       command.command === "McResHelper.buildRsglResourcePack" && command.icon === "$(play)"
@@ -39,6 +44,21 @@ describe("RSGL language", () => {
     assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
       item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
     ));
+  });
+
+  it("keeps resource keyword registry wired into the parser", () => {
+    assert.deepStrictEqual([...resourceKeywords], [...rsglResourceKinds]);
+    for (const kind of rsglResourceKinds) {
+      const source = kind === "model"
+        ? "model block example {}"
+        : kind === "pack" ? "pack {}" : `${kind} example {}`;
+      const module = parseRsgl(source);
+      assert.deepStrictEqual(module.diagnostics, []);
+      assert.strictEqual(module.statements[0].kind, "ResourceDecl");
+      if (module.statements[0].kind === "ResourceDecl") {
+        assert.strictEqual(module.statements[0].resourceKind, kind);
+      }
+    }
   });
 
   it("lexes comments, strings, numbers, and resource locations", () => {
@@ -467,6 +487,9 @@ describe("RSGL language", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "target"));
     assert.ok(topLevel.some(candidate => candidate.label === "target mc"));
     assert.ok(topLevel.some(candidate => candidate.label === "export"));
+    assert.ok(topLevel.some(candidate => candidate.label === "atlas"));
+    assert.ok(topLevel.some(candidate => candidate.label === "particles"));
+    assert.ok(topLevel.some(candidate => candidate.label === "equipment"));
     assert.ok(topLevel.some(candidate => candidate.label === "font"));
     assert.ok(topLevel.some(candidate => candidate.label === "waypoint_style"));
     assert.ok(topLevel.some(candidate => candidate.label === "post_effect"));

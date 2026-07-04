@@ -6,11 +6,12 @@ import {
   TextRange,
   UseDeclNode
 } from "../parser";
+import type { RsglGenericJsonResourceKind } from "../resourceKinds";
 import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
 import { expandSequencePattern } from "./sequences";
 
-export type JsonResourceFragmentKind = "atlas" | "particles" | "equipment" | "font" | "waypoint_style" | "post_effect" | "mcmeta";
+export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
 
 export interface RsglJsonResourceFragmentOptions {
   onError?: (code: string, message: string, range: TextRange) => void;

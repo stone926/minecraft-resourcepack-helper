@@ -1,4 +1,6 @@
-export const topLevelKeywords = [
+import { rsglResourceKinds } from "../resourceKinds";
+
+const declarationKeywords = [
   "target",
   "namespace",
   "import",
@@ -7,49 +9,7 @@ export const topLevelKeywords = [
   "let",
   "table",
   "template",
-  "fragment",
-  "model",
-  "blockstate",
-  "item",
-  "atlas",
-  "mcmeta",
-  "particles",
-  "equipment",
-  "font",
-  "waypoint_style",
-  "post_effect",
-  "pack",
-  "lang",
-  "sounds",
-  "stairs",
-  "slab",
-  "fence",
-  "wall",
-  "pane",
-  "cube_all",
-  "item_generated",
-  "items",
-  "wood_family",
-  "block_family",
-  "use",
-  "for",
-  "if"
-] as const;
-
-export const resourceKeywords = [
-  "model",
-  "blockstate",
-  "item",
-  "atlas",
-  "mcmeta",
-  "particles",
-  "equipment",
-  "font",
-  "waypoint_style",
-  "post_effect",
-  "pack",
-  "lang",
-  "sounds"
+  "fragment"
 ] as const;
 
 export const sugarKeywords = [
@@ -64,6 +24,17 @@ export const sugarKeywords = [
   "wood_family",
   "block_family"
 ] as const;
+
+export const topLevelKeywords = [
+  ...declarationKeywords,
+  ...rsglResourceKinds,
+  ...sugarKeywords,
+  "use",
+  "for",
+  "if"
+] as const;
+
+export const resourceKeywords = rsglResourceKinds;
 
 export const rsglKeywords = new Set<string>([
   ...topLevelKeywords,

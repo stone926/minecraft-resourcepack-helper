@@ -1,3 +1,5 @@
+import type { RsglResourceKind } from "../resourceKinds";
+
 export type RsglTokenKind =
   | "identifier"
   | "keyword"
@@ -382,20 +384,7 @@ export interface FragmentDeclNode extends StatementNodeBase {
   body: ResourceBodyNode;
 }
 
-export type ResourceKind =
-  | "model"
-  | "blockstate"
-  | "item"
-  | "atlas"
-  | "mcmeta"
-  | "particles"
-  | "equipment"
-  | "font"
-  | "waypoint_style"
-  | "post_effect"
-  | "pack"
-  | "lang"
-  | "sounds";
+export type ResourceKind = RsglResourceKind;
 
 export interface ResourceDeclNode extends StatementNodeBase {
   kind: "ResourceDecl";
