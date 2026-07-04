@@ -4,6 +4,7 @@ import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValida
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
+import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
 
 export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile";
 export type RsglResourceContentKind = "model";
@@ -176,6 +177,8 @@ export function validateResourceUnits(
       validateEquipmentUnit(unit, options, diagnostics);
     } else if (unit.kind === "font") {
       validateFontUnit(unit, generatedFonts, options, diagnostics);
+    } else if (unit.kind === "waypoint_style") {
+      validateWaypointStyleUnit(unit, options, diagnostics);
     } else if (unit.kind === "pack") {
       validatePackUnit(unit, options, diagnostics);
     }
@@ -1303,6 +1306,14 @@ function validateFontUnit(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   validateFontMetadata(unit, generatedFonts, options, diagnostics);
+}
+
+function validateWaypointStyleUnit(
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  validateWaypointStyleMetadata(unit, options, diagnostics);
 }
 
 function validatePackUnit(

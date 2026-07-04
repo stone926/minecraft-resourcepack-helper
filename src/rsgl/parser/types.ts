@@ -391,6 +391,7 @@ export type ResourceKind =
   | "particles"
   | "equipment"
   | "font"
+  | "waypoint_style"
   | "pack"
   | "lang"
   | "sounds";

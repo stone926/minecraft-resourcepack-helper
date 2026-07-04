@@ -91,6 +91,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "waypoint_style",
+    insertText: "waypoint_style ${1:default} {\n  near_distance ${2:128}\n  far_distance ${3:332}\n  sprites [\n    ${4:minecraft:default_0}\n  ]\n}",
+    detail: "Waypoint locator bar style resource",
+    kind: "snippet"
+  },
+  {
     label: "pack",
     insertText: "pack {\n  description \"${1:Generated pack}\"\n  min_format [${2:88}, ${3:0}]\n  max_format [${2:88}, ${3:0}]\n}",
     detail: "pack.mcmeta resource",

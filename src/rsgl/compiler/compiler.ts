@@ -333,7 +333,7 @@ class RsglCompiler {
       this.pushUnit(this.compileItem(statement, context));
     } else if (statement.resourceKind === "blockstate") {
       this.pushUnit(this.compileBlockstate(statement, context));
-    } else if (statement.resourceKind === "atlas" || statement.resourceKind === "particles" || statement.resourceKind === "equipment" || statement.resourceKind === "font") {
+    } else if (statement.resourceKind === "atlas" || statement.resourceKind === "particles" || statement.resourceKind === "equipment" || statement.resourceKind === "font" || statement.resourceKind === "waypoint_style") {
       this.pushUnit(this.compileGenericJsonResource(statement, context));
     } else if (statement.resourceKind === "pack") {
       this.pushUnit(this.compilePack(statement, context));

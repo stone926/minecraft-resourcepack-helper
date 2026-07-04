@@ -845,6 +845,11 @@ describe("RSGL compiler", () => {
       "}",
       "font include/space {",
       "  providers [{ type: space, advances: { \" \": 4 } }]",
+      "}",
+      "waypoint_style default {",
+      "  near_distance 128",
+      "  far_distance 332",
+      "  sprites [minecraft:default_0, minecraft:default_1]",
       "}"
     ].join("\n")), {
       resourceExists: (kind, id) => {
@@ -860,7 +865,8 @@ describe("RSGL compiler", () => {
       "assets/minecraft/font/default.json",
       "assets/minecraft/font/include/space.json",
       "assets/minecraft/particles/explosion.json",
-      "assets/minecraft/textures/block/high_light.png.mcmeta"
+      "assets/minecraft/textures/block/high_light.png.mcmeta",
+      "assets/minecraft/waypoint_style/default.json"
     ]);
     assert.deepStrictEqual(result.units.find(unit => unit.kind === "atlas")?.content, {
       sources: [
@@ -893,10 +899,17 @@ describe("RSGL compiler", () => {
         { type: "bitmap", file: "minecraft:font/ascii.png", ascent: 7, chars: ["abc"] }
       ]
     });
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "waypoint_style")?.content, {
+      ["near_distance"]: 128,
+      ["far_distance"]: 332,
+      sprites: ["minecraft:default_0", "minecraft:default_1"]
+    });
     assert.ok(checkedResources.includes("texture:minecraft:particle/explosion_00"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/iron"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/iron"));
     assert.ok(checkedResources.includes("texture:minecraft:font/ascii.png"));
+    assert.ok(checkedResources.includes("texture:minecraft:gui/sprites/hud/locator_bar_dot/default_0"));
+    assert.ok(checkedResources.includes("texture:minecraft:gui/sprites/hud/locator_bar_dot/default_1"));
     assert.strictEqual(checkedResources.includes("font:minecraft:include/space"), false);
   });
 
@@ -1849,6 +1862,34 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("font:minecraft:missing_font"));
     assert.ok(checkedResources.includes("fontFile:example:missing.ttf"));
     assert.ok(checkedResources.includes("fontFile:example:missing.hex"));
+  });
+
+  it("validates waypoint style resources", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "waypoint_style invalid {",
+      "  near_distance 400",
+      "  far_distance 100",
+      "  sprites [minecraft:missing, 1, \"\"]",
+      "}",
+      "waypoint_style missing {",
+      "  near_distance -1",
+      "  far_distance \"bad\"",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidWaypointDistance"));
+    assert.ok(codes.includes("rsgl.invalidWaypointDistanceRange"));
+    assert.ok(codes.includes("rsgl.invalidWaypointSprite"));
+    assert.ok(codes.includes("rsgl.missingWaypointSprites"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(checkedResources.includes("texture:minecraft:gui/sprites/hud/locator_bar_dot/missing"));
   });
 
   it("validates pack metadata formats and filters", () => {
