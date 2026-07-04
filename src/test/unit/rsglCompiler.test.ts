@@ -187,6 +187,38 @@ describe("RSGL compiler", () => {
     ]);
   });
 
+  it("lowers builtin use declarations to resources", () => {
+    const result = compileRsglModule(parseRsgl([
+      "use cubeAll(id: stone, texture: minecraft:block/stone)",
+      "use itemGenerated(id: diamond, texture: minecraft:item/diamond)"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/items/diamond.json",
+      "assets/minecraft/models/block/stone.json",
+      "assets/minecraft/models/item/diamond.json"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/stone.json"))?.content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/stone"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/diamond.json"))?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/diamond"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/diamond.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:item/diamond"
+      }
+    });
+  });
+
   it("lowers wood family sugar to linked resources", () => {
     const result = compileRsglModule(parseRsgl([
       "wood_family acacia {",

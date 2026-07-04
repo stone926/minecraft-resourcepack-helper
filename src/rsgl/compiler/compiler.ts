@@ -51,6 +51,7 @@ import {
   evaluateExpression
 } from "./evaluate";
 import { compileFamilySugar } from "./familySugar";
+import { compileBuiltinUse } from "./builtinUse";
 import { compileItemUseFragment } from "./itemFragments";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
@@ -705,6 +706,16 @@ class RsglCompiler {
     if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
       return;
     }
+    const builtinUnits = compileBuiltinUse(expression, context, {
+      sourceFile: context.sourceFile ?? this.options.fileName,
+      expansionStack: context.expansionStack ?? [],
+      onError: (code, message, range) => this.error(code, message, range)
+    });
+    if (builtinUnits) {
+      builtinUnits.forEach(unit => this.pushUnit(unit));
+      return;
+    }
+
     const template = (context.templates ?? this.templates).get(expression.callee.name.text);
     if (!template) {
       return;

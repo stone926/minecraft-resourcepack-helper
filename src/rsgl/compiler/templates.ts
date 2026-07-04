@@ -430,6 +430,36 @@ export function createItemMapping(
   };
 }
 
+export function createGeneratedItemModel(
+  idValue: string,
+  textureValue: string | undefined,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  const modelId = { namespace: id.namespace, path: `item/${id.path}` };
+  const outputPath = resourceOutputPath("model", modelId);
+  const texture = textureValue ? normalizeResourceValue(textureValue, namespace, "item") : `${id.namespace}:item/${id.path}`;
+  return {
+    id: modelId,
+    kind: "model",
+    outputPath,
+    content: {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: texture
+      }
+    },
+    mergePolicy: { kind: "errorOnConflict" },
+    sourceMap: sourceMap(outputPath, sourceFile, sourceRange, "builtin", expansionStack)
+  };
+}
+
 function blockstateUnit(
   idValue: string,
   namespace: string,
