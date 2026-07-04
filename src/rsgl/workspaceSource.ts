@@ -18,7 +18,7 @@ export interface RsglWorkspaceSourceCacheOptions {
   encoding?: BufferEncoding;
 }
 
-type RsglOpenTextDocumentProvider = (fileName: string) => RsglTextDocumentLike | null;
+export type RsglOpenTextDocumentProvider = (fileName: string) => RsglTextDocumentLike | null;
 
 interface RsglCachedSourceFile {
   versionKey: string;

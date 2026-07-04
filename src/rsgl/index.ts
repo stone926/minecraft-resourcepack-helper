@@ -3,13 +3,13 @@ import * as path from "node:path";
 import { rsglCompletionProvider } from "./completion";
 import { refreshRsglDiagnostics, rsglDocumentSelector, rsglLanguageId } from "./diagnostics";
 import { rsglFormattingProvider } from "./formatter";
-import { RsglWorkspaceSourceCache } from "./workspaceSource";
+import { RsglWorkspaceSemanticCache } from "./workspaceSemantic";
 
 export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): void {
   const diagnostics = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper RSGL"));
   context.subscriptions.push(diagnostics);
-  const sourceCache = new RsglWorkspaceSourceCache();
-  sourceCache.setOpenTextDocumentProvider(fileName => findOpenRsglDocument(fileName));
+  const semanticCache = RsglWorkspaceSemanticCache.create();
+  semanticCache.setOpenTextDocumentProvider(fileName => findOpenRsglDocument(fileName));
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     rsglDocumentSelector,
@@ -28,26 +28,26 @@ export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): 
   ));
 
   for (const document of vscode.workspace.textDocuments) {
-    refreshRsglDiagnostics(document, diagnostics, sourceCache);
+    refreshRsglDiagnostics(document, diagnostics, undefined, semanticCache);
   }
 
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
-    sourceCache.invalidatePath(document.fileName);
-    refreshRsglDiagnostics(document, diagnostics, sourceCache);
-    refreshOpenRsglDiagnostics(diagnostics, sourceCache, document);
+    semanticCache.invalidatePath(document.fileName);
+    refreshRsglDiagnostics(document, diagnostics, undefined, semanticCache);
+    refreshOpenRsglDiagnostics(diagnostics, semanticCache, document);
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
-    sourceCache.invalidatePath(event.document.fileName);
-    refreshRsglDiagnostics(event.document, diagnostics, sourceCache);
-    refreshOpenRsglDiagnostics(diagnostics, sourceCache, event.document);
+    semanticCache.invalidatePath(event.document.fileName);
+    refreshRsglDiagnostics(event.document, diagnostics, undefined, semanticCache);
+    refreshOpenRsglDiagnostics(diagnostics, semanticCache, event.document);
   }));
 
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(document => {
-    sourceCache.invalidatePath(document.fileName);
+    semanticCache.invalidatePath(document.fileName);
     if (document.languageId === rsglLanguageId) {
       diagnostics.delete(document.uri);
-      refreshOpenRsglDiagnostics(diagnostics, sourceCache, document);
+      refreshOpenRsglDiagnostics(diagnostics, semanticCache, document);
     }
   }));
 
@@ -55,11 +55,11 @@ export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): 
   context.subscriptions.push(watcher);
   const onRsglFileChange = (uri: vscode.Uri) => {
     if (uri.scheme === "file") {
-      sourceCache.invalidatePath(uri.fsPath);
+      semanticCache.invalidatePath(uri.fsPath);
     } else {
-      sourceCache.invalidateAll();
+      semanticCache.invalidateAll();
     }
-    refreshOpenRsglDiagnostics(diagnostics, sourceCache);
+    refreshOpenRsglDiagnostics(diagnostics, semanticCache);
   };
   watcher.onDidCreate(onRsglFileChange, null, context.subscriptions);
   watcher.onDidChange(onRsglFileChange, null, context.subscriptions);
@@ -68,14 +68,14 @@ export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): 
 
 function refreshOpenRsglDiagnostics(
   diagnostics: vscode.DiagnosticCollection,
-  sourceCache: RsglWorkspaceSourceCache,
+  semanticCache: RsglWorkspaceSemanticCache,
   except?: vscode.TextDocument
 ): void {
   for (const document of vscode.workspace.textDocuments) {
     if (document === except || document.languageId !== rsglLanguageId) {
       continue;
     }
-    refreshRsglDiagnostics(document, diagnostics, sourceCache);
+    refreshRsglDiagnostics(document, diagnostics, undefined, semanticCache);
   }
 }
 

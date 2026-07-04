@@ -98,6 +98,7 @@ export interface RsglCompileOptions extends RsglResourceValidationOptions {
 export interface RsglProgramCompileOptions extends RsglResourceValidationOptions {
   entryFileName?: string;
   namespace?: string;
+  semanticProgram?: RsglProgram;
 }
 
 export interface RsglFileLoadOptions {
@@ -206,7 +207,9 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     return { units: [], diagnostics: syntaxDiagnostics };
   }
 
-  const program = bindRsglProgram(files);
+  const program = semanticProgramMatchesFiles(options.semanticProgram, files)
+    ? options.semanticProgram
+    : bindRsglProgram(files);
   const units: ResourceUnit[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
     ...program.fileDiagnostics.map(diagnostic => ({ ...diagnostic }))
@@ -259,6 +262,12 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     ...validateResourceUnits(merged.units, validationOptions)
   );
   return { units: merged.units, diagnostics };
+}
+
+function semanticProgramMatchesFiles(program: RsglProgram | undefined, files: RsglSourceFile[]): program is RsglProgram {
+  return program !== undefined
+    && program.files.length === files.length
+    && program.files.every((file, index) => file === files[index]);
 }
 
 class RsglCompiler {
