@@ -2882,6 +2882,62 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.contradictoryBlockstateWhenCondition"));
   });
 
+  it("validates blockstate states against supplied schemas", () => {
+    const schemaRequests: string[] = [];
+    const schemas: Record<string, { properties: Record<string, readonly string[]> }> = {
+      lamp: {
+        properties: {
+          facing: ["north", "south"],
+          lit: ["true", "false"]
+        }
+      },
+      fence: {
+        properties: {
+          north: ["true", "false"]
+        }
+      }
+    };
+    const result = compileRsglModule(parseRsgl([
+      "blockstate lamp {",
+      "  variants {",
+      "    [facing=north lit=true] -> { model: minecraft:block/lamp }",
+      "    [facing=up lit=maybe bogus=true] -> { model: minecraft:block/lamp }",
+      "  }",
+      "}",
+      "blockstate fence {",
+      "  multipart {",
+      "    when { north: true, side: east } apply { model: minecraft:block/fence_side }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true,
+      blockstateSchema: id => {
+        schemaRequests.push(`${id.namespace}:${id.path}`);
+        return schemas[id.path] ?? null;
+      }
+    });
+
+    assert.deepStrictEqual(schemaRequests.sort(), ["minecraft:fence", "minecraft:lamp"]);
+    assert.strictEqual(result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.invalidBlockstateStateSchemaValue").length, 2);
+    assert.strictEqual(result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.unknownBlockstateStateProperty").length, 2);
+
+    const lamp = result.units.find(unit => unit.outputPath.endsWith("blockstates/lamp.json"));
+    const fence = result.units.find(unit => unit.outputPath.endsWith("blockstates/fence.json"));
+    const invalidVariantRange = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/bogus=true,facing=up,lit=maybe")?.sourceRange;
+    const multipartRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0")?.sourceRange;
+
+    assert.ok(invalidVariantRange);
+    assert.ok(multipartRange);
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.message.includes("'facing' does not allow value 'up'"))?.range,
+      invalidVariantRange
+    );
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.message.includes("'side' is not defined"))?.range,
+      multipartRange
+    );
+  });
+
   it("maps blockstate validation diagnostics to generated entry source ranges", () => {
     const result = compileRsglModule(parseRsgl([
       "blockstate lamp {",

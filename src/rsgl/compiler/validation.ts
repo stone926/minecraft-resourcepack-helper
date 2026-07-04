@@ -1,6 +1,6 @@
-import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { validateFontMetadata } from "./fontValidation";
-import { validateBlockstateStateDomains } from "./blockstateStateValidation";
+import { validateBlockstateStateDomains, type RsglBlockstateSchema } from "./blockstateStateValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
@@ -149,6 +149,7 @@ export interface RsglResourceValidationOptions {
   resourceContent?: (kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
   textureMetadata?: (id: string) => RsglTextureMetadata | null | undefined;
   soundMetadata?: (id: string) => RsglSoundMetadata | null | undefined;
+  blockstateSchema?: (id: ResourceId) => RsglBlockstateSchema | null | undefined;
 }
 
 export function validateResourceUnits(
@@ -335,7 +336,8 @@ function validateBlockstateUnit(
 ): void {
   const content = asObject(unit.content);
   validateBlockstateStateDomains(content ?? undefined, unit, diagnostics, {
-    rangeForGeneratedPath: path => sourceRangeForGeneratedPath(unit, path)
+    rangeForGeneratedPath: path => sourceRangeForGeneratedPath(unit, path),
+    schema: unit.id ? options.blockstateSchema?.(unit.id) : undefined
   });
   const variants = asObject(content?.variants);
   if (variants) {

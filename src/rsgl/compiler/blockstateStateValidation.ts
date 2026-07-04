@@ -1,6 +1,10 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 
+export interface RsglBlockstateSchema {
+  properties: Record<string, readonly string[]>;
+}
+
 interface StateDomain {
   values: Set<string>;
 }
@@ -17,6 +21,7 @@ interface StateTerm {
 
 interface BlockstateStateValidationOptions {
   rangeForGeneratedPath?: (path: string) => RsglCompileDiagnostic["range"];
+  schema?: RsglBlockstateSchema | null;
 }
 
 const stateNamePattern = /^[a-z0-9_]+$/;
@@ -51,8 +56,11 @@ function collectVariantStateDomains(
   for (const key of Object.keys(variants)) {
     const range = rangeForGeneratedPath(unit, options, appendGeneratedPath("/variants", key));
     for (const assignment of parseVariantStateAssignments(key)) {
-      validateStateName(assignment.name, diagnostics, range);
-      validateStateValue(assignment.value, diagnostics, range);
+      const validName = validateStateName(assignment.name, diagnostics, range);
+      const validValue = validateStateValue(assignment.value, diagnostics, range);
+      if (validName && validValue) {
+        validateStateAgainstSchema(assignment.name, assignment.value, options.schema, diagnostics, range);
+      }
       addStateDomainValue(domains, assignment.name, assignment.value);
     }
   }
@@ -68,7 +76,7 @@ function collectMultipartStateDomains(
   for (const [index, entry] of multipart.entries()) {
     const condition = asObject(asObject(entry)?.when);
     if (condition) {
-      collectWhenStateDomains(condition, domains, unit, diagnostics, rangeForGeneratedPath(unit, options, appendGeneratedPath("/multipart", String(index))));
+      collectWhenStateDomains(condition, domains, unit, diagnostics, rangeForGeneratedPath(unit, options, appendGeneratedPath("/multipart", String(index))), options.schema);
     }
   }
 }
@@ -78,7 +86,8 @@ function collectWhenStateDomains(
   domains: Map<string, StateDomain>,
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[],
-  range: RsglCompileDiagnostic["range"]
+  range: RsglCompileDiagnostic["range"],
+  schema: RsglBlockstateSchema | null | undefined
 ): StateConstraintMap {
   const constraints: StateConstraintMap = new Map();
   for (const [key, value] of Object.entries(condition)) {
@@ -87,7 +96,7 @@ function collectWhenStateDomains(
         for (const item of value) {
           const nested = asObject(item);
           if (nested) {
-            collectWhenStateDomains(nested, domains, unit, diagnostics, range);
+            collectWhenStateDomains(nested, domains, unit, diagnostics, range, schema);
           }
         }
       }
@@ -98,17 +107,20 @@ function collectWhenStateDomains(
         for (const item of value) {
           const nested = asObject(item);
           if (nested) {
-            mergeAndConstraints(constraints, collectWhenStateDomains(nested, domains, unit, diagnostics, range), diagnostics, range);
+            mergeAndConstraints(constraints, collectWhenStateDomains(nested, domains, unit, diagnostics, range, schema), diagnostics, range);
           }
         }
       }
       continue;
     }
 
-    validateStateName(key, diagnostics, range);
     const terms = parseWhenStateTerms(value, diagnostics, range);
+    const validName = validateStateName(key, diagnostics, range);
     for (const term of terms) {
-      validateStateValue(term.value, diagnostics, range);
+      const validValue = validateStateValue(term.value, diagnostics, range);
+      if (validName && validValue) {
+        validateStateAgainstSchema(key, term.value, schema, diagnostics, range);
+      }
       addStateDomainValue(domains, key, term.value);
     }
     const constraint = constraintFromTerms(terms);
@@ -265,9 +277,9 @@ function validateStateName(
   name: string,
   diagnostics: RsglCompileDiagnostic[],
   range: RsglCompileDiagnostic["range"]
-): void {
+): boolean {
   if (stateNamePattern.test(name)) {
-    return;
+    return true;
   }
   diagnostics.push({
     code: "rsgl.invalidBlockstateStateProperty",
@@ -275,15 +287,16 @@ function validateStateName(
     severity: "error",
     range
   });
+  return false;
 }
 
 function validateStateValue(
   value: string,
   diagnostics: RsglCompileDiagnostic[],
   range: RsglCompileDiagnostic["range"]
-): void {
+): boolean {
   if (stateValuePattern.test(value)) {
-    return;
+    return true;
   }
   diagnostics.push({
     code: "rsgl.invalidBlockstateStateValue",
@@ -291,6 +304,37 @@ function validateStateValue(
     severity: "error",
     range
   });
+  return false;
+}
+
+function validateStateAgainstSchema(
+  name: string,
+  value: string,
+  schema: RsglBlockstateSchema | null | undefined,
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
+): void {
+  if (!schema) {
+    return;
+  }
+  const allowedValues = schema.properties[name];
+  if (!allowedValues) {
+    diagnostics.push({
+      code: "rsgl.unknownBlockstateStateProperty",
+      message: `Blockstate state property '${name}' is not defined by the block schema.`,
+      severity: "error",
+      range
+    });
+    return;
+  }
+  if (!allowedValues.includes(value)) {
+    diagnostics.push({
+      code: "rsgl.invalidBlockstateStateSchemaValue",
+      message: `Blockstate state '${name}' does not allow value '${value}'.`,
+      severity: "error",
+      range
+    });
+  }
 }
 
 function addStateDomainValue(domains: Map<string, StateDomain>, name: string, value: string): void {
