@@ -7,6 +7,7 @@ import {
   createDoorBlockstate,
   createFenceBlockstate,
   createFenceGateBlockstate,
+  createHangingSignBlockstate,
   createItemMapping,
   createPressurePlateBlockstate,
   createSlabBlockstate,
@@ -26,7 +27,10 @@ type SupportedFamilyMember =
   | "trapdoor"
   | "button"
   | "pressure_plate"
-  | "sign";
+  | "sign"
+  | "hanging_sign"
+  | "boat"
+  | "chest_boat";
 
 export interface RsglFamilySugarOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -36,6 +40,7 @@ interface FamilyContext {
   baseName: string;
   namespace: string;
   texture: string;
+  hangingSignParticle: string;
   sourceFile: string;
   sourceRange: TextRange;
   expansionStack: ExpansionFrame[];
@@ -57,6 +62,7 @@ export function compileFamilySugar(
     baseName: id.path,
     namespace: id.namespace,
     texture: textureValue(statement, context, id.path),
+    hangingSignParticle: hangingSignParticleValue(statement, context, id.path),
     sourceFile: context.sourceFile ?? "<anonymous>",
     sourceRange: statement.range,
     expansionStack: [
@@ -187,6 +193,35 @@ function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContex
     ]);
   }
 
+  if (member === "hanging_sign") {
+    const id = `${family.baseName}_hanging_sign`;
+    const wallId = `${family.baseName}_wall_hanging_sign`;
+    const textures = hangingSignTextures(family, id);
+    return compact([
+      createCubeModel(family, `${id}_rot_0`, "minecraft:block/template_hanging_sign_rot_0", textures),
+      createCubeModel(family, `${id}_rot_1`, "minecraft:block/template_hanging_sign_rot_1", textures),
+      createCubeModel(family, `${id}_rot_2`, "minecraft:block/template_hanging_sign_rot_2", textures),
+      createCubeModel(family, `${id}_rot_3`, "minecraft:block/template_hanging_sign_rot_3", textures),
+      createCubeModel(family, `${id}_attached_rot_0`, "minecraft:block/template_attached_hanging_sign_rot_0", textures),
+      createCubeModel(family, `${id}_attached_rot_1`, "minecraft:block/template_attached_hanging_sign_rot_1", textures),
+      createCubeModel(family, `${id}_attached_rot_2`, "minecraft:block/template_attached_hanging_sign_rot_2", textures),
+      createCubeModel(family, `${id}_attached_rot_3`, "minecraft:block/template_attached_hanging_sign_rot_3", textures),
+      createCubeModel(family, wallId, "minecraft:block/template_wall_hanging_sign", textures),
+      createHangingSignBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createWallSignBlockstate(`${family.namespace}:${wallId}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemModel(family, id, "minecraft:item/generated", { layer0: `${family.namespace}:item/${id}` }),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:item/${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "boat" || member === "chest_boat") {
+    const id = member === "boat" ? `${family.baseName}_boat` : `${family.baseName}_chest_boat`;
+    return compact([
+      createItemModel(family, id, "minecraft:item/generated", { layer0: `${family.namespace}:item/${id}` }),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:item/${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
   const id = `${family.baseName}_fence_gate`;
   return compact([
     createCubeModel(family, id, "minecraft:block/template_fence_gate", { texture: family.texture }),
@@ -257,15 +292,29 @@ function familyMembers(statement: SugarDeclNode, context: EvaluationContext): st
 }
 
 function textureValue(statement: SugarDeclNode, context: EvaluationContext, baseName: string): string {
-  const textureStatement = statement.body?.statements.find(item =>
-    item.kind === "PropertyStmt" && item.name.text === "texture"
+  return propertyResourceValue(statement, context, "texture", `${context.namespace}:block/${baseName}_planks`, "block");
+}
+
+function hangingSignParticleValue(statement: SugarDeclNode, context: EvaluationContext, baseName: string): string {
+  return propertyResourceValue(statement, context, "hanging_sign_particle", defaultHangingSignParticle(context.namespace, baseName), "block");
+}
+
+function propertyResourceValue(
+  statement: SugarDeclNode,
+  context: EvaluationContext,
+  propertyName: string,
+  defaultValue: string,
+  defaultFolder: string
+): string {
+  const propertyStatement = statement.body?.statements.find(item =>
+    item.kind === "PropertyStmt" && item.name.text === propertyName
   );
-  const value = textureStatement?.kind === "PropertyStmt"
-    ? evaluateExpression(textureStatement.value, context)
+  const value = propertyStatement?.kind === "PropertyStmt"
+    ? evaluateExpression(propertyStatement.value, context)
     : undefined;
   return typeof value === "string"
-    ? normalizeResourceValue(value, context.namespace, "block")
-    : `${context.namespace}:block/${baseName}_planks`;
+    ? normalizeResourceValue(value, context.namespace, defaultFolder)
+    : defaultValue;
 }
 
 function slabTextures(texture: string): Record<string, JsonValue> {
@@ -288,6 +337,23 @@ function signTextures(family: FamilyContext, id: string): Record<string, JsonVal
     all: `${family.namespace}:block/${id}`,
     particle: family.texture
   };
+}
+
+function hangingSignTextures(family: FamilyContext, id: string): Record<string, JsonValue> {
+  return {
+    all: `${family.namespace}:block/${id}`,
+    particle: family.hangingSignParticle
+  };
+}
+
+function defaultHangingSignParticle(namespace: string, baseName: string): string {
+  if (baseName === "bamboo") {
+    return `${namespace}:block/bamboo_planks`;
+  }
+  if (baseName === "crimson" || baseName === "warped") {
+    return `${namespace}:block/stripped_${baseName}_stem`;
+  }
+  return `${namespace}:block/stripped_${baseName}_log`;
 }
 
 function createItemModel(
@@ -348,7 +414,10 @@ function isSupportedFamilyMember(value: string): value is SupportedFamilyMember 
     || value === "trapdoor"
     || value === "button"
     || value === "pressure_plate"
-    || value === "sign";
+    || value === "sign"
+    || value === "hanging_sign"
+    || value === "boat"
+    || value === "chest_boat";
 }
 
 function compact<T>(values: Array<T | null>): T[] {

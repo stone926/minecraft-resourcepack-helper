@@ -482,6 +482,107 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers hanging sign and boat family members", () => {
+    const result = compileRsglModule(parseRsgl([
+      "wood_family acacia {",
+      "  generate [hanging_sign, boat, chest_boat]",
+      "}"
+    ].join("\n")));
+    const outputPaths = result.units.map(unit => unit.outputPath).sort();
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(outputPaths.length, 17);
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_hanging_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_wall_hanging_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_hanging_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_boat.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_chest_boat.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_hanging_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_boat.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_chest_boat.json"));
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_hanging_sign_attached_rot_0.json"))?.content, {
+      parent: "minecraft:block/template_attached_hanging_sign_rot_0",
+      textures: {
+        all: "minecraft:block/acacia_hanging_sign",
+        particle: "minecraft:block/stripped_acacia_log"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_wall_hanging_sign.json"))?.content, {
+      parent: "minecraft:block/template_wall_hanging_sign",
+      textures: {
+        all: "minecraft:block/acacia_hanging_sign",
+        particle: "minecraft:block/stripped_acacia_log"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/acacia_chest_boat.json"))?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/acacia_chest_boat"
+      }
+    });
+
+    const hangingSignVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_hanging_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(hangingSignVariants).length, 32);
+    assert.deepStrictEqual(hangingSignVariants["attached=true,rotation=12"], {
+      model: "minecraft:block/acacia_hanging_sign_attached_rot_0",
+      y: 270
+    });
+    assert.deepStrictEqual(hangingSignVariants["attached=false,rotation=3"], {
+      model: "minecraft:block/acacia_hanging_sign_rot_3"
+    });
+
+    const wallHangingSignVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_wall_hanging_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.deepStrictEqual(wallHangingSignVariants["facing=north"], {
+      model: "minecraft:block/acacia_wall_hanging_sign",
+      y: 180
+    });
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_boat.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:item/acacia_boat"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_chest_boat.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:item/acacia_chest_boat"
+      }
+    });
+  });
+
+  it("uses hanging sign particle defaults and overrides", () => {
+    const bamboo = compileRsglModule(parseRsgl([
+      "wood_family bamboo {",
+      "  generate [hanging_sign]",
+      "}"
+    ].join("\n")));
+    const custom = compileRsglModule(parseRsgl([
+      "wood_family acacia {",
+      "  hanging_sign_particle custom:block/hanging_post",
+      "  generate [hanging_sign]",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(bamboo.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(custom.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(bamboo.units.find(unit => unit.outputPath.endsWith("models/block/bamboo_hanging_sign_rot_0.json"))?.content, {
+      parent: "minecraft:block/template_hanging_sign_rot_0",
+      textures: {
+        all: "minecraft:block/bamboo_hanging_sign",
+        particle: "minecraft:block/bamboo_planks"
+      }
+    });
+    assert.deepStrictEqual(custom.units.find(unit => unit.outputPath.endsWith("models/block/acacia_hanging_sign_rot_0.json"))?.content, {
+      parent: "minecraft:block/template_hanging_sign_rot_0",
+      textures: {
+        all: "minecraft:block/acacia_hanging_sign",
+        particle: "custom:block/hanging_post"
+      }
+    });
+  });
+
   it("lowers item range and select fragments", () => {
     const result = compileRsglModule(parseRsgl([
       "table potionCases {",

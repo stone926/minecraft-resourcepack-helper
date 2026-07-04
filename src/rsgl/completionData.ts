@@ -158,7 +158,7 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
   },
   {
     label: "wood_family",
-    insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, door, trapdoor, button, pressure_plate, sign]\n}",
+    insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, door, trapdoor, button, pressure_plate, sign, hanging_sign, boat, chest_boat]\n}",
     detail: "Wood family sugar",
     kind: "snippet"
   }

@@ -66,6 +66,11 @@ export interface SignBlockstateModels {
   rotations: [string, string, string, string];
 }
 
+export interface HangingSignBlockstateModels {
+  rotations: [string, string, string, string];
+  attachedRotations: [string, string, string, string];
+}
+
 export interface WallSignBlockstateModels {
   model: string;
 }
@@ -504,6 +509,51 @@ export function createSignBlockstateContent(models: SignBlockstateModels): Recor
       entry.y = y;
     }
     variants[`rotation=${rotation}`] = entry;
+  }
+  return { variants };
+}
+
+export function createHangingSignBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createHangingSignBlockstateContent({
+    rotations: [
+      `${id.namespace}:block/${id.path}_rot_0`,
+      `${id.namespace}:block/${id.path}_rot_1`,
+      `${id.namespace}:block/${id.path}_rot_2`,
+      `${id.namespace}:block/${id.path}_rot_3`
+    ],
+    attachedRotations: [
+      `${id.namespace}:block/${id.path}_attached_rot_0`,
+      `${id.namespace}:block/${id.path}_attached_rot_1`,
+      `${id.namespace}:block/${id.path}_attached_rot_2`,
+      `${id.namespace}:block/${id.path}_attached_rot_3`
+    ]
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createHangingSignBlockstateContent(models: HangingSignBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const attached of [false, true]) {
+    const rotations = attached ? models.attachedRotations : models.rotations;
+    for (let rotation = 0; rotation < 16; rotation += 1) {
+      const entry: Record<string, JsonValue> = {
+        model: rotations[rotation % rotations.length]
+      };
+      const y = Math.floor(rotation / rotations.length) * 90;
+      if (y !== 0) {
+        entry.y = y;
+      }
+      variants[`attached=${attached},rotation=${rotation}`] = entry;
+    }
   }
   return { variants };
 }
