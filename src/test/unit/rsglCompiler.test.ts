@@ -1753,6 +1753,49 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("validates lang and sounds resource structure", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "lang en_us {",
+      "  \"valid.key\" \"Valid\"",
+      "  raw_json { \"bad.key\": 1 }",
+      "}",
+      "lang deprecated {",
+      "  raw_json { removed: [\"old.key\", 1], renamed: { \"old.key\": 2 } }",
+      "}",
+      "sounds custom {",
+      "  \"valid.event\" { sounds: [\"entity/example/valid\"] }",
+      "  \"bad.event\" {",
+      "    replace: \"yes\"",
+      "    subtitle: 1",
+      "    sounds: [",
+      "      \"entity/example/bad sound.ogg\",",
+      "      { type: \"event\", name: \"missing.event\" },",
+      "      { type: \"bad\", name: 1, volume: 0, pitch: -1, weight: 0, attenuation_distance: 0, preload: \"yes\", stream: 1 },",
+      "      1",
+      "    ]",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidLangValue"));
+    assert.ok(codes.includes("rsgl.invalidLangDeprecated"));
+    assert.ok(codes.includes("rsgl.invalidSoundsEventField"));
+    assert.ok(codes.includes("rsgl.invalidSoundReference"));
+    assert.ok(codes.includes("rsgl.soundEventNotFound"));
+    assert.ok(codes.includes("rsgl.invalidSoundField"));
+    assert.ok(codes.includes("rsgl.missingSoundName"));
+    assert.ok(codes.includes("rsgl.invalidSoundEntry"));
+    assert.ok(codes.includes("rsgl.soundNotFound"));
+    assert.ok(checkedResources.includes("sound:custom:entity/example/valid"));
+  });
+
   it("validates pack metadata formats and filters", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format [75, 0]",

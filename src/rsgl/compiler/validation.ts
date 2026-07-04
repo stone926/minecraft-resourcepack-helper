@@ -1,4 +1,5 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
@@ -157,6 +158,8 @@ export function validateResourceUnits(
       validateBlockstateUnit(unit, generatedModels, options, diagnostics);
     } else if (unit.kind === "sounds") {
       validateSoundsUnit(unit, options, diagnostics);
+    } else if (unit.kind === "lang") {
+      validateLangUnit(unit, diagnostics);
     } else if (unit.kind === "atlas") {
       validateAtlasUnit(unit, options, diagnostics);
     } else if (unit.kind === "mcmeta") {
@@ -1184,22 +1187,14 @@ function validateSoundsUnit(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const namespace = unit.id?.namespace ?? "minecraft";
-  const content = asObject(unit.content);
-  if (!content) {
-    return;
-  }
+  validateSoundsMetadata(unit, options, diagnostics);
+}
 
-  for (const event of Object.values(content)) {
-    const eventObject = asObject(event);
-    const sounds = Array.isArray(eventObject?.sounds) ? eventObject.sounds : [];
-    for (const sound of sounds) {
-      const soundId = soundReferenceId(sound, namespace);
-      if (soundId) {
-        checkResourceExists("sound", soundId, unit, undefined, options, diagnostics);
-      }
-    }
-  }
+function validateLangUnit(
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  validateLangMetadata(unit, diagnostics);
 }
 
 function validateAtlasUnit(
@@ -1416,17 +1411,6 @@ function resolveTextureValue(
   }
 
   return { kind: "missing" };
-}
-
-function soundReferenceId(value: JsonValue, defaultNamespace: string): string | null {
-  if (typeof value === "string") {
-    return qualifyResourceId(value, defaultNamespace);
-  }
-  const object = asObject(value);
-  if (!object || typeof object.name !== "string" || object.type === "event") {
-    return null;
-  }
-  return qualifyResourceId(object.name, defaultNamespace);
 }
 
 function textureIdFromMcmetaOutputPath(outputPath: string): string | null {
