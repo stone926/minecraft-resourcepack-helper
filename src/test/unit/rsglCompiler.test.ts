@@ -524,6 +524,59 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
   });
+
+  it("validates sound, atlas, mcmeta, and overlay resources", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "sounds custom {",
+      "  \"entity.example.ambient\" {",
+      "    sounds: [",
+      "      \"entity/example/ambient1\",",
+      "      { name: \"entity/example/ambient2\" },",
+      "      { name: \"entity/example/event\", type: event }",
+      "    ]",
+      "  }",
+      "}",
+      "atlas minecraft:blocks {",
+      "  sources [",
+      "    { type: single, resource: minecraft:block/missing_single },",
+      "    { type: paletted_permutations, textures: [minecraft:block/missing_palette], permutations: { red: minecraft:block/missing_permutation } }",
+      "  ]",
+      "}",
+      "mcmeta \"assets/minecraft/textures/block/missing_anim.png\" {",
+      "  animation { frametime 2 }",
+      "}",
+      "pack {",
+      "  pack { description \"Generated\" }",
+      "  overlays {",
+      "    entries [",
+      "      { directory: \"Bad/Overlay\", min_format: [90, 0], max_format: [89, 0] },",
+      "      { directory: \"future\", min_format: [90, 0], max_format: [91, 0] }",
+      "    ]",
+      "  }",
+      "}"
+    ].join("\n")), {
+      targetPackFormat: { major: 88 },
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.soundNotFound"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(codes.includes("rsgl.invalidOverlayDirectory"));
+    assert.ok(codes.includes("rsgl.invalidOverlayFormatRange"));
+    assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
+    assert.ok(checkedResources.includes("sound:custom:entity/example/ambient1"));
+    assert.ok(checkedResources.includes("sound:custom:entity/example/ambient2"));
+    assert.strictEqual(checkedResources.includes("sound:custom:entity/example/event"), false);
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_single"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_palette"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_permutation"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_anim"));
+  });
 });
 
 function createTempDir(): string {
