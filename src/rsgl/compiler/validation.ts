@@ -21,6 +21,52 @@ interface ModelDocument {
   content: Record<string, JsonValue>;
 }
 
+const specialModelRequiredFields = new Map<string, string[]>([
+  ["banner", ["color"]],
+  ["bell", []],
+  ["book", ["open_angle", "page1", "page2"]],
+  ["chest", ["texture"]],
+  ["conduit", []],
+  ["copper_golem_statue", ["pose", "texture"]],
+  ["decorated_pot", []],
+  ["end_cube", ["effect"]],
+  ["head", ["kind"]],
+  ["player_head", []],
+  ["shield", []],
+  ["shulker_box", ["texture"]],
+  ["trident", []]
+]);
+
+const specialModelEnumFields = new Map<string, Array<{ field: string; values: string[] }>>([
+  ["banner", [
+    { field: "attachment", values: ["ground", "wall"] },
+    { field: "color", values: ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"] }
+  ]],
+  ["chest", [
+    { field: "chest_type", values: ["single", "left", "right"] }
+  ]],
+  ["copper_golem_statue", [
+    { field: "pose", values: ["standing", "sitting", "running", "star"] }
+  ]],
+  ["end_cube", [
+    { field: "effect", values: ["gateway", "portal"] }
+  ]],
+  ["head", [
+    { field: "kind", values: ["skeleton", "wither_skeleton", "player", "zombie", "creeper", "piglin", "dragon"] }
+  ]]
+]);
+
+const itemTintRequiredFields = new Map<string, string[]>([
+  ["constant", ["value"]],
+  ["dye", ["default"]],
+  ["firework", ["default"]],
+  ["grass", ["temperature", "downfall"]],
+  ["map_color", ["default"]],
+  ["potion", ["default"]],
+  ["team", ["default"]],
+  ["custom_model_data", ["default"]]
+]);
+
 export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
   resourceExists?: (kind: RsglResourceExistenceKind, id: string) => boolean;
@@ -419,6 +465,7 @@ function validateItemModelDefinition(
     return;
   }
 
+  validateItemTints(model, unit, diagnostics);
   const type = itemModelType(model.type);
   if (type === "model") {
     if (typeof model.model === "string") {
@@ -603,6 +650,7 @@ function validateItemSpecial(
     return;
   }
 
+  validateSpecialModelShape(specialModel, unit, diagnostics);
   const texture = typeof specialModel.texture === "string" ? specialModel.texture : null;
   if (texture) {
     const target = itemSpecialTextureId(itemModelType(specialModel.type), texture, unit.id?.namespace ?? "minecraft");
@@ -610,6 +658,165 @@ function validateItemSpecial(
       checkResourceExists("texture", target, unit, generatedModels, options, diagnostics);
     }
   }
+}
+
+function validateSpecialModelShape(
+  specialModel: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const type = itemModelType(specialModel.type);
+  const requiredFields = type ? specialModelRequiredFields.get(type) : undefined;
+  if (!type || !requiredFields) {
+    diagnostics.push({
+      code: "rsgl.invalidItemSpecialModelType",
+      message: "Item special model must define a known special model type.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+
+  for (const field of requiredFields) {
+    if (!(field in specialModel)) {
+      diagnostics.push({
+        code: "rsgl.missingItemSpecialModelField",
+        message: `Item special model '${type}' must define '${field}'.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+  }
+
+  for (const { field, values } of specialModelEnumFields.get(type) ?? []) {
+    const value = specialModel[field];
+    if (value !== undefined && (typeof value !== "string" || !values.includes(value))) {
+      diagnostics.push({
+        code: "rsgl.invalidItemSpecialModelField",
+        message: `Item special model '${type}' field '${field}' has an invalid value.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+  }
+
+  validateNumberInRange(specialModel, "page1", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
+  validateNumberInRange(specialModel, "page2", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
+  validateNumberInRange(specialModel, "openness", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
+  validateNumberInRange(specialModel, "animation", -Infinity, Infinity, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
+  if ("open_angle" in specialModel && !Number.isInteger(specialModel.open_angle)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemSpecialModelField",
+      message: "Item special model 'book' field 'open_angle' must be an integer.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateItemTints(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!("tints" in model)) {
+    return;
+  }
+  if (!Array.isArray(model.tints)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemTints",
+      message: "Item model tints must be an array.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+
+  for (const tint of model.tints) {
+    const tintObject = asObject(tint);
+    const type = itemModelType(tintObject?.type);
+    const requiredFields = type ? itemTintRequiredFields.get(type) : undefined;
+    if (!tintObject || !type || !requiredFields) {
+      diagnostics.push({
+        code: "rsgl.invalidItemTint",
+        message: "Item tint must define a known tint type.",
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+      continue;
+    }
+    for (const field of requiredFields) {
+      if (!(field in tintObject)) {
+        diagnostics.push({
+          code: "rsgl.missingItemTintField",
+          message: `Item tint '${type}' must define '${field}'.`,
+          severity: "error",
+          range: unit.sourceMap.mappings[0].sourceRange
+        });
+      }
+    }
+    validateTintValue(tintObject, type, unit, diagnostics);
+  }
+}
+
+function validateTintValue(
+  tint: Record<string, JsonValue>,
+  type: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  for (const field of ["value", "default"]) {
+    if (field in tint && !isColorValue(tint[field])) {
+      diagnostics.push({
+        code: "rsgl.invalidItemTintColor",
+        message: `Item tint '${type}' field '${field}' must be a packed color integer or RGB triplet.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+  }
+  validateNumberInRange(tint, "temperature", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics);
+  validateNumberInRange(tint, "downfall", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics);
+  if ("index" in tint && (!Number.isInteger(tint.index) || Number(tint.index) < 0)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemTintField",
+      message: `Item tint '${type}' field 'index' must be a non-negative integer.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateNumberInRange(
+  object: Record<string, JsonValue>,
+  field: string,
+  min: number,
+  max: number,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const value = object[field];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function isColorValue(value: JsonValue | undefined): boolean {
+  if (Number.isInteger(value)) {
+    return true;
+  }
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every(item => typeof item === "number" && Number.isFinite(item) && item >= 0 && item <= 1);
 }
 
 function validateNestedItemModels(

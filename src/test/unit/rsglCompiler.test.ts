@@ -2566,6 +2566,50 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:entity/chest/missing"));
   });
 
+  it("validates item special subtype fields and tints", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item invalid_special_fields {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:special,",
+      "      base: minecraft:item/base,",
+      "      model: { type: minecraft:chest, chest_type: middle, openness: 2 }",
+      "    }",
+      "  }",
+      "}",
+      "item unknown_special_type {",
+      "  raw_json {",
+      "    model: { type: minecraft:special, base: minecraft:item/base, model: { type: minecraft:unknown } }",
+      "  }",
+      "}",
+      "item invalid_tints {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:model,",
+      "      model: minecraft:item/base,",
+      "      tints: [",
+      "        { type: minecraft:constant, value: [1, 0.5] },",
+      "        { type: minecraft:grass, temperature: 2 },",
+      "        { type: minecraft:custom_model_data, default: 1, index: -1 },",
+      "        { type: minecraft:unknown }",
+      "      ]",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.missingItemSpecialModelField"));
+    assert.ok(codes.includes("rsgl.invalidItemSpecialModelField"));
+    assert.ok(codes.includes("rsgl.invalidItemSpecialModelType"));
+    assert.ok(codes.includes("rsgl.invalidItemTintColor"));
+    assert.ok(codes.includes("rsgl.missingItemTintField"));
+    assert.ok(codes.includes("rsgl.invalidItemTintField"));
+    assert.ok(codes.includes("rsgl.invalidItemTint"));
+  });
+
   it("validates generated model parent chains and texture variables", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
