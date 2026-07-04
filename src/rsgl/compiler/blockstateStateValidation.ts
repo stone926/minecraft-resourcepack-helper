@@ -1,4 +1,5 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { appendGeneratedPath } from "./sourcePaths";
 
 interface StateDomain {
   values: Set<string>;
@@ -14,21 +15,26 @@ interface StateTerm {
   negated: boolean;
 }
 
+interface BlockstateStateValidationOptions {
+  rangeForGeneratedPath?: (path: string) => RsglCompileDiagnostic["range"];
+}
+
 const stateNamePattern = /^[a-z0-9_]+$/;
 const stateValuePattern = /^[a-z0-9_]+$/;
 
 export function validateBlockstateStateDomains(
   content: Record<string, JsonValue> | undefined,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  options: BlockstateStateValidationOptions = {}
 ): void {
   if (!content) {
     return;
   }
 
   const domains = new Map<string, StateDomain>();
-  collectVariantStateDomains(asObject(content.variants), domains, unit, diagnostics);
-  collectMultipartStateDomains(Array.isArray(content.multipart) ? content.multipart : [], domains, unit, diagnostics);
+  collectVariantStateDomains(asObject(content.variants), domains, unit, diagnostics, options);
+  collectMultipartStateDomains(Array.isArray(content.multipart) ? content.multipart : [], domains, unit, diagnostics, options);
   validateInferredStateDomains(domains, unit, diagnostics);
 }
 
@@ -36,15 +42,17 @@ function collectVariantStateDomains(
   variants: Record<string, JsonValue> | undefined,
   domains: Map<string, StateDomain>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  options: BlockstateStateValidationOptions
 ): void {
   if (!variants) {
     return;
   }
   for (const key of Object.keys(variants)) {
+    const range = rangeForGeneratedPath(unit, options, appendGeneratedPath("/variants", key));
     for (const assignment of parseVariantStateAssignments(key)) {
-      validateStateName(assignment.name, unit, diagnostics);
-      validateStateValue(assignment.value, unit, diagnostics);
+      validateStateName(assignment.name, diagnostics, range);
+      validateStateValue(assignment.value, diagnostics, range);
       addStateDomainValue(domains, assignment.name, assignment.value);
     }
   }
@@ -54,12 +62,13 @@ function collectMultipartStateDomains(
   multipart: JsonValue[],
   domains: Map<string, StateDomain>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  options: BlockstateStateValidationOptions
 ): void {
-  for (const entry of multipart) {
+  for (const [index, entry] of multipart.entries()) {
     const condition = asObject(asObject(entry)?.when);
     if (condition) {
-      collectWhenStateDomains(condition, domains, unit, diagnostics);
+      collectWhenStateDomains(condition, domains, unit, diagnostics, rangeForGeneratedPath(unit, options, appendGeneratedPath("/multipart", String(index))));
     }
   }
 }
@@ -68,7 +77,8 @@ function collectWhenStateDomains(
   condition: Record<string, JsonValue>,
   domains: Map<string, StateDomain>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): StateConstraintMap {
   const constraints: StateConstraintMap = new Map();
   for (const [key, value] of Object.entries(condition)) {
@@ -77,7 +87,7 @@ function collectWhenStateDomains(
         for (const item of value) {
           const nested = asObject(item);
           if (nested) {
-            collectWhenStateDomains(nested, domains, unit, diagnostics);
+            collectWhenStateDomains(nested, domains, unit, diagnostics, range);
           }
         }
       }
@@ -88,22 +98,22 @@ function collectWhenStateDomains(
         for (const item of value) {
           const nested = asObject(item);
           if (nested) {
-            mergeAndConstraints(constraints, collectWhenStateDomains(nested, domains, unit, diagnostics), unit, diagnostics);
+            mergeAndConstraints(constraints, collectWhenStateDomains(nested, domains, unit, diagnostics, range), diagnostics, range);
           }
         }
       }
       continue;
     }
 
-    validateStateName(key, unit, diagnostics);
-    const terms = parseWhenStateTerms(value, unit, diagnostics);
+    validateStateName(key, diagnostics, range);
+    const terms = parseWhenStateTerms(value, diagnostics, range);
     for (const term of terms) {
-      validateStateValue(term.value, unit, diagnostics);
+      validateStateValue(term.value, diagnostics, range);
       addStateDomainValue(domains, key, term.value);
     }
     const constraint = constraintFromTerms(terms);
     if (constraint) {
-      mergeAndConstraints(constraints, new Map([[key, constraint]]), unit, diagnostics);
+      mergeAndConstraints(constraints, new Map([[key, constraint]]), diagnostics, range);
     }
   }
   return constraints;
@@ -114,8 +124,8 @@ type StateConstraintMap = Map<string, StateConstraint>;
 function mergeAndConstraints(
   target: StateConstraintMap,
   incoming: StateConstraintMap,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): void {
   for (const [name, next] of incoming) {
     const current = target.get(name);
@@ -134,7 +144,7 @@ function mergeAndConstraints(
         code: "rsgl.contradictoryBlockstateWhenCondition",
         message: `Blockstate multipart AND condition has contradictory requirements for state '${name}'.`,
         severity: "warning",
-        range: unitRange(unit)
+        range
       });
     }
     target.set(name, { allowed, denied });
@@ -194,8 +204,8 @@ function parseVariantStateAssignments(key: string): Array<{ name: string; value:
 
 function parseWhenStateTerms(
   value: JsonValue,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): StateTerm[] {
   if (typeof value === "boolean" || typeof value === "number") {
     return [{ value: String(value), negated: false }];
@@ -209,15 +219,15 @@ function parseWhenStateTerms(
     .map(part => part.startsWith("!")
       ? { value: part.slice(1), negated: true }
       : { value: part, negated: false });
-  reportDuplicateWhenTerms(terms, unit, diagnostics);
-  reportTautologicalWhenTerms(terms, unit, diagnostics);
+  reportDuplicateWhenTerms(terms, diagnostics, range);
+  reportTautologicalWhenTerms(terms, diagnostics, range);
   return terms;
 }
 
 function reportDuplicateWhenTerms(
   terms: StateTerm[],
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): void {
   const seen = new Set<string>();
   for (const term of terms) {
@@ -227,7 +237,7 @@ function reportDuplicateWhenTerms(
         code: "rsgl.duplicateBlockstateWhenValue",
         message: `Blockstate multipart when value '${key}' is repeated in the same state condition.`,
         severity: "warning",
-        range: unitRange(unit)
+        range
       });
       return;
     }
@@ -237,8 +247,8 @@ function reportDuplicateWhenTerms(
 
 function reportTautologicalWhenTerms(
   terms: StateTerm[],
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): void {
   const positives = new Set(terms.filter(term => !term.negated).map(term => term.value));
   if (terms.some(term => term.negated && positives.has(term.value))) {
@@ -246,15 +256,15 @@ function reportTautologicalWhenTerms(
       code: "rsgl.tautologicalBlockstateWhenValue",
       message: "Blockstate multipart when value includes both a state value and its negation.",
       severity: "warning",
-      range: unitRange(unit)
+      range
     });
   }
 }
 
 function validateStateName(
   name: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): void {
   if (stateNamePattern.test(name)) {
     return;
@@ -263,14 +273,14 @@ function validateStateName(
     code: "rsgl.invalidBlockstateStateProperty",
     message: `Blockstate state property '${name}' must use lowercase letters, digits, or underscores.`,
     severity: "error",
-    range: unitRange(unit)
+    range
   });
 }
 
 function validateStateValue(
   value: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: RsglCompileDiagnostic["range"]
 ): void {
   if (stateValuePattern.test(value)) {
     return;
@@ -279,7 +289,7 @@ function validateStateValue(
     code: "rsgl.invalidBlockstateStateValue",
     message: `Blockstate state value '${value}' must use lowercase letters, digits, or underscores.`,
     severity: "error",
-    range: unitRange(unit)
+    range
   });
 }
 
@@ -317,6 +327,14 @@ function asObject(value: JsonValue | undefined): Record<string, JsonValue> | und
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value
     : undefined;
+}
+
+function rangeForGeneratedPath(
+  unit: ResourceUnit,
+  options: BlockstateStateValidationOptions,
+  generatedPath: string
+): RsglCompileDiagnostic["range"] {
+  return options.rangeForGeneratedPath?.(generatedPath) ?? unitRange(unit);
 }
 
 function unitRange(unit: ResourceUnit): { start: number; end: number } {

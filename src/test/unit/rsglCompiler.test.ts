@@ -2849,6 +2849,52 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.contradictoryBlockstateWhenCondition"));
   });
 
+  it("maps blockstate validation diagnostics to generated entry source ranges", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate lamp {",
+      "  variants {",
+      "    [facing=north] -> { model: minecraft:block/missing_variant, x: 45 }",
+      "  }",
+      "}",
+      "blockstate fence {",
+      "  multipart {",
+      "    when { north: \"true||false\" } apply { model: minecraft:block/missing_multipart, z: 45 }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      targetPackFormat: { major: 74 },
+      resourceExists: () => false
+    });
+
+    const lamp = result.units.find(unit => unit.outputPath.endsWith("blockstates/lamp.json"));
+    const fence = result.units.find(unit => unit.outputPath.endsWith("blockstates/fence.json"));
+    const variantRange = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north")?.sourceRange;
+    const multipartRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0")?.sourceRange;
+
+    assert.ok(variantRange);
+    assert.ok(multipartRange);
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidBlockstateRotation")?.range,
+      variantRange
+    );
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.message.includes("missing_variant"))?.range,
+      variantRange
+    );
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidBlockstateWhenValue")?.range,
+      multipartRange
+    );
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsupportedBlockstateZRotation")?.range,
+      multipartRange
+    );
+    assert.deepStrictEqual(
+      result.diagnostics.find(diagnostic => diagnostic.message.includes("missing_multipart"))?.range,
+      multipartRange
+    );
+  });
+
   it("validates model display, element geometry, rotation, and face fields", () => {
     const valid = compileRsglModule(parseRsgl([
       "model block valid_geometry {",

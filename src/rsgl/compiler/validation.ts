@@ -6,6 +6,7 @@ import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
 import { validatePostEffectMetadata } from "./postEffectValidation";
+import { appendGeneratedPath } from "./sourcePaths";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
 
 export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
@@ -20,6 +21,8 @@ type TextureVariableResolution =
   | { kind: "resolved"; texture: string }
   | { kind: "missing" }
   | { kind: "cycle" };
+
+type ValidationRange = RsglCompileDiagnostic["range"];
 
 interface ModelDocument {
   id: string;
@@ -323,27 +326,31 @@ function validateBlockstateUnit(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
-  validateBlockstateStateDomains(content ?? undefined, unit, diagnostics);
+  validateBlockstateStateDomains(content ?? undefined, unit, diagnostics, {
+    rangeForGeneratedPath: path => sourceRangeForGeneratedPath(unit, path)
+  });
   const variants = asObject(content?.variants);
   if (variants) {
     for (const [key, value] of Object.entries(variants)) {
-      validateBlockstateVariantKey(key, unit, diagnostics);
-      validateBlockstateModelProps(value, unit, generatedModels, options, diagnostics);
+      const range = sourceRangeForGeneratedPath(unit, blockstateVariantPath(key));
+      validateBlockstateVariantKey(key, diagnostics, range);
+      validateBlockstateModelProps(value, unit, generatedModels, options, diagnostics, range);
     }
   }
 
   const multipart = Array.isArray(content?.multipart) ? content.multipart : [];
-  for (const entry of multipart) {
+  for (const [index, entry] of multipart.entries()) {
     const multipartEntry = asObject(entry);
-    validateBlockstateWhen(multipartEntry?.when, unit, diagnostics);
-    validateBlockstateModelProps(multipartEntry?.apply, unit, generatedModels, options, diagnostics);
+    const range = sourceRangeForGeneratedPath(unit, blockstateMultipartPath(index));
+    validateBlockstateWhen(multipartEntry?.when, diagnostics, range);
+    validateBlockstateModelProps(multipartEntry?.apply, unit, generatedModels, options, diagnostics, range);
   }
 }
 
 function validateBlockstateVariantKey(
   key: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
 ): void {
   if (key === "") {
     return;
@@ -358,7 +365,7 @@ function validateBlockstateVariantKey(
         code: "rsgl.invalidBlockstateVariantKey",
         message: `Blockstate variant key '${key}' must use comma-separated state=value pairs.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range
       });
       continue;
     }
@@ -367,7 +374,7 @@ function validateBlockstateVariantKey(
         code: "rsgl.duplicateBlockstateVariantProperty",
         message: `Blockstate variant key '${key}' defines '${stateName}' more than once.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range
       });
     }
     seen.add(stateName);
@@ -379,11 +386,12 @@ function validateBlockstateModelProps(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
 ): void {
   if (Array.isArray(value)) {
     for (const item of value) {
-      validateBlockstateModelProps(item, unit, generatedModels, options, diagnostics);
+      validateBlockstateModelProps(item, unit, generatedModels, options, diagnostics, range);
     }
     return;
   }
@@ -393,17 +401,17 @@ function validateBlockstateModelProps(
     return;
   }
   if (typeof model.model === "string") {
-    checkResourceExists("model", model.model, unit, generatedModels, options, diagnostics);
+    checkResourceExists("model", model.model, unit, generatedModels, options, diagnostics, range);
   }
   for (const axis of ["x", "y", "z"]) {
-    validateBlockstateRotation(axis, model[axis], unit, diagnostics);
+    validateBlockstateRotation(axis, model[axis], diagnostics, range);
   }
   if ("z" in model && options.targetPackFormat && options.targetPackFormat.major < 75) {
     diagnostics.push({
       code: "rsgl.unsupportedBlockstateZRotation",
       message: "Blockstate z rotation requires pack format 75.0 or newer.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range
     });
   }
   if ("uvlock" in model && typeof model.uvlock !== "boolean") {
@@ -411,7 +419,7 @@ function validateBlockstateModelProps(
       code: "rsgl.invalidBlockstateUvlock",
       message: "Blockstate model uvlock must be a boolean.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range
     });
   }
   if ("weight" in model && (!Number.isInteger(model.weight) || Number(model.weight) <= 0)) {
@@ -419,7 +427,7 @@ function validateBlockstateModelProps(
       code: "rsgl.invalidRandomWeight",
       message: "Random model weight must be a positive integer.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range
     });
   }
 }
@@ -427,8 +435,8 @@ function validateBlockstateModelProps(
 function validateBlockstateRotation(
   axis: string,
   value: JsonValue | undefined,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
 ): void {
   if (value === undefined || value === 0 || value === 90 || value === 180 || value === 270) {
     return;
@@ -437,14 +445,14 @@ function validateBlockstateRotation(
     code: "rsgl.invalidBlockstateRotation",
     message: `Blockstate model ${axis} rotation must be one of 0, 90, 180, or 270.`,
     severity: "error",
-    range: unit.sourceMap.mappings[0].sourceRange
+    range
   });
 }
 
 function validateBlockstateWhen(
   value: JsonValue | undefined,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
 ): void {
   if (value === undefined) {
     return;
@@ -455,21 +463,21 @@ function validateBlockstateWhen(
         code: "rsgl.emptyBlockstateWhen",
         message: "Blockstate multipart when array must contain at least one condition.",
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range
       });
     }
     for (const item of value) {
-      validateBlockstateCondition(item, unit, diagnostics);
+      validateBlockstateCondition(item, diagnostics, range);
     }
     return;
   }
-  validateBlockstateCondition(value, unit, diagnostics);
+  validateBlockstateCondition(value, diagnostics, range);
 }
 
 function validateBlockstateCondition(
   value: JsonValue | undefined,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
 ): void {
   const condition = asObject(value);
   if (!condition || Object.keys(condition).length === 0) {
@@ -477,7 +485,7 @@ function validateBlockstateCondition(
       code: "rsgl.invalidBlockstateWhen",
       message: "Blockstate multipart when condition must be a non-empty object.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range
     });
     return;
   }
@@ -488,7 +496,7 @@ function validateBlockstateCondition(
       code: "rsgl.mixedBlockstateWhenCondition",
       message: "Blockstate multipart OR/AND conditions cannot be mixed with state properties in the same condition object.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range
     });
   }
 
@@ -499,12 +507,12 @@ function validateBlockstateCondition(
         code: "rsgl.invalidBlockstateLogicalCondition",
         message: `Blockstate multipart ${key} condition must be a non-empty condition array.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range
       });
       continue;
     }
     for (const item of nested) {
-      validateBlockstateCondition(item, unit, diagnostics);
+      validateBlockstateCondition(item, diagnostics, range);
     }
   }
 
@@ -512,14 +520,14 @@ function validateBlockstateCondition(
     if (key === "OR" || key === "AND") {
       continue;
     }
-    validateBlockstateConditionValue(item, unit, diagnostics);
+    validateBlockstateConditionValue(item, diagnostics, range);
   }
 }
 
 function validateBlockstateConditionValue(
   value: JsonValue,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
 ): void {
   if (typeof value === "boolean" || typeof value === "number") {
     return;
@@ -531,7 +539,7 @@ function validateBlockstateConditionValue(
     code: "rsgl.invalidBlockstateWhenValue",
     message: "Blockstate multipart when values must be boolean, number, or a non-empty string list separated by '|'.",
     severity: "error",
-    range: unit.sourceMap.mappings[0].sourceRange
+    range
   });
 }
 
@@ -1343,7 +1351,8 @@ function checkResourceExists(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit> | undefined,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange = unitRange(unit)
 ): void {
   if (kind === "model" && generatedModels?.has(id)) {
     return;
@@ -1356,7 +1365,7 @@ function checkResourceExists(
     code: resourceNotFoundCode(kind),
     message: `${resourceLabel(kind)} not found: ${id}`,
     severity: "warning",
-    range: unit.sourceMap.mappings[0].sourceRange
+    range
   });
 }
 
@@ -1594,6 +1603,23 @@ function visitJson(value: JsonValue, visitor: (value: JsonValue) => void): void 
   } else if (isObject(value)) {
     Object.values(value).forEach(item => visitJson(item as JsonValue, visitor));
   }
+}
+
+function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): ValidationRange {
+  return unit.sourceMap.mappings.find(mapping => mapping.generatedPath === generatedPath)?.sourceRange
+    ?? unitRange(unit);
+}
+
+function blockstateVariantPath(key: string): string {
+  return appendGeneratedPath("/variants", key);
+}
+
+function blockstateMultipartPath(index: number): string {
+  return appendGeneratedPath("/multipart", String(index));
+}
+
+function unitRange(unit: ResourceUnit): ValidationRange {
+  return unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 };
 }
 
 function asObject(value: unknown): Record<string, JsonValue> | null {
