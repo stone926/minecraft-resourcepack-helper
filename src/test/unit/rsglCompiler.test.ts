@@ -1684,41 +1684,76 @@ describe("RSGL compiler", () => {
   });
 
   it("validates generated resource references and target-gated fields", () => {
-    const result = compileRsglModule(parseRsgl([
-      "model block stone {",
-      "  parent minecraft:block/missing_parent",
-      "  textures { all: minecraft:block/missing_texture }",
-      "}",
-      "blockstate stone {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/missing_model, z: 90, weight: 0 }",
-      "  }",
-      "}",
-      "blockstate malformed {",
-      "  raw_json {",
-      "    variants: {",
-      "      \"facing=north,facing=south\": { model: minecraft:block/missing_duplicate, x: 45, uvlock: \"yes\" }",
-      "      \"broken\": { model: minecraft:block/missing_broken, y: 45 }",
-      "    }",
-      "    multipart: [",
-      "      { apply: [{ model: minecraft:block/missing_part, z: 45, weight: -1 }] }",
-      "    ]",
-      "  }",
-      "}"
-    ].join("\n")), {
-      targetPackFormat: { major: 74 },
-      resourceExists: () => false
-    });
+    const root = createTempDir();
+    try {
+      const mainFile = path.join(root, "main.rsgl");
 
-    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-    assert.ok(codes.includes("rsgl.modelNotFound"));
-    assert.ok(codes.includes("rsgl.textureNotFound"));
-    assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
-    assert.ok(codes.includes("rsgl.invalidRandomWeight"));
-    assert.ok(codes.includes("rsgl.invalidBlockstateRotation"));
-    assert.ok(codes.includes("rsgl.invalidBlockstateUvlock"));
-    assert.ok(codes.includes("rsgl.invalidBlockstateVariantKey"));
-    assert.ok(codes.includes("rsgl.duplicateBlockstateVariantProperty"));
+      fs.writeFileSync(path.join(root, "bad_when.json"), JSON.stringify({
+        multipart: [
+          {
+            when: [],
+            apply: { model: "minecraft:block/missing_empty_when" }
+          }
+        ]
+      }));
+
+      const result = compileRsglModule(parseRsgl([
+        "model block stone {",
+        "  parent minecraft:block/missing_parent",
+        "  textures { all: minecraft:block/missing_texture }",
+        "}",
+        "blockstate stone {",
+        "  variants {",
+        "    {} -> { model: minecraft:block/missing_model, z: 90, weight: 0 }",
+        "  }",
+        "}",
+        "blockstate malformed {",
+        "  raw_json {",
+        "    variants: {",
+        "      \"facing=north,facing=south\": { model: minecraft:block/missing_duplicate, x: 45, uvlock: \"yes\" }",
+        "      \"broken\": { model: minecraft:block/missing_broken, y: 45 }",
+        "    }",
+        "    multipart: [",
+        "      { apply: [{ model: minecraft:block/missing_part, z: 45, weight: -1 }] }",
+        "    ]",
+        "  }",
+        "}",
+        "blockstate bad_when {",
+        "  raw_json {",
+        "    multipart: [",
+        "      { when: {}, apply: { model: minecraft:block/missing_empty_condition } },",
+        "      { when: { OR: [], north: true }, apply: { model: minecraft:block/missing_mixed } },",
+        "      { when: { AND: [{ north: true }, []] }, apply: { model: minecraft:block/missing_nested } },",
+        "      { when: { east: \"true||false\" }, apply: { model: minecraft:block/missing_value } }",
+        "    ]",
+        "  }",
+        "}",
+        "blockstate bad_when_file {",
+        "  raw_json(\"./bad_when.json\")",
+        "}"
+      ].join("\n")), {
+        fileName: mainFile,
+        targetPackFormat: { major: 74 },
+        resourceExists: () => false
+      });
+
+      const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+      assert.ok(codes.includes("rsgl.modelNotFound"));
+      assert.ok(codes.includes("rsgl.textureNotFound"));
+      assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
+      assert.ok(codes.includes("rsgl.invalidRandomWeight"));
+      assert.ok(codes.includes("rsgl.invalidBlockstateRotation"));
+      assert.ok(codes.includes("rsgl.invalidBlockstateUvlock"));
+      assert.ok(codes.includes("rsgl.invalidBlockstateVariantKey"));
+      assert.ok(codes.includes("rsgl.duplicateBlockstateVariantProperty"));
+      assert.ok(codes.includes("rsgl.emptyBlockstateWhen"));
+      assert.ok(codes.includes("rsgl.invalidBlockstateWhen"));
+      assert.ok(codes.includes("rsgl.mixedBlockstateWhenCondition"));
+      assert.ok(codes.includes("rsgl.invalidBlockstateLogicalCondition"));
+      assert.ok(codes.includes("rsgl.invalidBlockstateWhenValue"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("validates model element geometry and face fields", () => {

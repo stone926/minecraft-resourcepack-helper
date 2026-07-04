@@ -250,7 +250,9 @@ function validateBlockstateUnit(
 
   const multipart = Array.isArray(content?.multipart) ? content.multipart : [];
   for (const entry of multipart) {
-    validateBlockstateModelProps(asObject(entry)?.apply, unit, generatedModels, options, diagnostics);
+    const multipartEntry = asObject(entry);
+    validateBlockstateWhen(multipartEntry?.when, unit, diagnostics);
+    validateBlockstateModelProps(multipartEntry?.apply, unit, generatedModels, options, diagnostics);
   }
 }
 
@@ -350,6 +352,100 @@ function validateBlockstateRotation(
   diagnostics.push({
     code: "rsgl.invalidBlockstateRotation",
     message: `Blockstate model ${axis} rotation must be one of 0, 90, 180, or 270.`,
+    severity: "error",
+    range: unit.sourceMap.mappings[0].sourceRange
+  });
+}
+
+function validateBlockstateWhen(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      diagnostics.push({
+        code: "rsgl.emptyBlockstateWhen",
+        message: "Blockstate multipart when array must contain at least one condition.",
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+    for (const item of value) {
+      validateBlockstateCondition(item, unit, diagnostics);
+    }
+    return;
+  }
+  validateBlockstateCondition(value, unit, diagnostics);
+}
+
+function validateBlockstateCondition(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const condition = asObject(value);
+  if (!condition || Object.keys(condition).length === 0) {
+    diagnostics.push({
+      code: "rsgl.invalidBlockstateWhen",
+      message: "Blockstate multipart when condition must be a non-empty object.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+
+  const logicalKeys = ["OR", "AND"].filter(key => key in condition);
+  if (logicalKeys.length > 0 && Object.keys(condition).some(key => key !== "OR" && key !== "AND")) {
+    diagnostics.push({
+      code: "rsgl.mixedBlockstateWhenCondition",
+      message: "Blockstate multipart OR/AND conditions cannot be mixed with state properties in the same condition object.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+
+  for (const key of logicalKeys) {
+    const nested = condition[key];
+    if (!Array.isArray(nested) || nested.length === 0) {
+      diagnostics.push({
+        code: "rsgl.invalidBlockstateLogicalCondition",
+        message: `Blockstate multipart ${key} condition must be a non-empty condition array.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+      continue;
+    }
+    for (const item of nested) {
+      validateBlockstateCondition(item, unit, diagnostics);
+    }
+  }
+
+  for (const [key, item] of Object.entries(condition)) {
+    if (key === "OR" || key === "AND") {
+      continue;
+    }
+    validateBlockstateConditionValue(item, unit, diagnostics);
+  }
+}
+
+function validateBlockstateConditionValue(
+  value: JsonValue,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (typeof value === "boolean" || typeof value === "number") {
+    return;
+  }
+  if (typeof value === "string" && /^!?[^|]+(?:\|!?[^|]+)*$/.test(value)) {
+    return;
+  }
+  diagnostics.push({
+    code: "rsgl.invalidBlockstateWhenValue",
+    message: "Blockstate multipart when values must be boolean, number, or a non-empty string list separated by '|'.",
     severity: "error",
     range: unit.sourceMap.mappings[0].sourceRange
   });
