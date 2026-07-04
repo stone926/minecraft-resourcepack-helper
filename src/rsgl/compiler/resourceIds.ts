@@ -37,5 +37,8 @@ export function resourceOutputPath(kind: string, id: ResourceId, extension = "js
   if (kind === "equipment") {
     return `assets/${id.namespace}/equipment/${id.path}.${extension}`;
   }
+  if (kind === "lang") {
+    return `assets/${id.namespace}/lang/${id.path}.${extension}`;
+  }
   return `assets/${id.namespace}/${kind}/${id.path}.${extension}`;
 }

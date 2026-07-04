@@ -67,6 +67,30 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "pack",
+    insertText: "pack {\n  description \"${1:Generated pack}\"\n  pack_format ${2:88}\n}",
+    detail: "pack.mcmeta resource",
+    kind: "snippet"
+  },
+  {
+    label: "lang",
+    insertText: "lang ${1:en_us} {\n  \"${2:block.minecraft.stone}\" \"${3:Stone}\"\n}",
+    detail: "Language resource",
+    kind: "snippet"
+  },
+  {
+    label: "sounds",
+    insertText: "sounds ${1:minecraft} {\n  \"${2:block.example.break}\" { sounds: [\"${3:block/example_break}\"] }\n}",
+    detail: "sounds.json resource",
+    kind: "snippet"
+  },
+  {
+    label: "mcmeta",
+    insertText: "mcmeta \"${1:assets/minecraft/textures/block/example.png}\" {\n  animation { frametime ${2:5} }\n}",
+    detail: "PNG metadata resource",
+    kind: "snippet"
+  },
+  {
     label: "cube_all",
     insertText: "cube_all [\n  ${1:stone}\n]",
     detail: "Batch cube_all model sugar",

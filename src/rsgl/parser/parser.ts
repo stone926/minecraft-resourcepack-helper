@@ -666,7 +666,7 @@ class RsglParser extends ParserContext {
 
   private parsePropertyStmt(): ResourceStatementNode {
     const start = this.current();
-    const name = this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
+    const name = this.parsePropertyName(start);
     if (this.current().text === ":" || this.current().text === "=") {
       this.advance();
     }
@@ -693,6 +693,14 @@ class RsglParser extends ParserContext {
       value,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parsePropertyName(start: RsglToken): IdentifierNode {
+    if (this.current().kind === "string") {
+      const token = this.advance();
+      return this.syntheticIdentifier(token, unquoteString(token.text));
+    }
+    return this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
   }
 
   private parseRawLikeStmt(kind: "RawJsonStmt" | "OverrideStmt" | "AppendStmt"): ResourceStatementNode {

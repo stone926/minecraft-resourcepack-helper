@@ -1,0 +1,105 @@
+import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+
+export interface MergeResourceUnitsResult {
+  units: ResourceUnit[];
+  diagnostics: RsglCompileDiagnostic[];
+}
+
+export function mergeResourceUnits(units: ResourceUnit[]): MergeResourceUnitsResult {
+  const diagnostics: RsglCompileDiagnostic[] = [];
+  const groups = new Map<string, ResourceUnit[]>();
+
+  for (const unit of units) {
+    const group = groups.get(unit.outputPath);
+    if (group) {
+      group.push(unit);
+    } else {
+      groups.set(unit.outputPath, [unit]);
+    }
+  }
+
+  const mergedUnits: ResourceUnit[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      mergedUnits.push(group[0]);
+      continue;
+    }
+
+    const merged = tryMergeGroup(group, diagnostics);
+    if (merged) {
+      mergedUnits.push(merged);
+    } else {
+      mergedUnits.push(...group);
+    }
+  }
+
+  return { units: mergedUnits, diagnostics };
+}
+
+function tryMergeGroup(
+  units: ResourceUnit[],
+  diagnostics: RsglCompileDiagnostic[]
+): ResourceUnit | null {
+  if (units.every(unit => unit.mergePolicy.kind === "mergeObject")) {
+    return mergeObjectUnits(units, diagnostics);
+  }
+  if (units.every(unit => unit.mergePolicy.kind === "appendArray")) {
+    return mergeArrayUnits(units);
+  }
+  return null;
+}
+
+function mergeObjectUnits(
+  units: ResourceUnit[],
+  diagnostics: RsglCompileDiagnostic[]
+): ResourceUnit | null {
+  if (!units.every(unit => isJsonObject(unit.content))) {
+    return null;
+  }
+
+  const content: Record<string, JsonValue> = {};
+  const seen = new Map<string, ResourceUnit>();
+  for (const unit of units) {
+    for (const [key, value] of Object.entries(unit.content as Record<string, JsonValue>)) {
+      const existing = seen.get(key);
+      if (existing) {
+        diagnostics.push({
+          code: "rsgl.mergeKeyConflict",
+          message: `Merged RSGL resource key '${key}' is overwritten in ${unit.outputPath}.`,
+          severity: "warning",
+          range: unit.sourceMap.mappings[0]?.sourceRange ?? existing.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 }
+        });
+      }
+      seen.set(key, unit);
+      content[key] = value;
+    }
+  }
+
+  return {
+    ...units[0],
+    content,
+    sourceMap: {
+      generatedFile: units[0].outputPath,
+      mappings: units.flatMap(unit => unit.sourceMap.mappings)
+    }
+  };
+}
+
+function mergeArrayUnits(units: ResourceUnit[]): ResourceUnit | null {
+  if (!units.every(unit => Array.isArray(unit.content))) {
+    return null;
+  }
+
+  return {
+    ...units[0],
+    content: units.flatMap(unit => unit.content as JsonValue[]),
+    sourceMap: {
+      generatedFile: units[0].outputPath,
+      mappings: units.flatMap(unit => unit.sourceMap.mappings)
+    }
+  };
+}
+
+function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}

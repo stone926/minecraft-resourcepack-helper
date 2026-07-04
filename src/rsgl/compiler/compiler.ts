@@ -29,6 +29,7 @@ import {
 } from "./evaluate";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { createLoopBindings, createLoopContext } from "./looping";
+import { mergeResourceUnits } from "./merge";
 import { findResourceStatement, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
@@ -40,6 +41,8 @@ import {
   createWallBlockstate
 } from "./templates";
 import { RsglResourceValidationOptions, validateResourceUnits } from "./validation";
+
+const namespacePattern = /^[a-z0-9_.-]+$/;
 
 export interface RsglCompileOptions extends RsglResourceValidationOptions {
   fileName?: string;
@@ -55,7 +58,6 @@ interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
   externalTemplates?: RsglTemplateDefinition[];
-  detectOutputConflicts?: boolean;
 }
 
 interface RsglTemplateDefinition {
@@ -71,12 +73,15 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     namespace: options.namespace ?? semanticModel.namespace ?? "minecraft"
   });
   const result = compiler.compile();
+  const merged = mergeResourceUnits(result.units);
   return {
-    units: result.units,
+    units: merged.units,
     diagnostics: [
       ...semanticModel.diagnostics.map(diagnostic => ({ ...diagnostic })),
       ...result.diagnostics,
-      ...validateResourceUnits(result.units, options)
+      ...merged.diagnostics,
+      ...detectOutputConflicts(merged.units),
+      ...validateResourceUnits(merged.units, options)
     ]
   };
 }
@@ -102,19 +107,20 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     const compiler = new RsglCompiler(model.module, {
       fileName: model.fileName,
       namespace: options.namespace ?? model.namespace ?? "minecraft",
-      externalTemplates: collectImportedTemplates(model, program),
-      detectOutputConflicts: false
+      externalTemplates: collectImportedTemplates(model, program)
     });
     const result = compiler.compile();
     units.push(...result.units);
     diagnostics.push(...result.diagnostics);
   }
 
+  const merged = mergeResourceUnits(units);
   diagnostics.push(
-    ...detectOutputConflicts(units),
-    ...validateResourceUnits(units, options)
+    ...merged.diagnostics,
+    ...detectOutputConflicts(merged.units),
+    ...validateResourceUnits(merged.units, options)
   );
-  return { units, diagnostics };
+  return { units: merged.units, diagnostics };
 }
 
 class RsglCompiler {
@@ -143,9 +149,6 @@ class RsglCompiler {
     const context = this.createRootContext();
     for (const statement of this.module.statements) {
       this.compileStatement(statement, context);
-    }
-    if (this.options.detectOutputConflicts ?? true) {
-      this.diagnostics.push(...detectOutputConflicts(this.units));
     }
     return { units: this.units, diagnostics: this.diagnostics };
   }
@@ -183,6 +186,14 @@ class RsglCompiler {
       this.pushUnit(this.compileBlockstate(statement, context));
     } else if (statement.resourceKind === "atlas" || statement.resourceKind === "particles" || statement.resourceKind === "equipment") {
       this.pushUnit(this.compileGenericJsonResource(statement, context));
+    } else if (statement.resourceKind === "pack") {
+      this.pushUnit(this.compilePack(statement, context));
+    } else if (statement.resourceKind === "lang") {
+      this.pushUnit(this.compileLang(statement, context));
+    } else if (statement.resourceKind === "sounds") {
+      this.pushUnit(this.compileSounds(statement, context));
+    } else if (statement.resourceKind === "mcmeta") {
+      this.pushUnit(this.compileMcmeta(statement, context));
     }
   }
 
@@ -382,6 +393,76 @@ class RsglCompiler {
     };
   }
 
+  private compilePack(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit {
+    const outputPath = "pack.mcmeta";
+    const body = this.resourceBodyToObject(statement.body, context);
+    const content = isJsonObject(body.pack) ? body : { pack: body };
+    return {
+      kind: "pack",
+      outputPath,
+      content,
+      mergePolicy: { kind: "errorOnConflict" },
+      sourceMap: this.sourceMap(outputPath, statement, context)
+    };
+  }
+
+  private compileLang(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+    const idValue = statement.id ? this.staticText(statement.id, context) : null;
+    const id = idValue ? parseResourceId(idValue, this.options.namespace) : null;
+    if (!id || !statement.id) {
+      this.error("rsgl.compileMissingResourceId", "Lang declaration requires a static locale id.", statement.range);
+      return null;
+    }
+    const outputPath = resourceOutputPath("lang", id);
+    return {
+      id,
+      kind: "lang",
+      outputPath,
+      content: this.resourceBodyToObject(statement.body, context),
+      mergePolicy: { kind: "mergeObject" },
+      sourceMap: this.sourceMap(outputPath, statement, context)
+    };
+  }
+
+  private compileSounds(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+    const namespace = this.soundsNamespace(statement, context);
+    if (!namespace) {
+      this.error("rsgl.compileMissingResourceId", "Sounds declaration requires a namespace.", statement.range);
+      return null;
+    }
+    const id = { namespace, path: "sounds" };
+    const outputPath = `assets/${namespace}/sounds.json`;
+    return {
+      id,
+      kind: "sounds",
+      outputPath,
+      content: this.resourceBodyToObject(statement.body, context),
+      mergePolicy: { kind: "mergeObject" },
+      sourceMap: this.sourceMap(outputPath, statement, context)
+    };
+  }
+
+  private compileMcmeta(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+    const idValue = statement.id ? this.staticText(statement.id, context) : null;
+    if (!idValue || !statement.id) {
+      this.error("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
+      return null;
+    }
+    const target = this.mcmetaTarget(idValue);
+    if (!target) {
+      this.error("rsgl.compileInvalidResourceId", `Invalid mcmeta target '${idValue}'.`, statement.id.range);
+      return null;
+    }
+    return {
+      id: target.id,
+      kind: "mcmeta",
+      outputPath: target.outputPath,
+      content: this.resourceBodyToObject(statement.body, context),
+      mergePolicy: { kind: "errorOnConflict" },
+      sourceMap: this.sourceMap(target.outputPath, statement, context)
+    };
+  }
+
   private compileSugarDecl(statement: SugarDeclNode, context: EvaluationContext): void {
     if (statement.sugarKind === "conventionalBlockstate") {
       this.compileConventionalBlockstateSugar(statement, context);
@@ -510,6 +591,40 @@ class RsglCompiler {
     return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
   }
 
+  private soundsNamespace(statement: ResourceDeclNode, context: EvaluationContext): string | null {
+    const idValue = statement.id ? this.staticText(statement.id, context) : null;
+    if (!idValue) {
+      return null;
+    }
+    if (namespacePattern.test(idValue)) {
+      return idValue;
+    }
+    const id = parseResourceId(idValue, this.options.namespace);
+    return id?.namespace ?? null;
+  }
+
+  private mcmetaTarget(value: string): { id?: { namespace: string; path: string }; outputPath: string } | null {
+    const normalizedPath = value.replace(/\\/g, "/");
+    if (normalizedPath.startsWith("assets/")) {
+      return { outputPath: normalizeMcmetaOutputPath(normalizedPath) };
+    }
+
+    const id = parseResourceId(value, this.options.namespace);
+    if (!id) {
+      return null;
+    }
+    const texturePath = id.path.startsWith("textures/")
+      ? id.path.slice("textures/".length)
+      : id.path;
+    const pngPath = texturePath.endsWith(".png") || texturePath.endsWith(".png.mcmeta")
+      ? texturePath
+      : `${texturePath}.png`;
+    return {
+      id,
+      outputPath: normalizeMcmetaOutputPath(`assets/${id.namespace}/textures/${pngPath}`)
+    };
+  }
+
   private createRootContext(): EvaluationContext {
     return {
       namespace: this.options.namespace,
@@ -552,6 +667,14 @@ class RsglCompiler {
 
 function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
   return value === undefined ? null : value;
+}
+
+function normalizeMcmetaOutputPath(outputPath: string): string {
+  return outputPath.endsWith(".mcmeta") ? outputPath : `${outputPath}.mcmeta`;
+}
+
+function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function selectProgramModels(program: RsglProgram, entryFileName: string | undefined): RsglSemanticModel[] {

@@ -272,6 +272,66 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("emits pack, lang, sounds, and mcmeta resources", () => {
+    const result = compileRsglModule(parseRsgl([
+      "pack {",
+      "  description \"Generated pack\"",
+      "  pack_format 88",
+      "}",
+      "lang en_us {",
+      "  \"block.minecraft.stone\" \"Stone\"",
+      "}",
+      "lang minecraft:en_us {",
+      "  \"item.minecraft.stick\" \"Stick\"",
+      "}",
+      "sounds minecraft {",
+      "  \"block.example.break\" { sounds: [\"block/example_break\"] }",
+      "}",
+      "mcmeta \"assets/minecraft/textures/block/glow.png\" {",
+      "  animation { frametime 5 }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/lang/en_us.json",
+      "assets/minecraft/sounds.json",
+      "assets/minecraft/textures/block/glow.png.mcmeta",
+      "pack.mcmeta"
+    ]);
+
+    const pack = result.units.find(unit => unit.kind === "pack");
+    assert.deepStrictEqual(pack?.content, {
+      pack: {
+        description: "Generated pack",
+        ["pack_format"]: 88
+      }
+    });
+
+    const expectedLang = {
+      ["block.minecraft.stone"]: "Stone",
+      ["item.minecraft.stick"]: "Stick"
+    };
+    const lang = result.units.find(unit => unit.kind === "lang");
+    assert.deepStrictEqual(lang?.content, expectedLang);
+    assert.strictEqual(lang?.sourceMap.mappings.length, 2);
+
+    const expectedSounds = {
+      ["block.example.break"]: {
+        sounds: ["block/example_break"]
+      }
+    };
+    const sounds = result.units.find(unit => unit.kind === "sounds");
+    assert.deepStrictEqual(sounds?.content, expectedSounds);
+
+    const mcmeta = result.units.find(unit => unit.kind === "mcmeta");
+    assert.deepStrictEqual(mcmeta?.content, {
+      animation: {
+        frametime: 5
+      }
+    });
+  });
+
   it("reports non-finite loops inside resource bodies", () => {
     const result = compileRsglModule(parseRsgl([
       "model block bad {",

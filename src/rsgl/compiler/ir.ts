@@ -16,6 +16,8 @@ export type ResourceKind =
   | "particles"
   | "equipment"
   | "pack"
+  | "lang"
+  | "sounds"
   | "raw";
 
 export interface ResourceUnit {
