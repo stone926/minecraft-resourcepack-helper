@@ -23,11 +23,12 @@ type ResourceTarget = {
 
 export function createRsglWorkspaceValidationOptions(
   options: RsglWorkspaceValidationOptions
-): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent"> {
+): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata"> {
   const cache = options.cache ?? workspaceResourceCache;
   return {
     resourceExists: (kind, id) => resourceExists(cache, options, kind, id),
-    resourceContent: (kind, id) => resourceContent(cache, options, kind, id)
+    resourceContent: (kind, id) => resourceContent(cache, options, kind, id),
+    textureMetadata: id => textureMetadata(cache, options, id)
   };
 }
 
@@ -60,6 +61,15 @@ function resourceContent(
   }
   const ast = cache.getJsonFileAst(fileName);
   return ast ? astNodeToJsonValue(ast.body) ?? null : null;
+}
+
+function textureMetadata(
+  cache: WorkspaceResourceCache,
+  options: RsglWorkspaceValidationOptions,
+  id: string
+): { width: number; height: number } | null {
+  const fileName = resolveResource(cache, options, id, resourceTarget("texture"));
+  return fileName ? cache.getPngMetadata(fileName) : null;
 }
 
 function resolveResource(

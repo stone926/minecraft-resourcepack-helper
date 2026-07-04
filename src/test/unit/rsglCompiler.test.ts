@@ -2103,8 +2103,84 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:particle/missing_particle"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/missing_equipment"));
   });
+
+  it("validates mcmeta animation frames against texture metadata", () => {
+    const result = compileRsglModule(parseRsgl([
+      "mcmeta \"assets/minecraft/textures/block/animated.png\" {",
+      "  animation {",
+      "    width 16",
+      "    height 16",
+      "    frametime 0",
+      "    interpolate \"yes\"",
+      "    frames [0, 4, { index: 2, time: 0 }, { index: -1 }]",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true,
+      textureMetadata: id => id === "minecraft:block/animated" ? { width: 16, height: 48 } : null
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidMcmetaFrameTime"));
+    assert.ok(codes.includes("rsgl.invalidMcmetaInterpolate"));
+    assert.ok(codes.includes("rsgl.invalidMcmetaFrameIndex"));
+    assert.ok(codes.includes("rsgl.mcmetaFrameIndexOutOfRange"));
+    assert.strictEqual(codes.includes("rsgl.invalidMcmetaFrameStrip"), false);
+  });
+
+  it("validates mcmeta animation frame strip dimensions", () => {
+    const result = compileRsglModule(parseRsgl([
+      "mcmeta \"assets/minecraft/textures/block/bad_strip.png\" {",
+      "  animation {",
+      "    frames [0]",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true,
+      textureMetadata: id => id === "minecraft:block/bad_strip" ? { width: 16, height: 20 } : null
+    });
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidMcmetaFrameStrip"));
+  });
+
+  it("reads mcmeta texture metadata through the workspace validation adapter", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const sourceFile = path.join(packRoot, "main.rsgl");
+    const textureFile = path.join(packRoot, "assets", "minecraft", "textures", "block", "adapter_bad_strip.png");
+    try {
+      fs.mkdirSync(path.dirname(textureFile), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(textureFile, createPngBytes(16, 20));
+      fs.writeFileSync(sourceFile, [
+        "mcmeta \"assets/minecraft/textures/block/adapter_bad_strip.png\" {",
+        "  animation { frames [0] }",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        cache: new WorkspaceResourceCache()
+      }));
+
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidMcmetaFrameStrip"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-"));
+}
+
+function createPngBytes(width: number, height: number): Buffer {
+  const bytes = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0);
+  bytes.write("IHDR", 12, "ascii");
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
 }

@@ -1,7 +1,13 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { validateMcmetaAnimation } from "./mcmetaValidation";
 
 export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound";
 export type RsglResourceContentKind = "model";
+
+export interface RsglTextureMetadata {
+  width: number;
+  height: number;
+}
 
 type TextureVariableResolution =
   | { kind: "resolved"; texture: string }
@@ -18,6 +24,7 @@ export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
   resourceExists?: (kind: RsglResourceExistenceKind, id: string) => boolean;
   resourceContent?: (kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
+  textureMetadata?: (id: string) => RsglTextureMetadata | null | undefined;
 }
 
 export function validateResourceUnits(
@@ -695,6 +702,7 @@ function validateMcmetaUnit(
   if (textureId) {
     checkResourceExists("texture", textureId, unit, undefined, options, diagnostics);
   }
+  validateMcmetaAnimation(unit, textureId, options, diagnostics);
 }
 
 function validateParticlesUnit(
