@@ -476,6 +476,62 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use cubeModel"]);
   });
 
+  it("expands imported templates with their definition-file closure", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const tablesFile = path.resolve("pack", "tables.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "namespace caller",
+          "import { woodCube } from \"./templates.rsgl\"",
+          "use woodCube(oak_planks)"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "namespace custom",
+          "import { woods } from \"./tables.rsgl\"",
+          "let parentModel = block/cube_all",
+          "template cube(id: ResourceId, texture: TextureId = woods.acacia) {",
+          "  model block id {",
+          "    parent parentModel",
+          "    textures { all: texture }",
+          "  }",
+          "}",
+          "template woodCube(id: ResourceId) {",
+          "  use cube(id)",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: tablesFile,
+        module: parseRsgl([
+          "namespace textures",
+          "table woods {",
+          "  acacia: block/acacia_planks",
+          "}"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/custom/models/block/oak_planks.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "custom:block/cube_all",
+      textures: {
+        all: "textures:block/acacia_planks"
+      }
+    });
+    const mapping = result.units[0].sourceMap.mappings[0];
+    assert.strictEqual(mapping.sourceFile, templatesFile);
+    assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use woodCube", "use cube"]);
+  });
+
   it("uses local and imported tables during compilation", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const tablesFile = path.resolve("pack", "tables.rsgl");

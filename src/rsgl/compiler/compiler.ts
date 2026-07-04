@@ -12,7 +12,6 @@ import {
   RsglModule,
   SugarDeclNode,
   TableDeclNode,
-  TemplateDeclNode,
   TopLevelStatementNode,
   VariantBodyNode,
   VariantSectionStatementNode,
@@ -26,13 +25,22 @@ import {
   RsglSourceFile
 } from "../semantic";
 import {
+  RsglExternalValueDefinition,
+  RsglModuleCompileEnvironment,
+  RsglTemplateDefinition,
+  createProgramCompileEnvironments,
+  createStandaloneCompileEnvironment,
+  createTemplateDefinition,
+  mapToExternalValues
+} from "./environment";
+import {
   childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
   evaluateExpression
 } from "./evaluate";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
-import { createLoopBindings, createLoopContext } from "./looping";
+import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
 import { findResourceStatement, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
@@ -69,24 +77,23 @@ interface RsglCompilerOptions {
   namespace: string;
   externalTemplates?: RsglTemplateDefinition[];
   externalValues?: RsglExternalValueDefinition[];
+  environment?: RsglModuleCompileEnvironment;
 }
 
-interface RsglTemplateDefinition {
-  name: string;
-  node: TemplateDeclNode;
-  fileName: string;
-}
-
-interface RsglExternalValueDefinition {
-  name: string;
-  value: EvaluationValue;
-}
+type RsglCompileContext = EvaluationContext & {
+  templates?: Map<string, RsglTemplateDefinition>;
+};
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
+  const environment = createStandaloneCompileEnvironment(
+    semanticModel,
+    options.namespace ?? semanticModel.namespace ?? "minecraft"
+  );
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
-    namespace: options.namespace ?? semanticModel.namespace ?? "minecraft"
+    namespace: options.namespace ?? semanticModel.namespace ?? "minecraft",
+    environment
   });
   const result = compiler.compile();
   const merged = mergeResourceUnits(result.units);
@@ -135,6 +142,7 @@ export function loadRsglSourceFilesFromFile(entryFileName: string, options: Rsgl
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
   const program = bindRsglProgram(files);
+  const environments = createProgramCompileEnvironments(program, options.namespace);
   const selectedModels = selectProgramModels(program, options.entryFileName);
   const units: ResourceUnit[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
@@ -151,11 +159,14 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   }
 
   for (const model of selectedModels) {
+    const environment = environments.get(normalizeFileName(model.fileName))
+      ?? createStandaloneCompileEnvironment(model, options.namespace ?? model.namespace ?? "minecraft");
     const compiler = new RsglCompiler(model.module, {
       fileName: model.fileName,
       namespace: options.namespace ?? model.namespace ?? "minecraft",
-      externalTemplates: collectImportedTemplates(model, program),
-      externalValues: collectImportedValues(model, program)
+      externalTemplates: Array.from(environment.importedTemplates.values()),
+      externalValues: mapToExternalValues(environment.importedValues),
+      environment
     });
     const result = compiler.compile();
     units.push(...result.units);
@@ -187,11 +198,16 @@ class RsglCompiler {
     }
     for (const statement of this.module.statements) {
       if (statement.kind === "TemplateDecl" && statement.name) {
-        this.templates.set(statement.name.text, {
-          name: statement.name.text,
-          node: statement,
-          fileName: this.options.fileName
-        });
+        const template = this.options.environment?.allTemplates.get(statement.name.text)
+          ?? createTemplateDefinition(
+            statement.name.text,
+            statement,
+            this.options.fileName,
+            this.options.namespace,
+            new Map(),
+            this.templates
+          );
+        this.templates.set(statement.name.text, template);
       }
     }
     const context = this.createRootContext();
@@ -201,7 +217,7 @@ class RsglCompiler {
     return { units: this.units, diagnostics: this.diagnostics };
   }
 
-  private compileStatement(statement: TopLevelStatementNode, context: EvaluationContext): void {
+  private compileStatement(statement: TopLevelStatementNode, context: RsglCompileContext): void {
     if (statement.kind === "ResourceDecl") {
       this.compileResourceDecl(statement, context);
     } else if (statement.kind === "SugarDecl") {
@@ -227,7 +243,7 @@ class RsglCompiler {
     }
   }
 
-  private compileResourceDecl(statement: ResourceDeclNode, context: EvaluationContext): void {
+  private compileResourceDecl(statement: ResourceDeclNode, context: RsglCompileContext): void {
     if (statement.resourceKind === "model") {
       this.pushUnit(this.compileModel(statement, context));
     } else if (statement.resourceKind === "item") {
@@ -247,14 +263,14 @@ class RsglCompiler {
     }
   }
 
-  private compileModel(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileModel(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
     if (!idValue) {
       this.error("rsgl.compileMissingResourceId", "Model declaration requires a static id.", statement.range);
       return null;
     }
     const subtype = statement.subtype?.text ?? "block";
-    const id = parseResourceId(idValue, this.options.namespace);
+    const id = parseResourceId(idValue, context.namespace);
     if (!id) {
       this.error("rsgl.compileInvalidResourceId", `Invalid model id '${idValue}'.`, statement.id?.range ?? statement.range);
       return null;
@@ -271,9 +287,9 @@ class RsglCompiler {
     };
   }
 
-  private compileItem(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileItem(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
-    const id = idValue ? parseResourceId(idValue, this.options.namespace) : null;
+    const id = idValue ? parseResourceId(idValue, context.namespace) : null;
     if (!id || !statement.id) {
       this.error("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
       return null;
@@ -293,9 +309,9 @@ class RsglCompiler {
     };
   }
 
-  private compileBlockstate(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileBlockstate(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
-    const id = idValue ? parseResourceId(idValue, this.options.namespace) : null;
+    const id = idValue ? parseResourceId(idValue, context.namespace) : null;
     if (!id || !statement.id) {
       this.error("rsgl.compileMissingResourceId", "Blockstate declaration requires a static id.", statement.range);
       return null;
@@ -322,7 +338,7 @@ class RsglCompiler {
 
   private compileVariantEntries(
     statements: VariantSectionStatementNode[],
-    context: EvaluationContext
+    context: RsglCompileContext
   ): Record<string, JsonValue> {
     const entries: Record<string, JsonValue> = {};
     for (const statement of statements) {
@@ -333,7 +349,7 @@ class RsglCompiler {
 
   private compileVariantBody(
     body: VariantBodyNode,
-    context: EvaluationContext,
+    context: RsglCompileContext,
     entries: Record<string, JsonValue>
   ): void {
     for (const statement of body.statements) {
@@ -343,7 +359,7 @@ class RsglCompiler {
 
   private compileVariantStatement(
     statement: VariantSectionStatementNode,
-    context: EvaluationContext,
+    context: RsglCompileContext,
     entries: Record<string, JsonValue>
   ): void {
     if (statement.kind === "VariantEntry") {
@@ -360,7 +376,7 @@ class RsglCompiler {
       }
       for (const value of iterable) {
         const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-        this.compileVariantBody(statement.body, createLoopContext(context, bindings, statement.range), entries);
+        this.compileVariantBody(statement.body, this.createLoopContext(context, bindings, statement.range), entries);
       }
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
@@ -372,7 +388,7 @@ class RsglCompiler {
 
   private compileMultipartEntries(
     statements: MultipartSectionStatementNode[],
-    context: EvaluationContext
+    context: RsglCompileContext
   ): JsonValue[] {
     const entries: JsonValue[] = [];
     for (const statement of statements) {
@@ -383,7 +399,7 @@ class RsglCompiler {
 
   private compileMultipartBody(
     body: MultipartBodyNode,
-    context: EvaluationContext,
+    context: RsglCompileContext,
     entries: JsonValue[]
   ): void {
     for (const statement of body.statements) {
@@ -393,7 +409,7 @@ class RsglCompiler {
 
   private compileMultipartStatement(
     statement: MultipartSectionStatementNode,
-    context: EvaluationContext,
+    context: RsglCompileContext,
     entries: JsonValue[]
   ): void {
     if (statement.kind === "MultipartEntry") {
@@ -415,7 +431,7 @@ class RsglCompiler {
       }
       for (const value of iterable) {
         const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-        this.compileMultipartBody(statement.body, createLoopContext(context, bindings, statement.range), entries);
+        this.compileMultipartBody(statement.body, this.createLoopContext(context, bindings, statement.range), entries);
       }
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
@@ -425,9 +441,9 @@ class RsglCompiler {
     }
   }
 
-  private compileGenericJsonResource(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileGenericJsonResource(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
-    const id = idValue ? parseResourceId(idValue, this.options.namespace) : null;
+    const id = idValue ? parseResourceId(idValue, context.namespace) : null;
     if (!id || !statement.id) {
       this.error("rsgl.compileMissingResourceId", `${statement.resourceKind} declaration requires a static id.`, statement.range);
       return null;
@@ -443,7 +459,7 @@ class RsglCompiler {
     };
   }
 
-  private compilePack(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit {
+  private compilePack(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit {
     const outputPath = "pack.mcmeta";
     const body = this.resourceBodyToObject(statement.body, context);
     const content = isJsonObject(body.pack) ? body : { pack: body };
@@ -456,9 +472,9 @@ class RsglCompiler {
     };
   }
 
-  private compileLang(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileLang(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
-    const id = idValue ? parseResourceId(idValue, this.options.namespace) : null;
+    const id = idValue ? parseResourceId(idValue, context.namespace) : null;
     if (!id || !statement.id) {
       this.error("rsgl.compileMissingResourceId", "Lang declaration requires a static locale id.", statement.range);
       return null;
@@ -474,7 +490,7 @@ class RsglCompiler {
     };
   }
 
-  private compileSounds(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileSounds(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const namespace = this.soundsNamespace(statement, context);
     if (!namespace) {
       this.error("rsgl.compileMissingResourceId", "Sounds declaration requires a namespace.", statement.range);
@@ -492,13 +508,13 @@ class RsglCompiler {
     };
   }
 
-  private compileMcmeta(statement: ResourceDeclNode, context: EvaluationContext): ResourceUnit | null {
+  private compileMcmeta(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
     if (!idValue || !statement.id) {
       this.error("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
       return null;
     }
-    const target = this.mcmetaTarget(idValue);
+    const target = this.mcmetaTarget(idValue, context.namespace);
     if (!target) {
       this.error("rsgl.compileInvalidResourceId", `Invalid mcmeta target '${idValue}'.`, statement.id.range);
       return null;
@@ -513,7 +529,7 @@ class RsglCompiler {
     };
   }
 
-  private compileSugarDecl(statement: SugarDeclNode, context: EvaluationContext): void {
+  private compileSugarDecl(statement: SugarDeclNode, context: RsglCompileContext): void {
     if (statement.sugarKind === "conventionalBlockstate") {
       this.compileConventionalBlockstateSugar(statement, context);
     } else if (statement.sugarKind === "batchModel") {
@@ -521,7 +537,7 @@ class RsglCompiler {
         this.pushUnit(createCubeAllModel(
           this.staticText(entry.id, context) ?? "",
           entry.target ? (this.staticText(entry.target, context) ?? undefined) : undefined,
-          this.options.namespace,
+          context.namespace,
           context.sourceFile ?? this.options.fileName,
           entry.range,
           context.expansionStack ?? []
@@ -532,7 +548,7 @@ class RsglCompiler {
         this.pushUnit(createItemMapping(
           this.staticText(entry.id, context) ?? "",
           entry.target ? (this.staticText(entry.target, context) ?? undefined) : undefined,
-          this.options.namespace,
+          context.namespace,
           context.sourceFile ?? this.options.fileName,
           entry.range,
           context.expansionStack ?? []
@@ -541,25 +557,25 @@ class RsglCompiler {
     }
   }
 
-  private compileConventionalBlockstateSugar(statement: SugarDeclNode, context: EvaluationContext): void {
+  private compileConventionalBlockstateSugar(statement: SugarDeclNode, context: RsglCompileContext): void {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
     if (!idValue) {
       this.error("rsgl.compileMissingResourceId", "Blockstate sugar requires a static id.", statement.range);
       return;
     }
     if (statement.sugarName.text === "stairs") {
-      this.pushUnit(createStairsBlockstate(idValue, this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
+      this.pushUnit(createStairsBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "slab") {
       const double = statement.options.find(option => option.name.text === "double")?.value;
       if (!double) {
         this.error("rsgl.slabMissingDouble", "slab sugar requires an explicit double model.", statement.range);
         return;
       }
-      this.pushUnit(createSlabBlockstate(idValue, this.staticText(double, context) ?? "", this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
+      this.pushUnit(createSlabBlockstate(idValue, this.staticText(double, context) ?? "", context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "fence") {
-      this.pushUnit(createFenceBlockstate(idValue, this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
+      this.pushUnit(createFenceBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     } else if (statement.sugarName.text === "wall") {
-      this.pushUnit(createWallBlockstate(idValue, this.options.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
+      this.pushUnit(createWallBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     }
   }
 
@@ -573,26 +589,27 @@ class RsglCompiler {
       .join(",");
   }
 
-  private compileLetDecl(statement: LetDeclNode, context: EvaluationContext): void {
+  private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
       context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
     }
   }
 
-  private compileTableDecl(statement: TableDeclNode, context: EvaluationContext): void {
+  private compileTableDecl(statement: TableDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
       context.variables.set(statement.name.text, normalizeJsonValue(evaluateExpression(statement.body, context)));
     }
   }
 
-  private compileUseDecl(expression: ExprNode, context: EvaluationContext): void {
+  private compileUseDecl(expression: ExprNode, context: RsglCompileContext): void {
     if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
       return;
     }
-    const template = this.templates.get(expression.callee.name.text);
+    const template = (context.templates ?? this.templates).get(expression.callee.name.text);
     if (!template) {
       return;
     }
+    const templateBaseContext = this.createTemplateBaseContext(template);
     const values: Record<string, EvaluationValue> = {};
     const positional = expression.args.filter(arg => !arg.name);
     for (const [index, parameter] of template.node.parameters.entries()) {
@@ -604,12 +621,12 @@ class RsglCompiler {
       if (arg) {
         values[name] = evaluateExpression(arg.value, context);
       } else if (parameter.defaultValue) {
-        values[name] = evaluateExpression(parameter.defaultValue, childEvaluationContext(context, values));
+        values[name] = evaluateExpression(parameter.defaultValue, this.createChildContext(templateBaseContext, values));
       } else {
         this.error("rsgl.compileMissingArgument", `Missing template argument '${name}'.`, expression.range);
       }
     }
-    const templateContext = childEvaluationContext(context, values, {
+    const templateContext = this.createChildContext(templateBaseContext, values, {
       sourceFile: template.fileName,
       mappingReason: "template",
       expansionStack: [
@@ -620,7 +637,7 @@ class RsglCompiler {
     this.compileBlock(template.node.body, templateContext);
   }
 
-  private compileForStmt(statement: ForStmtNode, context: EvaluationContext): void {
+  private compileForStmt(statement: ForStmtNode, context: RsglCompileContext): void {
     const iterable = evaluateExpression(statement.iterable, context);
     const values = Array.isArray(iterable) ? iterable : [];
     if (!Array.isArray(iterable)) {
@@ -632,22 +649,22 @@ class RsglCompiler {
     }
     for (const value of values) {
       const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-      this.compileBlock(statement.body, createLoopContext(context, bindings, statement.range));
+      this.compileBlock(statement.body, this.createLoopContext(context, bindings, statement.range));
     }
   }
 
-  private compileBlock(body: BlockNode, context: EvaluationContext): void {
+  private compileBlock(body: BlockNode, context: RsglCompileContext): void {
     for (const statement of body.statements) {
       this.compileStatement(statement, context);
     }
   }
 
-  private staticText(expression: ExprNode, context: EvaluationContext): string | null {
+  private staticText(expression: ExprNode, context: RsglCompileContext): string | null {
     const value = evaluateExpression(expression, context);
     return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
   }
 
-  private soundsNamespace(statement: ResourceDeclNode, context: EvaluationContext): string | null {
+  private soundsNamespace(statement: ResourceDeclNode, context: RsglCompileContext): string | null {
     const idValue = statement.id ? this.staticText(statement.id, context) : null;
     if (!idValue) {
       return null;
@@ -655,17 +672,17 @@ class RsglCompiler {
     if (namespacePattern.test(idValue)) {
       return idValue;
     }
-    const id = parseResourceId(idValue, this.options.namespace);
+    const id = parseResourceId(idValue, context.namespace);
     return id?.namespace ?? null;
   }
 
-  private mcmetaTarget(value: string): { id?: { namespace: string; path: string }; outputPath: string } | null {
+  private mcmetaTarget(value: string, namespace: string): { id?: { namespace: string; path: string }; outputPath: string } | null {
     const normalizedPath = value.replace(/\\/g, "/");
     if (normalizedPath.startsWith("assets/")) {
       return { outputPath: normalizeMcmetaOutputPath(normalizedPath) };
     }
 
-    const id = parseResourceId(value, this.options.namespace);
+    const id = parseResourceId(value, namespace);
     if (!id) {
       return null;
     }
@@ -681,7 +698,7 @@ class RsglCompiler {
     };
   }
 
-  private createRootContext(): EvaluationContext {
+  private createRootContext(): RsglCompileContext {
     return {
       namespace: this.options.namespace,
       variables: new Map<string, EvaluationValue>(
@@ -689,7 +706,41 @@ class RsglCompiler {
       ),
       sourceFile: this.options.fileName,
       mappingReason: "direct",
-      expansionStack: []
+      expansionStack: [],
+      templates: this.templates
+    };
+  }
+
+  private createTemplateBaseContext(template: RsglTemplateDefinition): RsglCompileContext {
+    return {
+      namespace: template.namespace,
+      variables: new Map(template.values),
+      sourceFile: template.fileName,
+      mappingReason: "template",
+      expansionStack: [],
+      templates: template.templates
+    };
+  }
+
+  private createChildContext(
+    context: RsglCompileContext,
+    values: Record<string, EvaluationValue>,
+    metadata: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack">> = {}
+  ): RsglCompileContext {
+    return {
+      ...childEvaluationContext(context, values, metadata),
+      templates: context.templates
+    };
+  }
+
+  private createLoopContext(
+    context: RsglCompileContext,
+    bindings: Record<string, EvaluationValue>,
+    sourceRange: { start: number; end: number }
+  ): RsglCompileContext {
+    return {
+      ...createEvaluationLoopContext(context, bindings, sourceRange),
+      templates: context.templates
     };
   }
 
@@ -699,13 +750,13 @@ class RsglCompiler {
     }
   }
 
-  private resourceBodyToObject(body: ResourceDeclNode["body"], context: EvaluationContext): Record<string, JsonValue> {
+  private resourceBodyToObject(body: ResourceDeclNode["body"], context: RsglCompileContext): Record<string, JsonValue> {
     return resourceBodyToObject(body, context, {
       onError: (code, message, range) => this.error(code, message, range)
     });
   }
 
-  private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, context: EvaluationContext) {
+  private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, context: RsglCompileContext) {
     return {
       generatedFile: outputPath,
       mappings: [{
@@ -743,78 +794,6 @@ function selectProgramModels(program: RsglProgram, entryFileName: string | undef
   return program.models.filter(model => normalizeFileName(model.fileName) === normalizedEntry);
 }
 
-function collectImportedTemplates(model: RsglSemanticModel, program: RsglProgram): RsglTemplateDefinition[] {
-  const modelsByFile = new Map(program.models.map(item => [normalizeFileName(item.fileName), item]));
-  const currentFile = normalizeFileName(model.fileName);
-  const templates: RsglTemplateDefinition[] = [];
-
-  for (const record of model.imports) {
-    const targetFile = record.resolvedFileName
-      ? normalizeFileName(record.resolvedFileName)
-      : program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === record.source)?.to;
-    const targetModel = targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
-    if (!targetModel) {
-      continue;
-    }
-
-    for (const item of record.namedImports) {
-      const exported = targetModel.symbols.find(symbol => symbol.name === item.imported);
-      if (isTemplateDeclNode(exported?.node)) {
-        templates.push({
-          name: item.local,
-          node: exported.node,
-          fileName: targetModel.fileName
-        });
-      }
-    }
-  }
-
-  return templates;
-}
-
-function collectImportedValues(model: RsglSemanticModel, program: RsglProgram): RsglExternalValueDefinition[] {
-  const modelsByFile = new Map(program.models.map(item => [normalizeFileName(item.fileName), item]));
-  const currentFile = normalizeFileName(model.fileName);
-  const values: RsglExternalValueDefinition[] = [];
-
-  for (const record of model.imports) {
-    const targetFile = record.resolvedFileName
-      ? normalizeFileName(record.resolvedFileName)
-      : program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === record.source)?.to;
-    const targetModel = targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
-    if (!targetModel) {
-      continue;
-    }
-
-    const exportedValues = evaluateTopLevelValues(targetModel);
-    for (const item of record.namedImports) {
-      if (exportedValues.has(item.imported)) {
-        values.push({ name: item.local, value: exportedValues.get(item.imported) });
-      }
-    }
-  }
-
-  return values;
-}
-
-function evaluateTopLevelValues(model: RsglSemanticModel): Map<string, EvaluationValue> {
-  const context: EvaluationContext = {
-    namespace: model.namespace ?? "minecraft",
-    variables: new Map<string, EvaluationValue>(),
-    sourceFile: model.fileName,
-    mappingReason: "direct",
-    expansionStack: []
-  };
-  for (const statement of model.module.statements) {
-    if (isLetDeclNode(statement) && statement.name) {
-      context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
-    } else if (isTableDeclNode(statement) && statement.name) {
-      context.variables.set(statement.name.text, normalizeJsonValue(evaluateExpression(statement.body, context)));
-    }
-  }
-  return context.variables;
-}
-
 function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
   const diagnostics: RsglCompileDiagnostic[] = [];
   const seen = new Map<string, ResourceUnit>();
@@ -847,16 +826,4 @@ function normalizeFileName(fileName: string): string {
 
 function isImportDeclNode(node: unknown): node is ImportDeclNode {
   return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ImportDecl");
-}
-
-function isTemplateDeclNode(node: unknown): node is TemplateDeclNode {
-  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "TemplateDecl");
-}
-
-function isTableDeclNode(node: unknown): node is TableDeclNode {
-  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "TableDecl");
-}
-
-function isLetDeclNode(node: unknown): node is LetDeclNode {
-  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "LetDecl");
 }
