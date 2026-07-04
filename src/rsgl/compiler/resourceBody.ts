@@ -11,6 +11,7 @@ import {
 } from "./evaluate";
 import { JsonValue } from "./ir";
 import { createLoopBindings, createLoopContext } from "./looping";
+import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 
 export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
@@ -64,15 +65,15 @@ function applyResourceStatement(
 ): void {
   if (statement.kind === "PropertyStmt") {
     result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-    emitMapping(options, appendPath(path, statement.name.text), statement.range, context);
+    emitMapping(options, appendGeneratedPath(path, statement.name.text), statement.range, context);
   } else if (statement.kind === "SectionStmt") {
     if (statement.body) {
-      const sectionPath = appendPath(path, statement.name.text);
+      const sectionPath = appendGeneratedPath(path, statement.name.text);
       emitMapping(options, sectionPath, statement.range, context);
       result[statement.name.text] = resourceBodyToObjectAtPath(statement.body, context, options, sectionPath);
     } else if (statement.value) {
       result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-      emitMapping(options, appendPath(path, statement.name.text), statement.range, context);
+      emitMapping(options, appendGeneratedPath(path, statement.name.text), statement.range, context);
     }
   } else if (statement.kind === "IfStmt") {
     const selectedBody = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
@@ -159,7 +160,7 @@ function emitObjectMappings(
   context: EvaluationContext
 ): void {
   for (const key of Object.keys(value)) {
-    emitMapping(options, appendPath(path, key), sourceRange, context);
+    emitMapping(options, appendGeneratedPath(path, key), sourceRange, context);
   }
 }
 
@@ -170,24 +171,6 @@ function emitMapping(
   context: EvaluationContext
 ): void {
   options.onMapping?.({ generatedPath, sourceRange, context });
-}
-
-function appendPath(path: string, segment: string): string {
-  return `${path}/${escapeJsonPointerSegment(segment)}`;
-}
-
-function joinGeneratedPath(path: string, generatedPath: string): string {
-  if (!path) {
-    return generatedPath;
-  }
-  if (!generatedPath) {
-    return path;
-  }
-  return `${path}${generatedPath.startsWith("/") ? generatedPath : `/${generatedPath}`}`;
-}
-
-function escapeJsonPointerSegment(segment: string): string {
-  return segment.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 function mergeObject(target: Record<string, JsonValue>, source: Record<string, JsonValue>): void {

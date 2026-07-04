@@ -1426,6 +1426,17 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(result.units[0].content, {
       variants: expectedVariants
     });
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath).sort(), [
+      "",
+      "/variants",
+      "/variants/facing=east,powered=false",
+      "/variants/facing=east,powered=true",
+      "/variants/facing=north,powered=false",
+      "/variants/facing=north,powered=true"
+    ].sort());
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings
+      .filter(mapping => mapping.generatedPath.startsWith("/variants/facing="))
+      .map(mapping => mapping.reason), ["loop", "loop", "loop", "loop"]);
   });
 
   it("expands for and if statements inside blockstate multipart sections", () => {
@@ -1479,6 +1490,17 @@ describe("RSGL compiler", () => {
         }
       ]
     });
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/multipart",
+      "/multipart/0",
+      "/multipart/1",
+      "/multipart/2",
+      "/multipart/3"
+    ]);
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings
+      .filter(mapping => mapping.generatedPath === "/multipart/1" || mapping.generatedPath === "/multipart/2")
+      .map(mapping => mapping.reason), ["loop", "loop"]);
   });
 
   it("expands built-in blockstate fragments from use declarations", () => {
