@@ -7,6 +7,7 @@ import {
   MultipartBodyNode,
   MultipartSectionStatementNode,
   OverlayDeclNode,
+  ParameterNode,
   ResourceBodyNode,
   ResourceDeclNode,
   ResourceStatementNode,
@@ -17,6 +18,7 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
+import { bindRsglArguments, RsglCallableParameter } from "../arguments";
 import {
   bindRsglModule,
   bindRsglProgram,
@@ -96,6 +98,10 @@ interface RsglCompilerOptions {
 
 type RsglCompileContext = EvaluationContext & {
   templates?: Map<string, RsglTemplateDefinition>;
+};
+
+type TemplateCallParameter = RsglCallableParameter & {
+  parameterNode: ParameterNode;
 };
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
@@ -690,19 +696,39 @@ class RsglCompiler {
     }
     const templateBaseContext = this.createTemplateBaseContext(template);
     const values: Record<string, EvaluationValue> = {};
-    const positional = expression.args.filter(arg => !arg.name);
-    for (const [index, parameter] of template.node.parameters.entries()) {
-      const name = parameter.name?.text;
-      if (!name) {
-        continue;
+    const parameters = template.node.parameters
+      .filter(parameter => parameter.name)
+      .map((parameter): TemplateCallParameter => ({
+        name: parameter.name!.text,
+        optional: Boolean(parameter.defaultValue),
+        node: parameter,
+        parameterNode: parameter
+      }));
+    const binding = bindRsglArguments(parameters, expression.args, {
+      callRange: expression.range,
+      codes: {
+        duplicate: "rsgl.compileDuplicateArgument",
+        missing: "rsgl.compileMissingArgument",
+        tooMany: "rsgl.compileTooManyArguments",
+        unknown: "rsgl.compileUnknownArgument"
+      },
+      messages: {
+        duplicate: name => `Duplicate template argument '${name}'.`,
+        missing: parameter => `Missing template argument '${parameter.name}'.`,
+        tooMany: () => "Too many template positional arguments.",
+        unknown: name => `Unknown template argument '${name}'.`
       }
-      const arg = expression.args.find(item => item.name?.text === name) ?? positional[index];
+    });
+    this.diagnostics.push(...binding.diagnostics);
+    const argsByParameter = new Map(binding.primaryAssignments.map(assignment => [assignment.parameter.name, assignment.arg]));
+
+    for (const parameter of parameters) {
+      const name = parameter.name;
+      const arg = argsByParameter.get(name);
       if (arg) {
         values[name] = evaluateExpression(arg.value, context);
-      } else if (parameter.defaultValue) {
-        values[name] = evaluateExpression(parameter.defaultValue, this.createChildContext(templateBaseContext, values));
-      } else {
-        this.error("rsgl.compileMissingArgument", `Missing template argument '${name}'.`, expression.range);
+      } else if (parameter.parameterNode.defaultValue) {
+        values[name] = evaluateExpression(parameter.parameterNode.defaultValue, this.createChildContext(templateBaseContext, values));
       }
     }
     const templateContext = this.createChildContext(templateBaseContext, values, {

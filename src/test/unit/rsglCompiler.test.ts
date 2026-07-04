@@ -421,6 +421,30 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("reports invalid template call arguments during compilation", () => {
+    const result = compileRsglModule(parseRsgl([
+      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "  model block id { parent minecraft:block/cube_all }",
+      "}",
+      "use cube(",
+      "  stone,",
+      "  minecraft:block/stone,",
+      "  minecraft:block/granite,",
+      "  id: dirt,",
+      "  extra: minecraft:block/x,",
+      "  extra: minecraft:block/y",
+      ")"
+    ].join("\n")));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.unknownArgument"));
+    assert.ok(codes.includes("rsgl.tooManyArguments"));
+    assert.ok(codes.includes("rsgl.duplicateArgument"));
+    assert.ok(codes.includes("rsgl.compileUnknownArgument"));
+    assert.ok(codes.includes("rsgl.compileTooManyArguments"));
+    assert.ok(codes.includes("rsgl.compileDuplicateArgument"));
+  });
+
   it("expands finite for loops over lists", () => {
     const result = compileRsglModule(parseRsgl([
       "for block in [minecraft:stone, minecraft:dirt] {",

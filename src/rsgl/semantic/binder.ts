@@ -2,6 +2,7 @@ import * as path from "node:path";
 import {
   ArgumentNode,
   BlockNode,
+  CallExprNode,
   ExprNode,
   IdentifierNode,
   MultipartBodyNode,
@@ -20,6 +21,7 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
+import { bindRsglArguments } from "../arguments";
 import { createBuiltinSymbols } from "./builtins";
 import { createRsglExportMaps } from "./exportResolution";
 import { validateResolvedImportCalls } from "./importValidation";
@@ -405,7 +407,7 @@ class RsglBinder {
       return jsonType;
     }
     if (expression.kind === "CallExpr") {
-      return this.checkCallExpression(expression.callee, expression.args, scope);
+      return this.checkCallExpression(expression, scope);
     }
     if (expression.kind === "MemberExpr") {
       this.checkExpression(expression.object, scope);
@@ -481,7 +483,8 @@ class RsglBinder {
     return { kind: "Object", properties };
   }
 
-  private checkCallExpression(callee: ExprNode, args: ArgumentNode[], scope: RsglScope): RsglType {
+  private checkCallExpression(expression: CallExprNode, scope: RsglScope): RsglType {
+    const { callee, args } = expression;
     const calleeType = this.checkExpression(callee, scope);
 
     if (callee.kind !== "IdentifierExpr") {
@@ -502,27 +505,27 @@ class RsglBinder {
       return symbol?.type ?? unknownType;
     }
 
-    this.checkArguments(symbol.signature, args, scope);
+    this.checkArguments(symbol.signature, args, scope, expression.range);
     return symbol.signature.returnType;
   }
 
-  private checkArguments(signature: RsglSignature, args: ArgumentNode[], scope: RsglScope): void {
-    const namedArgs = new Map(args.filter(arg => arg.name).map(arg => [arg.name!.text, arg]));
-    const positionalArgs = args.filter(arg => !arg.name);
+  private checkArguments(signature: RsglSignature, args: ArgumentNode[], scope: RsglScope, callRange: { start: number; end: number }): void {
+    const binding = bindRsglArguments(signature.parameters, args, { callRange });
+    this.diagnostics.push(...binding.diagnostics);
+    const checkedArgs = new Set<ArgumentNode>();
 
-    signature.parameters.forEach((parameter, index) => {
-      const arg = namedArgs.get(parameter.name) ?? positionalArgs[index];
-      if (!arg) {
-        if (!parameter.optional) {
-          this.diagnostics.push(diagnostic("rsgl.missingArgument", `Missing argument '${parameter.name}'.`, signature.parameters[index - 1]?.node?.range ?? { start: 0, end: 1 }));
-        }
-        return;
-      }
+    for (const { parameter, arg } of binding.assignments) {
+      checkedArgs.add(arg);
       const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId" || parameter.type.kind === "TextureId"
         ? this.checkResourceIdExpression(arg.value, scope)
         : this.checkExpression(arg.value, scope);
       this.checkAssignable(parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
-    });
+    }
+    for (const arg of binding.unmatchedArgs) {
+      if (!checkedArgs.has(arg)) {
+        this.checkExpression(arg.value, scope);
+      }
+    }
   }
 
   private checkAssignable(expected: RsglType, actual: RsglType, node: RsglNode): void {

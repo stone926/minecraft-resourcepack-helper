@@ -12,6 +12,7 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
+import { bindRsglArguments } from "../arguments";
 import {
   anyType,
   inferLiteralType,
@@ -188,7 +189,7 @@ class ResolvedImportCallValidator {
 
   private validateExpression(expression: ExprNode): void {
     if (expression.kind === "CallExpr") {
-      this.validateCallExpression(expression.callee, expression.args);
+      this.validateCallExpression(expression);
       this.validateExpression(expression.callee);
       expression.args.forEach(arg => this.validateExpression(arg.value));
     } else if (expression.kind === "ListExpr") {
@@ -234,13 +235,14 @@ class ResolvedImportCallValidator {
     }
   }
 
-  private validateCallExpression(callee: ExprNode, args: ArgumentNode[]): void {
+  private validateCallExpression(expression: Extract<ExprNode, { kind: "CallExpr" }>): void {
+    const { callee, args } = expression;
     if (callee.kind !== "IdentifierExpr") {
       return;
     }
     const symbol = this.model.scope.symbols.get(callee.name.text);
     if (symbol?.kind === "import" && symbol.signature) {
-      this.validateImportedArguments(symbol.signature, args);
+      this.validateImportedArguments(symbol.signature, args, expression.range);
     }
   }
 
@@ -251,18 +253,11 @@ class ResolvedImportCallValidator {
     this.validateExpression(property.value);
   }
 
-  private validateImportedArguments(signature: RsglSignature, args: ArgumentNode[]): void {
-    const namedArgs = new Map(args.filter(arg => arg.name).map(arg => [arg.name!.text, arg]));
-    const positionalArgs = args.filter(arg => !arg.name);
+  private validateImportedArguments(signature: RsglSignature, args: ArgumentNode[], callRange: { start: number; end: number }): void {
+    const binding = bindRsglArguments(signature.parameters, args, { callRange });
+    this.diagnostics.push(...binding.diagnostics);
 
-    signature.parameters.forEach((parameter, index) => {
-      const arg = namedArgs.get(parameter.name) ?? positionalArgs[index];
-      if (!arg) {
-        if (!parameter.optional) {
-          this.diagnostics.push(diagnostic("rsgl.missingArgument", `Missing argument '${parameter.name}'.`, parameter.node?.range ?? { start: 0, end: 1 }));
-        }
-        return;
-      }
+    for (const { parameter, arg } of binding.assignments) {
       const actualType = inferImportedArgumentType(arg.value, parameter.type);
       if (!isAssignable(parameter.type, actualType)) {
         this.diagnostics.push(diagnostic(
@@ -271,7 +266,7 @@ class ResolvedImportCallValidator {
           arg.value.range
         ));
       }
-    });
+    }
   }
 }
 

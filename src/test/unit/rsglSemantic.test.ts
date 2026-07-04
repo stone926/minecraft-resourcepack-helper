@@ -77,6 +77,30 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 3);
   });
 
+  it("reports unknown, duplicate, and excessive template call arguments", () => {
+    const module = parseRsgl([
+      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "  model block id { parent minecraft:block/cube_all }",
+      "}",
+      "use cube(",
+      "  stone,",
+      "  minecraft:block/stone,",
+      "  minecraft:block/granite,",
+      "  id: dirt,",
+      "  extra: minecraft:block/x,",
+      "  extra: minecraft:block/y",
+      ")"
+    ].join("\n"));
+
+    const model = bindRsglModule(module);
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.unknownArgument"));
+    assert.ok(codes.includes("rsgl.tooManyArguments"));
+    assert.ok(codes.includes("rsgl.duplicateArgument"));
+    assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
+  });
+
   it("builds an import graph and reports missing imports", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const woodsFile = path.resolve("pack", "woods.rsgl");
@@ -284,5 +308,39 @@ describe("RSGL semantic model", () => {
     ]);
 
     assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingArgument"));
+  });
+
+  it("checks resolved imported template argument binding", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { cube } from \"./templates.rsgl\"",
+          "use cube(",
+          "  stone,",
+          "  minecraft:block/stone,",
+          "  minecraft:block/granite,",
+          "  id: dirt,",
+          "  extra: minecraft:block/x,",
+          "  extra: minecraft:block/y",
+          ")"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "template cube(id: ResourceId, texture: TextureId = id) {",
+          "  model block id { parent minecraft:block/cube_all }",
+          "}"
+        ].join("\n"))
+      }
+    ]);
+
+    const codes = program.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.unknownArgument"));
+    assert.ok(codes.includes("rsgl.tooManyArguments"));
+    assert.ok(codes.includes("rsgl.duplicateArgument"));
   });
 });
