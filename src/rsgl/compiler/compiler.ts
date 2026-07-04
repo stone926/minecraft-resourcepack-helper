@@ -37,10 +37,12 @@ import {
 } from "./environment";
 import {
   compileBlockstateUseFragment,
+  compileBlockstateValueFragment,
   mergeBlockstateContent,
   mergeBlockstateFragment,
   RsglBlockstateFragmentOptions
 } from "./blockstateFragments";
+import { blockstateVariantKey } from "./blockstateKeys";
 import {
   childEvaluationContext,
   EvaluationContext,
@@ -429,8 +431,11 @@ class RsglCompiler {
     entries: Record<string, JsonValue>
   ): void {
     if (statement.kind === "VariantEntry") {
-      const state = this.variantKey(normalizeJsonValue(evaluateExpression(statement.state, context)));
-      entries[state] = normalizeJsonValue(evaluateExpression(statement.value, context));
+      const state = blockstateVariantKey(normalizeJsonValue(evaluateExpression(statement.state, context)));
+      const fragmentValue = compileBlockstateValueFragment(statement.value, context, this.blockstateFragmentOptions());
+      entries[state] = fragmentValue?.handled
+        ? fragmentValue.value
+        : normalizeJsonValue(evaluateExpression(statement.value, context));
     } else if (statement.kind === "UseDecl") {
       const fragment = compileBlockstateUseFragment(statement, context, this.blockstateFragmentOptions());
       if (fragment.multipart) {
@@ -682,16 +687,6 @@ class RsglCompiler {
     } else if (statement.sugarName.text === "wall") {
       this.pushUnit(createWallBlockstate(idValue, context.namespace, context.sourceFile ?? this.options.fileName, statement.range, context.expansionStack ?? []));
     }
-  }
-
-  private variantKey(value: JsonValue): string {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return "";
-    }
-    return Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${key}=${String(item)}`)
-      .join(",");
   }
 
   private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {

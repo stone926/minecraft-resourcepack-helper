@@ -8,6 +8,7 @@ import {
   EvaluationValue,
   evaluateExpression
 } from "./evaluate";
+import { blockstateVariantKey } from "./blockstateKeys";
 import { JsonValue } from "./ir";
 import {
   createDoorBlockstateContent,
@@ -22,6 +23,11 @@ import {
 export interface RsglBlockstateFragment {
   variants?: Record<string, JsonValue>;
   multipart?: JsonValue[];
+}
+
+export interface RsglBlockstateValueFragment {
+  handled: boolean;
+  value: JsonValue;
 }
 
 export interface RsglBlockstateFragmentOptions {
@@ -93,8 +99,38 @@ export function compileBlockstateUseFragment(
       sideTall: requiredModelArgument(expression, "sideTall", 2, context, options)
     });
   }
+  if (expression.callee.name.text === "randomVariants") {
+    const models = randomVariantEntries(expression, context, options);
+    if (!models) {
+      return {};
+    }
+    const stateArg = callArgument(expression, "state", 1);
+    const state = stateArg ? normalizeJsonValue(evaluateExpression(stateArg.value, context)) : {};
+    return {
+      variants: {
+        [blockstateVariantKey(state)]: models
+      }
+    };
+  }
 
   return {};
+}
+
+export function compileBlockstateValueFragment(
+  expression: ExprNode,
+  context: EvaluationContext,
+  options: RsglBlockstateFragmentOptions = {}
+): RsglBlockstateValueFragment | null {
+  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+    return null;
+  }
+  if (expression.callee.name.text !== "randomVariants") {
+    return null;
+  }
+  return {
+    handled: true,
+    value: randomVariantEntries(expression, context, options) ?? []
+  };
 }
 
 export function mergeBlockstateContent(
@@ -156,6 +192,50 @@ function requiredModelArgument(
   return normalizeBlockModelValue(value, context.namespace);
 }
 
+function randomVariantEntries(
+  expression: CallExprNode,
+  context: EvaluationContext,
+  options: RsglBlockstateFragmentOptions
+): JsonValue[] | null {
+  const argument = callArgument(expression, "models", 0);
+  if (!argument) {
+    options.onError?.("rsgl.compileMissingArgument", "Missing template argument 'models'.", expression.range);
+    return null;
+  }
+  const value = normalizeJsonValue(evaluateExpression(argument.value, context));
+  if (!Array.isArray(value)) {
+    options.onError?.("rsgl.invalidRandomVariantsArgument", "randomVariants models must evaluate to a finite list.", argument.value.range);
+    return null;
+  }
+
+  const entries: JsonValue[] = [];
+  for (const item of value) {
+    const entry = normalizeRandomVariantEntry(item, context.namespace);
+    if (!entry) {
+      options.onError?.("rsgl.invalidRandomVariantEntry", "randomVariants entries must be model ids or model objects.", argument.value.range);
+      continue;
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
+function normalizeRandomVariantEntry(value: JsonValue, namespace: string): JsonValue | null {
+  if (typeof value === "string") {
+    return { model: normalizeBlockModelValue(value, namespace) };
+  }
+  if (!isJsonObject(value)) {
+    return null;
+  }
+  if (typeof value.model === "string") {
+    return {
+      ...value,
+      model: normalizeBlockModelValue(value.model, namespace)
+    };
+  }
+  return null;
+}
+
 function optionalBooleanArgument(
   expression: CallExprNode,
   name: string,
@@ -176,6 +256,10 @@ function callArgument(expression: CallExprNode, name: string, positionalIndex: n
 function staticText(expression: ExprNode, context: EvaluationContext): string | null {
   const value = evaluateExpression(expression, context);
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
+}
+
+function normalizeJsonValue(value: EvaluationValue): JsonValue {
+  return value === undefined ? null : value;
 }
 
 function normalizeBlockModelValue(value: string, namespace: string): string {

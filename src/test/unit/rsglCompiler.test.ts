@@ -880,6 +880,15 @@ describe("RSGL compiler", () => {
       "    top: minecraft:block/acacia_trapdoor_top,",
       "    open: minecraft:block/acacia_trapdoor_open",
       "  )",
+      "}",
+      "blockstate oak_leaves {",
+      "  use randomVariants(",
+      "    state: { persistent: false },",
+      "    models: [",
+      "      { model: minecraft:block/oak_leaves, weight: 2 },",
+      "      { model: minecraft:block/oak_leaves_2 }",
+      "    ]",
+      "  )",
       "}"
     ].join("\n")));
 
@@ -889,11 +898,13 @@ describe("RSGL compiler", () => {
     const fenceGate = result.units.find(unit => unit.outputPath.endsWith("acacia_fence_gate.json"));
     const door = result.units.find(unit => unit.outputPath.endsWith("acacia_door.json"));
     const trapdoor = result.units.find(unit => unit.outputPath.endsWith("acacia_trapdoor.json"));
+    const leaves = result.units.find(unit => unit.outputPath.endsWith("oak_leaves.json"));
     assert.ok(stairs);
     assert.ok(fence);
     assert.ok(fenceGate);
     assert.ok(door);
     assert.ok(trapdoor);
+    assert.ok(leaves);
     const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
     assert.strictEqual(Object.keys(variants).length, 40);
     assert.deepStrictEqual(variants["facing=east,half=bottom,shape=straight"], {
@@ -928,6 +939,38 @@ describe("RSGL compiler", () => {
       x: 180,
       y: 90
     });
+    assert.deepStrictEqual(leaves.content, {
+      variants: {
+        ["persistent=false"]: [
+          { model: "minecraft:block/oak_leaves", weight: 2 },
+          { model: "minecraft:block/oak_leaves_2" }
+        ]
+      }
+    });
+  });
+
+  it("lowers randomVariants inside explicit blockstate variants", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate stone {",
+      "  variants {",
+      "    {} -> randomVariants([",
+      "      { model: minecraft:block/stone, weight: 3 },",
+      "      { model: minecraft:block/stone_mirrored, y: 180, weight: 1 }",
+      "    ])",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const defaultVariantKey = "";
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        [defaultVariantKey]: [
+          { model: "minecraft:block/stone", weight: 3 },
+          { model: "minecraft:block/stone_mirrored", y: 180, weight: 1 }
+        ]
+      }
+    });
   });
 
   it("reports incompatible blockstate fragment use in section contexts", () => {
@@ -940,6 +983,21 @@ describe("RSGL compiler", () => {
     ].join("\n")));
 
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"));
+  });
+
+  it("reports invalid randomVariants arguments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate broken {",
+      "  variants {",
+      "    {} -> randomVariants({ bad: true })",
+      "  }",
+      "  use randomVariants(models: [{ bad: true }])",
+      "}"
+    ].join("\n")));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.invalidRandomVariantsArgument"));
+    assert.ok(codes.includes("rsgl.invalidRandomVariantEntry"));
   });
 
   it("emits pack, lang, sounds, and mcmeta resources", () => {
