@@ -2817,6 +2817,38 @@ describe("RSGL compiler", () => {
     }
   });
 
+  it("validates blockstate state names, values, and inferred domains", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate invalid_variant_states {",
+      "  raw_json {",
+      "    variants: {",
+      "      \"bad-state=north\": { model: minecraft:block/stone }",
+      "      \"facing=North\": { model: minecraft:block/stone }",
+      "      \"powered=true\": { model: minecraft:block/stone }",
+      "      \"powered=on\": { model: minecraft:block/stone }",
+      "    }",
+      "  }",
+      "}",
+      "blockstate invalid_when_states {",
+      "  raw_json {",
+      "    multipart: [",
+      "      { when: { facing: \"north|north\" }, apply: { model: minecraft:block/stone } },",
+      "      { when: { facing: \"north|!north\" }, apply: { model: minecraft:block/stone } },",
+      "      { when: { AND: [{ facing: \"north\" }, { facing: \"!north\" }] }, apply: { model: minecraft:block/stone } }",
+      "    ]",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidBlockstateStateProperty"));
+    assert.ok(codes.includes("rsgl.invalidBlockstateStateValue"));
+    assert.ok(codes.includes("rsgl.mixedBlockstateStateValueDomain"));
+    assert.ok(codes.includes("rsgl.duplicateBlockstateWhenValue"));
+    assert.ok(codes.includes("rsgl.tautologicalBlockstateWhenValue"));
+    assert.ok(codes.includes("rsgl.contradictoryBlockstateWhenCondition"));
+  });
+
   it("validates model display, element geometry, rotation, and face fields", () => {
     const valid = compileRsglModule(parseRsgl([
       "model block valid_geometry {",

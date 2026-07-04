@@ -1,5 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { validateFontMetadata } from "./fontValidation";
+import { validateBlockstateStateDomains } from "./blockstateStateValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
@@ -322,6 +323,7 @@ function validateBlockstateUnit(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
+  validateBlockstateStateDomains(content ?? undefined, unit, diagnostics);
   const variants = asObject(content?.variants);
   if (variants) {
     for (const [key, value] of Object.entries(variants)) {
