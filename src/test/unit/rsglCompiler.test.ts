@@ -1758,15 +1758,22 @@ describe("RSGL compiler", () => {
     }
   });
 
-  it("validates model element geometry and face fields", () => {
+  it("validates model display, element geometry, rotation, and face fields", () => {
     const valid = compileRsglModule(parseRsgl([
       "model block valid_geometry {",
+      "  display {",
+      "    gui: { rotation: [30, 45, 0], translation: [0, 0, 0], scale: [1, 1, 1] }",
+      "    on_shelf: { rotation: [0, 0, 0], translation: [0, 0, 0], scale: [1, 1, 1] }",
+      "  }",
       "  textures { all: minecraft:block/stone }",
       "  elements [",
       "    {",
       "      from: [0, 0, 0]",
       "      to: [16, 16, 16]",
-      "      faces: { north: { texture: \"#all\", rotation: 90 } }",
+      "      rotation: { origin: [8, 8, 8], axis: y, angle: 45, rescale: true }",
+      "      shade: true",
+      "      light_emission: 0",
+      "      faces: { north: { uv: [0, 0, 16, 16], texture: \"#all\", cullface: north, rotation: 90, tintindex: -1 } }",
       "    }",
       "  ]",
       "}",
@@ -1777,15 +1784,30 @@ describe("RSGL compiler", () => {
     assert.strictEqual(validCodes.includes("rsgl.modelElementCoordinateOutOfRange"), false);
     assert.strictEqual(validCodes.includes("rsgl.invalidModelFaceTexture"), false);
     assert.strictEqual(validCodes.includes("rsgl.invalidModelFaceRotation"), false);
+    assert.strictEqual(validCodes.includes("rsgl.invalidModelDisplayContext"), false);
+    assert.strictEqual(validCodes.includes("rsgl.invalidModelElementRotationAxis"), false);
+    assert.strictEqual(validCodes.includes("rsgl.modelFaceUvOutOfRange"), false);
 
     const invalid = compileRsglModule(parseRsgl([
       "model block broken_geometry {",
+      "  display {",
+      "    bad_context: { rotation: [0, 0, 0] }",
+      "    gui: { rotation: [0, 0], translation: [0, 81, 0], scale: [1, 5, 1] }",
+      "    ground: \"bad\"",
+      "  }",
       "  textures { all: minecraft:block/stone }",
       "  elements [",
       "    {",
       "      from: [-17, 0, 0]",
       "      to: [16, 33, 16]",
-      "      faces: { north: { texture: minecraft:block/stone, rotation: 45 } }",
+      "      rotation: { origin: [8, 8], axis: q, angle: \"bad\", rescale: \"yes\" }",
+      "      shade: \"yes\"",
+      "      light_emission: 16",
+      "      faces: {",
+      "        north: { texture: minecraft:block/stone, rotation: 45, uv: [0, 0, 17, 16], cullface: \"bad\", tintindex: -2 },",
+      "        south: { texture: \"#all\", uv: [0, 0, \"bad\"] },",
+      "        top: { texture: \"#all\" }",
+      "      }",
       "    }",
       "    {",
       "      from: [0, 0]",
@@ -1801,6 +1823,22 @@ describe("RSGL compiler", () => {
     assert.ok(invalidCodes.includes("rsgl.modelElementCoordinateOutOfRange"));
     assert.ok(invalidCodes.includes("rsgl.invalidModelFaceTexture"));
     assert.ok(invalidCodes.includes("rsgl.invalidModelFaceRotation"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelDisplayContext"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelDisplayTransform"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelDisplayVector"));
+    assert.ok(invalidCodes.includes("rsgl.modelDisplayTranslationOutOfRange"));
+    assert.ok(invalidCodes.includes("rsgl.modelDisplayScaleOutOfRange"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementRotationOrigin"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementRotationAxis"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementRotationAngle"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementRescale"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementShade"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementLightEmission"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceName"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceUv"));
+    assert.ok(invalidCodes.includes("rsgl.modelFaceUvOutOfRange"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceCullface"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceTintIndex"));
   });
 
   it("uses RSGL target declarations for version-gated validation", () => {
