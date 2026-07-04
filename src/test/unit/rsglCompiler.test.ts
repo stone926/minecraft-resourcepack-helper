@@ -1706,6 +1706,51 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
   });
 
+  it("validates model element geometry and face fields", () => {
+    const valid = compileRsglModule(parseRsgl([
+      "model block valid_geometry {",
+      "  textures { all: minecraft:block/stone }",
+      "  elements [",
+      "    {",
+      "      from: [0, 0, 0]",
+      "      to: [16, 16, 16]",
+      "      faces: { north: { texture: \"#all\", rotation: 90 } }",
+      "    }",
+      "  ]",
+      "}",
+    ].join("\n")));
+    const validCodes = valid.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.strictEqual(validCodes.includes("rsgl.invalidModelElementVector"), false);
+    assert.strictEqual(validCodes.includes("rsgl.modelElementCoordinateOutOfRange"), false);
+    assert.strictEqual(validCodes.includes("rsgl.invalidModelFaceTexture"), false);
+    assert.strictEqual(validCodes.includes("rsgl.invalidModelFaceRotation"), false);
+
+    const invalid = compileRsglModule(parseRsgl([
+      "model block broken_geometry {",
+      "  textures { all: minecraft:block/stone }",
+      "  elements [",
+      "    {",
+      "      from: [-17, 0, 0]",
+      "      to: [16, 33, 16]",
+      "      faces: { north: { texture: minecraft:block/stone, rotation: 45 } }",
+      "    }",
+      "    {",
+      "      from: [0, 0]",
+      "      to: [0, 0, \"bad\"]",
+      "      faces: { south: { texture: \"#all\", rotation: 270 } }",
+      "    }",
+      "  ]",
+      "}",
+    ].join("\n")));
+    const invalidCodes = invalid.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(invalidCodes.includes("rsgl.invalidModelElementVector"));
+    assert.ok(invalidCodes.includes("rsgl.modelElementCoordinateOutOfRange"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceTexture"));
+    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceRotation"));
+  });
+
   it("uses RSGL target declarations for version-gated validation", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format [74, 0]",

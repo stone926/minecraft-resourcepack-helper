@@ -83,6 +83,88 @@ function validateModelUnit(
   }
 
   validateModelTextureVariables(unit, generatedModels, options, diagnostics);
+  validateModelElements(unit, diagnostics);
+}
+
+function validateModelElements(
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const elements = asObject(unit.content)?.elements;
+  if (!Array.isArray(elements)) {
+    return;
+  }
+
+  for (const element of elements) {
+    const elementObject = asObject(element);
+    if (!elementObject) {
+      continue;
+    }
+    validateModelElementVector(elementObject.from, "from", unit, diagnostics);
+    validateModelElementVector(elementObject.to, "to", unit, diagnostics);
+    validateModelElementFaces(asObject(elementObject.faces), unit, diagnostics);
+  }
+}
+
+function validateModelElementVector(
+  value: JsonValue | undefined,
+  name: "from" | "to",
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!Array.isArray(value) || value.length !== 3 || value.some(item => typeof item !== "number" || !Number.isFinite(item))) {
+    diagnostics.push({
+      code: "rsgl.invalidModelElementVector",
+      message: `Model element '${name}' must be a finite [x, y, z] number vector.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+  if (value.some(item => Number(item) < -16 || Number(item) > 32)) {
+    diagnostics.push({
+      code: "rsgl.modelElementCoordinateOutOfRange",
+      message: `Model element '${name}' coordinates must be between -16 and 32.`,
+      severity: "warning",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateModelElementFaces(
+  faces: Record<string, JsonValue> | null,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!faces) {
+    return;
+  }
+  for (const face of Object.values(faces)) {
+    const faceObject = asObject(face);
+    if (!faceObject) {
+      continue;
+    }
+    if ("texture" in faceObject && (typeof faceObject.texture !== "string" || !faceObject.texture.startsWith("#"))) {
+      diagnostics.push({
+        code: "rsgl.invalidModelFaceTexture",
+        message: "Model element face texture must reference a texture variable starting with '#'.",
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+    if ("rotation" in faceObject && !isValidFaceRotation(faceObject.rotation)) {
+      diagnostics.push({
+        code: "rsgl.invalidModelFaceRotation",
+        message: "Model element face rotation must be one of 0, 90, 180, or 270.",
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+  }
+}
+
+function isValidFaceRotation(value: JsonValue | undefined): boolean {
+  return value === 0 || value === 90 || value === 180 || value === 270;
 }
 
 function validateGeneratedModelParentChain(
