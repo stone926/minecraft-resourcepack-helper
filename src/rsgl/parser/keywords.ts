@@ -2,6 +2,7 @@ export const topLevelKeywords = [
   "target",
   "namespace",
   "import",
+  "export",
   "let",
   "table",
   "template",

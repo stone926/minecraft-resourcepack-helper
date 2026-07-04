@@ -25,6 +25,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "export",
+    insertText: "export { ${1:name} }",
+    detail: "Export RSGL symbols",
+    kind: "snippet"
+  },
+  {
     label: "let",
     insertText: "let ${1:name} = ${2:value}",
     detail: "Constant declaration",

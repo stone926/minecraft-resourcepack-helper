@@ -73,6 +73,32 @@ describe("RSGL language", () => {
     assert.strictEqual(model.body.statements[0].kind, "PropertyStmt");
   });
 
+  it("parses export declarations", () => {
+    const module = parseRsgl([
+      "export { cube as cubeModel, woods }",
+      "export { cubeModel } from \"./templates.rsgl\"",
+      "export * from \"./tables.rsgl\""
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.deepStrictEqual(module.statements.map(statement => statement.kind), [
+      "ExportDecl",
+      "ExportDecl",
+      "ExportDecl"
+    ]);
+    const localExport = module.statements[0];
+    assert.strictEqual(localExport.kind, "ExportDecl");
+    assert.strictEqual(localExport.source, null);
+    assert.strictEqual(localExport.specifiers[0].local.text, "cube");
+    assert.strictEqual(localExport.specifiers[0].exported.text, "cubeModel");
+    const reExport = module.statements[1];
+    assert.strictEqual(reExport.kind, "ExportDecl");
+    assert.strictEqual(reExport.source?.value, "./templates.rsgl");
+    const exportAll = module.statements[2];
+    assert.strictEqual(exportAll.kind, "ExportDecl");
+    assert.strictEqual(exportAll.exportAll, true);
+  });
+
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
     const module = parseRsgl([
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",
@@ -214,6 +240,7 @@ describe("RSGL language", () => {
   it("provides top-level and block-aware completion candidates", () => {
     const topLevel = getRsglCompletionCandidates("", 0);
     assert.ok(topLevel.some(candidate => candidate.label === "target"));
+    assert.ok(topLevel.some(candidate => candidate.label === "export"));
     assert.ok(topLevel.some(candidate => candidate.label === "lang"));
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
     assert.ok(topLevel.some(candidate => candidate.label === "cubeAll"));

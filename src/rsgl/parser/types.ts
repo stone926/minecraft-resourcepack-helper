@@ -57,6 +57,7 @@ export type TopLevelStatementNode =
   | TargetDeclNode
   | NamespaceDeclNode
   | ImportDeclNode
+  | ExportDeclNode
   | LetDeclNode
   | TableDeclNode
   | TemplateDeclNode
@@ -323,6 +324,19 @@ export interface ImportDeclNode extends StatementNodeBase {
   defaultName?: IdentifierNode;
   namedImports: ImportSpecifierNode[];
   source: StringLiteralNode | null;
+}
+
+export interface ExportSpecifierNode extends RsglNode {
+  kind: "ExportSpecifier";
+  local: IdentifierNode;
+  exported: IdentifierNode;
+}
+
+export interface ExportDeclNode extends StatementNodeBase {
+  kind: "ExportDecl";
+  specifiers: ExportSpecifierNode[];
+  source: StringLiteralNode | null;
+  exportAll: boolean;
 }
 
 export interface LetDeclNode extends StatementNodeBase {

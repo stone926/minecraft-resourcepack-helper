@@ -21,6 +21,7 @@ import {
   VariantSectionStatementNode
 } from "../parser";
 import { createBuiltinSymbols } from "./builtins";
+import { createRsglExportMaps } from "./exportResolution";
 import { validateResolvedImportCalls } from "./importValidation";
 import { formatType, isAssignable } from "./typeRelations";
 import {
@@ -32,6 +33,7 @@ import {
   numberType,
   resourceIdType,
   RsglBindOptions,
+  RsglExportRecord,
   RsglImportGraph,
   RsglImportRecord,
   RsglOutputResourcePreview,
@@ -62,10 +64,12 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   const resolver = options.resolver ?? createDefaultResolver(files);
   const models = files.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
   const importGraph = buildImportGraph(files, models, resolver);
-  const importDiagnostics = resolveProgramImports(models, importGraph);
+  const exportMaps = createRsglExportMaps(models, importGraph);
+  const importDiagnostics = resolveProgramImports(models, importGraph, exportMaps.maps);
   const importedCallDiagnostics = models.flatMap(validateResolvedImportCalls);
   const diagnostics = [
     ...models.flatMap(model => model.diagnostics),
+    ...exportMaps.diagnostics,
     ...importDiagnostics,
     ...importedCallDiagnostics,
     ...importGraph.missing.map(missing => diagnostic(
@@ -83,6 +87,7 @@ class RsglBinder {
   private readonly diagnostics: RsglDiagnostic[] = [];
   private readonly symbols: RsglSymbol[] = [];
   private readonly imports: RsglImportRecord[] = [];
+  private readonly exports: RsglExportRecord[] = [];
   private readonly references: RsglReferenceRecord[] = [];
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly globalScope: RsglScope = createScope("global");
@@ -109,6 +114,7 @@ class RsglBinder {
       scope: this.globalScope,
       symbols: this.symbols,
       imports: this.imports,
+      exports: this.exports,
       references: this.references,
       outputResources: this.outputResources,
       diagnostics: this.diagnostics,
@@ -120,6 +126,8 @@ class RsglBinder {
     for (const statement of statements) {
       if (statement.kind === "ImportDecl") {
         this.recordImport(statement, scope);
+      } else if (statement.kind === "ExportDecl") {
+        this.recordExport(statement);
       } else if (statement.kind === "LetDecl") {
         this.defineIdentifier(scope, statement.name, "variable", typeFromAnnotation(statement.typeAnnotation), statement);
       } else if (statement.kind === "TableDecl") {
@@ -547,6 +555,24 @@ class RsglBinder {
     }
   }
 
+  private recordExport(statement: Extract<TopLevelStatementNode, { kind: "ExportDecl" }>): void {
+    const source = statement.source?.value;
+    const resolvedFileName = source
+      ? this.options.resolver?.resolveImport(this.fileName, source) ?? undefined
+      : undefined;
+    this.exports.push({
+      source,
+      node: statement,
+      exportAll: statement.exportAll,
+      specifiers: statement.specifiers.map(item => ({
+        local: item.local.text,
+        exported: item.exported.text,
+        range: item.range
+      })),
+      resolvedFileName
+    });
+  }
+
   private defineTemplate(scope: RsglScope, statement: TemplateDeclNode): void {
     const name = identifierName(statement.name);
     if (!name) {
@@ -611,7 +637,11 @@ class RsglBinder {
   }
 }
 
-function resolveProgramImports(models: RsglSemanticModel[], importGraph: RsglImportGraph): RsglDiagnostic[] {
+function resolveProgramImports(
+  models: RsglSemanticModel[],
+  importGraph: RsglImportGraph,
+  exportMaps: Map<string, Map<string, RsglSymbol>>
+): RsglDiagnostic[] {
   const diagnostics: RsglDiagnostic[] = [];
   const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
 
@@ -631,7 +661,7 @@ function resolveProgramImports(models: RsglSemanticModel[], importGraph: RsglImp
     }
 
     for (const item of record.namedImports) {
-      const exported = targetModel.symbols.find(symbol => symbol.name === item.imported);
+      const exported = exportMaps.get(normalizeFileName(targetModel.fileName))?.get(item.imported);
       const localSymbol = sourceModel.scope.symbols.get(item.local);
       if (!exported) {
         diagnostics.push(diagnostic(
@@ -735,6 +765,26 @@ function buildImportGraph(
 
   for (const model of models) {
     for (const record of model.imports) {
+      const resolved = record.resolvedFileName ?? resolver.resolveImport(model.fileName, record.source);
+      if (resolved) {
+        edges.push({
+          from: normalizeFileName(model.fileName),
+          to: normalizeFileName(resolved),
+          source: record.source,
+          range: record.node.source?.range ?? record.node.range
+        });
+      } else {
+        missing.push({
+          from: normalizeFileName(model.fileName),
+          source: record.source,
+          range: record.node.source?.range ?? record.node.range
+        });
+      }
+    }
+    for (const record of model.exports) {
+      if (!record.source) {
+        continue;
+      }
       const resolved = record.resolvedFileName ?? resolver.resolveImport(model.fileName, record.source);
       if (resolved) {
         edges.push({

@@ -532,6 +532,60 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use woodCube", "use cube"]);
   });
 
+  it("compiles templates and values re-exported through barrel modules", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const barrelFile = path.resolve("pack", "barrel.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const tablesFile = path.resolve("pack", "tables.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { woodCube } from \"./barrel.rsgl\"",
+          "use woodCube(acacia_planks)"
+        ].join("\n"))
+      },
+      {
+        fileName: barrelFile,
+        module: parseRsgl("export { woodCube } from \"./templates.rsgl\"")
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "import { woods } from \"./tables.rsgl\"",
+          "template woodCube(id: ResourceId) {",
+          "  model block id {",
+          "    parent minecraft:block/cube_all",
+          "    textures { all: woods.acacia }",
+          "  }",
+          "}",
+          "export { woodCube }"
+        ].join("\n"))
+      },
+      {
+        fileName: tablesFile,
+        module: parseRsgl([
+          "namespace custom",
+          "table woods {",
+          "  acacia: block/acacia_planks",
+          "}",
+          "export { woods }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/models/block/acacia_planks.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "custom:block/acacia_planks"
+      }
+    });
+  });
+
   it("uses local and imported tables during compilation", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const tablesFile = path.resolve("pack", "tables.rsgl");
@@ -641,6 +695,39 @@ describe("RSGL compiler", () => {
           all: "minecraft:block/spruce_planks"
         }
       });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads re-exported RSGL files from a filesystem entry", () => {
+    const root = createTempDir();
+    try {
+      const packDir = path.join(root, "pack");
+      const mainFile = path.join(packDir, "main.rsgl");
+      const barrelFile = path.join(packDir, "barrel.rsgl");
+      const templatesFile = path.join(packDir, "templates.rsgl");
+      fs.mkdirSync(packDir, { recursive: true });
+      fs.writeFileSync(templatesFile, [
+        "template cube(id: ResourceId) {",
+        "  model block id {",
+        "    parent minecraft:block/cube_all",
+        "  }",
+        "}",
+        "export { cube }"
+      ].join("\n"));
+      fs.writeFileSync(barrelFile, "export { cube } from \"./templates.rsgl\"");
+      fs.writeFileSync(mainFile, [
+        "import { cube } from \"./barrel.rsgl\"",
+        "use cube(stone)"
+      ].join("\n"));
+
+      const result = compileRsglFile(mainFile);
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+        "assets/minecraft/models/block/stone.json"
+      ]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

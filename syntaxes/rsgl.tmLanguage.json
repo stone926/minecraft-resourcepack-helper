@@ -102,7 +102,7 @@
       "patterns": [
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|from|as)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as)\\b"
         },
         {
           "name": "storage.type.rsgl",

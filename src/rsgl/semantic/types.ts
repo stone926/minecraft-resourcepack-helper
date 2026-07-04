@@ -1,5 +1,6 @@
 import {
   ExprNode,
+  ExportDeclNode,
   IdentifierNode,
   ImportDeclNode,
   ResourceDeclNode,
@@ -79,6 +80,14 @@ export interface RsglImportRecord {
   resolvedFileName?: string;
 }
 
+export interface RsglExportRecord {
+  source?: string;
+  node: ExportDeclNode;
+  exportAll: boolean;
+  specifiers: Array<{ local: string; exported: string; range: TextRange }>;
+  resolvedFileName?: string;
+}
+
 export interface RsglImportGraph {
   files: string[];
   edges: Array<{ from: string; to: string; source: string; range: TextRange }>;
@@ -104,6 +113,7 @@ export interface RsglSemanticModel {
   scope: RsglScope;
   symbols: RsglSymbol[];
   imports: RsglImportRecord[];
+  exports: RsglExportRecord[];
   references: RsglReferenceRecord[];
   outputResources: RsglOutputResourcePreview[];
   diagnostics: RsglDiagnostic[];

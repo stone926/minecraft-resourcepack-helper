@@ -3,6 +3,7 @@ import * as path from "node:path";
 import {
   BlockNode,
   ExprNode,
+  ExportDeclNode,
   ForStmtNode,
   ImportDeclNode,
   LetDeclNode,
@@ -815,7 +816,7 @@ function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
 
 function collectRelativeImportSources(module: RsglModule): string[] {
   return module.statements
-    .filter(isImportDeclNode)
+    .filter((statement): statement is ImportDeclNode | ExportDeclNode => isImportDeclNode(statement) || isExportDeclNode(statement))
     .map(statement => statement.source?.value)
     .filter((source): source is string => Boolean(source && source.startsWith(".")));
 }
@@ -826,4 +827,8 @@ function normalizeFileName(fileName: string): string {
 
 function isImportDeclNode(node: unknown): node is ImportDeclNode {
   return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ImportDecl");
+}
+
+function isExportDeclNode(node: unknown): node is ExportDeclNode {
+  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ExportDecl");
 }

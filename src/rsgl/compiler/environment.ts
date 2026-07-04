@@ -5,8 +5,10 @@ import {
   TemplateDeclNode
 } from "../parser";
 import {
+  createRsglExportMaps,
   RsglProgram,
-  RsglSemanticModel
+  RsglSemanticModel,
+  RsglSymbol
 } from "../semantic";
 import {
   EvaluationContext,
@@ -23,6 +25,8 @@ export interface RsglModuleCompileEnvironment {
   localValues: Map<string, EvaluationValue>;
   allValues: Map<string, EvaluationValue>;
   allTemplates: Map<string, RsglTemplateDefinition>;
+  exportedValues: Map<string, EvaluationValue>;
+  exportedTemplates: Map<string, RsglTemplateDefinition>;
 }
 
 export interface RsglTemplateDefinition {
@@ -54,6 +58,7 @@ export function createProgramCompileEnvironments(
   namespaceOverride: string | undefined
 ): Map<string, RsglModuleCompileEnvironment> {
   const modelsByFile = new Map(program.models.map(model => [normalizeFileName(model.fileName), model]));
+  const exportMaps = createRsglExportMaps(program.models, program.importGraph).maps;
   const environments = new Map<string, RsglModuleCompileEnvironment>();
 
   const createEnvironment = (model: RsglSemanticModel): RsglModuleCompileEnvironment => {
@@ -69,6 +74,7 @@ export function createProgramCompileEnvironments(
     collectImportedEnvironmentBindings(environment, model, program, modelsByFile, createEnvironment);
     evaluateLocalEnvironmentValues(environment, model);
     collectLocalEnvironmentTemplates(environment, model);
+    collectExportedEnvironmentBindings(environment, model, program, modelsByFile, exportMaps, createEnvironment);
     return environment;
   };
 
@@ -101,7 +107,9 @@ function createEmptyCompileEnvironment(model: RsglSemanticModel, namespace: stri
     importedTemplates: new Map(),
     localValues: new Map(),
     allValues: new Map(),
-    allTemplates: new Map()
+    allTemplates: new Map(),
+    exportedValues: new Map(),
+    exportedTemplates: new Map()
   };
 }
 
@@ -113,24 +121,77 @@ function collectImportedEnvironmentBindings(
   createEnvironment: (model: RsglSemanticModel) => RsglModuleCompileEnvironment
 ): void {
   for (const record of model.imports) {
-    const targetModel = resolveImportTargetModel(model, record, program, modelsByFile);
+    const targetModel = resolveModuleTargetModel(model, record.source, program, modelsByFile);
     if (!targetModel) {
       continue;
     }
 
     const targetEnvironment = createEnvironment(targetModel);
     for (const item of record.namedImports) {
-      if (targetEnvironment.allValues.has(item.imported)) {
-        const value = targetEnvironment.allValues.get(item.imported);
+      if (targetEnvironment.exportedValues.has(item.imported)) {
+        const value = targetEnvironment.exportedValues.get(item.imported);
         environment.importedValues.set(item.local, value);
         environment.allValues.set(item.local, value);
       }
 
-      const template = targetEnvironment.allTemplates.get(item.imported);
+      const template = targetEnvironment.exportedTemplates.get(item.imported);
       if (template) {
         const aliasedTemplate = aliasTemplate(template, item.local);
         environment.importedTemplates.set(item.local, aliasedTemplate);
         environment.allTemplates.set(item.local, aliasedTemplate);
+      }
+    }
+  }
+}
+
+function collectExportedEnvironmentBindings(
+  environment: RsglModuleCompileEnvironment,
+  model: RsglSemanticModel,
+  program: RsglProgram,
+  modelsByFile: Map<string, RsglSemanticModel>,
+  exportMaps: Map<string, Map<string, RsglSymbol>>,
+  createEnvironment: (model: RsglSemanticModel) => RsglModuleCompileEnvironment
+): void {
+  if (model.exports.length === 0) {
+    copyValues(environment.exportedValues, environment.allValues);
+    copyTemplates(environment.exportedTemplates, environment.allTemplates);
+    return;
+  }
+
+  const semanticExports = exportMaps.get(normalizeFileName(model.fileName)) ?? new Map();
+  for (const [exportedName, symbol] of semanticExports) {
+    if (symbol && typeof symbol === "object" && "name" in symbol) {
+      const localName = String(symbol.name);
+      if (environment.allValues.has(localName)) {
+        environment.exportedValues.set(exportedName, environment.allValues.get(localName));
+      }
+      const template = environment.allTemplates.get(localName);
+      if (template) {
+        environment.exportedTemplates.set(exportedName, aliasTemplate(template, exportedName));
+      }
+    }
+  }
+
+  for (const record of model.exports) {
+    if (!record.source) {
+      continue;
+    }
+    const targetModel = resolveModuleTargetModel(model, record.source, program, modelsByFile);
+    if (!targetModel) {
+      continue;
+    }
+    const targetEnvironment = createEnvironment(targetModel);
+    if (record.exportAll) {
+      copyValues(environment.exportedValues, targetEnvironment.exportedValues);
+      copyTemplates(environment.exportedTemplates, targetEnvironment.exportedTemplates);
+    }
+    for (const specifier of record.specifiers) {
+      if (targetEnvironment.exportedValues.has(specifier.local)) {
+        environment.exportedValues.set(specifier.exported, targetEnvironment.exportedValues.get(specifier.local));
+      }
+      const template = targetEnvironment.exportedTemplates.get(specifier.local);
+      if (template) {
+        environment.exportedTemplates.set(specifier.exported, aliasTemplate(template, specifier.exported));
       }
     }
   }
@@ -181,21 +242,35 @@ function collectLocalEnvironmentTemplates(
   }
 }
 
-function resolveImportTargetModel(
+function resolveModuleTargetModel(
   model: RsglSemanticModel,
-  record: RsglSemanticModel["imports"][number],
+  source: string,
   program: RsglProgram,
   modelsByFile: Map<string, RsglSemanticModel>
 ): RsglSemanticModel | undefined {
   const currentFile = normalizeFileName(model.fileName);
-  const targetFile = record.resolvedFileName
-    ? normalizeFileName(record.resolvedFileName)
-    : program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === record.source)?.to;
+  const targetFile = program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === source)?.to;
   return targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
 }
 
 function aliasTemplate(template: RsglTemplateDefinition, name: string): RsglTemplateDefinition {
   return template.name === name ? template : { ...template, name };
+}
+
+function copyValues(target: Map<string, EvaluationValue>, source: Map<string, EvaluationValue>): void {
+  for (const [name, value] of source) {
+    if (!target.has(name)) {
+      target.set(name, value);
+    }
+  }
+}
+
+function copyTemplates(target: Map<string, RsglTemplateDefinition>, source: Map<string, RsglTemplateDefinition>): void {
+  for (const [name, template] of source) {
+    if (!target.has(name)) {
+      target.set(name, template);
+    }
+  }
 }
 
 function normalizeJsonValue(value: JsonValue | undefined): JsonValue {

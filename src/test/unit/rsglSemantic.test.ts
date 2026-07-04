@@ -145,6 +145,89 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(importedCube?.signature?.parameters[0].name, "id");
   });
 
+  it("restricts named imports when a module has explicit exports", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const tablesFile = path.resolve("pack", "tables.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl("import { publicWoods, secretWoods } from \"./tables.rsgl\"")
+      },
+      {
+        fileName: tablesFile,
+        module: parseRsgl([
+          "table publicWoods { acacia: minecraft:block/acacia_planks }",
+          "table secretWoods { hidden: minecraft:block/barrier }",
+          "export { publicWoods }"
+        ].join("\n"))
+      }
+    ]);
+
+    const codes = program.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.missingImportedSymbol"));
+    assert.strictEqual(codes.filter(code => code === "rsgl.missingImportedSymbol").length, 1);
+  });
+
+  it("resolves re-exported template signatures", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const barrelFile = path.resolve("pack", "barrel.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { cubeModel } from \"./barrel.rsgl\"",
+          "use cubeModel(id: minecraft:block/stone)"
+        ].join("\n"))
+      },
+      {
+        fileName: barrelFile,
+        module: parseRsgl("export { cube as cubeModel } from \"./templates.rsgl\"")
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "template cube(id: ResourceId) {",
+          "  model block id { parent minecraft:block/cube_all }",
+          "}",
+          "export { cube }"
+        ].join("\n"))
+      }
+    ]);
+
+    const mainModel = program.models.find(model => model.fileName === mainFile);
+    const importedCube = mainModel?.scope.symbols.get("cubeModel");
+
+    assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(importedCube?.signature?.parameters[0].name, "id");
+  });
+
+  it("resolves export-star re-exports", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const barrelFile = path.resolve("pack", "barrel.rsgl");
+    const tablesFile = path.resolve("pack", "tables.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl("import { woods } from \"./barrel.rsgl\"")
+      },
+      {
+        fileName: barrelFile,
+        module: parseRsgl("export * from \"./tables.rsgl\"")
+      },
+      {
+        fileName: tablesFile,
+        module: parseRsgl([
+          "table woods { acacia: minecraft:block/acacia_planks }",
+          "export { woods }"
+        ].join("\n"))
+      }
+    ]);
+
+    assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(program.importGraph.edges.some(edge => edge.from === barrelFile && edge.to === tablesFile), true);
+  });
+
   it("reports named imports that are not exported by the target module", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");

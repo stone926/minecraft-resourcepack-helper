@@ -10,6 +10,7 @@ import {
   BlockNode,
   BooleanLiteralNode,
   ExprNode,
+  ExportSpecifierNode,
   ForStmtNode,
   IdentifierNode,
   IfStmtNode,
@@ -121,6 +122,9 @@ class RsglParser extends ParserContext {
     }
     if (keyword === "import") {
       return this.parseImportDecl();
+    }
+    if (keyword === "export") {
+      return this.parseExportDecl();
     }
     if (keyword === "let") {
       return this.parseLetDecl();
@@ -250,6 +254,66 @@ class RsglParser extends ParserContext {
       this.consumeOptionalSeparator();
     }
     this.expectText("}", "Expected '}' after import list.");
+    return specifiers;
+  }
+
+  private parseExportDecl(): TopLevelStatementNode {
+    const start = this.advance();
+    const specifiers: ExportSpecifierNode[] = [];
+    let source: StringLiteralNode | null = null;
+    let exportAll = false;
+    let expectsSource = false;
+
+    if (this.matchText("*")) {
+      exportAll = true;
+      expectsSource = true;
+      this.matchText("from");
+    } else if (this.current().text === "{") {
+      specifiers.push(...this.parseExportSpecifiers());
+      expectsSource = this.matchText("from");
+    } else {
+      this.addDiagnosticAtCurrent("rsgl.expectedExportList", "Expected export list or '*'.");
+      this.recoverToLineEnd();
+    }
+
+    if (expectsSource) {
+      if (this.current().kind === "string") {
+        source = this.parseStringLiteral();
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedExportSource", "Expected export source string.");
+        this.recoverToLineEnd();
+      }
+    }
+
+    return {
+      kind: "ExportDecl",
+      keyword: start.text,
+      specifiers,
+      source,
+      exportAll,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseExportSpecifiers(): ExportSpecifierNode[] {
+    const specifiers: ExportSpecifierNode[] = [];
+    this.matchText("{");
+    while (!this.isAtEnd() && this.current().text !== "}") {
+      const start = this.current();
+      const local = this.parseIdentifier("Expected export name.");
+      let exported = local;
+      if (this.matchText("as")) {
+        exported = this.parseIdentifier("Expected exported name.") ?? local;
+      }
+      specifiers.push({
+        kind: "ExportSpecifier",
+        local: local ?? this.syntheticIdentifier(start, ""),
+        exported: exported ?? this.syntheticIdentifier(start, ""),
+        ...this.nodeRanges(start, this.previousOr(start))
+      });
+      this.consumeOptionalSeparator();
+    }
+    this.expectText("}", "Expected '}' after export list.");
     return specifiers;
   }
 
