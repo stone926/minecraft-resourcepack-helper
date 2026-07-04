@@ -67,7 +67,8 @@ function mergeObjectUnits(
           code: "rsgl.mergeKeyConflict",
           message: `Merged RSGL resource key '${key}' is overwritten in ${unit.outputPath}.`,
           severity: "warning",
-          range: unit.sourceMap.mappings[0]?.sourceRange ?? existing.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 }
+          range: unit.sourceMap.mappings[0]?.sourceRange ?? existing.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 },
+          fileName: unit.sourceMap.mappings[0]?.sourceFile ?? existing.sourceMap.mappings[0]?.sourceFile
         });
       }
       seen.set(key, unit);

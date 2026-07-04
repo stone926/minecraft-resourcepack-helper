@@ -164,7 +164,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   const program = bindRsglProgram(files);
   const units: ResourceUnit[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
-    ...program.diagnostics.map(diagnostic => ({ ...diagnostic }))
+    ...program.fileDiagnostics.map(diagnostic => ({ ...diagnostic }))
   ];
   const rawJsonLoader = createCompileRawJsonLoader(options.entryFileName ?? "<anonymous>", diagnostics);
   const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
@@ -180,7 +180,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       code: "rsgl.compileMissingEntry",
       message: `RSGL entry file not found: ${options.entryFileName}.`,
       range: { start: 0, end: 1 },
-      severity: "error"
+      severity: "error",
+      fileName: options.entryFileName
     });
   }
 
@@ -1104,7 +1105,8 @@ function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
         code: "rsgl.outputConflict",
         message: `Multiple RSGL resources emit ${unit.outputPath}.`,
         range: unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 },
-        severity: "error"
+        severity: "error",
+        fileName: unit.sourceMap.mappings[0]?.sourceFile
       });
     } else {
       seen.set(unit.outputPath, unit);

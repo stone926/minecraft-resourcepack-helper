@@ -2,8 +2,10 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
 import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
+import { createRsglWorkspaceValidationOptions } from "../../rsgl/workspaceValidation";
 
 describe("RSGL compiler", () => {
   it("emits explicit model, item, and blockstate resources", () => {
@@ -1983,6 +1985,50 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.modelParentCycle"));
     assert.ok(codes.includes("rsgl.modelNotFound"));
     assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
+  });
+
+  it("uses workspace resource cache for RSGL validation resources", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const mainFile = path.join(packRoot, "main.rsgl");
+    const externalChild = path.join(packRoot, "assets", "minecraft", "models", "block", "external_child.json");
+    const externalRoot = path.join(packRoot, "assets", "minecraft", "models", "block", "external_root.json");
+    const texture = path.join(packRoot, "assets", "minecraft", "textures", "block", "external_texture.png");
+
+    try {
+      fs.mkdirSync(path.dirname(externalChild), { recursive: true });
+      fs.mkdirSync(path.dirname(texture), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(mainFile, [
+        "model block workspace_child {",
+        "  parent minecraft:block/external_child",
+        "  textures { all: \"#alias\" }",
+        "}"
+      ].join("\n"));
+      fs.writeFileSync(externalChild, JSON.stringify({
+        parent: "minecraft:block/external_root",
+        textures: { alias: "#root" }
+      }));
+      fs.writeFileSync(externalRoot, JSON.stringify({
+        textures: { root: "minecraft:block/external_texture" }
+      }));
+      fs.writeFileSync(texture, Buffer.alloc(0));
+
+      const cache = new WorkspaceResourceCache();
+      const result = compileRsglFile(mainFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: mainFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        cache
+      }));
+      const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+      assert.strictEqual(codes.includes("rsgl.modelNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.textureNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("validates sound, atlas, mcmeta, and overlay resources", () => {

@@ -63,4 +63,5 @@ export interface RsglCompileDiagnostic {
   message: string;
   severity: "error" | "warning" | "info";
   range: TextRange;
+  fileName?: string;
 }

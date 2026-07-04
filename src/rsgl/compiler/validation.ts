@@ -33,6 +33,7 @@ export function validateResourceUnits(
   const modelResolver = createModelResolver(generatedModels, options);
 
   for (const unit of units) {
+    const diagnosticStart = diagnostics.length;
     if (unit.kind === "model") {
       validateModelUnit(unit, generatedModels, modelResolver, options, diagnostics);
     } else if (unit.kind === "item") {
@@ -52,9 +53,19 @@ export function validateResourceUnits(
     } else if (unit.kind === "pack") {
       validatePackUnit(unit, options, diagnostics);
     }
+    attachSourceFile(diagnostics, diagnosticStart, unit.sourceMap.mappings[0]?.sourceFile);
   }
 
   return diagnostics;
+}
+
+function attachSourceFile(diagnostics: RsglCompileDiagnostic[], start: number, fileName: string | undefined): void {
+  if (!fileName) {
+    return;
+  }
+  for (const diagnostic of diagnostics.slice(start)) {
+    diagnostic.fileName ??= fileName;
+  }
 }
 
 function validateItemUnit(

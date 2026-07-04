@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { parseRsgl, RsglDiagnostic, TextRange } from "./parser";
-import { bindRsglModule, bindRsglProgram } from "./semantic";
+import { compileRsglModule, compileRsglProgram, type RsglResourceValidationOptions } from "./compiler";
 import { RsglWorkspaceSourceCache } from "./workspaceSource";
+import { createRsglWorkspaceValidationOptions } from "./workspaceValidation";
 
 export const rsglLanguageId = "rsgl";
 export const rsglDocumentSelector: vscode.DocumentSelector = [{ language: rsglLanguageId }];
@@ -21,10 +22,13 @@ export function refreshRsglDiagnostics(
   if (sourceCache && fileName) {
     const files = sourceCache.loadProgramFromEntry(fileName);
     if (files.length > 0) {
-      const program = bindRsglProgram(files);
+      const result = compileRsglProgram(files, {
+        entryFileName: fileName,
+        ...workspaceValidationOptions(fileName)
+      });
       const currentFileName = normalizeFileName(path.resolve(fileName));
-      const diagnostics = program.fileDiagnostics
-        .filter(diagnostic => normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
+      const diagnostics = result.diagnostics
+        .filter(diagnostic => diagnostic.fileName && normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
         .map(toRsglDiagnostic);
       collection.set(document.uri, diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
       return;
@@ -32,8 +36,19 @@ export function refreshRsglDiagnostics(
   }
 
   const parsed = parseRsgl(document.getText());
-  const semanticModel = bindRsglModule(parsed, { fileName });
-  collection.set(document.uri, semanticModel.diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
+  const result = compileRsglModule(parsed, {
+    fileName,
+    ...workspaceValidationOptions(fileName)
+  });
+  collection.set(document.uri, result.diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
+}
+
+function workspaceValidationOptions(fileName: string): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent"> {
+  return createRsglWorkspaceValidationOptions({
+    sourceFileName: fileName,
+    defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
+    resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+  });
 }
 
 function toVscodeDiagnostic(document: vscode.TextDocument, diagnostic: RsglDiagnostic): vscode.Diagnostic {
