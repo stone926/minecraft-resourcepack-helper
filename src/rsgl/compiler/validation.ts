@@ -67,6 +67,66 @@ const itemTintRequiredFields = new Map<string, string[]>([
   ["custom_model_data", ["default"]]
 ]);
 
+const conditionProperties = new Set([
+  "broken",
+  "bundle/has_selected_item",
+  "carried",
+  "component",
+  "custom_model_data",
+  "damaged",
+  "extended_view",
+  "fishing_rod/cast",
+  "has_component",
+  "keybind_down",
+  "selected",
+  "using_item",
+  "view_entity"
+]);
+
+const conditionRequiredFields = new Map<string, string[]>([
+  ["component", ["predicate", "value"]],
+  ["has_component", ["component"]],
+  ["keybind_down", ["keybind"]]
+]);
+
+const selectProperties = new Set([
+  "block_state",
+  "charge_type",
+  "component",
+  "context_dimension",
+  "context_entity_type",
+  "custom_model_data",
+  "display_context",
+  "local_time",
+  "main_hand",
+  "potion_contents",
+  "trim_material"
+]);
+
+const selectRequiredFields = new Map<string, string[]>([
+  ["block_state", ["block_state_property"]],
+  ["component", ["component"]],
+  ["local_time", ["pattern"]]
+]);
+
+const rangeDispatchProperties = new Set([
+  "bundle/fullness",
+  "compass",
+  "cooldown",
+  "count",
+  "crossbow/pull",
+  "custom_model_data",
+  "damage",
+  "time",
+  "use_cycle",
+  "use_duration"
+]);
+
+const rangeDispatchRequiredFields = new Map<string, string[]>([
+  ["compass", ["target"]],
+  ["time", ["source"]]
+]);
+
 export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
   resourceExists?: (kind: RsglResourceExistenceKind, id: string) => boolean;
@@ -507,6 +567,15 @@ function validateItemRangeDispatch(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  validateItemProperty(model, "range_dispatch", rangeDispatchProperties, rangeDispatchRequiredFields, unit, diagnostics);
+  validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateBooleanField(model, "normalize", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateBooleanField(model, "wobble", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateBooleanField(model, "remaining", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validatePositiveNumberField(model, "period", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateEnumField(model, "target", ["spawn", "lodestone", "recovery", "none"], "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateEnumField(model, "source", ["daytime", "moon_phase", "random"], "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateNumberField(model, "scale", "rsgl.invalidItemPropertyField", unit, diagnostics);
   const entries = Array.isArray(model.entries) ? model.entries : null;
   if (!entries) {
     diagnostics.push({
@@ -559,6 +628,13 @@ function validateItemSelect(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  validateItemProperty(model, "select", selectProperties, selectRequiredFields, unit, diagnostics);
+  validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateStringField(model, "block_state_property", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateStringField(model, "locale", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateStringField(model, "time_zone", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateStringField(model, "pattern", "rsgl.invalidItemPropertyField", unit, diagnostics);
   const cases = Array.isArray(model.cases) ? model.cases : null;
   if (!cases) {
     diagnostics.push({
@@ -601,6 +677,12 @@ function validateItemCondition(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  validateItemProperty(model, "condition", conditionProperties, conditionRequiredFields, unit, diagnostics);
+  validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateBooleanField(model, "ignore_default", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateStringField(model, "keybind", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateStringField(model, "predicate", "rsgl.invalidItemPropertyField", unit, diagnostics);
   if (!("on_true" in model)) {
     diagnostics.push({
       code: "rsgl.invalidItemConditionBranch",
@@ -680,6 +762,37 @@ function validateItemTopLevelFields(
       severity: "error",
       range: unit.sourceMap.mappings[0].sourceRange
     });
+  }
+}
+
+function validateItemProperty(
+  model: Record<string, JsonValue>,
+  modelType: string,
+  knownProperties: Set<string>,
+  requiredFieldsByProperty: Map<string, string[]>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const property = itemModelType(model.property);
+  if (!property || !knownProperties.has(property)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemProperty",
+      message: `Item ${modelType} model must define a known property.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+
+  for (const field of requiredFieldsByProperty.get(property) ?? []) {
+    if (!(field in model)) {
+      diagnostics.push({
+        code: "rsgl.missingItemPropertyField",
+        message: `Item ${modelType} property '${property}' must define '${field}'.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
   }
 }
 
@@ -882,6 +995,93 @@ function validateBooleanField(
     diagnostics.push({
       code,
       message: `Field '${field}' must be a boolean.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateStringField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (field in object && typeof object[field] !== "string") {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' must be a string.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateEnumField(
+  object: Record<string, JsonValue>,
+  field: string,
+  values: string[],
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const value = itemModelType(object[field]);
+  if (field in object && (!value || !values.includes(value))) {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' has an invalid value.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateNonNegativeIntegerField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (field in object && (!Number.isInteger(object[field]) || Number(object[field]) < 0)) {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' must be a non-negative integer.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validateNumberField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]))) {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' must be a finite number.`,
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+}
+
+function validatePositiveNumberField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]) || Number(object[field]) <= 0)) {
+    diagnostics.push({
+      code,
+      message: `Field '${field}' must be a positive number.`,
       severity: "error",
       range: unit.sourceMap.mappings[0].sourceRange
     });

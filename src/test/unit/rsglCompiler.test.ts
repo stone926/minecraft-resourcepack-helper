@@ -2683,6 +2683,56 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.missingItemTransformationField"));
   });
 
+  it("validates item property-specific fields", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item invalid_range_property {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:range_dispatch,",
+      "      property: minecraft:time,",
+      "      source: day_time,",
+      "      period: 0,",
+      "      wobble: \"yes\",",
+      "      entries: [{ threshold: 0, model: { type: minecraft:model, model: minecraft:item/base } }]",
+      "    }",
+      "  }",
+      "}",
+      "item invalid_select_property {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:block_state,",
+      "      component: 1,",
+      "      cases: [{ when: stone, model: { type: minecraft:model, model: minecraft:item/base } }]",
+      "    }",
+      "  }",
+      "}",
+      "item invalid_condition_property {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:condition,",
+      "      property: minecraft:component,",
+      "      predicate: 1,",
+      "      on_true: { type: minecraft:model, model: minecraft:item/base },",
+      "      on_false: { type: minecraft:model, model: minecraft:item/base }",
+      "    }",
+      "  }",
+      "}",
+      "item unknown_property {",
+      "  raw_json {",
+      "    model: { type: minecraft:select, property: minecraft:unknown, cases: [] }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.missingItemPropertyField"));
+    assert.ok(codes.includes("rsgl.invalidItemPropertyField"));
+    assert.ok(codes.includes("rsgl.invalidItemProperty"));
+  });
+
   it("validates generated model parent chains and texture variables", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([

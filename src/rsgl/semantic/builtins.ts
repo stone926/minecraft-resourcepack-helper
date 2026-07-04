@@ -33,6 +33,8 @@ const enumConstants = [
   "outer_right",
   "spawn",
   "day_time",
+  "daytime",
+  "moon_phase",
   "planks",
   "slab",
   "stairs",

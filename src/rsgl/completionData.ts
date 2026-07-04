@@ -169,7 +169,7 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "textures", insertText: "textures {\n  ${1:all}: ${2:minecraft:block/stone}\n}", detail: "Model texture map", kind: "snippet" },
   { label: "variants", insertText: "variants {\n  ${1:{}} -> { model: ${2:minecraft:block/stone} }\n}", detail: "Blockstate variants section", kind: "snippet" },
   { label: "multipart", insertText: "multipart {\n  apply { model: ${1:minecraft:block/stone} }\n}", detail: "Blockstate multipart section", kind: "snippet" },
-  { label: "range", insertText: "range property ${1:minecraft:time} source ${2:day_time} wobble ${3:true} {\n  frames ${4:0..31} model ${5:minecraft:item/clock_00}\n  fallback ${6:minecraft:item/clock_00}\n}", detail: "Item range_dispatch model", kind: "snippet" },
+  { label: "range", insertText: "range property ${1:minecraft:time} source ${2:daytime} wobble ${3:true} {\n  frames ${4:0..31} model ${5:minecraft:item/clock_00}\n  fallback ${6:minecraft:item/clock_00}\n}", detail: "Item range_dispatch model", kind: "snippet" },
   { label: "select", insertText: "select property ${1:minecraft:potion_contents} component ${2:minecraft:potion_contents} {\n  case ${3:\"minecraft:healing\"} -> ${4:minecraft:item/potion_healing}\n  fallback ${5:minecraft:item/potion}\n}", detail: "Item select model", kind: "snippet" },
   { label: "condition", insertText: "condition property ${1:minecraft:using_item} {\n  on_true ${2:minecraft:item/bow_pulling}\n  on_false ${3:minecraft:item/bow}\n}", detail: "Item condition model", kind: "snippet" },
   { label: "composite", insertText: "composite {\n  model ${1:minecraft:item/base}\n  model ${2:minecraft:item/overlay}\n}", detail: "Item composite model", kind: "snippet" },
