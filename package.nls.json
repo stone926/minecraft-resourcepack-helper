@@ -15,6 +15,7 @@
   "command.title.openUnsupportedModelPreviewResource": "McResHelper: model preview unavailable for this resource",
   "command.title.createCitTemplate": "McResHelper: create CIT template",
   "command.title.generateCitForCurrentItem": "McResHelper: generate CIT for current item",
+  "command.title.buildRsglResourcePack": "McResHelper: build RSGL resource pack",
   "viewContainer.title.resources": "Minecraft Resources",
   "view.name.resourceGraph": "Resource Relations",
   "schema.packMcmeta.url": "./assets/linters/en/pack.mcmeta.json",

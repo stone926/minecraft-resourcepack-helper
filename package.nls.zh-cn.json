@@ -15,6 +15,7 @@
   "command.title.openUnsupportedModelPreviewResource": "McResHelper: 此资源暂不支持模型预览",
   "command.title.createCitTemplate": "McResHelper: 创建 CIT 模板",
   "command.title.generateCitForCurrentItem": "McResHelper: 为当前物品生成 CIT",
+  "command.title.buildRsglResourcePack": "McResHelper: 构建 RSGL 资源包",
   "viewContainer.title.resources": "Minecraft 资源",
   "view.name.resourceGraph": "资源关系",
   "schema.packMcmeta.url": "./assets/linters/zh-cn/pack.mcmeta.json",

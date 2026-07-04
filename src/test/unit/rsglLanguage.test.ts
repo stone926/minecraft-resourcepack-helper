@@ -10,12 +10,15 @@ describe("RSGL language", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
       activationEvents?: string[];
       contributes?: {
+        commands?: Array<{ command?: string; icon?: string }>;
         languages?: Array<{ id?: string; extensions?: string[]; configuration?: string }>;
         grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
+        menus?: Record<string, Array<{ command?: string; when?: string }>>;
       };
     };
 
     assert.ok(packageJson.activationEvents?.includes("onLanguage:rsgl"));
+    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePack"));
     const language = packageJson.contributes?.languages?.find(entry => entry.id === "rsgl");
     assert.ok(language);
     assert.ok(language.extensions?.includes(".rsgl"));
@@ -26,6 +29,16 @@ describe("RSGL language", () => {
     assert.strictEqual(grammar?.scopeName, "source.rsgl");
     assert.ok(grammar.path);
     assert.doesNotThrow(() => JSON.parse(fs.readFileSync(path.join(process.cwd(), grammar.path!), "utf8")));
+
+    assert.ok(packageJson.contributes?.commands?.some(command =>
+      command.command === "McResHelper.buildRsglResourcePack" && command.icon === "$(play)"
+    ));
+    assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
+      item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
+    ));
+    assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
+      item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
+    ));
   });
 
   it("lexes comments, strings, numbers, and resource locations", () => {

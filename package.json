@@ -26,6 +26,7 @@
   },
   "activationEvents": [
     "onLanguage:rsgl",
+    "onCommand:McResHelper.buildRsglResourcePack",
     "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
@@ -182,6 +183,11 @@
         "command": "McResHelper.generateCitForCurrentItem",
         "title": "%command.title.generateCitForCurrentItem%",
         "icon": "$(wand)"
+      },
+      {
+        "command": "McResHelper.buildRsglResourcePack",
+        "title": "%command.title.buildRsglResourcePack%",
+        "icon": "$(play)"
       }
     ],
     "viewsContainers": {
@@ -204,6 +210,11 @@
     "menus": {
       "editor/title": [
         {
+          "command": "McResHelper.buildRsglResourcePack",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation"
+        },
+        {
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
@@ -215,6 +226,11 @@
         }
       ],
       "editor/context": [
+        {
+          "command": "McResHelper.buildRsglResourcePack",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation"
+        },
         {
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
