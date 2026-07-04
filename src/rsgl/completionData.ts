@@ -152,6 +152,8 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "cubeAll", detail: "Builtin block cube model template", kind: "function" },
   { label: "itemGenerated", detail: "Builtin generated item template", kind: "function" },
+  { label: "itemRangeFrames", detail: "Builtin range_dispatch item helper", kind: "function" },
+  { label: "itemSelectCases", detail: "Builtin select item helper", kind: "function" },
   { label: "stairs", detail: "Builtin stairs blockstate template", kind: "function" },
   { label: "slab", detail: "Builtin slab blockstate template", kind: "function" },
   { label: "fence", detail: "Builtin fence blockstate template", kind: "function" },

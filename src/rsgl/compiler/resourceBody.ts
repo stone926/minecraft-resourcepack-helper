@@ -1,6 +1,7 @@
 import {
   ResourceBodyNode,
-  ResourceStatementNode
+  ResourceStatementNode,
+  UseDeclNode
 } from "../parser";
 import {
   EvaluationContext,
@@ -12,6 +13,7 @@ import { createLoopBindings, createLoopContext } from "./looping";
 
 export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
+  onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
 }
 
 export function resourceBodyToObject(
@@ -55,6 +57,11 @@ function applyResourceStatement(
     const value = normalizeJsonValue(evaluateExpression(statement.value, context));
     if (isJsonObject(value)) {
       mergeObject(result, value);
+    }
+  } else if (statement.kind === "UseDecl") {
+    const fragment = options.onUseFragment?.(statement, context);
+    if (fragment) {
+      mergeObject(result, fragment);
     }
   }
 }

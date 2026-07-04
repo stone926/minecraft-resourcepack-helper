@@ -31,6 +31,8 @@ const enumConstants = [
   "inner_right",
   "outer_left",
   "outer_right",
+  "spawn",
+  "day_time",
   "planks",
   "slab",
   "stairs",
@@ -85,6 +87,24 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "sideTall", type: modelIdType, optional: false }
     ], jsonType),
     builtinFunction("randomVariants", [{ name: "models", type: { kind: "List", elementType: jsonType }, optional: false }], jsonType),
+    builtinFunction("itemRangeFrames", [
+      { name: "property", type: resourceIdType, optional: false },
+      { name: "frames", type: jsonType, optional: false },
+      { name: "model", type: resourceIdType, optional: false },
+      { name: "threshold", type: jsonType, optional: true },
+      { name: "fallback", type: resourceIdType, optional: true },
+      { name: "component", type: resourceIdType, optional: true },
+      { name: "source", type: stringType, optional: true },
+      { name: "target", type: stringType, optional: true },
+      { name: "wobble", type: booleanType, optional: true },
+      { name: "scale", type: numberType, optional: true }
+    ], jsonType),
+    builtinFunction("itemSelectCases", [
+      { name: "property", type: resourceIdType, optional: false },
+      { name: "cases", type: jsonType, optional: false },
+      { name: "fallback", type: resourceIdType, optional: true },
+      { name: "component", type: resourceIdType, optional: true }
+    ], jsonType),
     builtinFunction("model_path", [{ name: "id", type: modelIdType, optional: false }], stringType),
     builtinFunction("texture_path", [{ name: "id", type: textureIdType, optional: false }], stringType),
     builtinValue("index", numberType)

@@ -45,11 +45,12 @@ import {
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
+import { compileItemUseFragment } from "./itemFragments";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
 import { createFileRawJsonLoader } from "./rawJson";
-import { resourceBodyToObject } from "./resourceBody";
+import { ResourceBodyCompileOptions, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
   createCubeAllModel,
@@ -290,7 +291,9 @@ class RsglCompiler {
       this.error("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
       return null;
     }
-    const body = this.resourceBodyToObject(statement.body, context);
+    const body = this.resourceBodyToObject(statement.body, context, {
+      onUseFragment: (useStatement, fragmentContext) => compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions())
+    });
     const model = typeof body.model === "string"
       ? { type: "minecraft:model", model: body.model }
       : body.model;
@@ -803,10 +806,21 @@ class RsglCompiler {
     }
   }
 
-  private resourceBodyToObject(body: ResourceDeclNode["body"], context: RsglCompileContext): Record<string, JsonValue> {
+  private resourceBodyToObject(
+    body: ResourceDeclNode["body"],
+    context: RsglCompileContext,
+    options: ResourceBodyCompileOptions = {}
+  ): Record<string, JsonValue> {
     return resourceBodyToObject(body, context, {
+      ...options,
       onError: (code, message, range) => this.error(code, message, range)
     });
+  }
+
+  private itemFragmentOptions() {
+    return {
+      onError: (code: string, message: string, range: { start: number; end: number }) => this.error(code, message, range)
+    };
   }
 
   private blockstateFragmentOptions(): RsglBlockstateFragmentOptions {

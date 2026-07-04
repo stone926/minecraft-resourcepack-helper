@@ -26,6 +26,8 @@ export function validateResourceUnits(
   for (const unit of units) {
     if (unit.kind === "model") {
       validateModelUnit(unit, generatedModels, options, diagnostics);
+    } else if (unit.kind === "item") {
+      validateItemUnit(unit, generatedModels, options, diagnostics);
     } else if (unit.kind === "blockstate") {
       validateBlockstateUnit(unit, generatedModels, options, diagnostics);
     } else if (unit.kind === "sounds") {
@@ -40,6 +42,15 @@ export function validateResourceUnits(
   }
 
   return diagnostics;
+}
+
+function validateItemUnit(
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  validateItemModelDefinition(asObject(unit.content)?.model, unit, generatedModels, options, diagnostics);
 }
 
 function validateModelUnit(
@@ -166,6 +177,150 @@ function validateBlockstateUnit(
       });
     }
   });
+}
+
+function validateItemModelDefinition(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const model = asObject(value);
+  if (!model) {
+    return;
+  }
+
+  const type = itemModelType(model.type);
+  if (type === "model") {
+    if (typeof model.model === "string") {
+      checkResourceExists("model", model.model, unit, generatedModels, options, diagnostics);
+    }
+    return;
+  }
+
+  if (type === "range_dispatch") {
+    validateItemRangeDispatch(model, unit, generatedModels, options, diagnostics);
+    return;
+  }
+
+  if (type === "select") {
+    validateItemSelect(model, unit, generatedModels, options, diagnostics);
+    return;
+  }
+
+  validateNestedItemModels(model, unit, generatedModels, options, diagnostics);
+}
+
+function validateItemRangeDispatch(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const entries = Array.isArray(model.entries) ? model.entries : null;
+  if (!entries) {
+    diagnostics.push({
+      code: "rsgl.invalidItemRangeEntries",
+      message: "Item range_dispatch entries must be an array.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  } else {
+    let previousThreshold = -Infinity;
+    for (const entry of entries) {
+      const entryObject = asObject(entry);
+      if (!entryObject || typeof entryObject.threshold !== "number" || !Number.isFinite(entryObject.threshold)) {
+        diagnostics.push({
+          code: "rsgl.invalidItemRangeThreshold",
+          message: "Item range_dispatch entry threshold must be a finite number.",
+          severity: "error",
+          range: unit.sourceMap.mappings[0].sourceRange
+        });
+      } else if (entryObject.threshold < previousThreshold) {
+        diagnostics.push({
+          code: "rsgl.unsortedItemRangeThresholds",
+          message: "Item range_dispatch entries should be sorted by threshold ascending.",
+          severity: "warning",
+          range: unit.sourceMap.mappings[0].sourceRange
+        });
+      } else {
+        previousThreshold = entryObject.threshold;
+      }
+      validateItemModelDefinition(entryObject?.model, unit, generatedModels, options, diagnostics);
+    }
+  }
+
+  if (!("fallback" in model)) {
+    diagnostics.push({
+      code: "rsgl.itemModelMissingFallback",
+      message: "Item range_dispatch should define a fallback model.",
+      severity: "warning",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  } else {
+    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+  }
+}
+
+function validateItemSelect(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const cases = Array.isArray(model.cases) ? model.cases : null;
+  if (!cases) {
+    diagnostics.push({
+      code: "rsgl.invalidItemSelectCases",
+      message: "Item select cases must be an array.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  } else {
+    for (const itemCase of cases) {
+      const caseObject = asObject(itemCase);
+      if (!caseObject || !("when" in caseObject)) {
+        diagnostics.push({
+          code: "rsgl.invalidItemSelectCase",
+          message: "Item select cases must define a when value.",
+          severity: "error",
+          range: unit.sourceMap.mappings[0].sourceRange
+        });
+      }
+      validateItemModelDefinition(caseObject?.model, unit, generatedModels, options, diagnostics);
+    }
+  }
+
+  if (!("fallback" in model)) {
+    diagnostics.push({
+      code: "rsgl.itemModelMissingFallback",
+      message: "Item select should define a fallback model.",
+      severity: "warning",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  } else {
+    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+  }
+}
+
+function validateNestedItemModels(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (Array.isArray(model.models)) {
+    for (const nested of model.models) {
+      validateItemModelDefinition(nested, unit, generatedModels, options, diagnostics);
+    }
+  }
+  if ("fallback" in model) {
+    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+  }
 }
 
 function validateSoundsUnit(
@@ -355,6 +510,13 @@ function textureIdFromMcmetaOutputPath(outputPath: string): string | null {
 }
 
 function atlasSourceType(value: JsonValue | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return value.startsWith("minecraft:") ? value.slice("minecraft:".length) : value;
+}
+
+function itemModelType(value: JsonValue | undefined): string | null {
   if (typeof value !== "string") {
     return null;
   }

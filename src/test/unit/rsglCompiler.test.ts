@@ -187,6 +187,72 @@ describe("RSGL compiler", () => {
     ]);
   });
 
+  it("lowers item range and select fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "table potionCases {",
+      "  healing: minecraft:item/potion_healing",
+      "  strong_healing: minecraft:item/potion_strong_healing",
+      "}",
+      "item compass {",
+      "  use itemRangeFrames(",
+      "    property: minecraft:compass,",
+      "    target: spawn,",
+      "    wobble: true,",
+      "    frames: 0..2,",
+      "    threshold: index / 3,",
+      "    model: `minecraft:item/compass_${pad(index, 2)}`,",
+      "    fallback: minecraft:item/compass_00",
+      "  )",
+      "}",
+      "item potion {",
+      "  use itemSelectCases(",
+      "    property: minecraft:potion_contents,",
+      "    component: minecraft:potion_contents,",
+      "    cases: potionCases,",
+      "    fallback: minecraft:item/potion",
+      "  )",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/items/compass.json",
+      "assets/minecraft/items/potion.json"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("compass.json"))?.content, {
+      model: {
+        type: "minecraft:range_dispatch",
+        property: "minecraft:compass",
+        target: "spawn",
+        wobble: true,
+        entries: [
+          { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
+          { threshold: 1 / 3, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } },
+          { threshold: 2 / 3, model: { type: "minecraft:model", model: "minecraft:item/compass_02" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/compass_00"
+        }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("potion.json"))?.content, {
+      model: {
+        type: "minecraft:select",
+        property: "minecraft:potion_contents",
+        component: "minecraft:potion_contents",
+        cases: [
+          { when: "healing", model: { type: "minecraft:model", model: "minecraft:item/potion_healing" } },
+          { when: "strong_healing", model: { type: "minecraft:model", model: "minecraft:item/potion_strong_healing" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/potion"
+        }
+      }
+    });
+  });
+
   it("expands local templates with positional, named, and default arguments", () => {
     const result = compileRsglModule(parseRsgl([
       "template cube(id: ResourceId, texture: TextureId = id) {",
@@ -993,6 +1059,40 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.textureNotFound"));
     assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
+  });
+
+  it("validates item model condition trees", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item broken_compass {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:range_dispatch,",
+      "      property: minecraft:compass,",
+      "      entries: [",
+      "        { threshold: 1, model: { type: minecraft:model, model: minecraft:item/missing_high } },",
+      "        { threshold: 0, model: { type: minecraft:model, model: minecraft:item/missing_low } }",
+      "      ]",
+      "    }",
+      "  }",
+      "}",
+      "item broken_select {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:main_hand,",
+      "      cases: [{ model: { type: minecraft:model, model: minecraft:item/missing_case } }]",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => false
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.modelNotFound"));
+    assert.ok(codes.includes("rsgl.unsortedItemRangeThresholds"));
+    assert.ok(codes.includes("rsgl.itemModelMissingFallback"));
+    assert.ok(codes.includes("rsgl.invalidItemSelectCase"));
   });
 
   it("validates generated model parent chains and texture variables", () => {
