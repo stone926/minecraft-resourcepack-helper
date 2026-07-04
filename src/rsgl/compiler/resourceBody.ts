@@ -1,6 +1,7 @@
 import {
   ResourceBodyNode,
   ResourceStatementNode,
+  TextRange,
   UseDeclNode
 } from "../parser";
 import {
@@ -15,6 +16,13 @@ export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
   onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
   onSpecialStatement?: (statement: ResourceStatementNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
+  onMapping?: (mapping: ResourceBodyMapping) => void;
+}
+
+export interface ResourceBodyMapping {
+  generatedPath: string;
+  sourceRange: TextRange;
+  context: EvaluationContext;
 }
 
 export function resourceBodyToObject(
@@ -22,9 +30,18 @@ export function resourceBodyToObject(
   context: EvaluationContext,
   options: ResourceBodyCompileOptions = {}
 ): Record<string, JsonValue> {
+  return resourceBodyToObjectAtPath(body, context, options, "");
+}
+
+function resourceBodyToObjectAtPath(
+  body: ResourceBodyNode,
+  context: EvaluationContext,
+  options: ResourceBodyCompileOptions,
+  path: string
+): Record<string, JsonValue> {
   const result: Record<string, JsonValue> = {};
   for (const statement of body.statements) {
-    applyResourceStatement(result, statement, context, options);
+    applyResourceStatement(result, statement, context, options, path);
   }
   return result;
 }
@@ -37,42 +54,51 @@ function applyResourceStatement(
   result: Record<string, JsonValue>,
   statement: ResourceStatementNode,
   context: EvaluationContext,
-  options: ResourceBodyCompileOptions
+  options: ResourceBodyCompileOptions,
+  path: string
 ): void {
   if (statement.kind === "PropertyStmt") {
     result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
+    emitMapping(options, appendPath(path, statement.name.text), statement.range, context);
   } else if (statement.kind === "SectionStmt") {
     if (statement.body) {
-      result[statement.name.text] = resourceBodyToObject(statement.body, context, options);
+      const sectionPath = appendPath(path, statement.name.text);
+      emitMapping(options, sectionPath, statement.range, context);
+      result[statement.name.text] = resourceBodyToObjectAtPath(statement.body, context, options, sectionPath);
     } else if (statement.value) {
       result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
+      emitMapping(options, appendPath(path, statement.name.text), statement.range, context);
     }
   } else if (statement.kind === "IfStmt") {
     const selectedBody = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
     if (selectedBody?.kind === "ResourceBody") {
-      mergeResourceObject(result, resourceBodyToObject(selectedBody, context, options));
+      mergeResourceObject(result, resourceBodyToObjectAtPath(selectedBody, context, options, path));
     }
   } else if (statement.kind === "ForStmt") {
-    applyForStatement(result, statement, context, options);
+    applyForStatement(result, statement, context, options, path);
   } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt") {
     const value = normalizeJsonValue(evaluateExpression(statement.value, context));
     if (isJsonObject(value)) {
       mergeObject(result, value);
+      emitObjectMappings(options, path, value, statement.range, context);
     }
   } else if (statement.kind === "AppendStmt") {
     const value = normalizeJsonValue(evaluateExpression(statement.value, context));
     if (isJsonObject(value)) {
       mergeResourceObject(result, value);
+      emitObjectMappings(options, path, value, statement.range, context);
     }
   } else if (statement.kind === "UseDecl") {
     const fragment = options.onUseFragment?.(statement, context);
     if (fragment) {
       mergeResourceObject(result, fragment);
+      emitObjectMappings(options, path, fragment, statement.range, context);
     }
   } else {
     const fragment = options.onSpecialStatement?.(statement, context);
     if (fragment) {
       mergeResourceObject(result, fragment);
+      emitObjectMappings(options, path, fragment, statement.range, context);
     }
   }
 }
@@ -81,7 +107,8 @@ function applyForStatement(
   result: Record<string, JsonValue>,
   statement: Extract<ResourceStatementNode, { kind: "ForStmt" }>,
   context: EvaluationContext,
-  options: ResourceBodyCompileOptions
+  options: ResourceBodyCompileOptions,
+  path: string
 ): void {
   const iterable = evaluateExpression(statement.iterable, context);
   if (!Array.isArray(iterable)) {
@@ -94,8 +121,37 @@ function applyForStatement(
   for (const value of iterable) {
     const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
     const loopContext = createLoopContext(context, bindings, statement.range);
-    mergeResourceObject(result, resourceBodyToObject(statement.body, loopContext, options));
+    mergeResourceObject(result, resourceBodyToObjectAtPath(statement.body, loopContext, options, path));
   }
+}
+
+function emitObjectMappings(
+  options: ResourceBodyCompileOptions,
+  path: string,
+  value: Record<string, JsonValue>,
+  sourceRange: TextRange,
+  context: EvaluationContext
+): void {
+  for (const key of Object.keys(value)) {
+    emitMapping(options, appendPath(path, key), sourceRange, context);
+  }
+}
+
+function emitMapping(
+  options: ResourceBodyCompileOptions,
+  generatedPath: string,
+  sourceRange: TextRange,
+  context: EvaluationContext
+): void {
+  options.onMapping?.({ generatedPath, sourceRange, context });
+}
+
+function appendPath(path: string, segment: string): string {
+  return `${path}/${escapeJsonPointerSegment(segment)}`;
+}
+
+function escapeJsonPointerSegment(segment: string): string {
+  return segment.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 function mergeObject(target: Record<string, JsonValue>, source: Record<string, JsonValue>): void {

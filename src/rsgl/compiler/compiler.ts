@@ -66,7 +66,7 @@ import { createFileGlobLoader } from "./fileGlob";
 import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
 import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
-import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
+import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
@@ -363,13 +363,14 @@ class RsglCompiler {
     }
     const modelId = { namespace: id.namespace, path: `${subtype}/${id.path}` };
     const outputPath = resourceOutputPath("model", modelId);
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
     return {
       id: modelId,
       kind: "model",
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions()),
+      content: body.content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, context)
+      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
     };
   }
 
@@ -380,18 +381,18 @@ class RsglCompiler {
       this.error("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
       return null;
     }
-    const body = this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions("item"));
-    const model = typeof body.model === "string"
-      ? { type: "minecraft:model", model: body.model }
-      : body.model;
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions("item"));
+    const model = typeof body.content.model === "string"
+      ? { type: "minecraft:model", model: body.content.model }
+      : body.content.model;
     const outputPath = resourceOutputPath("item", id);
     return {
       id,
       kind: "item",
       outputPath,
-      content: { ...body, model: normalizeJsonValue(model) },
+      content: { ...body.content, model: normalizeJsonValue(model) },
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, context)
+      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
     };
   }
 
@@ -598,26 +599,33 @@ class RsglCompiler {
       return null;
     }
     const outputPath = resourceOutputPath(resourceKind, id);
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.jsonResourceFragmentOptions(resourceKind));
     return {
       id,
       kind: resourceKind,
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions(resourceKind)),
+      content: body.content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, context)
+      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
     };
   }
 
   private compilePack(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit {
     const outputPath = "pack.mcmeta";
-    const body = this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions());
-    const content = this.packContentWithTargetMetadata(isJsonObject(body.pack) ? body : { pack: body });
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
+    const hasExplicitPackRoot = isJsonObject(body.content.pack);
+    const content = this.packContentWithTargetMetadata(hasExplicitPackRoot ? body.content : { pack: body.content });
     return {
       kind: "pack",
       outputPath,
       content,
       mergePolicy: { kind: "mergeObject" },
-      sourceMap: this.sourceMap(outputPath, statement, context)
+      sourceMap: this.sourceMap(
+        outputPath,
+        statement,
+        context,
+        hasExplicitPackRoot ? body.mappings : prefixSourceMappings(body.mappings, "/pack")
+      )
     };
   }
 
@@ -646,13 +654,14 @@ class RsglCompiler {
       return null;
     }
     const outputPath = resourceOutputPath("lang", id);
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
     return {
       id,
       kind: "lang",
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions()),
+      content: body.content,
       mergePolicy: { kind: "mergeObject" },
-      sourceMap: this.sourceMap(outputPath, statement, context)
+      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
     };
   }
 
@@ -664,13 +673,14 @@ class RsglCompiler {
     }
     const id = { namespace, path: "sounds" };
     const outputPath = `assets/${namespace}/sounds.json`;
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
     return {
       id,
       kind: "sounds",
       outputPath,
-      content: this.resourceBodyToObject(statement.body, context, this.resourceBodyFragmentOptions()),
+      content: body.content,
       mergePolicy: { kind: "mergeObject" },
-      sourceMap: this.sourceMap(outputPath, statement, context)
+      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
     };
   }
 
@@ -679,7 +689,7 @@ class RsglCompiler {
     if (!targetValues) {
       return [];
     }
-    const content = this.resourceBodyToObject(statement.body, context, this.jsonResourceFragmentOptions("mcmeta"));
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.jsonResourceFragmentOptions("mcmeta"));
     const units: ResourceUnit[] = [];
     for (const idValue of targetValues) {
       const target = this.mcmetaTarget(idValue, context.namespace);
@@ -691,9 +701,9 @@ class RsglCompiler {
         id: target.id,
         kind: "mcmeta",
         outputPath: target.outputPath,
-        content,
+        content: body.content,
         mergePolicy: { kind: "errorOnConflict" },
-        sourceMap: this.sourceMap(target.outputPath, statement, context)
+        sourceMap: this.sourceMap(target.outputPath, statement, context, body.mappings)
       });
     }
     return units;
@@ -1181,6 +1191,23 @@ class RsglCompiler {
     });
   }
 
+  private resourceBodyToObjectWithMappings(
+    body: ResourceDeclNode["body"],
+    context: RsglCompileContext,
+    options: ResourceBodyCompileOptions = {}
+  ): { content: Record<string, JsonValue>; mappings: RsglMapping[] } {
+    const mappings: RsglMapping[] = [];
+    const content = resourceBodyToObject(body, context, {
+      ...options,
+      onError: (code, message, range) => this.error(code, message, range),
+      onMapping: mapping => {
+        mappings.push(this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context));
+        options.onMapping?.(mapping);
+      }
+    });
+    return { content, mappings };
+  }
+
   private itemFragmentOptions() {
     return {
       onError: (code: string, message: string, range: { start: number; end: number }) => this.error(code, message, range)
@@ -1219,16 +1246,32 @@ class RsglCompiler {
     };
   }
 
-  private sourceMap(outputPath: string, node: { range: { start: number; end: number } }, context: RsglCompileContext) {
+  private sourceMap(
+    outputPath: string,
+    node: { range: { start: number; end: number } },
+    context: RsglCompileContext,
+    mappings: RsglMapping[] = []
+  ) {
     return {
       generatedFile: outputPath,
-      mappings: [{
-        generatedPath: "",
-        sourceFile: context.sourceFile ?? this.options.fileName,
-        sourceRange: node.range,
-        reason: context.mappingReason ?? "direct",
-        expansionStack: context.expansionStack ?? []
-      }]
+      mappings: [
+        this.sourceMapping("", node.range, context),
+        ...mappings
+      ]
+    };
+  }
+
+  private sourceMapping(
+    generatedPath: string,
+    sourceRange: { start: number; end: number },
+    context: Pick<RsglCompileContext, "sourceFile" | "mappingReason" | "expansionStack">
+  ): RsglMapping {
+    return {
+      generatedPath,
+      sourceFile: context.sourceFile ?? this.options.fileName,
+      sourceRange,
+      reason: context.mappingReason ?? "direct",
+      expansionStack: context.expansionStack ?? []
     };
   }
 
@@ -1303,6 +1346,13 @@ function prefixOverlayUnit(unit: ResourceUnit, directory: string): ResourceUnit 
       generatedFile: outputPath
     }
   };
+}
+
+function prefixSourceMappings(mappings: RsglMapping[], pathPrefix: string): RsglMapping[] {
+  return mappings.map(mapping => ({
+    ...mapping,
+    generatedPath: mapping.generatedPath ? `${pathPrefix}${mapping.generatedPath}` : pathPrefix
+  }));
 }
 
 function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {

@@ -83,10 +83,16 @@ describe("RSGL compiler", () => {
     const sourceMap = JSON.parse(files[1].content) as {
       version?: number;
       generatedFile?: string;
-      mappings?: Array<{ sourceFile?: string; reason?: string }>;
+      mappings?: Array<{ generatedPath?: string; sourceFile?: string; reason?: string }>;
     };
     assert.strictEqual(sourceMap.version, 1);
     assert.strictEqual(sourceMap.generatedFile, "assets/minecraft/models/block/stone.json");
+    assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), [
+      "",
+      "/parent",
+      "/textures",
+      "/textures/all"
+    ]);
     assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
     assert.strictEqual(sourceMap.mappings?.[0]?.reason, "direct");
 
@@ -1279,6 +1285,35 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("records source map entries for resource body raw_json and loops", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block mapped {",
+      "  raw_json { \"base/key\": true }",
+      "  textures {",
+      "    for layer in [{ key: \"layer/zero\", tex: minecraft:block/stone }, { key: \"layer1\", tex: minecraft:block/dirt }] {",
+      "      raw_json { [layer.key]: layer.tex }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")), { fileName: path.resolve("pack", "main.rsgl") });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/base~1key",
+      "/textures",
+      "/textures/layer~1zero",
+      "/textures/layer1"
+    ]);
+
+    const loopMappings = result.units[0].sourceMap.mappings.filter(mapping => mapping.reason === "loop");
+    assert.deepStrictEqual(loopMappings.map(mapping => mapping.generatedPath), [
+      "/textures/layer~1zero",
+      "/textures/layer1"
+    ]);
+    assert.ok(loopMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "for")));
+  });
+
   it("loads raw_json path fragments relative to RSGL source files", () => {
     const root = createTempDir();
     try {
@@ -1748,6 +1783,12 @@ describe("RSGL compiler", () => {
         ["max_format"]: [88, 0]
       }
     });
+    assert.deepStrictEqual(pack?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/pack/description",
+      "/pack/min_format",
+      "/pack/max_format"
+    ]);
 
     const expectedLang = {
       ["block.minecraft.stone"]: "Stone",
@@ -1755,7 +1796,12 @@ describe("RSGL compiler", () => {
     };
     const lang = result.units.find(unit => unit.kind === "lang");
     assert.deepStrictEqual(lang?.content, expectedLang);
-    assert.strictEqual(lang?.sourceMap.mappings.length, 2);
+    assert.deepStrictEqual(lang?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/block.minecraft.stone",
+      "",
+      "/item.minecraft.stick"
+    ]);
 
     const expectedSounds = {
       ["block.example.break"]: {
@@ -2046,7 +2092,16 @@ describe("RSGL compiler", () => {
     });
     const model = result.units.find(unit => unit.outputPath.endsWith("models/block/stone.json"));
     assert.strictEqual(model?.sourceMap.generatedFile, "future/assets/minecraft/models/block/stone.json");
+    assert.deepStrictEqual(model?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/parent",
+      "/textures",
+      "/textures/all"
+    ]);
     assert.deepStrictEqual(model?.sourceMap.mappings.map(mapping => mapping.expansionStack.map(frame => frame.label)), [
+      ["overlay future"],
+      ["overlay future"],
+      ["overlay future"],
       ["overlay future"]
     ]);
   });
