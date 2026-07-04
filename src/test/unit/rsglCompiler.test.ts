@@ -1693,6 +1693,17 @@ describe("RSGL compiler", () => {
       "  variants {",
       "    {} -> { model: minecraft:block/missing_model, z: 90, weight: 0 }",
       "  }",
+      "}",
+      "blockstate malformed {",
+      "  raw_json {",
+      "    variants: {",
+      "      \"facing=north,facing=south\": { model: minecraft:block/missing_duplicate, x: 45, uvlock: \"yes\" }",
+      "      \"broken\": { model: minecraft:block/missing_broken, y: 45 }",
+      "    }",
+      "    multipart: [",
+      "      { apply: [{ model: minecraft:block/missing_part, z: 45, weight: -1 }] }",
+      "    ]",
+      "  }",
       "}"
     ].join("\n")), {
       targetPackFormat: { major: 74 },
@@ -1704,6 +1715,10 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.textureNotFound"));
     assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
+    assert.ok(codes.includes("rsgl.invalidBlockstateRotation"));
+    assert.ok(codes.includes("rsgl.invalidBlockstateUvlock"));
+    assert.ok(codes.includes("rsgl.invalidBlockstateVariantKey"));
+    assert.ok(codes.includes("rsgl.duplicateBlockstateVariantProperty"));
   });
 
   it("validates model element geometry and face fields", () => {
