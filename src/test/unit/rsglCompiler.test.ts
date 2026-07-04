@@ -930,6 +930,12 @@ describe("RSGL compiler", () => {
       "    noSideAlt: minecraft:block/glass_pane_noside_alt",
       "  )",
       "}",
+      "blockstate furnace {",
+      "  use horizontalFacing(model: minecraft:block/furnace, state: { lit: false })",
+      "}",
+      "blockstate oak_log {",
+      "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal)",
+      "}",
       "blockstate oak_leaves {",
       "  use randomVariants(",
       "    state: { persistent: false },",
@@ -948,6 +954,8 @@ describe("RSGL compiler", () => {
     const door = result.units.find(unit => unit.outputPath.endsWith("acacia_door.json"));
     const trapdoor = result.units.find(unit => unit.outputPath.endsWith("acacia_trapdoor.json"));
     const pane = result.units.find(unit => unit.outputPath.endsWith("glass_pane.json"));
+    const furnace = result.units.find(unit => unit.outputPath.endsWith("furnace.json"));
+    const log = result.units.find(unit => unit.outputPath.endsWith("oak_log.json"));
     const leaves = result.units.find(unit => unit.outputPath.endsWith("oak_leaves.json"));
     assert.ok(stairs);
     assert.ok(fence);
@@ -955,6 +963,8 @@ describe("RSGL compiler", () => {
     assert.ok(door);
     assert.ok(trapdoor);
     assert.ok(pane);
+    assert.ok(furnace);
+    assert.ok(log);
     assert.ok(leaves);
     const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
     assert.strictEqual(Object.keys(variants).length, 40);
@@ -1002,6 +1012,21 @@ describe("RSGL compiler", () => {
         { when: { south: false }, apply: { model: "minecraft:block/glass_pane_noside_alt", y: 90 } },
         { when: { west: false }, apply: { model: "minecraft:block/glass_pane_noside", y: 270 } }
       ]
+    });
+    assert.deepStrictEqual(furnace.content, {
+      variants: {
+        ["facing=east,lit=false"]: { model: "minecraft:block/furnace", y: 90 },
+        ["facing=north,lit=false"]: { model: "minecraft:block/furnace" },
+        ["facing=south,lit=false"]: { model: "minecraft:block/furnace", y: 180 },
+        ["facing=west,lit=false"]: { model: "minecraft:block/furnace", y: 270 }
+      }
+    });
+    assert.deepStrictEqual(log.content, {
+      variants: {
+        ["axis=x"]: { model: "minecraft:block/oak_log_horizontal", x: 90, y: 90 },
+        ["axis=y"]: { model: "minecraft:block/oak_log" },
+        ["axis=z"]: { model: "minecraft:block/oak_log_horizontal", x: 90 }
+      }
     });
     assert.deepStrictEqual(leaves.content, {
       variants: {
@@ -1062,6 +1087,19 @@ describe("RSGL compiler", () => {
 
     assert.ok(codes.includes("rsgl.invalidRandomVariantsArgument"));
     assert.ok(codes.includes("rsgl.invalidRandomVariantEntry"));
+  });
+
+  it("reports invalid blockstate template state arguments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate broken {",
+      "  use horizontalFacing(model: minecraft:block/furnace, state: [north])",
+      "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal, state: { axis: x })",
+      "}",
+    ].join("\n")));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.invalidTemplateStateArgument"));
+    assert.ok(codes.includes("rsgl.templateStateConflict"));
   });
 
   it("emits pack, lang, sounds, and mcmeta resources", () => {

@@ -114,6 +114,17 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "noSide", type: modelIdType, optional: false },
       { name: "noSideAlt", type: modelIdType, optional: false }
     ], jsonType),
+    builtinFunction("horizontalFacing", [
+      { name: "model", type: modelIdType, optional: false },
+      { name: "state", type: jsonType, optional: true },
+      { name: "uvlock", type: booleanType, optional: true }
+    ], jsonType),
+    builtinFunction("axisRotated", [
+      { name: "vertical", type: modelIdType, optional: false },
+      { name: "horizontal", type: modelIdType, optional: false },
+      { name: "state", type: jsonType, optional: true },
+      { name: "uvlock", type: booleanType, optional: true }
+    ], jsonType),
     builtinFunction("randomVariants", [
       { name: "models", type: { kind: "List", elementType: jsonType }, optional: false },
       { name: "state", type: jsonType, optional: true }

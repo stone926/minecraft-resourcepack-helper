@@ -11,9 +11,11 @@ import {
 import { blockstateVariantKey } from "./blockstateKeys";
 import { JsonValue } from "./ir";
 import {
+  createAxisRotatedBlockstateContent,
   createDoorBlockstateContent,
   createFenceBlockstateContent,
   createFenceGateBlockstateContent,
+  createHorizontalFacingBlockstateContent,
   createPaneBlockstateContent,
   createSlabBlockstateContent,
   createStairsBlockstateContent,
@@ -50,7 +52,7 @@ export function compileBlockstateUseFragment(
       base: requiredModelArgument(expression, "base", 0, context, options),
       inner: requiredModelArgument(expression, "inner", 1, context, options),
       outer: requiredModelArgument(expression, "outer", 2, context, options),
-      uvlock: optionalBooleanArgument(expression, "uvlock", context)
+      uvlock: optionalBooleanArgument(expression, "uvlock", 3, context)
     });
   }
   if (expression.callee.name.text === "slab") {
@@ -107,6 +109,21 @@ export function compileBlockstateUseFragment(
       sideAlt: requiredModelArgument(expression, "sideAlt", 2, context, options),
       noSide: requiredModelArgument(expression, "noSide", 3, context, options),
       noSideAlt: requiredModelArgument(expression, "noSideAlt", 4, context, options)
+    });
+  }
+  if (expression.callee.name.text === "horizontalFacing") {
+    return createHorizontalFacingBlockstateContent({
+      model: requiredModelArgument(expression, "model", 0, context, options),
+      state: optionalStateArgument(expression, "state", 1, context, options, ["facing"]),
+      uvlock: optionalBooleanArgument(expression, "uvlock", 2, context)
+    });
+  }
+  if (expression.callee.name.text === "axisRotated") {
+    return createAxisRotatedBlockstateContent({
+      vertical: requiredModelArgument(expression, "vertical", 0, context, options),
+      horizontal: requiredModelArgument(expression, "horizontal", 1, context, options),
+      state: optionalStateArgument(expression, "state", 2, context, options, ["axis"]),
+      uvlock: optionalBooleanArgument(expression, "uvlock", 3, context)
     });
   }
   if (expression.callee.name.text === "randomVariants") {
@@ -249,13 +266,39 @@ function normalizeRandomVariantEntry(value: JsonValue, namespace: string): JsonV
 function optionalBooleanArgument(
   expression: CallExprNode,
   name: string,
+  positionalIndex: number,
   context: EvaluationContext
 ): boolean | undefined {
-  const argument = expression.args.find(item => item.name?.text === name);
+  const argument = callArgument(expression, name, positionalIndex);
   if (!argument) {
     return undefined;
   }
   return Boolean(evaluateExpression(argument.value, context));
+}
+
+function optionalStateArgument(
+  expression: CallExprNode,
+  name: string,
+  positionalIndex: number,
+  context: EvaluationContext,
+  options: RsglBlockstateFragmentOptions,
+  reservedKeys: string[]
+): Record<string, JsonValue> | undefined {
+  const argument = callArgument(expression, name, positionalIndex);
+  if (!argument) {
+    return undefined;
+  }
+  const value = normalizeJsonValue(evaluateExpression(argument.value, context));
+  if (!isJsonObject(value)) {
+    options.onError?.("rsgl.invalidTemplateStateArgument", `Template argument '${name}' must evaluate to an object.`, argument.value.range);
+    return undefined;
+  }
+  for (const key of reservedKeys) {
+    if (Object.hasOwn(value, key)) {
+      options.onError?.("rsgl.templateStateConflict", `Template argument '${name}' must not define '${key}'.`, argument.value.range);
+    }
+  }
+  return value;
 }
 
 function callArgument(expression: CallExprNode, name: string, positionalIndex: number): CallExprNode["args"][number] | undefined {

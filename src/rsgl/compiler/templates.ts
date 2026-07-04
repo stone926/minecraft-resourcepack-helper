@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import { ExpansionFrame, JsonValue, ResourceUnit } from "./ir";
+import { blockstateVariantKey } from "./blockstateKeys";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 
 const facings = ["north", "east", "south", "west"] as const;
@@ -62,6 +63,19 @@ export interface PaneBlockstateModels {
   noSideAlt: string;
 }
 
+export interface HorizontalFacingBlockstateOptions {
+  model: string;
+  state?: Record<string, JsonValue>;
+  uvlock?: boolean;
+}
+
+export interface AxisRotatedBlockstateModels {
+  vertical: string;
+  horizontal: string;
+  state?: Record<string, JsonValue>;
+  uvlock?: boolean;
+}
+
 const stairsYaw: Record<string, Record<string, Record<string, number>>> = {
   bottom: {
     straight: { north: 270, east: 0, south: 90, west: 180 },
@@ -84,6 +98,13 @@ const fenceGateYaw: Record<string, number> = {
   east: 270,
   south: 0,
   west: 90
+};
+
+const horizontalFacingYaw: Record<string, number> = {
+  north: 0,
+  east: 90,
+  south: 180,
+  west: 270
 };
 
 const doorClosedYaw: Record<string, number> = {
@@ -419,6 +440,31 @@ export function createPaneBlockstateContent(models: PaneBlockstateModels): Recor
   return { multipart };
 }
 
+export function createHorizontalFacingBlockstateContent(options: HorizontalFacingBlockstateOptions): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const facing of facings) {
+    const entry: Record<string, JsonValue> = { model: options.model };
+    const y = horizontalFacingYaw[facing];
+    if (y !== 0) {
+      entry.y = y;
+    }
+    if (options.uvlock && y !== 0) {
+      entry.uvlock = true;
+    }
+    variants[blockstateVariantKey({ ...(options.state ?? {}), facing })] = entry;
+  }
+  return { variants };
+}
+
+export function createAxisRotatedBlockstateContent(models: AxisRotatedBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {
+    [blockstateVariantKey({ ...(models.state ?? {}), axis: "x" })]: rotatedAxisEntry(models.horizontal, 90, 90, models.uvlock),
+    [blockstateVariantKey({ ...(models.state ?? {}), axis: "y" })]: { model: models.vertical },
+    [blockstateVariantKey({ ...(models.state ?? {}), axis: "z" })]: rotatedAxisEntry(models.horizontal, 90, 0, models.uvlock)
+  };
+  return { variants };
+}
+
 export function createCubeAllModel(
   idValue: string,
   textureValue: string | undefined,
@@ -569,6 +615,20 @@ function doorYaw(facing: string, hinge: "left" | "right", open: boolean): number
     return doorClosedYaw[facing];
   }
   return hinge === "left" ? doorOpenLeftYaw[facing] : doorOpenRightYaw[facing];
+}
+
+function rotatedAxisEntry(model: string, x: number, y: number, uvlock: boolean | undefined): Record<string, JsonValue> {
+  const entry: Record<string, JsonValue> = { model };
+  if (x !== 0) {
+    entry.x = x;
+  }
+  if (y !== 0) {
+    entry.y = y;
+  }
+  if (uvlock) {
+    entry.uvlock = true;
+  }
+  return entry;
 }
 
 function sourceMap(

@@ -190,6 +190,8 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "trapdoor", detail: "Builtin trapdoor blockstate template", kind: "function" },
   { label: "wall", detail: "Builtin wall blockstate template", kind: "function" },
   { label: "pane", detail: "Builtin pane blockstate template", kind: "function" },
+  { label: "horizontalFacing", detail: "Builtin horizontal facing blockstate template", kind: "function" },
+  { label: "axisRotated", detail: "Builtin axis rotated blockstate template", kind: "function" },
   { label: "randomVariants", detail: "Builtin random variants helper", kind: "function" },
   { label: "HORIZONTAL", detail: "Standard enum: north, east, south, west", kind: "constant" },
   { label: "DIRECTIONS", detail: "Standard enum: down, up, north, south, west, east", kind: "constant" },
