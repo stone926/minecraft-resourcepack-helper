@@ -2,7 +2,7 @@ import { rsglKeywords } from "./keywords";
 import { LexResult, RsglDiagnostic, RsglToken, RsglTokenKind, Trivia } from "./types";
 
 const twoCharacterOperators = new Set(["->", "==", "!=", "<=", ">=", "&&", "||", ".."]);
-const singleCharacterOperators = new Set(["=", "?", ":", "+", "-", "*", "/", "%", "!", "<", ">"]);
+const singleCharacterOperators = new Set(["=", "?", ":", "+", "-", "*", "/", "%", "!", "<", ">", "|"]);
 const punctuationCharacters = new Set(["{", "}", "[", "]", "(", ")", ",", ".", ";", "@"]);
 const resourceLocationPattern = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
 

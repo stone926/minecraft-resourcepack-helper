@@ -426,7 +426,9 @@ class RsglBinder {
     if (expression.kind === "MatchExpr") {
       this.checkExpression(expression.expression, scope);
       for (const arm of expression.arms) {
-        arm.patterns.forEach(pattern => this.checkExpression(pattern, scope));
+        arm.patterns
+          .filter(pattern => !isWildcardPattern(pattern))
+          .forEach(pattern => this.checkExpression(pattern, scope));
         this.checkExpression(arm.value, scope);
       }
       return anyType;
@@ -752,6 +754,10 @@ function toDiagnostic(diagnostic: RsglFileDiagnostic): RsglDiagnostic {
     range: diagnostic.range,
     severity: diagnostic.severity
   };
+}
+
+function isWildcardPattern(expression: ExprNode): boolean {
+  return expression.kind === "IdentifierExpr" && expression.name.text === "_";
 }
 
 function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnostic[] {

@@ -14,6 +14,37 @@ export interface EvaluationContext {
   expansionStack?: ExpansionFrame[];
 }
 
+const builtinValues = new Map<string, JsonValue>([
+  ["HORIZONTAL", ["north", "east", "south", "west"]],
+  ["DIRECTIONS", ["down", "up", "north", "south", "west", "east"]],
+  ["STAIR_SHAPES", ["straight", "inner_left", "inner_right", "outer_left", "outer_right"]],
+  ["COLORS_16", [
+    "white",
+    "orange",
+    "magenta",
+    "light_blue",
+    "yellow",
+    "lime",
+    "pink",
+    "gray",
+    "light_gray",
+    "cyan",
+    "purple",
+    "blue",
+    "brown",
+    "green",
+    "red",
+    "black"
+  ]]
+]);
+
+const horizontalYaw: Record<string, number> = {
+  north: 0,
+  east: 90,
+  south: 180,
+  west: 270
+};
+
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
   if (expression.kind === "StringLiteral") {
     return expression.value;
@@ -31,7 +62,7 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     return expression.value.includes(":") ? expression.value : `${context.namespace}:${expression.value}`;
   }
   if (expression.kind === "IdentifierExpr") {
-    return context.variables.get(expression.name.text) ?? expression.name.text;
+    return context.variables.get(expression.name.text) ?? builtinValues.get(expression.name.text) ?? expression.name.text;
   }
   if (expression.kind === "TemplateStringExpr") {
     return expression.parts.map(part => {
@@ -100,6 +131,9 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
   }
   if (expression.kind === "ConditionalExpr") {
     return evaluateExpression(truthy(evaluateExpression(expression.condition, context)) ? expression.whenTrue : expression.whenFalse, context);
+  }
+  if (expression.kind === "MatchExpr") {
+    return evaluateMatchExpression(expression.expression, expression.arms, context);
   }
   if (expression.kind === "BinaryExpr") {
     return evaluateBinaryExpression(expression.operator, evaluateExpression(expression.left, context), evaluateExpression(expression.right, context));
@@ -173,6 +207,18 @@ function evaluateBinaryExpression(operator: string, left: EvaluationValue, right
   if (operator === "!=") {
     return left !== right;
   }
+  if (operator === "<") {
+    return compareValues(left, right) < 0;
+  }
+  if (operator === "<=") {
+    return compareValues(left, right) <= 0;
+  }
+  if (operator === ">") {
+    return compareValues(left, right) > 0;
+  }
+  if (operator === ">=") {
+    return compareValues(left, right) >= 0;
+  }
   if (operator === "&&") {
     return truthy(left) && truthy(right);
   }
@@ -204,8 +250,38 @@ function evaluateCallExpression(
     const pattern = String(args[0]?.value ?? "");
     return expandSequence(pattern, context);
   }
+  if (callee.name.text === "yaw") {
+    return horizontalYaw[String(args[0]?.value)] ?? 0;
+  }
+  if (callee.name.text === "model_path") {
+    return resourceAssetPath(String(args[0]?.value ?? ""), context.namespace, "models", "json");
+  }
+  if (callee.name.text === "texture_path") {
+    return resourceAssetPath(String(args[0]?.value ?? ""), context.namespace, "textures", "png");
+  }
 
   return undefined;
+}
+
+function evaluateMatchExpression(
+  expression: ExprNode,
+  arms: Array<{ patterns: ExprNode[]; value: ExprNode }>,
+  context: EvaluationContext
+): EvaluationValue {
+  const matchedValue = normalizeJsonValue(evaluateExpression(expression, context));
+  for (const arm of arms) {
+    if (arm.patterns.some(pattern => matchesPattern(pattern, matchedValue, context))) {
+      return evaluateExpression(arm.value, context);
+    }
+  }
+  return undefined;
+}
+
+function matchesPattern(pattern: ExprNode, value: JsonValue, context: EvaluationContext): boolean {
+  if (pattern.kind === "IdentifierExpr" && pattern.name.text === "_") {
+    return true;
+  }
+  return jsonEquals(normalizeJsonValue(evaluateExpression(pattern, context)), value);
 }
 
 function product(source: Record<string, JsonValue>): JsonValue[] {
@@ -245,6 +321,57 @@ function expandSequence(pattern: string, context: EvaluationContext): string[] {
   return Array.isArray(values)
     ? values.map(value => pattern.replace(match[0], String(value).padStart(width, "0")))
     : [pattern];
+}
+
+function compareValues(left: EvaluationValue, right: EvaluationValue): number {
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return String(left ?? "").localeCompare(String(right ?? ""));
+}
+
+function resourceAssetPath(value: string, namespace: string, root: string, extension: string): string {
+  const id = parseResourceIdValue(value, namespace);
+  if (!id) {
+    return "";
+  }
+  return `assets/${id.namespace}/${root}/${id.path}.${extension}`;
+}
+
+function parseResourceIdValue(value: string, namespace: string): { namespace: string; path: string } | null {
+  if (!value) {
+    return null;
+  }
+  const separator = value.indexOf(":");
+  const id = separator >= 0
+    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
+    : { namespace, path: value };
+  return id.namespace && id.path ? id : null;
+}
+
+function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function jsonEquals(left: JsonValue, right: JsonValue): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+    return left.every((item, index) => jsonEquals(item, right[index]));
+  }
+  if (isJsonObject(left) || isJsonObject(right)) {
+    if (!isJsonObject(left) || !isJsonObject(right)) {
+      return false;
+    }
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return leftKeys.length === rightKeys.length && leftKeys.every(key => jsonEquals(left[key] as JsonValue, right[key] as JsonValue));
+  }
+  return false;
 }
 
 function truthy(value: EvaluationValue): boolean {

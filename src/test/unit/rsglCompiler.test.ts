@@ -252,6 +252,69 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("evaluates match expressions, builtin constants, comparisons, and path helpers", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block paths {",
+      "  parent minecraft:block/cube_all",
+      "  raw_json {",
+      "    metadata: {",
+      "      model_path: model_path(minecraft:block/stone),",
+      "      texture_path: texture_path(block/stone),",
+      "      compare: 3 >= 2",
+      "    }",
+      "  }",
+      "}",
+      "blockstate orient {",
+      "  variants {",
+      "    for dir in HORIZONTAL {",
+      "      [facing=dir] -> {",
+      "        model: match dir {",
+      "          north | south -> minecraft:block/line",
+      "          _ -> minecraft:block/turn",
+      "        }",
+      "        y: yaw(dir)",
+      "        uvlock: dir != north",
+      "      }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/paths.json"))?.content, {
+      parent: "minecraft:block/cube_all",
+      metadata: {
+        ["model_path"]: "assets/minecraft/models/block/stone.json",
+        ["texture_path"]: "assets/minecraft/textures/block/stone.png",
+        compare: true
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("blockstates/orient.json"))?.content, {
+      variants: {
+        ["facing=east"]: {
+          model: "minecraft:block/turn",
+          y: 90,
+          uvlock: true
+        },
+        ["facing=north"]: {
+          model: "minecraft:block/line",
+          y: 0,
+          uvlock: false
+        },
+        ["facing=south"]: {
+          model: "minecraft:block/line",
+          y: 180,
+          uvlock: true
+        },
+        ["facing=west"]: {
+          model: "minecraft:block/turn",
+          y: 270,
+          uvlock: true
+        }
+      }
+    });
+  });
+
   it("expands for and if statements inside resource bodies", () => {
     const result = compileRsglModule(parseRsgl([
       "model block layered {",

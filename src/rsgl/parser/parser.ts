@@ -1289,7 +1289,7 @@ class RsglParser extends ParserContext {
         patterns.push(this.parseExpression({ stopTexts: ["|", "->"] }));
       }
       this.expectText("->", "Expected '->' in match arm.");
-      const value = this.parseExpression({ stopTexts: [",", "}"] });
+      const value = this.parseExpression({ stopTexts: [] });
       arms.push({
         kind: "MatchArm",
         patterns,
