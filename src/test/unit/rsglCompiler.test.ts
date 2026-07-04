@@ -958,8 +958,11 @@ describe("RSGL compiler", () => {
       "}",
       "atlas minecraft:blocks {",
       "  sources [",
+      "    { type: minecraft:directory, source: block/missing_directory },",
       "    { type: single, resource: minecraft:block/missing_single },",
-      "    { type: paletted_permutations, textures: [minecraft:block/missing_palette], permutations: { red: minecraft:block/missing_permutation } }",
+      "    { type: minecraft:unstitch, resource: minecraft:block/missing_unstitch, regions: [{ sprite: block/slice, x: 0, y: 0, width: 16, height: 16 }] },",
+      "    { type: filter, pattern: { namespace: \"[\", path: \"*\" } },",
+      "    { type: paletted_permutations, textures: [minecraft:block/missing_palette], palette_key: minecraft:block/missing_palette_key, permutations: { red: minecraft:block/missing_permutation } }",
       "  ]",
       "}",
       "mcmeta \"assets/minecraft/textures/block/missing_anim.png\" {",
@@ -985,14 +988,19 @@ describe("RSGL compiler", () => {
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
     assert.ok(codes.includes("rsgl.soundNotFound"));
     assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(codes.includes("rsgl.textureDirectoryNotFound"));
+    assert.ok(codes.includes("rsgl.invalidAtlasFilterPattern"));
     assert.ok(codes.includes("rsgl.invalidOverlayDirectory"));
     assert.ok(codes.includes("rsgl.invalidOverlayFormatRange"));
     assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
     assert.ok(checkedResources.includes("sound:custom:entity/example/ambient1"));
     assert.ok(checkedResources.includes("sound:custom:entity/example/ambient2"));
     assert.strictEqual(checkedResources.includes("sound:custom:entity/example/event"), false);
+    assert.ok(checkedResources.includes("textureDirectory:minecraft:block/missing_directory"));
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_single"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_unstitch"));
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_palette"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_palette_key"));
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_permutation"));
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_anim"));
   });

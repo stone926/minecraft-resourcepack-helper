@@ -1,6 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
-type ResourceExistenceKind = "model" | "texture" | "sound";
+type ResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound";
 
 type TextureVariableResolution =
   | { kind: "resolved"; texture: string }
@@ -196,6 +196,7 @@ function validateAtlasUnit(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  const namespace = unit.id?.namespace ?? "minecraft";
   const content = asObject(unit.content);
   const sources = Array.isArray(content?.sources) ? content.sources : [];
   for (const source of sources) {
@@ -203,16 +204,26 @@ function validateAtlasUnit(
     if (!sourceObject) {
       continue;
     }
-    if (sourceObject.type === "single" && typeof sourceObject.resource === "string") {
-      checkResourceExists("texture", sourceObject.resource, unit, undefined, options, diagnostics);
+    const sourceType = atlasSourceType(sourceObject.type);
+    if (sourceType === "directory" && typeof sourceObject.source === "string") {
+      checkResourceExists("textureDirectory", qualifyResourceId(sourceObject.source, namespace), unit, undefined, options, diagnostics);
     }
-    if (sourceObject.type === "paletted_permutations") {
+    if ((sourceType === "single" || sourceType === "unstitch") && typeof sourceObject.resource === "string") {
+      checkResourceExists("texture", qualifyResourceId(sourceObject.resource, namespace), unit, undefined, options, diagnostics);
+    }
+    if (sourceType === "filter") {
+      validateAtlasFilterPattern(sourceObject, unit, diagnostics);
+    }
+    if (sourceType === "paletted_permutations") {
       for (const texture of stringValues(sourceObject.textures)) {
-        checkResourceExists("texture", texture, unit, undefined, options, diagnostics);
+        checkResourceExists("texture", qualifyResourceId(texture, namespace), unit, undefined, options, diagnostics);
+      }
+      if (typeof sourceObject.palette_key === "string") {
+        checkResourceExists("texture", qualifyResourceId(sourceObject.palette_key, namespace), unit, undefined, options, diagnostics);
       }
       for (const texture of Object.values(asObject(sourceObject.permutations) ?? {})) {
         if (typeof texture === "string") {
-          checkResourceExists("texture", texture, unit, undefined, options, diagnostics);
+          checkResourceExists("texture", qualifyResourceId(texture, namespace), unit, undefined, options, diagnostics);
         }
       }
     }
@@ -343,6 +354,40 @@ function textureIdFromMcmetaOutputPath(outputPath: string): string | null {
   return match ? `${match[1]}:${match[2]}` : null;
 }
 
+function atlasSourceType(value: JsonValue | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return value.startsWith("minecraft:") ? value.slice("minecraft:".length) : value;
+}
+
+function validateAtlasFilterPattern(
+  sourceObject: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const pattern = asObject(sourceObject.pattern);
+  if (!pattern) {
+    return;
+  }
+  for (const key of ["namespace", "path"]) {
+    const value = pattern[key];
+    if (typeof value !== "string") {
+      continue;
+    }
+    try {
+      new RegExp(value);
+    } catch {
+      diagnostics.push({
+        code: "rsgl.invalidAtlasFilterPattern",
+        message: `Atlas filter ${key} pattern is not a valid regular expression.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
+  }
+}
+
 function textureVariableReference(value: JsonValue): string | null {
   return typeof value === "string" && value.startsWith("#") && value.length > 1
     ? value.slice(1)
@@ -414,6 +459,9 @@ function resourceNotFoundCode(kind: ResourceExistenceKind): string {
   if (kind === "model") {
     return "rsgl.modelNotFound";
   }
+  if (kind === "textureDirectory") {
+    return "rsgl.textureDirectoryNotFound";
+  }
   if (kind === "texture") {
     return "rsgl.textureNotFound";
   }
@@ -423,6 +471,9 @@ function resourceNotFoundCode(kind: ResourceExistenceKind): string {
 function resourceLabel(kind: ResourceExistenceKind): string {
   if (kind === "model") {
     return "Model";
+  }
+  if (kind === "textureDirectory") {
+    return "Texture directory";
   }
   if (kind === "texture") {
     return "Texture";
