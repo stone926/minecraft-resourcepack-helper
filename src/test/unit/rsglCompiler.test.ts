@@ -1653,7 +1653,8 @@ describe("RSGL compiler", () => {
     const result = compileRsglModule(parseRsgl([
       "pack {",
       "  description \"Generated pack\"",
-      "  pack_format 88",
+      "  min_format [88, 0]",
+      "  max_format [88, 0]",
       "}",
       "lang en_us {",
       "  \"block.minecraft.stone\" \"Stone\"",
@@ -1681,7 +1682,8 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(pack?.content, {
       pack: {
         description: "Generated pack",
-        ["pack_format"]: 88
+        ["min_format"]: [88, 0],
+        ["max_format"]: [88, 0]
       }
     });
 
@@ -1749,6 +1751,44 @@ describe("RSGL compiler", () => {
         ["pack_format"]: 12
       }
     });
+  });
+
+  it("validates pack metadata formats and filters", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format [75, 0]",
+      "pack {",
+      "  pack {",
+      "    description: \"Invalid\"",
+      "    min_format: [66, 0]",
+      "    max_format: [70, 0]",
+      "    pack_format: 88",
+      "    supported_formats: [1, 63]",
+      "  }",
+      "  filter {",
+      "    block: [{ namespace: \"[\", path: \"*\" }]",
+      "  }",
+      "  overlays {",
+      "    entries: [",
+      "      { directory: \"legacy\", formats: [2, 1] },",
+      "      { directory: \"old\", formats: [1, 64] }",
+      "    ]",
+      "  }",
+      "}"
+    ].join("\n")));
+    const modernPackFormat = compileRsglModule(parseRsgl([
+      "pack {",
+      "  description \"Invalid\"",
+      "  pack_format 88",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.unsupportedPackFormatFields"));
+    assert.ok(codes.includes("rsgl.packOutsideTargetFormat"));
+    assert.ok(codes.includes("rsgl.invalidPackFilterPattern"));
+    assert.ok(codes.includes("rsgl.invalidOverlayFormatRange"));
+    assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
+    assert.ok(modernPackFormat.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.invalidPackFormatField"));
   });
 
   it("lowers overlay blocks to prefixed resources and pack metadata", () => {

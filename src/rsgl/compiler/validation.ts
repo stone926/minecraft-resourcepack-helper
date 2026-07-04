@@ -1,6 +1,7 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
+import { validatePackMetadata } from "./packMetadataValidation";
 
 export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound";
 export type RsglResourceContentKind = "model";
@@ -1297,25 +1298,7 @@ function validatePackUnit(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const content = asObject(unit.content);
-  const entries = Array.isArray(asObject(content?.overlays)?.entries)
-    ? asObject(content?.overlays)?.entries as JsonValue[]
-    : [];
-  for (const entry of entries) {
-    const overlay = asObject(entry);
-    if (!overlay) {
-      continue;
-    }
-    if (typeof overlay.directory === "string" && !/^[a-z0-9_-]+$/.test(overlay.directory)) {
-      diagnostics.push({
-        code: "rsgl.invalidOverlayDirectory",
-        message: `Overlay directory '${overlay.directory}' must contain only lowercase letters, numbers, '_' or '-'.`,
-        severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
-      });
-    }
-    validateOverlayRange(overlay, unit, options, diagnostics);
-  }
+  validatePackMetadata(unit, options, diagnostics);
 }
 
 function checkResourceExists(
@@ -1527,49 +1510,6 @@ function stringValues(value: JsonValue | undefined): string[] {
     return value.filter((item): item is string => typeof item === "string");
   }
   return [];
-}
-
-function validateOverlayRange(
-  overlay: Record<string, JsonValue>,
-  unit: ResourceUnit,
-  options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  const min = packFormatValue(overlay.min_format);
-  const max = packFormatValue(overlay.max_format);
-  const hasCompleteRange = min !== null && max !== null;
-  const hasValidRange = hasCompleteRange && comparePackFormats(min, max) <= 0;
-  if (hasCompleteRange && !hasValidRange) {
-    diagnostics.push({
-      code: "rsgl.invalidOverlayFormatRange",
-      message: "Overlay min_format must not be greater than max_format.",
-      severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-  const target = options.targetPackFormat ? [options.targetPackFormat.major, options.targetPackFormat.minor ?? 0] as const : null;
-  if (target && hasValidRange && (comparePackFormats(target, min) < 0 || comparePackFormats(target, max) > 0)) {
-    diagnostics.push({
-      code: "rsgl.overlayOutsideTargetFormat",
-      message: "Overlay format range does not include the compile target pack format.",
-      severity: "warning",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-}
-
-function packFormatValue(value: JsonValue | undefined): readonly [number, number] | null {
-  if (typeof value === "number") {
-    return [value, 0];
-  }
-  if (Array.isArray(value) && typeof value[0] === "number") {
-    return [value[0], typeof value[1] === "number" ? value[1] : 0];
-  }
-  return null;
-}
-
-function comparePackFormats(left: readonly [number, number], right: readonly [number, number]): number {
-  return left[0] === right[0] ? left[1] - right[1] : left[0] - right[0];
 }
 
 function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
