@@ -39,7 +39,10 @@ const enumConstants = [
   "fence",
   "fence_gate",
   "door",
-  "trapdoor"
+  "trapdoor",
+  "button",
+  "pressure_plate",
+  "sign"
 ];
 
 export function createBuiltinSymbols(): RsglSymbol[] {

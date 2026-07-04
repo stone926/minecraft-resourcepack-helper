@@ -4,8 +4,11 @@ import { blockstateVariantKey } from "./blockstateKeys";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 
 const facings = ["north", "east", "south", "west"] as const;
+type Facing = typeof facings[number];
 const halves = ["bottom", "top"] as const;
 const shapes = ["straight", "inner_left", "inner_right", "outer_left", "outer_right"] as const;
+const buttonFaces = ["ceiling", "floor", "wall"] as const;
+type ButtonFace = typeof buttonFaces[number];
 
 export interface StairsBlockstateModels {
   base: string;
@@ -47,6 +50,24 @@ export interface TrapdoorBlockstateModels {
   bottom: string;
   top: string;
   open: string;
+}
+
+export interface ButtonBlockstateModels {
+  base: string;
+  pressed: string;
+}
+
+export interface PressurePlateBlockstateModels {
+  up: string;
+  down: string;
+}
+
+export interface SignBlockstateModels {
+  rotations: [string, string, string, string];
+}
+
+export interface WallSignBlockstateModels {
+  model: string;
 }
 
 export interface WallBlockstateModels {
@@ -136,6 +157,19 @@ const trapdoorClosedYaw: Record<string, number> = {
 };
 
 const trapdoorTopOpenYaw: Record<string, number> = {
+  north: 180,
+  east: 270,
+  south: 0,
+  west: 90
+};
+
+const buttonYaw: Record<ButtonFace, Record<Facing, number>> = {
+  ceiling: { north: 180, east: 270, south: 0, west: 90 },
+  floor: { north: 0, east: 90, south: 180, west: 270 },
+  wall: { north: 0, east: 90, south: 180, west: 270 }
+};
+
+const wallSignYaw: Record<Facing, number> = {
   north: 180,
   east: 270,
   south: 0,
@@ -366,6 +400,141 @@ export function createTrapdoorBlockstateContent(models: TrapdoorBlockstateModels
         variants[`facing=${facing},half=${half},open=${open}`] = entry;
       }
     }
+  }
+  return { variants };
+}
+
+export function createButtonBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createButtonBlockstateContent({
+    base: `${id.namespace}:block/${id.path}`,
+    pressed: `${id.namespace}:block/${id.path}_pressed`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createButtonBlockstateContent(models: ButtonBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const face of buttonFaces) {
+    for (const facing of facings) {
+      for (const powered of [false, true]) {
+        const entry: Record<string, JsonValue> = {
+          model: powered ? models.pressed : models.base
+        };
+        if (face === "ceiling") {
+          entry.x = 180;
+        } else if (face === "wall") {
+          entry.x = 90;
+          entry.uvlock = true;
+        }
+        const y = buttonYaw[face][facing];
+        if (y !== 0) {
+          entry.y = y;
+        }
+        variants[`face=${face},facing=${facing},powered=${powered}`] = entry;
+      }
+    }
+  }
+  return { variants };
+}
+
+export function createPressurePlateBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createPressurePlateBlockstateContent({
+    up: `${id.namespace}:block/${id.path}`,
+    down: `${id.namespace}:block/${id.path}_down`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createPressurePlateBlockstateContent(models: PressurePlateBlockstateModels): Record<string, JsonValue> {
+  return {
+    variants: {
+      "powered=false": { model: models.up },
+      "powered=true": { model: models.down }
+    }
+  };
+}
+
+export function createSignBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createSignBlockstateContent({
+    rotations: [
+      `${id.namespace}:block/${id.path}_rot_0`,
+      `${id.namespace}:block/${id.path}_rot_1`,
+      `${id.namespace}:block/${id.path}_rot_2`,
+      `${id.namespace}:block/${id.path}_rot_3`
+    ]
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createSignBlockstateContent(models: SignBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (let rotation = 0; rotation < 16; rotation += 1) {
+    const entry: Record<string, JsonValue> = {
+      model: models.rotations[rotation % models.rotations.length]
+    };
+    const y = Math.floor(rotation / models.rotations.length) * 90;
+    if (y !== 0) {
+      entry.y = y;
+    }
+    variants[`rotation=${rotation}`] = entry;
+  }
+  return { variants };
+}
+
+export function createWallSignBlockstate(
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  return blockstateUnit(idValue, namespace, createWallSignBlockstateContent({
+    model: `${id.namespace}:block/${id.path}`
+  }), sourceFile, sourceRange, "builtin", expansionStack);
+}
+
+export function createWallSignBlockstateContent(models: WallSignBlockstateModels): Record<string, JsonValue> {
+  const variants: Record<string, JsonValue> = {};
+  for (const facing of facings) {
+    const entry: Record<string, JsonValue> = {
+      model: models.model
+    };
+    const y = wallSignYaw[facing];
+    if (y !== 0) {
+      entry.y = y;
+    }
+    variants[`facing=${facing}`] = entry;
   }
   return { variants };
 }

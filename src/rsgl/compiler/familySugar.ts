@@ -3,16 +3,30 @@ import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { ExpansionFrame, JsonValue, ResourceUnit, RsglMapping } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
+  createButtonBlockstate,
   createDoorBlockstate,
   createFenceBlockstate,
   createFenceGateBlockstate,
   createItemMapping,
+  createPressurePlateBlockstate,
   createSlabBlockstate,
+  createSignBlockstate,
   createStairsBlockstate,
-  createTrapdoorBlockstate
+  createTrapdoorBlockstate,
+  createWallSignBlockstate
 } from "./templates";
 
-type SupportedFamilyMember = "planks" | "slab" | "stairs" | "fence" | "fence_gate" | "door" | "trapdoor";
+type SupportedFamilyMember =
+  | "planks"
+  | "slab"
+  | "stairs"
+  | "fence"
+  | "fence_gate"
+  | "door"
+  | "trapdoor"
+  | "button"
+  | "pressure_plate"
+  | "sign";
 
 export interface RsglFamilySugarOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -133,6 +147,46 @@ function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContex
     ]);
   }
 
+  if (member === "button") {
+    const id = `${family.baseName}_button`;
+    const textures = { texture: family.texture };
+    return compact([
+      createCubeModel(family, id, "minecraft:block/button", textures),
+      createCubeModel(family, `${id}_pressed`, "minecraft:block/button_pressed", textures),
+      createCubeModel(family, `${id}_inventory`, "minecraft:block/button_inventory", textures),
+      createButtonBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_inventory`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "pressure_plate") {
+    const id = `${family.baseName}_pressure_plate`;
+    const textures = { texture: family.texture };
+    return compact([
+      createCubeModel(family, id, "minecraft:block/pressure_plate_up", textures),
+      createCubeModel(family, `${id}_down`, "minecraft:block/pressure_plate_down", textures),
+      createPressurePlateBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "sign") {
+    const id = `${family.baseName}_sign`;
+    const wallId = `${family.baseName}_wall_sign`;
+    const textures = signTextures(family, id);
+    return compact([
+      createCubeModel(family, `${id}_rot_0`, "minecraft:block/template_sign_rot_0", textures),
+      createCubeModel(family, `${id}_rot_1`, "minecraft:block/template_sign_rot_1", textures),
+      createCubeModel(family, `${id}_rot_2`, "minecraft:block/template_sign_rot_2", textures),
+      createCubeModel(family, `${id}_rot_3`, "minecraft:block/template_sign_rot_3", textures),
+      createCubeModel(family, wallId, "minecraft:block/template_wall_sign", textures),
+      createSignBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createWallSignBlockstate(`${family.namespace}:${wallId}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemModel(family, id, "minecraft:item/generated", { layer0: `${family.namespace}:item/${id}` }),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:item/${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
   const id = `${family.baseName}_fence_gate`;
   return compact([
     createCubeModel(family, id, "minecraft:block/template_fence_gate", { texture: family.texture }),
@@ -211,7 +265,7 @@ function textureValue(statement: SugarDeclNode, context: EvaluationContext, base
     : undefined;
   return typeof value === "string"
     ? normalizeResourceValue(value, context.namespace, "block")
-    : `${context.namespace}:block/${baseName}`;
+    : `${context.namespace}:block/${baseName}_planks`;
 }
 
 function slabTextures(texture: string): Record<string, JsonValue> {
@@ -226,6 +280,13 @@ function doorTextures(family: FamilyContext): Record<string, JsonValue> {
   return {
     bottom: `${family.namespace}:block/${family.baseName}_door_bottom`,
     top: `${family.namespace}:block/${family.baseName}_door_top`
+  };
+}
+
+function signTextures(family: FamilyContext, id: string): Record<string, JsonValue> {
+  return {
+    all: `${family.namespace}:block/${id}`,
+    particle: family.texture
   };
 }
 
@@ -284,7 +345,10 @@ function isSupportedFamilyMember(value: string): value is SupportedFamilyMember 
     || value === "fence"
     || value === "fence_gate"
     || value === "door"
-    || value === "trapdoor";
+    || value === "trapdoor"
+    || value === "button"
+    || value === "pressure_plate"
+    || value === "sign";
 }
 
 function compact<T>(values: Array<T | null>): T[] {

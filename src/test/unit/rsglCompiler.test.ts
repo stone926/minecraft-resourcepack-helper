@@ -398,6 +398,90 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers button, pressure plate, and sign family members", () => {
+    const result = compileRsglModule(parseRsgl([
+      "wood_family acacia {",
+      "  generate [button, pressure_plate, sign]",
+      "}"
+    ].join("\n")));
+    const outputPaths = result.units.map(unit => unit.outputPath).sort();
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(outputPaths.length, 18);
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_button.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_pressure_plate.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_wall_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_button.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_pressure_plate.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/acacia_sign.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_sign.json"));
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_button_pressed.json"))?.content, {
+      parent: "minecraft:block/button_pressed",
+      textures: {
+        texture: "minecraft:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_pressure_plate_down.json"))?.content, {
+      parent: "minecraft:block/pressure_plate_down",
+      textures: {
+        texture: "minecraft:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_sign_rot_2.json"))?.content, {
+      parent: "minecraft:block/template_sign_rot_2",
+      textures: {
+        all: "minecraft:block/acacia_sign",
+        particle: "minecraft:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_wall_sign.json"))?.content, {
+      parent: "minecraft:block/template_wall_sign",
+      textures: {
+        all: "minecraft:block/acacia_sign",
+        particle: "minecraft:block/acacia_planks"
+      }
+    });
+
+    const buttonVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_button.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(buttonVariants).length, 24);
+    assert.deepStrictEqual(buttonVariants["face=wall,facing=west,powered=true"], {
+      model: "minecraft:block/acacia_button_pressed",
+      x: 90,
+      uvlock: true,
+      y: 270
+    });
+
+    const poweredFalse = "powered=false";
+    const poweredTrue = "powered=true";
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_pressure_plate.json"))?.content, {
+      variants: {
+        [poweredFalse]: { model: "minecraft:block/acacia_pressure_plate" },
+        [poweredTrue]: { model: "minecraft:block/acacia_pressure_plate_down" }
+      }
+    });
+
+    const signVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.strictEqual(Object.keys(signVariants).length, 16);
+    assert.deepStrictEqual(signVariants["rotation=12"], {
+      model: "minecraft:block/acacia_sign_rot_0",
+      y: 270
+    });
+    const wallSignVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_wall_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
+    assert.deepStrictEqual(wallSignVariants["facing=east"], {
+      model: "minecraft:block/acacia_wall_sign",
+      y: 270
+    });
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_sign.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:item/acacia_sign"
+      }
+    });
+  });
+
   it("lowers item range and select fragments", () => {
     const result = compileRsglModule(parseRsgl([
       "table potionCases {",
