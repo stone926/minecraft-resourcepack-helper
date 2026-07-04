@@ -277,6 +277,36 @@ describe("RSGL semantic model", () => {
     assert.ok(codes.includes("rsgl.missingArgument"));
   });
 
+  it("validates imported fragment signatures inside blockstate sections", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { lampFacing } from \"./fragments.rsgl\"",
+          "blockstate lamp {",
+          "  variants {",
+          "    use lampFacing()",
+          "  }",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "fragment lampFacing(modelId: ModelId) {",
+          "  variants {",
+          "    { facing: north } -> { model: modelId }",
+          "  }",
+          "}"
+        ].join("\n"))
+      }
+    ]);
+
+    assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingArgument"));
+  });
+
   it("resolves export-star re-exports", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const barrelFile = path.resolve("pack", "barrel.rsgl");

@@ -15,6 +15,7 @@ import {
   SugarDeclNode,
   TableDeclNode,
   TopLevelStatementNode,
+  UseDeclNode,
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
@@ -42,6 +43,7 @@ import {
   compileBlockstateValueFragment,
   mergeBlockstateContent,
   mergeBlockstateFragment,
+  RsglBlockstateFragment,
   RsglBlockstateFragmentOptions
 } from "./blockstateFragments";
 import { blockstateVariantKey } from "./blockstateKeys";
@@ -114,6 +116,11 @@ type RsglCompileContext = EvaluationContext & {
 
 type TemplateCallParameter = RsglCallableParameter & {
   parameterNode: ParameterNode;
+};
+
+type FragmentExpansion = {
+  definition: RsglFragmentDefinition;
+  context: RsglCompileContext;
 };
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
@@ -412,7 +419,7 @@ class RsglCompiler {
     } else if (statement.kind === "MultipartSection") {
       mergeBlockstateFragment(content, { multipart: this.compileMultipartEntries(statement.entries, context) }, statement.range, fragmentOptions);
     } else if (statement.kind === "UseDecl") {
-      mergeBlockstateFragment(content, compileBlockstateUseFragment(statement, context, fragmentOptions), statement.range, fragmentOptions);
+      mergeBlockstateFragment(content, this.compileBlockstateUse(statement, context), statement.range, fragmentOptions);
     } else if (statement.kind === "ForStmt") {
       const iterable = evaluateExpression(statement.iterable, context);
       if (!Array.isArray(iterable)) {
@@ -473,7 +480,7 @@ class RsglCompiler {
         ? fragmentValue.value
         : normalizeJsonValue(evaluateExpression(statement.value, context));
     } else if (statement.kind === "UseDecl") {
-      const fragment = compileBlockstateUseFragment(statement, context, this.blockstateFragmentOptions());
+      const fragment = this.compileBlockstateUse(statement, context);
       if (fragment.multipart) {
         this.error("rsgl.incompatibleBlockstateFragment", "Multipart template fragments cannot be used inside a variants section.", statement.range);
       }
@@ -536,7 +543,7 @@ class RsglCompiler {
       }
       entries.push(value);
     } else if (statement.kind === "UseDecl") {
-      const fragment = compileBlockstateUseFragment(statement, context, this.blockstateFragmentOptions());
+      const fragment = this.compileBlockstateUse(statement, context);
       if (fragment.variants) {
         this.error("rsgl.incompatibleBlockstateFragment", "Variant template fragments cannot be used inside a multipart section.", statement.range);
       }
@@ -841,6 +848,46 @@ class RsglCompiler {
     context: RsglCompileContext,
     kind?: "item" | JsonResourceFragmentKind
   ): Record<string, JsonValue> | undefined {
+    const expansion = this.createFragmentExpansion(useStatement, context);
+    return expansion
+      ? this.resourceBodyToObject(expansion.definition.node.body, expansion.context, this.resourceBodyFragmentOptions(kind))
+      : undefined;
+  }
+
+  private compileBlockstateUse(
+    useStatement: UseDeclNode,
+    context: RsglCompileContext
+  ): RsglBlockstateFragment {
+    const builtInFragment = compileBlockstateUseFragment(useStatement, context, this.blockstateFragmentOptions());
+    if (builtInFragment.variants || builtInFragment.multipart) {
+      return builtInFragment;
+    }
+    return this.compileBlockstateUserFragment(useStatement, context) ?? {};
+  }
+
+  private compileBlockstateUserFragment(
+    useStatement: UseDeclNode,
+    context: RsglCompileContext
+  ): RsglBlockstateFragment | undefined {
+    const expansion = this.createFragmentExpansion(useStatement, context);
+    if (!expansion) {
+      return undefined;
+    }
+    const content = this.compileBlockstateBody(expansion.definition.node.body, expansion.context);
+    const fragment: RsglBlockstateFragment = {};
+    if (isJsonObject(content.variants)) {
+      fragment.variants = content.variants;
+    }
+    if (Array.isArray(content.multipart)) {
+      fragment.multipart = content.multipart;
+    }
+    return fragment;
+  }
+
+  private createFragmentExpansion(
+    useStatement: UseDeclNode,
+    context: RsglCompileContext
+  ): FragmentExpansion | undefined {
     const expression = useStatement.expression;
     if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
       return undefined;
@@ -850,7 +897,6 @@ class RsglCompiler {
     if (!fragment) {
       return undefined;
     }
-
     const recursionKey = `fragment ${fragment.name}`;
     if ((context.expansionStack ?? []).some(frame => frame.label === recursionKey)) {
       this.error("rsgl.fragmentRecursion", `Fragment '${fragment.name}' cannot recursively expand itself.`, expression.range);
@@ -884,7 +930,7 @@ class RsglCompiler {
         { label: recursionKey, sourceRange: expression.range }
       ]
     });
-    return this.resourceBodyToObject(fragment.node.body, fragmentContext, this.resourceBodyFragmentOptions(kind));
+    return { definition: fragment, context: fragmentContext };
   }
 
   private bindCallableValues(

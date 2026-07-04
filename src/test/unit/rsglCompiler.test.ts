@@ -1170,6 +1170,53 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("expands user blockstate section fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "fragment lampFacing(modelId: ModelId, states: Json = HORIZONTAL) {",
+      "  variants {",
+      "    for facing in states {",
+      "      { facing: facing } -> { model: modelId, y: yaw(facing) }",
+      "    }",
+      "  }",
+      "}",
+      "fragment connectedPane(post: ModelId, side: ModelId) {",
+      "  multipart {",
+      "    apply { model: post }",
+      "    for facing in [north, east] {",
+      "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
+      "    }",
+      "  }",
+      "}",
+      "blockstate lamp {",
+      "  variants {",
+      "    use lampFacing(minecraft:block/lamp)",
+      "  }",
+      "}",
+      "blockstate pane {",
+      "  use connectedPane(minecraft:block/pane_post, minecraft:block/pane_side)",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const lamp = result.units.find(unit => unit.outputPath.endsWith("lamp.json"));
+    const pane = result.units.find(unit => unit.outputPath.endsWith("pane.json"));
+    assert.deepStrictEqual(lamp?.content, {
+      variants: {
+        ["facing=north"]: { model: "minecraft:block/lamp", y: 0 },
+        ["facing=east"]: { model: "minecraft:block/lamp", y: 90 },
+        ["facing=south"]: { model: "minecraft:block/lamp", y: 180 },
+        ["facing=west"]: { model: "minecraft:block/lamp", y: 270 }
+      }
+    });
+    assert.deepStrictEqual(pane?.content, {
+      multipart: [
+        { apply: { model: "minecraft:block/pane_post" } },
+        { when: { north: true }, apply: { model: "minecraft:block/pane_side", y: 0 } },
+        { when: { east: true }, apply: { model: "minecraft:block/pane_side", y: 90 } }
+      ]
+    });
+  });
+
   it("reports incompatible blockstate fragment use in section contexts", () => {
     const result = compileRsglModule(parseRsgl([
       "blockstate broken {",
@@ -1512,6 +1559,48 @@ describe("RSGL compiler", () => {
       parent: "minecraft:item/generated",
       textures: {
         layer0: "library:block/dirt"
+      }
+    });
+  });
+
+  it("expands imported blockstate section fragments with definition-file defaults", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "namespace app",
+          "import { lampFacing } from \"./fragments.rsgl\"",
+          "blockstate lamp {",
+          "  variants {",
+          "    use lampFacing()",
+          "  }",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "namespace library",
+          "let defaultModel = block/lamp",
+          "fragment lampFacing(modelId: ModelId = defaultModel) {",
+          "  variants {",
+          "    { facing: north } -> { model: modelId }",
+          "  }",
+          "}",
+          "export { lampFacing }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/app/blockstates/lamp.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        ["facing=north"]: { model: "library:block/lamp" }
       }
     });
   });

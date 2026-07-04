@@ -151,6 +151,8 @@ class ResolvedImportCallValidator {
     if (statement.kind === "VariantEntry") {
       this.validateExpression(statement.state);
       this.validateExpression(statement.value);
+    } else if (statement.kind === "UseDecl") {
+      this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
       this.validateExpression(statement.iterable);
       this.validateBody(statement.body);
@@ -177,6 +179,8 @@ class ResolvedImportCallValidator {
         this.validateExpression(statement.when);
       }
       this.validateExpression(statement.apply);
+    } else if (statement.kind === "UseDecl") {
+      this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
       this.validateExpression(statement.iterable);
       this.validateBody(statement.body);
