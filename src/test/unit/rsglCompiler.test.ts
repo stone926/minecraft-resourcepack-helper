@@ -1,6 +1,8 @@
 import * as assert from "node:assert";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { compileRsglModule, compileRsglProgram, emitRsglFiles, stableJsonStringify } from "../../rsgl/compiler";
+import { compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, stableJsonStringify, writeRsglFiles } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 
 describe("RSGL compiler", () => {
@@ -95,6 +97,48 @@ describe("RSGL compiler", () => {
       id: "minecraft:block/stone",
       sourceMap: "assets/minecraft/models/block/stone.json.rsgl.map"
     }]);
+  });
+
+  it("plans and writes emitted files to a pack directory", () => {
+    const root = createTempDir();
+    try {
+      const files = [
+        {
+          outputPath: "assets/minecraft/models/block/stone.json",
+          content: "{\n  \"parent\": \"minecraft:block/cube_all\"\n}\n",
+          kind: "resource" as const
+        },
+        {
+          outputPath: "assets/minecraft/models/block/stone.json.rsgl.map",
+          content: "{\n  \"version\": 1\n}\n",
+          kind: "sourceMap" as const
+        }
+      ];
+
+      const dryRun = createRsglWritePlan(files, root);
+      assert.deepStrictEqual(dryRun.summary, { create: 2, update: 0, unchanged: 0 });
+      assert.strictEqual(fs.existsSync(path.join(root, files[0].outputPath)), false);
+
+      const written = writeRsglFiles(files, root);
+      assert.deepStrictEqual(written.summary, { create: 2, update: 0, unchanged: 0 });
+      assert.strictEqual(fs.readFileSync(path.join(root, files[0].outputPath), "utf8"), files[0].content);
+
+      const unchanged = createRsglWritePlan(files, root);
+      assert.deepStrictEqual(unchanged.summary, { create: 0, update: 0, unchanged: 2 });
+
+      const updatedFiles = [{ ...files[0], content: `${files[0].content}\n` }];
+      const update = createRsglWritePlan(updatedFiles, root, { includePreviousContent: true });
+      assert.deepStrictEqual(update.summary, { create: 0, update: 1, unchanged: 0 });
+      assert.strictEqual(update.entries[0].previousContent, files[0].content);
+      assert.deepStrictEqual(update.entries[0].diff, { addedLines: 1, removedLines: 0 });
+
+      assert.throws(
+        () => createRsglWritePlan([{ ...files[0], outputPath: "../outside.json" }], root),
+        /Unsafe RSGL output path/
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("lowers stairs, slab, fence, and wall sugar to blockstates", () => {
@@ -481,3 +525,7 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
   });
 });
+
+function createTempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-"));
+}

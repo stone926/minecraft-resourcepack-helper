@@ -5,6 +5,8 @@ export type { RsglEmittedFile, RsglEmitOptions } from "./emit";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
 export { validateResourceUnits } from "./validation";
 export type { RsglResourceValidationOptions } from "./validation";
+export { createRsglWritePlan, writeRsglFiles } from "./write";
+export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export type {
   ExpansionFrame,
   JsonValue,
