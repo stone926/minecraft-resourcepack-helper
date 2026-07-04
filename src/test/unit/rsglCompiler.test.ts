@@ -476,6 +476,56 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use cubeModel"]);
   });
 
+  it("uses local and imported tables during compilation", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const tablesFile = path.resolve("pack", "tables.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { woods as importedWoods, defaultParent } from \"./tables.rsgl\"",
+          "table localWoods { spruce: minecraft:block/spruce_planks }",
+          "model block acacia_planks {",
+          "  parent defaultParent",
+          "  textures { all: importedWoods.acacia }",
+          "}",
+          "model block spruce_planks {",
+          "  parent defaultParent",
+          "  textures { all: localWoods.spruce }",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: tablesFile,
+        module: parseRsgl([
+          "namespace custom",
+          "let defaultParent = minecraft:block/cube_all",
+          "table woods {",
+          "  acacia: block/acacia_planks",
+          "}"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/models/block/acacia_planks.json",
+      "assets/minecraft/models/block/spruce_planks.json"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("acacia_planks.json"))?.content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "custom:block/acacia_planks"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("spruce_planks.json"))?.content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/spruce_planks"
+      }
+    });
+  });
+
   it("reports output conflicts across compiled RSGL files", () => {
     const firstFile = path.resolve("pack", "first.rsgl");
     const secondFile = path.resolve("pack", "second.rsgl");

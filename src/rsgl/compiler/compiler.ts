@@ -9,6 +9,7 @@ import {
   ResourceDeclNode,
   RsglModule,
   SugarDeclNode,
+  TableDeclNode,
   TemplateDeclNode,
   TopLevelStatementNode,
   VariantBodyNode,
@@ -58,12 +59,18 @@ interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
   externalTemplates?: RsglTemplateDefinition[];
+  externalValues?: RsglExternalValueDefinition[];
 }
 
 interface RsglTemplateDefinition {
   name: string;
   node: TemplateDeclNode;
   fileName: string;
+}
+
+interface RsglExternalValueDefinition {
+  name: string;
+  value: EvaluationValue;
 }
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
@@ -107,7 +114,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     const compiler = new RsglCompiler(model.module, {
       fileName: model.fileName,
       namespace: options.namespace ?? model.namespace ?? "minecraft",
-      externalTemplates: collectImportedTemplates(model, program)
+      externalTemplates: collectImportedTemplates(model, program),
+      externalValues: collectImportedValues(model, program)
     });
     const result = compiler.compile();
     units.push(...result.units);
@@ -160,6 +168,8 @@ class RsglCompiler {
       this.compileSugarDecl(statement, context);
     } else if (statement.kind === "LetDecl") {
       this.compileLetDecl(statement, context);
+    } else if (statement.kind === "TableDecl") {
+      this.compileTableDecl(statement, context);
     } else if (statement.kind === "UseDecl") {
       this.compileUseDecl(statement.expression, context);
     } else if (statement.kind === "ForStmt") {
@@ -529,6 +539,12 @@ class RsglCompiler {
     }
   }
 
+  private compileTableDecl(statement: TableDeclNode, context: EvaluationContext): void {
+    if (statement.name) {
+      context.variables.set(statement.name.text, normalizeJsonValue(evaluateExpression(statement.body, context)));
+    }
+  }
+
   private compileUseDecl(expression: ExprNode, context: EvaluationContext): void {
     if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
       return;
@@ -628,7 +644,9 @@ class RsglCompiler {
   private createRootContext(): EvaluationContext {
     return {
       namespace: this.options.namespace,
-      variables: new Map<string, EvaluationValue>(),
+      variables: new Map<string, EvaluationValue>(
+        (this.options.externalValues ?? []).map(item => [item.name, item.value])
+      ),
       sourceFile: this.options.fileName,
       mappingReason: "direct",
       expansionStack: []
@@ -714,6 +732,49 @@ function collectImportedTemplates(model: RsglSemanticModel, program: RsglProgram
   return templates;
 }
 
+function collectImportedValues(model: RsglSemanticModel, program: RsglProgram): RsglExternalValueDefinition[] {
+  const modelsByFile = new Map(program.models.map(item => [normalizeFileName(item.fileName), item]));
+  const currentFile = normalizeFileName(model.fileName);
+  const values: RsglExternalValueDefinition[] = [];
+
+  for (const record of model.imports) {
+    const targetFile = record.resolvedFileName
+      ? normalizeFileName(record.resolvedFileName)
+      : program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === record.source)?.to;
+    const targetModel = targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
+    if (!targetModel) {
+      continue;
+    }
+
+    const exportedValues = evaluateTopLevelValues(targetModel);
+    for (const item of record.namedImports) {
+      if (exportedValues.has(item.imported)) {
+        values.push({ name: item.local, value: exportedValues.get(item.imported) });
+      }
+    }
+  }
+
+  return values;
+}
+
+function evaluateTopLevelValues(model: RsglSemanticModel): Map<string, EvaluationValue> {
+  const context: EvaluationContext = {
+    namespace: model.namespace ?? "minecraft",
+    variables: new Map<string, EvaluationValue>(),
+    sourceFile: model.fileName,
+    mappingReason: "direct",
+    expansionStack: []
+  };
+  for (const statement of model.module.statements) {
+    if (isLetDeclNode(statement) && statement.name) {
+      context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
+    } else if (isTableDeclNode(statement) && statement.name) {
+      context.variables.set(statement.name.text, normalizeJsonValue(evaluateExpression(statement.body, context)));
+    }
+  }
+  return context.variables;
+}
+
 function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
   const diagnostics: RsglCompileDiagnostic[] = [];
   const seen = new Map<string, ResourceUnit>();
@@ -739,4 +800,12 @@ function normalizeFileName(fileName: string): string {
 
 function isTemplateDeclNode(node: unknown): node is TemplateDeclNode {
   return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "TemplateDecl");
+}
+
+function isTableDeclNode(node: unknown): node is TableDeclNode {
+  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "TableDecl");
+}
+
+function isLetDeclNode(node: unknown): node is LetDeclNode {
+  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "LetDecl");
 }
