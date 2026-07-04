@@ -1926,6 +1926,39 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("sound:custom:entity/example/valid"));
   });
 
+  it("validates sound metadata through compiler hooks", () => {
+    const result = compileRsglModule(parseRsgl([
+      "sounds custom {",
+      "  \"entity.example\" {",
+      "    sounds: [",
+      "      \"entity/example/unreadable\",",
+      "      \"entity/example/bad_shape\",",
+      "      \"entity/example/valid\"",
+      "    ]",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true,
+      soundMetadata: id => {
+        if (id.endsWith("unreadable")) {
+          return null;
+        }
+        if (id.endsWith("bad_shape")) {
+          return { codec: "opus", channels: 0, sampleRate: 0, durationSeconds: -1 };
+        }
+        return { codec: "vorbis", channels: 2, sampleRate: 44100, durationSeconds: 1 };
+      }
+    });
+
+    const invalidSoundMetadata = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.invalidSoundMetadata");
+    assert.strictEqual(invalidSoundMetadata.length, 5);
+    assert.ok(invalidSoundMetadata.some(diagnostic => diagnostic.message.includes("could not be read")));
+    assert.ok(invalidSoundMetadata.some(diagnostic => diagnostic.message.includes("unsupported codec")));
+    assert.ok(invalidSoundMetadata.some(diagnostic => diagnostic.message.includes("channel count")));
+    assert.ok(invalidSoundMetadata.some(diagnostic => diagnostic.message.includes("sample rate")));
+    assert.ok(invalidSoundMetadata.some(diagnostic => diagnostic.message.includes("duration")));
+  });
+
   it("validates font provider resources", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
@@ -3533,6 +3566,35 @@ describe("RSGL compiler", () => {
       }));
 
       assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidMcmetaFrameStrip"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads sound metadata through the workspace validation adapter", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const sourceFile = path.join(packRoot, "main.rsgl");
+    const soundFile = path.join(packRoot, "assets", "minecraft", "sounds", "entity", "example", "bad.ogg");
+    try {
+      fs.mkdirSync(path.dirname(soundFile), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(soundFile, Buffer.from("not ogg"));
+      fs.writeFileSync(sourceFile, [
+        "sounds minecraft {",
+        "  \"entity.example.bad\" { sounds: [\"entity/example/bad\"] }",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        cache: new WorkspaceResourceCache()
+      }));
+
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidSoundMetadata"));
+      assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.soundNotFound"), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -54,6 +54,30 @@ describe("workspace resource cache", () => {
     }
   });
 
+  it("invalidates cached negative OGG metadata", () => {
+    const root = createTempDirectory();
+    const oggPath = path.join(root, "sound.ogg");
+
+    try {
+      fs.writeFileSync(oggPath, Buffer.from("not ogg"));
+      const cache = new WorkspaceResourceCache();
+
+      assert.strictEqual(cache.getOggMetadata(oggPath), null);
+
+      fs.writeFileSync(oggPath, createOggVorbisBytes(1, 22050, 22050));
+      cache.invalidatePath(oggPath);
+
+      assert.deepStrictEqual(cache.getOggMetadata(oggPath), {
+        codec: "vorbis",
+        channels: 1,
+        sampleRate: 22050,
+        durationSeconds: 1
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("caches pack metadata and refreshes after pack.mcmeta invalidation", () => {
     const root = createTempDirectory();
     const packRoot = path.join(root, "pack");
@@ -227,6 +251,33 @@ function createPngBytes(width: number, height: number): Buffer {
   bytes.writeUInt32BE(width, 16);
   bytes.writeUInt32BE(height, 20);
   return bytes;
+}
+
+function createOggVorbisBytes(channels: number, sampleRate: number, samples: number): Buffer {
+  const identification = Buffer.alloc(30);
+  identification[0] = 1;
+  identification.write("vorbis", 1, "ascii");
+  identification.writeUInt32LE(0, 7);
+  identification[11] = channels;
+  identification.writeUInt32LE(sampleRate, 12);
+  identification[29] = 1;
+  return Buffer.concat([
+    createOggPage(identification, 0n, 0, 2),
+    createOggPage(Buffer.from([0]), BigInt(samples), 1, 4)
+  ]);
+}
+
+function createOggPage(packet: Buffer, granule: bigint, sequence: number, headerType: number): Buffer {
+  const segments = [packet.length];
+  const header = Buffer.alloc(27 + segments.length);
+  header.write("OggS", 0, "ascii");
+  header[5] = headerType;
+  header.writeBigUInt64LE(granule, 6);
+  header.writeUInt32LE(1, 14);
+  header.writeUInt32LE(sequence, 18);
+  header[26] = segments.length;
+  header[27] = packet.length;
+  return Buffer.concat([header, packet]);
 }
 
 function createTempDirectory(): string {

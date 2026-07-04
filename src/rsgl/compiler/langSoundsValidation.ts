@@ -2,6 +2,12 @@ import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface LangSoundsValidationOptions {
   resourceExists?: (kind: "sound", id: string) => boolean;
+  soundMetadata?: (id: string) => {
+    codec?: string;
+    channels?: number;
+    sampleRate?: number;
+    durationSeconds?: number;
+  } | null | undefined;
 }
 
 export function validateLangMetadata(unit: ResourceUnit, diagnostics: RsglCompileDiagnostic[]): void {
@@ -157,6 +163,39 @@ function validateSoundFileReference(
   const soundId = qualifyResourceId(value, unit.id?.namespace ?? "minecraft");
   if (options.resourceExists && !options.resourceExists("sound", soundId)) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.soundNotFound", `Sound not found: ${soundId}`, "warning");
+    return;
+  }
+  validateSoundMetadata(soundId, unit, options, diagnostics);
+}
+
+function validateSoundMetadata(
+  soundId: string,
+  unit: ResourceUnit,
+  options: LangSoundsValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!options.soundMetadata) {
+    return;
+  }
+  const metadata = options.soundMetadata(soundId);
+  if (metadata === undefined) {
+    return;
+  }
+  if (!metadata) {
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundMetadata", `Sound metadata could not be read: ${soundId}`, "warning");
+    return;
+  }
+  if (metadata.codec !== undefined && metadata.codec !== "vorbis") {
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundMetadata", `Sound ${soundId} uses unsupported codec '${metadata.codec}'.`, "warning");
+  }
+  if (!isPositiveInteger(metadata.channels)) {
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundMetadata", `Sound ${soundId} must report a positive channel count.`, "warning");
+  }
+  if (!isPositiveInteger(metadata.sampleRate)) {
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundMetadata", `Sound ${soundId} must report a positive sample rate.`, "warning");
+  }
+  if (metadata.durationSeconds !== undefined && (!Number.isFinite(metadata.durationSeconds) || metadata.durationSeconds < 0)) {
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundMetadata", `Sound ${soundId} must report a non-negative duration.`, "warning");
   }
 }
 
@@ -248,6 +287,10 @@ function parseResourceId(value: string, defaultNamespace: string): { namespace: 
   return separator >= 0
     ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
     : { namespace: defaultNamespace, path: value };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) > 0;
 }
 
 function pushUnitDiagnostic(

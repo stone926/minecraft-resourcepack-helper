@@ -23,12 +23,13 @@ type ResourceTarget = {
 
 export function createRsglWorkspaceValidationOptions(
   options: RsglWorkspaceValidationOptions
-): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata"> {
+): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata"> {
   const cache = options.cache ?? workspaceResourceCache;
   return {
     resourceExists: (kind, id) => resourceExists(cache, options, kind, id),
     resourceContent: (kind, id) => resourceContent(cache, options, kind, id),
-    textureMetadata: id => textureMetadata(cache, options, id)
+    textureMetadata: id => textureMetadata(cache, options, id),
+    soundMetadata: id => soundMetadata(cache, options, id)
   };
 }
 
@@ -70,6 +71,15 @@ function textureMetadata(
 ): { width: number; height: number } | null {
   const fileName = resolveResource(cache, options, id, resourceTarget("texture"));
   return fileName ? cache.getPngMetadata(fileName) : null;
+}
+
+function soundMetadata(
+  cache: WorkspaceResourceCache,
+  options: RsglWorkspaceValidationOptions,
+  id: string
+): { codec?: string; channels?: number; sampleRate?: number; durationSeconds?: number } | null {
+  const fileName = resolveResource(cache, options, id, resourceTarget("sound"));
+  return fileName ? cache.getOggMetadata(fileName) : null;
 }
 
 function resolveResource(

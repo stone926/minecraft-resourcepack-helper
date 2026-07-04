@@ -17,6 +17,7 @@ import {
   type ResourceLocation,
   type PackMetadata
 } from "../utils/resourceLocation";
+import { readOggMetadata, type OggMetadata } from "../utils/oggMetadata";
 import { readPngMetadata, type PngMetadata } from "../utils/pngMetadata";
 
 export interface CacheTextDocument {
@@ -164,6 +165,7 @@ export class WorkspaceResourceCache {
   private readonly resourceResolutionDependenciesByPath = new Map<string, Set<string>>();
   private readonly resourceResolutionDependencyPathsByKey = new Map<string, Set<string>>();
   private readonly soundEventsCache = new LruCache<string, VersionedCacheEntry<Set<string> | null>>(512);
+  private readonly oggMetadataCache = new LruCache<string, VersionedCacheEntry<OggMetadata | null>>(2048);
   private readonly pngMetadataCache = new LruCache<string, VersionedCacheEntry<PngMetadata | null>>(2048);
   private readonly modelParentChainCache = new LruCache<string, CacheEntry<CachedModelDocument[]>>(
     1024,
@@ -470,6 +472,26 @@ export class WorkspaceResourceCache {
     return metadata;
   }
 
+  getOggMetadata(fileName: string): OggMetadata | null {
+    const key = pathKey(fileName);
+    const version = this.getFileVersion(fileName) ?? `missing:${this.resourceFsGeneration}`;
+    const cached = this.oggMetadataCache.get(key);
+    if (cached && cached.version === version) {
+      this.hit("oggMetadata");
+      return cached.value;
+    }
+
+    this.miss("oggMetadata");
+    let metadata: OggMetadata | null;
+    try {
+      metadata = readOggMetadata(fs.readFileSync(fileName));
+    } catch {
+      metadata = null;
+    }
+    this.oggMetadataCache.set(key, { version, value: metadata });
+    return metadata;
+  }
+
   getModelParentChain(
     document: CacheTextDocument,
     ast: JsonDocumentNode,
@@ -561,6 +583,7 @@ export class WorkspaceResourceCache {
     this.resourceResolutionDependenciesByPath.clear();
     this.resourceResolutionDependencyPathsByKey.clear();
     this.soundEventsCache.clear();
+    this.oggMetadataCache.clear();
     this.pngMetadataCache.clear();
     this.modelParentChainCache.clear();
     this.modelTextureDefinitionsCache.clear();
@@ -574,6 +597,7 @@ export class WorkspaceResourceCache {
     this.fileAstCache.delete(key);
     this.documentAstCache.delete(key);
     this.soundEventsCache.delete(key);
+    this.oggMetadataCache.delete(key);
     this.pngMetadataCache.delete(key);
     this.directoryEntriesCache.delete(pathKey(path.dirname(fileName)));
     this.directoryEntriesSyncCache.delete(pathKey(path.dirname(fileName)));
@@ -596,6 +620,7 @@ export class WorkspaceResourceCache {
     this.documentAstCache.delete(documentKey(document));
     this.fileAstCache.delete(pathKey(document.fileName));
     this.soundEventsCache.delete(pathKey(document.fileName));
+    this.oggMetadataCache.delete(pathKey(document.fileName));
     this.deleteModelCacheDependenciesForPath(pathKey(document.fileName));
   }
 
@@ -629,6 +654,7 @@ export class WorkspaceResourceCache {
         resourceRootCandidates: this.resourceRootCandidatesCache.size,
         resourceResolution: this.resourceResolutionCache.size,
         soundEvents: this.soundEventsCache.size,
+        oggMetadata: this.oggMetadataCache.size,
         pngMetadata: this.pngMetadataCache.size,
         modelParentChain: this.modelParentChainCache.size,
         modelTextureDefinitions: this.modelTextureDefinitionsCache.size

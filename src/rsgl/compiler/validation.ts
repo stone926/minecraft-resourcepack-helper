@@ -17,6 +17,13 @@ export interface RsglTextureMetadata {
   height: number;
 }
 
+export interface RsglSoundMetadata {
+  codec?: string;
+  channels?: number;
+  sampleRate?: number;
+  durationSeconds?: number;
+}
+
 type TextureVariableResolution =
   | { kind: "resolved"; texture: string }
   | { kind: "missing" }
@@ -141,6 +148,7 @@ export interface RsglResourceValidationOptions {
   resourceExists?: (kind: RsglResourceExistenceKind, id: string) => boolean;
   resourceContent?: (kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
   textureMetadata?: (id: string) => RsglTextureMetadata | null | undefined;
+  soundMetadata?: (id: string) => RsglSoundMetadata | null | undefined;
 }
 
 export function validateResourceUnits(
