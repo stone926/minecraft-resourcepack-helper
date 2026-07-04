@@ -469,6 +469,7 @@ describe("RSGL language", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "export"));
     assert.ok(topLevel.some(candidate => candidate.label === "font"));
     assert.ok(topLevel.some(candidate => candidate.label === "waypoint_style"));
+    assert.ok(topLevel.some(candidate => candidate.label === "post_effect"));
     assert.ok(topLevel.some(candidate => candidate.label === "lang"));
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
     assert.ok(topLevel.some(candidate => candidate.label === "cubeAll"));

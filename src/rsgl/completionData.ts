@@ -97,6 +97,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "post_effect",
+    insertText: "post_effect ${1:example} {\n  targets {\n    ${2:swap}: {}\n  }\n  passes [\n    { vertex_shader: ${3:minecraft:core/screenquad}, fragment_shader: ${4:minecraft:post/box_blur}, inputs: [{ sampler_name: \"In\", target: minecraft:main }], output: \"${2:swap}\" }\n  ]\n}",
+    detail: "Post-processing effect resource",
+    kind: "snippet"
+  },
+  {
     label: "pack",
     insertText: "pack {\n  description \"${1:Generated pack}\"\n  min_format [${2:88}, ${3:0}]\n  max_format [${2:88}, ${3:0}]\n}",
     detail: "pack.mcmeta resource",

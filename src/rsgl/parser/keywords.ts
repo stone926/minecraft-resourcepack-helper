@@ -17,6 +17,7 @@ export const topLevelKeywords = [
   "equipment",
   "font",
   "waypoint_style",
+  "post_effect",
   "pack",
   "lang",
   "sounds",
@@ -45,6 +46,7 @@ export const resourceKeywords = [
   "equipment",
   "font",
   "waypoint_style",
+  "post_effect",
   "pack",
   "lang",
   "sounds"

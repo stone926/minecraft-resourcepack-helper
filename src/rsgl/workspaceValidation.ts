@@ -105,6 +105,12 @@ function resourceTarget(kind: RsglResourceExistenceKind | RsglResourceContentKin
   if (kind === "fontFile") {
     return { target: "font", extension: null, directory: false };
   }
+  if (kind === "shaderVertex") {
+    return { target: "shaders", extension: "vsh", directory: false };
+  }
+  if (kind === "shaderFragment") {
+    return { target: "shaders", extension: "fsh", directory: false };
+  }
   return { target: "sounds", extension: "ogg", directory: false };
 }
 

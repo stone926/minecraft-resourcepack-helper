@@ -4,9 +4,10 @@ import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValida
 import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
+import { validatePostEffectMetadata } from "./postEffectValidation";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
 
-export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile";
+export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
 export type RsglResourceContentKind = "model";
 
 export interface RsglTextureMetadata {
@@ -179,6 +180,8 @@ export function validateResourceUnits(
       validateFontUnit(unit, generatedFonts, options, diagnostics);
     } else if (unit.kind === "waypoint_style") {
       validateWaypointStyleUnit(unit, options, diagnostics);
+    } else if (unit.kind === "post_effect") {
+      validatePostEffectUnit(unit, options, diagnostics);
     } else if (unit.kind === "pack") {
       validatePackUnit(unit, options, diagnostics);
     }
@@ -1316,6 +1319,14 @@ function validateWaypointStyleUnit(
   validateWaypointStyleMetadata(unit, options, diagnostics);
 }
 
+function validatePostEffectUnit(
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  validatePostEffectMetadata(unit, options, diagnostics);
+}
+
 function validatePackUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
@@ -1540,6 +1551,12 @@ function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
   if (kind === "fontFile") {
     return "rsgl.fontFileNotFound";
   }
+  if (kind === "shaderVertex") {
+    return "rsgl.vertexShaderNotFound";
+  }
+  if (kind === "shaderFragment") {
+    return "rsgl.fragmentShaderNotFound";
+  }
   return "rsgl.soundNotFound";
 }
 
@@ -1558,6 +1575,12 @@ function resourceLabel(kind: RsglResourceExistenceKind): string {
   }
   if (kind === "fontFile") {
     return "Font file";
+  }
+  if (kind === "shaderVertex") {
+    return "Vertex shader";
+  }
+  if (kind === "shaderFragment") {
+    return "Fragment shader";
   }
   return "Sound";
 }

@@ -17,6 +17,7 @@ export type ResourceKind =
   | "equipment"
   | "font"
   | "waypoint_style"
+  | "post_effect"
   | "pack"
   | "lang"
   | "sounds"

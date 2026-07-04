@@ -850,6 +850,14 @@ describe("RSGL compiler", () => {
       "  near_distance 128",
       "  far_distance 332",
       "  sprites [minecraft:default_0, minecraft:default_1]",
+      "}",
+      "post_effect blur {",
+      "  targets {",
+      "    swap: { width: 640, height: 480, persistent: true }",
+      "  }",
+      "  passes [",
+      "    { vertex_shader: minecraft:core/screenquad, fragment_shader: minecraft:post/box_blur, inputs: [{ sampler_name: \"Mask\", location: minecraft:blur/mask, width: 16, height: 16, bilinear: true }], output: \"swap\", uniforms: { BlurDir: [{ name: \"BlurDir\", type: \"vec2\", value: [1, 0] }] } }",
+      "  ]",
       "}"
     ].join("\n")), {
       resourceExists: (kind, id) => {
@@ -865,6 +873,7 @@ describe("RSGL compiler", () => {
       "assets/minecraft/font/default.json",
       "assets/minecraft/font/include/space.json",
       "assets/minecraft/particles/explosion.json",
+      "assets/minecraft/post_effect/blur.json",
       "assets/minecraft/textures/block/high_light.png.mcmeta",
       "assets/minecraft/waypoint_style/default.json"
     ]);
@@ -904,12 +913,33 @@ describe("RSGL compiler", () => {
       ["far_distance"]: 332,
       sprites: ["minecraft:default_0", "minecraft:default_1"]
     });
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "post_effect")?.content, {
+      targets: {
+        swap: { width: 640, height: 480, persistent: true }
+      },
+      passes: [
+        {
+          ["vertex_shader"]: "minecraft:core/screenquad",
+          ["fragment_shader"]: "minecraft:post/box_blur",
+          inputs: [
+            { ["sampler_name"]: "Mask", location: "minecraft:blur/mask", width: 16, height: 16, bilinear: true }
+          ],
+          output: "swap",
+          uniforms: {
+            ["BlurDir"]: [{ name: "BlurDir", type: "vec2", value: [1, 0] }]
+          }
+        }
+      ]
+    });
     assert.ok(checkedResources.includes("texture:minecraft:particle/explosion_00"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/iron"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/iron"));
     assert.ok(checkedResources.includes("texture:minecraft:font/ascii.png"));
     assert.ok(checkedResources.includes("texture:minecraft:gui/sprites/hud/locator_bar_dot/default_0"));
     assert.ok(checkedResources.includes("texture:minecraft:gui/sprites/hud/locator_bar_dot/default_1"));
+    assert.ok(checkedResources.includes("shaderVertex:minecraft:core/screenquad"));
+    assert.ok(checkedResources.includes("shaderFragment:minecraft:post/box_blur"));
+    assert.ok(checkedResources.includes("texture:minecraft:effect/blur/mask"));
     assert.strictEqual(checkedResources.includes("font:minecraft:include/space"), false);
   });
 
@@ -1890,6 +1920,54 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.missingWaypointSprites"));
     assert.ok(codes.includes("rsgl.textureNotFound"));
     assert.ok(checkedResources.includes("texture:minecraft:gui/sprites/hud/locator_bar_dot/missing"));
+  });
+
+  it("validates post effect resources", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "post_effect invalid {",
+      "  targets {",
+      "    swap: { width: 0, height: \"bad\", persistent: \"yes\", clear_color: [1, 2, 3] }",
+      "  }",
+      "  passes [",
+      "    1,",
+      "    { vertex_shader: 1, fragment_shader: minecraft:post/missing, inputs: 1, uniforms: [] },",
+      "    { vertex_shader: minecraft:core/missing, fragment_shader: minecraft:post/missing, output: \"swap\", inputs: [",
+      "      1,",
+      "      { sampler_name: 1, target: \"missing\", location: minecraft:missing, width: 0, height: \"bad\", use_depth_buffer: \"yes\", bilinear: \"no\" },",
+      "      { target: \"swap\" }",
+      "    ], uniforms: { Bad: [1, { name: 1, type: \"bad\", value: [\"bad\"] }] } },",
+      "    { output: \"missing\", inputs: [{ target: \"missing\" }] }",
+      "  ]",
+      "}",
+      "post_effect invalid_shapes {",
+      "  raw_json { targets: [], passes: {} }",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidPostEffectTargetField"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectPasses"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectPass"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectPassField"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectInputs"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectInput"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectInputField"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectUniform"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectUniformField"));
+    assert.ok(codes.includes("rsgl.postEffectTargetNotFound"));
+    assert.ok(codes.includes("rsgl.invalidPostEffectTargetFlow"));
+    assert.ok(codes.includes("rsgl.vertexShaderNotFound"));
+    assert.ok(codes.includes("rsgl.fragmentShaderNotFound"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(checkedResources.includes("shaderVertex:minecraft:core/missing"));
+    assert.ok(checkedResources.includes("shaderFragment:minecraft:post/missing"));
+    assert.ok(checkedResources.includes("texture:minecraft:effect/missing"));
   });
 
   it("validates pack metadata formats and filters", () => {
@@ -3003,15 +3081,27 @@ describe("RSGL compiler", () => {
     const externalChild = path.join(packRoot, "assets", "minecraft", "models", "block", "external_child.json");
     const externalRoot = path.join(packRoot, "assets", "minecraft", "models", "block", "external_root.json");
     const texture = path.join(packRoot, "assets", "minecraft", "textures", "block", "external_texture.png");
+    const vertexShader = path.join(packRoot, "assets", "minecraft", "shaders", "core", "screenquad.vsh");
+    const fragmentShader = path.join(packRoot, "assets", "minecraft", "shaders", "post", "box_blur.fsh");
+    const effectTexture = path.join(packRoot, "assets", "minecraft", "textures", "effect", "blur", "mask.png");
 
     try {
       fs.mkdirSync(path.dirname(externalChild), { recursive: true });
       fs.mkdirSync(path.dirname(texture), { recursive: true });
+      fs.mkdirSync(path.dirname(vertexShader), { recursive: true });
+      fs.mkdirSync(path.dirname(fragmentShader), { recursive: true });
+      fs.mkdirSync(path.dirname(effectTexture), { recursive: true });
       fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
       fs.writeFileSync(mainFile, [
         "model block workspace_child {",
         "  parent minecraft:block/external_child",
         "  textures { all: \"#alias\" }",
+        "}",
+        "post_effect workspace_shader {",
+        "  targets { swap: {} }",
+        "  passes [",
+        "    { vertex_shader: minecraft:core/screenquad, fragment_shader: minecraft:post/box_blur, inputs: [{ sampler_name: \"Mask\", location: minecraft:blur/mask }], output: \"swap\" }",
+        "  ]",
         "}"
       ].join("\n"));
       fs.writeFileSync(externalChild, JSON.stringify({
@@ -3022,6 +3112,9 @@ describe("RSGL compiler", () => {
         textures: { root: "minecraft:block/external_texture" }
       }));
       fs.writeFileSync(texture, Buffer.alloc(0));
+      fs.writeFileSync(vertexShader, "");
+      fs.writeFileSync(fragmentShader, "");
+      fs.writeFileSync(effectTexture, Buffer.alloc(0));
 
       const cache = new WorkspaceResourceCache();
       const result = compileRsglFile(mainFile, createRsglWorkspaceValidationOptions({
@@ -3034,6 +3127,8 @@ describe("RSGL compiler", () => {
 
       assert.strictEqual(codes.includes("rsgl.modelNotFound"), false);
       assert.strictEqual(codes.includes("rsgl.textureNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.vertexShaderNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.fragmentShaderNotFound"), false);
       assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
