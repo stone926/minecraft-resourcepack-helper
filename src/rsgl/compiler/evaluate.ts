@@ -1,10 +1,12 @@
 import {
   ExprNode,
-  ObjectPropertyNode
+  ObjectPropertyNode,
+  TextRange
 } from "../parser";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 
 export type EvaluationValue = JsonValue | undefined;
+export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange) => EvaluationValue;
 
 export interface EvaluationContext {
   namespace: string;
@@ -12,6 +14,7 @@ export interface EvaluationContext {
   sourceFile?: string;
   mappingReason?: RsglMapping["reason"];
   expansionStack?: ExpansionFrame[];
+  rawJsonLoader?: RawJsonLoader;
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -108,8 +111,9 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
   if (expression.kind === "CallExpr") {
     return evaluateCallExpression(expression.callee, expression.args.map(arg => ({
       name: arg.name?.text,
-      value: evaluateExpression(arg.value, context)
-    })), context);
+      value: evaluateExpression(arg.value, context),
+      range: arg.value.range
+    })), context, expression.range);
   }
   if (expression.kind === "MemberExpr") {
     const objectValue = evaluateExpression(expression.object, context);
@@ -155,7 +159,8 @@ export function childEvaluationContext(
     variables: new Map([...context.variables, ...Object.entries(values)]),
     sourceFile: metadata.sourceFile ?? context.sourceFile,
     mappingReason: metadata.mappingReason ?? context.mappingReason,
-    expansionStack: metadata.expansionStack ?? context.expansionStack
+    expansionStack: metadata.expansionStack ?? context.expansionStack,
+    rawJsonLoader: context.rawJsonLoader
   };
 }
 
@@ -230,13 +235,18 @@ function evaluateBinaryExpression(operator: string, left: EvaluationValue, right
 
 function evaluateCallExpression(
   callee: ExprNode,
-  args: Array<{ name?: string; value: EvaluationValue }>,
-  context: EvaluationContext
+  args: Array<{ name?: string; value: EvaluationValue; range: TextRange }>,
+  context: EvaluationContext,
+  range: TextRange
 ): EvaluationValue {
   if (callee.kind !== "IdentifierExpr") {
     return undefined;
   }
 
+  if (callee.name.text === "raw_json") {
+    const request = args[0]?.value;
+    return typeof request === "string" ? context.rawJsonLoader?.(request, context, range) : undefined;
+  }
   if (callee.name.text === "product") {
     const source = normalizeJsonValue(args[0]?.value);
     return source && typeof source === "object" && !Array.isArray(source) ? product(source as Record<string, JsonValue>) : [];

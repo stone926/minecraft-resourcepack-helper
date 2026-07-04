@@ -42,11 +42,13 @@ import {
   childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
+  RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
+import { createFileRawJsonLoader } from "./rawJson";
 import { resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
@@ -84,6 +86,7 @@ interface RsglCompilerOptions {
   externalTemplates?: RsglTemplateDefinition[];
   externalValues?: RsglExternalValueDefinition[];
   environment?: RsglModuleCompileEnvironment;
+  rawJsonLoader?: RawJsonLoader;
 }
 
 type RsglCompileContext = EvaluationContext & {
@@ -92,14 +95,18 @@ type RsglCompileContext = EvaluationContext & {
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
+  const rawJsonDiagnostics: RsglCompileDiagnostic[] = [];
+  const rawJsonLoader = createCompileRawJsonLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
-    options.namespace ?? semanticModel.namespace ?? "minecraft"
+    options.namespace ?? semanticModel.namespace ?? "minecraft",
+    { rawJsonLoader }
   );
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
     namespace: options.namespace ?? semanticModel.namespace ?? "minecraft",
-    environment
+    environment,
+    rawJsonLoader
   });
   const result = compiler.compile();
   const merged = mergeResourceUnits(result.units);
@@ -107,6 +114,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     units: merged.units,
     diagnostics: [
       ...semanticModel.diagnostics.map(diagnostic => ({ ...diagnostic })),
+      ...rawJsonDiagnostics,
       ...result.diagnostics,
       ...merged.diagnostics,
       ...detectOutputConflicts(merged.units),
@@ -128,12 +136,13 @@ export function loadRsglSourceFilesFromFile(entryFileName: string, options: Rsgl
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
   const program = bindRsglProgram(files);
-  const environments = createProgramCompileEnvironments(program, options.namespace);
-  const selectedModels = selectProgramModels(program, options.entryFileName);
   const units: ResourceUnit[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
     ...program.diagnostics.map(diagnostic => ({ ...diagnostic }))
   ];
+  const rawJsonLoader = createCompileRawJsonLoader(options.entryFileName ?? "<anonymous>", diagnostics);
+  const environments = createProgramCompileEnvironments(program, options.namespace, { rawJsonLoader });
+  const selectedModels = selectProgramModels(program, options.entryFileName);
 
   if (options.entryFileName && selectedModels.length === 0) {
     diagnostics.push({
@@ -152,7 +161,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       namespace: options.namespace ?? model.namespace ?? "minecraft",
       externalTemplates: Array.from(environment.importedTemplates.values()),
       externalValues: mapToExternalValues(environment.importedValues),
-      environment
+      environment,
+      rawJsonLoader
     });
     const result = compiler.compile();
     units.push(...result.units);
@@ -748,6 +758,7 @@ class RsglCompiler {
       sourceFile: this.options.fileName,
       mappingReason: "direct",
       expansionStack: [],
+      rawJsonLoader: this.options.rawJsonLoader,
       templates: this.templates
     };
   }
@@ -759,6 +770,7 @@ class RsglCompiler {
       sourceFile: template.fileName,
       mappingReason: "template",
       expansionStack: [],
+      rawJsonLoader: this.options.rawJsonLoader,
       templates: template.templates
     };
   }
@@ -858,6 +870,13 @@ function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
     }
   }
   return diagnostics;
+}
+
+function createCompileRawJsonLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawJsonLoader {
+  return createFileRawJsonLoader({
+    fallbackFileName,
+    onError: (code, message, range) => diagnostics.push({ code, message, range, severity: "error" })
+  });
 }
 
 function normalizeFileName(fileName: string): string {

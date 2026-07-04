@@ -13,6 +13,7 @@ import {
 import {
   EvaluationContext,
   EvaluationValue,
+  RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
 import { JsonValue } from "./ir";
@@ -43,19 +44,25 @@ export interface RsglExternalValueDefinition {
   value: EvaluationValue;
 }
 
+export interface RsglCompileEnvironmentOptions {
+  rawJsonLoader?: RawJsonLoader;
+}
+
 export function createStandaloneCompileEnvironment(
   model: RsglSemanticModel,
-  namespace: string
+  namespace: string,
+  options: RsglCompileEnvironmentOptions = {}
 ): RsglModuleCompileEnvironment {
   const environment = createEmptyCompileEnvironment(model, namespace);
-  evaluateLocalEnvironmentValues(environment, model);
+  evaluateLocalEnvironmentValues(environment, model, options);
   collectLocalEnvironmentTemplates(environment, model);
   return environment;
 }
 
 export function createProgramCompileEnvironments(
   program: RsglProgram,
-  namespaceOverride: string | undefined
+  namespaceOverride: string | undefined,
+  options: RsglCompileEnvironmentOptions = {}
 ): Map<string, RsglModuleCompileEnvironment> {
   const modelsByFile = new Map(program.models.map(model => [normalizeFileName(model.fileName), model]));
   const exportMaps = createRsglExportMaps(program.models, program.importGraph).maps;
@@ -72,7 +79,7 @@ export function createProgramCompileEnvironments(
     environments.set(fileName, environment);
 
     collectImportedEnvironmentBindings(environment, model, program, modelsByFile, createEnvironment);
-    evaluateLocalEnvironmentValues(environment, model);
+    evaluateLocalEnvironmentValues(environment, model, options);
     collectLocalEnvironmentTemplates(environment, model);
     collectExportedEnvironmentBindings(environment, model, program, modelsByFile, exportMaps, createEnvironment);
     return environment;
@@ -199,14 +206,16 @@ function collectExportedEnvironmentBindings(
 
 function evaluateLocalEnvironmentValues(
   environment: RsglModuleCompileEnvironment,
-  model: RsglSemanticModel
+  model: RsglSemanticModel,
+  options: RsglCompileEnvironmentOptions
 ): void {
   const context: EvaluationContext = {
     namespace: environment.namespace,
     variables: new Map(environment.importedValues),
     sourceFile: model.fileName,
     mappingReason: "direct",
-    expansionStack: []
+    expansionStack: [],
+    rawJsonLoader: options.rawJsonLoader
   };
 
   for (const statement of model.module.statements) {

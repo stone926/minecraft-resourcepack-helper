@@ -343,6 +343,89 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("loads raw_json path fragments relative to RSGL source files", () => {
+    const root = createTempDir();
+    try {
+      const packDir = path.join(root, "pack");
+      const fragmentsDir = path.join(packDir, "fragments");
+      const mainFile = path.join(packDir, "main.rsgl");
+      const valuesFile = path.join(packDir, "values.rsgl");
+      fs.mkdirSync(fragmentsDir, { recursive: true });
+      fs.writeFileSync(path.join(fragmentsDir, "model.json"), JSON.stringify({
+        parent: "minecraft:block/cube_all",
+        textures: {
+          all: "minecraft:block/stone"
+        },
+        ambientocclusion: false
+      }));
+      fs.writeFileSync(path.join(fragmentsDir, "item.json"), JSON.stringify({
+        model: "minecraft:item/diamond",
+        ["hand_animation_on_swap"]: false
+      }));
+      fs.writeFileSync(valuesFile, [
+        "let itemFragment = raw_json(\"./fragments/item.json\")",
+        "export { itemFragment }"
+      ].join("\n"));
+      fs.writeFileSync(mainFile, [
+        "import { itemFragment } from \"./values.rsgl\"",
+        "model block custom_panel {",
+        "  raw_json(\"./fragments/model.json\")",
+        "}",
+        "item diamond {",
+        "  raw_json itemFragment",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(mainFile);
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+        "assets/minecraft/items/diamond.json",
+        "assets/minecraft/models/block/custom_panel.json"
+      ]);
+      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("custom_panel.json"))?.content, {
+        parent: "minecraft:block/cube_all",
+        textures: {
+          all: "minecraft:block/stone"
+        },
+        ambientocclusion: false
+      });
+      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("diamond.json"))?.content, {
+        ["hand_animation_on_swap"]: false,
+        model: {
+          type: "minecraft:model",
+          model: "minecraft:item/diamond"
+        }
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports raw_json path load and parse errors", () => {
+    const root = createTempDir();
+    try {
+      const mainFile = path.join(root, "main.rsgl");
+      fs.writeFileSync(path.join(root, "invalid.json"), "{");
+      fs.writeFileSync(mainFile, [
+        "model block missing {",
+        "  raw_json(\"./missing.json\")",
+        "}",
+        "model block invalid {",
+        "  raw_json(\"./invalid.json\")",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(mainFile);
+      const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+      assert.ok(codes.includes("rsgl.rawJsonLoadFailed"));
+      assert.ok(codes.includes("rsgl.rawJsonParseFailed"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("expands for statements inside blockstate variants", () => {
     const result = compileRsglModule(parseRsgl([
       "blockstate lamp {",
