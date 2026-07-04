@@ -34,6 +34,7 @@ import {
   resourceIdType,
   RsglBindOptions,
   RsglExportRecord,
+  RsglFileDiagnostic,
   RsglImportGraph,
   RsglImportRecord,
   RsglOutputResourcePreview,
@@ -66,21 +67,23 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   const importGraph = buildImportGraph(files, models, resolver);
   const exportMaps = createRsglExportMaps(models, importGraph);
   const importDiagnostics = resolveProgramImports(models, importGraph, exportMaps.maps);
-  const importedCallDiagnostics = models.flatMap(validateResolvedImportCalls);
-  const diagnostics = [
-    ...models.flatMap(model => model.diagnostics),
-    ...exportMaps.diagnostics,
+  const importedCallDiagnostics = models.flatMap(model => withFileName(model.fileName, validateResolvedImportCalls(model)));
+  const fileDiagnostics: RsglFileDiagnostic[] = [
+    ...models.flatMap(model => withFileName(model.fileName, model.diagnostics)),
+    ...exportMaps.fileDiagnostics,
     ...importDiagnostics,
     ...importedCallDiagnostics,
-    ...importGraph.missing.map(missing => diagnostic(
+    ...importGraph.missing.map(missing => fileDiagnostic(
+      missing.from,
       "rsgl.missingImport",
       `RSGL import not found: ${missing.source}`,
       missing.range
     )),
     ...importCycleDiagnostics(importGraph)
   ];
+  const diagnostics = fileDiagnostics.map(toDiagnostic);
 
-  return { files, models, importGraph, diagnostics };
+  return { files, models, importGraph, diagnostics, fileDiagnostics };
 }
 
 class RsglBinder {
@@ -641,8 +644,8 @@ function resolveProgramImports(
   models: RsglSemanticModel[],
   importGraph: RsglImportGraph,
   exportMaps: Map<string, Map<string, RsglSymbol>>
-): RsglDiagnostic[] {
-  const diagnostics: RsglDiagnostic[] = [];
+): RsglFileDiagnostic[] {
+  const diagnostics: RsglFileDiagnostic[] = [];
   const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
 
   for (const edge of importGraph.edges) {
@@ -664,7 +667,8 @@ function resolveProgramImports(
       const exported = exportMaps.get(normalizeFileName(targetModel.fileName))?.get(item.imported);
       const localSymbol = sourceModel.scope.symbols.get(item.local);
       if (!exported) {
-        diagnostics.push(diagnostic(
+        diagnostics.push(fileDiagnostic(
+          sourceModel.fileName,
           "rsgl.missingImportedSymbol",
           `RSGL module '${record.source}' does not export '${item.imported}'.`,
           item.range
@@ -729,11 +733,29 @@ function diagnostic(code: string, message: string, range: { start: number; end: 
   return { code, message, range, severity };
 }
 
-function importCycleDiagnostics(importGraph: RsglImportGraph): RsglDiagnostic[] {
+function fileDiagnostic(fileName: string, code: string, message: string, range: { start: number; end: number }, severity: RsglDiagnostic["severity"] = "error"): RsglFileDiagnostic {
+  return { fileName, code, message, range, severity };
+}
+
+function withFileName(fileName: string, diagnostics: RsglDiagnostic[]): RsglFileDiagnostic[] {
+  return diagnostics.map(item => ({ ...item, fileName }));
+}
+
+function toDiagnostic(diagnostic: RsglFileDiagnostic): RsglDiagnostic {
+  return {
+    code: diagnostic.code,
+    message: diagnostic.message,
+    range: diagnostic.range,
+    severity: diagnostic.severity
+  };
+}
+
+function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnostic[] {
   return importGraph.cycles.flatMap(cycle => cycle.map((fileName, index) => {
     const nextFileName = cycle[(index + 1) % cycle.length];
     const edge = importGraph.edges.find(item => item.from === fileName && item.to === nextFileName);
-    return diagnostic(
+    return fileDiagnostic(
+      fileName,
       "rsgl.importCycle",
       `RSGL import cycle includes ${fileName}.`,
       edge?.range ?? { start: 0, end: 1 }

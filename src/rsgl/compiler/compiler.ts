@@ -1,11 +1,8 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   BlockNode,
   ExprNode,
-  ExportDeclNode,
   ForStmtNode,
-  ImportDeclNode,
   LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
@@ -15,8 +12,7 @@ import {
   TableDeclNode,
   TopLevelStatementNode,
   VariantBodyNode,
-  VariantSectionStatementNode,
-  parseRsgl
+  VariantSectionStatementNode
 } from "../parser";
 import {
   bindRsglModule,
@@ -54,6 +50,7 @@ import {
   createWallBlockstate
 } from "./templates";
 import { RsglResourceValidationOptions, validateResourceUnits } from "./validation";
+import { RsglWorkspaceSourceCache } from "../workspaceSource";
 
 const namespacePattern = /^[a-z0-9_.-]+$/;
 
@@ -118,27 +115,7 @@ export function compileRsglFile(entryFileName: string, options: RsglFileCompileO
 }
 
 export function loadRsglSourceFilesFromFile(entryFileName: string, options: RsglFileLoadOptions = {}): RsglSourceFile[] {
-  const encoding = options.encoding ?? "utf8";
-  const files: RsglSourceFile[] = [];
-  const visited = new Set<string>();
-
-  const visit = (fileName: string): void => {
-    const normalizedFileName = normalizeFileName(path.resolve(fileName));
-    if (visited.has(normalizedFileName) || !fs.existsSync(normalizedFileName)) {
-      return;
-    }
-
-    visited.add(normalizedFileName);
-    const module = parseRsgl(fs.readFileSync(normalizedFileName, encoding));
-    files.push({ fileName: normalizedFileName, module });
-
-    for (const source of collectRelativeImportSources(module)) {
-      visit(path.resolve(path.dirname(normalizedFileName), source));
-    }
-  };
-
-  visit(entryFileName);
-  return files;
+  return new RsglWorkspaceSourceCache(options).loadProgramFromEntry(entryFileName);
 }
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
@@ -814,21 +791,6 @@ function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
   return diagnostics;
 }
 
-function collectRelativeImportSources(module: RsglModule): string[] {
-  return module.statements
-    .filter((statement): statement is ImportDeclNode | ExportDeclNode => isImportDeclNode(statement) || isExportDeclNode(statement))
-    .map(statement => statement.source?.value)
-    .filter((source): source is string => Boolean(source && source.startsWith(".")));
-}
-
 function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
-}
-
-function isImportDeclNode(node: unknown): node is ImportDeclNode {
-  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ImportDecl");
-}
-
-function isExportDeclNode(node: unknown): node is ExportDeclNode {
-  return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ExportDecl");
 }

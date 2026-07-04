@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { RsglDiagnostic } from "../parser";
 import {
+  RsglFileDiagnostic,
   RsglImportGraph,
   RsglSemanticModel,
   RsglSymbol
@@ -8,7 +9,7 @@ import {
 
 export interface RsglExportMapResult {
   maps: Map<string, Map<string, RsglSymbol>>;
-  diagnostics: RsglDiagnostic[];
+  fileDiagnostics: RsglFileDiagnostic[];
 }
 
 export function createRsglExportMaps(
@@ -17,7 +18,7 @@ export function createRsglExportMaps(
 ): RsglExportMapResult {
   const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
   const maps = new Map<string, Map<string, RsglSymbol>>();
-  const diagnostics: RsglDiagnostic[] = [];
+  const fileDiagnostics: RsglFileDiagnostic[] = [];
   const resolving = new Set<string>();
 
   const resolveModel = (model: RsglSemanticModel): Map<string, RsglSymbol> => {
@@ -48,35 +49,37 @@ export function createRsglExportMaps(
           const targetExports = resolveModel(targetModel);
           if (record.exportAll) {
             for (const [name, symbol] of targetExports) {
-              setExport(exports, name, symbol, record.node.range, diagnostics);
+              setExport(model.fileName, exports, name, symbol, record.node.range, fileDiagnostics);
             }
           }
           for (const specifier of record.specifiers) {
             const symbol = targetExports.get(specifier.local);
             if (!symbol) {
-              diagnostics.push(diagnostic(
+              fileDiagnostics.push(diagnostic(
+                model.fileName,
                 "rsgl.missingReExportedSymbol",
                 `RSGL module '${record.source}' does not export '${specifier.local}'.`,
                 specifier.range
               ));
             } else {
-              setExport(exports, specifier.exported, symbol, specifier.range, diagnostics);
+              setExport(model.fileName, exports, specifier.exported, symbol, specifier.range, fileDiagnostics);
             }
           }
         } else {
           if (record.exportAll) {
-            diagnostics.push(diagnostic("rsgl.exportAllRequiresSource", "export * requires a source module.", record.node.range));
+            fileDiagnostics.push(diagnostic(model.fileName, "rsgl.exportAllRequiresSource", "export * requires a source module.", record.node.range));
           }
           for (const specifier of record.specifiers) {
             const symbol = model.scope.symbols.get(specifier.local);
             if (!symbol) {
-              diagnostics.push(diagnostic(
+              fileDiagnostics.push(diagnostic(
+                model.fileName,
                 "rsgl.missingExportedSymbol",
                 `RSGL module does not define '${specifier.local}'.`,
                 specifier.range
               ));
             } else {
-              setExport(exports, specifier.exported, symbol, specifier.range, diagnostics);
+              setExport(model.fileName, exports, specifier.exported, symbol, specifier.range, fileDiagnostics);
             }
           }
         }
@@ -91,7 +94,7 @@ export function createRsglExportMaps(
     resolveModel(model);
   }
 
-  return { maps, diagnostics };
+  return { maps, fileDiagnostics };
 }
 
 function resolveExportTargetModel(
@@ -106,26 +109,28 @@ function resolveExportTargetModel(
 }
 
 function setExport(
+  fileName: string,
   exports: Map<string, RsglSymbol>,
   name: string,
   symbol: RsglSymbol,
   range: { start: number; end: number },
-  diagnostics: RsglDiagnostic[]
+  diagnostics: RsglFileDiagnostic[]
 ): void {
   if (exports.has(name)) {
-    diagnostics.push(diagnostic("rsgl.duplicateExport", `Duplicate RSGL export '${name}'.`, range));
+    diagnostics.push(diagnostic(fileName, "rsgl.duplicateExport", `Duplicate RSGL export '${name}'.`, range));
     return;
   }
   exports.set(name, symbol);
 }
 
 function diagnostic(
+  fileName: string,
   code: string,
   message: string,
   range: { start: number; end: number },
   severity: RsglDiagnostic["severity"] = "error"
-): RsglDiagnostic {
-  return { code, message, range, severity };
+): RsglFileDiagnostic {
+  return { fileName, code, message, range, severity };
 }
 
 function normalizeFileName(fileName: string): string {

@@ -243,6 +243,10 @@ describe("RSGL semantic model", () => {
     ]);
 
     assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImportedSymbol"));
+    assert.ok(program.fileDiagnostics.some(diagnostic =>
+      diagnostic.fileName === mainFile &&
+      diagnostic.code === "rsgl.missingImportedSymbol"
+    ));
   });
 
   it("checks resolved imported template call signatures", () => {

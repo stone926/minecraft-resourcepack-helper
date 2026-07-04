@@ -130,6 +130,11 @@ export interface RsglProgram {
   models: RsglSemanticModel[];
   importGraph: RsglImportGraph;
   diagnostics: RsglDiagnostic[];
+  fileDiagnostics: RsglFileDiagnostic[];
+}
+
+export interface RsglFileDiagnostic extends RsglDiagnostic {
+  fileName: string;
 }
 
 export interface RsglModuleResolver {

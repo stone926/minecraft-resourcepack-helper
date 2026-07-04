@@ -7,6 +7,7 @@ export type { RsglExportMapResult } from "./exportResolution";
 export type {
   RsglBindOptions,
   RsglExportRecord,
+  RsglFileDiagnostic,
   RsglImportGraph,
   RsglImportRecord,
   RsglOutputResourcePreview,
