@@ -2,6 +2,11 @@ import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 type ResourceExistenceKind = "model" | "texture" | "sound";
 
+type TextureVariableResolution =
+  | { kind: "resolved"; texture: string }
+  | { kind: "missing" }
+  | { kind: "cycle" };
+
 export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
   resourceExists?: (kind: ResourceExistenceKind, id: string) => boolean;
@@ -12,10 +17,10 @@ export function validateResourceUnits(
   options: RsglResourceValidationOptions = {}
 ): RsglCompileDiagnostic[] {
   const diagnostics: RsglCompileDiagnostic[] = [];
-  const generatedModels = new Set(
+  const generatedModels = new Map(
     units
       .filter(unit => unit.kind === "model" && unit.id)
-      .map(unit => `${unit.id!.namespace}:${unit.id!.path}`)
+      .map(unit => [`${unit.id!.namespace}:${unit.id!.path}`, unit])
   );
 
   for (const unit of units) {
@@ -39,10 +44,12 @@ export function validateResourceUnits(
 
 function validateModelUnit(
   unit: ResourceUnit,
-  generatedModels: Set<string>,
+  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  validateGeneratedModelParentChain(unit, generatedModels, diagnostics);
+
   const content = asObject(unit.content);
   const parent = content ? content.parent : undefined;
   if (typeof parent === "string") {
@@ -59,11 +66,79 @@ function validateModelUnit(
       }
     }
   }
+
+  validateModelTextureVariables(unit, generatedModels, options, diagnostics);
+}
+
+function validateGeneratedModelParentChain(
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const seen = new Set<string>();
+  let current: ResourceUnit | undefined = unit;
+  while (current) {
+    const key = modelKey(current);
+    if (!key) {
+      return;
+    }
+    if (seen.has(key)) {
+      diagnostics.push({
+        code: "rsgl.modelParentCycle",
+        message: `Generated model parent chain contains a cycle at ${key}.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+      return;
+    }
+    seen.add(key);
+
+    const parent = asObject(current.content)?.parent;
+    if (typeof parent !== "string") {
+      return;
+    }
+    current = generatedModels.get(qualifyResourceId(parent, current.id?.namespace ?? "minecraft"));
+  }
+}
+
+function validateModelTextureVariables(
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const checked = new Set<string>();
+  visitJson(unit.content, value => {
+    const reference = textureVariableReference(value);
+    if (!reference || checked.has(reference)) {
+      return;
+    }
+    checked.add(reference);
+
+    const resolution = resolveTextureVariable(unit, reference, generatedModels, new Set());
+    if (resolution.kind === "missing") {
+      diagnostics.push({
+        code: "rsgl.unresolvedTextureVariable",
+        message: `Texture variable '#${reference}' is not defined in the generated model parent chain.`,
+        severity: "warning",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    } else if (resolution.kind === "cycle") {
+      diagnostics.push({
+        code: "rsgl.textureVariableCycle",
+        message: `Texture variable '#${reference}' resolves through a cycle.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    } else {
+      checkResourceExists("texture", resolution.texture, unit, generatedModels, options, diagnostics);
+    }
+  });
 }
 
 function validateBlockstateUnit(
   unit: ResourceUnit,
-  generatedModels: Set<string>,
+  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
@@ -185,7 +260,7 @@ function checkResourceExists(
   kind: ResourceExistenceKind,
   id: string,
   unit: ResourceUnit,
-  generatedModels: Set<string> | undefined,
+  generatedModels: Map<string, ResourceUnit> | undefined,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
@@ -204,6 +279,54 @@ function checkResourceExists(
   });
 }
 
+function resolveTextureVariable(
+  unit: ResourceUnit,
+  name: string,
+  generatedModels: Map<string, ResourceUnit>,
+  seen: Set<string>
+): TextureVariableResolution {
+  const key = modelKey(unit);
+  const resolutionKey = `${key ?? unit.outputPath}#${name}`;
+  if (seen.has(resolutionKey)) {
+    return { kind: "cycle" };
+  }
+  seen.add(resolutionKey);
+
+  const content = asObject(unit.content);
+  const textures = asObject(content?.textures);
+  if (textures && Object.hasOwn(textures, name)) {
+    return resolveTextureValue(textures[name], unit, generatedModels, seen);
+  }
+
+  const parent = content?.parent;
+  const parentUnit = typeof parent === "string"
+    ? generatedModels.get(qualifyResourceId(parent, unit.id?.namespace ?? "minecraft"))
+    : undefined;
+  return parentUnit ? resolveTextureVariable(parentUnit, name, generatedModels, seen) : { kind: "missing" };
+}
+
+function resolveTextureValue(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  seen: Set<string>
+): TextureVariableResolution {
+  if (typeof value === "string") {
+    return value.startsWith("#")
+      ? resolveTextureVariable(unit, value.slice(1), generatedModels, seen)
+      : { kind: "resolved", texture: value };
+  }
+
+  const object = asObject(value);
+  if (typeof object?.sprite === "string") {
+    return object.sprite.startsWith("#")
+      ? resolveTextureVariable(unit, object.sprite.slice(1), generatedModels, seen)
+      : { kind: "resolved", texture: object.sprite };
+  }
+
+  return { kind: "missing" };
+}
+
 function soundReferenceId(value: JsonValue, defaultNamespace: string): string | null {
   if (typeof value === "string") {
     return qualifyResourceId(value, defaultNamespace);
@@ -218,6 +341,16 @@ function soundReferenceId(value: JsonValue, defaultNamespace: string): string | 
 function textureIdFromMcmetaOutputPath(outputPath: string): string | null {
   const match = /^assets\/([^/]+)\/textures\/(.+)\.png\.mcmeta$/.exec(outputPath.replace(/\\/g, "/"));
   return match ? `${match[1]}:${match[2]}` : null;
+}
+
+function textureVariableReference(value: JsonValue): string | null {
+  return typeof value === "string" && value.startsWith("#") && value.length > 1
+    ? value.slice(1)
+    : null;
+}
+
+function modelKey(unit: ResourceUnit): string | null {
+  return unit.id ? `${unit.id.namespace}:${unit.id.path}` : null;
 }
 
 function qualifyResourceId(value: string, defaultNamespace: string): string {

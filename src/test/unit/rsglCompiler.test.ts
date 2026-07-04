@@ -912,6 +912,38 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidRandomWeight"));
   });
 
+  it("validates generated model parent chains and texture variables", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "model block parent_model {",
+      "  textures { base: minecraft:block/inherited_texture }",
+      "}",
+      "model block child_model {",
+      "  parent minecraft:block/parent_model",
+      "  textures { all: \"#base\" }",
+      "}",
+      "model block missing_variable {",
+      "  textures { all: \"#missing\" }",
+      "}",
+      "model block texture_cycle {",
+      "  textures { a: \"#b\", b: \"#a\" }",
+      "}",
+      "model block parent_a { parent minecraft:block/parent_b }",
+      "model block parent_b { parent minecraft:block/parent_a }"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(checkedResources.includes("texture:minecraft:block/inherited_texture"));
+    assert.ok(codes.includes("rsgl.unresolvedTextureVariable"));
+    assert.ok(codes.includes("rsgl.textureVariableCycle"));
+    assert.ok(codes.includes("rsgl.modelParentCycle"));
+  });
+
   it("validates sound, atlas, mcmeta, and overlay resources", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
