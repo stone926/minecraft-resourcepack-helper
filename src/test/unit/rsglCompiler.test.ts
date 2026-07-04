@@ -1316,9 +1316,37 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
   });
 
+  it("resolves RSGL Minecraft version targets to pack formats", () => {
+    const modern = compileRsglModule(parseRsgl([
+      "target java mc \"1.21.11\"",
+      "blockstate rotated {",
+      "  variants {",
+      "    {} -> { model: minecraft:block/rotated, z: 90 }",
+      "  }",
+      "}"
+    ].join("\n")));
+    const older = compileRsglModule(parseRsgl([
+      "target java mc \"1.21.10\"",
+      "blockstate rotated {",
+      "  variants {",
+      "    {} -> { model: minecraft:block/rotated, z: 90 }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.strictEqual(modern.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedBlockstateZRotation"), false);
+    assert.ok(older.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedBlockstateZRotation"));
+  });
+
   it("reports invalid and conflicting RSGL target formats", () => {
     const invalid = compileRsglModule(parseRsgl("target java format \"newest\""));
     assert.ok(invalid.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidTargetFormat"));
+
+    const invalidMinecraftVersion = compileRsglModule(parseRsgl("target java mc 1"));
+    assert.ok(invalidMinecraftVersion.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidTargetMinecraftVersion"));
+
+    const unknownMinecraftVersion = compileRsglModule(parseRsgl("target java mc \"1.99.0\""));
+    assert.ok(unknownMinecraftVersion.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unknownTargetMinecraftVersion"));
 
     const firstFile = path.resolve("pack", "first.rsgl");
     const secondFile = path.resolve("pack", "second.rsgl");

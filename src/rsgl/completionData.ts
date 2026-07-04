@@ -13,6 +13,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "target mc",
+    insertText: "target java mc \"${1:1.21.11}\"",
+    detail: "RSGL target declaration by Minecraft version",
+    kind: "snippet"
+  },
+  {
     label: "namespace",
     insertText: "namespace ${1:minecraft}",
     detail: "Default namespace declaration",

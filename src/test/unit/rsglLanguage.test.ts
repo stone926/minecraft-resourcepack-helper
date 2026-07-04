@@ -307,6 +307,7 @@ describe("RSGL language", () => {
   it("provides top-level and block-aware completion candidates", () => {
     const topLevel = getRsglCompletionCandidates("", 0);
     assert.ok(topLevel.some(candidate => candidate.label === "target"));
+    assert.ok(topLevel.some(candidate => candidate.label === "target mc"));
     assert.ok(topLevel.some(candidate => candidate.label === "export"));
     assert.ok(topLevel.some(candidate => candidate.label === "lang"));
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
