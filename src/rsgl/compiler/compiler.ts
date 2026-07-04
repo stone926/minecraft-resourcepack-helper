@@ -94,6 +94,7 @@ interface RsglCompilerOptions {
   externalValues?: RsglExternalValueDefinition[];
   environment?: RsglModuleCompileEnvironment;
   rawJsonLoader?: RawJsonLoader;
+  targetPackFormat?: RsglTargetPackFormat;
 }
 
 type RsglCompileContext = EvaluationContext & {
@@ -109,6 +110,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";
   const rawJsonDiagnostics: RsglCompileDiagnostic[] = [];
   const rawJsonLoader = createCompileRawJsonLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
+  const target = resolveTargetPackFormat([{ module, namespace }]);
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
     namespace,
@@ -118,11 +120,11 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     fileName: options.fileName ?? "<anonymous>",
     namespace,
     environment,
-    rawJsonLoader
+    rawJsonLoader,
+    targetPackFormat: target.targetPackFormat
   });
   const result = compiler.compile();
   const merged = mergeResourceUnits(result.units);
-  const target = resolveTargetPackFormat([{ module, namespace }]);
   const validationOptions = withTargetPackFormat(options, target.targetPackFormat);
   return {
     units: merged.units,
@@ -158,6 +160,10 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   const rawJsonLoader = createCompileRawJsonLoader(options.entryFileName ?? "<anonymous>", diagnostics);
   const environments = createProgramCompileEnvironments(program, options.namespace, { rawJsonLoader });
   const selectedModels = selectProgramModels(program, options.entryFileName);
+  const target = resolveTargetPackFormat(selectedModels.map(model => ({
+    module: model.module,
+    namespace: options.namespace ?? model.namespace ?? "minecraft"
+  })));
 
   if (options.entryFileName && selectedModels.length === 0) {
     diagnostics.push({
@@ -178,7 +184,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       externalTemplates: Array.from(environment.importedTemplates.values()),
       externalValues: mapToExternalValues(environment.importedValues),
       environment,
-      rawJsonLoader
+      rawJsonLoader,
+      targetPackFormat: target.targetPackFormat
     });
     const result = compiler.compile();
     units.push(...result.units);
@@ -186,10 +193,6 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   }
 
   const merged = mergeResourceUnits(units);
-  const target = resolveTargetPackFormat(selectedModels.map(model => ({
-    module: model.module,
-    namespace: options.namespace ?? model.namespace ?? "minecraft"
-  })));
   const validationOptions = withTargetPackFormat(options, target.targetPackFormat);
   diagnostics.push(
     ...target.diagnostics,
@@ -541,13 +544,30 @@ class RsglCompiler {
   private compilePack(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit {
     const outputPath = "pack.mcmeta";
     const body = this.resourceBodyToObject(statement.body, context);
-    const content = isJsonObject(body.pack) ? body : { pack: body };
+    const content = this.packContentWithTargetMetadata(isJsonObject(body.pack) ? body : { pack: body });
     return {
       kind: "pack",
       outputPath,
       content,
       mergePolicy: { kind: "mergeObject" },
       sourceMap: this.sourceMap(outputPath, statement, context)
+    };
+  }
+
+  private packContentWithTargetMetadata(content: Record<string, JsonValue>): Record<string, JsonValue> {
+    if (!this.options.targetPackFormat || !isJsonObject(content.pack)) {
+      return content;
+    }
+    const pack = content.pack;
+    if ("pack_format" in pack || "supported_formats" in pack || "min_format" in pack || "max_format" in pack) {
+      return content;
+    }
+    return {
+      ...content,
+      pack: {
+        ...pack,
+        ...packFormatMetadata(this.options.targetPackFormat)
+      }
     };
   }
 
@@ -1049,6 +1069,16 @@ function withTargetPackFormat<T extends RsglResourceValidationOptions>(
   return options.targetPackFormat || !targetPackFormat
     ? options
     : { ...options, targetPackFormat };
+}
+
+function packFormatMetadata(target: RsglTargetPackFormat): Record<string, JsonValue> {
+  if (target.major >= 65) {
+    return {
+      ["min_format"]: [target.major, target.minor ?? 0],
+      ["max_format"]: [target.major, target.minor ?? 0]
+    };
+  }
+  return { ["pack_format"]: target.major };
 }
 
 function createCompileRawJsonLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawJsonLoader {

@@ -850,6 +850,48 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("fills pack metadata from RSGL target declarations", () => {
+    const modern = compileRsglModule(parseRsgl([
+      "target java mc \"1.21.11\"",
+      "pack {",
+      "  description \"Generated pack\"",
+      "}"
+    ].join("\n")));
+    const legacy = compileRsglModule(parseRsgl([
+      "target java mc \"1.21.8\"",
+      "pack {",
+      "  description \"Legacy pack\"",
+      "}"
+    ].join("\n")));
+    const explicit = compileRsglModule(parseRsgl([
+      "target java mc \"1.21.11\"",
+      "pack {",
+      "  description \"Explicit pack\"",
+      "  pack_format 12",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(modern.units.find(unit => unit.kind === "pack")?.content, {
+      pack: {
+        description: "Generated pack",
+        ["min_format"]: [75, 0],
+        ["max_format"]: [75, 0]
+      }
+    });
+    assert.deepStrictEqual(legacy.units.find(unit => unit.kind === "pack")?.content, {
+      pack: {
+        description: "Legacy pack",
+        ["pack_format"]: 64
+      }
+    });
+    assert.deepStrictEqual(explicit.units.find(unit => unit.kind === "pack")?.content, {
+      pack: {
+        description: "Explicit pack",
+        ["pack_format"]: 12
+      }
+    });
+  });
+
   it("lowers overlay blocks to prefixed resources and pack metadata", () => {
     const result = compileRsglModule(parseRsgl([
       "pack {",
