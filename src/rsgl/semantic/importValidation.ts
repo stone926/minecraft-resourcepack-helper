@@ -113,6 +113,17 @@ class ResolvedImportCallValidator {
       if (statement.fallback) {
         this.validateExpression(statement.fallback);
       }
+    } else if (statement.kind === "ItemConditionStmt") {
+      this.validateExpression(statement.property);
+      statement.options.forEach(option => this.validateExpression(option.value));
+      if (statement.onTrue) {
+        this.validateExpression(statement.onTrue);
+      }
+      if (statement.onFalse) {
+        this.validateExpression(statement.onFalse);
+      }
+    } else if (statement.kind === "ItemCompositeStmt") {
+      statement.models.forEach(model => this.validateExpression(model));
     } else if (statement.kind === "ForStmt") {
       this.validateExpression(statement.iterable);
       this.validateBody(statement.body);

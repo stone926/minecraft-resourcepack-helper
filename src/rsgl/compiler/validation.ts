@@ -437,6 +437,11 @@ function validateItemModelDefinition(
     return;
   }
 
+  if (type === "condition") {
+    validateItemCondition(model, unit, generatedModels, options, diagnostics);
+    return;
+  }
+
   validateNestedItemModels(model, unit, generatedModels, options, diagnostics);
 }
 
@@ -531,6 +536,36 @@ function validateItemSelect(
     });
   } else {
     validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+  }
+}
+
+function validateItemCondition(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!("on_true" in model)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemConditionBranch",
+      message: "Item condition must define an on_true model.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  } else {
+    validateItemModelDefinition(model["on_true"], unit, generatedModels, options, diagnostics);
+  }
+
+  if (!("on_false" in model)) {
+    diagnostics.push({
+      code: "rsgl.invalidItemConditionBranch",
+      message: "Item condition must define an on_false model.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  } else {
+    validateItemModelDefinition(model["on_false"], unit, generatedModels, options, diagnostics);
   }
 }
 

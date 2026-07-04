@@ -547,6 +547,44 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers item condition and composite statements", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item bow {",
+      "  condition property minecraft:using_item {",
+      "    on_true minecraft:item/bow_pulling_0",
+      "    on_false minecraft:item/bow",
+      "  }",
+      "}",
+      "item layered {",
+      "  composite {",
+      "    model minecraft:item/base",
+      "    model { model: minecraft:item/overlay, weight: 2 }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("bow.json"))?.content, {
+      model: {
+        type: "minecraft:condition",
+        property: "minecraft:using_item",
+        ["on_true"]: { type: "minecraft:model", model: "minecraft:item/bow_pulling_0" },
+        ["on_false"]: { type: "minecraft:model", model: "minecraft:item/bow" }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("layered.json"))?.content, {
+      model: {
+        type: "minecraft:composite",
+        models: [
+          { type: "minecraft:model", model: "minecraft:item/base" },
+          { type: "minecraft:model", model: "minecraft:item/overlay", weight: 2 }
+        ]
+      }
+    });
+  });
+
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
@@ -2240,6 +2278,15 @@ describe("RSGL compiler", () => {
       "      cases: [{ model: { type: minecraft:model, model: minecraft:item/missing_case } }]",
       "    }",
       "  }",
+      "}",
+      "item broken_condition {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:condition,",
+      "      property: minecraft:using_item,",
+      "      on_true: { type: minecraft:model, model: minecraft:item/missing_true }",
+      "    }",
+      "  }",
       "}"
     ].join("\n")), {
       resourceExists: () => false
@@ -2250,6 +2297,7 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.unsortedItemRangeThresholds"));
     assert.ok(codes.includes("rsgl.itemModelMissingFallback"));
     assert.ok(codes.includes("rsgl.invalidItemSelectCase"));
+    assert.ok(codes.includes("rsgl.invalidItemConditionBranch"));
   });
 
   it("validates generated model parent chains and texture variables", () => {

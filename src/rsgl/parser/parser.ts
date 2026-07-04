@@ -56,6 +56,7 @@ const resourceBodySectionKeywords = new Set([
 
 const itemRangeOptionKeywords = ["component", "source", "target", "wobble", "scale"];
 const itemSelectOptionKeywords = ["component"];
+const itemConditionOptionKeywords = ["component", "ignore_default", "index", "keybind", "predicate", "value"];
 
 const binaryPrecedence = new Map<string, number>([
   ["||", 2],
@@ -763,6 +764,12 @@ class RsglParser extends ParserContext {
     if (token.text === "select") {
       return this.parseItemSelectStmt();
     }
+    if (token.text === "condition") {
+      return this.parseItemConditionStmt();
+    }
+    if (token.text === "composite") {
+      return this.parseItemCompositeStmt();
+    }
     if (resourceBodySectionKeywords.has(token.text)) {
       return this.parseSectionStmt();
     }
@@ -1006,7 +1013,69 @@ class RsglParser extends ParserContext {
     };
   }
 
-  private parseItemModelStatementHeader(owner: "range" | "select", optionKeywords: string[]) {
+  private parseItemConditionStmt(): ResourceStatementNode {
+    const start = this.advance();
+    const { property, options } = this.parseItemModelStatementHeader("condition", itemConditionOptionKeywords);
+    let onTrue: ExprNode | undefined;
+    let onFalse: ExprNode | undefined;
+
+    if (this.matchText("{")) {
+      while (!this.isAtEnd() && this.current().text !== "}") {
+        if (this.current().text === "on_true") {
+          this.advance();
+          onTrue = this.parseExpression({ stopTexts: [] });
+        } else if (this.current().text === "on_false") {
+          this.advance();
+          onFalse = this.parseExpression({ stopTexts: [] });
+        } else {
+          this.addDiagnosticAtCurrent("rsgl.unexpectedItemConditionStatement", "Expected 'on_true' or 'on_false' in item condition body.");
+          this.recoverToLineEnd();
+        }
+      }
+      this.expectText("}", "Expected '}' after item condition body.");
+    } else {
+      this.addDiagnosticAtCurrent("rsgl.expectedItemConditionBody", "Expected item condition body.");
+    }
+
+    return {
+      kind: "ItemConditionStmt",
+      keyword: start.text,
+      property,
+      options,
+      onTrue,
+      onFalse,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemCompositeStmt(): ResourceStatementNode {
+    const start = this.advance();
+    const models = [];
+
+    if (this.matchText("{")) {
+      while (!this.isAtEnd() && this.current().text !== "}") {
+        if (this.current().text === "model") {
+          this.advance();
+          models.push(this.parseExpression({ stopTexts: [] }));
+        } else {
+          this.addDiagnosticAtCurrent("rsgl.unexpectedItemCompositeStatement", "Expected 'model' in item composite body.");
+          this.recoverToLineEnd();
+        }
+      }
+      this.expectText("}", "Expected '}' after item composite body.");
+    } else {
+      this.addDiagnosticAtCurrent("rsgl.expectedItemCompositeBody", "Expected item composite body.");
+    }
+
+    return {
+      kind: "ItemCompositeStmt",
+      keyword: start.text,
+      models,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseItemModelStatementHeader(owner: "range" | "select" | "condition", optionKeywords: string[]) {
     this.expectText("property", `Expected 'property' in item ${owner} statement.`);
     const property = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
     const options = [];

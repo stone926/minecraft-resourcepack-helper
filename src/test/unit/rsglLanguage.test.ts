@@ -160,6 +160,34 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(potion.body.statements.map(statement => statement.kind), ["ItemSelectStmt"]);
   });
 
+  it("parses item condition and composite statements", () => {
+    const module = parseRsgl([
+      "item bow {",
+      "  condition property minecraft:using_item {",
+      "    on_true minecraft:item/bow_pulling",
+      "    on_false minecraft:item/bow",
+      "  }",
+      "}",
+      "item layered {",
+      "  composite {",
+      "    model minecraft:item/base",
+      "    model { type: minecraft:model, model: minecraft:item/overlay }",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const bow = module.statements[0];
+    const layered = module.statements[1];
+    assert.strictEqual(bow.kind, "ResourceDecl");
+    assert.strictEqual(layered.kind, "ResourceDecl");
+    if (bow.kind !== "ResourceDecl" || layered.kind !== "ResourceDecl") {
+      throw new Error("Expected item resource declarations.");
+    }
+    assert.deepStrictEqual(bow.body.statements.map(statement => statement.kind), ["ItemConditionStmt"]);
+    assert.deepStrictEqual(layered.body.statements.map(statement => statement.kind), ["ItemCompositeStmt"]);
+  });
+
   it("parses overlay declarations", () => {
     const module = parseRsgl([
       "overlay \"future\" format [90, 0]..[91, 0] {",

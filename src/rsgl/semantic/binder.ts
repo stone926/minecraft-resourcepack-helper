@@ -318,6 +318,17 @@ class RsglBinder {
       if (statement.fallback) {
         this.checkExpression(statement.fallback, scope);
       }
+    } else if (statement.kind === "ItemConditionStmt") {
+      this.checkExpression(statement.property, scope);
+      statement.options.forEach(option => this.checkExpression(option.value, scope));
+      if (statement.onTrue) {
+        this.checkExpression(statement.onTrue, scope);
+      }
+      if (statement.onFalse) {
+        this.checkExpression(statement.onFalse, scope);
+      }
+    } else if (statement.kind === "ItemCompositeStmt") {
+      statement.models.forEach(model => this.checkExpression(model, scope));
     } else if (statement.kind === "ForStmt") {
       this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
     } else if (statement.kind === "IfStmt") {

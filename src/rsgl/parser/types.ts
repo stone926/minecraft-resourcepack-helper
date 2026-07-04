@@ -460,6 +460,8 @@ export type ResourceStatementNode =
   | MultipartSectionNode
   | ItemRangeStmtNode
   | ItemSelectStmtNode
+  | ItemConditionStmtNode
+  | ItemCompositeStmtNode
   | VariantEntryNode
   | MultipartEntryNode
   | UseDeclNode
@@ -541,6 +543,19 @@ export interface ItemSelectStmtNode extends StatementNodeBase {
   options: ItemOptionNode[];
   cases: ItemSelectCaseNode[];
   fallback?: ExprNode;
+}
+
+export interface ItemConditionStmtNode extends StatementNodeBase {
+  kind: "ItemConditionStmt";
+  property: ExprNode;
+  options: ItemOptionNode[];
+  onTrue?: ExprNode;
+  onFalse?: ExprNode;
+}
+
+export interface ItemCompositeStmtNode extends StatementNodeBase {
+  kind: "ItemCompositeStmt";
+  models: ExprNode[];
 }
 
 export interface RawJsonStmtNode extends StatementNodeBase {

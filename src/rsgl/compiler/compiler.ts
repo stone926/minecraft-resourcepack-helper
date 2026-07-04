@@ -3,6 +3,10 @@ import {
   BlockNode,
   ExprNode,
   ForStmtNode,
+  ItemCompositeStmtNode,
+  ItemConditionStmtNode,
+  ItemRangeStmtNode,
+  ItemSelectStmtNode,
   LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
@@ -1175,7 +1179,7 @@ class RsglCompiler {
         return this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
       },
       onSpecialStatement: (statement, fragmentContext) =>
-        kind === "item" && (statement.kind === "ItemRangeStmt" || statement.kind === "ItemSelectStmt")
+        kind === "item" && isItemModelStatement(statement)
           ? compileItemSpecialStatement(statement, fragmentContext, this.itemFragmentOptions())
           : undefined
     };
@@ -1344,4 +1348,11 @@ function createCompileGlobLoader(fallbackFileName: string, diagnostics: RsglComp
 
 function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
+}
+
+function isItemModelStatement(statement: ResourceStatementNode): statement is ItemRangeStmtNode | ItemSelectStmtNode | ItemConditionStmtNode | ItemCompositeStmtNode {
+  return statement.kind === "ItemRangeStmt"
+    || statement.kind === "ItemSelectStmt"
+    || statement.kind === "ItemConditionStmt"
+    || statement.kind === "ItemCompositeStmt";
 }

@@ -3,6 +3,8 @@ import {
   CallExprNode,
   ExprNode,
   IdentifierExprNode,
+  ItemCompositeStmtNode,
+  ItemConditionStmtNode,
   ItemRangeStmtNode,
   ItemSelectStmtNode,
   TextRange,
@@ -43,7 +45,7 @@ export function compileItemUseFragment(
 }
 
 export function compileItemSpecialStatement(
-  statement: ItemRangeStmtNode | ItemSelectStmtNode,
+  statement: ItemRangeStmtNode | ItemSelectStmtNode | ItemConditionStmtNode | ItemCompositeStmtNode,
   context: EvaluationContext,
   options: RsglItemFragmentOptions = {}
 ): Record<string, JsonValue> | undefined {
@@ -51,7 +53,15 @@ export function compileItemSpecialStatement(
     const model = compileItemRangeStatement(statement, context, options);
     return model ? { model } : undefined;
   }
-  const model = compileItemSelectStatement(statement, context, options);
+  if (statement.kind === "ItemSelectStmt") {
+    const model = compileItemSelectStatement(statement, context, options);
+    return model ? { model } : undefined;
+  }
+  if (statement.kind === "ItemConditionStmt") {
+    const model = compileItemConditionStatement(statement, context, options);
+    return model ? { model } : undefined;
+  }
+  const model = compileItemCompositeStatement(statement, context, options);
   return model ? { model } : undefined;
 }
 
@@ -228,6 +238,62 @@ function compileItemSelectStatement(
   return result;
 }
 
+function compileItemConditionStatement(
+  statement: ItemConditionStmtNode,
+  context: EvaluationContext,
+  options: RsglItemFragmentOptions
+): JsonValue | undefined {
+  const property = expressionString(statement.property, context, "property", options);
+  const onTrue = statement.onTrue
+    ? normalizeItemModelDefinition(evaluateExpression(statement.onTrue, context), context.namespace)
+    : null;
+  const onFalse = statement.onFalse
+    ? normalizeItemModelDefinition(evaluateExpression(statement.onFalse, context), context.namespace)
+    : null;
+  if (!property || !onTrue || !onFalse) {
+    if (!onTrue) {
+      options.onError?.("rsgl.compileMissingItemConditionBranch", "Item condition statement requires an on_true model.", statement.range);
+    }
+    if (!onFalse) {
+      options.onError?.("rsgl.compileMissingItemConditionBranch", "Item condition statement requires an on_false model.", statement.range);
+    }
+    return undefined;
+  }
+
+  const result: Record<string, JsonValue> = {
+    type: "minecraft:condition",
+    property,
+    ["on_true"]: onTrue,
+    ["on_false"]: onFalse
+  };
+  copyStatementOptions(result, statement.options, context, ["component", "ignore_default", "index", "keybind", "predicate", "value"]);
+  return result;
+}
+
+function compileItemCompositeStatement(
+  statement: ItemCompositeStmtNode,
+  context: EvaluationContext,
+  options: RsglItemFragmentOptions
+): JsonValue | undefined {
+  const models: JsonValue[] = [];
+  for (const item of statement.models) {
+    const model = normalizeItemModelDefinition(evaluateExpression(item, context), context.namespace);
+    if (!model) {
+      options.onError?.("rsgl.invalidItemModel", "Item composite model must evaluate to a model id or item model object.", item.range);
+      continue;
+    }
+    models.push(model);
+  }
+  if (models.length === 0) {
+    options.onError?.("rsgl.compileMissingItemCompositeModels", "Item composite statement requires at least one model.", statement.range);
+    return undefined;
+  }
+  return {
+    type: "minecraft:composite",
+    models
+  };
+}
+
 function itemFragmentCall(expression: ExprNode): (CallExprNode & { callee: IdentifierExprNode }) | null {
   return expression.kind === "CallExpr" && expression.callee.kind === "IdentifierExpr"
     ? expression as CallExprNode & { callee: IdentifierExprNode }
@@ -319,7 +385,7 @@ function copyOptionalArgs(
 
 function copyStatementOptions(
   target: Record<string, JsonValue>,
-  options: ItemRangeStmtNode["options"],
+  options: ItemRangeStmtNode["options"] | ItemConditionStmtNode["options"],
   context: EvaluationContext,
   names: string[]
 ): void {
