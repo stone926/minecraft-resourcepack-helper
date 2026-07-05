@@ -14,7 +14,13 @@ export function validateMcmetaAnimation(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
-  if (!content || !Object.hasOwn(content, "animation")) {
+  if (!content) {
+    return;
+  }
+
+  validateMcmetaGui(content.gui, unit, diagnostics);
+
+  if (!Object.hasOwn(content, "animation")) {
     return;
   }
 
@@ -46,6 +52,84 @@ export function validateMcmetaAnimation(
     ? getMcmetaFrameLayout(textureId, animation, frameWidth, frameHeight, options, unit, diagnostics)
     : null;
   validateMcmetaFrames(animation.frames, layout, unit, diagnostics);
+}
+
+function validateMcmetaGui(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+  const gui = asObject(value);
+  if (!gui) {
+    diagnostics.push({
+      code: "rsgl.invalidMcmetaGui",
+      message: "PNG GUI metadata must be an object.",
+      severity: "error",
+      range: unitRange(unit)
+    });
+    return;
+  }
+  validateMcmetaGuiScaling(gui.scaling, unit, diagnostics);
+}
+
+function validateMcmetaGuiScaling(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+  const scaling = asObject(value);
+  if (!scaling) {
+    pushGuiScalingDiagnostic("GUI scaling metadata must be an object.", unit, diagnostics);
+    return;
+  }
+  if (scaling.type !== "stretch" && scaling.type !== "tile" && scaling.type !== "nine_slice") {
+    pushGuiScalingDiagnostic("GUI scaling type must be 'stretch', 'tile', or 'nine_slice'.", unit, diagnostics);
+    return;
+  }
+  if (scaling.type === "tile" || scaling.type === "nine_slice") {
+    validateRequiredPositiveInteger(scaling, "width", "GUI scaling width", unit, diagnostics);
+    validateRequiredPositiveInteger(scaling, "height", "GUI scaling height", unit, diagnostics);
+  }
+  if (scaling.type === "nine_slice") {
+    validateNineSliceBorder(scaling.border, unit, diagnostics);
+  }
+  if ("stretch_inner" in scaling && typeof scaling.stretch_inner !== "boolean") {
+    pushGuiScalingDiagnostic("GUI nine-slice stretch_inner must be a boolean.", unit, diagnostics);
+  }
+}
+
+function validateNineSliceBorder(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (value === undefined) {
+    pushGuiScalingDiagnostic("GUI nine-slice scaling requires a border.", unit, diagnostics);
+    return;
+  }
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || value < 0) {
+      pushGuiScalingDiagnostic("GUI nine-slice border must be a non-negative integer.", unit, diagnostics);
+    }
+    return;
+  }
+  const border = asObject(value);
+  if (!border) {
+    pushGuiScalingDiagnostic("GUI nine-slice border must be a non-negative integer or border object.", unit, diagnostics);
+    return;
+  }
+  for (const key of ["left", "top", "right", "bottom"]) {
+    const side = border[key];
+    if (side !== undefined && (typeof side !== "number" || !Number.isInteger(side) || side < 0)) {
+      pushGuiScalingDiagnostic(`GUI nine-slice border ${key} must be a non-negative integer.`, unit, diagnostics);
+    }
+  }
 }
 
 function getMcmetaFrameLayout(
@@ -181,6 +265,33 @@ function validateOptionalPositiveInteger(
     return null;
   }
   return value;
+}
+
+function validateRequiredPositiveInteger(
+  object: Record<string, JsonValue>,
+  field: string,
+  label: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): number | null {
+  if (!Object.hasOwn(object, field)) {
+    pushGuiScalingDiagnostic(`${label} is required.`, unit, diagnostics);
+    return null;
+  }
+  return validateOptionalPositiveInteger(object[field], label, "rsgl.invalidMcmetaGuiScaling", unit, diagnostics);
+}
+
+function pushGuiScalingDiagnostic(
+  message: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  diagnostics.push({
+    code: "rsgl.invalidMcmetaGuiScaling",
+    message,
+    severity: "error",
+    range: unitRange(unit)
+  });
 }
 
 function isPositiveDimension(value: number): boolean {

@@ -164,6 +164,7 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "atlasDirectory", detail: "Builtin atlas directory source helper", kind: "function" },
   { label: "particlesSeq", detail: "Builtin particle texture sequence helper", kind: "function" },
   { label: "mcmetaAnimation", detail: "Builtin PNG animation metadata helper", kind: "function" },
+  { label: "nineSliceGui", detail: "Builtin PNG GUI nine-slice metadata helper", kind: "function" },
   { label: "equipmentLayers", detail: "Builtin equipment layer helper", kind: "function" },
   { label: "stairs", detail: "Builtin stairs blockstate template", kind: "function" },
   { label: "slab", detail: "Builtin slab blockstate template", kind: "function" },

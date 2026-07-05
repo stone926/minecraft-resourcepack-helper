@@ -37,6 +37,9 @@ export function compileJsonResourceUseFragment(
   if (kind === "mcmeta" && call.callee.name.text === "mcmetaAnimation") {
     return compileMcmetaAnimation(call, context);
   }
+  if (kind === "mcmeta" && call.callee.name.text === "nineSliceGui") {
+    return compileNineSliceGui(call, context, options);
+  }
   if (kind === "equipment" && call.callee.name.text === "equipmentLayers") {
     return compileEquipmentLayers(call, context, options);
   }
@@ -93,6 +96,32 @@ function compileMcmetaAnimation(
   copyOptionalArg(animation, "interpolate", call, context, 1);
   copyOptionalArg(animation, "frames", call, context, 2);
   return { animation };
+}
+
+function compileNineSliceGui(
+  call: CallExprNode & { callee: IdentifierExprNode },
+  context: EvaluationContext,
+  options: RsglJsonResourceFragmentOptions
+): Record<string, JsonValue> | undefined {
+  const width = numberArg(call, "width", 0, context, options);
+  const height = numberArg(call, "height", 1, context, options);
+  const borderArg = requiredArg(call, "border", 2, options);
+  if (width === null || height === null || !borderArg) {
+    return undefined;
+  }
+
+  const scaling: Record<string, JsonValue> = {
+    type: "nine_slice",
+    width,
+    height,
+    border: normalizeJsonValue(evaluateExpression(borderArg.value, context))
+  };
+  copyOptionalArg(scaling, "stretch_inner", call, context, 3);
+  return {
+    gui: {
+      scaling
+    }
+  };
 }
 
 function compileEquipmentLayers(
@@ -197,6 +226,25 @@ function optionalStringArg(
   const value = evaluateExpression(arg.value, context);
   if (typeof value !== "string") {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a string.`, arg.value.range);
+    return null;
+  }
+  return value;
+}
+
+function numberArg(
+  call: CallExprNode,
+  name: string,
+  positionalIndex: number,
+  context: EvaluationContext,
+  options: RsglJsonResourceFragmentOptions
+): number | null {
+  const arg = requiredArg(call, name, positionalIndex, options);
+  if (!arg) {
+    return null;
+  }
+  const value = evaluateExpression(arg.value, context);
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a finite number.`, arg.value.range);
     return null;
   }
   return value;

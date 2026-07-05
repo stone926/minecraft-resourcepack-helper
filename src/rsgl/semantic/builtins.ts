@@ -181,6 +181,12 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "interpolate", type: booleanType, optional: true },
       { name: "frames", type: jsonType, optional: true }
     ], jsonType),
+    builtinFunction("nineSliceGui", [
+      { name: "width", type: numberType, optional: false },
+      { name: "height", type: numberType, optional: false },
+      { name: "border", type: jsonType, optional: false },
+      { name: "stretch_inner", type: booleanType, optional: true }
+    ], jsonType),
     builtinFunction("equipmentLayers", [
       { name: "texture", type: textureIdType, optional: false },
       { name: "layers", type: jsonType, optional: false },

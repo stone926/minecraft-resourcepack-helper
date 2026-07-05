@@ -285,6 +285,8 @@ class RsglBinder {
     if (statement.kind === "PropertyStmt") {
       if (owner === "equipment" && statement.name.text === "layers") {
         this.checkEquipmentLayerListExpression(statement.value, scope);
+      } else if (owner === "scaling" && statement.name.text === "type") {
+        this.checkStringEnumLikeExpression(statement.value, scope);
       } else {
         this.checkExpression(statement.value, scope);
       }
@@ -293,6 +295,8 @@ class RsglBinder {
       if (statement.value) {
         if (owner === "equipment" && statement.name.text === "layers") {
           this.checkEquipmentLayerListExpression(statement.value, scope);
+        } else if (owner === "scaling" && statement.name.text === "type") {
+          this.checkStringEnumLikeExpression(statement.value, scope);
         } else {
           this.checkExpression(statement.value, scope);
         }
@@ -477,6 +481,13 @@ class RsglBinder {
   }
 
   private checkEquipmentLayerNameExpression(expression: ExprNode, scope: RsglScope): void {
+    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
+      return;
+    }
+    this.checkExpression(expression, scope);
+  }
+
+  private checkStringEnumLikeExpression(expression: ExprNode, scope: RsglScope): void {
     if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
       return;
     }

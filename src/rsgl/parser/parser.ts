@@ -56,6 +56,8 @@ const resourceBodySectionKeywords = new Set([
   "animation",
   "sources",
   "filter",
+  "gui",
+  "scaling",
   "layers",
   "raw"
 ]);

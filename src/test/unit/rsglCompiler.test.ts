@@ -1259,6 +1259,67 @@ describe("RSGL compiler", () => {
     ]);
   });
 
+  it("lowers and validates mcmeta GUI scaling sugar", () => {
+    const result = compileRsglModule(parseRsgl([
+      "mcmeta \"assets/minecraft/textures/gui/sprites/widget/button.png\" {",
+      "  use nineSliceGui(width: 200, height: 20, border: 2, stretch_inner: true)",
+      "}",
+      "mcmeta \"assets/minecraft/textures/gui/sprites/widget/panel.png\" {",
+      "  gui {",
+      "    scaling {",
+      "      type tile",
+      "      width 16",
+      "      height 16",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("button.png.mcmeta"))?.content, {
+      gui: {
+        scaling: {
+          type: "nine_slice",
+          width: 200,
+          height: 20,
+          border: 2,
+          ["stretch_inner"]: true
+        }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("panel.png.mcmeta"))?.content, {
+      gui: {
+        scaling: {
+          type: "tile",
+          width: 16,
+          height: 16
+        }
+      }
+    });
+  });
+
+  it("reports invalid mcmeta GUI scaling metadata", () => {
+    const result = compileRsglModule(parseRsgl([
+      "mcmeta \"assets/minecraft/textures/gui/sprites/widget/bad.png\" {",
+      "  gui {",
+      "    scaling {",
+      "      type nine_slice",
+      "      width 16",
+      "      border -1",
+      "      stretch_inner \"yes\"",
+      "    }",
+      "  }",
+      "}",
+      "mcmeta \"assets/minecraft/textures/gui/sprites/widget/bad_helper.png\" {",
+      "  use nineSliceGui(width: \"wide\", height: 10, border: 1)",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidMcmetaGuiScaling"));
+    assert.ok(codes.includes("rsgl.invalidJsonResourceFragmentArgument"));
+  });
+
   it("expands mcmeta glob targets relative to the resource pack root", () => {
     const root = createTempDir();
     try {
