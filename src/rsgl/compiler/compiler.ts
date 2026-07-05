@@ -55,8 +55,10 @@ import { compileEquipmentLayerStatement, lowerEquipmentBodySugar } from "./equip
 import {
   compileBlockstateUseFragment,
   compileBlockstateValueFragment,
+  appendBlockstateContent,
   mergeBlockstateContent,
   mergeBlockstateFragment,
+  overrideBlockstateContent,
   RsglBlockstateFragment,
   RsglBlockstateFragmentOptions
 } from "./blockstateFragments";
@@ -502,12 +504,30 @@ class RsglCompiler {
         mergeBlockstateContent(result.content, branchContent.content, statement.range, fragmentOptions);
         result.mappings.push(...offsetMultipartMappings(branchContent.mappings, multipartOffset));
       }
-    } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt") {
+    } else if (statement.kind === "RawJsonStmt") {
       const value = normalizeJsonValue(evaluateExpression(statement.value, context));
       if (isJsonObject(value)) {
         const multipartOffset = currentMultipartLength(result.content);
         mergeBlockstateContent(result.content, value, statement.range, fragmentOptions);
         result.mappings.push(...this.blockstateObjectMappings(value, statement.range, context, multipartOffset));
+      } else {
+        this.error("rsgl.invalidRawJsonFragment", "raw_json must evaluate to an object fragment.", statement.value.range);
+      }
+    } else if (statement.kind === "OverrideStmt") {
+      const value = normalizeJsonValue(evaluateExpression(statement.value, context));
+      if (isJsonObject(value)) {
+        const applied = overrideBlockstateContent(result.content, value, statement.create, statement.range, fragmentOptions);
+        result.mappings.push(...this.blockstateObjectMappings(applied, statement.range, context, 0));
+      } else {
+        this.error("rsgl.invalidOverrideFragment", "override must evaluate to an object fragment.", statement.value.range);
+      }
+    } else if (statement.kind === "AppendStmt") {
+      const value = normalizeJsonValue(evaluateExpression(statement.value, context));
+      if (isJsonObject(value)) {
+        const appended = appendBlockstateContent(result.content, value, statement.range, fragmentOptions);
+        result.mappings.push(...this.blockstateObjectMappings(appended.applied, statement.range, context, appended.multipartOffset));
+      } else {
+        this.error("rsgl.invalidAppendFragment", "append must evaluate to an object fragment.", statement.value.range);
       }
     }
   }

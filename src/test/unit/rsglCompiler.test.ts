@@ -1740,6 +1740,106 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("applies override create and append semantics in blockstate bodies", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate lamp {",
+      "  variants {",
+      "    { facing: north } -> { model: minecraft:block/lamp, x: 0 }",
+      "  }",
+      "  override { variants: { \"facing=north\": { model: minecraft:block/lamp_changed } } }",
+      "  override create { variants: { \"facing=south\": { model: minecraft:block/lamp_south } } }",
+      "}",
+      "blockstate fence {",
+      "  multipart {",
+      "    apply { model: minecraft:block/fence_post }",
+      "  }",
+      "  append { multipart: [{ when: { north: true }, apply: { model: minecraft:block/fence_side } }] }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const lamp = result.units.find(unit => unit.outputPath.endsWith("lamp.json"));
+    assert.deepStrictEqual(lamp?.content, {
+      variants: {
+        ["facing=north"]: {
+          model: "minecraft:block/lamp_changed",
+          x: 0
+        },
+        ["facing=south"]: {
+          model: "minecraft:block/lamp_south"
+        }
+      }
+    });
+
+    const fence = result.units.find(unit => unit.outputPath.endsWith("fence.json"));
+    assert.deepStrictEqual(fence?.content, {
+      multipart: [
+        {
+          apply: {
+            model: "minecraft:block/fence_post"
+          }
+        },
+        {
+          apply: {
+            model: "minecraft:block/fence_side"
+          },
+          when: {
+            north: true
+          }
+        }
+      ]
+    });
+    assert.ok(fence?.sourceMap.mappings.some(mapping => mapping.generatedPath === "/multipart/1"));
+  });
+
+  it("reports invalid blockstate override and append fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate invalid_variants {",
+      "  variants {",
+      "    {} -> { model: minecraft:block/base }",
+      "  }",
+      "  override { variants: { \"facing=north\": { model: minecraft:block/new } } }",
+      "  append { variants: { \"facing=south\": { model: minecraft:block/south } } }",
+      "  raw_json 1",
+      "  override 2",
+      "  append 3",
+      "}",
+      "blockstate invalid_multipart {",
+      "  multipart {",
+      "    apply { model: minecraft:block/post }",
+      "  }",
+      "  append { multipart: { apply: { model: minecraft:block/side } } }",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.overrideMissingField"));
+    assert.ok(codes.includes("rsgl.appendIncompatibleField"));
+    assert.ok(codes.includes("rsgl.invalidRawJsonFragment"));
+    assert.ok(codes.includes("rsgl.invalidOverrideFragment"));
+    assert.ok(codes.includes("rsgl.invalidAppendFragment"));
+    assert.ok(codes.includes("rsgl.invalidBlockstateMultipartFragment"));
+
+    const invalidVariants = result.units.find(unit => unit.outputPath.endsWith("invalid_variants.json"));
+    assert.deepStrictEqual(invalidVariants?.content, {
+      variants: {
+        [""]: {
+          model: "minecraft:block/base"
+        }
+      }
+    });
+    const invalidMultipart = result.units.find(unit => unit.outputPath.endsWith("invalid_multipart.json"));
+    assert.deepStrictEqual(invalidMultipart?.content, {
+      multipart: [
+        {
+          apply: {
+            model: "minecraft:block/post"
+          }
+        }
+      ]
+    });
+  });
+
   it("loads raw_json path fragments relative to RSGL source files", () => {
     const root = createTempDir();
     try {
