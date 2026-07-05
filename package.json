@@ -308,12 +308,17 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "compile:all": "npm run compile && npm run compile:rsgl-extension",
+    "compile:rsgl-extension": "npm --prefix extensions/vscode-rsgl run compile",
     "watch": "tsc -watch -p ./",
+    "watch:rsgl-extension": "npm --prefix extensions/vscode-rsgl run watch",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"extensions/**/*.ts\"",
     "test": "mocha \"./out/src/test/unit/**/*.test.js\"",
     "benchmark:model-preview": "npm run compile && node scripts/model-preview-benchmark.mjs",
-    "package:vsix": "vsce package",
+    "package:vsix": "node scripts/package-vsix.mjs main",
+    "package:main:vsix": "node scripts/package-vsix.mjs main",
+    "package:rsgl:vsix": "node scripts/package-vsix.mjs rsgl",
     "deploy": "vsce publish",
     "publish": "node scripts/release.mjs",
     "publish:dry-run": "node scripts/release.mjs --dry-run",
@@ -330,12 +335,12 @@
     "mocha": "^11.7.6",
     "three": "^0.185.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
-  },
-  "dependencies": {
-    "@humanwhocodes/momoa": "^3.3.10",
+    "typescript-eslint": "^8.61.1",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "dependencies": {
+    "@humanwhocodes/momoa": "^3.3.10"
   }
 }

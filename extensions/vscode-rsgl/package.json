@@ -2,8 +2,12 @@
   "name": "rsgl",
   "displayName": "RSGL - Resourcepack Generation Language",
   "publisher": "stone926",
-  "version": "1.0.0",
+  "version": "2.3.1",
   "license": "UNLICENSED",
+  "repository": {
+    "url": "https://github.com/stone926/minecraft-resourcepack-helper",
+    "type": "git"
+  },
   "engines": {
     "vscode": "^1.125.0"
   },
@@ -22,7 +26,8 @@
   "main": "./out/extensions/vscode-rsgl/src/extension.js",
   "l10n": "./l10n",
   "scripts": {
-    "compile": "tsc -p ./tsconfig.json"
+    "compile": "tsc -p ./tsconfig.json",
+    "watch": "tsc -watch -p ./tsconfig.json"
   },
   "contributes": {
     "languages": [
@@ -163,7 +168,9 @@
     }
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

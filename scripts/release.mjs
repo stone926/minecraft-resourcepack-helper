@@ -25,7 +25,10 @@ const releaseInput = positional[0] ?? "patch";
 
 const packagePath = "package.json";
 const lockPath = "package-lock.json";
+const rsglPackagePath = "extensions/vscode-rsgl/package.json";
+const rsglLockPath = "extensions/vscode-rsgl/package-lock.json";
 const changelogPath = "CHANGELOG.md";
+const rsglChangelogPath = "extensions/vscode-rsgl/CHANGELOG.md";
 const remoteName = "origin";
 
 const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -38,6 +41,7 @@ main();
 function main() {
   assertGitRepo();
   assertRemoteExists(remoteName);
+  assertSplitPackageVersionsMatch();
 
   const status = getGitStatus();
   if (status) {
@@ -69,12 +73,18 @@ function main() {
   if (!skipTests) {
     run("npm", ["test"]);
   }
-  run("npm", ["run", "compile"]);
+  run("npm", ["run", "compile:all"]);
 
   run("npm", ["version", nextVersion, "--no-git-tag-version"]);
-  updateChangelog(nextVersion, notes);
+  if (existsSync(rsglPackagePath)) {
+    run("npm", ["--prefix", "extensions/vscode-rsgl", "version", nextVersion, "--no-git-tag-version"]);
+  }
+  updateChangelog(changelogPath, nextVersion, notes);
+  if (existsSync(rsglChangelogPath)) {
+    updateChangelog(rsglChangelogPath, nextVersion, notes);
+  }
 
-  const filesToStage = [packagePath, lockPath, changelogPath].filter((file) => existsSync(file));
+  const filesToStage = [packagePath, lockPath, rsglPackagePath, rsglLockPath, changelogPath, rsglChangelogPath].filter((file) => existsSync(file));
   run("git", ["add", ...filesToStage]);
   run("git", ["commit", "-m", `chore: release ${tagName}`]);
   run("git", ["tag", "-a", tagName, "-m", tagName]);
@@ -139,6 +149,17 @@ function compareVersions(left, right) {
   }
 
   return 0;
+}
+
+function assertSplitPackageVersionsMatch() {
+  if (!existsSync(rsglPackagePath)) {
+    return;
+  }
+
+  const rsglPkg = JSON.parse(readFileSync(rsglPackagePath, "utf8"));
+  if (rsglPkg.version !== currentVersion) {
+    fail(`${rsglPackagePath} version ${rsglPkg.version} does not match ${packagePath} version ${currentVersion}.`);
+  }
 }
 
 function getReleaseBase() {
@@ -225,19 +246,19 @@ function getUnreleasedNotes() {
     .filter((line) => line.trim().length > 0);
 }
 
-function updateChangelog(version, notes) {
+function updateChangelog(targetChangelogPath, version, notes) {
   const date = new Date().toISOString().slice(0, 10);
   const entry = `## [${version}] - ${date}\n\n${notes.join("\n")}\n\n`;
   let content = "# Changelog\n\n";
 
-  if (existsSync(changelogPath)) {
-    content = readFileSync(changelogPath, "utf8");
+  if (existsSync(targetChangelogPath)) {
+    content = readFileSync(targetChangelogPath, "utf8");
   }
 
   content = content.replace(/\r\n/g, "\n");
 
   if (content.includes(`## [${version}]`)) {
-    fail(`${changelogPath} already contains an entry for ${version}.`);
+    fail(`${targetChangelogPath} already contains an entry for ${version}.`);
   }
 
   if (!content.startsWith("# Changelog")) {
@@ -260,7 +281,7 @@ function updateChangelog(version, notes) {
     }
   }
 
-  writeFileSync(changelogPath, `${content.trimEnd()}\n`, "utf8");
+  writeFileSync(targetChangelogPath, `${content.trimEnd()}\n`, "utf8");
 }
 
 function findChangelogSection(content, title) {
@@ -306,9 +327,9 @@ function printPlan(releaseBase, notes) {
   } else {
     console.log("- tests skipped");
   }
-  console.log("- npm run compile");
-  console.log("- npm version --no-git-tag-version");
-  console.log("- update CHANGELOG.md");
+  console.log("- npm run compile:all");
+  console.log("- npm version --no-git-tag-version for both VS Code extensions");
+  console.log("- update CHANGELOG.md files");
   console.log("- git commit and annotated tag");
   console.log(noPush ? "- skip push" : `- git push ${remoteName} HEAD --follow-tags`);
 }

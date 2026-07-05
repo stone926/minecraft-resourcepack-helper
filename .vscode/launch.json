@@ -6,7 +6,7 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "Run Extension",
+			"name": "Run Main Extension",
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
@@ -16,6 +16,32 @@
 				"${workspaceFolder}/out/**/*.js"
 			],
 			"preLaunchTask": "npm: compile"
+		},
+		{
+			"name": "Run RSGL Extension",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode-rsgl"
+			],
+			"outFiles": [
+				"${workspaceFolder}/extensions/vscode-rsgl/out/**/*.js"
+			],
+			"preLaunchTask": "npm: compile:rsgl-extension"
+		},
+		{
+			"name": "Run Main + RSGL Extensions",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode-rsgl"
+			],
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js",
+				"${workspaceFolder}/extensions/vscode-rsgl/out/**/*.js"
+			],
+			"preLaunchTask": "npm: compile:all"
 		},
 		{
 			"name": "Debug Unit Tests",

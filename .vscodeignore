@@ -8,6 +8,12 @@ node_modules/three/**
 *.vsix
 .codex-*.vsix
 assets/*.gif
+extensions/**
+packages/**
+out/extensions/**
+out/packages/rsgl-cli/**
+out/packages/rsgl-core/**
+out/packages/rsgl-lsp/**
 out/test/**
 src/**
 scripts/**

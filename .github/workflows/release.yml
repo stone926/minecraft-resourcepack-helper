@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish VS Code extension
+    name: Publish VS Code extensions
     runs-on: ubuntu-latest
 
     steps:
@@ -39,11 +39,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install RSGL extension dependencies
+        run: npm ci --prefix extensions/vscode-rsgl
+
       - name: Test
         run: npm test
 
-      - name: Compile
-        run: npm run compile
+      - name: Compile split extensions
+        run: npm run compile:all
 
       - name: Read package metadata
         id: meta
@@ -51,26 +54,38 @@ jobs:
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           NAME="$(node -p "require('./package.json').name")"
+          RSGL_VERSION="$(node -p "require('./extensions/vscode-rsgl/package.json').version")"
+          RSGL_NAME="$(node -p "require('./extensions/vscode-rsgl/package.json').name")"
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           if [ "${TAG}" != "v${VERSION}" ]; then
             echo "Tag ${TAG} does not match package version ${VERSION}."
             exit 1
           fi
+          if [ "${RSGL_VERSION}" != "${VERSION}" ]; then
+            echo "RSGL extension version ${RSGL_VERSION} does not match package version ${VERSION}."
+            exit 1
+          fi
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "name=${NAME}" >> "${GITHUB_OUTPUT}"
+          echo "rsgl_version=${RSGL_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "rsgl_name=${RSGL_NAME}" >> "${GITHUB_OUTPUT}"
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
-          echo "vsix=dist/${NAME}-${VERSION}.vsix" >> "${GITHUB_OUTPUT}"
+          echo "main_vsix=dist/${NAME}-${VERSION}.vsix" >> "${GITHUB_OUTPUT}"
+          echo "rsgl_vsix=dist/${RSGL_NAME}-${RSGL_VERSION}.vsix" >> "${GITHUB_OUTPUT}"
 
-      - name: Package VSIX
+      - name: Package VSIX artifacts
         run: |
           mkdir -p dist
-          npm run package:vsix -- --out "${{ steps.meta.outputs.vsix }}"
+          npm run package:main:vsix -- --out "${{ steps.meta.outputs.main_vsix }}"
+          npm run package:rsgl:vsix -- --out "${{ steps.meta.outputs.rsgl_vsix }}"
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}-vsix
-          path: ${{ steps.meta.outputs.vsix }}
+          name: vscode-extensions-${{ steps.meta.outputs.version }}-vsix
+          path: |
+            ${{ steps.meta.outputs.main_vsix }}
+            ${{ steps.meta.outputs.rsgl_vsix }}
           if-no-files-found: error
           retention-days: 30
 
@@ -84,8 +99,13 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      - name: Publish to VS Code Marketplace
-        run: npm run deploy -- --packagePath "${{ steps.meta.outputs.vsix }}"
+      - name: Publish RSGL extension to VS Code Marketplace
+        run: npm run deploy -- --packagePath "${{ steps.meta.outputs.rsgl_vsix }}" --skip-duplicate
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish main extension to VS Code Marketplace
+        run: npm run deploy -- --packagePath "${{ steps.meta.outputs.main_vsix }}" --skip-duplicate
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
@@ -134,10 +154,11 @@ jobs:
         shell: bash
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
-          VSIX="${{ steps.meta.outputs.vsix }}"
+          MAIN_VSIX="${{ steps.meta.outputs.main_vsix }}"
+          RSGL_VSIX="${{ steps.meta.outputs.rsgl_vsix }}"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md
-            gh release upload "${TAG}" "${VSIX}" --clobber
+            gh release upload "${TAG}" "${MAIN_VSIX}" "${RSGL_VSIX}" --clobber
           else
-            gh release create "${TAG}" "${VSIX}" --title "${TAG}" --notes-file release-notes.md --verify-tag
+            gh release create "${TAG}" "${MAIN_VSIX}" "${RSGL_VSIX}" --title "${TAG}" --notes-file release-notes.md --verify-tag
           fi

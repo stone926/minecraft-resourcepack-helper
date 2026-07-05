@@ -17,9 +17,40 @@
 			}
 		},
 		{
+			"label": "npm: compile:rsgl-extension",
+			"type": "npm",
+			"script": "compile:rsgl-extension",
+			"problemMatcher": "$tsc",
+			"presentation": {
+				"reveal": "never"
+			},
+			"group": "build"
+		},
+		{
+			"label": "npm: compile:all",
+			"type": "npm",
+			"script": "compile:all",
+			"problemMatcher": "$tsc",
+			"presentation": {
+				"reveal": "never"
+			},
+			"group": "build"
+		},
+		{
 			"label": "npm: watch",
 			"type": "npm",
 			"script": "watch",
+			"problemMatcher": "$tsc-watch",
+			"isBackground": true,
+			"presentation": {
+				"reveal": "never"
+			},
+			"group": "build"
+		},
+		{
+			"label": "npm: watch:rsgl-extension",
+			"type": "npm",
+			"script": "watch:rsgl-extension",
 			"problemMatcher": "$tsc-watch",
 			"isBackground": true,
 			"presentation": {
