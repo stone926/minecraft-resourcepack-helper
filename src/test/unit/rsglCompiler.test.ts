@@ -1080,6 +1080,82 @@ describe("RSGL compiler", () => {
     assert.strictEqual(result.units[0].kind, "model");
   });
 
+  it("lowers legacy custom model data select cases", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item numbered {",
+      "  model: {",
+      "    type: minecraft:select,",
+      "    property: minecraft:custom_model_data,",
+      "    cases: [",
+      "      { when: [1, 2], model: { type: minecraft:model, model: minecraft:item/numbered_one } }",
+      "    ],",
+      "    fallback: { type: minecraft:model, model: minecraft:item/numbered }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/numbered"
+      },
+      overrides: [
+        {
+          predicate: { ["custom_model_data"]: 1 },
+          model: "minecraft:item/numbered_one"
+        },
+        {
+          predicate: { ["custom_model_data"]: 2 },
+          model: "minecraft:item/numbered_one"
+        }
+      ]
+    });
+  });
+
+  it("flattens nested legacy item model predicates", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item bow {",
+      "  model: {",
+      "    type: minecraft:condition,",
+      "    property: minecraft:using_item,",
+      "    on_false: { type: minecraft:model, model: minecraft:item/bow },",
+      "    on_true: {",
+      "      type: minecraft:range_dispatch,",
+      "      property: minecraft:custom_model_data,",
+      "      fallback: { type: minecraft:model, model: minecraft:item/bow_pulling_0 },",
+      "      entries: [",
+      "        { threshold: 1, model: { type: minecraft:model, model: minecraft:item/bow_pulling_special } }",
+      "      ]",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/bow"
+      },
+      overrides: [
+        {
+          predicate: { pulling: 1 },
+          model: "minecraft:item/bow_pulling_0"
+        },
+        {
+          predicate: {
+            pulling: 1,
+            ["custom_model_data"]: 1
+          },
+          model: "minecraft:item/bow_pulling_special"
+        }
+      ]
+    });
+  });
+
   it("reports unsupported item models in the legacy item backend", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format 64",

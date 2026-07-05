@@ -8,6 +8,16 @@ export interface LowerItemUnitsForTargetResult {
   diagnostics: RsglCompileDiagnostic[];
 }
 
+interface LegacyItemLowering {
+  baseModel: string;
+  overrides: LegacyItemOverride[];
+}
+
+interface LegacyItemOverride {
+  predicate: Record<string, number>;
+  model: string;
+}
+
 const modernItemModelPackFormat = 75;
 
 export function lowerItemUnitsForTarget(
@@ -46,33 +56,34 @@ function lowerItemUnitToLegacy(
   }
 
   const outputPath = legacyItemModelOutputPath(unit.id);
-  const simpleModel = modelRef(model);
-  if (simpleModel) {
-    if (simpleModel === itemModelId(unit.id) && modelOutputPaths.has(normalizedPath(outputPath))) {
-      return [];
-    }
-    return [legacyUnit(unit, outputPath, legacyBaseModel(unit.id, simpleModel))];
+  const lowered = lowerLegacyItemModel(model, unit, diagnostics);
+  if (!lowered) {
+    return [];
   }
-
-  const lowered = lowerLegacyConditionalItemModel(unit.id, model, unit, diagnostics);
-  return lowered ? [legacyUnit(unit, outputPath, lowered)] : [];
+  if (lowered.baseModel === itemModelId(unit.id) && lowered.overrides.length === 0 && modelOutputPaths.has(normalizedPath(outputPath))) {
+    return [];
+  }
+  return [legacyUnit(unit, outputPath, legacyContent(unit.id, lowered))];
 }
 
-function lowerLegacyConditionalItemModel(
-  itemId: ResourceId,
+function lowerLegacyItemModel(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
-): Record<string, JsonValue> | null {
+): LegacyItemLowering | null {
   const type = itemModelType(model.type);
+  if (type === "model") {
+    const modelValue = modelRef(model);
+    return modelValue ? { baseModel: modelValue, overrides: [] } : null;
+  }
   if (type === "range_dispatch") {
-    return lowerLegacyRangeDispatch(itemId, model, unit, diagnostics);
+    return lowerLegacyRangeDispatch(model, unit, diagnostics);
   }
   if (type === "select") {
-    return lowerLegacySelect(itemId, model, unit, diagnostics);
+    return lowerLegacySelect(model, unit, diagnostics);
   }
   if (type === "condition") {
-    return lowerLegacyCondition(itemId, model, unit, diagnostics);
+    return lowerLegacyCondition(model, unit, diagnostics);
   }
 
   pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", `Legacy item backend does not support '${String(model.type)}' item models.`);
@@ -80,95 +91,151 @@ function lowerLegacyConditionalItemModel(
 }
 
 function lowerLegacyRangeDispatch(
-  itemId: ResourceId,
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
-): Record<string, JsonValue> | null {
+): LegacyItemLowering | null {
   const predicate = rangePredicateName(model);
   const entries = Array.isArray(model.entries) ? model.entries : null;
-  const fallback = isJsonObject(model.fallback) ? modelRef(model.fallback) : null;
+  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
   if (!predicate || !entries || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch lowering requires a supported property, entries, and a model fallback.");
     return null;
   }
+  if (fallback.overrides.length > 0) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch lowering requires a plain fallback model.");
+    return null;
+  }
 
-  const overrides: JsonValue[] = [];
+  const overrides: LegacyItemOverride[] = [];
   for (const entry of entries) {
     const entryObject = isJsonObject(entry) ? entry : null;
     const threshold = typeof entryObject?.threshold === "number" && Number.isFinite(entryObject.threshold)
       ? entryObject.threshold
       : null;
-    const modelRefValue = isJsonObject(entryObject?.model) ? modelRef(entryObject.model) : null;
-    if (threshold === null || !modelRefValue) {
-      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch entries must use finite thresholds and plain model branches.");
+    const branch = isJsonObject(entryObject?.model) ? lowerLegacyItemModel(entryObject.model, unit, diagnostics) : null;
+    if (threshold === null || !branch) {
+      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch entries must use finite thresholds and lowerable model branches.");
       return null;
     }
-    overrides.push({
-      predicate: { [predicate]: threshold },
-      model: modelRefValue
-    });
+    const branchOverrides = prefixLowering({ [predicate]: threshold }, branch, unit, diagnostics);
+    if (!branchOverrides) {
+      return null;
+    }
+    overrides.push(...branchOverrides);
   }
 
-  return withOverrides(legacyBaseModel(itemId, fallback), overrides);
+  return { baseModel: fallback.baseModel, overrides };
 }
 
 function lowerLegacySelect(
-  itemId: ResourceId,
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
-): Record<string, JsonValue> | null {
+): LegacyItemLowering | null {
   if (normalizedProperty(model.property) !== "custom_model_data") {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering currently supports only custom_model_data cases.");
     return null;
   }
 
   const cases = Array.isArray(model.cases) ? model.cases : null;
-  const fallback = isJsonObject(model.fallback) ? modelRef(model.fallback) : null;
+  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
   if (!cases || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering requires cases and a model fallback.");
     return null;
   }
-
-  const overrides: JsonValue[] = [];
-  for (const itemCase of cases) {
-    const caseObject = isJsonObject(itemCase) ? itemCase : null;
-    const when = legacyNumericPredicateValue(caseObject?.when);
-    const modelRefValue = isJsonObject(caseObject?.model) ? modelRef(caseObject.model) : null;
-    if (when === null || !modelRefValue) {
-      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select cases must use numeric custom_model_data values and plain model branches.");
-      return null;
-    }
-    overrides.push({
-      predicate: { ["custom_model_data"]: when },
-      model: modelRefValue
-    });
-  }
-
-  return withOverrides(legacyBaseModel(itemId, fallback), overrides);
-}
-
-function lowerLegacyCondition(
-  itemId: ResourceId,
-  model: Record<string, JsonValue>,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): Record<string, JsonValue> | null {
-  const predicate = conditionPredicateName(model);
-  const onTrue = isJsonObject(model["on_true"]) ? modelRef(model["on_true"]) : null;
-  const onFalse = isJsonObject(model["on_false"]) ? modelRef(model["on_false"]) : null;
-  if (!predicate || !onTrue || !onFalse) {
-    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a supported property and plain model branches.");
+  if (fallback.overrides.length > 0) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering requires a plain fallback model.");
     return null;
   }
 
-  return withOverrides(legacyBaseModel(itemId, onFalse), [
-    {
-      predicate: { [predicate]: 1 },
-      model: onTrue
+  const overrides: LegacyItemOverride[] = [];
+  for (const itemCase of cases) {
+    const caseObject = isJsonObject(itemCase) ? itemCase : null;
+    const whenValues = legacyNumericPredicateValues(caseObject?.when);
+    const branch = isJsonObject(caseObject?.model) ? lowerLegacyItemModel(caseObject.model, unit, diagnostics) : null;
+    if (!whenValues || !branch) {
+      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select cases must use numeric custom_model_data values and lowerable model branches.");
+      return null;
     }
-  ]);
+    for (const when of whenValues) {
+      const branchOverrides = prefixLowering({ ["custom_model_data"]: when }, branch, unit, diagnostics);
+      if (!branchOverrides) {
+        return null;
+      }
+      overrides.push(...branchOverrides);
+    }
+  }
+
+  return { baseModel: fallback.baseModel, overrides };
+}
+
+function lowerLegacyCondition(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): LegacyItemLowering | null {
+  const predicate = conditionPredicateName(model);
+  const onTrue = isJsonObject(model["on_true"]) ? lowerLegacyItemModel(model["on_true"], unit, diagnostics) : null;
+  const onFalse = isJsonObject(model["on_false"]) ? lowerLegacyItemModel(model["on_false"], unit, diagnostics) : null;
+  if (!predicate || !onTrue || !onFalse) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a supported property and lowerable model branches.");
+    return null;
+  }
+  if (onFalse.overrides.length > 0) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a plain on_false model.");
+    return null;
+  }
+
+  const overrides = prefixLowering({ [predicate]: 1 }, onTrue, unit, diagnostics);
+  return overrides ? { baseModel: onFalse.baseModel, overrides } : null;
+}
+
+function prefixLowering(
+  predicate: Record<string, number>,
+  lowering: LegacyItemLowering,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): LegacyItemOverride[] | null {
+  const overrides: LegacyItemOverride[] = [
+    { predicate: { ...predicate }, model: lowering.baseModel }
+  ];
+  for (const override of lowering.overrides) {
+    const merged = mergePredicates(predicate, override.predicate);
+    if (!merged) {
+      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy item backend cannot combine conflicting nested predicates.");
+      return null;
+    }
+    overrides.push({
+      predicate: merged,
+      model: override.model
+    });
+  }
+  return overrides;
+}
+
+function mergePredicates(
+  base: Record<string, number>,
+  nested: Record<string, number>
+): Record<string, number> | null {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(nested)) {
+    if (Object.hasOwn(result, key) && result[key] !== value) {
+      return null;
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function legacyContent(itemId: ResourceId, lowering: LegacyItemLowering): Record<string, JsonValue> {
+  return withOverrides(
+    legacyBaseModel(itemId, lowering.baseModel),
+    lowering.overrides.map(override => ({
+      predicate: override.predicate,
+      model: override.model
+    }))
+  );
 }
 
 function legacyBaseModel(itemId: ResourceId, model: string): Record<string, JsonValue> {
@@ -245,6 +312,15 @@ function conditionPredicateName(model: Record<string, JsonValue>): string | null
 
 function normalizedProperty(value: JsonValue | undefined): string | null {
   return typeof value === "string" ? value.replace(/^minecraft:/, "") : null;
+}
+
+function legacyNumericPredicateValues(value: JsonValue | undefined): number[] | null {
+  if (Array.isArray(value)) {
+    const values = value.map(item => legacyNumericPredicateValue(item));
+    return values.every((item): item is number => item !== null) ? values : null;
+  }
+  const single = legacyNumericPredicateValue(value);
+  return single === null ? null : [single];
 }
 
 function legacyNumericPredicateValue(value: JsonValue | undefined): number | null {
