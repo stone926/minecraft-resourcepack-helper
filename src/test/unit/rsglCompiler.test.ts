@@ -4695,6 +4695,36 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemTopLevelField"));
     assert.ok(codes.includes("rsgl.invalidItemTransformation"));
     assert.ok(codes.includes("rsgl.missingItemTransformationField"));
+    const invalidMatrixUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_matrix.json"));
+    const matrixRange = invalidMatrixUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/transformation")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTransformation"
+      && diagnostic.message.includes("matrix")
+      && diagnostic.range.start === matrixRange?.start
+      && diagnostic.range.end === matrixRange?.end
+    ));
+    const invalidTransformUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_transform_object.json"));
+    const transformationRange = invalidTransformUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/transformation")?.sourceRange;
+    const leftRotationRange = invalidTransformUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/transformation/left_rotation")?.sourceRange;
+    const translationRange = invalidTransformUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/transformation/translation")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.missingItemTransformationField"
+      && diagnostic.message.includes("'right_rotation'")
+      && diagnostic.range.start === transformationRange?.start
+      && diagnostic.range.end === transformationRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTransformation"
+      && diagnostic.message.includes("'left_rotation'")
+      && diagnostic.range.start === leftRotationRange?.start
+      && diagnostic.range.end === leftRotationRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTransformation"
+      && diagnostic.message.includes("'translation'")
+      && diagnostic.range.start === translationRange?.start
+      && diagnostic.range.end === translationRange?.end
+    ));
   });
 
   it("validates item property-specific fields", () => {

@@ -696,7 +696,7 @@ function validateItemModelDefinition(
     return;
   }
 
-  validateItemTransformation(model, unit, diagnostics);
+  validateItemTransformation(model, unit, diagnostics, generatedPath);
   validateItemTints(model, unit, diagnostics, generatedPath);
   const type = itemModelType(model.type);
   if (type === "model") {
@@ -1342,14 +1342,24 @@ function validateSpecialNumberInRange(
 function validateItemTransformation(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (!("transformation" in model)) {
     return;
   }
+  const transformationPath = appendGeneratedPath(generatedPath, "transformation");
   const transformation = model.transformation;
   if (Array.isArray(transformation)) {
-    validateNumericArray(transformation, 16, "rsgl.invalidItemTransformation", "Item transformation matrix must contain 16 numbers.", unit, diagnostics);
+    validateNumericArray(
+      transformation,
+      16,
+      "rsgl.invalidItemTransformation",
+      "Item transformation matrix must contain 16 numbers.",
+      unit,
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, transformationPath)
+    );
     return;
   }
   const object = asObject(transformation);
@@ -1358,7 +1368,7 @@ function validateItemTransformation(
       code: "rsgl.invalidItemTransformation",
       message: "Item transformation must be a matrix array or transformation object.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, transformationPath)
     });
     return;
   }
@@ -1369,14 +1379,30 @@ function validateItemTransformation(
         code: "rsgl.missingItemTransformationField",
         message: `Item transformation must define '${field}'.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, transformationPath)
       });
     }
   }
-  validateRotationValue(object.left_rotation, "left_rotation", unit, diagnostics);
-  validateRotationValue(object.right_rotation, "right_rotation", unit, diagnostics);
-  validateNumericArray(object.scale, 3, "rsgl.invalidItemTransformation", "Item transformation 'scale' must contain 3 numbers.", unit, diagnostics);
-  validateNumericArray(object.translation, 3, "rsgl.invalidItemTransformation", "Item transformation 'translation' must contain 3 numbers.", unit, diagnostics);
+  validateRotationValue(object.left_rotation, "left_rotation", unit, diagnostics, transformationPath);
+  validateRotationValue(object.right_rotation, "right_rotation", unit, diagnostics, transformationPath);
+  validateNumericArray(
+    object.scale,
+    3,
+    "rsgl.invalidItemTransformation",
+    "Item transformation 'scale' must contain 3 numbers.",
+    unit,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, appendGeneratedPath(transformationPath, "scale"))
+  );
+  validateNumericArray(
+    object.translation,
+    3,
+    "rsgl.invalidItemTransformation",
+    "Item transformation 'translation' must contain 3 numbers.",
+    unit,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, appendGeneratedPath(transformationPath, "translation"))
+  );
 }
 
 function validateItemTints(
@@ -1460,10 +1486,20 @@ function validateRotationValue(
   value: JsonValue | undefined,
   field: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
+  const fieldPath = appendGeneratedPath(generatedPath, field);
   if (Array.isArray(value)) {
-    validateNumericArray(value, 4, "rsgl.invalidItemTransformation", `Item transformation '${field}' quaternion must contain 4 numbers.`, unit, diagnostics);
+    validateNumericArray(
+      value,
+      4,
+      "rsgl.invalidItemTransformation",
+      `Item transformation '${field}' quaternion must contain 4 numbers.`,
+      unit,
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, fieldPath)
+    );
     return;
   }
   const object = asObject(value);
@@ -1472,7 +1508,7 @@ function validateRotationValue(
       code: "rsgl.invalidItemTransformation",
       message: `Item transformation '${field}' must be a quaternion or axis-angle rotation.`,
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, fieldPath)
     });
   }
 }
@@ -1524,14 +1560,15 @@ function validateNumericArray(
   code: string,
   message: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange = unitRange(unit)
 ): void {
   if (!isNumericArray(value, length)) {
     diagnostics.push({
       code,
       message,
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range
     });
   }
 }
