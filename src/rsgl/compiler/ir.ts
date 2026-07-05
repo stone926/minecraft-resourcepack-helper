@@ -3,6 +3,18 @@ import type { RsglResourceKind } from "../resourceKinds";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
+export interface TextValue {
+  kind: "text";
+  text: string;
+}
+
+export interface BinaryCopyRef {
+  kind: "copy";
+  sourcePath: string;
+}
+
+export type ResourceContent = JsonValue | TextValue | BinaryCopyRef;
+
 export interface ResourceId {
   namespace: string;
   path: string;
@@ -14,7 +26,7 @@ export interface ResourceUnit {
   id?: ResourceId;
   kind: ResourceKind;
   outputPath: string;
-  content: JsonValue;
+  content: ResourceContent;
   mergePolicy: MergePolicy;
   sourceMap: RsglSourceMap;
 }

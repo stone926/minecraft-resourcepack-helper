@@ -66,7 +66,7 @@ import { createFileGlobLoader } from "./fileGlob";
 import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
 import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
-import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
+import { JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
@@ -367,6 +367,8 @@ class RsglCompiler {
       this.pushUnit(this.compileLang(statement, context));
     } else if (statement.resourceKind === "sounds") {
       this.pushUnit(this.compileSounds(statement, context));
+    } else if (statement.resourceKind === "text") {
+      this.pushUnit(this.compileTextResource(statement, context));
     } else if (statement.resourceKind === "mcmeta") {
       for (const unit of this.compileMcmeta(statement, context)) {
         this.pushUnit(unit);
@@ -729,6 +731,43 @@ class RsglCompiler {
       content: body.content,
       mergePolicy: { kind: "mergeObject" },
       sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
+    };
+  }
+
+  private compileTextResource(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
+    const targetValue = statement.id ? this.staticText(statement.id, context) : null;
+    if (!targetValue || !statement.id) {
+      this.error("rsgl.compileMissingResourceId", "Text declaration requires a static resource id or pack-relative path.", statement.range);
+      return null;
+    }
+    const target = textResourceTarget(targetValue, context.namespace);
+    if (!target) {
+      this.error("rsgl.compileInvalidTextTarget", `Invalid text resource target '${targetValue}'.`, statement.id.range);
+      return null;
+    }
+
+    const body = this.resourceBodyToObjectWithRawMappings(statement.body, context, this.resourceBodyFragmentOptions());
+    for (const key of Object.keys(body.content)) {
+      if (key !== "content") {
+        this.error("rsgl.invalidTextResourceField", `Text resources do not support field '${key}'.`, statement.body.range);
+      }
+    }
+    const text = textContent(body.content.content);
+    if (text === null) {
+      this.error("rsgl.invalidTextContent", "Text resource requires a scalar 'content' field.", statement.body.range);
+      return null;
+    }
+
+    const mappings = body.mappings
+      .filter(mapping => mapping.generatedPath === "/content")
+      .map(mapping => this.sourceMapping("", mapping.sourceRange, mapping.context));
+    return {
+      id: target.id,
+      kind: "text",
+      outputPath: target.outputPath,
+      content: { kind: "text", text },
+      mergePolicy: { kind: "errorOnConflict" },
+      sourceMap: this.sourceMap(target.outputPath, statement, context, mappings)
     };
   }
 
@@ -1507,6 +1546,53 @@ class RsglCompiler {
 
 function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
   return value === undefined ? null : value;
+}
+
+function textContent(value: JsonValue | undefined): string | null {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
+}
+
+function textResourceTarget(value: string, namespace: string): { id?: ResourceId; outputPath: string } | null {
+  const normalized = value.replace(/\\/g, "/");
+  if (normalized.startsWith("assets/")) {
+    if (!isSafePackRelativePath(normalized)) {
+      return null;
+    }
+    const outputPath = ensureTextExtension(normalized);
+    const assetId = /^assets\/([^/]+)\/(.+)$/.exec(outputPath);
+    return {
+      id: assetId ? parseResourceId(`${assetId[1]}:${assetId[2]}`, namespace) ?? undefined : undefined,
+      outputPath
+    };
+  }
+
+  const id = parseResourceId(value, namespace);
+  if (id && !isSafeResourcePath(id.path)) {
+    return null;
+  }
+  return id ? {
+    id,
+    outputPath: `assets/${id.namespace}/${ensureTextExtension(id.path)}`
+  } : null;
+}
+
+function ensureTextExtension(outputPath: string): string {
+  const fileName = outputPath.split("/").pop() ?? outputPath;
+  return /\.[a-z0-9]+$/i.test(fileName) ? outputPath : `${outputPath}.txt`;
+}
+
+function isSafePackRelativePath(outputPath: string): boolean {
+  if (outputPath.length === 0 || outputPath.startsWith("/") || /^[A-Za-z]:/.test(outputPath)) {
+    return false;
+  }
+  return outputPath.split("/").every(segment => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function isSafeResourcePath(resourcePath: string): boolean {
+  return resourcePath.split("/").every(segment => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
 function normalizeMcmetaOutputPath(outputPath: string): string {

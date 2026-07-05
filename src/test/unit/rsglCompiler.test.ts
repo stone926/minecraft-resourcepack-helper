@@ -34,7 +34,7 @@ describe("RSGL compiler", () => {
 
     const model = result.units.find(unit => unit.kind === "model");
     assert.ok(model);
-    assert.strictEqual(stableJsonStringify(model.content, model.kind), [
+    assert.strictEqual(stableJsonStringify(model.content as JsonValue, model.kind), [
       "{",
       "  \"parent\": \"minecraft:block/cube_all\",",
       "  \"textures\": {",
@@ -105,6 +105,81 @@ describe("RSGL compiler", () => {
       id: "minecraft:block/stone",
       sourceMap: "assets/minecraft/models/block/stone.json.rsgl.map"
     }]);
+  });
+
+  it("emits text resources without JSON stringification", () => {
+    const result = compileRsglModule(parseRsgl([
+      "namespace minecraft",
+      "let player = \"PLAYERNAME\"",
+      "text texts/end {",
+      "  content `Good luck, ${player}\\n`",
+      "}",
+      "text \"assets/minecraft/texts/splashes.txt\" {",
+      "  content \"Generated splash\"",
+      "}"
+    ].join("\n")), { fileName: path.resolve("pack", "main.rsgl") });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/texts/end.txt",
+      "assets/minecraft/texts/splashes.txt"
+    ]);
+
+    const endText = result.units.find(unit => unit.outputPath.endsWith("end.txt"));
+    assert.deepStrictEqual(endText?.content, {
+      kind: "text",
+      text: "Good luck, PLAYERNAME\\n"
+    });
+    const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
+    assert.strictEqual(files.find(file => file.outputPath.endsWith("end.txt"))?.content, "Good luck, PLAYERNAME\\n");
+
+    const sourceMap = JSON.parse(files.find(file => file.outputPath.endsWith("end.txt.rsgl.map"))?.content ?? "{}") as {
+      mappings?: Array<{ generatedPath?: string; sourceFile?: string }>;
+    };
+    assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), ["", ""]);
+    assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
+
+    const manifest = JSON.parse(files.find(file => file.outputPath === "rsgl.manifest.json")?.content ?? "{}") as {
+      files?: Array<{ outputPath?: string; kind?: string; id?: string }>;
+    };
+    assert.ok(manifest.files?.some(file =>
+      file.outputPath === "assets/minecraft/texts/end.txt" &&
+      file.kind === "text" &&
+      file.id === "minecraft:texts/end"
+    ));
+  });
+
+  it("reports invalid text resource bodies", () => {
+    const result = compileRsglModule(parseRsgl([
+      "text \"../outside.txt\" { content \"bad\" }",
+      "text valid {",
+      "  content [1, 2]",
+      "  extra true",
+      "}"
+    ].join("\n")));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.compileInvalidTextTarget"));
+    assert.ok(codes.includes("rsgl.invalidTextContent"));
+    assert.ok(codes.includes("rsgl.invalidTextResourceField"));
+  });
+
+  it("keeps copy-shaped JSON content on the JSON emit path", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block copy_shape {",
+      "  kind \"copy\"",
+      "  sourcePath \"textures/source.png\"",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(emitRsglFiles(result.units)[0].content, [
+      "{",
+      "  \"kind\": \"copy\",",
+      "  \"sourcePath\": \"textures/source.png\"",
+      "}",
+      ""
+    ].join("\n"));
   });
 
   it("plans and writes emitted files to a pack directory", () => {

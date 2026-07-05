@@ -34,7 +34,7 @@ export function emitRsglFiles(units: ResourceUnit[], options: RsglEmitOptions = 
   for (const unit of sortedUnits) {
     files.push({
       outputPath: unit.outputPath,
-      content: stableJsonStringify(unit.content, unit.kind, indent),
+      content: stringifyResourceContent(unit, indent),
       kind: "resource"
     });
 
@@ -56,6 +56,13 @@ export function emitRsglFiles(units: ResourceUnit[], options: RsglEmitOptions = 
   }
 
   return files;
+}
+
+function stringifyResourceContent(unit: ResourceUnit, indent: number): string {
+  if (unit.kind === "text") {
+    return isTextContent(unit.content) ? unit.content.text : "";
+  }
+  return stableJsonStringify(unit.content as JsonValue, unit.kind, indent);
 }
 
 export function orderJsonValue(value: JsonValue, resourceKind: ResourceKind): JsonValue {
@@ -98,6 +105,10 @@ function getFieldOrder(value: Record<string, unknown>, resourceKind: ResourceKin
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isTextContent(value: unknown): value is { kind: "text"; text: string } {
+  return isObject(value) && value.kind === "text" && typeof value.text === "string";
 }
 
 function sourceMapStringify(sourceMap: RsglSourceMap, indent: number): string {

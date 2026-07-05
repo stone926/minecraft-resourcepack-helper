@@ -22,7 +22,8 @@ export const rsglResourceKinds = [
   "post_effect",
   "pack",
   "lang",
-  "sounds"
+  "sounds",
+  "text"
 ] as const;
 
 export type RsglResourceKind = typeof rsglResourceKinds[number];
@@ -98,6 +99,11 @@ export const rsglResourceCompletionDescriptors: RsglResourceCompletionDescriptor
     label: "sounds",
     insertText: "sounds ${1:minecraft} {\n  \"${2:block.example.break}\" { sounds: [\"${3:block/example_break}\"] }\n}",
     detail: "sounds.json resource"
+  },
+  {
+    label: "text",
+    insertText: "text ${1:minecraft:texts/end} {\n  content `${2:Generated text}`\n}",
+    detail: "Text resource"
   },
   {
     label: "mcmeta",

@@ -11,13 +11,16 @@ export { createRsglWritePlan, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export type {
   ExpansionFrame,
+  BinaryCopyRef,
   JsonValue,
   MergePolicy,
+  ResourceContent,
   ResourceId,
   ResourceKind,
   ResourceUnit,
   RsglCompileDiagnostic,
   RsglCompileResult,
   RsglMapping,
-  RsglSourceMap
+  RsglSourceMap,
+  TextValue
 } from "./ir";

@@ -300,7 +300,7 @@ function validateModelTextureVariables(
   }
 
   const checked = new Set<string>();
-  visitJson(unit.content, value => {
+  visitJson(unit.content as JsonValue, value => {
     const reference = textureVariableReference(value);
     if (!reference || checked.has(reference)) {
       return;
