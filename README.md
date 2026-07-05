@@ -24,6 +24,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 - Extra semantic checks for `pack.mcmeta`, `pack.png`, colormap PNG sizes, `sounds.json`, post-effect targets, model parent/texture-variable chains, and `assets/<namespace>/texts/{splashes,end,postcredits}.txt`.
 - English and Simplified Chinese localization for extension commands, runtime prompts, diagnostics, resource graph labels, model preview issues, and model preview webview controls.
 - Commands for scaffolding a modern resource pack with namespace folders, a default `pack.png`, and `min_format`/`max_format` pack metadata.
+- RSGL support through the companion `stone926.rsgl` extension, which is installed as an extension dependency and owns `.rsgl` language features, build commands, and the bundled language server.
 
 ## Quick Start
 
@@ -33,7 +34,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 4. Optional: configure `McResHelper.resourcePackLoadOrder` with absolute paths to lower-priority resource pack roots.
 5. Open a supported resource pack file and use Go to Definition, path suggestions, diagnostics, the Minecraft Resources activity bar view, or model preview for model JSON files.
 
-The extension activates automatically when the workspace contains `pack.mcmeta`.
+The extension activates automatically when the workspace contains `pack.mcmeta`. Installing Minecraft Resourcepack Helper also installs the RSGL companion extension through VS Code extension dependencies.
 
 ## Resource Resolution
 
@@ -101,6 +102,17 @@ The **Minecraft Resources** activity bar view follows the active editor and show
 
 The view has cached workspace indexes and can be refreshed manually with **McResHelper: refresh resource graph**.
 
+## RSGL
+
+RSGL support is split into a separate VS Code extension: `stone926.rsgl`. Minecraft Resourcepack Helper depends on it, so users who install the main extension receive RSGL automatically without legacy command bridges.
+
+The RSGL extension owns:
+
+- `.rsgl` language registration, syntax highlighting, language configuration, diagnostics, completion, hover, and formatting.
+- RSGL build and preview commands such as **RSGL: Build Resourcepack JSON**, **RSGL: Preview Build**, **RSGL: Build Source Directory**, and workspace build variants.
+- Settings under the `rsgl.*` namespace, including output directory, Minecraft target version, vanilla assets fallback, lower-priority packs, source maps, and generated JSON validation.
+- The bundled RSGL language server plus shared compiler/core packages.
+
 ## Configuration
 
 - `McResHelper.defaultMcAssetsPath`: absolute path to vanilla Minecraft assets. It can point at an `assets` folder, an `assets/minecraft` folder, or a resource pack root containing `assets/minecraft`.
@@ -131,6 +143,8 @@ Example:
 
 The model preview commands are also available from model JSON editor menus. Resource graph model nodes provide an inline preview action.
 
+RSGL commands are provided by the companion RSGL extension and use the `RSGL:` command prefix rather than legacy `McResHelper` command IDs.
+
 ## Scaffolding
 
 The resource-pack creation commands prompt for pack name, namespace, target resource-pack format, and description. They create `pack.mcmeta`, a default `pack.png`, and common namespace folders such as `blockstates`, `models`, `items`, `textures`, `sounds`, `font`, `atlases`, `equipment`, `post_effect`, `shaders`, and `waypoint_style`.
@@ -139,7 +153,7 @@ The resource-pack creation commands prompt for pack name, namespace, target reso
 
 ```bash
 npm install
-npm run compile
+npm run compile:all
 npm run lint
 npm test
 ```
@@ -148,10 +162,15 @@ Useful focused commands:
 
 ```bash
 npm run benchmark:model-preview
-npm run package:vsix
+npm run compile:rsgl-extension
+npm run package:main:vsix
+npm run package:rsgl:vsix
 ```
+
+The repository contains the main extension at the root, shared RSGL packages under `packages/rsgl-*`, and the standalone RSGL VS Code extension under `extensions/vscode-rsgl`. RSGL unit tests live with the core package in `packages/rsgl-core/test/unit`.
 
 ## Links
 
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)
+- [RSGL companion extension](https://marketplace.visualstudio.com/items?itemName=stone926.rsgl)
 - [Repository](https://github.com/stone926/minecraft-resourcepack-helper)

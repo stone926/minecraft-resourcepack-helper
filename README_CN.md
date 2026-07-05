@@ -24,6 +24,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 - 额外语义检查覆盖 `pack.mcmeta`、`pack.png`、colormap PNG 尺寸、`sounds.json`、后处理 target、模型 parent/纹理变量链，以及 `assets/<namespace>/texts/{splashes,end,postcredits}.txt`。
 - 扩展命令、运行时提示、诊断、资源关系图标签、模型预览问题和模型预览 webview 控件均覆盖英文与简体中文本地化。
 - 提供创建现代资源包脚手架的命令，包含常用命名空间目录、默认 `pack.png` 和 `min_format`/`max_format` 资源包元数据。
+- 通过配套的 `stone926.rsgl` 扩展提供 RSGL 支持。该扩展作为依赖自动安装，负责 `.rsgl` 语言能力、构建命令和内置语言服务器。
 
 ## 快速开始
 
@@ -33,7 +34,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 4. 可选：用 `McResHelper.resourcePackLoadOrder` 配置低优先级资源包根目录的绝对路径。
 5. 打开受支持的资源包文件，使用跳转定义、路径建议、诊断、Minecraft 资源活动栏视图，或在模型 JSON 中打开模型预览。
 
-当工作区中存在 `pack.mcmeta` 时，扩展会自动激活。
+当工作区中存在 `pack.mcmeta` 时，扩展会自动激活。安装 Minecraft 资源包助手时，VS Code 也会通过扩展依赖自动安装 RSGL 配套扩展。
 
 ## 资源解析顺序
 
@@ -101,6 +102,17 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 
 该视图使用缓存的工作区索引，也可以通过 **McResHelper: 刷新资源映射** 手动刷新。
 
+## RSGL
+
+RSGL 支持已经拆分到独立 VS Code 扩展：`stone926.rsgl`。Minecraft 资源包助手依赖该扩展，用户安装主扩展时会自动获得 RSGL 能力，不再通过旧的 `McResHelper` 命令桥接。
+
+RSGL 扩展负责：
+
+- `.rsgl` 语言注册、语法高亮、语言配置、诊断、补全、悬停和格式化。
+- RSGL 构建与预览命令，例如 **RSGL: Build Resourcepack JSON**、**RSGL: Preview Build**、**RSGL: Build Source Directory** 和工作区构建命令。
+- `rsgl.*` 命名空间下的设置，包括输出目录、Minecraft 目标版本、原版资源回退、低优先级资源包、source map 和生成 JSON 校验。
+- 内置 RSGL 语言服务器以及共享 compiler/core 包。
+
 ## 配置项
 
 - `McResHelper.defaultMcAssetsPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹，或包含 `assets/minecraft` 的资源包根目录。
@@ -131,6 +143,8 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 
 模型预览命令也会出现在模型 JSON 的编辑器菜单中。资源关系图里的模型节点提供内联预览操作。
 
+RSGL 命令由配套 RSGL 扩展提供，使用 `RSGL:` 命令前缀，不再使用旧的 `McResHelper` 命令 ID。
+
 ## 脚手架
 
 资源包创建命令会依次询问资源包名称、命名空间、目标资源包格式版本和描述。生成内容包括 `pack.mcmeta`、默认 `pack.png`，以及 `blockstates`、`models`、`items`、`textures`、`sounds`、`font`、`atlases`、`equipment`、`post_effect`、`shaders`、`waypoint_style` 等常用命名空间目录。
@@ -139,7 +153,7 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 
 ```bash
 npm install
-npm run compile
+npm run compile:all
 npm run lint
 npm test
 ```
@@ -148,10 +162,15 @@ npm test
 
 ```bash
 npm run benchmark:model-preview
-npm run package:vsix
+npm run compile:rsgl-extension
+npm run package:main:vsix
+npm run package:rsgl:vsix
 ```
+
+仓库根目录是主扩展，`packages/rsgl-*` 存放共享 RSGL 包，`extensions/vscode-rsgl` 是独立 RSGL VS Code 扩展。RSGL 单元测试与核心包放在一起：`packages/rsgl-core/test/unit`。
 
 ## 链接
 
 - [VS Code 扩展市场](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)
+- [RSGL 配套扩展](https://marketplace.visualstudio.com/items?itemName=stone926.rsgl)
 - [项目仓库](https://github.com/stone926/minecraft-resourcepack-helper)
