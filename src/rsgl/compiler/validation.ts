@@ -350,7 +350,7 @@ function validateItemUnit(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
-  validateItemTopLevelFields(content, unit, diagnostics);
+  validateItemTopLevelFields(content, unit, diagnostics, "");
   validateItemModelDefinition(content?.model, unit, generatedModels, options, diagnostics, "/model");
 }
 
@@ -767,13 +767,14 @@ function validateItemComposite(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
+  const modelsPath = appendGeneratedPath(generatedPath, "models");
   const models = Array.isArray(model.models) ? model.models : null;
   if (!models) {
     diagnostics.push({
       code: "rsgl.invalidItemCompositeModels",
       message: "Item composite model must define a models array.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, modelsPath)
     });
     return;
   }
@@ -782,16 +783,17 @@ function validateItemComposite(
       code: "rsgl.emptyItemCompositeModels",
       message: "Item composite model should define at least one child model.",
       severity: "warning",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, modelsPath)
     });
   }
   for (const [index, nested] of models.entries()) {
+    const childPath = appendGeneratedPath(modelsPath, String(index));
     if (!asObject(nested)) {
       diagnostics.push({
         code: "rsgl.invalidItemCompositeModel",
         message: "Item composite children must be item model objects.",
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, childPath)
       });
       continue;
     }
@@ -801,7 +803,7 @@ function validateItemComposite(
       generatedModels,
       options,
       diagnostics,
-      appendGeneratedPath(appendGeneratedPath(generatedPath, "models"), String(index))
+      childPath
     );
   }
 }
@@ -826,13 +828,14 @@ function validateItemRangeDispatch(
     generatedPath
   );
   validateItemPropertyFieldTypes(model, rangeDispatchFieldRules, unit, diagnostics, generatedPath);
+  const entriesPath = appendGeneratedPath(generatedPath, "entries");
   const entries = Array.isArray(model.entries) ? model.entries : null;
   if (!entries) {
     diagnostics.push({
       code: "rsgl.invalidItemRangeEntries",
       message: "Item range_dispatch entries must be an array.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, entriesPath)
     });
   } else {
     if (entries.length === 0) {
@@ -840,7 +843,7 @@ function validateItemRangeDispatch(
         code: "rsgl.emptyItemRangeEntries",
         message: "Item range_dispatch should define at least one entry.",
         severity: "warning",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, entriesPath)
       });
     }
     let previousThreshold = -Infinity;
@@ -881,7 +884,7 @@ function validateItemRangeDispatch(
       code: "rsgl.itemModelMissingFallback",
       message: "Item range_dispatch should define a fallback model.",
       severity: "warning",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, generatedPath)
     });
   } else {
     validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "fallback"));
@@ -909,17 +912,18 @@ function validateItemSelect(
   );
   validateItemPropertyFieldTypes(model, selectFieldRules, unit, diagnostics, generatedPath);
   const property = itemModelType(model.property);
+  const casesPath = appendGeneratedPath(generatedPath, "cases");
   const cases = Array.isArray(model.cases) ? model.cases : null;
   if (!cases) {
     diagnostics.push({
       code: "rsgl.invalidItemSelectCases",
       message: "Item select cases must be an array.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, casesPath)
     });
   } else {
     for (const [index, itemCase] of cases.entries()) {
-      const casePath = appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index));
+      const casePath = appendGeneratedPath(casesPath, String(index));
       const caseObject = asObject(itemCase);
       if (!caseObject || !("when" in caseObject)) {
         diagnostics.push({
@@ -947,7 +951,7 @@ function validateItemSelect(
       code: "rsgl.itemModelMissingFallback",
       message: "Item select should define a fallback model.",
       severity: "warning",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, generatedPath)
     });
   } else {
     validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "fallback"));
@@ -1033,7 +1037,7 @@ function validateItemCondition(
       code: "rsgl.invalidItemConditionBranch",
       message: "Item condition must define an on_true model.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, generatedPath)
     });
   } else {
     validateItemModelDefinition(model["on_true"], unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "on_true"));
@@ -1044,7 +1048,7 @@ function validateItemCondition(
       code: "rsgl.invalidItemConditionBranch",
       message: "Item condition must define an on_false model.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, generatedPath)
     });
   } else {
     validateItemModelDefinition(model["on_false"], unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "on_false"));
@@ -1104,19 +1108,20 @@ function validateItemSpecial(
 function validateItemTopLevelFields(
   content: Record<string, JsonValue> | null,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (!content) {
     return;
   }
-  validateBooleanField(content, "hand_animation_on_swap", "rsgl.invalidItemTopLevelField", unit, diagnostics);
-  validateBooleanField(content, "oversized_in_gui", "rsgl.invalidItemTopLevelField", unit, diagnostics);
+  validateBooleanField(content, "hand_animation_on_swap", "rsgl.invalidItemTopLevelField", unit, diagnostics, generatedPath);
+  validateBooleanField(content, "oversized_in_gui", "rsgl.invalidItemTopLevelField", unit, diagnostics, generatedPath);
   if ("swap_animation_scale" in content && (typeof content.swap_animation_scale !== "number" || !Number.isFinite(content.swap_animation_scale))) {
     diagnostics.push({
       code: "rsgl.invalidItemTopLevelField",
       message: "Item top-level field 'swap_animation_scale' must be a finite number.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "swap_animation_scale"))
     });
   }
 }
@@ -1518,14 +1523,15 @@ function validateBooleanField(
   field: string,
   code: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (field in object && typeof object[field] !== "boolean") {
     diagnostics.push({
       code,
       message: `Field '${field}' must be a boolean.`,
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
     });
   }
 }

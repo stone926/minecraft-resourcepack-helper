@@ -4407,9 +4407,33 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemSelectCase"));
     assert.ok(codes.includes("rsgl.invalidItemConditionBranch"));
     const brokenCompassUnit = result.units.find(unit => unit.outputPath.endsWith("broken_compass.json"));
+    const brokenCompassModelRange = brokenCompassUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model")?.sourceRange;
     const unsortedThresholdRange = brokenCompassUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/entries/1/threshold")?.sourceRange;
     const unsortedDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsortedItemRangeThresholds");
     assert.deepStrictEqual(unsortedDiagnostic?.range, unsortedThresholdRange);
+    const missingRangeFallback = result.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.itemModelMissingFallback" && diagnostic.message.includes("range_dispatch")
+    );
+    assert.deepStrictEqual(missingRangeFallback?.range, brokenCompassModelRange);
+    const emptyEntriesUnit = result.units.find(unit => unit.outputPath.endsWith("empty_range_entries.json"));
+    const emptyEntriesRange = emptyEntriesUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/entries")?.sourceRange;
+    const emptyEntriesDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.emptyItemRangeEntries");
+    assert.deepStrictEqual(emptyEntriesDiagnostic?.range, emptyEntriesRange);
+    const brokenSelectUnit = result.units.find(unit => unit.outputPath.endsWith("broken_select.json"));
+    const brokenSelectModelRange = brokenSelectUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model")?.sourceRange;
+    const brokenSelectCaseRange = brokenSelectUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0")?.sourceRange;
+    const brokenSelectCaseDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemSelectCase");
+    assert.deepStrictEqual(brokenSelectCaseDiagnostic?.range, brokenSelectCaseRange);
+    const missingSelectFallback = result.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.itemModelMissingFallback" && diagnostic.message.includes("select")
+    );
+    assert.deepStrictEqual(missingSelectFallback?.range, brokenSelectModelRange);
+    const brokenConditionUnit = result.units.find(unit => unit.outputPath.endsWith("broken_condition.json"));
+    const brokenConditionModelRange = brokenConditionUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model")?.sourceRange;
+    const missingFalseDiagnostic = result.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemConditionBranch" && diagnostic.message.includes("on_false")
+    );
+    assert.deepStrictEqual(missingFalseDiagnostic?.range, brokenConditionModelRange);
   });
 
   it("validates item composite and terminal model types", () => {
@@ -4467,6 +4491,14 @@ describe("RSGL compiler", () => {
       diagnostic.code === "rsgl.modelNotFound" && diagnostic.message.includes("missing_child")
     );
     assert.deepStrictEqual(missingChildDiagnostic?.range, missingChildRange);
+    const invalidCompositeModelsUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_composite_models.json"));
+    const invalidCompositeModelsRange = invalidCompositeModelsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/models")?.sourceRange;
+    const invalidCompositeModelsDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemCompositeModels");
+    assert.deepStrictEqual(invalidCompositeModelsDiagnostic?.range, invalidCompositeModelsRange);
+    const invalidCompositeChildUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_composite_child.json"));
+    const invalidCompositeChildRange = invalidCompositeChildUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/models/0")?.sourceRange;
+    const invalidCompositeChildDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemCompositeModel");
+    assert.deepStrictEqual(invalidCompositeChildDiagnostic?.range, invalidCompositeChildRange);
 
     const emptyCompositeDiagnostics = validateResourceUnits([minimalItemUnit({
       model: { type: "minecraft:composite", models: [] }
@@ -4695,6 +4727,28 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemTopLevelField"));
     assert.ok(codes.includes("rsgl.invalidItemTransformation"));
     assert.ok(codes.includes("rsgl.missingItemTransformationField"));
+    const invalidTopLevelUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_top_level.json"));
+    const handAnimationRange = invalidTopLevelUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/hand_animation_on_swap")?.sourceRange;
+    const oversizedRange = invalidTopLevelUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/oversized_in_gui")?.sourceRange;
+    const swapAnimationRange = invalidTopLevelUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/swap_animation_scale")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTopLevelField"
+      && diagnostic.message.includes("'hand_animation_on_swap'")
+      && diagnostic.range.start === handAnimationRange?.start
+      && diagnostic.range.end === handAnimationRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTopLevelField"
+      && diagnostic.message.includes("'oversized_in_gui'")
+      && diagnostic.range.start === oversizedRange?.start
+      && diagnostic.range.end === oversizedRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTopLevelField"
+      && diagnostic.message.includes("'swap_animation_scale'")
+      && diagnostic.range.start === swapAnimationRange?.start
+      && diagnostic.range.end === swapAnimationRange?.end
+    ));
     const invalidMatrixUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_matrix.json"));
     const matrixRange = invalidMatrixUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/transformation")?.sourceRange;
     assert.ok(result.diagnostics.some(diagnostic =>
