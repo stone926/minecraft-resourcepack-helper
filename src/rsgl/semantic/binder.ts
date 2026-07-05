@@ -56,6 +56,29 @@ import {
 
 const resourceLocationPattern = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
 const resourcePathPattern = /^[a-z0-9_./-]+$/;
+const builtinFiniteStringDomains = new Map<string, string[]>([
+  ["HORIZONTAL", ["north", "east", "south", "west"]],
+  ["DIRECTIONS", ["down", "up", "north", "south", "west", "east"]],
+  ["STAIR_SHAPES", ["straight", "inner_left", "inner_right", "outer_left", "outer_right"]],
+  ["COLORS_16", [
+    "white",
+    "orange",
+    "magenta",
+    "light_blue",
+    "yellow",
+    "lime",
+    "pink",
+    "gray",
+    "light_gray",
+    "cyan",
+    "purple",
+    "blue",
+    "brown",
+    "green",
+    "red",
+    "black"
+  ]]
+]);
 
 type CheckableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
@@ -160,6 +183,11 @@ class RsglBinder {
         const actualType = this.checkExpression(statement.value, scope);
         const expectedType = typeFromAnnotation(statement.typeAnnotation);
         this.checkAssignable(expectedType, actualType, statement.value);
+        const name = identifierName(statement.name);
+        const symbol = name ? lookup(scope, name) : undefined;
+        if (symbol) {
+          symbol.finiteDomain = this.finiteStringDomain(statement.value, scope) ?? undefined;
+        }
       } else if (statement.kind === "TableDecl") {
         this.checkObject(statement.body, scope);
       } else if (statement.kind === "TemplateDecl") {
@@ -409,9 +437,16 @@ class RsglBinder {
     scope: RsglScope
   ): void {
     this.checkExpression(iterable, scope);
+    const finiteDomain = bindings.length === 1 ? this.finiteStringDomain(iterable, scope) : null;
     const loopScope = createChildScope(scope, "loop");
     for (const binding of bindings) {
       this.defineIdentifier(loopScope, binding, "variable", anyType, binding);
+      if (finiteDomain) {
+        const symbol = lookup(loopScope, binding.text);
+        if (symbol) {
+          symbol.finiteDomain = finiteDomain;
+        }
+      }
     }
     this.checkBody(body, loopScope);
   }
@@ -492,6 +527,73 @@ class RsglBinder {
       return;
     }
     this.checkExpression(expression, scope);
+  }
+
+  private checkMatchExhaustiveness(expression: Extract<ExprNode, { kind: "MatchExpr" }>, scope: RsglScope): void {
+    if (expression.arms.some(arm => arm.patterns.some(isWildcardPattern))) {
+      return;
+    }
+
+    const domain = this.finiteStringDomain(expression.expression, scope);
+    if (!domain?.length) {
+      return;
+    }
+
+    const covered = new Set<string>();
+    for (const arm of expression.arms) {
+      for (const pattern of arm.patterns) {
+        const value = this.staticStringPatternValue(pattern, scope);
+        if (value !== null) {
+          covered.add(value);
+        }
+      }
+    }
+
+    const missing = domain.filter(value => !covered.has(value));
+    if (missing.length === 0) {
+      return;
+    }
+
+    const preview = missing.slice(0, 6).join(", ");
+    const suffix = missing.length > 6 ? `, and ${missing.length - 6} more` : "";
+    this.diagnostics.push(diagnostic(
+      "rsgl.nonExhaustiveMatch",
+      `Match expression is missing cases: ${preview}${suffix}.`,
+      expression.range,
+      "warning"
+    ));
+  }
+
+  private finiteStringDomain(expression: ExprNode, scope: RsglScope): string[] | null {
+    if (expression.kind === "IdentifierExpr") {
+      return lookup(scope, expression.name.text)?.finiteDomain
+        ?? builtinFiniteStringDomains.get(expression.name.text)
+        ?? null;
+    }
+    if (expression.kind !== "ListExpr") {
+      return null;
+    }
+
+    const values: string[] = [];
+    for (const element of expression.elements) {
+      const value = this.staticStringPatternValue(element, scope);
+      if (value === null) {
+        return null;
+      }
+      values.push(value);
+    }
+    return values;
+  }
+
+  private staticStringPatternValue(expression: ExprNode, scope: RsglScope): string | null {
+    if (expression.kind === "StringLiteral" || expression.kind === "ResourceLocationExpr") {
+      return expression.value;
+    }
+    if (expression.kind === "IdentifierExpr") {
+      const symbol = lookup(scope, expression.name.text);
+      return !symbol || symbol.kind === "builtin" ? expression.name.text : null;
+    }
+    return null;
   }
 
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
@@ -576,6 +678,7 @@ class RsglBinder {
           .forEach(pattern => this.checkExpression(pattern, scope));
         this.checkExpression(arm.value, scope);
       }
+      this.checkMatchExhaustiveness(expression, scope);
       return anyType;
     }
     if (expression.kind === "TemplateStringExpr") {

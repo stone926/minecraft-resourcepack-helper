@@ -65,6 +65,33 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "missing");
   });
 
+  it("warns when match expressions over finite domains are not exhaustive", () => {
+    const model = bindRsglModule(parseRsgl([
+      "for dir in HORIZONTAL {",
+      "  let model = match dir {",
+      "    north -> \"north\"",
+      "    west -> \"west\"",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    const diagnostic = model.diagnostics.find(item => item.code === "rsgl.nonExhaustiveMatch");
+    assert.ok(diagnostic);
+    assert.strictEqual(diagnostic.severity, "warning");
+    assert.ok(diagnostic.message.includes("east"));
+    assert.ok(diagnostic.message.includes("south"));
+
+    const withFallback = bindRsglModule(parseRsgl([
+      "for dir in HORIZONTAL {",
+      "  let model = match dir {",
+      "    north -> \"north\"",
+      "    _ -> \"other\"",
+      "  }",
+      "}"
+    ].join("\n")));
+    assert.strictEqual(withFallback.diagnostics.some(item => item.code === "rsgl.nonExhaustiveMatch"), false);
+  });
+
   it("checks builtin template signatures", () => {
     const module = parseRsgl([
       "blockstate minecraft:bad_stairs {",

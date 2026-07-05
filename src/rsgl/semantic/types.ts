@@ -65,6 +65,7 @@ export interface RsglSymbol {
   node?: RsglNode;
   range?: TextRange;
   signature?: RsglSignature;
+  finiteDomain?: string[];
 }
 
 export interface RsglScope {
