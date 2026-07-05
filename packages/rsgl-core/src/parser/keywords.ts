@@ -8,16 +8,10 @@ const declarationKeywords = [
   "overlay",
   "let",
   "table",
-  "template",
-  "fragment"
+  "template"
 ] as const;
 
 export const sugarKeywords = [
-  "stairs",
-  "slab",
-  "fence",
-  "wall",
-  "pane",
   "cube_all",
   "item_generated",
   "items",

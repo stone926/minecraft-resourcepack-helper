@@ -16,14 +16,15 @@ describe("RSGL semantic model", () => {
       "    textures { all: texture }",
       "  }",
       "}",
-      "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId) {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}",
       "model block acacia_planks {",
       "  parent minecraft:block/cube_all",
       "  textures { all: id }",
-      "}"
+      "}",
+      "use stairs(id: acacia_stairs)"
     ].join("\n"));
 
     const model = bindRsglModule(module, { fileName: path.join("pack", "main.rsgl") });
@@ -37,6 +38,7 @@ describe("RSGL semantic model", () => {
     assert.deepStrictEqual(model.imports[0].namedImports.map(item => item.local), ["woodTable"]);
     assert.ok(model.references.some(reference => reference.name === "id" && reference.symbol?.kind === "variable"));
     assert.ok(model.outputResources.some(resource => resource.kind === "model" && resource.id === "acacia_planks"));
+    assert.ok(model.outputResources.some(resource => resource.kind === "blockstate" && resource.id === "acacia_stairs"));
   });
 
   it("reports duplicate symbols, undefined symbols, and simple type mismatches", () => {
@@ -286,7 +288,7 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(importedCube?.signature?.parameters[0].name, "id");
   });
 
-  it("resolves imported fragment signatures", () => {
+  it("resolves imported template signatures", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const program = bindRsglProgram([
@@ -302,7 +304,7 @@ describe("RSGL semantic model", () => {
       {
         fileName: fragmentsFile,
         module: parseRsgl([
-          "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+          "template cubeFields(parentModel: ModelId, texture: TextureId) {",
           "  parent parentModel",
           "  textures { all: texture }",
           "}"
@@ -319,7 +321,7 @@ describe("RSGL semantic model", () => {
     assert.ok(codes.includes("rsgl.missingArgument"));
   });
 
-  it("validates imported fragment signatures inside blockstate sections", () => {
+  it("validates imported template signatures inside blockstate sections", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const program = bindRsglProgram([
@@ -337,7 +339,7 @@ describe("RSGL semantic model", () => {
       {
         fileName: fragmentsFile,
         module: parseRsgl([
-          "fragment lampFacing(modelId: ModelId) {",
+          "template lampFacing(modelId: ModelId) {",
           "  variants {",
           "    { facing: north } -> { model: modelId }",
           "  }",

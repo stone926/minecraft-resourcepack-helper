@@ -68,12 +68,12 @@ describe("RSGL compiler imports", () => {
     assert.ok(result.units[0].sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(overrideFile)));
   });
 
-  it("uses project rsgl-std overrides for implicit stdlib sugar", () => {
+  it("uses project rsgl-std overrides for top-level stdlib uses", () => {
     const root = createTempDir();
     const mainFile = path.join(root, "main.rsgl");
     const overrideFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
     fs.mkdirSync(path.dirname(overrideFile), { recursive: true });
-    fs.writeFileSync(mainFile, "slab custom_slab double minecraft:block/custom_double");
+    fs.writeFileSync(mainFile, "use slab(id: custom_slab, double: minecraft:block/custom_double)");
     fs.writeFileSync(overrideFile, [
       "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
       "  variants {",
@@ -134,7 +134,7 @@ describe("RSGL compiler imports", () => {
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use cubeModel"]);
   });
 
-  it("expands imported resource body fragments with definition-file defaults", () => {
+  it("expands imported resource body templates with definition-file defaults", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const result = compileRsglProgram([
@@ -154,7 +154,7 @@ describe("RSGL compiler imports", () => {
         module: parseRsgl([
           "namespace library",
           "let defaultTexture = block/stone",
-          "fragment cubeFields(texture: TextureId = defaultTexture) {",
+          "template cubeFields(texture: TextureId = defaultTexture) {",
           "  textures { all: texture }",
           "}",
           "export { cubeFields }"
@@ -174,7 +174,7 @@ describe("RSGL compiler imports", () => {
     });
   });
 
-  it("maps imported resource body fragment fields to definition files", () => {
+  it("maps imported resource body template fields to definition files", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const result = compileRsglProgram([
@@ -195,10 +195,10 @@ describe("RSGL compiler imports", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "fragment modelFields(parentModel: ModelId) {",
+          "template modelFields(parentModel: ModelId) {",
           "  parent parentModel",
           "}",
-          "fragment textureLayer(key: String, texture: TextureId) {",
+          "template textureLayer(key: String, texture: TextureId) {",
           "  raw_json { [key]: texture }",
           "}",
           "export { modelFields, textureLayer }"
@@ -235,7 +235,7 @@ describe("RSGL compiler imports", () => {
     assert.deepStrictEqual(layerMapping?.expansionStack.map(frame => frame.label), ["use textureLayer"]);
   });
 
-  it("preserves imported fragment environments inside resource body loops", () => {
+  it("preserves imported template environments inside resource body loops", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const result = compileRsglProgram([
@@ -253,10 +253,10 @@ describe("RSGL compiler imports", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "fragment textureLayer(texture: TextureId) {",
+          "template textureLayer(texture: TextureId) {",
           "  textures { layer0: texture }",
           "}",
-          "fragment generatedLayers(textures: Json = [block/stone, block/dirt]) {",
+          "template generatedLayers(textures: Json = [block/stone, block/dirt]) {",
           "  parent minecraft:item/generated",
           "  for texture in textures {",
           "    use textureLayer(texture)",
@@ -279,7 +279,7 @@ describe("RSGL compiler imports", () => {
     });
   });
 
-  it("expands imported blockstate section fragments with definition-file defaults", () => {
+  it("expands imported blockstate section templates with definition-file defaults", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const result = compileRsglProgram([
@@ -306,12 +306,12 @@ describe("RSGL compiler imports", () => {
         module: parseRsgl([
           "namespace library",
           "let defaultModel = block/lamp",
-          "fragment lampFacing(modelId: ModelId = defaultModel) {",
+          "template lampFacing(modelId: ModelId = defaultModel) {",
           "  variants {",
           "    { facing: north } -> { model: modelId }",
           "  }",
           "}",
-          "fragment connectedPane(side: ModelId = block/pane_side) {",
+          "template connectedPane(side: ModelId = block/pane_side) {",
           "  multipart {",
           "    for facing in [north, east] {",
           "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
@@ -368,7 +368,7 @@ describe("RSGL compiler imports", () => {
     assert.ok(paneFragmentMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "use connectedPane")));
   });
 
-  it("imports exported fragments from bare import modules", () => {
+  it("imports exported templates from bare import modules", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const fragmentsFile = path.resolve("pack", "fragments.rsgl");
     const result = compileRsglProgram([
@@ -386,7 +386,7 @@ describe("RSGL compiler imports", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "fragment keyed(property: String, modelId: ModelId) {",
+          "template keyed(property: String, modelId: ModelId) {",
           "  variants {",
           "    [property=full] -> @modelId",
           "  }",

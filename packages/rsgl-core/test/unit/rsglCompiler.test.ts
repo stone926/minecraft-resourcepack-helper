@@ -385,13 +385,13 @@ describe("RSGL compiler", () => {
     }
   });
 
-  it("lowers conventional blockstate sugar to blockstates", () => {
+  it("lowers top-level blockstate template uses to blockstates", () => {
     const result = compileRsglModule(parseRsgl([
-      "stairs acacia_stairs",
-      "slab acacia_slab double minecraft:block/acacia_planks",
-      "fence oak_fence",
-      "wall cobblestone_wall",
-      "pane glass_pane"
+      "use stairs(id: acacia_stairs)",
+      "use slab(id: acacia_slab, double: minecraft:block/acacia_planks)",
+      "use fence(id: oak_fence)",
+      "use wall(id: cobblestone_wall)",
+      "use pane(id: glass_pane)"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -418,8 +418,8 @@ describe("RSGL compiler", () => {
     });
   });
 
-  it("lowers stairs sugar custom model patterns", () => {
-    const result = compileRsglModule(parseRsgl("stairs acacia_stairs models \"minecraft:block/stair/{id}\""));
+  it("lowers stairs use custom model patterns", () => {
+    const result = compileRsglModule(parseRsgl("use stairs(id: acacia_stairs, models: \"minecraft:block/stair/{id}\")"));
     const variants = (result.units[0].content as { variants: Record<string, Record<string, unknown>> }).variants;
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -1031,9 +1031,9 @@ describe("RSGL compiler", () => {
     });
   });
 
-  it("lowers item statements inside user fragments", () => {
+  it("lowers item statements inside user templates", () => {
     const result = compileRsglModule(parseRsgl([
-      "fragment compassModel(frames: Json = 0..1) {",
+      "template compassModel(frames: Json = 0..1) {",
       "  range property minecraft:compass target spawn {",
       "    frames frames model `minecraft:item/compass_${pad(index, 2)}`",
       "    fallback minecraft:item/compass_00",
@@ -1522,7 +1522,7 @@ describe("RSGL compiler", () => {
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
-      "fragment atlasSource(source: String, prefix: String) {",
+      "template atlasSource(source: String, prefix: String) {",
       "  use atlasDirectory(source: source, prefix: prefix)",
       "}",
       "atlas minecraft:blocks {",
@@ -2190,9 +2190,9 @@ describe("RSGL compiler", () => {
     assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
   });
 
-  it("expands local resource body fragments", () => {
+  it("expands local resource body templates", () => {
     const result = compileRsglModule(parseRsgl([
-      "fragment cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}",
@@ -2237,9 +2237,9 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.compileDuplicateArgument"));
   });
 
-  it("reports invalid fragment call arguments during compilation", () => {
+  it("reports invalid template call arguments during compilation", () => {
     const result = compileRsglModule(parseRsgl([
-      "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId) {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}",
@@ -2951,16 +2951,16 @@ describe("RSGL compiler", () => {
     });
   });
 
-  it("expands user blockstate section fragments", () => {
+  it("expands user blockstate section templates", () => {
     const result = compileRsglModule(parseRsgl([
-      "fragment lampFacing(modelId: ModelId, states: Json = HORIZONTAL) {",
+      "template lampFacing(modelId: ModelId, states: Json = HORIZONTAL) {",
       "  variants {",
       "    for facing in states {",
       "      { facing: facing } -> { model: modelId, y: yaw(facing) }",
       "    }",
       "  }",
       "}",
-      "fragment connectedPane(post: ModelId, side: ModelId) {",
+      "template connectedPane(post: ModelId, side: ModelId) {",
       "  multipart {",
       "    apply { model: post }",
       "    for facing in [north, east] {",
@@ -2998,10 +2998,10 @@ describe("RSGL compiler", () => {
     });
   });
 
-  it("supports parameterized blockstate sugar used by real-world fragments", () => {
+  it("supports parameterized blockstate templates used by real-world packs", () => {
     const result = compileRsglModule(parseRsgl([
       "let suffix = \"lamp\"",
-      "fragment keyed(property: String, prop1: String, modelId: ModelId) {",
+      "template keyed(property: String, prop1: String, modelId: ModelId) {",
       "  variants {",
       "    [property=full prop1=false] ->",
       "      @modelId y=yaw(east)",
@@ -3072,7 +3072,7 @@ describe("RSGL compiler", () => {
     });
   });
 
-  it("reports incompatible blockstate fragment use in section contexts", () => {
+  it("reports incompatible blockstate template use in section contexts", () => {
     const result = compileRsglModule(parseRsgl([
       "blockstate broken {",
       "  variants {",

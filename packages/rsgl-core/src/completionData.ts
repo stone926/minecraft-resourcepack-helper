@@ -56,12 +56,6 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     detail: "Declarative template",
     kind: "snippet"
   },
-  {
-    label: "fragment",
-    insertText: "fragment ${1:name}(${2:value}: ${3:Json}) {\n  ${4:key}: ${2:value}\n}",
-    detail: "Reusable resource body fragment",
-    kind: "snippet"
-  },
   ...rsglResourceCompletionDescriptors.map(descriptor => ({
     ...descriptor,
     kind: "snippet" as const
@@ -85,33 +79,33 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
-    label: "stairs",
-    insertText: "stairs ${1:acacia_stairs}",
-    detail: "Conventional stairs blockstate sugar",
+    label: "use stairs",
+    insertText: "use stairs(id: ${1:acacia_stairs})",
+    detail: "Generate a conventional stairs blockstate",
     kind: "snippet"
   },
   {
-    label: "slab",
-    insertText: "slab ${1:acacia_slab} double minecraft:block/${2:acacia_planks}",
-    detail: "Conventional slab blockstate sugar",
+    label: "use slab",
+    insertText: "use slab(id: ${1:acacia_slab}, double: minecraft:block/${2:acacia_planks})",
+    detail: "Generate a conventional slab blockstate",
     kind: "snippet"
   },
   {
-    label: "fence",
-    insertText: "fence ${1:oak_fence}",
-    detail: "Conventional fence blockstate sugar",
+    label: "use fence",
+    insertText: "use fence(id: ${1:oak_fence})",
+    detail: "Generate a conventional fence blockstate",
     kind: "snippet"
   },
   {
-    label: "wall",
-    insertText: "wall ${1:cobblestone_wall}",
-    detail: "Conventional wall blockstate sugar",
+    label: "use wall",
+    insertText: "use wall(id: ${1:cobblestone_wall})",
+    detail: "Generate a conventional wall blockstate",
     kind: "snippet"
   },
   {
-    label: "pane",
-    insertText: "pane ${1:glass_pane}",
-    detail: "Conventional pane blockstate sugar",
+    label: "use pane",
+    insertText: "use pane(id: ${1:glass_pane})",
+    detail: "Generate a conventional pane blockstate",
     kind: "snippet"
   },
   {

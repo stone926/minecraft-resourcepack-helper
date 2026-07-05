@@ -6,6 +6,7 @@ import {
   CallExprNode,
   ExprNode,
   ForStmtNode,
+  IdentifierExprNode,
   IdentifierNode,
   LetDeclNode,
   MultipartBodyNode,
@@ -22,6 +23,7 @@ import {
   StringLiteralNode,
   SugarDeclNode,
   TableDeclNode,
+  TemplateBodyNode,
   TopLevelStatementNode,
   UseDeclNode,
   VariantBodyNode,
@@ -35,6 +37,7 @@ import {
   RsglProgram,
   RsglSourceFile
 } from "../semantic";
+import { isBlockstateTemplateUseName } from "../semantic/blockstateTemplateUse";
 import {
   RsglExternalValueDefinition,
   RsglModuleCompileEnvironment,
@@ -956,9 +959,7 @@ export class RsglCompiler {
   }
 
   private compileSugarDecl(statement: SugarDeclNode, context: RsglCompileContext): void {
-    if (statement.sugarKind === "conventionalBlockstate") {
-      this.compileConventionalBlockstateSugar(statement, context);
-    } else if (statement.sugarKind === "family") {
+    if (statement.sugarKind === "family") {
       for (const unit of compileFamilySugar(statement, context, {
         onError: (code, message, range) => this.error(code, message, range)
       })) {
@@ -989,95 +990,161 @@ export class RsglCompiler {
     }
   }
 
-  private compileConventionalBlockstateSugar(statement: SugarDeclNode, context: RsglCompileContext): void {
-    const idValue = statement.id ? this.staticText(statement.id, context) : null;
+  private compileTopLevelBlockstateTemplateUse(expression: ExprNode, context: RsglCompileContext): ResourceUnit | null | undefined {
+    const call = this.blockstateTemplateUseCall(expression);
+    if (!call) {
+      return undefined;
+    }
+    const idValue = this.blockstateTemplateIdValue(call, context);
     if (!idValue) {
-      this.error("rsgl.compileMissingResourceId", "Blockstate sugar requires a static id.", statement.range);
-      return;
-    }
-    const id = parseResourceId(idValue, context.namespace);
-    if (!id) {
-      this.error("rsgl.compileInvalidResourceId", `Invalid blockstate sugar id '${idValue}'.`, statement.id?.range ?? statement.range);
-      return;
-    }
-    if (statement.sugarName.text === "stairs") {
-      const models = this.stairsSugarModels(statement, idValue, context) ?? {
-        base: `${id.namespace}:block/${id.path}`,
-        inner: `${id.namespace}:block/${id.path}_inner`,
-        outer: `${id.namespace}:block/${id.path}_outer`
-      };
-      this.pushUnit(this.compileBlockstateTemplateSugar(statement, idValue, "stairs", {
-        base: models.base,
-        inner: models.inner,
-        outer: models.outer
-      }, context));
-    } else if (statement.sugarName.text === "slab") {
-      const double = statement.options.find(option => option.name.text === "double")?.value;
-      if (!double) {
-        this.error("rsgl.slabMissingDouble", "slab sugar requires an explicit double model.", statement.range);
-        return;
-      }
-      const doubleModel = this.staticText(double, context) ?? "";
-      this.pushUnit(this.compileBlockstateTemplateSugar(statement, idValue, "slab", {
-        bottom: `${id.namespace}:block/${id.path}`,
-        top: `${id.namespace}:block/${id.path}_top`,
-        double: doubleModel.includes(":") ? doubleModel : `${context.namespace}:${doubleModel}`
-      }, context));
-    } else if (statement.sugarName.text === "fence") {
-      this.pushUnit(this.compileBlockstateTemplateSugar(statement, idValue, "fence", {
-        post: `${id.namespace}:block/${id.path}_post`,
-        side: `${id.namespace}:block/${id.path}_side`
-      }, context));
-    } else if (statement.sugarName.text === "wall") {
-      this.pushUnit(this.compileBlockstateTemplateSugar(statement, idValue, "wall", {
-        post: `${id.namespace}:block/${id.path}_post`,
-        side: `${id.namespace}:block/${id.path}_side`,
-        sideTall: `${id.namespace}:block/${id.path}_side_tall`
-      }, context));
-    } else if (statement.sugarName.text === "pane") {
-      this.pushUnit(this.compileBlockstateTemplateSugar(statement, idValue, "pane", {
-        post: `${id.namespace}:block/${id.path}_post`,
-        side: `${id.namespace}:block/${id.path}_side`,
-        sideAlt: `${id.namespace}:block/${id.path}_side_alt`,
-        noSide: `${id.namespace}:block/${id.path}_noside`,
-        noSideAlt: `${id.namespace}:block/${id.path}_noside_alt`
-      }, context));
-    }
-  }
-
-  private compileBlockstateTemplateSugar(
-    statement: SugarDeclNode,
-    idValue: string,
-    templateName: string,
-    args: Record<string, string>,
-    context: RsglCompileContext
-  ): ResourceUnit | null {
-    const id = parseResourceId(idValue, context.namespace);
-    if (!id) {
+      this.error("rsgl.compileMissingResourceId", `Top-level use of '${call.callee.name.text}' requires a static id argument.`, expression.range);
       return null;
     }
-    const useStatement = this.syntheticUseStatement(templateName, args, statement.range);
-    const fragment = this.compileBlockstateUse(useStatement, context);
+    const id = parseResourceId(idValue, context.namespace);
+    if (!id) {
+      this.error("rsgl.compileInvalidResourceId", `Invalid blockstate id '${idValue}'.`, expression.range);
+      return null;
+    }
+    const normalized = this.normalizedBlockstateTemplateUseStatement(call, context);
+    if (!normalized) {
+      return null;
+    }
+    const fragment = this.compileBlockstateUse(normalized, context);
     const content: Record<string, JsonValue> = {};
     const fragmentOptions = this.blockstateFragmentOptions();
-    mergeBlockstateFragment(content, fragment, statement.range, fragmentOptions);
+    mergeBlockstateFragment(content, fragment, expression.range, fragmentOptions);
     const outputPath = resourceOutputPath("blockstate", id);
-    const mappings = [
-      this.sourceMapping("", statement.range, context),
-      ...this.blockstateFragmentMappings(fragment, statement.range, context, 0)
-    ];
     return {
       id,
       kind: "blockstate",
       outputPath,
       content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, context, mappings)
+      sourceMap: this.sourceMap(outputPath, expression, context, this.blockstateFragmentMappings(fragment, expression.range, context, 0))
     };
   }
 
-  private stairsSugarModels(statement: SugarDeclNode, idValue: string, context: RsglCompileContext): { base: string; inner: string; outer: string } | undefined {
-    const models = statement.options.find(option => option.name.text === "models")?.value;
+  private normalizedBlockstateTemplateUseStatement(useStatement: UseDeclNode, context: RsglCompileContext): UseDeclNode | null | undefined;
+  private normalizedBlockstateTemplateUseStatement(call: CallExprNode & { callee: IdentifierExprNode }, context: RsglCompileContext): UseDeclNode | null | undefined;
+  private normalizedBlockstateTemplateUseStatement(
+    input: UseDeclNode | (CallExprNode & { callee: IdentifierExprNode }),
+    context: RsglCompileContext
+  ): UseDeclNode | null | undefined {
+    const call = input.kind === "UseDecl" ? this.blockstateTemplateUseCall(input.expression) : input;
+    if (!call) {
+      return undefined;
+    }
+    const idValue = this.blockstateTemplateIdValue(call, context);
+    if (!idValue) {
+      return undefined;
+    }
+    const defaults = this.defaultBlockstateTemplateArgs(call, idValue, context);
+    if (!defaults) {
+      return null;
+    }
+    const namedArgs = new Set(call.args.filter(arg => arg.name).map(arg => arg.name!.text));
+    const args = call.args.filter(arg => {
+      if (!arg.name) {
+        return false;
+      }
+      return arg.name.text !== "id" && arg.name.text !== "models";
+    });
+    for (const [name, value] of Object.entries(defaults)) {
+      if (!namedArgs.has(name)) {
+        args.push(this.syntheticStringArgument(name, value, call.range));
+      }
+    }
+    const expression: CallExprNode = {
+      ...call,
+      args
+    };
+    return {
+      kind: "UseDecl",
+      keyword: "use",
+      expression,
+      range: input.range,
+      fullRange: input.fullRange
+    };
+  }
+
+  private blockstateTemplateUseCall(expression: ExprNode): (CallExprNode & { callee: IdentifierExprNode }) | null {
+    if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+      return null;
+    }
+    return isBlockstateTemplateUseName(expression.callee.name.text)
+      ? expression as CallExprNode & { callee: IdentifierExprNode }
+      : null;
+  }
+
+  private blockstateTemplateIdValue(call: CallExprNode & { callee: IdentifierExprNode }, context: RsglCompileContext): string | null {
+    const namedId = call.args.find(arg => arg.name?.text === "id");
+    const positionalId = call.args.length === 1 && !call.args[0].name ? call.args[0] : undefined;
+    const arg = namedId ?? positionalId;
+    return arg ? this.staticText(arg.value, context) : null;
+  }
+
+  private defaultBlockstateTemplateArgs(
+    call: CallExprNode & { callee: IdentifierExprNode },
+    idValue: string,
+    context: RsglCompileContext
+  ): Record<string, string> | null {
+    const id = parseResourceId(idValue, context.namespace);
+    if (!id) {
+      return null;
+    }
+    const name = call.callee.name.text;
+    if (name === "stairs") {
+      return this.stairsTemplateModels(call, idValue, context) ?? {
+        base: `${id.namespace}:block/${id.path}`,
+        inner: `${id.namespace}:block/${id.path}_inner`,
+        outer: `${id.namespace}:block/${id.path}_outer`
+      };
+    }
+    if (name === "slab") {
+      const doubleArg = call.args.find(arg => arg.name?.text === "double");
+      if (!doubleArg) {
+        this.error("rsgl.slabMissingDouble", "slab use with an id requires an explicit double model.", call.range);
+        return null;
+      }
+      const doubleModel = this.staticText(doubleArg.value, context);
+      if (!doubleModel) {
+        this.error("rsgl.invalidBuiltinUseArgument", "slab double model must evaluate to a resource id string.", doubleArg.value.range);
+        return null;
+      }
+      return {
+        bottom: `${id.namespace}:block/${id.path}`,
+        top: `${id.namespace}:block/${id.path}_top`,
+        double: doubleModel.includes(":") ? doubleModel : `${context.namespace}:${doubleModel}`
+      };
+    }
+    if (name === "fence") {
+      return {
+        post: `${id.namespace}:block/${id.path}_post`,
+        side: `${id.namespace}:block/${id.path}_side`
+      };
+    }
+    if (name === "wall") {
+      return {
+        post: `${id.namespace}:block/${id.path}_post`,
+        side: `${id.namespace}:block/${id.path}_side`,
+        sideTall: `${id.namespace}:block/${id.path}_side_tall`
+      };
+    }
+    return {
+      post: `${id.namespace}:block/${id.path}_post`,
+      side: `${id.namespace}:block/${id.path}_side`,
+      sideAlt: `${id.namespace}:block/${id.path}_side_alt`,
+      noSide: `${id.namespace}:block/${id.path}_noside`,
+      noSideAlt: `${id.namespace}:block/${id.path}_noside_alt`
+    };
+  }
+
+  private stairsTemplateModels(
+    call: CallExprNode & { callee: IdentifierExprNode },
+    idValue: string,
+    context: RsglCompileContext
+  ): { base: string; inner: string; outer: string } | undefined {
+    const models = call.args.find(arg => arg.name?.text === "models")?.value;
     const pattern = models ? this.staticText(models, context) : null;
     if (!pattern) {
       return undefined;
@@ -1094,40 +1161,11 @@ export class RsglCompiler {
     };
   }
 
-  private syntheticUseStatement(
-    templateName: string,
-    args: Record<string, string>,
-    range: { start: number; end: number }
-  ): UseDeclNode {
+  private syntheticStringArgument(name: string, value: string, range: { start: number; end: number }): ArgumentNode {
     return {
-      kind: "UseDecl",
-      keyword: "use",
-      expression: this.syntheticCallExpression(templateName, args, range),
-      range,
-      fullRange: range
-    };
-  }
-
-  private syntheticCallExpression(
-    templateName: string,
-    args: Record<string, string>,
-    range: { start: number; end: number }
-  ): CallExprNode {
-    return {
-      kind: "CallExpr",
-      callee: {
-        kind: "IdentifierExpr",
-        name: this.syntheticIdentifier(templateName, range),
-        range,
-        fullRange: range
-      },
-      args: Object.entries(args).map(([name, value]): ArgumentNode => ({
-        kind: "Argument",
-        name: this.syntheticIdentifier(name, range),
-        value: this.syntheticStringLiteral(value, range),
-        range,
-        fullRange: range
-      })),
+      kind: "Argument",
+      name: this.syntheticIdentifier(name, range),
+      value: this.syntheticStringLiteral(value, range),
       range,
       fullRange: range
     };
@@ -1165,6 +1203,12 @@ export class RsglCompiler {
   }
 
   private compileUseDecl(expression: ExprNode, context: RsglCompileContext): void {
+    const blockstateUnit = this.compileTopLevelBlockstateTemplateUse(expression, context);
+    if (blockstateUnit !== undefined) {
+      this.pushUnit(blockstateUnit);
+      return;
+    }
+
     const expansion = this.createTemplateExpansion(expression, context);
     if (expansion) {
       if (expansion.definition.node.body.kind !== "Block") {
@@ -1199,7 +1243,8 @@ export class RsglCompiler {
     if (!expansion) {
       return undefined;
     }
-    if (expansion.definition.node.body.kind !== "ResourceBody") {
+    const resourceBody = this.templateResourceBody(expansion.definition.node.body);
+    if (!resourceBody) {
       this.error(
         "rsgl.invalidTemplateContext",
         `Template '${expansion.definition.name}' emits resources and cannot be used inside a resource body.`,
@@ -1208,7 +1253,7 @@ export class RsglCompiler {
       return undefined;
     }
     const body = this.resourceBodyToObjectWithRawMappings(
-      expansion.definition.node.body,
+      resourceBody,
       expansion.context,
       this.resourceBodyFragmentOptions(kind)
     );
@@ -1230,11 +1275,16 @@ export class RsglCompiler {
     useStatement: UseDeclNode,
     context: RsglCompileContext
   ): RsglBlockstateFragment | undefined {
-    const expansion = this.createTemplateExpansion(useStatement.expression, context);
+    const normalizedUseStatement = this.normalizedBlockstateTemplateUseStatement(useStatement, context);
+    if (normalizedUseStatement === null) {
+      return {};
+    }
+    const expansion = this.createTemplateExpansion((normalizedUseStatement ?? useStatement).expression, context);
     if (!expansion) {
       return undefined;
     }
-    if (expansion.definition.node.body.kind !== "ResourceBody") {
+    const resourceBody = this.templateResourceBody(expansion.definition.node.body);
+    if (!resourceBody) {
       this.error(
         "rsgl.invalidTemplateContext",
         `Template '${expansion.definition.name}' emits resources and cannot be used inside a blockstate body.`,
@@ -1242,7 +1292,7 @@ export class RsglCompiler {
       );
       return undefined;
     }
-    const body = this.compileBlockstateBody(expansion.definition.node.body, expansion.context);
+    const body = this.compileBlockstateBody(resourceBody, expansion.context);
     const content = body.content;
     const fragment: RsglBlockstateFragment = {};
     if (isJsonObject(content.variants)) {
@@ -1332,6 +1382,62 @@ export class RsglCompiler {
       }
     }
     return mappings;
+  }
+
+  private templateResourceBody(body: TemplateBodyNode): ResourceBodyNode | null {
+    if (body.kind === "ResourceBody") {
+      return body;
+    }
+    return this.blockAsResourceBody(body);
+  }
+
+  private blockAsResourceBody(block: BlockNode): ResourceBodyNode | null {
+    const statements: ResourceStatementNode[] = [];
+    for (const statement of block.statements) {
+      const converted = this.topLevelAsResourceStatement(statement);
+      if (!converted) {
+        return null;
+      }
+      statements.push(converted);
+    }
+    return {
+      kind: "ResourceBody",
+      statements,
+      range: block.range,
+      fullRange: block.fullRange
+    };
+  }
+
+  private topLevelAsResourceStatement(statement: TopLevelStatementNode): ResourceStatementNode | null {
+    if (statement.kind === "LetDecl" || statement.kind === "UseDecl" || statement.kind === "UnknownStmt") {
+      return statement;
+    }
+    if (statement.kind === "ForStmt") {
+      const body = this.bodyAsResourceBody(statement.body);
+      return body ? { ...statement, body } : null;
+    }
+    if (statement.kind === "IfStmt") {
+      const thenBody = this.bodyAsResourceBody(statement.thenBody);
+      if (!thenBody) {
+        return null;
+      }
+      if (!statement.elseBody) {
+        return { ...statement, thenBody };
+      }
+      const elseBody = this.bodyAsResourceBody(statement.elseBody);
+      return elseBody ? { ...statement, thenBody, elseBody } : null;
+    }
+    return null;
+  }
+
+  private bodyAsResourceBody(body: ForStmtNode["body"]): ResourceBodyNode | null {
+    if (body.kind === "ResourceBody") {
+      return body;
+    }
+    if (body.kind === "Block") {
+      return this.blockAsResourceBody(body);
+    }
+    return null;
   }
 
   private createTemplateExpansion(

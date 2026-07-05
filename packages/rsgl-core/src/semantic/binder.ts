@@ -60,6 +60,7 @@ import {
   typeFromAnnotation,
   unknownType
 } from "./types";
+import { blockstateTemplateIdParameters, isBlockstateTemplateIdCall } from "./blockstateTemplateUse";
 
 const builtinFiniteStringDomains = new Map<string, string[]>([
   ["HORIZONTAL", ["north", "east", "south", "west"]],
@@ -177,6 +178,11 @@ class RsglBinder {
         this.defineResource(scope, statement, id);
       } else if (statement.kind === "SugarDecl") {
         this.outputResources.push({ kind: "sugar", id: statement.id ? expressionToStaticText(statement.id) : undefined, node: statement });
+      } else if (statement.kind === "UseDecl") {
+        const id = this.topLevelBlockstateUseId(statement);
+        if (id) {
+          this.outputResources.push({ kind: "blockstate", id, node: statement });
+        }
       }
     }
   }
@@ -787,6 +793,9 @@ class RsglBinder {
     if (callee.name.text === "seq") {
       return this.checkSeqCallExpression(expression, scope);
     }
+    if (isBlockstateTemplateIdCall(expression)) {
+      return this.checkBlockstateTemplateIdCall(expression, scope);
+    }
     if (!symbol?.signature) {
       if (symbol?.kind === "import") {
         return anyType;
@@ -799,6 +808,48 @@ class RsglBinder {
 
     this.checkArguments(symbol.signature, args, scope, expression.range);
     return symbol.signature.returnType;
+  }
+
+  private checkBlockstateTemplateIdCall(expression: CallExprNode, scope: RsglScope): RsglType {
+    const callee = expression.callee;
+    if (callee.kind !== "IdentifierExpr") {
+      return jsonType;
+    }
+    const parameters = blockstateTemplateIdParameters.get(callee.name.text);
+    if (!parameters) {
+      return jsonType;
+    }
+    const binding = bindRsglArguments(parameters, expression.args, { callRange: expression.range });
+    this.diagnostics.push(...binding.diagnostics);
+    const checkedArgs = new Set<ArgumentNode>();
+
+    for (const { parameter, arg } of binding.assignments) {
+      checkedArgs.add(arg);
+      const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId"
+        ? this.checkResourceIdExpression(arg.value, scope)
+        : this.checkExpression(arg.value, scope);
+      this.checkAssignable(parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
+    }
+    for (const arg of binding.unmatchedArgs) {
+      if (!checkedArgs.has(arg)) {
+        this.checkExpression(arg.value, scope);
+      }
+    }
+    return jsonType;
+  }
+
+  private topLevelBlockstateUseId(statement: Extract<TopLevelStatementNode, { kind: "UseDecl" }>): string | undefined {
+    const expression = statement.expression;
+    if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+      return undefined;
+    }
+    if (!blockstateTemplateIdParameters.has(expression.callee.name.text)) {
+      return undefined;
+    }
+    const namedId = expression.args.find(arg => arg.name?.text === "id");
+    const positionalId = expression.args.length === 1 && !expression.args[0].name ? expression.args[0] : undefined;
+    const arg = namedId ?? positionalId;
+    return arg ? expressionToStaticText(arg.value) : undefined;
   }
 
   private checkSeqCallExpression(expression: CallExprNode, scope: RsglScope): RsglType {

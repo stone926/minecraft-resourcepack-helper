@@ -396,7 +396,6 @@ export interface ResourceDeclNode extends StatementNodeBase {
 }
 
 export type SugarKind =
-  | "conventionalBlockstate"
   | "batchModel"
   | "batchItemModel"
   | "family";

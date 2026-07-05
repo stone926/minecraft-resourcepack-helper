@@ -25,6 +25,7 @@ import {
   unknownType
 } from "./types";
 import { formatType, isAssignable } from "./typeRelations";
+import { blockstateTemplateIdParameters, isBlockstateTemplateIdCall } from "./blockstateTemplateUse";
 
 type ValidatableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
@@ -284,10 +285,26 @@ class ResolvedImportCallValidator {
     if (callee.kind !== "IdentifierExpr") {
       return;
     }
+    if (isBlockstateTemplateIdCall(expression)) {
+      this.validateBlockstateTemplateIdCall(expression);
+      return;
+    }
     const symbol = this.model.scope.symbols.get(callee.name.text);
     if (symbol?.kind === "import" && symbol.signature) {
       this.validateImportedArguments(symbol.signature, args, expression.range);
     }
+  }
+
+  private validateBlockstateTemplateIdCall(expression: Extract<ExprNode, { kind: "CallExpr" }>): void {
+    const callee = expression.callee;
+    if (callee.kind !== "IdentifierExpr") {
+      return;
+    }
+    const parameters = blockstateTemplateIdParameters.get(callee.name.text);
+    if (!parameters) {
+      return;
+    }
+    this.validateImportedArguments({ parameters, returnType: jsonType }, expression.args, expression.range);
   }
 
   private validateObjectProperty(property: ObjectPropertyNode): void {

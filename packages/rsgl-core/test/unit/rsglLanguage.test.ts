@@ -196,7 +196,7 @@ describe("RSGL language", () => {
       "    all: minecraft:block/acacia_planks",
       "  }",
       "}",
-      "stairs acacia_stairs"
+      "use stairs(id: acacia_stairs)"
     ].join("\n"));
 
     assert.deepStrictEqual(module.diagnostics, []);
@@ -206,7 +206,7 @@ describe("RSGL language", () => {
       "NamespaceDecl",
       "ImportDecl",
       "ResourceDecl",
-      "SugarDecl"
+      "UseDecl"
     ]);
 
     const model = module.statements[3];
@@ -268,9 +268,9 @@ describe("RSGL language", () => {
     assert.strictEqual(exportAll.exportAll, true);
   });
 
-  it("parses resource body fragment declarations", () => {
+  it("parses resource body template declarations", () => {
     const module = parseRsgl([
-      "fragment cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId) {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}"
@@ -287,6 +287,18 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(fragment.parameters.map(parameter => parameter.name?.text), ["parentModel", "texture"]);
     assert.strictEqual(fragment.body.kind, "ResourceBody");
     assert.deepStrictEqual(fragment.body.statements.map(statement => statement.kind), ["PropertyStmt", "SectionStmt"]);
+  });
+
+  it("rejects legacy fragment declarations", () => {
+    const module = parseRsgl("fragment cubeFields(value: Json) { key: value }");
+
+    assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unexpectedToken"));
+  });
+
+  it("rejects legacy bare blockstate sugar declarations", () => {
+    const module = parseRsgl("stairs acacia_stairs");
+
+    assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unexpectedToken"));
   });
 
   it("parses item range and select statements", () => {
