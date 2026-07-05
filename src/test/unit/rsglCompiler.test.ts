@@ -1250,6 +1250,41 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("maps main hand selects to legacy lefthanded predicates", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item tool {",
+      "  model: {",
+      "    type: minecraft:select,",
+      "    property: minecraft:main_hand,",
+      "    cases: [",
+      "      { when: \"right\", model: { type: minecraft:model, model: minecraft:item/tool_right } },",
+      "      { when: \"left\", model: { type: minecraft:model, model: minecraft:item/tool_left } }",
+      "    ],",
+      "    fallback: { type: minecraft:model, model: minecraft:item/tool }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/tool"
+      },
+      overrides: [
+        {
+          predicate: { lefthanded: 0 },
+          model: "minecraft:item/tool_right"
+        },
+        {
+          predicate: { lefthanded: 1 },
+          model: "minecraft:item/tool_left"
+        }
+      ]
+    });
+  });
+
   it("reports unsupported item models in the legacy item backend", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format 64",

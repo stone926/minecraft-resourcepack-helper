@@ -133,7 +133,11 @@ function lowerLegacySelect(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
 ): LegacyItemLowering | null {
-  if (normalizedProperty(model.property) !== "custom_model_data") {
+  const property = normalizedProperty(model.property);
+  if (property === "main_hand") {
+    return lowerLegacyMainHandSelect(model, unit, diagnostics);
+  }
+  if (property !== "custom_model_data") {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering currently supports only custom_model_data cases.");
     return null;
   }
@@ -168,6 +172,60 @@ function lowerLegacySelect(
   }
 
   return { baseModel: fallback.baseModel, overrides };
+}
+
+function lowerLegacyMainHandSelect(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): LegacyItemLowering | null {
+  const cases = Array.isArray(model.cases) ? model.cases : null;
+  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
+  if (!cases || !fallback) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy main_hand select lowering requires cases and a model fallback.");
+    return null;
+  }
+  if (fallback.overrides.length > 0) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy main_hand select lowering requires a plain fallback model.");
+    return null;
+  }
+
+  const rightHandOverrides: LegacyItemOverride[] = [];
+  const leftHandOverrides: LegacyItemOverride[] = [];
+  for (const itemCase of cases) {
+    const caseObject = isJsonObject(itemCase) ? itemCase : null;
+    const whenValues = legacyMainHandValues(caseObject?.when);
+    const branch = isJsonObject(caseObject?.model) ? lowerLegacyItemModel(caseObject.model, unit, diagnostics) : null;
+    if (!whenValues || !branch) {
+      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy main_hand select cases must use 'left'/'right' values and lowerable model branches.");
+      return null;
+    }
+    for (const when of whenValues) {
+      const predicate = when === "left"
+        ? { lefthanded: 1 }
+        : { lefthanded: 0 };
+      const branchOverrides = prefixLowering(predicate, branch, unit, diagnostics);
+      if (!branchOverrides) {
+        return null;
+      }
+      if (when === "left") {
+        leftHandOverrides.push(...branchOverrides);
+      } else {
+        rightHandOverrides.push(...branchOverrides);
+      }
+    }
+  }
+
+  return {
+    baseModel: fallback.baseModel,
+    overrides: [
+      ...rightHandOverrides,
+      ...(rightHandOverrides.length > 0 && leftHandOverrides.length === 0
+        ? [{ predicate: { lefthanded: 1 }, model: fallback.baseModel }]
+        : []),
+      ...leftHandOverrides
+    ]
+  };
 }
 
 function lowerLegacyCondition(
@@ -327,6 +385,23 @@ function legacyNumericPredicateValues(value: JsonValue | undefined): number[] | 
   }
   const single = legacyNumericPredicateValue(value);
   return single === null ? null : [single];
+}
+
+function legacyMainHandValues(value: JsonValue | undefined): Array<"left" | "right"> | null {
+  if (Array.isArray(value)) {
+    const values = value.map(item => legacyMainHandValue(item));
+    return values.every((item): item is "left" | "right" => item !== null) ? values : null;
+  }
+  const single = legacyMainHandValue(value);
+  return single === null ? null : [single];
+}
+
+function legacyMainHandValue(value: JsonValue | undefined): "left" | "right" | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.replace(/^minecraft:/, "");
+  return normalized === "left" || normalized === "right" ? normalized : null;
 }
 
 function legacyNumericPredicateValue(value: JsonValue | undefined): number | null {
