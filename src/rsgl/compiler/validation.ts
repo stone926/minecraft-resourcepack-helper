@@ -1282,8 +1282,8 @@ function isNumericArray(value: JsonValue | undefined, length: number): boolean {
 }
 
 function isColorValue(value: JsonValue | undefined): boolean {
-  if (Number.isInteger(value)) {
-    return true;
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value >= 0 && value <= 0xffffff;
   }
   return Array.isArray(value)
     && value.length === 3

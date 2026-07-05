@@ -4388,6 +4388,8 @@ describe("RSGL compiler", () => {
       "      model: minecraft:item/base,",
       "      tints: [",
       "        { type: minecraft:constant, value: [1, 0.5] },",
+      "        { type: minecraft:constant, value: -1 },",
+      "        { type: minecraft:constant, value: 16777216 },",
       "        { type: minecraft:grass, temperature: 2 },",
       "        { type: minecraft:custom_model_data, default: 1, index: -1 },",
       "        { type: minecraft:unknown }",
