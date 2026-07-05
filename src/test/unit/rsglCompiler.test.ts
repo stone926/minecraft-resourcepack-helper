@@ -2299,6 +2299,51 @@ describe("RSGL compiler", () => {
     assert.ok(modernPackFormat.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.invalidPackFormatField"));
   });
 
+  it("lowers pack metadata sugar to root pack.mcmeta sections", () => {
+    const result = compileRsglModule(parseRsgl([
+      "pack {",
+      "  description \"Generated pack\"",
+      "  formats min [88, 0] max [9999, 0]",
+      "  overlay \"format_75\" {",
+      "    formats min [75, 0] max [87, 9999]",
+      "  }",
+      "  filter {",
+      "    block namespace \"minecraft\" path \"textures/block/stone.*\"",
+      "  }",
+      "}"
+    ].join("\n")));
+    const pack = result.units.find(unit => unit.kind === "pack");
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(pack?.content, {
+      pack: {
+        description: "Generated pack",
+        ["min_format"]: [88, 0],
+        ["max_format"]: [9999, 0]
+      },
+      overlays: {
+        entries: [{
+          directory: "format_75",
+          ["min_format"]: [75, 0],
+          ["max_format"]: [87, 9999]
+        }]
+      },
+      filter: {
+        block: [{
+          namespace: "minecraft",
+          path: "textures/block/stone.*"
+        }]
+      }
+    });
+    const paths = pack?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(paths.includes("/pack/description"));
+    assert.ok(paths.includes("/pack/min_format"));
+    assert.ok(paths.includes("/pack/max_format"));
+    assert.ok(paths.includes("/overlays"));
+    assert.ok(paths.includes("/filter"));
+    assert.ok(paths.includes("/filter/block"));
+  });
+
   it("lowers overlay blocks to prefixed resources and pack metadata", () => {
     const result = compileRsglModule(parseRsgl([
       "pack {",

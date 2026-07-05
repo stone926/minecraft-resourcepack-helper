@@ -462,6 +462,9 @@ export type ResourceStatementNode =
   | UseDeclNode
   | ForStmtNode
   | IfStmtNode
+  | PackFormatsStmtNode
+  | PackOverlayStmtNode
+  | PackFilterBlockStmtNode
   | RawJsonStmtNode
   | OverrideStmtNode
   | AppendStmtNode
@@ -505,6 +508,24 @@ export interface MultipartEntryNode extends StatementNodeBase {
 }
 
 export type MultipartSectionStatementNode = MultipartEntryNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+
+export interface PackFormatsStmtNode extends StatementNodeBase {
+  kind: "PackFormatsStmt";
+  min?: ExprNode;
+  max?: ExprNode;
+}
+
+export interface PackOverlayStmtNode extends StatementNodeBase {
+  kind: "PackOverlayStmt";
+  directory: ExprNode;
+  body: ResourceBodyNode;
+}
+
+export interface PackFilterBlockStmtNode extends StatementNodeBase {
+  kind: "PackFilterBlockStmt";
+  namespace?: ExprNode;
+  path?: ExprNode;
+}
 
 export interface ItemOptionNode extends RsglNode {
   kind: "ItemOption";

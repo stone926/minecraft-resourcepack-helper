@@ -15,6 +15,9 @@ import {
   MultipartBodyNode,
   MultipartSectionStatementNode,
   OverlayDeclNode,
+  PackFilterBlockStmtNode,
+  PackFormatsStmtNode,
+  PackOverlayStmtNode,
   ParameterNode,
   ResourceBodyNode,
   ResourceDeclNode,
@@ -665,9 +668,9 @@ class RsglCompiler {
 
   private compilePack(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit {
     const outputPath = "pack.mcmeta";
-    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.packResourceBodyOptions());
     const hasExplicitPackRoot = isJsonObject(body.content.pack);
-    const content = this.packContentWithTargetMetadata(hasExplicitPackRoot ? body.content : { pack: body.content });
+    const content = this.packContentWithTargetMetadata(packContentFromBody(body.content, hasExplicitPackRoot));
     return {
       kind: "pack",
       outputPath,
@@ -677,7 +680,7 @@ class RsglCompiler {
         outputPath,
         statement,
         context,
-        hasExplicitPackRoot ? body.mappings : prefixSourceMappings(body.mappings, "/pack")
+        packSourceMappings(body.mappings, hasExplicitPackRoot)
       )
     };
   }
@@ -1497,6 +1500,79 @@ class RsglCompiler {
     };
   }
 
+  private packResourceBodyOptions(): ResourceBodyCompileOptions {
+    return {
+      ...this.resourceBodyFragmentOptions(),
+      onSpecialStatement: (statement, context) => this.compilePackSpecialStatement(statement, context)
+    };
+  }
+
+  private compilePackSpecialStatement(statement: ResourceStatementNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
+    if (statement.kind === "PackFormatsStmt") {
+      return this.compilePackFormatsStatement(statement, context);
+    }
+    if (statement.kind === "PackOverlayStmt") {
+      return this.compilePackOverlayStatement(statement, context);
+    }
+    if (statement.kind === "PackFilterBlockStmt") {
+      return this.compilePackFilterBlockStatement(statement, context);
+    }
+    return undefined;
+  }
+
+  private compilePackFormatsStatement(statement: PackFormatsStmtNode, context: RsglCompileContext): Record<string, JsonValue> {
+    const result: Record<string, JsonValue> = {};
+    if (statement.min) {
+      const min = this.packFormatValue(statement.min, context);
+      if (min) {
+        result.min_format = min;
+      } else {
+        this.error("rsgl.invalidPackFormatField", "Pack formats min must be a number or [major, minor] tuple.", statement.min.range);
+      }
+    }
+    if (statement.max) {
+      const max = this.packFormatValue(statement.max, context);
+      if (max) {
+        result.max_format = max;
+      } else {
+        this.error("rsgl.invalidPackFormatField", "Pack formats max must be a number or [major, minor] tuple.", statement.max.range);
+      }
+    }
+    return result;
+  }
+
+  private compilePackOverlayStatement(statement: PackOverlayStmtNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
+    const directory = this.staticText(statement.directory, context);
+    if (!directory) {
+      this.error("rsgl.invalidOverlayDirectory", "Pack overlay directory must be a static string.", statement.directory.range);
+      return undefined;
+    }
+    const body = this.resourceBodyToObject(statement.body, context, this.packResourceBodyOptions());
+    return {
+      overlays: {
+        entries: [{
+          directory,
+          ...body
+        }]
+      }
+    };
+  }
+
+  private compilePackFilterBlockStatement(statement: PackFilterBlockStmtNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
+    const namespace = statement.namespace ? this.staticText(statement.namespace, context) : null;
+    const path = statement.path ? this.staticText(statement.path, context) : null;
+    if (!namespace || !path) {
+      this.error("rsgl.invalidPackFilterBlock", "Pack filter block requires static namespace and path patterns.", statement.range);
+      return undefined;
+    }
+    return {
+      block: [{
+        namespace,
+        path
+      }]
+    };
+  }
+
   private jsonResourceFragmentOptions(kind: JsonResourceFragmentKind): ResourceBodyCompileOptions {
     return this.resourceBodyFragmentOptions(kind);
   }
@@ -1591,6 +1667,63 @@ class RsglCompiler {
 
 function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
   return value === undefined ? null : value;
+}
+
+const packRootFields = new Set(["description", "pack_format", "supported_formats", "min_format", "max_format"]);
+const packMcmetaRootFields = new Set(["filter", "overlays"]);
+
+function packContentFromBody(content: Record<string, JsonValue>, hasExplicitPackRoot: boolean): Record<string, JsonValue> {
+  if (hasExplicitPackRoot) {
+    const result: Record<string, JsonValue> = { ...content };
+    const pack = isJsonObject(result.pack) ? { ...result.pack } : {};
+    for (const key of packRootFields) {
+      if (Object.hasOwn(result, key)) {
+        pack[key] = result[key];
+        delete result[key];
+      }
+    }
+    result.pack = pack;
+    return result;
+  }
+
+  const pack: Record<string, JsonValue> = {};
+  const result: Record<string, JsonValue> = {};
+  for (const [key, value] of Object.entries(content)) {
+    if (packMcmetaRootFields.has(key)) {
+      result[key] = value;
+    } else {
+      pack[key] = value;
+    }
+  }
+  return {
+    pack,
+    ...result
+  };
+}
+
+function packSourceMappings(mappings: RsglMapping[], hasExplicitPackRoot: boolean): RsglMapping[] {
+  if (hasExplicitPackRoot) {
+    return mappings.map(mapping =>
+      isPackFieldMapping(mapping.generatedPath)
+        ? { ...mapping, generatedPath: prefixGeneratedPath(mapping.generatedPath, "/pack") }
+        : mapping
+    );
+  }
+  return mappings.map(mapping =>
+    isPackMcmetaRootMapping(mapping.generatedPath)
+      ? mapping
+      : { ...mapping, generatedPath: prefixGeneratedPath(mapping.generatedPath, "/pack") }
+  );
+}
+
+function isPackFieldMapping(pathValue: string): boolean {
+  const match = /^\/([^/]+)(?:\/|$)/.exec(pathValue);
+  return Boolean(match && packRootFields.has(match[1]));
+}
+
+function isPackMcmetaRootMapping(pathValue: string): boolean {
+  const match = /^\/([^/]+)(?:\/|$)/.exec(pathValue);
+  return Boolean(match && packMcmetaRootFields.has(match[1]));
 }
 
 function textContent(value: JsonValue | undefined): string | null {
@@ -1711,13 +1844,6 @@ function prefixOverlayUnit(unit: ResourceUnit, directory: string): ResourceUnit 
       generatedFile: outputPath
     }
   };
-}
-
-function prefixSourceMappings(mappings: RsglMapping[], pathPrefix: string): RsglMapping[] {
-  return mappings.map(mapping => ({
-    ...mapping,
-    generatedPath: prefixGeneratedPath(mapping.generatedPath, pathPrefix)
-  }));
 }
 
 function createResourceBodyFragment(content: Record<string, JsonValue> | undefined): ResourceBodyFragment | undefined {

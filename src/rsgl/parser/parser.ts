@@ -23,6 +23,9 @@ import {
   NumberLiteralNode,
   ObjectExprNode,
   ObjectPropertyNode,
+  PackFilterBlockStmtNode,
+  PackFormatsStmtNode,
+  PackOverlayStmtNode,
   ParameterNode,
   ResourceBodyNode,
   ResourceDeclNode,
@@ -671,7 +674,7 @@ class RsglParser extends ParserContext {
         }
         statements.push(this.parseMultipartSection());
       } else {
-        statements.push(this.parseResourceStatement());
+        statements.push(this.parseResourceStatement(owner));
       }
       this.consumeOptionalSeparator();
       this.ensureProgress(mark, "Unable to parse resource statement; skipping token.");
@@ -763,7 +766,7 @@ class RsglParser extends ParserContext {
     return this.parseMultipartEntry();
   }
 
-  private parseResourceStatement(): ResourceStatementNode {
+  private parseResourceStatement(owner: string): ResourceStatementNode {
     const token = this.current();
     if (token.text === "use") {
       return this.parseUseDecl();
@@ -782,6 +785,15 @@ class RsglParser extends ParserContext {
     }
     if (token.text === "append") {
       return this.parseRawLikeStmt("AppendStmt");
+    }
+    if ((owner === "pack" || owner === "packOverlay") && token.text === "formats") {
+      return this.parsePackFormatsStmt();
+    }
+    if (owner === "pack" && token.text === "overlay") {
+      return this.parsePackOverlayStmt();
+    }
+    if (owner === "filter" && token.text === "block" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parsePackFilterBlockStmt();
     }
     if (token.text === "range") {
       return this.parseItemRangeStmt();
@@ -867,6 +879,73 @@ class RsglParser extends ParserContext {
       return this.syntheticIdentifier(token, unquoteString(token.text));
     }
     return this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
+  }
+
+  private parsePackFormatsStmt(): PackFormatsStmtNode {
+    const start = this.advance();
+    let min: ExprNode | undefined;
+    let max: ExprNode | undefined;
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
+      const mark = this.mark();
+      if (this.matchText("min")) {
+        min = this.parseExpression({ stopTexts: ["max", "}"] });
+      } else if (this.matchText("max")) {
+        max = this.parseExpression({ stopTexts: ["min", "}"] });
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedPackFormatClause", "Expected 'min' or 'max' in pack formats.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse pack formats clause; skipping token.");
+    }
+    return {
+      kind: "PackFormatsStmt",
+      keyword: start.text,
+      min,
+      max,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parsePackOverlayStmt(): PackOverlayStmtNode {
+    const start = this.advance();
+    const directory = this.parseExpression({ stopTexts: ["{"] });
+    const body = this.current().text === "{"
+      ? this.parseResourceBody("packOverlay")
+      : this.emptyResourceBodyAt(this.current(), "Expected pack overlay body.");
+    return {
+      kind: "PackOverlayStmt",
+      keyword: start.text,
+      directory,
+      body,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parsePackFilterBlockStmt(): PackFilterBlockStmtNode {
+    const start = this.advance();
+    let namespace: ExprNode | undefined;
+    let path: ExprNode | undefined;
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
+      const mark = this.mark();
+      if (this.matchText("namespace")) {
+        namespace = this.parseExpression({ stopTexts: ["path", "}"] });
+      } else if (this.matchText("path")) {
+        path = this.parseExpression({ stopTexts: ["namespace", "}"] });
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedPackFilterBlockClause", "Expected 'namespace' or 'path' in pack filter block.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse pack filter block clause; skipping token.");
+    }
+    return {
+      kind: "PackFilterBlockStmt",
+      keyword: start.text,
+      namespace,
+      path,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
   }
 
   private parseRawLikeStmt(kind: "RawJsonStmt" | "OverrideStmt" | "AppendStmt"): ResourceStatementNode {

@@ -265,6 +265,41 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(overlay.body.statements.map(statement => statement.kind), ["ResourceDecl"]);
   });
 
+  it("parses pack metadata sugar statements", () => {
+    const module = parseRsgl([
+      "pack {",
+      "  formats min [88, 0] max [9999, 0]",
+      "  overlay \"format_75\" {",
+      "    formats min [75, 0] max [87, 9999]",
+      "  }",
+      "  filter {",
+      "    block namespace \"minecraft\" path \"textures/block/stone.*\"",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const pack = module.statements[0];
+    assert.strictEqual(pack.kind, "ResourceDecl");
+    if (pack.kind !== "ResourceDecl") {
+      throw new Error("Expected pack resource declaration.");
+    }
+    assert.deepStrictEqual(pack.body.statements.map(statement => statement.kind), [
+      "PackFormatsStmt",
+      "PackOverlayStmt",
+      "SectionStmt"
+    ]);
+    const overlay = pack.body.statements[1];
+    assert.strictEqual(overlay.kind, "PackOverlayStmt");
+    if (overlay.kind !== "PackOverlayStmt") {
+      throw new Error("Expected pack overlay statement.");
+    }
+    assert.deepStrictEqual(overlay.body.statements.map(statement => statement.kind), ["PackFormatsStmt"]);
+    const filter = pack.body.statements[2];
+    assert.strictEqual(filter.kind, "SectionStmt");
+    assert.deepStrictEqual(filter.kind === "SectionStmt" ? filter.body?.statements.map(statement => statement.kind) : [], ["PackFilterBlockStmt"]);
+  });
+
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
     const source = [
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",

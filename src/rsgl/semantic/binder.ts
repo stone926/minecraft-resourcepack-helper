@@ -298,6 +298,23 @@ class RsglBinder {
       this.checkMultipartStatements(statement.entries, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
+    } else if (statement.kind === "PackFormatsStmt") {
+      if (statement.min) {
+        this.checkExpression(statement.min, scope);
+      }
+      if (statement.max) {
+        this.checkExpression(statement.max, scope);
+      }
+    } else if (statement.kind === "PackOverlayStmt") {
+      this.checkExpression(statement.directory, scope);
+      this.checkResourceBody(statement.body, createChildScope(scope, "block"));
+    } else if (statement.kind === "PackFilterBlockStmt") {
+      if (statement.namespace) {
+        this.checkExpression(statement.namespace, scope);
+      }
+      if (statement.path) {
+        this.checkExpression(statement.path, scope);
+      }
     } else if (statement.kind === "ItemRangeStmt") {
       this.checkExpression(statement.property, scope);
       statement.options.forEach(option => this.checkExpression(option.value, scope));
