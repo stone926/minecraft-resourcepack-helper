@@ -53,6 +53,19 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("preserves empty list expressions in resource raw json", () => {
+    const result = compileRsglModule(parseRsgl([
+      "atlas blocks {",
+      "  raw_json { sources: [] }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.kind === "atlas")?.content, {
+      sources: []
+    });
+  });
+
   it("emits deterministic files with source maps and manifest", () => {
     const result = compileRsglModule(parseRsgl([
       "namespace minecraft",
@@ -4246,6 +4259,15 @@ describe("RSGL compiler", () => {
       "    }",
       "  }",
       "}",
+      "item empty_range_entries {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:range_dispatch,",
+      "      property: minecraft:count,",
+      "      entries: []",
+      "    }",
+      "  }",
+      "}",
       "item broken_select {",
       "  raw_json {",
       "    model: {",
@@ -4271,6 +4293,7 @@ describe("RSGL compiler", () => {
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
     assert.ok(codes.includes("rsgl.modelNotFound"));
     assert.ok(codes.includes("rsgl.unsortedItemRangeThresholds"));
+    assert.ok(codes.includes("rsgl.emptyItemRangeEntries"));
     assert.ok(codes.includes("rsgl.itemModelMissingFallback"));
     assert.ok(codes.includes("rsgl.invalidItemSelectCase"));
     assert.ok(codes.includes("rsgl.invalidItemConditionBranch"));

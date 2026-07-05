@@ -726,6 +726,14 @@ function validateItemRangeDispatch(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   } else {
+    if (entries.length === 0) {
+      diagnostics.push({
+        code: "rsgl.emptyItemRangeEntries",
+        message: "Item range_dispatch should define at least one entry.",
+        severity: "warning",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+    }
     let previousThreshold = -Infinity;
     for (const entry of entries) {
       const entryObject = asObject(entry);

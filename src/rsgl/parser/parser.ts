@@ -2019,9 +2019,6 @@ class RsglParser extends ParserContext {
     if (this.current().text !== "[") {
       return false;
     }
-    if (this.peekText(1) === "]") {
-      return true;
-    }
     return (this.peekKind(1) === "identifier" || this.peekKind(1) === "keyword" || this.peekKind(1) === "string") &&
       this.peekText(2) === "=";
   }
