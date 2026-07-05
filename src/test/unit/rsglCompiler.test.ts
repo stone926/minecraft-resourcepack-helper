@@ -4458,6 +4458,11 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.missingItemTintField"));
     assert.ok(codes.includes("rsgl.invalidItemTintField"));
     assert.ok(codes.includes("rsgl.invalidItemTint"));
+    const invalidTintsUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_tints.json"));
+    const tintValueRange = invalidTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/tints/0/value")?.sourceRange;
+    const invalidTintColor = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemTintColor");
+    assert.deepStrictEqual(invalidTintColor?.range, tintValueRange);
+    assert.notDeepStrictEqual(invalidTintColor?.range, invalidTintsUnit?.sourceMap.mappings[0].sourceRange);
   });
 
   it("validates item top-level fields and transformations", () => {

@@ -263,7 +263,7 @@ function validateItemUnit(
 ): void {
   const content = asObject(unit.content);
   validateItemTopLevelFields(content, unit, diagnostics);
-  validateItemModelDefinition(content?.model, unit, generatedModels, options, diagnostics);
+  validateItemModelDefinition(content?.model, unit, generatedModels, options, diagnostics, "/model");
 }
 
 function validateModelUnit(
@@ -600,7 +600,8 @@ function validateItemModelDefinition(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath = ""
 ): void {
   const model = asObject(value);
   if (!model) {
@@ -608,7 +609,7 @@ function validateItemModelDefinition(
   }
 
   validateItemTransformation(model, unit, diagnostics);
-  validateItemTints(model, unit, diagnostics);
+  validateItemTints(model, unit, diagnostics, generatedPath);
   const type = itemModelType(model.type);
   if (type === "model") {
     if (typeof model.model === "string") {
@@ -1101,22 +1102,25 @@ function validateItemTransformation(
 function validateItemTints(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (!("tints" in model)) {
     return;
   }
+  const tintsPath = appendGeneratedPath(generatedPath, "tints");
   if (!Array.isArray(model.tints)) {
     diagnostics.push({
       code: "rsgl.invalidItemTints",
       message: "Item model tints must be an array.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, tintsPath)
     });
     return;
   }
 
-  for (const tint of model.tints) {
+  for (const [index, tint] of model.tints.entries()) {
+    const tintPath = appendGeneratedPath(tintsPath, String(index));
     const tintObject = asObject(tint);
     const type = itemModelType(tintObject?.type);
     const requiredFields = type ? itemTintRequiredFields.get(type) : undefined;
@@ -1125,7 +1129,7 @@ function validateItemTints(
         code: "rsgl.invalidItemTint",
         message: "Item tint must define a known tint type.",
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, tintPath)
       });
       continue;
     }
@@ -1135,11 +1139,11 @@ function validateItemTints(
           code: "rsgl.missingItemTintField",
           message: `Item tint '${type}' must define '${field}'.`,
           severity: "error",
-          range: unit.sourceMap.mappings[0].sourceRange
+          range: sourceRangeForGeneratedPath(unit, tintPath)
         });
       }
     }
-    validateTintValue(tintObject, type, unit, diagnostics);
+    validateTintValue(tintObject, type, unit, diagnostics, tintPath);
   }
 }
 
@@ -1147,7 +1151,8 @@ function validateTintValue(
   tint: Record<string, JsonValue>,
   type: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   for (const field of ["value", "default"]) {
     if (field in tint && !isColorValue(tint[field])) {
@@ -1155,7 +1160,7 @@ function validateTintValue(
         code: "rsgl.invalidItemTintColor",
         message: `Item tint '${type}' field '${field}' must be a packed color integer or RGB triplet.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
       });
     }
   }
@@ -1166,7 +1171,7 @@ function validateTintValue(
       code: "rsgl.invalidItemTintField",
       message: `Item tint '${type}' field 'index' must be a non-negative integer.`,
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "index"))
     });
   }
 }
