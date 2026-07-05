@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { RsglEmittedFile } from "./emit";
+import { RsglCopyEmittedFile, RsglEmittedFile } from "./emit";
 
 export type RsglWriteStatus = "create" | "update" | "unchanged";
 
@@ -15,12 +15,12 @@ export interface RsglWriteDiff {
   removedLines: number;
 }
 
-export interface RsglWritePlanEntry extends RsglEmittedFile {
+export type RsglWritePlanEntry = RsglEmittedFile & {
   absolutePath: string;
   status: RsglWriteStatus;
   previousContent?: string;
   diff?: RsglWriteDiff;
-}
+};
 
 export interface RsglWritePlan {
   outputRoot: string;
@@ -63,7 +63,11 @@ export function writeRsglFiles(
       continue;
     }
     fs.mkdirSync(path.dirname(entry.absolutePath), { recursive: true });
-    fs.writeFileSync(entry.absolutePath, entry.content, encoding);
+    if (isCopyFile(entry)) {
+      fs.copyFileSync(entry.copyFrom, entry.absolutePath);
+    } else {
+      fs.writeFileSync(entry.absolutePath, entry.content, encoding);
+    }
   }
   return plan;
 }
@@ -75,6 +79,21 @@ function createPlanEntry(
   includePreviousContent: boolean
 ): RsglWritePlanEntry {
   const absolutePath = resolveOutputPath(outputRoot, file.outputPath);
+  if (isCopyFile(file)) {
+    const previousContent = fs.existsSync(absolutePath)
+      ? fs.readFileSync(absolutePath)
+      : undefined;
+    const nextContent = fs.readFileSync(file.copyFrom);
+    const status = previousContent === undefined
+      ? "create"
+      : Buffer.compare(previousContent, nextContent) === 0 ? "unchanged" : "update";
+    return {
+      ...file,
+      absolutePath,
+      status
+    };
+  }
+
   const previousContent = fs.existsSync(absolutePath)
     ? fs.readFileSync(absolutePath, encoding)
     : undefined;
@@ -91,6 +110,10 @@ function createPlanEntry(
       ? createLineDiff(previousContent, file.content)
       : undefined
   };
+}
+
+function isCopyFile(file: RsglEmittedFile): file is RsglCopyEmittedFile {
+  return "copyFrom" in file;
 }
 
 function resolveOutputPath(outputRoot: string, outputPath: string): string {

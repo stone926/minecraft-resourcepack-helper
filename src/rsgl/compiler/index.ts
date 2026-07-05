@@ -1,7 +1,7 @@
 export { compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromFile } from "./compiler";
 export type { RsglCompileOptions, RsglFileCompileOptions, RsglFileLoadOptions, RsglProgramCompileOptions } from "./compiler";
 export { emitRsglFiles, stableJsonStringify, orderJsonValue } from "./emit";
-export type { RsglEmittedFile, RsglEmitOptions } from "./emit";
+export type { RsglContentEmittedFile, RsglCopyEmittedFile, RsglEmittedFile, RsglEmitOptions } from "./emit";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
 export { validateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";

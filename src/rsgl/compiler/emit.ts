@@ -1,4 +1,4 @@
-import { JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
+import { BinaryCopyRef, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
 
 const objectFieldOrder: Record<string, string[]> = {
   model: ["parent", "ambientocclusion", "gui_light", "display", "textures", "elements"],
@@ -7,10 +7,18 @@ const objectFieldOrder: Record<string, string[]> = {
   itemModel: ["type", "property", "component", "index", "scale", "cases", "entries", "fallback", "model", "models", "tints"]
 };
 
-export interface RsglEmittedFile {
+export type RsglEmittedFile = RsglContentEmittedFile | RsglCopyEmittedFile;
+
+export interface RsglContentEmittedFile {
   outputPath: string;
   content: string;
   kind: "resource" | "sourceMap" | "manifest";
+}
+
+export interface RsglCopyEmittedFile {
+  outputPath: string;
+  copyFrom: string;
+  kind: "resource";
 }
 
 export interface RsglEmitOptions {
@@ -32,11 +40,7 @@ export function emitRsglFiles(units: ResourceUnit[], options: RsglEmitOptions = 
   const files: RsglEmittedFile[] = [];
 
   for (const unit of sortedUnits) {
-    files.push({
-      outputPath: unit.outputPath,
-      content: stringifyResourceContent(unit, indent),
-      kind: "resource"
-    });
+    files.push(resourceFile(unit, indent));
 
     if (options.sourceMaps) {
       files.push({
@@ -56,6 +60,21 @@ export function emitRsglFiles(units: ResourceUnit[], options: RsglEmitOptions = 
   }
 
   return files;
+}
+
+function resourceFile(unit: ResourceUnit, indent: number): RsglEmittedFile {
+  if (unit.kind === "copy" && isBinaryCopyRef(unit.content)) {
+    return {
+      outputPath: unit.outputPath,
+      copyFrom: unit.content.sourcePath,
+      kind: "resource"
+    };
+  }
+  return {
+    outputPath: unit.outputPath,
+    content: stringifyResourceContent(unit, indent),
+    kind: "resource"
+  };
 }
 
 function stringifyResourceContent(unit: ResourceUnit, indent: number): string {
@@ -109,6 +128,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isTextContent(value: unknown): value is { kind: "text"; text: string } {
   return isObject(value) && value.kind === "text" && typeof value.text === "string";
+}
+
+function isBinaryCopyRef(value: unknown): value is BinaryCopyRef {
+  return isObject(value) && value.kind === "copy" && typeof value.sourcePath === "string";
 }
 
 function sourceMapStringify(sourceMap: RsglSourceMap, indent: number): string {

@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   BlockNode,
@@ -66,7 +67,7 @@ import { createFileGlobLoader } from "./fileGlob";
 import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
 import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
-import { JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
+import { BinaryCopyRef, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
@@ -369,6 +370,8 @@ class RsglCompiler {
       this.pushUnit(this.compileSounds(statement, context));
     } else if (statement.resourceKind === "text") {
       this.pushUnit(this.compileTextResource(statement, context));
+    } else if (statement.resourceKind === "copy") {
+      this.pushUnit(this.compileCopyResource(statement, context));
     } else if (statement.resourceKind === "mcmeta") {
       for (const unit of this.compileMcmeta(statement, context)) {
         this.pushUnit(unit);
@@ -766,6 +769,48 @@ class RsglCompiler {
       kind: "text",
       outputPath: target.outputPath,
       content: { kind: "text", text },
+      mergePolicy: { kind: "errorOnConflict" },
+      sourceMap: this.sourceMap(target.outputPath, statement, context, mappings)
+    };
+  }
+
+  private compileCopyResource(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
+    const targetValue = statement.id ? this.staticText(statement.id, context) : null;
+    if (!targetValue || !statement.id) {
+      this.error("rsgl.compileMissingResourceId", "Copy declaration requires a static resource id or pack-relative path.", statement.range);
+      return null;
+    }
+    const target = copyResourceTarget(targetValue, context.namespace, isPackRelativeTargetExpression(statement.id));
+    if (!target) {
+      this.error("rsgl.compileInvalidCopyTarget", `Invalid copy resource target '${targetValue}'.`, statement.id.range);
+      return null;
+    }
+
+    const body = this.resourceBodyToObjectWithRawMappings(statement.body, context, this.resourceBodyFragmentOptions());
+    for (const key of Object.keys(body.content)) {
+      if (key !== "from") {
+        this.error("rsgl.invalidCopyResourceField", `Copy resources do not support field '${key}'.`, statement.body.range);
+      }
+    }
+    const sourcePath = copySourcePath(body.content.from, context.sourceFile ?? this.options.fileName);
+    if (!sourcePath) {
+      this.error("rsgl.invalidCopySource", "Copy resource requires a static string 'from' field.", statement.body.range);
+      return null;
+    }
+    if (!isExistingFile(sourcePath)) {
+      this.error("rsgl.copySourceNotFound", `Copy source file not found: ${sourcePath}`, statement.body.range);
+      return null;
+    }
+
+    const mappings = body.mappings
+      .filter(mapping => mapping.generatedPath === "/from")
+      .map(mapping => this.sourceMapping("", mapping.sourceRange, mapping.context));
+    const content: BinaryCopyRef = { kind: "copy", sourcePath };
+    return {
+      id: target.id,
+      kind: "copy",
+      outputPath: target.outputPath,
+      content,
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(target.outputPath, statement, context, mappings)
     };
@@ -1579,6 +1624,58 @@ function textResourceTarget(value: string, namespace: string): { id?: ResourceId
   } : null;
 }
 
+function copyResourceTarget(value: string, namespace: string, packRelative: boolean): { id?: ResourceId; outputPath: string } | null {
+  const normalized = value.replace(/\\/g, "/");
+  if (packRelative || normalized.startsWith("assets/")) {
+    if (!isSafePackRelativePath(normalized)) {
+      return null;
+    }
+    const assetId = /^assets\/([^/]+)\/(.+)$/.exec(normalized);
+    return {
+      id: assetId ? parseResourceId(`${assetId[1]}:${assetId[2]}`, namespace) ?? undefined : undefined,
+      outputPath: normalized
+    };
+  }
+
+  const id = parseResourceId(value, namespace);
+  if (id && !isSafeResourcePath(id.path)) {
+    return null;
+  }
+  return id ? {
+    id,
+    outputPath: `assets/${id.namespace}/${id.path}`
+  } : null;
+}
+
+function isPackRelativeTargetExpression(expression: ExprNode): boolean {
+  return expression.kind === "StringLiteral" || expression.kind === "TemplateStringExpr";
+}
+
+function copySourcePath(value: JsonValue | undefined, sourceFile: string | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+  const normalized = value.replace(/\\/g, path.sep);
+  return path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : path.resolve(sourceBaseDirectory(sourceFile), normalized);
+}
+
+function sourceBaseDirectory(sourceFile: string | undefined): string {
+  if (!sourceFile || sourceFile.startsWith("<")) {
+    return process.cwd();
+  }
+  return path.dirname(path.resolve(sourceFile));
+}
+
+function isExistingFile(fileName: string): boolean {
+  try {
+    return fs.statSync(fileName).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function ensureTextExtension(outputPath: string): string {
   const fileName = outputPath.split("/").pop() ?? outputPath;
   return /\.[a-z0-9]+$/i.test(fileName) ? outputPath : `${outputPath}.txt`;
@@ -1588,7 +1685,12 @@ function isSafePackRelativePath(outputPath: string): boolean {
   if (outputPath.length === 0 || outputPath.startsWith("/") || /^[A-Za-z]:/.test(outputPath)) {
     return false;
   }
-  return outputPath.split("/").every(segment => segment.length > 0 && segment !== "." && segment !== "..");
+  return outputPath.split("/").every(segment =>
+    segment.length > 0 &&
+    segment !== "." &&
+    segment !== ".." &&
+    !/[<>:"|?*]/.test(segment)
+  );
 }
 
 function isSafeResourcePath(resourcePath: string): boolean {

@@ -88,11 +88,19 @@ export function formatRsglBuildPreview(
     lines.push("", "## Diff Preview", "");
     for (const entry of changedEntries) {
       lines.push(`### ${entry.outputPath}`, "", "```diff");
-      lines.push(...createPreviewDiffLines(entry.previousContent, entry.content, maxDiffLinesPerFile));
+      if (isCopyPlanEntry(entry)) {
+        lines.push(`Binary copy from ${entry.copyFrom}`);
+      } else {
+        lines.push(...createPreviewDiffLines(entry.previousContent, entry.content, maxDiffLinesPerFile));
+      }
       lines.push("```", "");
     }
   }
   return `${lines.join("\n")}\n`;
+}
+
+function isCopyPlanEntry(entry: RsglWritePlan["entries"][number]): entry is RsglWritePlan["entries"][number] & { copyFrom: string } {
+  return "copyFrom" in entry;
 }
 
 function createPreviewDiffLines(previousContent: string | undefined, nextContent: string, maxLines: number): string[] {

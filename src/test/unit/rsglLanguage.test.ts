@@ -506,6 +506,7 @@ describe("RSGL language", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "lang"));
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
     assert.ok(topLevel.some(candidate => candidate.label === "text"));
+    assert.ok(topLevel.some(candidate => candidate.label === "copy"));
     assert.ok(topLevel.some(candidate => candidate.label === "cubeAll"));
 
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);

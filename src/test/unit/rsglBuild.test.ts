@@ -93,6 +93,33 @@ describe("RSGL build", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("previews binary copy resources without writing output files", () => {
+    const root = createTempDirectory();
+    const entry = path.join(root, "src", "main.rsgl");
+    const outputRoot = path.join(root, "pack");
+    const source = path.join(root, "src", "pack.png");
+
+    try {
+      fs.mkdirSync(path.dirname(entry), { recursive: true });
+      fs.writeFileSync(source, Buffer.from([1, 2, 3]));
+      fs.writeFileSync(entry, [
+        "copy \"pack.png\" {",
+        "  from \"pack.png\"",
+        "}"
+      ].join("\n"));
+
+      const preview = previewRsglResourcePackBuild(entry, { outputRoot });
+
+      assert.deepStrictEqual(preview.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(preview.plan?.summary, { create: 3, update: 0, unchanged: 0 });
+      assert.ok(preview.preview?.includes("create: pack.png"));
+      assert.ok(preview.preview?.includes(`Binary copy from ${source}`));
+      assert.strictEqual(fs.existsSync(path.join(outputRoot, "pack.png")), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function createTempDirectory(): string {

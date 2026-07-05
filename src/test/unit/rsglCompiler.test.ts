@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, inferBlockstateSchemaFromContent, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../rsgl/compiler";
+import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, inferBlockstateSchemaFromContent, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, type RsglEmittedFile, writeRsglFiles } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl/workspaceValidation";
 
@@ -70,7 +70,7 @@ describe("RSGL compiler", () => {
       "rsgl.manifest.json"
     ]);
 
-    assert.strictEqual(files[0].content, [
+    assert.strictEqual(emittedContent(files[0]), [
       "{",
       "  \"parent\": \"minecraft:block/cube_all\",",
       "  \"textures\": {",
@@ -80,7 +80,7 @@ describe("RSGL compiler", () => {
       ""
     ].join("\n"));
 
-    const sourceMap = JSON.parse(files[1].content) as {
+    const sourceMap = JSON.parse(emittedContent(files[1])) as {
       version?: number;
       generatedFile?: string;
       mappings?: Array<{ generatedPath?: string; sourceFile?: string; reason?: string }>;
@@ -96,7 +96,7 @@ describe("RSGL compiler", () => {
     assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
     assert.strictEqual(sourceMap.mappings?.[0]?.reason, "direct");
 
-    const manifest = JSON.parse(files[2].content) as {
+    const manifest = JSON.parse(emittedContent(files[2])) as {
       files?: Array<{ outputPath?: string; sourceMap?: string }>;
     };
     assert.deepStrictEqual(manifest.files, [{
@@ -131,15 +131,15 @@ describe("RSGL compiler", () => {
       text: "Good luck, PLAYERNAME\\n"
     });
     const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
-    assert.strictEqual(files.find(file => file.outputPath.endsWith("end.txt"))?.content, "Good luck, PLAYERNAME\\n");
+    assert.strictEqual(emittedContent(files.find(file => file.outputPath.endsWith("end.txt"))), "Good luck, PLAYERNAME\\n");
 
-    const sourceMap = JSON.parse(files.find(file => file.outputPath.endsWith("end.txt.rsgl.map"))?.content ?? "{}") as {
+    const sourceMap = JSON.parse(emittedContent(files.find(file => file.outputPath.endsWith("end.txt.rsgl.map")))) as {
       mappings?: Array<{ generatedPath?: string; sourceFile?: string }>;
     };
     assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), ["", ""]);
     assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
 
-    const manifest = JSON.parse(files.find(file => file.outputPath === "rsgl.manifest.json")?.content ?? "{}") as {
+    const manifest = JSON.parse(emittedContent(files.find(file => file.outputPath === "rsgl.manifest.json"))) as {
       files?: Array<{ outputPath?: string; kind?: string; id?: string }>;
     };
     assert.ok(manifest.files?.some(file =>
@@ -173,13 +173,83 @@ describe("RSGL compiler", () => {
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.strictEqual(emitRsglFiles(result.units)[0].content, [
+    assert.strictEqual(emittedContent(emitRsglFiles(result.units)[0]), [
       "{",
       "  \"kind\": \"copy\",",
       "  \"sourcePath\": \"textures/source.png\"",
       "}",
       ""
     ].join("\n"));
+  });
+
+  it("emits and writes binary copy resources", () => {
+    const root = createTempDir();
+    try {
+      const sourceFile = path.join(root, "source.png");
+      const entryFile = path.join(root, "main.rsgl");
+      const outputRoot = path.join(root, "out");
+      const sourceBytes = Buffer.from([0, 1, 2, 255]);
+      fs.writeFileSync(sourceFile, sourceBytes);
+
+      const result = compileRsglModule(parseRsgl([
+        "namespace minecraft",
+        "copy \"pack.png\" {",
+        "  from \"source.png\"",
+        "}",
+        "copy minecraft:textures/block/copied.png {",
+        "  from \"source.png\"",
+        "}"
+      ].join("\n")), { fileName: entryFile });
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+        "assets/minecraft/textures/block/copied.png",
+        "pack.png"
+      ]);
+      assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "pack.png")?.content, {
+        kind: "copy",
+        sourcePath: sourceFile
+      });
+
+      const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
+      const copyFile = files.find(file => file.outputPath === "pack.png");
+      assert.ok(copyFile && "copyFrom" in copyFile);
+      assert.strictEqual(copyFile.copyFrom, sourceFile);
+
+      const written = writeRsglFiles(files, outputRoot);
+      assert.deepStrictEqual(written.summary, { create: 5, update: 0, unchanged: 0 });
+      assert.deepStrictEqual(fs.readFileSync(path.join(outputRoot, "pack.png")), sourceBytes);
+      assert.deepStrictEqual(fs.readFileSync(path.join(outputRoot, "assets", "minecraft", "textures", "block", "copied.png")), sourceBytes);
+
+      const unchanged = createRsglWritePlan(files, outputRoot);
+      assert.deepStrictEqual(unchanged.summary, { create: 0, update: 0, unchanged: 5 });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports invalid binary copy resources", () => {
+    const root = createTempDir();
+    try {
+      const result = compileRsglModule(parseRsgl([
+        "copy \"bad:name\" { from \"missing.bin\" }",
+        "copy \"pack.png\" {",
+        "  from [1]",
+        "  extra true",
+        "}",
+        "copy \"assets/minecraft/textures/block/missing.png\" {",
+        "  from \"missing.bin\"",
+        "}"
+      ].join("\n")), { fileName: path.join(root, "main.rsgl") });
+      const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+      assert.ok(codes.includes("rsgl.compileInvalidCopyTarget"));
+      assert.ok(codes.includes("rsgl.invalidCopySource"));
+      assert.ok(codes.includes("rsgl.invalidCopyResourceField"));
+      assert.ok(codes.includes("rsgl.copySourceNotFound"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("plans and writes emitted files to a pack directory", () => {
@@ -3858,6 +3928,13 @@ describe("RSGL compiler", () => {
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-"));
+}
+
+function emittedContent(file: RsglEmittedFile | undefined): string {
+  if (!file || !("content" in file)) {
+    throw new Error("Expected emitted content file.");
+  }
+  return file.content;
 }
 
 function createPngBytes(width: number, height: number): Buffer {

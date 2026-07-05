@@ -23,7 +23,8 @@ export const rsglResourceKinds = [
   "pack",
   "lang",
   "sounds",
-  "text"
+  "text",
+  "copy"
 ] as const;
 
 export type RsglResourceKind = typeof rsglResourceKinds[number];
@@ -104,6 +105,11 @@ export const rsglResourceCompletionDescriptors: RsglResourceCompletionDescriptor
     label: "text",
     insertText: "text ${1:minecraft:texts/end} {\n  content `${2:Generated text}`\n}",
     detail: "Text resource"
+  },
+  {
+    label: "copy",
+    insertText: "copy \"${1:pack.png}\" {\n  from \"${2:assets/pack.png}\"\n}",
+    detail: "Binary copy resource"
   },
   {
     label: "mcmeta",
