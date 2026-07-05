@@ -4381,6 +4381,11 @@ describe("RSGL compiler", () => {
       "    model: { type: minecraft:special, base: minecraft:item/base, model: { type: minecraft:unknown } }",
       "  }",
       "}",
+      "item invalid_special_texture {",
+      "  raw_json {",
+      "    model: { type: minecraft:special, base: minecraft:item/base, model: { type: minecraft:chest, texture: 1 } }",
+      "  }",
+      "}",
       "item invalid_tints {",
       "  raw_json {",
       "    model: {",
@@ -4405,6 +4410,7 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.missingItemSpecialModelField"));
     assert.ok(codes.includes("rsgl.invalidItemSpecialModelField"));
     assert.ok(codes.includes("rsgl.invalidItemSpecialModelType"));
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidItemSpecialModelField" && diagnostic.message.includes("'texture'")));
     assert.ok(codes.includes("rsgl.invalidItemTintColor"));
     assert.ok(codes.includes("rsgl.missingItemTintField"));
     assert.ok(codes.includes("rsgl.invalidItemTintField"));

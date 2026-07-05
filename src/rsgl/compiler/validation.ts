@@ -72,6 +72,13 @@ const specialModelEnumFields = new Map<string, Array<{ field: string; values: st
   ]]
 ]);
 
+const specialModelStringFields = new Map<string, string[]>([
+  ["chest", ["texture"]],
+  ["copper_golem_statue", ["texture"]],
+  ["head", ["texture"]],
+  ["shulker_box", ["texture"]]
+]);
+
 const itemTintRequiredFields = new Map<string, string[]>([
   ["constant", ["value"]],
   ["dye", ["default"]],
@@ -991,6 +998,10 @@ function validateSpecialModelShape(
         range: unit.sourceMap.mappings[0].sourceRange
       });
     }
+  }
+
+  for (const field of specialModelStringFields.get(type) ?? []) {
+    validateStringField(specialModel, field, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
   }
 
   validateNumberInRange(specialModel, "page1", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
