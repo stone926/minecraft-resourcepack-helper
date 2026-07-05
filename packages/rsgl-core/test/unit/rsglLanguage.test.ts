@@ -279,12 +279,13 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(module.diagnostics, []);
     assert.strictEqual(module.statements.length, 1);
     const fragment = module.statements[0];
-    assert.strictEqual(fragment.kind, "FragmentDecl");
-    if (fragment.kind !== "FragmentDecl") {
-      throw new Error("Expected fragment declaration.");
+    assert.strictEqual(fragment.kind, "TemplateDecl");
+    if (fragment.kind !== "TemplateDecl") {
+      throw new Error("Expected template declaration.");
     }
     assert.strictEqual(fragment.name?.text, "cubeFields");
     assert.deepStrictEqual(fragment.parameters.map(parameter => parameter.name?.text), ["parentModel", "texture"]);
+    assert.strictEqual(fragment.body.kind, "ResourceBody");
     assert.deepStrictEqual(fragment.body.statements.map(statement => statement.kind), ["PropertyStmt", "SectionStmt"]);
   });
 

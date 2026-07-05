@@ -31,7 +31,7 @@ describe("RSGL semantic model", () => {
     assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.strictEqual(model.namespace, "minecraft");
     assert.ok(model.symbols.some(symbol => symbol.kind === "template" && symbol.name === "cube"));
-    assert.ok(model.symbols.some(symbol => symbol.kind === "fragment" && symbol.name === "cubeFields"));
+    assert.ok(model.symbols.some(symbol => symbol.kind === "template" && symbol.name === "cubeFields"));
     assert.ok(model.symbols.some(symbol => symbol.kind === "variable" && symbol.name === "id"));
     assert.strictEqual(model.imports[0].source, "./woods.rsgl");
     assert.deepStrictEqual(model.imports[0].namedImports.map(item => item.local), ["woodTable"]);

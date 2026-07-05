@@ -7,6 +7,12 @@ import {
   parseRsgl
 } from "./parser";
 import { RsglSourceFile } from "./semantic";
+import {
+  isRsglStdlibImportSource,
+  readRsglStdlibVirtualSource,
+  resolveRsglStdlibOverrideFromDisk,
+  rsglStdlibVirtualFileName
+} from "./stdlib";
 
 export interface RsglTextDocumentLike {
   fileName: string;
@@ -54,7 +60,7 @@ export class RsglWorkspaceSourceCache {
     const visited = new Set<string>();
 
     const visit = (fileName: string): void => {
-      const normalizedFileName = normalizeFileName(path.resolve(fileName));
+      const normalizedFileName = normalizeSourceFileName(fileName);
       if (visited.has(normalizedFileName)) {
         return;
       }
@@ -66,8 +72,11 @@ export class RsglWorkspaceSourceCache {
       }
       files.push(sourceFile);
 
-      for (const source of collectRsglRelativeModuleSources(sourceFile.module)) {
-        visit(path.resolve(path.dirname(normalizedFileName), source));
+      for (const source of collectRsglModuleSources(sourceFile.module)) {
+        const resolved = resolveModuleSourceFileName(normalizedFileName, source);
+        if (resolved) {
+          visit(resolved);
+        }
       }
     };
 
@@ -80,7 +89,7 @@ export class RsglWorkspaceSourceCache {
     const visited = new Set<string>();
 
     const visit = (fileName: string): void => {
-      const normalizedFileName = normalizeFileName(path.resolve(fileName));
+      const normalizedFileName = normalizeSourceFileName(fileName);
       if (visited.has(normalizedFileName)) {
         return;
       }
@@ -92,8 +101,11 @@ export class RsglWorkspaceSourceCache {
       }
       files.push(sourceFile);
 
-      for (const source of collectRsglRelativeModuleSources(sourceFile.module)) {
-        visit(path.resolve(path.dirname(normalizedFileName), source));
+      for (const source of collectRsglModuleSources(sourceFile.module)) {
+        const resolved = resolveModuleSourceFileName(normalizedFileName, source);
+        if (resolved) {
+          visit(resolved);
+        }
       }
     };
 
@@ -104,7 +116,7 @@ export class RsglWorkspaceSourceCache {
   }
 
   private readSourceFile(fileName: string): RsglSourceFile | null {
-    const normalizedFileName = normalizeFileName(path.resolve(fileName));
+    const normalizedFileName = normalizeFileName(isVirtualSourceFileName(fileName) ? fileName : path.resolve(fileName));
     const readResult = this.readText(normalizedFileName);
     if (!readResult) {
       this.sourceFiles.delete(normalizedFileName);
@@ -125,6 +137,14 @@ export class RsglWorkspaceSourceCache {
   }
 
   private readText(fileName: string): RsglSourceReadResult | null {
+    const stdlibText = readRsglStdlibVirtualSource(fileName);
+    if (stdlibText !== null) {
+      return {
+        text: stdlibText,
+        versionKey: `rsgl-stdlib:${hashText(stdlibText)}`
+      };
+    }
+
     const openDocument = this.openTextDocumentProvider?.(fileName);
     if (openDocument) {
       const text = openDocument.getText();
@@ -151,14 +171,37 @@ export class RsglWorkspaceSourceCache {
 }
 
 export function collectRsglRelativeModuleSources(module: RsglModule): string[] {
+  return collectRsglModuleSources(module).filter(source => source.startsWith("."));
+}
+
+function collectRsglModuleSources(module: RsglModule): string[] {
   return module.statements
     .filter((statement): statement is ImportDeclNode | ExportDeclNode => isImportDeclNode(statement) || isExportDeclNode(statement))
     .map(statement => statement.source?.value)
-    .filter((source): source is string => Boolean(source && source.startsWith(".")));
+    .filter((source): source is string => Boolean(source && (source.startsWith(".") || isRsglStdlibImportSource(source))));
+}
+
+function resolveModuleSourceFileName(fromFileName: string, source: string): string | null {
+  if (source.startsWith(".")) {
+    return path.resolve(path.dirname(fromFileName), source);
+  }
+  if (isRsglStdlibImportSource(source)) {
+    return resolveRsglStdlibOverrideFromDisk(fromFileName, source)
+      ?? rsglStdlibVirtualFileName(source);
+  }
+  return null;
+}
+
+function isVirtualSourceFileName(fileName: string): boolean {
+  return readRsglStdlibVirtualSource(fileName) !== null;
 }
 
 function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
+}
+
+function normalizeSourceFileName(fileName: string): string {
+  return normalizeFileName(isVirtualSourceFileName(fileName) ? fileName : path.resolve(fileName));
 }
 
 function enumerateRsglFiles(rootDirectory: string): string[] {

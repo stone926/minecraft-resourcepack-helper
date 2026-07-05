@@ -5,7 +5,6 @@ import {
   BlockNode,
   CallExprNode,
   ExprNode,
-  FragmentDeclNode,
   IdentifierNode,
   LetDeclNode,
   MultipartBodyNode,
@@ -24,6 +23,12 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
+import {
+  includeRsglStdlibSourceFiles,
+  isRsglStdlibImportSource,
+  resolveRsglStdlibOverrideFromFiles,
+  rsglStdlibVirtualFileName
+} from "../stdlib";
 import { bindRsglArguments } from "../arguments";
 import { createBuiltinSymbols } from "./builtins";
 import { createRsglExportMaps } from "./exportResolution";
@@ -88,9 +93,10 @@ export function bindRsglModule(module: RsglModule, options: RsglBindOptions = {}
 }
 
 export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOptions = {}): RsglProgram {
-  const resolver = options.resolver ?? createDefaultResolver(files);
-  const models = files.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
-  const importGraph = buildImportGraph(files, models, resolver);
+  const sourceFiles = includeRsglStdlibSourceFiles(files);
+  const resolver = options.resolver ?? createDefaultResolver(sourceFiles);
+  const models = sourceFiles.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
+  const importGraph = buildImportGraph(sourceFiles, models, resolver);
   const exportMaps = createRsglExportMaps(models, importGraph);
   const importDiagnostics = resolveProgramImports(models, importGraph, exportMaps.maps);
   const importedCallDiagnostics = models.flatMap(model => withFileName(model.fileName, validateResolvedImportCalls(model)));
@@ -109,7 +115,7 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   ];
   const diagnostics = fileDiagnostics.map(toDiagnostic);
 
-  return { files, models, importGraph, diagnostics, fileDiagnostics };
+  return { files: sourceFiles, models, importGraph, diagnostics, fileDiagnostics };
 }
 
 class RsglBinder {
@@ -163,8 +169,6 @@ class RsglBinder {
         this.defineIdentifier(scope, statement.name, "table", jsonType, statement);
       } else if (statement.kind === "TemplateDecl") {
         this.defineTemplate(scope, statement);
-      } else if (statement.kind === "FragmentDecl") {
-        this.defineFragment(scope, statement);
       } else if (statement.kind === "NamespaceDecl") {
         this.namespace = expressionToStaticText(statement.name) ?? this.namespace;
       } else if (statement.kind === "ResourceDecl") {
@@ -192,8 +196,6 @@ class RsglBinder {
         this.checkObject(statement.body, scope);
       } else if (statement.kind === "TemplateDecl") {
         this.checkTemplate(statement, scope);
-      } else if (statement.kind === "FragmentDecl") {
-        this.checkFragment(statement, scope);
       } else if (statement.kind === "ResourceDecl") {
         this.checkResourceDecl(statement, scope);
       } else if (statement.kind === "SugarDecl") {
@@ -223,13 +225,11 @@ class RsglBinder {
   private checkTemplate(statement: TemplateDeclNode, parentScope: RsglScope): void {
     const scope = createChildScope(parentScope, "template");
     this.checkCallableParameters(statement.parameters, scope);
-    this.checkBody(statement.body, scope);
-  }
-
-  private checkFragment(statement: FragmentDeclNode, parentScope: RsglScope): void {
-    const scope = createChildScope(parentScope, "template");
-    this.checkCallableParameters(statement.parameters, scope);
-    this.checkResourceBody(statement.body, scope);
+    if (statement.body.kind === "ResourceBody") {
+      this.checkResourceBody(statement.body, scope);
+    } else {
+      this.checkBody(statement.body, scope);
+    }
   }
 
   private checkCallableParameters(parameters: TemplateDeclNode["parameters"], scope: RsglScope): void {
@@ -927,11 +927,7 @@ class RsglBinder {
     this.defineCallable(scope, statement, "template");
   }
 
-  private defineFragment(scope: RsglScope, statement: FragmentDeclNode): void {
-    this.defineCallable(scope, statement, "fragment");
-  }
-
-  private defineCallable(scope: RsglScope, statement: TemplateDeclNode | FragmentDeclNode, kind: "template" | "fragment"): void {
+  private defineCallable(scope: RsglScope, statement: TemplateDeclNode, kind: "template"): void {
     const name = identifierName(statement.name);
     if (!name) {
       return;
@@ -1164,8 +1160,17 @@ function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnosti
 
 function createDefaultResolver(files: RsglSourceFile[]) {
   const fileNames = new Set(files.map(file => normalizeFileName(file.fileName)));
+  const orderedFileNames = files.map(file => file.fileName);
   return {
     resolveImport(fromFileName: string, source: string): string | null {
+      if (isRsglStdlibImportSource(source)) {
+        const override = resolveRsglStdlibOverrideFromFiles(source, orderedFileNames);
+        if (override) {
+          return normalizeFileName(override);
+        }
+        const virtual = rsglStdlibVirtualFileName(source);
+        return virtual && fileNames.has(normalizeFileName(virtual)) ? normalizeFileName(virtual) : null;
+      }
       if (!source.startsWith(".")) {
         return null;
       }

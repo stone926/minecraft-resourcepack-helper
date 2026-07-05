@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import {
-  FragmentDeclNode,
   LetDeclNode,
   TableDeclNode,
   TemplateDeclNode
@@ -25,14 +24,11 @@ export interface RsglModuleCompileEnvironment {
   namespace: string;
   importedValues: Map<string, EvaluationValue>;
   importedTemplates: Map<string, RsglTemplateDefinition>;
-  importedFragments: Map<string, RsglFragmentDefinition>;
   localValues: Map<string, EvaluationValue>;
   allValues: Map<string, EvaluationValue>;
   allTemplates: Map<string, RsglTemplateDefinition>;
-  allFragments: Map<string, RsglFragmentDefinition>;
   exportedValues: Map<string, EvaluationValue>;
   exportedTemplates: Map<string, RsglTemplateDefinition>;
-  exportedFragments: Map<string, RsglFragmentDefinition>;
 }
 
 export interface RsglTemplateDefinition {
@@ -42,17 +38,6 @@ export interface RsglTemplateDefinition {
   namespace: string;
   values: Map<string, EvaluationValue>;
   templates: Map<string, RsglTemplateDefinition>;
-  fragments: Map<string, RsglFragmentDefinition>;
-}
-
-export interface RsglFragmentDefinition {
-  name: string;
-  node: FragmentDeclNode;
-  fileName: string;
-  namespace: string;
-  values: Map<string, EvaluationValue>;
-  templates: Map<string, RsglTemplateDefinition>;
-  fragments: Map<string, RsglFragmentDefinition>;
 }
 
 export interface RsglExternalValueDefinition {
@@ -73,7 +58,6 @@ export function createStandaloneCompileEnvironment(
   const environment = createEmptyCompileEnvironment(model, namespace);
   evaluateLocalEnvironmentValues(environment, model, options);
   collectLocalEnvironmentTemplates(environment, model);
-  collectLocalEnvironmentFragments(environment, model);
   return environment;
 }
 
@@ -99,7 +83,6 @@ export function createProgramCompileEnvironments(
     collectImportedEnvironmentBindings(environment, model, program, modelsByFile, createEnvironment);
     evaluateLocalEnvironmentValues(environment, model, options);
     collectLocalEnvironmentTemplates(environment, model);
-    collectLocalEnvironmentFragments(environment, model);
     collectExportedEnvironmentBindings(environment, model, program, modelsByFile, exportMaps, createEnvironment);
     return environment;
   };
@@ -116,22 +99,9 @@ export function createTemplateDefinition(
   fileName: string,
   namespace: string,
   values: Map<string, EvaluationValue>,
-  templates: Map<string, RsglTemplateDefinition>,
-  fragments: Map<string, RsglFragmentDefinition>
+  templates: Map<string, RsglTemplateDefinition>
 ): RsglTemplateDefinition {
-  return { name, node, fileName, namespace, values, templates, fragments };
-}
-
-export function createFragmentDefinition(
-  name: string,
-  node: FragmentDeclNode,
-  fileName: string,
-  namespace: string,
-  values: Map<string, EvaluationValue>,
-  templates: Map<string, RsglTemplateDefinition>,
-  fragments: Map<string, RsglFragmentDefinition>
-): RsglFragmentDefinition {
-  return { name, node, fileName, namespace, values, templates, fragments };
+  return { name, node, fileName, namespace, values, templates };
 }
 
 export function mapToExternalValues(values: Map<string, EvaluationValue>): RsglExternalValueDefinition[] {
@@ -144,14 +114,11 @@ function createEmptyCompileEnvironment(model: RsglSemanticModel, namespace: stri
     namespace,
     importedValues: new Map(),
     importedTemplates: new Map(),
-    importedFragments: new Map(),
     localValues: new Map(),
     allValues: new Map(),
     allTemplates: new Map(),
-    allFragments: new Map(),
     exportedValues: new Map(),
-    exportedTemplates: new Map(),
-    exportedFragments: new Map()
+    exportedTemplates: new Map()
   };
 }
 
@@ -174,8 +141,6 @@ function collectImportedEnvironmentBindings(
       copyValues(environment.allValues, targetEnvironment.exportedValues);
       copyTemplates(environment.importedTemplates, targetEnvironment.exportedTemplates);
       copyTemplates(environment.allTemplates, targetEnvironment.exportedTemplates);
-      copyFragments(environment.importedFragments, targetEnvironment.exportedFragments);
-      copyFragments(environment.allFragments, targetEnvironment.exportedFragments);
     }
     for (const item of record.namedImports) {
       if (targetEnvironment.exportedValues.has(item.imported)) {
@@ -189,13 +154,6 @@ function collectImportedEnvironmentBindings(
         const aliasedTemplate = aliasTemplate(template, item.local);
         environment.importedTemplates.set(item.local, aliasedTemplate);
         environment.allTemplates.set(item.local, aliasedTemplate);
-      }
-
-      const fragment = targetEnvironment.exportedFragments.get(item.imported);
-      if (fragment) {
-        const aliasedFragment = aliasFragment(fragment, item.local);
-        environment.importedFragments.set(item.local, aliasedFragment);
-        environment.allFragments.set(item.local, aliasedFragment);
       }
     }
   }
@@ -212,7 +170,6 @@ function collectExportedEnvironmentBindings(
   if (model.exports.length === 0) {
     copyValues(environment.exportedValues, environment.allValues);
     copyTemplates(environment.exportedTemplates, environment.allTemplates);
-    copyFragments(environment.exportedFragments, environment.allFragments);
     return;
   }
 
@@ -226,10 +183,6 @@ function collectExportedEnvironmentBindings(
       const template = environment.allTemplates.get(localName);
       if (template) {
         environment.exportedTemplates.set(exportedName, aliasTemplate(template, exportedName));
-      }
-      const fragment = environment.allFragments.get(localName);
-      if (fragment) {
-        environment.exportedFragments.set(exportedName, aliasFragment(fragment, exportedName));
       }
     }
   }
@@ -246,7 +199,6 @@ function collectExportedEnvironmentBindings(
     if (record.exportAll) {
       copyValues(environment.exportedValues, targetEnvironment.exportedValues);
       copyTemplates(environment.exportedTemplates, targetEnvironment.exportedTemplates);
-      copyFragments(environment.exportedFragments, targetEnvironment.exportedFragments);
     }
     for (const specifier of record.specifiers) {
       if (targetEnvironment.exportedValues.has(specifier.local)) {
@@ -255,10 +207,6 @@ function collectExportedEnvironmentBindings(
       const template = targetEnvironment.exportedTemplates.get(specifier.local);
       if (template) {
         environment.exportedTemplates.set(specifier.exported, aliasTemplate(template, specifier.exported));
-      }
-      const fragment = targetEnvironment.exportedFragments.get(specifier.local);
-      if (fragment) {
-        environment.exportedFragments.set(specifier.exported, aliasFragment(fragment, specifier.exported));
       }
     }
   }
@@ -306,27 +254,7 @@ function collectLocalEnvironmentTemplates(
         model.fileName,
         environment.namespace,
         environment.allValues,
-        environment.allTemplates,
-        environment.allFragments
-      ));
-    }
-  }
-}
-
-function collectLocalEnvironmentFragments(
-  environment: RsglModuleCompileEnvironment,
-  model: RsglSemanticModel
-): void {
-  for (const statement of model.module.statements) {
-    if (statement.kind === "FragmentDecl" && statement.name) {
-      environment.allFragments.set(statement.name.text, createFragmentDefinition(
-        statement.name.text,
-        statement,
-        model.fileName,
-        environment.namespace,
-        environment.allValues,
-        environment.allTemplates,
-        environment.allFragments
+        environment.allTemplates
       ));
     }
   }
@@ -347,10 +275,6 @@ function aliasTemplate(template: RsglTemplateDefinition, name: string): RsglTemp
   return template.name === name ? template : { ...template, name };
 }
 
-function aliasFragment(fragment: RsglFragmentDefinition, name: string): RsglFragmentDefinition {
-  return fragment.name === name ? fragment : { ...fragment, name };
-}
-
 function copyValues(target: Map<string, EvaluationValue>, source: Map<string, EvaluationValue>): void {
   for (const [name, value] of source) {
     if (!target.has(name)) {
@@ -363,14 +287,6 @@ function copyTemplates(target: Map<string, RsglTemplateDefinition>, source: Map<
   for (const [name, template] of source) {
     if (!target.has(name)) {
       target.set(name, template);
-    }
-  }
-}
-
-function copyFragments(target: Map<string, RsglFragmentDefinition>, source: Map<string, RsglFragmentDefinition>): void {
-  for (const [name, fragment] of source) {
-    if (!target.has(name)) {
-      target.set(name, fragment);
     }
   }
 }

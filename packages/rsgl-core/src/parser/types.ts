@@ -63,7 +63,6 @@ export type TopLevelStatementNode =
   | LetDeclNode
   | TableDeclNode
   | TemplateDeclNode
-  | FragmentDeclNode
   | ResourceDeclNode
   | SugarDeclNode
   | OverlayDeclNode
@@ -297,6 +296,8 @@ export interface BlockNode extends RsglNode {
   statements: TopLevelStatementNode[];
 }
 
+export type TemplateBodyNode = BlockNode | ResourceBodyNode;
+
 export interface ResourceBodyNode extends RsglNode {
   kind: "ResourceBody";
   statements: ResourceStatementNode[];
@@ -381,14 +382,7 @@ export interface TemplateDeclNode extends StatementNodeBase {
   kind: "TemplateDecl";
   name: IdentifierNode | null;
   parameters: ParameterNode[];
-  body: BlockNode;
-}
-
-export interface FragmentDeclNode extends StatementNodeBase {
-  kind: "FragmentDecl";
-  name: IdentifierNode | null;
-  parameters: ParameterNode[];
-  body: ResourceBodyNode;
+  body: TemplateBodyNode;
 }
 
 export type ResourceKind = RsglResourceKind;

@@ -156,7 +156,7 @@ class RsglParser extends ParserContext {
       return this.parseTemplateDecl();
     }
     if (keyword === "fragment") {
-      return this.parseFragmentDecl();
+      return this.parseFragmentTemplateDecl();
     }
     if (isResourceKeyword(keyword)) {
       return this.parseResourceDecl();
@@ -405,7 +405,7 @@ class RsglParser extends ParserContext {
       this.addDiagnosticAtCurrent("rsgl.expectedParameters", "Expected template parameter list.");
     }
     const body = this.current().text === "{"
-      ? this.parseBlock()
+      ? this.parseTemplateBody()
       : this.emptyBlockAt(this.current(), "Expected template body.");
     return {
       kind: "TemplateDecl",
@@ -417,7 +417,7 @@ class RsglParser extends ParserContext {
     };
   }
 
-  private parseFragmentDecl(): TopLevelStatementNode {
+  private parseFragmentTemplateDecl(): TopLevelStatementNode {
     const start = this.advance();
     const name = this.parseIdentifier("Expected fragment name.");
     const parameters = this.current().text === "(" ? this.parseParameters() : [];
@@ -428,13 +428,52 @@ class RsglParser extends ParserContext {
       ? this.parseResourceBody("fragment")
       : this.emptyResourceBodyAt(this.current(), "Expected fragment body.");
     return {
-      kind: "FragmentDecl",
+      kind: "TemplateDecl",
       keyword: start.text,
       name,
       parameters,
       body,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseTemplateBody(): BlockNode | ResourceBodyNode {
+    if (this.templateBodyLooksLikeResourceBody()) {
+      return this.parseResourceBody("template");
+    }
+    return this.parseBlock();
+  }
+
+  private templateBodyLooksLikeResourceBody(): boolean {
+    if (this.current().text !== "{") {
+      return false;
+    }
+    const first = this.peekText(1);
+    if (first === "}" || first === "") {
+      return false;
+    }
+    if (first === "variants" || first === "multipart") {
+      return true;
+    }
+    if (this.isResourceStatementStart(first)) {
+      return true;
+    }
+    return !isTopLevelKeyword(first);
+  }
+
+  private isResourceStatementStart(text: string): boolean {
+    return text === "raw_json"
+      || text === "raw_json_file"
+      || text === "override"
+      || text === "append"
+      || text === "range"
+      || text === "select"
+      || text === "condition"
+      || text === "composite"
+      || text === "empty"
+      || text === "selected_item"
+      || text === "special"
+      || resourceBodySectionKeywords.has(text);
   }
 
   private parseParameters(): ParameterNode[] {

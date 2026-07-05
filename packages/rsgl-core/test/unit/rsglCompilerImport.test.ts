@@ -6,6 +6,94 @@ import { parseRsgl } from "../../src/parser";
 import { createTempDir } from "./rsglTestHelpers";
 
 describe("RSGL compiler imports", () => {
+  it("expands templates imported from the bundled RSGL stdlib", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { slab } from \"rsgl:blockstates/slab.rsgl\"",
+          "blockstate acacia_slab {",
+          "  use slab(",
+          "    bottom: minecraft:block/acacia_slab,",
+          "    top: minecraft:block/acacia_slab_top,",
+          "    double: minecraft:block/acacia_planks",
+          "  )",
+          "}"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        ["type=bottom"]: { model: "minecraft:block/acacia_slab" },
+        ["type=top"]: { model: "minecraft:block/acacia_slab_top" },
+        ["type=double"]: { model: "minecraft:block/acacia_planks" }
+      }
+    });
+    assert.ok(result.units[0].sourceMap.mappings.some(mapping =>
+      mapping.sourceFile.includes(`${path.normalize("<rsgl-stdlib>")}${path.sep}blockstates${path.sep}slab.rsgl`)
+    ));
+  });
+
+  it("prefers project rsgl-std overrides for stdlib imports", () => {
+    const root = createTempDir();
+    const mainFile = path.join(root, "main.rsgl");
+    const overrideFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
+    fs.mkdirSync(path.dirname(overrideFile), { recursive: true });
+    fs.writeFileSync(mainFile, [
+      "import { slab } from \"rsgl:blockstates/slab.rsgl\"",
+      "blockstate custom_slab {",
+      "  use slab(bottom: minecraft:block/custom_bottom, top: minecraft:block/custom_top, double: minecraft:block/custom_double)",
+      "}"
+    ].join("\n"));
+    fs.writeFileSync(overrideFile, [
+      "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
+      "  variants {",
+      "    [custom=\"override\"] -> @double",
+      "  }",
+      "}",
+      "export { slab }"
+    ].join("\n"));
+
+    const result = compileRsglFile(mainFile);
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        ["custom=override"]: { model: "minecraft:block/custom_double" }
+      }
+    });
+    assert.ok(result.units[0].sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(overrideFile)));
+  });
+
+  it("uses project rsgl-std overrides for implicit stdlib sugar", () => {
+    const root = createTempDir();
+    const mainFile = path.join(root, "main.rsgl");
+    const overrideFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
+    fs.mkdirSync(path.dirname(overrideFile), { recursive: true });
+    fs.writeFileSync(mainFile, "slab custom_slab double minecraft:block/custom_double");
+    fs.writeFileSync(overrideFile, [
+      "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
+      "  variants {",
+      "    [custom=\"sugar\"] -> @top",
+      "  }",
+      "}",
+      "export { slab }"
+    ].join("\n"));
+
+    const result = compileRsglFile(mainFile);
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        ["custom=sugar"]: { model: "minecraft:block/custom_slab_top" }
+      }
+    });
+    assert.ok(result.units[0].sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(overrideFile)));
+  });
+
   it("expands templates imported from another RSGL file", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");
@@ -135,7 +223,7 @@ describe("RSGL compiler imports", () => {
     const parentMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/parent");
     assert.strictEqual(parentMapping?.sourceFile, fragmentsFile);
     assert.strictEqual(parentMapping?.reason, "template");
-    assert.deepStrictEqual(parentMapping?.expansionStack.map(frame => frame.label), ["fragment modelFields"]);
+    assert.deepStrictEqual(parentMapping?.expansionStack.map(frame => frame.label), ["use modelFields"]);
 
     const texturesMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures");
     assert.strictEqual(texturesMapping?.sourceFile, mainFile);
@@ -144,7 +232,7 @@ describe("RSGL compiler imports", () => {
     const layerMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/layer~1zero");
     assert.strictEqual(layerMapping?.sourceFile, fragmentsFile);
     assert.strictEqual(layerMapping?.reason, "template");
-    assert.deepStrictEqual(layerMapping?.expansionStack.map(frame => frame.label), ["fragment textureLayer"]);
+    assert.deepStrictEqual(layerMapping?.expansionStack.map(frame => frame.label), ["use textureLayer"]);
   });
 
   it("preserves imported fragment environments inside resource body loops", () => {
@@ -255,7 +343,7 @@ describe("RSGL compiler imports", () => {
     const lampVariant = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north");
     assert.strictEqual(lampVariant?.sourceFile, fragmentsFile);
     assert.strictEqual(lampVariant?.reason, "template");
-    assert.deepStrictEqual(lampVariant?.expansionStack.map(frame => frame.label), ["fragment lampFacing"]);
+    assert.deepStrictEqual(lampVariant?.expansionStack.map(frame => frame.label), ["use lampFacing"]);
 
     const pane = result.units.find(unit => unit.outputPath.endsWith("pane.json"));
     assert.deepStrictEqual(pane?.content, {
@@ -277,7 +365,7 @@ describe("RSGL compiler imports", () => {
     ) ?? [];
     assert.deepStrictEqual(paneFragmentMappings.map(mapping => mapping.sourceFile), [fragmentsFile, fragmentsFile]);
     assert.deepStrictEqual(paneFragmentMappings.map(mapping => mapping.reason), ["template", "template"]);
-    assert.ok(paneFragmentMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "fragment connectedPane")));
+    assert.ok(paneFragmentMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "use connectedPane")));
   });
 
   it("imports exported fragments from bare import modules", () => {

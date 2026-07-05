@@ -18,7 +18,6 @@ export type RsglSymbolKind =
   | "variable"
   | "table"
   | "template"
-  | "fragment"
   | "parameter"
   | "resource"
   | "sugar";
