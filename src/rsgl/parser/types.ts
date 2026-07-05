@@ -467,6 +467,7 @@ export type ResourceStatementNode =
   | PackFilterBlockStmtNode
   | AtlasDirectoryStmtNode
   | AtlasFilterStmtNode
+  | EquipmentLayerStmtNode
   | RawJsonStmtNode
   | OverrideStmtNode
   | AppendStmtNode
@@ -539,6 +540,15 @@ export interface AtlasFilterStmtNode extends StatementNodeBase {
   kind: "AtlasFilterStmt";
   namespace?: ExprNode;
   path?: ExprNode;
+}
+
+export interface EquipmentLayerStmtNode extends StatementNodeBase {
+  kind: "EquipmentLayerStmt";
+  layer: ExprNode;
+  texture?: ExprNode;
+  dyeable?: ExprNode;
+  color?: ExprNode;
+  usePlayerTexture?: ExprNode;
 }
 
 export interface ItemOptionNode extends RsglNode {

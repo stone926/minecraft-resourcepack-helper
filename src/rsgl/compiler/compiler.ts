@@ -51,6 +51,7 @@ import {
   createTemplateDefinition,
   mapToExternalValues
 } from "./environment";
+import { compileEquipmentLayerStatement, lowerEquipmentBodySugar } from "./equipmentSugar";
 import {
   compileBlockstateUseFragment,
   compileBlockstateValueFragment,
@@ -658,13 +659,22 @@ class RsglCompiler {
     }
     const outputPath = resourceOutputPath(resourceKind, id);
     const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.jsonResourceFragmentOptions(resourceKind));
+    let content = body.content;
+    let mappings = body.mappings;
+    if (resourceKind === "equipment") {
+      const equipmentBody = lowerEquipmentBodySugar(content, context, statement.range, {
+        onError: (code, message, range) => this.error(code, message, range)
+      });
+      content = equipmentBody.content;
+      mappings = equipmentBody.compactLayers ? compactEquipmentSourceMappings(mappings) : mappings;
+    }
     return {
       id,
       kind: resourceKind,
       outputPath,
-      content: body.content,
+      content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
+      sourceMap: this.sourceMap(outputPath, statement, context, mappings)
     };
   }
 
@@ -1577,15 +1587,31 @@ class RsglCompiler {
 
   private jsonResourceFragmentOptions(kind: JsonResourceFragmentKind): ResourceBodyCompileOptions {
     const baseOptions = this.resourceBodyFragmentOptions(kind);
-    if (kind !== "atlas") {
+    if (kind !== "atlas" && kind !== "equipment") {
       return baseOptions;
     }
     return {
       ...baseOptions,
       onSpecialStatement: (statement, context) =>
-        this.compileAtlasSpecialStatement(statement, context)
+        this.compileJsonResourceSpecialStatement(kind, statement, context)
         ?? baseOptions.onSpecialStatement?.(statement, context)
     };
+  }
+
+  private compileJsonResourceSpecialStatement(
+    kind: JsonResourceFragmentKind,
+    statement: ResourceStatementNode,
+    context: RsglCompileContext
+  ): Record<string, JsonValue> | undefined {
+    if (kind === "atlas") {
+      return this.compileAtlasSpecialStatement(statement, context);
+    }
+    if (kind === "equipment" && statement.kind === "EquipmentLayerStmt") {
+      return compileEquipmentLayerStatement(statement, context, {
+        onError: (code, message, range) => this.error(code, message, range)
+      });
+    }
+    return undefined;
   }
 
   private compileAtlasSpecialStatement(statement: ResourceStatementNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
@@ -1774,6 +1800,18 @@ function packSourceMappings(mappings: RsglMapping[], hasExplicitPackRoot: boolea
       ? mapping
       : { ...mapping, generatedPath: prefixGeneratedPath(mapping.generatedPath, "/pack") }
   );
+}
+
+const compactEquipmentSugarFields = new Set([
+  "/texture",
+  "/dyeable",
+  "/color",
+  "/use_player_texture",
+  "/usePlayerTexture"
+]);
+
+function compactEquipmentSourceMappings(mappings: RsglMapping[]): RsglMapping[] {
+  return mappings.filter(mapping => !compactEquipmentSugarFields.has(mapping.generatedPath));
 }
 
 function isPackFieldMapping(pathValue: string): boolean {

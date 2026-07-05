@@ -1193,6 +1193,72 @@ describe("RSGL compiler", () => {
     ]);
   });
 
+  it("lowers equipment layer sugar statements", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "equipment minecraft:iron {",
+      "  layers [horse_body, humanoid]",
+      "  texture minecraft:iron",
+      "}",
+      "equipment minecraft:leather {",
+      "  layer humanoid texture minecraft:leather dyeable color 0xA06500",
+      "  layer humanoid texture minecraft:leather_overlay",
+      "  layer humanoid_leggings texture minecraft:leather_leggings dyeable color 0xA06500",
+      "  layer humanoid_leggings texture minecraft:leather_leggings_overlay",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const iron = result.units.find(unit => unit.outputPath.endsWith("iron.json"));
+    const leather = result.units.find(unit => unit.outputPath.endsWith("leather.json"));
+    assert.deepStrictEqual(iron?.content, {
+      layers: {
+        ["horse_body"]: [{ texture: "minecraft:iron" }],
+        humanoid: [{ texture: "minecraft:iron" }]
+      }
+    });
+    assert.deepStrictEqual(iron?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/layers"
+    ]);
+    assert.deepStrictEqual(leather?.content, {
+      layers: {
+        humanoid: [
+          { texture: "minecraft:leather", dyeable: { ["color_when_undyed"]: 10511616 } },
+          { texture: "minecraft:leather_overlay" }
+        ],
+        ["humanoid_leggings"]: [
+          { texture: "minecraft:leather_leggings", dyeable: { ["color_when_undyed"]: 10511616 } },
+          { texture: "minecraft:leather_leggings_overlay" }
+        ]
+      }
+    });
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/horse_body/iron"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/leather"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/leather_leggings_overlay"));
+  });
+
+  it("reports invalid equipment layer sugar statements", () => {
+    const result = compileRsglModule(parseRsgl([
+      "equipment minecraft:broken {",
+      "  layer humanoid dyeable",
+      "}",
+      "equipment minecraft:compact_broken {",
+      "  layers [humanoid]",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.invalidEquipmentLayerTexture",
+      "rsgl.invalidEquipmentLayersTexture"
+    ]);
+  });
+
   it("expands mcmeta glob targets relative to the resource pack root", () => {
     const root = createTempDir();
     try {

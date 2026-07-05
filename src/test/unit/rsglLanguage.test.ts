@@ -324,6 +324,26 @@ describe("RSGL language", () => {
     ]);
   });
 
+  it("parses equipment layer sugar statements", () => {
+    const module = parseRsgl([
+      "equipment minecraft:leather {",
+      "  layer humanoid texture minecraft:leather dyeable color 0xA06500",
+      "  layer humanoid texture minecraft:leather_overlay use_player_texture",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const equipment = module.statements[0];
+    assert.strictEqual(equipment.kind, "ResourceDecl");
+    if (equipment.kind !== "ResourceDecl") {
+      throw new Error("Expected equipment resource declaration.");
+    }
+    assert.deepStrictEqual(equipment.body.statements.map(statement => statement.kind), [
+      "EquipmentLayerStmt",
+      "EquipmentLayerStmt"
+    ]);
+  });
+
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
     const source = [
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",

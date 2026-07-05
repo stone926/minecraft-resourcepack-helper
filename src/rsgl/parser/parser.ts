@@ -11,6 +11,7 @@ import {
   AtlasFilterStmtNode,
   BlockNode,
   BooleanLiteralNode,
+  EquipmentLayerStmtNode,
   ExprNode,
   ExportSpecifierNode,
   ForStmtNode,
@@ -62,6 +63,7 @@ const resourceBodySectionKeywords = new Set([
 const itemRangeOptionKeywords = ["component", "source", "target", "wobble", "scale"];
 const itemSelectOptionKeywords = ["component"];
 const itemConditionOptionKeywords = ["component", "ignore_default", "index", "keybind", "predicate", "value"];
+const equipmentLayerClauseKeywords = ["texture", "dyeable", "color", "use_player_texture", "usePlayerTexture"];
 
 const binaryPrecedence = new Map<string, number>([
   ["||", 2],
@@ -803,6 +805,9 @@ class RsglParser extends ParserContext {
     if (owner === "atlas" && token.text === "filter" && this.peekText(1) !== "{" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseAtlasFilterStmt();
     }
+    if (owner === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parseEquipmentLayerStmt();
+    }
     if (token.text === "range") {
       return this.parseItemRangeStmt();
     }
@@ -1006,6 +1011,52 @@ class RsglParser extends ParserContext {
       path,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseEquipmentLayerStmt(): EquipmentLayerStmtNode {
+    const start = this.advance();
+    const layer = this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
+    let texture: ExprNode | undefined;
+    let dyeable: ExprNode | undefined;
+    let color: ExprNode | undefined;
+    let usePlayerTexture: ExprNode | undefined;
+
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
+      const mark = this.mark();
+      if (this.matchText("texture")) {
+        texture = this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
+      } else if (this.current().text === "dyeable") {
+        dyeable = this.parseEquipmentBooleanClause();
+      } else if (this.matchText("color")) {
+        color = this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
+      } else if (this.current().text === "use_player_texture" || this.current().text === "usePlayerTexture") {
+        usePlayerTexture = this.parseEquipmentBooleanClause();
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedEquipmentLayerClause", "Expected 'texture', 'dyeable', 'color', or 'use_player_texture' in equipment layer.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse equipment layer clause; skipping token.");
+    }
+
+    return {
+      kind: "EquipmentLayerStmt",
+      keyword: start.text,
+      layer,
+      texture,
+      dyeable,
+      color,
+      usePlayerTexture,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseEquipmentBooleanClause(): ExprNode {
+    const start = this.advance();
+    if (this.isAtEnd() || this.isLineBoundaryOr("}") || equipmentLayerClauseKeywords.includes(this.current().text)) {
+      return this.booleanLiteral(start, true);
+    }
+    return this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
   }
 
   private parseRawLikeStmt(kind: "RawJsonStmt" | "OverrideStmt" | "AppendStmt"): ResourceStatementNode {

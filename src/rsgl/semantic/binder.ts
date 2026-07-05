@@ -229,7 +229,7 @@ class RsglBinder {
       this.checkResourceIdExpression(statement.id, scope);
       this.validateResourceLocationLike(statement.id);
     }
-    this.checkResourceBody(statement.body, createChildScope(scope, "block"));
+    this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.resourceKind);
   }
 
   private checkOverlayFormatExpression(expression: ExprNode, scope: RsglScope): void {
@@ -275,22 +275,30 @@ class RsglBinder {
     }
   }
 
-  private checkResourceBody(body: ResourceBodyNode, scope: RsglScope): void {
+  private checkResourceBody(body: ResourceBodyNode, scope: RsglScope, owner = "resource"): void {
     for (const statement of body.statements) {
-      this.checkResourceStatement(statement, scope);
+      this.checkResourceStatement(statement, scope, owner);
     }
   }
 
-  private checkResourceStatement(statement: ResourceStatementNode, scope: RsglScope): void {
+  private checkResourceStatement(statement: ResourceStatementNode, scope: RsglScope, owner: string): void {
     if (statement.kind === "PropertyStmt") {
-      this.checkExpression(statement.value, scope);
+      if (owner === "equipment" && statement.name.text === "layers") {
+        this.checkEquipmentLayerListExpression(statement.value, scope);
+      } else {
+        this.checkExpression(statement.value, scope);
+      }
       this.validateResourceLocationLike(statement.value);
     } else if (statement.kind === "SectionStmt") {
       if (statement.value) {
-        this.checkExpression(statement.value, scope);
+        if (owner === "equipment" && statement.name.text === "layers") {
+          this.checkEquipmentLayerListExpression(statement.value, scope);
+        } else {
+          this.checkExpression(statement.value, scope);
+        }
       }
       if (statement.body) {
-        this.checkResourceBody(statement.body, createChildScope(scope, "block"));
+        this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.name.text);
       }
     } else if (statement.kind === "VariantsSection") {
       this.checkVariantStatements(statement.entries, scope);
@@ -307,7 +315,7 @@ class RsglBinder {
       }
     } else if (statement.kind === "PackOverlayStmt") {
       this.checkExpression(statement.directory, scope);
-      this.checkResourceBody(statement.body, createChildScope(scope, "block"));
+      this.checkResourceBody(statement.body, createChildScope(scope, "block"), "packOverlay");
     } else if (statement.kind === "PackFilterBlockStmt") {
       if (statement.namespace) {
         this.checkExpression(statement.namespace, scope);
@@ -328,6 +336,20 @@ class RsglBinder {
       }
       if (statement.path) {
         this.checkExpression(statement.path, scope);
+      }
+    } else if (statement.kind === "EquipmentLayerStmt") {
+      this.checkEquipmentLayerNameExpression(statement.layer, scope);
+      if (statement.texture) {
+        this.checkExpression(statement.texture, scope);
+      }
+      if (statement.dyeable) {
+        this.checkExpression(statement.dyeable, scope);
+      }
+      if (statement.color) {
+        this.checkExpression(statement.color, scope);
+      }
+      if (statement.usePlayerTexture) {
+        this.checkExpression(statement.usePlayerTexture, scope);
       }
     } else if (statement.kind === "ItemRangeStmt") {
       this.checkExpression(statement.property, scope);
@@ -444,6 +466,21 @@ class RsglBinder {
         this.checkBody(statement.elseBody, createChildScope(scope, "block"));
       }
     }
+  }
+
+  private checkEquipmentLayerListExpression(expression: ExprNode, scope: RsglScope): void {
+    if (expression.kind === "ListExpr") {
+      expression.elements.forEach(element => this.checkEquipmentLayerNameExpression(element, scope));
+      return;
+    }
+    this.checkEquipmentLayerNameExpression(expression, scope);
+  }
+
+  private checkEquipmentLayerNameExpression(expression: ExprNode, scope: RsglScope): void {
+    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
+      return;
+    }
+    this.checkExpression(expression, scope);
   }
 
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
