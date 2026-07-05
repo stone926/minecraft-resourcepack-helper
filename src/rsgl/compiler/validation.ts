@@ -366,11 +366,20 @@ function validateModelUnit(
   const content = asObject(unit.content);
   const textures = asObject(content?.textures);
   if (textures) {
-    for (const value of Object.values(textures)) {
+    for (const [key, value] of Object.entries(textures)) {
+      const texturePath = appendGeneratedPath("/textures", key);
       if (typeof value === "string" && !value.startsWith("#")) {
-        checkResourceExists("texture", value, unit, generatedModels, options, diagnostics);
+        checkResourceExists("texture", value, unit, generatedModels, options, diagnostics, sourceRangeForGeneratedPath(unit, texturePath));
       } else if (isObject(value) && typeof value.sprite === "string" && !value.sprite.startsWith("#")) {
-        checkResourceExists("texture", value.sprite, unit, generatedModels, options, diagnostics);
+        checkResourceExists(
+          "texture",
+          value.sprite,
+          unit,
+          generatedModels,
+          options,
+          diagnostics,
+          sourceRangeForGeneratedPath(unit, appendGeneratedPath(texturePath, "sprite"))
+        );
       }
     }
   }
@@ -430,30 +439,31 @@ function validateModelTextureVariables(
   }
 
   const checked = new Set<string>();
-  visitJson(unit.content as JsonValue, value => {
+  visitJsonWithPath(unit.content as JsonValue, (value, generatedPath) => {
     const reference = textureVariableReference(value);
     if (!reference || checked.has(reference)) {
       return;
     }
     checked.add(reference);
 
+    const range = sourceRangeForGeneratedPath(unit, generatedPath);
     const resolution = resolveTextureVariable(root, reference, modelResolver, new Set());
     if (resolution.kind === "missing") {
       diagnostics.push({
         code: "rsgl.unresolvedTextureVariable",
         message: `Texture variable '#${reference}' is not defined in the model parent chain.`,
         severity: "warning",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range
       });
     } else if (resolution.kind === "cycle") {
       diagnostics.push({
         code: "rsgl.textureVariableCycle",
         message: `Texture variable '#${reference}' resolves through a cycle.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range
       });
     } else {
-      checkResourceExists("texture", resolution.texture, unit, generatedModels, options, diagnostics);
+      checkResourceExists("texture", resolution.texture, unit, generatedModels, options, diagnostics, range);
     }
   });
 }
@@ -2030,12 +2040,12 @@ function resourceLabel(kind: RsglResourceExistenceKind): string {
   return "Sound";
 }
 
-function visitJson(value: JsonValue, visitor: (value: JsonValue) => void): void {
-  visitor(value);
+function visitJsonWithPath(value: JsonValue, visitor: (value: JsonValue, generatedPath: string) => void, generatedPath = ""): void {
+  visitor(value, generatedPath);
   if (Array.isArray(value)) {
-    value.forEach(item => visitJson(item, visitor));
+    value.forEach((item, index) => visitJsonWithPath(item, visitor, appendGeneratedPath(generatedPath, String(index))));
   } else if (isObject(value)) {
-    Object.values(value).forEach(item => visitJson(item as JsonValue, visitor));
+    Object.entries(value).forEach(([key, item]) => visitJsonWithPath(item as JsonValue, visitor, appendGeneratedPath(generatedPath, key)));
   }
 }
 

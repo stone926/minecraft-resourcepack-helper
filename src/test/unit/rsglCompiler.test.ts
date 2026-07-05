@@ -5005,12 +5005,15 @@ describe("RSGL compiler", () => {
       "model block texture_cycle {",
       "  textures { a: \"#b\", b: \"#a\" }",
       "}",
+      "model block missing_texture {",
+      "  textures { base: minecraft:block/missing_texture, all: \"#base\" }",
+      "}",
       "model block parent_a { parent minecraft:block/parent_b }",
       "model block parent_b { parent minecraft:block/parent_a }"
     ].join("\n")), {
       resourceExists: (kind, id) => {
         checkedResources.push(`${kind}:${id}`);
-        return true;
+        return id !== "minecraft:block/missing_texture";
       }
     });
 
@@ -5018,7 +5021,28 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:block/inherited_texture"));
     assert.ok(codes.includes("rsgl.unresolvedTextureVariable"));
     assert.ok(codes.includes("rsgl.textureVariableCycle"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
     assert.ok(codes.includes("rsgl.modelParentCycle"));
+    const missingVariableUnit = result.units.find(unit => unit.outputPath.endsWith("missing_variable.json"));
+    const missingVariableRange = missingVariableUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/all")?.sourceRange;
+    const missingVariableDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unresolvedTextureVariable");
+    assert.deepStrictEqual(missingVariableDiagnostic?.range, missingVariableRange);
+    const textureCycleUnit = result.units.find(unit => unit.outputPath.endsWith("texture_cycle.json"));
+    const textureCycleRange = textureCycleUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/a")?.sourceRange;
+    const textureCycleDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.textureVariableCycle");
+    assert.deepStrictEqual(textureCycleDiagnostic?.range, textureCycleRange);
+    const missingTextureUnit = result.units.find(unit => unit.outputPath.endsWith("missing_texture.json"));
+    const directTextureRange = missingTextureUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/base")?.sourceRange;
+    const resolvedTextureRange = missingTextureUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/all")?.sourceRange;
+    const missingTextureDiagnostics = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound" && diagnostic.message.includes("missing_texture")
+    );
+    assert.ok(missingTextureDiagnostics.some(diagnostic =>
+      diagnostic.range.start === directTextureRange?.start && diagnostic.range.end === directTextureRange?.end
+    ));
+    assert.ok(missingTextureDiagnostics.some(diagnostic =>
+      diagnostic.range.start === resolvedTextureRange?.start && diagnostic.range.end === resolvedTextureRange?.end
+    ));
   });
 
   it("validates external model parent chains and texture variables", () => {
