@@ -4505,6 +4505,25 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemSpecialModel"));
     assert.ok(checkedResources.includes("model:minecraft:item/missing_base"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/chest/missing"));
+
+    const brokenSpecialUnit = result.units.find(unit => unit.outputPath.endsWith("broken_special.json"));
+    const invalidSpecialUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_special.json"));
+    const missingBaseRange = brokenSpecialUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/base")?.sourceRange;
+    const missingTextureRange = brokenSpecialUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/model/texture")?.sourceRange;
+    const invalidBaseRange = invalidSpecialUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/base")?.sourceRange;
+    const invalidModelRange = invalidSpecialUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/model")?.sourceRange;
+    const missingBaseDiagnostic = result.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.modelNotFound" && diagnostic.message.includes("missing_base")
+    );
+    const missingTextureDiagnostic = result.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound" && diagnostic.message.includes("missing")
+    );
+    const invalidBaseDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemSpecialBase");
+    const invalidModelDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemSpecialModel");
+    assert.deepStrictEqual(missingBaseDiagnostic?.range, missingBaseRange);
+    assert.deepStrictEqual(missingTextureDiagnostic?.range, missingTextureRange);
+    assert.deepStrictEqual(invalidBaseDiagnostic?.range, invalidBaseRange);
+    assert.deepStrictEqual(invalidModelDiagnostic?.range, invalidModelRange);
   });
 
   it("validates item special subtype fields and tints", () => {
@@ -4585,6 +4604,36 @@ describe("RSGL compiler", () => {
       diagnostic.code === "rsgl.invalidItemTintColor"
       && diagnostic.range.start === nestedTintValueRange?.start
       && diagnostic.range.end === nestedTintValueRange?.end
+    ));
+    const invalidSpecialFieldsUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_special_fields.json"));
+    const unknownSpecialTypeUnit = result.units.find(unit => unit.outputPath.endsWith("unknown_special_type.json"));
+    const invalidSpecialTextureUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_special_texture.json"));
+    const chestTypeRange = invalidSpecialFieldsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/model/chest_type")?.sourceRange;
+    const opennessRange = invalidSpecialFieldsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/model/openness")?.sourceRange;
+    const specialTypeRange = unknownSpecialTypeUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/model/type")?.sourceRange;
+    const specialTextureRange = invalidSpecialTextureUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/model/texture")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemSpecialModelField"
+      && diagnostic.message.includes("'chest_type'")
+      && diagnostic.range.start === chestTypeRange?.start
+      && diagnostic.range.end === chestTypeRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemSpecialModelField"
+      && diagnostic.message.includes("'openness'")
+      && diagnostic.range.start === opennessRange?.start
+      && diagnostic.range.end === opennessRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemSpecialModelType"
+      && diagnostic.range.start === specialTypeRange?.start
+      && diagnostic.range.end === specialTypeRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemSpecialModelField"
+      && diagnostic.message.includes("'texture'")
+      && diagnostic.range.start === specialTextureRange?.start
+      && diagnostic.range.end === specialTextureRange?.end
     ));
   });
 

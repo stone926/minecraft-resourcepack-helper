@@ -707,7 +707,7 @@ function validateItemModelDefinition(
   }
 
   if (type === "special") {
-    validateItemSpecial(model, unit, generatedModels, options, diagnostics);
+    validateItemSpecial(model, unit, generatedModels, options, diagnostics, generatedPath);
     return;
   }
 
@@ -1037,16 +1037,19 @@ function validateItemSpecial(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
+  const basePath = appendGeneratedPath(generatedPath, "base");
+  const specialModelPath = appendGeneratedPath(generatedPath, "model");
   if (typeof model.base === "string") {
-    checkResourceExists("model", model.base, unit, generatedModels, options, diagnostics);
+    checkResourceExists("model", model.base, unit, generatedModels, options, diagnostics, sourceRangeForGeneratedPath(unit, basePath));
   } else {
     diagnostics.push({
       code: "rsgl.invalidItemSpecialBase",
       message: "Item special model must define a base model id.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, basePath)
     });
   }
 
@@ -1056,17 +1059,25 @@ function validateItemSpecial(
       code: "rsgl.invalidItemSpecialModel",
       message: "Item special model must define a model object.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, specialModelPath)
     });
     return;
   }
 
-  validateSpecialModelShape(specialModel, unit, diagnostics);
+  validateSpecialModelShape(specialModel, unit, diagnostics, specialModelPath);
   const texture = typeof specialModel.texture === "string" ? specialModel.texture : null;
   if (texture) {
     const target = itemSpecialTextureId(itemModelType(specialModel.type), texture, unit.id?.namespace ?? "minecraft");
     if (target) {
-      checkResourceExists("texture", target, unit, generatedModels, options, diagnostics);
+      checkResourceExists(
+        "texture",
+        target,
+        unit,
+        generatedModels,
+        options,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(specialModelPath, "texture"))
+      );
     }
   }
 }
@@ -1156,8 +1167,10 @@ function validateItemPropertyFields(
 function validateSpecialModelShape(
   specialModel: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
+  const typePath = appendGeneratedPath(generatedPath, "type");
   const type = itemModelType(specialModel.type);
   const requiredFields = type ? specialModelRequiredFields.get(type) : undefined;
   if (!type || !requiredFields) {
@@ -1165,7 +1178,7 @@ function validateSpecialModelShape(
       code: "rsgl.invalidItemSpecialModelType",
       message: "Item special model must define a known special model type.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, typePath)
     });
     return;
   }
@@ -1176,7 +1189,7 @@ function validateSpecialModelShape(
         code: "rsgl.missingItemSpecialModelField",
         message: `Item special model '${type}' must define '${field}'.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, typePath)
       });
     }
   }
@@ -1188,25 +1201,65 @@ function validateSpecialModelShape(
         code: "rsgl.invalidItemSpecialModelField",
         message: `Item special model '${type}' field '${field}' has an invalid value.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
       });
     }
   }
 
   for (const field of specialModelStringFields.get(type) ?? []) {
-    validateStringField(specialModel, field, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
+    validateSpecialStringField(specialModel, field, unit, diagnostics, generatedPath);
   }
 
-  validateNumberInRange(specialModel, "page1", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
-  validateNumberInRange(specialModel, "page2", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
-  validateNumberInRange(specialModel, "openness", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
-  validateNumberInRange(specialModel, "animation", -Infinity, Infinity, "rsgl.invalidItemSpecialModelField", unit, diagnostics);
+  validateSpecialNumberInRange(specialModel, "page1", 0, 1, unit, diagnostics, generatedPath);
+  validateSpecialNumberInRange(specialModel, "page2", 0, 1, unit, diagnostics, generatedPath);
+  validateSpecialNumberInRange(specialModel, "openness", 0, 1, unit, diagnostics, generatedPath);
+  validateSpecialNumberInRange(specialModel, "animation", -Infinity, Infinity, unit, diagnostics, generatedPath);
   if ("open_angle" in specialModel && !Number.isInteger(specialModel.open_angle)) {
     diagnostics.push({
       code: "rsgl.invalidItemSpecialModelField",
       message: "Item special model 'book' field 'open_angle' must be an integer.",
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "open_angle"))
+    });
+  }
+}
+
+function validateSpecialStringField(
+  object: Record<string, JsonValue>,
+  field: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
+): void {
+  if (field in object && typeof object[field] !== "string") {
+    diagnostics.push({
+      code: "rsgl.invalidItemSpecialModelField",
+      message: `Field '${field}' must be a string.`,
+      severity: "error",
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
+    });
+  }
+}
+
+function validateSpecialNumberInRange(
+  object: Record<string, JsonValue>,
+  field: string,
+  min: number,
+  max: number,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
+): void {
+  const value = object[field];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+    diagnostics.push({
+      code: "rsgl.invalidItemSpecialModelField",
+      message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
+      severity: "error",
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
     });
   }
 }
