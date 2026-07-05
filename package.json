@@ -30,6 +30,8 @@
     "onCommand:McResHelper.previewRsglResourcePackBuild",
     "onCommand:McResHelper.buildRsglResourcePackDirectory",
     "onCommand:McResHelper.previewRsglResourcePackDirectoryBuild",
+    "onCommand:McResHelper.buildRsglWorkspaceResourcePacks",
+    "onCommand:McResHelper.previewRsglWorkspaceResourcePackBuilds",
     "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
@@ -205,6 +207,16 @@
       {
         "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
         "title": "%command.title.previewRsglResourcePackDirectoryBuild%",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "McResHelper.buildRsglWorkspaceResourcePacks",
+        "title": "%command.title.buildRsglWorkspaceResourcePacks%",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "McResHelper.previewRsglWorkspaceResourcePackBuilds",
+        "title": "%command.title.previewRsglWorkspaceResourcePackBuilds%",
         "icon": "$(diff)"
       }
     ],

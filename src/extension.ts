@@ -26,10 +26,14 @@ import {
   buildActiveRsglResourcePackDirectory,
   buildRsglResourcePackCommand,
   buildRsglResourcePackDirectoryCommand,
+  buildRsglWorkspaceResourcePacks,
+  buildRsglWorkspaceResourcePacksCommand,
   previewActiveRsglResourcePackBuild,
   previewActiveRsglResourcePackDirectoryBuild,
+  previewRsglWorkspaceResourcePackBuilds,
   previewRsglResourcePackBuildCommand,
-  previewRsglResourcePackDirectoryBuildCommand
+  previewRsglResourcePackDirectoryBuildCommand,
+  previewRsglWorkspaceResourcePackBuildsCommand
 } from './rsgl/commands/build';
 
 const jsonResourceReferenceSelectors: vscode.DocumentFilter[] = [
@@ -132,6 +136,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand(previewRsglResourcePackBuildCommand, previewActiveRsglResourcePackBuild));
   context.subscriptions.push(vscode.commands.registerCommand(buildRsglResourcePackDirectoryCommand, buildActiveRsglResourcePackDirectory));
   context.subscriptions.push(vscode.commands.registerCommand(previewRsglResourcePackDirectoryBuildCommand, previewActiveRsglResourcePackDirectoryBuild));
+  context.subscriptions.push(vscode.commands.registerCommand(buildRsglWorkspaceResourcePacksCommand, buildRsglWorkspaceResourcePacks));
+  context.subscriptions.push(vscode.commands.registerCommand(previewRsglWorkspaceResourcePackBuildsCommand, previewRsglWorkspaceResourcePackBuilds));
 
   const modelPreviewService = new ModelPreviewService({
     fileSystem: new ModelPreviewHostFileSystem(),

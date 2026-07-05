@@ -6,7 +6,7 @@ import { formatRsglText } from "../../rsgl/formatterCore";
 import { lexRsgl, parseRsgl } from "../../rsgl/parser";
 import { resourceKeywords } from "../../rsgl/parser/keywords";
 import { rsglResourceKinds } from "../../rsgl/resourceKinds";
-import { resolveRsglSourceRootFromFileName } from "../../rsgl/sourceRoot";
+import { discoverRsglSourceRootsFromFileNames, resolveRsglSourceRootFromFileName } from "../../rsgl/sourceRoot";
 
 describe("RSGL language", () => {
   it("contributes the rsgl language and bundled editor assets", () => {
@@ -25,6 +25,8 @@ describe("RSGL language", () => {
     assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackBuild"));
     assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePackDirectory"));
     assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackDirectoryBuild"));
+    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglWorkspaceResourcePacks"));
+    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglWorkspaceResourcePackBuilds"));
     const language = packageJson.contributes?.languages?.find(entry => entry.id === "rsgl");
     assert.ok(language);
     assert.ok(language.extensions?.includes(".rsgl"));
@@ -50,6 +52,12 @@ describe("RSGL language", () => {
     ));
     assert.ok(packageJson.contributes?.commands?.some(command =>
       command.command === "McResHelper.previewRsglResourcePackDirectoryBuild" && command.icon === "$(diff)"
+    ));
+    assert.ok(packageJson.contributes?.commands?.some(command =>
+      command.command === "McResHelper.buildRsglWorkspaceResourcePacks" && command.icon === "$(run-all)"
+    ));
+    assert.ok(packageJson.contributes?.commands?.some(command =>
+      command.command === "McResHelper.previewRsglWorkspaceResourcePackBuilds" && command.icon === "$(diff)"
     ));
     assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
       item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
@@ -90,6 +98,20 @@ describe("RSGL language", () => {
     assert.strictEqual(
       resolveRsglSourceRootFromFileName(path.resolve("pack", "rsgl", "blocks.rsgl")),
       path.resolve("pack", "rsgl")
+    );
+
+    assert.deepStrictEqual(
+      discoverRsglSourceRootsFromFileNames([
+        path.join(sourceRoot, "main.rsgl"),
+        path.join(sourceRoot, "nested", "blocks.rsgl"),
+        path.resolve("pack", ".vscode", "ignored.rsgl"),
+        path.resolve("pack", "assets", "model.json"),
+        path.resolve("other_pack", "src", "main.rsgl")
+      ]).map(root => root.sourceRoot),
+      [
+        path.resolve("other_pack", "src"),
+        sourceRoot
+      ].sort()
     );
   });
 
