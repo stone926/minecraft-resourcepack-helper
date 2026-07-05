@@ -344,6 +344,31 @@ describe("RSGL language", () => {
     ]);
   });
 
+  it("parses override create and append resource fragments", () => {
+    const module = parseRsgl([
+      "model block patched {",
+      "  parent minecraft:block/cube_all",
+      "  override create { display: { gui: { scale: [1, 1, 1] } } }",
+      "  append { textures: { particle: minecraft:block/stone } }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const model = module.statements[0];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    if (model.kind !== "ResourceDecl") {
+      throw new Error("Expected model resource declaration.");
+    }
+    assert.deepStrictEqual(model.body.statements.map(statement => statement.kind), [
+      "PropertyStmt",
+      "OverrideStmt",
+      "AppendStmt"
+    ]);
+    const override = model.body.statements[1];
+    assert.strictEqual(override.kind, "OverrideStmt");
+    assert.strictEqual(override.kind === "OverrideStmt" ? override.create : false, true);
+  });
+
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
     const source = [
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",

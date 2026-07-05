@@ -1685,6 +1685,61 @@ describe("RSGL compiler", () => {
     assert.ok(loopMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "for")));
   });
 
+  it("enforces override create and append merge semantics in resource bodies", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block patched {",
+      "  parent minecraft:block/cube_all",
+      "  textures { all minecraft:block/stone }",
+      "  layers [{ texture: minecraft:block/base }]",
+      "  override { parent: minecraft:block/overridden }",
+      "  override create { display: { gui: { scale: [1, 1, 1] } } }",
+      "  append { textures: { particle: minecraft:block/stone } }",
+      "  append { layers: [{ texture: minecraft:block/overlay }] }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/overridden",
+      textures: {
+        all: "minecraft:block/stone",
+        particle: "minecraft:block/stone"
+      },
+      layers: [
+        { texture: "minecraft:block/base" },
+        { texture: "minecraft:block/overlay" }
+      ],
+      display: {
+        gui: {
+          scale: [1, 1, 1]
+        }
+      }
+    });
+  });
+
+  it("reports invalid override and append fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block invalid {",
+      "  parent minecraft:block/cube_all",
+      "  override { textures: { all: minecraft:block/stone } }",
+      "  append { parent: minecraft:block/other }",
+      "  raw_json 1",
+      "  override 2",
+      "  append 3",
+      "}"
+    ].join("\n")));
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.overrideMissingField"));
+    assert.ok(codes.includes("rsgl.appendIncompatibleField"));
+    assert.ok(codes.includes("rsgl.invalidRawJsonFragment"));
+    assert.ok(codes.includes("rsgl.invalidOverrideFragment"));
+    assert.ok(codes.includes("rsgl.invalidAppendFragment"));
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all"
+    });
+  });
+
   it("loads raw_json path fragments relative to RSGL source files", () => {
     const root = createTempDir();
     try {

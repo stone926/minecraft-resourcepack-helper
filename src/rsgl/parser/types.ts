@@ -619,6 +619,7 @@ export interface RawJsonStmtNode extends StatementNodeBase {
 
 export interface OverrideStmtNode extends StatementNodeBase {
   kind: "OverrideStmt";
+  create: boolean;
   value: ExprNode;
 }
 

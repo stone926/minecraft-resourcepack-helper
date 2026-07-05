@@ -1063,6 +1063,7 @@ class RsglParser extends ParserContext {
 
   private parseRawLikeStmt(kind: "RawJsonStmt" | "OverrideStmt" | "AppendStmt"): ResourceStatementNode {
     const start = this.advance();
+    const create = kind === "OverrideStmt" && this.matchText("create");
     const value = kind === "RawJsonStmt" && this.current().text === "("
       ? this.finishCallExpression({
         kind: "IdentifierExpr",
@@ -1070,12 +1071,10 @@ class RsglParser extends ParserContext {
         ...this.nodeRanges(start, start)
       })
       : this.parseExpression({ stopTexts: [] });
-    return {
-      kind,
-      keyword: start.text,
-      value,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
+    if (kind === "OverrideStmt") {
+      return { kind, keyword: start.text, create, value, ...this.nodeRanges(start, this.previousOr(start)) };
+    }
+    return { kind, keyword: start.text, value, ...this.nodeRanges(start, this.previousOr(start)) };
   }
 
   private parseVariantsSection(): ResourceStatementNode {
