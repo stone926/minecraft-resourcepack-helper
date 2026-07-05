@@ -9,11 +9,13 @@ import {
   createFenceGateBlockstate,
   createHangingSignBlockstate,
   createItemMapping,
+  createPaneBlockstate,
   createPressurePlateBlockstate,
   createSlabBlockstate,
   createSignBlockstate,
   createStairsBlockstate,
   createTrapdoorBlockstate,
+  createWallBlockstate,
   createWallSignBlockstate
 } from "./templates";
 
@@ -23,6 +25,8 @@ type SupportedFamilyMember =
   | "stairs"
   | "fence"
   | "fence_gate"
+  | "wall"
+  | "pane"
   | "door"
   | "trapdoor"
   | "button"
@@ -157,6 +161,33 @@ function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContex
       createCubeModel(family, `${id}_inventory`, "minecraft:block/fence_inventory", { texture: family.texture }),
       createFenceBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
       createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_inventory`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "wall") {
+    const id = `${family.baseName}_wall`;
+    const textures = { wall: family.texture };
+    return compact([
+      createCubeModel(family, `${id}_post`, "minecraft:block/template_wall_post", textures),
+      createCubeModel(family, `${id}_side`, "minecraft:block/template_wall_side", textures),
+      createCubeModel(family, `${id}_side_tall`, "minecraft:block/template_wall_side_tall", textures),
+      createCubeModel(family, `${id}_inventory`, "minecraft:block/wall_inventory", textures),
+      createWallBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_inventory`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
+    ]);
+  }
+
+  if (member === "pane") {
+    const id = `${family.baseName}_pane`;
+    const textures = { pane: family.texture, edge: family.texture };
+    return compact([
+      createCubeModel(family, `${id}_post`, "minecraft:block/template_glass_pane_post", textures),
+      createCubeModel(family, `${id}_side`, "minecraft:block/template_glass_pane_side", textures),
+      createCubeModel(family, `${id}_side_alt`, "minecraft:block/template_glass_pane_side_alt", textures),
+      createCubeModel(family, `${id}_noside`, "minecraft:block/template_glass_pane_noside", textures),
+      createCubeModel(family, `${id}_noside_alt`, "minecraft:block/template_glass_pane_noside_alt", textures),
+      createPaneBlockstate(`${family.namespace}:${id}`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack),
+      createItemMapping(`${family.namespace}:${id}`, `${family.namespace}:block/${id}_noside`, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack)
     ]);
   }
 
@@ -517,6 +548,8 @@ function isSupportedFamilyMember(value: string): value is SupportedFamilyMember 
     || value === "stairs"
     || value === "fence"
     || value === "fence_gate"
+    || value === "wall"
+    || value === "pane"
     || value === "door"
     || value === "trapdoor"
     || value === "button"

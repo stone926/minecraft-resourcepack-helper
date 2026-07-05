@@ -517,11 +517,54 @@ describe("RSGL compiler", () => {
     const result = compileRsglModule(parseRsgl([
       "wood_family acacia {",
       "  texture minecraft:block/acacia_planks",
-      "  generate [pane]",
+      "  generate [recipe]",
       "}"
     ].join("\n")));
 
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedFamilyMember"));
+  });
+
+  it("lowers wall and pane family members", () => {
+    const result = compileRsglModule(parseRsgl([
+      "block_family glass {",
+      "  texture minecraft:block/glass",
+      "  generate [wall, pane]",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const outputPaths = result.units.map(unit => unit.outputPath).sort();
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/glass_wall.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/blockstates/glass_pane.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/glass_wall.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/items/glass_pane.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/block/glass_wall_inventory.json"));
+    assert.ok(outputPaths.includes("assets/minecraft/models/block/glass_pane_noside.json"));
+
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/glass_wall_side_tall.json"))?.content, {
+      parent: "minecraft:block/template_wall_side_tall",
+      textures: {
+        wall: "minecraft:block/glass"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/glass_pane_side_alt.json"))?.content, {
+      parent: "minecraft:block/template_glass_pane_side_alt",
+      textures: {
+        pane: "minecraft:block/glass",
+        edge: "minecraft:block/glass"
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/glass_wall.json"))?.content, {
+      model: {
+        type: "minecraft:model",
+        model: "minecraft:block/glass_wall_inventory"
+      }
+    });
+    const paneBlockstate = result.units.find(unit => unit.outputPath.endsWith("blockstates/glass_pane.json"));
+    assert.deepStrictEqual((paneBlockstate?.content as { multipart: unknown[] }).multipart[8], {
+      when: { west: false },
+      apply: { model: "minecraft:block/glass_pane_noside", y: 270 }
+    });
   });
 
   it("lowers door and trapdoor family members", () => {
