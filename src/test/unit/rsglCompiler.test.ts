@@ -4746,6 +4746,29 @@ describe("RSGL compiler", () => {
       "    }",
       "  }",
       "}",
+      "item invalid_custom_model_data_index {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:custom_model_data,",
+      "      index: -1,",
+      "      cases: [{ when: 1, model: { type: minecraft:model, model: minecraft:item/base } }],",
+      "      fallback: { type: minecraft:model, model: minecraft:item/base }",
+      "    }",
+      "  }",
+      "}",
+      "item invalid_condition_has_component {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:condition,",
+      "      property: minecraft:has_component,",
+      "      component: 1,",
+      "      ignore_default: \"yes\",",
+      "      on_true: { type: minecraft:model, model: minecraft:item/base },",
+      "      on_false: { type: minecraft:model, model: minecraft:item/base }",
+      "    }",
+      "  }",
+      "}",
       "item unknown_property {",
       "  raw_json {",
       "    model: { type: minecraft:select, property: minecraft:unknown, cases: [] }",
@@ -4770,6 +4793,19 @@ describe("RSGL compiler", () => {
       && diagnostic.range.start === periodRange?.start
       && diagnostic.range.end === periodRange?.end
     ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'period'")
+      && diagnostic.range.start === periodRange?.start
+      && diagnostic.range.end === periodRange?.end
+    ));
+    const sourceRange = invalidRangeUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/source")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'source'")
+      && diagnostic.range.start === sourceRange?.start
+      && diagnostic.range.end === sourceRange?.end
+    ));
     const invalidSelectUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_select_property.json"));
     const componentRange = invalidSelectUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/component")?.sourceRange;
     assert.ok(result.diagnostics.some(diagnostic =>
@@ -4777,6 +4813,57 @@ describe("RSGL compiler", () => {
       && diagnostic.message.includes("component")
       && diagnostic.range.start === componentRange?.start
       && diagnostic.range.end === componentRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'component'")
+      && diagnostic.range.start === componentRange?.start
+      && diagnostic.range.end === componentRange?.end
+    ));
+    const invalidConditionUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_condition_property.json"));
+    const conditionPropertyRange = invalidConditionUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/property")?.sourceRange;
+    const predicateRange = invalidConditionUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/predicate")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.missingItemPropertyField"
+      && diagnostic.message.includes("'value'")
+      && diagnostic.range.start === conditionPropertyRange?.start
+      && diagnostic.range.end === conditionPropertyRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'predicate'")
+      && diagnostic.range.start === predicateRange?.start
+      && diagnostic.range.end === predicateRange?.end
+    ));
+    const invalidCustomModelDataUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_custom_model_data_index.json"));
+    const customIndexRange = invalidCustomModelDataUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/index")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'index'")
+      && diagnostic.range.start === customIndexRange?.start
+      && diagnostic.range.end === customIndexRange?.end
+    ));
+    const invalidHasComponentUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_condition_has_component.json"));
+    const hasComponentRange = invalidHasComponentUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/component")?.sourceRange;
+    const ignoreDefaultRange = invalidHasComponentUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/ignore_default")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'component'")
+      && diagnostic.range.start === hasComponentRange?.start
+      && diagnostic.range.end === hasComponentRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemPropertyField"
+      && diagnostic.message.includes("'ignore_default'")
+      && diagnostic.range.start === ignoreDefaultRange?.start
+      && diagnostic.range.end === ignoreDefaultRange?.end
+    ));
+    const unknownPropertyUnit = result.units.find(unit => unit.outputPath.endsWith("unknown_property.json"));
+    const unknownPropertyRange = unknownPropertyUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/property")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemProperty"
+      && diagnostic.range.start === unknownPropertyRange?.start
+      && diagnostic.range.end === unknownPropertyRange?.end
     ));
     const displayContextUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_display_context_when.json"));
     const displayContextWhenRange = displayContextUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0/when")?.sourceRange;

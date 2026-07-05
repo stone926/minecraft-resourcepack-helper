@@ -31,11 +31,18 @@ type TextureVariableResolution =
   | { kind: "cycle" };
 
 type ValidationRange = RsglCompileDiagnostic["range"];
+type ItemPropertyFieldKind = "boolean" | "enum" | "nonNegativeInteger" | "number" | "positiveNumber" | "resourceId" | "string";
 
 interface ModelDocument {
   id: string;
   namespace: string;
   content: Record<string, JsonValue>;
+}
+
+interface ItemPropertyFieldRule {
+  field: string;
+  kind: ItemPropertyFieldKind;
+  values?: string[];
 }
 
 const specialModelRequiredFields = new Map<string, string[]>([
@@ -237,6 +244,34 @@ const rangeDispatchKnownPropertyFields = new Set([
   "target",
   "wobble"
 ]);
+
+const rangeDispatchFieldRules: ItemPropertyFieldRule[] = [
+  { field: "index", kind: "nonNegativeInteger" },
+  { field: "normalize", kind: "boolean" },
+  { field: "period", kind: "positiveNumber" },
+  { field: "remaining", kind: "boolean" },
+  { field: "scale", kind: "number" },
+  { field: "source", kind: "enum", values: ["daytime", "moon_phase", "random"] },
+  { field: "target", kind: "enum", values: ["spawn", "lodestone", "recovery", "none"] },
+  { field: "wobble", kind: "boolean" }
+];
+
+const selectFieldRules: ItemPropertyFieldRule[] = [
+  { field: "block_state_property", kind: "string" },
+  { field: "component", kind: "resourceId" },
+  { field: "index", kind: "nonNegativeInteger" },
+  { field: "locale", kind: "string" },
+  { field: "pattern", kind: "string" },
+  { field: "time_zone", kind: "string" }
+];
+
+const conditionFieldRules: ItemPropertyFieldRule[] = [
+  { field: "component", kind: "resourceId" },
+  { field: "ignore_default", kind: "boolean" },
+  { field: "index", kind: "nonNegativeInteger" },
+  { field: "keybind", kind: "string" },
+  { field: "predicate", kind: "string" }
+];
 
 export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
@@ -779,7 +814,7 @@ function validateItemRangeDispatch(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  validateItemProperty(model, "range_dispatch", rangeDispatchProperties, rangeDispatchRequiredFields, unit, diagnostics);
+  validateItemProperty(model, "range_dispatch", rangeDispatchProperties, rangeDispatchRequiredFields, unit, diagnostics, generatedPath);
   validateItemPropertyFields(
     model,
     "range_dispatch",
@@ -790,14 +825,7 @@ function validateItemRangeDispatch(
     diagnostics,
     generatedPath
   );
-  validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateBooleanField(model, "normalize", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateBooleanField(model, "wobble", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateBooleanField(model, "remaining", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validatePositiveNumberField(model, "period", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateEnumField(model, "target", ["spawn", "lodestone", "recovery", "none"], "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateEnumField(model, "source", ["daytime", "moon_phase", "random"], "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateNumberField(model, "scale", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateItemPropertyFieldTypes(model, rangeDispatchFieldRules, unit, diagnostics, generatedPath);
   const entries = Array.isArray(model.entries) ? model.entries : null;
   if (!entries) {
     diagnostics.push({
@@ -868,7 +896,7 @@ function validateItemSelect(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  validateItemProperty(model, "select", selectProperties, selectRequiredFields, unit, diagnostics);
+  validateItemProperty(model, "select", selectProperties, selectRequiredFields, unit, diagnostics, generatedPath);
   validateItemPropertyFields(
     model,
     "select",
@@ -879,12 +907,7 @@ function validateItemSelect(
     diagnostics,
     generatedPath
   );
-  validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateStringField(model, "block_state_property", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateStringField(model, "locale", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateStringField(model, "time_zone", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateStringField(model, "pattern", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateItemPropertyFieldTypes(model, selectFieldRules, unit, diagnostics, generatedPath);
   const property = itemModelType(model.property);
   const cases = Array.isArray(model.cases) ? model.cases : null;
   if (!cases) {
@@ -993,7 +1016,7 @@ function validateItemCondition(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  validateItemProperty(model, "condition", conditionProperties, conditionRequiredFields, unit, diagnostics);
+  validateItemProperty(model, "condition", conditionProperties, conditionRequiredFields, unit, diagnostics, generatedPath);
   validateItemPropertyFields(
     model,
     "condition",
@@ -1004,11 +1027,7 @@ function validateItemCondition(
     diagnostics,
     generatedPath
   );
-  validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateBooleanField(model, "ignore_default", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateStringField(model, "keybind", "rsgl.invalidItemPropertyField", unit, diagnostics);
-  validateStringField(model, "predicate", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  validateItemPropertyFieldTypes(model, conditionFieldRules, unit, diagnostics, generatedPath);
   if (!("on_true" in model)) {
     diagnostics.push({
       code: "rsgl.invalidItemConditionBranch",
@@ -1108,15 +1127,17 @@ function validateItemProperty(
   knownProperties: Set<string>,
   requiredFieldsByProperty: Map<string, string[]>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
+  const propertyPath = appendGeneratedPath(generatedPath, "property");
   const property = itemModelType(model.property);
   if (!property || !knownProperties.has(property)) {
     diagnostics.push({
       code: "rsgl.invalidItemProperty",
       message: `Item ${modelType} model must define a known property.`,
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, propertyPath)
     });
     return;
   }
@@ -1127,7 +1148,7 @@ function validateItemProperty(
         code: "rsgl.missingItemPropertyField",
         message: `Item ${modelType} property '${property}' must define '${field}'.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, propertyPath)
       });
     }
   }
@@ -1162,6 +1183,60 @@ function validateItemPropertyFields(
       range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
     });
   }
+}
+
+function validateItemPropertyFieldTypes(
+  model: Record<string, JsonValue>,
+  rules: ItemPropertyFieldRule[],
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
+): void {
+  for (const rule of rules) {
+    if (!Object.hasOwn(model, rule.field)) {
+      continue;
+    }
+    const value = model[rule.field];
+    const message = itemPropertyFieldMessage(rule, value, unit.id?.namespace ?? "minecraft");
+    if (message) {
+      diagnostics.push({
+        code: "rsgl.invalidItemPropertyField",
+        message,
+        severity: "error",
+        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, rule.field))
+      });
+    }
+  }
+}
+
+function itemPropertyFieldMessage(
+  rule: ItemPropertyFieldRule,
+  value: JsonValue,
+  defaultNamespace: string
+): string | null {
+  if (rule.kind === "boolean") {
+    return typeof value === "boolean" ? null : `Field '${rule.field}' must be a boolean.`;
+  }
+  if (rule.kind === "string") {
+    return typeof value === "string" ? null : `Field '${rule.field}' must be a string.`;
+  }
+  if (rule.kind === "resourceId") {
+    if (typeof value !== "string") {
+      return `Field '${rule.field}' must be a resource id string.`;
+    }
+    return parseStrictResourceId(value, defaultNamespace) ? null : `Field '${rule.field}' must be a valid resource id.`;
+  }
+  if (rule.kind === "nonNegativeInteger") {
+    return Number.isInteger(value) && Number(value) >= 0 ? null : `Field '${rule.field}' must be a non-negative integer.`;
+  }
+  if (rule.kind === "number") {
+    return typeof value === "number" && Number.isFinite(value) ? null : `Field '${rule.field}' must be a finite number.`;
+  }
+  if (rule.kind === "positiveNumber") {
+    return typeof value === "number" && Number.isFinite(value) && Number(value) > 0 ? null : `Field '${rule.field}' must be a positive number.`;
+  }
+  const normalized = itemModelType(value);
+  return normalized && (rule.values ?? []).includes(normalized) ? null : `Field '${rule.field}' has an invalid value.`;
 }
 
 function validateSpecialModelShape(
@@ -1413,93 +1488,6 @@ function validateBooleanField(
     diagnostics.push({
       code,
       message: `Field '${field}' must be a boolean.`,
-      severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-}
-
-function validateStringField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && typeof object[field] !== "string") {
-    diagnostics.push({
-      code,
-      message: `Field '${field}' must be a string.`,
-      severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-}
-
-function validateEnumField(
-  object: Record<string, JsonValue>,
-  field: string,
-  values: string[],
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  const value = itemModelType(object[field]);
-  if (field in object && (!value || !values.includes(value))) {
-    diagnostics.push({
-      code,
-      message: `Field '${field}' has an invalid value.`,
-      severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-}
-
-function validateNonNegativeIntegerField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && (!Number.isInteger(object[field]) || Number(object[field]) < 0)) {
-    diagnostics.push({
-      code,
-      message: `Field '${field}' must be a non-negative integer.`,
-      severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-}
-
-function validateNumberField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]))) {
-    diagnostics.push({
-      code,
-      message: `Field '${field}' must be a finite number.`,
-      severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
-    });
-  }
-}
-
-function validatePositiveNumberField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]) || Number(object[field]) <= 0)) {
-    diagnostics.push({
-      code,
-      message: `Field '${field}' must be a positive number.`,
       severity: "error",
       range: unit.sourceMap.mappings[0].sourceRange
     });
