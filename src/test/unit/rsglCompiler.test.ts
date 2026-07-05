@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, inferBlockstateSchemaFromContent, loadRsglSourceFilesFromFile, stableJsonStringify, type JsonValue, type RsglEmittedFile, writeRsglFiles } from "../../rsgl/compiler";
+import { compileRsglFile, compileRsglModule, compileRsglProgram, createRsglWritePlan, emitRsglFiles, inferBlockstateSchemaFromContent, loadRsglSourceFilesFromFile, stableJsonStringify, validateResourceUnits, type JsonValue, type ResourceUnit, type RsglEmittedFile, writeRsglFiles } from "../../rsgl/compiler";
 import { parseRsgl } from "../../rsgl/parser";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl/workspaceValidation";
 
@@ -4276,6 +4276,62 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemConditionBranch"));
   });
 
+  it("validates item composite and terminal model types", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "item composite_with_missing_child {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:composite,",
+      "      models: [",
+      "        { type: minecraft:model, model: minecraft:item/missing_child },",
+      "        { type: minecraft:empty },",
+      "        { type: minecraft:bundle/selected_item }",
+      "      ]",
+      "    }",
+      "  }",
+      "}",
+      "item invalid_composite_models {",
+      "  raw_json {",
+      "    model: { type: minecraft:composite, models: \"bad\" }",
+      "  }",
+      "}",
+      "item invalid_composite_child {",
+      "  raw_json {",
+      "    model: { type: minecraft:composite, models: [1] }",
+      "  }",
+      "}",
+      "item unknown_model_type {",
+      "  raw_json {",
+      "    model: { type: minecraft:unknown }",
+      "  }",
+      "}",
+      "item invalid_model_reference {",
+      "  raw_json {",
+      "    model: { type: minecraft:model, model: 1 }",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.modelNotFound"));
+    assert.ok(codes.includes("rsgl.invalidItemCompositeModels"));
+    assert.ok(codes.includes("rsgl.invalidItemCompositeModel"));
+    assert.ok(codes.includes("rsgl.invalidItemModelType"));
+    assert.ok(codes.includes("rsgl.invalidItemModelReference"));
+    assert.ok(checkedResources.includes("model:minecraft:item/missing_child"));
+
+    const emptyCompositeDiagnostics = validateResourceUnits([minimalItemUnit({
+      model: { type: "minecraft:composite", models: [] }
+    })]);
+    assert.ok(emptyCompositeDiagnostics.some(diagnostic => diagnostic.code === "rsgl.emptyItemCompositeModels"));
+  });
+
   it("validates item special model resources and shape", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
@@ -4801,6 +4857,26 @@ function emittedContent(file: RsglEmittedFile | undefined): string {
     throw new Error("Expected emitted content file.");
   }
   return file.content;
+}
+
+function minimalItemUnit(content: Record<string, JsonValue>): ResourceUnit {
+  return {
+    id: { namespace: "minecraft", path: "test_item" },
+    kind: "item",
+    outputPath: "assets/minecraft/items/test_item.json",
+    content,
+    mergePolicy: { kind: "errorOnConflict" },
+    sourceMap: {
+      generatedFile: "assets/minecraft/items/test_item.json",
+      mappings: [{
+        generatedPath: "",
+        sourceFile: "test.rsgl",
+        sourceRange: { start: 0, end: 1 },
+        reason: "direct",
+        expansionStack: []
+      }]
+    }
+  };
 }
 
 function createPngBytes(width: number, height: number): Buffer {

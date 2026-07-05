@@ -138,6 +138,17 @@ const rangeDispatchProperties = new Set([
   "use_duration"
 ]);
 
+const itemModelTypes = new Set([
+  "model",
+  "composite",
+  "condition",
+  "select",
+  "range_dispatch",
+  "empty",
+  "bundle/selected_item",
+  "special"
+]);
+
 const rangeDispatchRequiredFields = new Map<string, string[]>([
   ["compass", ["target"]],
   ["time", ["source"]]
@@ -571,7 +582,19 @@ function validateItemModelDefinition(
   if (type === "model") {
     if (typeof model.model === "string") {
       checkResourceExists("model", model.model, unit, generatedModels, options, diagnostics);
+    } else {
+      diagnostics.push({
+        code: "rsgl.invalidItemModelReference",
+        message: "Item model definition must reference a model id.",
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
     }
+    return;
+  }
+
+  if (type === "composite") {
+    validateItemComposite(model, unit, generatedModels, options, diagnostics);
     return;
   }
 
@@ -595,7 +618,56 @@ function validateItemModelDefinition(
     return;
   }
 
+  if (type === "empty" || type === "bundle/selected_item") {
+    return;
+  }
+
+  diagnostics.push({
+    code: "rsgl.invalidItemModelType",
+    message: "Item model definition must define a known item model type.",
+    severity: "error",
+    range: unit.sourceMap.mappings[0].sourceRange
+  });
   validateNestedItemModels(model, unit, generatedModels, options, diagnostics);
+}
+
+function validateItemComposite(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const models = Array.isArray(model.models) ? model.models : null;
+  if (!models) {
+    diagnostics.push({
+      code: "rsgl.invalidItemCompositeModels",
+      message: "Item composite model must define a models array.",
+      severity: "error",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+    return;
+  }
+  if (models.length === 0) {
+    diagnostics.push({
+      code: "rsgl.emptyItemCompositeModels",
+      message: "Item composite model should define at least one child model.",
+      severity: "warning",
+      range: unit.sourceMap.mappings[0].sourceRange
+    });
+  }
+  for (const nested of models) {
+    if (!asObject(nested)) {
+      diagnostics.push({
+        code: "rsgl.invalidItemCompositeModel",
+        message: "Item composite children must be item model objects.",
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+      continue;
+    }
+    validateItemModelDefinition(nested, unit, generatedModels, options, diagnostics);
+  }
 }
 
 function validateItemRangeDispatch(
@@ -1189,6 +1261,10 @@ function validateNestedItemModels(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
+  const type = itemModelType(model.type);
+  if (type && !itemModelTypes.has(type)) {
+    return;
+  }
   if (Array.isArray(model.models)) {
     for (const nested of model.models) {
       validateItemModelDefinition(nested, unit, generatedModels, options, diagnostics);
