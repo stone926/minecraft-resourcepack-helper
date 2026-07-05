@@ -1,5 +1,6 @@
 import {
   createRsglWritePlan,
+  compileRsglDirectory,
   compileRsglFile,
   emitRsglFiles,
   type RsglEmittedFile,
@@ -22,16 +23,12 @@ export interface RsglBuildResult {
 
 export function buildRsglResourcePack(entryFileName: string, options: RsglBuildOptions): RsglBuildResult {
   const compiled = compileRsglBuildFiles(entryFileName, options);
-  if (!compiled.files) {
-    return {
-      diagnostics: compiled.diagnostics
-    };
-  }
+  return writeCompiledRsglBuild(compiled, options);
+}
 
-  return {
-    diagnostics: compiled.diagnostics,
-    plan: writeRsglFiles(compiled.files, options.outputRoot, options)
-  };
+export function buildRsglResourcePackDirectory(rootDirectory: string, options: RsglBuildOptions): RsglBuildResult {
+  const compiled = compileRsglBuildDirectory(rootDirectory, options);
+  return writeCompiledRsglBuild(compiled, options);
 }
 
 export interface RsglBuildPreviewResult extends RsglBuildResult {
@@ -40,26 +37,18 @@ export interface RsglBuildPreviewResult extends RsglBuildResult {
 
 export interface RsglBuildPreviewFormatOptions {
   entryFileName?: string;
+  sourceRoot?: string;
   maxDiffLinesPerFile?: number;
 }
 
 export function previewRsglResourcePackBuild(entryFileName: string, options: RsglBuildOptions): RsglBuildPreviewResult {
   const compiled = compileRsglBuildFiles(entryFileName, options);
-  if (!compiled.files) {
-    return {
-      diagnostics: compiled.diagnostics
-    };
-  }
+  return previewCompiledRsglBuild(compiled, options, { entryFileName });
+}
 
-  const plan = createRsglWritePlan(compiled.files, options.outputRoot, {
-    ...options,
-    includePreviousContent: true
-  });
-  return {
-    diagnostics: compiled.diagnostics,
-    plan,
-    preview: formatRsglBuildPreview(plan, { entryFileName })
-  };
+export function previewRsglResourcePackDirectoryBuild(rootDirectory: string, options: RsglBuildOptions): RsglBuildPreviewResult {
+  const compiled = compileRsglBuildDirectory(rootDirectory, options);
+  return previewCompiledRsglBuild(compiled, options, { sourceRoot: rootDirectory });
 }
 
 export function formatRsglBuildPreview(
@@ -71,6 +60,7 @@ export function formatRsglBuildPreview(
     "# RSGL Build Preview",
     "",
     ...(options.entryFileName ? [`Entry: ${options.entryFileName}`] : []),
+    ...(options.sourceRoot ? [`Source root: ${options.sourceRoot}`] : []),
     `Output root: ${plan.outputRoot}`,
     `Summary: ${plan.summary.create} create, ${plan.summary.update} update, ${plan.summary.unchanged} unchanged`,
     "",
@@ -177,5 +167,65 @@ function compileRsglBuildFiles(
       sourceMaps: options.sourceMaps ?? true,
       manifest: options.manifest ?? true
     })
+  };
+}
+
+function compileRsglBuildDirectory(
+  rootDirectory: string,
+  options: RsglBuildOptions
+): { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] } {
+  const result = compileRsglDirectory(rootDirectory, options);
+  const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
+  if (blockingDiagnostics.length > 0) {
+    return {
+      diagnostics: result.diagnostics
+    };
+  }
+
+  return {
+    diagnostics: result.diagnostics,
+    files: emitRsglFiles(result.units, {
+      ...options,
+      sourceMaps: options.sourceMaps ?? true,
+      manifest: options.manifest ?? true
+    })
+  };
+}
+
+function writeCompiledRsglBuild(
+  compiled: { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] },
+  options: RsglBuildOptions
+): RsglBuildResult {
+  if (!compiled.files) {
+    return {
+      diagnostics: compiled.diagnostics
+    };
+  }
+
+  return {
+    diagnostics: compiled.diagnostics,
+    plan: writeRsglFiles(compiled.files, options.outputRoot, options)
+  };
+}
+
+function previewCompiledRsglBuild(
+  compiled: { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] },
+  options: RsglBuildOptions,
+  previewOptions: RsglBuildPreviewFormatOptions
+): RsglBuildPreviewResult {
+  if (!compiled.files) {
+    return {
+      diagnostics: compiled.diagnostics
+    };
+  }
+
+  const plan = createRsglWritePlan(compiled.files, options.outputRoot, {
+    ...options,
+    includePreviousContent: true
+  });
+  return {
+    diagnostics: compiled.diagnostics,
+    plan,
+    preview: formatRsglBuildPreview(plan, previewOptions)
   };
 }

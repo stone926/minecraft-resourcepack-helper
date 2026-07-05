@@ -117,6 +117,8 @@ export interface RsglFileLoadOptions {
 
 export interface RsglFileCompileOptions extends Omit<RsglProgramCompileOptions, "entryFileName">, RsglFileLoadOptions { }
 
+export interface RsglDirectoryCompileOptions extends Omit<RsglProgramCompileOptions, "entryFileName">, RsglFileLoadOptions { }
+
 interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
@@ -209,8 +211,31 @@ export function compileRsglFile(entryFileName: string, options: RsglFileCompileO
   return compileRsglProgram(files, { ...compileOptions, entryFileName: resolvedEntryFileName });
 }
 
+export function compileRsglDirectory(rootDirectory: string, options: RsglDirectoryCompileOptions = {}): RsglCompileResult {
+  const { encoding, ...compileOptions } = options;
+  const resolvedRootDirectory = path.resolve(rootDirectory);
+  const files = loadRsglSourceFilesFromDirectory(resolvedRootDirectory, { encoding });
+  if (files.length === 0) {
+    return {
+      units: [],
+      diagnostics: [{
+        code: "rsgl.compileMissingSource",
+        message: `No RSGL source files found in ${resolvedRootDirectory}.`,
+        range: { start: 0, end: 1 },
+        severity: "error",
+        fileName: resolvedRootDirectory
+      }]
+    };
+  }
+  return compileRsglProgram(files, compileOptions);
+}
+
 export function loadRsglSourceFilesFromFile(entryFileName: string, options: RsglFileLoadOptions = {}): RsglSourceFile[] {
   return new RsglWorkspaceSourceCache(options).loadProgramFromEntry(entryFileName);
+}
+
+export function loadRsglSourceFilesFromDirectory(rootDirectory: string, options: RsglFileLoadOptions = {}): RsglSourceFile[] {
+  return new RsglWorkspaceSourceCache(options).loadProgramFromDirectory(rootDirectory);
 }
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {

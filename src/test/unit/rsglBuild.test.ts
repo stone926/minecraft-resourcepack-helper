@@ -2,7 +2,12 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildRsglResourcePack, previewRsglResourcePackBuild } from "../../rsgl/build";
+import {
+  buildRsglResourcePack,
+  buildRsglResourcePackDirectory,
+  previewRsglResourcePackBuild,
+  previewRsglResourcePackDirectoryBuild
+} from "../../rsgl/build";
 
 describe("RSGL build", () => {
   it("writes emitted resources with source maps and a manifest", () => {
@@ -116,6 +121,99 @@ describe("RSGL build", () => {
       assert.ok(preview.preview?.includes("create: pack.png"));
       assert.ok(preview.preview?.includes(`Binary copy from ${source}`));
       assert.strictEqual(fs.existsSync(path.join(outputRoot, "pack.png")), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("builds every RSGL source file in a source directory", () => {
+    const root = createTempDirectory();
+    const sourceRoot = path.join(root, "src");
+    const outputRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "blocks.rsgl"), [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/stone }",
+        "}"
+      ].join("\n"));
+      fs.writeFileSync(path.join(sourceRoot, "items.rsgl"), [
+        "model item stick {",
+        "  parent minecraft:item/generated",
+        "  textures { layer0: minecraft:item/stick }",
+        "}"
+      ].join("\n"));
+
+      const result = buildRsglResourcePackDirectory(sourceRoot, { outputRoot });
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.plan?.summary, { create: 5, update: 0, unchanged: 0 });
+      assert.strictEqual(
+        fs.existsSync(path.join(outputRoot, "assets", "minecraft", "models", "block", "stone.json")),
+        true
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(outputRoot, "assets", "minecraft", "models", "item", "stick.json")),
+        true
+      );
+      assert.strictEqual(fs.existsSync(path.join(outputRoot, "rsgl.manifest.json")), true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("previews directory builds without writing output files", () => {
+    const root = createTempDirectory();
+    const sourceRoot = path.join(root, "src");
+    const outputRoot = path.join(root, "pack");
+    const modelPath = path.join(outputRoot, "assets", "minecraft", "models", "block", "stone.json");
+
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "blocks.rsgl"), [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/stone }",
+        "}"
+      ].join("\n"));
+      buildRsglResourcePackDirectory(sourceRoot, { outputRoot });
+      const previousModel = fs.readFileSync(modelPath, "utf8");
+
+      fs.writeFileSync(path.join(sourceRoot, "blocks.rsgl"), [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/deepslate }",
+        "}"
+      ].join("\n"));
+      const preview = previewRsglResourcePackDirectoryBuild(sourceRoot, { outputRoot });
+
+      assert.deepStrictEqual(preview.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(preview.plan?.summary, { create: 0, update: 2, unchanged: 1 });
+      assert.ok(preview.preview?.includes(`Source root: ${sourceRoot}`));
+      assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json (+1 -1)"));
+      assert.ok(preview.preview?.includes('-    "all": "minecraft:block/stone"'));
+      assert.ok(preview.preview?.includes('+    "all": "minecraft:block/deepslate"'));
+      assert.strictEqual(fs.readFileSync(modelPath, "utf8"), previousModel);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an error for an empty RSGL source directory", () => {
+    const root = createTempDirectory();
+    const sourceRoot = path.join(root, "src");
+    const outputRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+
+      const result = buildRsglResourcePackDirectory(sourceRoot, { outputRoot });
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), ["rsgl.compileMissingSource"]);
+      assert.strictEqual(result.plan, undefined);
+      assert.strictEqual(fs.existsSync(outputRoot), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

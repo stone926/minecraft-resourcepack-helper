@@ -75,6 +75,34 @@ export class RsglWorkspaceSourceCache {
     return files;
   }
 
+  public loadProgramFromDirectory(rootDirectory: string): RsglSourceFile[] {
+    const files: RsglSourceFile[] = [];
+    const visited = new Set<string>();
+
+    const visit = (fileName: string): void => {
+      const normalizedFileName = normalizeFileName(path.resolve(fileName));
+      if (visited.has(normalizedFileName)) {
+        return;
+      }
+      visited.add(normalizedFileName);
+
+      const sourceFile = this.readSourceFile(normalizedFileName);
+      if (!sourceFile) {
+        return;
+      }
+      files.push(sourceFile);
+
+      for (const source of collectRsglRelativeModuleSources(sourceFile.module)) {
+        visit(path.resolve(path.dirname(normalizedFileName), source));
+      }
+    };
+
+    for (const fileName of enumerateRsglFiles(rootDirectory)) {
+      visit(fileName);
+    }
+    return files;
+  }
+
   private readSourceFile(fileName: string): RsglSourceFile | null {
     const normalizedFileName = normalizeFileName(path.resolve(fileName));
     const readResult = this.readText(normalizedFileName);
@@ -132,6 +160,38 @@ export function collectRsglRelativeModuleSources(module: RsglModule): string[] {
 function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
 }
+
+function enumerateRsglFiles(rootDirectory: string): string[] {
+  const normalizedRoot = path.resolve(rootDirectory);
+  const result: string[] = [];
+
+  const visitDirectory = (directory: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    entries
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .forEach(entry => {
+        const fileName = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (!ignoredDirectoryNames.has(entry.name)) {
+            visitDirectory(fileName);
+          }
+        } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".rsgl") {
+          result.push(normalizeFileName(fileName));
+        }
+      });
+  };
+
+  visitDirectory(normalizedRoot);
+  return result;
+}
+
+const ignoredDirectoryNames = new Set([".git", ".vscode", "node_modules"]);
 
 function isImportDeclNode(node: unknown): node is ImportDeclNode {
   return Boolean(node && typeof node === "object" && (node as { kind?: string }).kind === "ImportDecl");

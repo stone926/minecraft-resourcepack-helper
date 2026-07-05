@@ -1,5 +1,5 @@
-export { compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromFile } from "./compiler";
-export type { RsglCompileOptions, RsglFileCompileOptions, RsglFileLoadOptions, RsglProgramCompileOptions } from "./compiler";
+export { compileRsglDirectory, compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromDirectory, loadRsglSourceFilesFromFile } from "./compiler";
+export type { RsglCompileOptions, RsglDirectoryCompileOptions, RsglFileCompileOptions, RsglFileLoadOptions, RsglProgramCompileOptions } from "./compiler";
 export { emitRsglFiles, stableJsonStringify, orderJsonValue } from "./emit";
 export type { RsglContentEmittedFile, RsglCopyEmittedFile, RsglEmittedFile, RsglEmitOptions } from "./emit";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
