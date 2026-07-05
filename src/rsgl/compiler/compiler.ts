@@ -485,6 +485,8 @@ class RsglCompiler {
       const multipartOffset = currentMultipartLength(result.content);
       mergeBlockstateFragment(result.content, fragment, statement.range, fragmentOptions);
       result.mappings.push(...this.blockstateFragmentMappings(fragment, statement.range, context, multipartOffset));
+    } else if (statement.kind === "LetDecl") {
+      this.compileLetDecl(statement, context);
     } else if (statement.kind === "ForStmt") {
       const iterable = evaluateExpression(statement.iterable, context);
       if (!Array.isArray(iterable)) {
@@ -570,6 +572,8 @@ class RsglCompiler {
         ? fragmentValue.value
         : normalizeJsonValue(evaluateExpression(statement.value, context));
       result.mappings.push(this.sourceMapping(blockstateVariantPath(state), statement.range, context));
+    } else if (statement.kind === "LetDecl") {
+      this.compileLetDecl(statement, context);
     } else if (statement.kind === "UseDecl") {
       const fragment = this.compileBlockstateUse(statement, context);
       if (fragment.multipart) {
@@ -639,6 +643,8 @@ class RsglCompiler {
       const index = startIndex + result.entries.length;
       result.entries.push(value);
       result.mappings.push(this.sourceMapping(blockstateMultipartPath(index), statement.range, context));
+    } else if (statement.kind === "LetDecl") {
+      this.compileLetDecl(statement, context);
     } else if (statement.kind === "UseDecl") {
       const fragment = this.compileBlockstateUse(statement, context);
       if (fragment.variants) {
@@ -1071,6 +1077,7 @@ class RsglCompiler {
         { label: recursionLabel, sourceRange: expression.range }
       ]
     });
+    templateContext.stateKeyAliases = this.callableStateKeyAliases(templateBaseContext, parameters);
     this.compileBlock(template.node.body, templateContext);
   }
 
@@ -1225,15 +1232,16 @@ class RsglCompiler {
     }
 
     const fragmentBaseContext = this.createFragmentBaseContext(fragment);
+    const parameters = fragment.node.parameters
+      .filter(parameter => parameter.name)
+      .map((parameter): TemplateCallParameter => ({
+        name: parameter.name!.text,
+        optional: Boolean(parameter.defaultValue),
+        node: parameter,
+        parameterNode: parameter
+      }));
     const values = this.bindCallableValues(
-      fragment.node.parameters
-        .filter(parameter => parameter.name)
-        .map((parameter): TemplateCallParameter => ({
-          name: parameter.name!.text,
-          optional: Boolean(parameter.defaultValue),
-          node: parameter,
-          parameterNode: parameter
-        })),
+      parameters,
       expression,
       context,
       fragmentBaseContext,
@@ -1251,6 +1259,7 @@ class RsglCompiler {
         { label: recursionKey, sourceRange: expression.range }
       ]
     });
+    fragmentContext.stateKeyAliases = this.callableStateKeyAliases(fragmentBaseContext, parameters);
     return { definition: fragment, context: fragmentContext };
   }
 
@@ -1459,6 +1468,16 @@ class RsglCompiler {
       templates: context.templates,
       fragments: context.fragments
     };
+  }
+
+  private callableStateKeyAliases(
+    context: RsglCompileContext,
+    parameters: TemplateCallParameter[]
+  ): ReadonlySet<string> {
+    return new Set([
+      ...(context.stateKeyAliases ?? []),
+      ...parameters.map(parameter => parameter.name)
+    ]);
   }
 
   private pushUnit(unit: ResourceUnit | null): void {

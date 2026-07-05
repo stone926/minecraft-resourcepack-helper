@@ -93,6 +93,8 @@ class ResolvedImportCallValidator {
       this.validateMultipartStatements(statement.entries);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
+    } else if (statement.kind === "LetDecl") {
+      this.validateExpression(statement.value);
     } else if (statement.kind === "ItemRangeStmt") {
       this.validateExpression(statement.property);
       statement.options.forEach(option => this.validateExpression(option.value));
@@ -185,6 +187,8 @@ class ResolvedImportCallValidator {
     if (statement.kind === "VariantEntry") {
       this.validateExpression(statement.state);
       this.validateExpression(statement.value);
+    } else if (statement.kind === "LetDecl") {
+      this.validateExpression(statement.value);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
@@ -213,6 +217,8 @@ class ResolvedImportCallValidator {
         this.validateExpression(statement.when);
       }
       this.validateExpression(statement.apply);
+    } else if (statement.kind === "LetDecl") {
+      this.validateExpression(statement.value);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
@@ -311,7 +317,10 @@ class ResolvedImportCallValidator {
 }
 
 function inferImportedArgumentType(expression: ExprNode, expectedType: RsglType): RsglType {
-  if (isResourceIdLike(expectedType) && expression.kind === "IdentifierExpr") {
+  if (
+    isResourceIdLike(expectedType) &&
+    (expression.kind === "IdentifierExpr" || expression.kind === "StringLiteral" || expression.kind === "TemplateStringExpr")
+  ) {
     return resourceIdType;
   }
   if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar" || expression.kind === "ModelApplySugar" || expression.kind === "RandomApply") {

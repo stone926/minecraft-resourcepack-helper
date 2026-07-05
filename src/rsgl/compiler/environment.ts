@@ -169,6 +169,14 @@ function collectImportedEnvironmentBindings(
     }
 
     const targetEnvironment = createEnvironment(targetModel);
+    if (record.importAll) {
+      copyValues(environment.importedValues, targetEnvironment.exportedValues);
+      copyValues(environment.allValues, targetEnvironment.exportedValues);
+      copyTemplates(environment.importedTemplates, targetEnvironment.exportedTemplates);
+      copyTemplates(environment.allTemplates, targetEnvironment.exportedTemplates);
+      copyFragments(environment.importedFragments, targetEnvironment.exportedFragments);
+      copyFragments(environment.allFragments, targetEnvironment.exportedFragments);
+    }
     for (const item of record.namedImports) {
       if (targetEnvironment.exportedValues.has(item.imported)) {
         const value = targetEnvironment.exportedValues.get(item.imported);

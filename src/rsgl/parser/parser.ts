@@ -18,6 +18,7 @@ import {
   IdentifierNode,
   IfStmtNode,
   ImportSpecifierNode,
+  LetDeclNode,
   MatchArmNode,
   ModelApplySugarNode,
   MultipartBodyNode,
@@ -362,7 +363,7 @@ class RsglParser extends ParserContext {
     return specifiers;
   }
 
-  private parseLetDecl(): TopLevelStatementNode {
+  private parseLetDecl(): LetDeclNode {
     const start = this.advance();
     const name = this.parseIdentifier("Expected let binding name.");
     const typeAnnotation = this.matchText(":") ? this.parseType() : undefined;
@@ -721,6 +722,9 @@ class RsglParser extends ParserContext {
 
   private parseVariantSectionStatement(): VariantSectionStatementNode {
     const token = this.current();
+    if (token.text === "let") {
+      return this.parseLetDecl();
+    }
     if (token.text === "use") {
       return this.parseUseDecl();
     }
@@ -760,6 +764,9 @@ class RsglParser extends ParserContext {
 
   private parseMultipartSectionStatement(): MultipartSectionStatementNode {
     const token = this.current();
+    if (token.text === "let") {
+      return this.parseLetDecl();
+    }
     if (token.text === "use") {
       return this.parseUseDecl();
     }
@@ -774,6 +781,9 @@ class RsglParser extends ParserContext {
 
   private parseResourceStatement(owner: string): ResourceStatementNode {
     const token = this.current();
+    if (token.text === "let") {
+      return this.parseLetDecl();
+    }
     if (token.text === "use") {
       return this.parseUseDecl();
     }
@@ -1101,9 +1111,7 @@ class RsglParser extends ParserContext {
     const state = this.parseExpression({ stopTexts: ["->"] });
     const hasArrow = this.expectText("->", "Expected '->' in variant entry.");
     const value = hasArrow
-      ? this.current().text === "random"
-        ? this.parseRandomApply()
-        : this.parseExpression({ stopTexts: [] })
+      ? this.parseBlockstateEntryValue()
       : this.recoverMalformedEntryValue();
     return {
       kind: "VariantEntry",
@@ -1141,9 +1149,7 @@ class RsglParser extends ParserContext {
     }
     const hasApply = this.expectText("apply", "Expected 'apply' in multipart entry.");
     const apply = hasApply
-      ? this.current().text === "random"
-        ? this.parseRandomApply()
-        : this.parseExpression({ stopTexts: [] })
+      ? this.parseBlockstateEntryValue()
       : this.recoverMalformedEntryValue();
     return {
       kind: "MultipartEntry",
@@ -1523,6 +1529,9 @@ class RsglParser extends ParserContext {
     let result = expression;
     let reading = true;
     while (reading && !this.isExpressionStop(stopTexts)) {
+      if (this.isStatementBoundary(this.current())) {
+        break;
+      }
       if (this.current().text === "(") {
         result = this.finishCallExpression(result);
       } else if (this.current().text === "." && this.peekKind(1) !== "number") {
@@ -1733,7 +1742,7 @@ class RsglParser extends ParserContext {
     const start = this.advance();
     const model = this.parseModelApplyPath(start);
     const properties: SugarPropertyNode[] = [];
-    while (!this.isAtEnd() && !this.isExpressionStop([",", "]", "}"])) {
+    while (!this.isAtEnd() && !this.isModelApplyPropertyStop()) {
       const propertyStart = this.current();
       const name = this.parseIdentifier("Expected model apply property.");
       if (!name) {
@@ -1748,7 +1757,7 @@ class RsglParser extends ParserContext {
         value,
         ...this.nodeRanges(propertyStart, this.previousOr(propertyStart))
       });
-      this.consumeOptionalSeparator();
+      this.consumeModelApplyPropertySeparator();
     }
     return {
       kind: "ModelApplySugar",
@@ -1760,6 +1769,9 @@ class RsglParser extends ParserContext {
 
   private parseModelApplyPath(atToken: RsglToken): ExprNode {
     const start = this.current();
+    if (start.kind === "templateString") {
+      return this.parseTemplateStringExpression();
+    }
     if (start.kind === "resourceLocation") {
       const token = this.advance();
       return {
@@ -1769,28 +1781,12 @@ class RsglParser extends ParserContext {
       };
     }
 
-    const parts: string[] = [];
-    let end = start;
-    while (
-      !this.isAtEnd() &&
-      !this.hasLeadingTrivia(this.current()) &&
-      !this.isExpressionStop([",", "]", "}"])
-    ) {
-      parts.push(this.advance().text);
-      end = this.previousOr(start);
+    if (start.kind === "identifier" || start.kind === "keyword") {
+      return this.parseIdentifierOrPathExpression();
     }
 
-    if (parts.length === 0) {
-      this.addDiagnostic("rsgl.expectedModelApplyPath", "Expected model path after '@'.", endRange(atToken));
-      return this.missingExprAt(atToken);
-    }
-
-    return {
-      kind: "ResourceLocationExpr",
-      value: parts.join(""),
-      range: { start: start.offset, end: end.offset + end.length },
-      fullRange: { start: this.fullStart(start), end: end.offset + end.length }
-    };
+    this.addDiagnostic("rsgl.expectedModelApplyPath", "Expected model path after '@'.", endRange(atToken));
+    return this.missingExprAt(atToken);
   }
 
   private parseRandomApply(): ExprNode {
@@ -1811,6 +1807,12 @@ class RsglParser extends ParserContext {
       entries,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseBlockstateEntryValue(): ExprNode {
+    return this.current().text === "random"
+      ? this.parseRandomApply()
+      : this.parseExpression({ stopTexts: ["}"] });
   }
 
   private parseMatchExpression(): ExprNode {
@@ -2009,6 +2011,10 @@ class RsglParser extends ParserContext {
     return stopTexts.length === 0 && this.isStatementBoundary(this.current());
   }
 
+  private isModelApplyPropertyStop(): boolean {
+    return this.isExpressionStop([",", "]", "}"]) || this.isStatementBoundary(this.current());
+  }
+
   private looksLikeStateKeySugar(): boolean {
     if (this.current().text !== "[") {
       return false;
@@ -2047,6 +2053,19 @@ class RsglParser extends ParserContext {
 
   private consumeOptionalSeparator(): void {
     if (this.current().text === "," || this.current().text === ";") {
+      this.advance();
+    }
+  }
+
+  private consumeModelApplyPropertySeparator(): void {
+    if (this.current().text === ";") {
+      this.advance();
+      return;
+    }
+    if (
+      this.current().text === "," &&
+      (this.peekKind(1) === "identifier" || this.peekKind(1) === "keyword")
+    ) {
       this.advance();
     }
   }

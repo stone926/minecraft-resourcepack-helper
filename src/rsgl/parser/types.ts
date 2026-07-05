@@ -446,6 +446,7 @@ export interface UnknownStmtNode extends StatementNodeBase {
 }
 
 export type ResourceStatementNode =
+  | LetDeclNode
   | PropertyStmtNode
   | SectionStmtNode
   | VariantsSectionNode
@@ -497,7 +498,7 @@ export interface VariantEntryNode extends StatementNodeBase {
   value: ExprNode;
 }
 
-export type VariantSectionStatementNode = VariantEntryNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+export type VariantSectionStatementNode = VariantEntryNode | LetDeclNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
 
 export interface MultipartSectionNode extends StatementNodeBase {
   kind: "MultipartSection";
@@ -510,7 +511,7 @@ export interface MultipartEntryNode extends StatementNodeBase {
   apply: ExprNode;
 }
 
-export type MultipartSectionStatementNode = MultipartEntryNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
+export type MultipartSectionStatementNode = MultipartEntryNode | LetDeclNode | UseDeclNode | ForStmtNode | IfStmtNode | UnknownStmtNode;
 
 export interface PackFormatsStmtNode extends StatementNodeBase {
   kind: "PackFormatsStmt";

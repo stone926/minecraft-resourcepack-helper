@@ -2537,6 +2537,80 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("supports parameterized blockstate sugar used by real-world fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "let suffix = \"lamp\"",
+      "fragment keyed(property: String, prop1: String, modelId: ModelId) {",
+      "  variants {",
+      "    [property=full prop1=false] ->",
+      "      @modelId y=yaw(east)",
+      "  }",
+      "}",
+      "blockstate example {",
+      "  use keyed(\"tilt\", \"powered\", `minecraft:block/${suffix}`)",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        ["powered=false,tilt=full"]: {
+          model: "minecraft:block/lamp",
+          y: 90
+        }
+      }
+    });
+  });
+
+  it("parses newline blockstate values and comma-separated random apply entries", () => {
+    const result = compileRsglModule(parseRsgl([
+      "let block = \"powder_snow\"",
+      "blockstate snow {",
+      "  variants {",
+      "    {} ->",
+      "      random [",
+      "        @`minecraft:block/${block}`, @`minecraft:block/${block}` y=90,",
+      "        @`minecraft:block/${block}` y=180, @`minecraft:block/${block}` y=270",
+      "      ]",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const defaultVariantKey = "";
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        [defaultVariantKey]: [
+          { model: "minecraft:block/powder_snow" },
+          { model: "minecraft:block/powder_snow", y: 90 },
+          { model: "minecraft:block/powder_snow", y: 180 },
+          { model: "minecraft:block/powder_snow", y: 270 }
+        ]
+      }
+    });
+  });
+
+  it("evaluates local let declarations inside multipart sections", () => {
+    const result = compileRsglModule(parseRsgl([
+      "blockstate sensor {",
+      "  multipart {",
+      "    let poweredStates = \"1|2|3\"",
+      "    when { power: poweredStates } apply @minecraft:block/sensor_powered",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      multipart: [
+        {
+          when: { power: "1|2|3" },
+          apply: { model: "minecraft:block/sensor_powered" }
+        }
+      ]
+    });
+  });
+
   it("reports incompatible blockstate fragment use in section contexts", () => {
     const result = compileRsglModule(parseRsgl([
       "blockstate broken {",
@@ -3346,6 +3420,42 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(paneFragmentMappings.map(mapping => mapping.sourceFile), [fragmentsFile, fragmentsFile]);
     assert.deepStrictEqual(paneFragmentMappings.map(mapping => mapping.reason), ["template", "template"]);
     assert.ok(paneFragmentMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "fragment connectedPane")));
+  });
+
+  it("imports exported fragments from bare import modules", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const fragmentsFile = path.resolve("pack", "fragments.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "namespace app",
+          "import \"./fragments.rsgl\"",
+          "blockstate lamp {",
+          "  use keyed(\"tilt\", `minecraft:block/${\"lamp\"}`)",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: fragmentsFile,
+        module: parseRsgl([
+          "namespace library",
+          "fragment keyed(property: String, modelId: ModelId) {",
+          "  variants {",
+          "    [property=full] -> @modelId",
+          "  }",
+          "}",
+          "export { keyed }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        ["tilt=full"]: { model: "minecraft:block/lamp" }
+      }
+    });
   });
 
   it("expands imported templates with their definition-file closure", () => {

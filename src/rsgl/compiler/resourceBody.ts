@@ -67,6 +67,10 @@ function applyResourceStatement(
   if (statement.kind === "PropertyStmt") {
     result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
     emitMapping(options, appendGeneratedPath(path, statement.name.text), statement.range, context);
+  } else if (statement.kind === "LetDecl") {
+    if (statement.name) {
+      context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
+    }
   } else if (statement.kind === "SectionStmt") {
     if (statement.body) {
       const sectionPath = appendGeneratedPath(path, statement.name.text);

@@ -6,6 +6,7 @@ import {
   ExprNode,
   FragmentDeclNode,
   IdentifierNode,
+  LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
   ObjectExprNode,
@@ -338,6 +339,8 @@ class RsglBinder {
       this.checkMultipartStatements(statement.entries, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
+    } else if (statement.kind === "LetDecl") {
+      this.checkLocalLetDecl(statement, scope);
     } else if (statement.kind === "PackFormatsStmt") {
       if (statement.min) {
         this.checkExpression(statement.min, scope);
@@ -465,6 +468,8 @@ class RsglBinder {
     if (statement.kind === "VariantEntry") {
       this.checkExpression(statement.state, scope);
       this.checkExpression(statement.value, scope);
+    } else if (statement.kind === "LetDecl") {
+      this.checkLocalLetDecl(statement, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
@@ -494,6 +499,8 @@ class RsglBinder {
         this.checkExpression(statement.when, scope);
       }
       this.checkExpression(statement.apply, scope);
+    } else if (statement.kind === "LetDecl") {
+      this.checkLocalLetDecl(statement, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
@@ -619,12 +626,15 @@ class RsglBinder {
     }
     if (expression.kind === "StateKeySugar") {
       for (const entry of expression.entries) {
-        this.checkExpression(entry.value, scope);
+        if (entry.key.kind === "DynamicKey") {
+          this.checkExpression(entry.key.expression, scope);
+        }
+        this.checkStateKeyValueExpression(entry.value, scope);
       }
       return jsonType;
     }
     if (expression.kind === "ModelApplySugar") {
-      this.checkExpression(expression.model, scope);
+      this.checkResourceIdExpression(expression.model, scope);
       for (const property of expression.properties) {
         this.checkExpression(property.value, scope);
       }
@@ -693,10 +703,37 @@ class RsglBinder {
   }
 
   private checkResourceIdExpression(expression: ExprNode, scope: RsglScope): RsglType {
+    if (expression.kind === "StringLiteral") {
+      this.validateResourceLocationValue(expression.value, expression.range);
+      return resourceIdType;
+    }
+    if (expression.kind === "TemplateStringExpr") {
+      this.checkExpression(expression, scope);
+      return resourceIdType;
+    }
     if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
       return resourceIdType;
     }
     return this.checkExpression(expression, scope);
+  }
+
+  private checkStateKeyValueExpression(expression: ExprNode, scope: RsglScope): RsglType {
+    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
+      return stringType;
+    }
+    return this.checkExpression(expression, scope);
+  }
+
+  private checkLocalLetDecl(statement: LetDeclNode, scope: RsglScope): void {
+    const actualType = this.checkExpression(statement.value, scope);
+    const expectedType = typeFromAnnotation(statement.typeAnnotation);
+    this.checkAssignable(expectedType, actualType, statement.value);
+    this.defineIdentifier(scope, statement.name, "variable", expectedType, statement);
+    const name = identifierName(statement.name);
+    const symbol = name ? lookup(scope, name) : undefined;
+    if (symbol) {
+      symbol.finiteDomain = this.finiteStringDomain(statement.value, scope) ?? undefined;
+    }
   }
 
   private checkObject(expression: ObjectExprNode, scope: RsglScope): RsglType {
@@ -796,6 +833,7 @@ class RsglBinder {
       source,
       node: statement,
       defaultName: statement.defaultName?.text,
+      importAll: !statement.defaultName && statement.namedImports.length === 0,
       namedImports: statement.namedImports.map(item => ({
         imported: item.imported.text,
         local: item.local.text,
@@ -943,6 +981,42 @@ function resolveProgramImports(
         localSymbol.type = exported.type;
         localSymbol.signature = exported.signature;
         localSymbol.node = exported.node;
+      }
+    }
+    if (record.importAll) {
+      const exportedSymbols = exportMaps.get(normalizeFileName(targetModel.fileName)) ?? new Map();
+      const importedNames = new Set<string>();
+      for (const [name, exported] of exportedSymbols) {
+        if (sourceModel.scope.symbols.has(name)) {
+          continue;
+        }
+        const symbol: RsglSymbol = {
+          name,
+          kind: "import",
+          type: exported.type,
+          node: exported.node,
+          range: record.node.source?.range,
+          signature: exported.signature,
+          finiteDomain: exported.finiteDomain
+        };
+        sourceModel.scope.symbols.set(name, symbol);
+        sourceModel.symbols.push(symbol);
+        importedNames.add(name);
+      }
+      if (importedNames.size > 0) {
+        for (const reference of sourceModel.references) {
+          if (importedNames.has(reference.name)) {
+            reference.symbol = sourceModel.scope.symbols.get(reference.name);
+          }
+        }
+        sourceModel.diagnostics = sourceModel.diagnostics.filter(diagnostic =>
+          diagnostic.code !== "rsgl.undefinedSymbol" ||
+          !sourceModel.references.some(reference =>
+            importedNames.has(reference.name) &&
+            reference.range.start === diagnostic.range.start &&
+            reference.range.end === diagnostic.range.end
+          )
+        );
       }
     }
   }

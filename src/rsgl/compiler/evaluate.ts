@@ -13,6 +13,7 @@ export type RawGlobLoader = (pattern: string, context: EvaluationContext, range:
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
+  stateKeyAliases?: ReadonlySet<string>;
   sourceFile?: string;
   mappingReason?: RsglMapping["reason"];
   expansionStack?: ExpansionFrame[];
@@ -85,10 +86,10 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     return evaluateObjectProperties(expression.properties, context);
   }
   if (expression.kind === "StateKeySugar") {
-    return evaluateObjectProperties(expression.entries, context);
+    return evaluateStateKeyProperties(expression.entries, context);
   }
   if (expression.kind === "ModelApplySugar") {
-    const model = normalizeJsonValue(evaluateExpression(expression.model, context));
+    const model = normalizeModelApplyValue(evaluateExpression(expression.model, context), context.namespace);
     const result: Record<string, JsonValue> = { model };
     for (const property of expression.properties) {
       result[property.name.text] = normalizeJsonValue(evaluateExpression(property.value, context));
@@ -177,6 +178,17 @@ function evaluateObjectProperties(properties: ObjectPropertyNode[], context: Eva
   return result;
 }
 
+function evaluateStateKeyProperties(properties: ObjectPropertyNode[], context: EvaluationContext): Record<string, JsonValue> {
+  const result: Record<string, JsonValue> = {};
+  for (const property of properties) {
+    const key = stateKeyToString(property, context);
+    if (key) {
+      result[key] = normalizeJsonValue(evaluateExpression(property.value, context));
+    }
+  }
+  return result;
+}
+
 function propertyKeyToString(property: ObjectPropertyNode, context: EvaluationContext): string | null {
   if (property.key.kind === "Identifier") {
     return property.key.text;
@@ -186,6 +198,35 @@ function propertyKeyToString(property: ObjectPropertyNode, context: EvaluationCo
   }
   const value = evaluateExpression(property.key.expression, context);
   return value === undefined ? null : String(value);
+}
+
+function stateKeyToString(property: ObjectPropertyNode, context: EvaluationContext): string | null {
+  if (property.key.kind === "Identifier") {
+    if (context.stateKeyAliases?.has(property.key.text)) {
+      const value = context.variables.get(property.key.text);
+      return scalarText(value) ?? property.key.text;
+    }
+    return property.key.text;
+  }
+  if (property.key.kind === "StringLiteral") {
+    return property.key.value;
+  }
+  const value = evaluateExpression(property.key.expression, context);
+  return scalarText(value);
+}
+
+function normalizeModelApplyValue(value: EvaluationValue, namespace: string): JsonValue {
+  const text = scalarText(value);
+  if (text === null) {
+    return normalizeJsonValue(value);
+  }
+  return text.includes(":") ? text : `${namespace}:${text}`;
+}
+
+function scalarText(value: EvaluationValue): string | null {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? String(value)
+    : null;
 }
 
 function normalizeJsonValue(value: EvaluationValue): JsonValue {

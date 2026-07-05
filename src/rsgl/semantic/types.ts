@@ -78,6 +78,7 @@ export interface RsglImportRecord {
   source: string;
   node: ImportDeclNode;
   defaultName?: string;
+  importAll?: boolean;
   namedImports: Array<{ imported: string; local: string; range: TextRange }>;
   resolvedFileName?: string;
 }
