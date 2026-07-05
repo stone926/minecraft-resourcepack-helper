@@ -1014,6 +1014,84 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:entity/chest/christmas"));
   });
 
+  it("lowers item mappings to legacy item model files for older targets", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java mc \"1.21.8\"",
+      "use itemGenerated(id: diamond, texture: minecraft:item/diamond)",
+      "items model [",
+      "  acacia_stairs -> block/acacia_stairs",
+      "]",
+      "item custom_tool {",
+      "  model minecraft:item/diamond",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/models/item/acacia_stairs.json",
+      "assets/minecraft/models/item/custom_tool.json",
+      "assets/minecraft/models/item/diamond.json"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/acacia_stairs.json"))?.content, {
+      parent: "minecraft:block/acacia_stairs"
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/custom_tool.json"))?.content, {
+      parent: "minecraft:item/diamond"
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/diamond.json"))?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/diamond"
+      }
+    });
+  });
+
+  it("lowers custom model data item dispatch to legacy overrides", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item wand {",
+      "  range property minecraft:custom_model_data {",
+      "    frames [1, 2] model `minecraft:item/wand_${index}`",
+      "    fallback minecraft:item/wand",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/models/item/wand.json"
+    ]);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/wand"
+      },
+      overrides: [
+        {
+          predicate: { ["custom_model_data"]: 1 },
+          model: "minecraft:item/wand_0"
+        },
+        {
+          predicate: { ["custom_model_data"]: 2 },
+          model: "minecraft:item/wand_1"
+        }
+      ]
+    });
+    assert.strictEqual(result.units[0].kind, "model");
+  });
+
+  it("reports unsupported item models in the legacy item backend", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item bundle {",
+      "  selected_item",
+      "}"
+    ].join("\n")));
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedLegacyItemModel"));
+    assert.deepStrictEqual(result.units, []);
+  });
+
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([

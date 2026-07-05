@@ -76,6 +76,7 @@ import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
 import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
 import { BinaryCopyRef, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
+import { lowerItemUnitsForTarget } from "./itemLegacyBackend";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
@@ -183,7 +184,8 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     targetPackFormat: target.targetPackFormat
   });
   const result = compiler.compile();
-  const merged = mergeResourceUnits(result.units);
+  const lowered = lowerItemUnitsForTarget(result.units, target.targetPackFormat);
+  const merged = mergeResourceUnits(lowered.units);
   const validationOptions = withTargetPackFormat(options, target.targetPackFormat);
   return {
     units: merged.units,
@@ -192,6 +194,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
       ...target.diagnostics,
       ...rawJsonDiagnostics,
       ...result.diagnostics,
+      ...lowered.diagnostics,
       ...merged.diagnostics,
       ...detectOutputConflicts(merged.units),
       ...validateResourceUnits(merged.units, validationOptions)
@@ -262,10 +265,12 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     diagnostics.push(...result.diagnostics);
   }
 
-  const merged = mergeResourceUnits(units);
+  const lowered = lowerItemUnitsForTarget(units, target.targetPackFormat);
+  const merged = mergeResourceUnits(lowered.units);
   const validationOptions = withTargetPackFormat(options, target.targetPackFormat);
   diagnostics.push(
     ...target.diagnostics,
+    ...lowered.diagnostics,
     ...merged.diagnostics,
     ...detectOutputConflicts(merged.units),
     ...validateResourceUnits(merged.units, validationOptions)
