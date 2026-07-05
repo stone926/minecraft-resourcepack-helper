@@ -1,4 +1,5 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { appendGeneratedPath } from "./sourcePaths";
 import type { RsglResourceValidationOptions } from "./validation";
 
 interface McmetaFrameLayout {
@@ -29,32 +30,22 @@ export function validateMcmetaMetadata(
 
   const animation = asObject(content.animation);
   if (!animation) {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaAnimation",
-      message: "PNG animation metadata must be an object.",
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic("rsgl.invalidMcmetaAnimation", "PNG animation metadata must be an object.", unit, diagnostics, "/animation");
     return;
   }
 
-  const frameWidth = validateOptionalPositiveInteger(animation.width, "Animation frame width", "rsgl.invalidMcmetaFrameSize", unit, diagnostics);
-  const frameHeight = validateOptionalPositiveInteger(animation.height, "Animation frame height", "rsgl.invalidMcmetaFrameSize", unit, diagnostics);
-  validateOptionalPositiveInteger(animation.frametime, "Animation frametime", "rsgl.invalidMcmetaFrameTime", unit, diagnostics);
+  const frameWidth = validateOptionalPositiveInteger(animation.width, "Animation frame width", "rsgl.invalidMcmetaFrameSize", unit, diagnostics, "/animation/width");
+  const frameHeight = validateOptionalPositiveInteger(animation.height, "Animation frame height", "rsgl.invalidMcmetaFrameSize", unit, diagnostics, "/animation/height");
+  validateOptionalPositiveInteger(animation.frametime, "Animation frametime", "rsgl.invalidMcmetaFrameTime", unit, diagnostics, "/animation/frametime");
 
   if ("interpolate" in animation && typeof animation.interpolate !== "boolean") {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaInterpolate",
-      message: "Animation interpolate must be a boolean.",
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic("rsgl.invalidMcmetaInterpolate", "Animation interpolate must be a boolean.", unit, diagnostics, "/animation/interpolate");
   }
 
   const layout = textureId
     ? getMcmetaFrameLayout(textureId, animation, frameWidth, frameHeight, options, unit, diagnostics)
     : null;
-  validateMcmetaFrames(animation.frames, layout, unit, diagnostics);
+  validateMcmetaFrames(animation.frames, layout, unit, diagnostics, "/animation/frames");
 }
 
 function validateMcmetaTexture(
@@ -123,12 +114,7 @@ function validateMcmetaGui(
   }
   const gui = asObject(value);
   if (!gui) {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaGui",
-      message: "PNG GUI metadata must be an object.",
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic("rsgl.invalidMcmetaGui", "PNG GUI metadata must be an object.", unit, diagnostics, "/gui");
     return;
   }
   validateMcmetaGuiScaling(gui.scaling, unit, diagnostics);
@@ -144,49 +130,50 @@ function validateMcmetaGuiScaling(
   }
   const scaling = asObject(value);
   if (!scaling) {
-    pushGuiScalingDiagnostic("GUI scaling metadata must be an object.", unit, diagnostics);
+    pushGuiScalingDiagnostic("GUI scaling metadata must be an object.", unit, diagnostics, "/gui/scaling");
     return;
   }
   if (scaling.type !== "stretch" && scaling.type !== "tile" && scaling.type !== "nine_slice") {
-    pushGuiScalingDiagnostic("GUI scaling type must be 'stretch', 'tile', or 'nine_slice'.", unit, diagnostics);
+    pushGuiScalingDiagnostic("GUI scaling type must be 'stretch', 'tile', or 'nine_slice'.", unit, diagnostics, "/gui/scaling/type");
     return;
   }
   if (scaling.type === "tile" || scaling.type === "nine_slice") {
-    validateRequiredPositiveInteger(scaling, "width", "GUI scaling width", unit, diagnostics);
-    validateRequiredPositiveInteger(scaling, "height", "GUI scaling height", unit, diagnostics);
+    validateRequiredPositiveInteger(scaling, "width", "GUI scaling width", unit, diagnostics, "/gui/scaling/width");
+    validateRequiredPositiveInteger(scaling, "height", "GUI scaling height", unit, diagnostics, "/gui/scaling/height");
   }
   if (scaling.type === "nine_slice") {
-    validateNineSliceBorder(scaling.border, unit, diagnostics);
+    validateNineSliceBorder(scaling.border, unit, diagnostics, "/gui/scaling/border");
   }
   if ("stretch_inner" in scaling && typeof scaling.stretch_inner !== "boolean") {
-    pushGuiScalingDiagnostic("GUI nine-slice stretch_inner must be a boolean.", unit, diagnostics);
+    pushGuiScalingDiagnostic("GUI nine-slice stretch_inner must be a boolean.", unit, diagnostics, "/gui/scaling/stretch_inner");
   }
 }
 
 function validateNineSliceBorder(
   value: JsonValue | undefined,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (value === undefined) {
-    pushGuiScalingDiagnostic("GUI nine-slice scaling requires a border.", unit, diagnostics);
+    pushGuiScalingDiagnostic("GUI nine-slice scaling requires a border.", unit, diagnostics, generatedPath);
     return;
   }
   if (typeof value === "number") {
     if (!Number.isInteger(value) || value < 0) {
-      pushGuiScalingDiagnostic("GUI nine-slice border must be a non-negative integer.", unit, diagnostics);
+      pushGuiScalingDiagnostic("GUI nine-slice border must be a non-negative integer.", unit, diagnostics, generatedPath);
     }
     return;
   }
   const border = asObject(value);
   if (!border) {
-    pushGuiScalingDiagnostic("GUI nine-slice border must be a non-negative integer or border object.", unit, diagnostics);
+    pushGuiScalingDiagnostic("GUI nine-slice border must be a non-negative integer or border object.", unit, diagnostics, generatedPath);
     return;
   }
   for (const key of ["left", "top", "right", "bottom"]) {
     const side = border[key];
     if (side !== undefined && (typeof side !== "number" || !Number.isInteger(side) || side < 0)) {
-      pushGuiScalingDiagnostic(`GUI nine-slice border ${key} must be a non-negative integer.`, unit, diagnostics);
+      pushGuiScalingDiagnostic(`GUI nine-slice border ${key} must be a non-negative integer.`, unit, diagnostics, appendGeneratedPath(generatedPath, key));
     }
   }
 }
@@ -212,12 +199,13 @@ function getMcmetaFrameLayout(
   const frameWidth = declaredWidth ?? defaultFrameSize;
   const frameHeight = declaredHeight ?? defaultFrameSize;
   if (metadata.width % frameWidth !== 0 || metadata.height % frameHeight !== 0) {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaFrameStrip",
-      message: `Texture ${textureId} size ${metadata.width}x${metadata.height} must be divisible by animation frame size ${frameWidth}x${frameHeight}.`,
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic(
+      "rsgl.invalidMcmetaFrameStrip",
+      `Texture ${textureId} size ${metadata.width}x${metadata.height} must be divisible by animation frame size ${frameWidth}x${frameHeight}.`,
+      unit,
+      diagnostics,
+      "/animation"
+    );
     return null;
   }
 
@@ -232,23 +220,19 @@ function validateMcmetaFrames(
   value: JsonValue | undefined,
   layout: McmetaFrameLayout | null,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (value === undefined) {
     return;
   }
   if (!Array.isArray(value)) {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaFrames",
-      message: "Animation frames must be an array.",
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic("rsgl.invalidMcmetaFrames", "Animation frames must be an array.", unit, diagnostics, generatedPath);
     return;
   }
 
-  for (const frame of value) {
-    validateMcmetaFrame(frame, layout, unit, diagnostics);
+  for (const [index, frame] of value.entries()) {
+    validateMcmetaFrame(frame, layout, unit, diagnostics, appendGeneratedPath(generatedPath, String(index)));
   }
 }
 
@@ -256,51 +240,50 @@ function validateMcmetaFrame(
   value: JsonValue,
   layout: McmetaFrameLayout | null,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (typeof value === "number") {
-    validateFrameIndex(value, layout, unit, diagnostics);
+    validateFrameIndex(value, layout, unit, diagnostics, generatedPath);
     return;
   }
 
   const frame = asObject(value);
   if (!frame || !Object.hasOwn(frame, "index")) {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaFrame",
-      message: "Animation frame entries must be a non-negative integer or an object with an index.",
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic(
+      "rsgl.invalidMcmetaFrame",
+      "Animation frame entries must be a non-negative integer or an object with an index.",
+      unit,
+      diagnostics,
+      generatedPath
+    );
     return;
   }
 
-  validateFrameIndex(frame.index, layout, unit, diagnostics);
-  validateOptionalPositiveInteger(frame.time, "Animation frame time", "rsgl.invalidMcmetaFrameTime", unit, diagnostics);
+  validateFrameIndex(frame.index, layout, unit, diagnostics, appendGeneratedPath(generatedPath, "index"));
+  validateOptionalPositiveInteger(frame.time, "Animation frame time", "rsgl.invalidMcmetaFrameTime", unit, diagnostics, appendGeneratedPath(generatedPath, "time"));
 }
 
 function validateFrameIndex(
   value: JsonValue | undefined,
   layout: McmetaFrameLayout | null,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    diagnostics.push({
-      code: "rsgl.invalidMcmetaFrameIndex",
-      message: "Animation frame index must be a non-negative integer.",
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic("rsgl.invalidMcmetaFrameIndex", "Animation frame index must be a non-negative integer.", unit, diagnostics, generatedPath);
     return;
   }
 
   if (layout && value >= layout.frameCount) {
-    diagnostics.push({
-      code: "rsgl.mcmetaFrameIndexOutOfRange",
-      message: `Animation frame index ${value} is outside the ${layout.frameCount} frames available from ${layout.frameWidth}x${layout.frameHeight} tiles.`,
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic(
+      "rsgl.mcmetaFrameIndexOutOfRange",
+      `Animation frame index ${value} is outside the ${layout.frameCount} frames available from ${layout.frameWidth}x${layout.frameHeight} tiles.`,
+      unit,
+      diagnostics,
+      generatedPath
+    );
   }
 }
 
@@ -309,18 +292,14 @@ function validateOptionalPositiveInteger(
   label: string,
   code: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): number | null {
   if (value === undefined) {
     return null;
   }
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-    diagnostics.push({
-      code,
-      message: `${label} must be a positive integer.`,
-      severity: "error",
-      range: unitRange(unit)
-    });
+    pushMcmetaDiagnostic(code, `${label} must be a positive integer.`, unit, diagnostics, generatedPath);
     return null;
   }
   return value;
@@ -344,26 +323,23 @@ function validateRequiredPositiveInteger(
   field: string,
   label: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): number | null {
   if (!Object.hasOwn(object, field)) {
-    pushGuiScalingDiagnostic(`${label} is required.`, unit, diagnostics);
+    pushGuiScalingDiagnostic(`${label} is required.`, unit, diagnostics, generatedPath);
     return null;
   }
-  return validateOptionalPositiveInteger(object[field], label, "rsgl.invalidMcmetaGuiScaling", unit, diagnostics);
+  return validateOptionalPositiveInteger(object[field], label, "rsgl.invalidMcmetaGuiScaling", unit, diagnostics, generatedPath);
 }
 
 function pushGuiScalingDiagnostic(
   message: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
-  diagnostics.push({
-    code: "rsgl.invalidMcmetaGuiScaling",
-    message,
-    severity: "error",
-    range: unitRange(unit)
-  });
+  pushMcmetaDiagnostic("rsgl.invalidMcmetaGuiScaling", message, unit, diagnostics, generatedPath);
 }
 
 function pushMcmetaDiagnostic(
@@ -382,8 +358,25 @@ function pushMcmetaDiagnostic(
 }
 
 function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): RsglCompileDiagnostic["range"] {
-  return unit.sourceMap.mappings.find(mapping => mapping.generatedPath === generatedPath)?.sourceRange
-    ?? unitRange(unit);
+  for (const path of generatedPathFallbacks(generatedPath)) {
+    const range = unit.sourceMap.mappings.find(mapping => mapping.generatedPath === path)?.sourceRange;
+    if (range) {
+      return range;
+    }
+  }
+  return unitRange(unit);
+}
+
+function generatedPathFallbacks(generatedPath: string): string[] {
+  const paths: string[] = [];
+  let current = generatedPath;
+  while (current) {
+    paths.push(current);
+    const slash = current.lastIndexOf("/");
+    current = slash > 0 ? current.slice(0, slash) : "";
+  }
+  paths.push("");
+  return paths;
 }
 
 function isPositiveDimension(value: number): boolean {

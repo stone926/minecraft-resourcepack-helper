@@ -1526,6 +1526,11 @@ describe("RSGL compiler", () => {
         { type: "minecraft:directory", source: "item", prefix: "item/" }
       ]
     });
+    const atlasMappingPaths = result.units.find(unit => unit.kind === "atlas")?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(atlasMappingPaths.includes("/sources/0/source"));
+    assert.ok(atlasMappingPaths.includes("/sources/0/prefix"));
+    assert.ok(atlasMappingPaths.includes("/sources/1/source"));
+    assert.ok(atlasMappingPaths.includes("/sources/1/prefix"));
     const particles = result.units.find(unit => unit.kind === "particles");
     assert.deepStrictEqual(particles?.content, {
       textures: [
@@ -1545,12 +1550,18 @@ describe("RSGL compiler", () => {
         interpolate: true
       }
     });
+    const mcmetaMappingPaths = result.units.find(unit => unit.kind === "mcmeta")?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(mcmetaMappingPaths.includes("/animation/frametime"));
+    assert.ok(mcmetaMappingPaths.includes("/animation/interpolate"));
     assert.deepStrictEqual(result.units.find(unit => unit.kind === "equipment")?.content, {
       layers: {
         humanoid: [{ texture: "minecraft:iron" }],
         ["humanoid_leggings"]: [{ texture: "minecraft:iron" }]
       }
     });
+    const equipmentMappingPaths = result.units.find(unit => unit.kind === "equipment")?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(equipmentMappingPaths.includes("/layers/humanoid/0/texture"));
+    assert.ok(equipmentMappingPaths.includes("/layers/humanoid_leggings/0/texture"));
     assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "assets/minecraft/font/default.json")?.content, {
       providers: [
         { type: "reference", id: "minecraft:include/space" },
@@ -1609,6 +1620,65 @@ describe("RSGL compiler", () => {
       && diagnostic.message.includes("explosion_01")
       && diagnostic.range.start === textureRange?.start
       && diagnostic.range.end === textureRange?.end
+    ));
+  });
+
+  it("reports generic JSON helper diagnostics at helper argument ranges", () => {
+    const source = [
+      "atlas minecraft:blocks {",
+      "  use atlasDirectory(source: \"missing\", prefix: \"block/\")",
+      "}",
+      "equipment iron {",
+      "  use equipmentLayers(texture: minecraft:missing, layers: [\"humanoid\"])",
+      "}",
+      "mcmeta \"assets/minecraft/textures/block/bad_anim.png\" {",
+      "  use mcmetaAnimation(frametime: 0, interpolate: \"yes\")",
+      "}",
+      "mcmeta \"assets/minecraft/textures/gui/sprites/widget/bad_helper.png\" {",
+      "  use nineSliceGui(width: 10, height: 10, border: -1)",
+      "}"
+    ].join("\n");
+    const result = compileRsglModule(parseRsgl(source), {
+      resourceExists: (kind, id) => !(kind === "textureDirectory" && id === "minecraft:missing")
+        && !(kind === "texture" && id === "minecraft:entity/equipment/humanoid/missing"),
+      textureMetadata: id => id === "minecraft:block/bad_anim" ? { width: 16, height: 16 } : null
+    });
+
+    const atlas = result.units.find(unit => unit.kind === "atlas");
+    const equipment = result.units.find(unit => unit.kind === "equipment");
+    const badAnim = result.units.find(unit => unit.outputPath.endsWith("bad_anim.png.mcmeta"));
+    const badHelper = result.units.find(unit => unit.outputPath.endsWith("bad_helper.png.mcmeta"));
+    const atlasSourceRange = atlas?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/sources/0/source")?.sourceRange;
+    const equipmentTextureRange = equipment?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/layers/humanoid/0/texture")?.sourceRange;
+    const frametimeRange = badAnim?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/animation/frametime")?.sourceRange;
+    const interpolateRange = badAnim?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/animation/interpolate")?.sourceRange;
+    const borderRange = badHelper?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/gui/scaling/border")?.sourceRange;
+
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureDirectoryNotFound"
+      && diagnostic.range.start === atlasSourceRange?.start
+      && diagnostic.range.end === atlasSourceRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.range.start === equipmentTextureRange?.start
+      && diagnostic.range.end === equipmentTextureRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidMcmetaFrameTime"
+      && diagnostic.range.start === frametimeRange?.start
+      && diagnostic.range.end === frametimeRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidMcmetaInterpolate"
+      && diagnostic.range.start === interpolateRange?.start
+      && diagnostic.range.end === interpolateRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidMcmetaGuiScaling"
+      && diagnostic.message.includes("border")
+      && diagnostic.range.start === borderRange?.start
+      && diagnostic.range.end === borderRange?.end
     ));
   });
 
