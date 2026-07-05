@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { getRsglCompletionCandidates, RsglCompletionCandidate } from "./completionData";
+import { getRsglCompletionCandidates, RsglCompletionCandidate } from "../../../packages/rsgl-core/src/completionData";
 
 export const rsglCompletionProvider: vscode.CompletionItemProvider = {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {

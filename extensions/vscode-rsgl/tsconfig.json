@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "out"
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../packages/rsgl-core/src/**/*.ts",
+    "../../packages/rsgl-shared/src/**/*.ts",
+    "../../packages/rsgl-lsp/src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "out"
+  ]
+}

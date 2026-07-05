@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import { ExpansionFrame, JsonValue, ResourceUnit } from "./ir";
 import { blockstateVariantKey } from "./blockstateKeys";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";

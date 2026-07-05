@@ -20,21 +20,7 @@ import { ModelPreviewHostFileSystem } from './modelPreview/host/ModelPreviewHost
 import { openModelPreviewCommand } from './modelPreview/commands/openModelPreview';
 import { captureModelPreviewImageCommand, exportModelPreviewImageCommand } from './modelPreview/commands/exportModelPreviewImage';
 import { workspaceResourceCache } from './services/workspaceResourceCache';
-import { registerRsglLanguageFeatures } from './rsgl';
-import {
-  buildActiveRsglResourcePack,
-  buildActiveRsglResourcePackDirectory,
-  buildRsglResourcePackCommand,
-  buildRsglResourcePackDirectoryCommand,
-  buildRsglWorkspaceResourcePacks,
-  buildRsglWorkspaceResourcePacksCommand,
-  previewActiveRsglResourcePackBuild,
-  previewActiveRsglResourcePackDirectoryBuild,
-  previewRsglWorkspaceResourcePackBuilds,
-  previewRsglResourcePackBuildCommand,
-  previewRsglResourcePackDirectoryBuildCommand,
-  previewRsglWorkspaceResourcePackBuildsCommand
-} from './rsgl/commands/build';
+import { registerRsglBridgeCommands } from './rsglBridge';
 
 const jsonResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { language: "json", pattern: "**/blockstates/*.json" },
@@ -81,7 +67,7 @@ const resourceReferenceSelectors: vscode.DocumentFilter[] = [
 
 export function activate(context: vscode.ExtensionContext) {
   workspaceResourceCache.setOpenTextDocumentProvider(fileName => findOpenTextDocument(fileName));
-  registerRsglLanguageFeatures(context);
+  registerRsglBridgeCommands(context);
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     resourceReferenceSelectors,
@@ -132,13 +118,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.createCitTemplate", createCitTemplateCommand));
   context.subscriptions.push(vscode.commands.registerCommand("McResHelper.generateCitForCurrentItem", generateCitForCurrentItemCommand));
   context.subscriptions.push(vscode.commands.registerCommand(createMissingCitResourceCommand, createMissingCitResource));
-  context.subscriptions.push(vscode.commands.registerCommand(buildRsglResourcePackCommand, buildActiveRsglResourcePack));
-  context.subscriptions.push(vscode.commands.registerCommand(previewRsglResourcePackBuildCommand, previewActiveRsglResourcePackBuild));
-  context.subscriptions.push(vscode.commands.registerCommand(buildRsglResourcePackDirectoryCommand, buildActiveRsglResourcePackDirectory));
-  context.subscriptions.push(vscode.commands.registerCommand(previewRsglResourcePackDirectoryBuildCommand, previewActiveRsglResourcePackDirectoryBuild));
-  context.subscriptions.push(vscode.commands.registerCommand(buildRsglWorkspaceResourcePacksCommand, buildRsglWorkspaceResourcePacks));
-  context.subscriptions.push(vscode.commands.registerCommand(previewRsglWorkspaceResourcePackBuildsCommand, previewRsglWorkspaceResourcePackBuilds));
-
   const modelPreviewService = new ModelPreviewService({
     fileSystem: new ModelPreviewHostFileSystem(),
     configuration: () => ({

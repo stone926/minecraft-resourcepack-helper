@@ -1,0 +1,7 @@
+{
+  "name": "@minecraft-resourcepack-helper/rsgl-core",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "main": "out/index.js",
+  "types": "out/index.d.ts"
+}

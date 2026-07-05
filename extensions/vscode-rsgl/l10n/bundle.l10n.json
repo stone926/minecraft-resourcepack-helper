@@ -1,0 +1,21 @@
+{
+  "Building RSGL resource pack": "Building RSGL resource pack",
+  "Building RSGL source directory": "Building RSGL source directory",
+  "Building RSGL workspace source directories": "Building RSGL workspace source directories",
+  "No RSGL source directories found in the workspace.": "No RSGL source directories found in the workspace.",
+  "No RSGL source directories with resource pack roots found; skipped {0}.": "No RSGL source directories with resource pack roots found; skipped {0}.",
+  "Open a workspace before building RSGL source directories.": "Open a workspace before building RSGL source directories.",
+  "Open an RSGL file before building.": "Open an RSGL file before building.",
+  "Previewing RSGL resource pack build": "Previewing RSGL resource pack build",
+  "Previewing RSGL source directory build": "Previewing RSGL source directory build",
+  "Previewing RSGL workspace source directory builds": "Previewing RSGL workspace source directory builds",
+  "RSGL": "RSGL",
+  "RSGL build complete: {0} created, {1} updated, {2} unchanged.": "RSGL build complete: {0} created, {1} updated, {2} unchanged.",
+  "RSGL build failed with {0} error(s).": "RSGL build failed with {0} error(s).",
+  "RSGL workspace build complete: {0} source directories, {1} created, {2} updated, {3} unchanged, {4} skipped.": "RSGL workspace build complete: {0} source directories, {1} created, {2} updated, {3} unchanged, {4} skipped.",
+  "RSGL workspace build failed with {0} error(s); skipped {1} source directories.": "RSGL workspace build failed with {0} error(s); skipped {1} source directories.",
+  "Save all RSGL files in the source directory before building.": "Save all RSGL files in the source directory before building.",
+  "Save all RSGL files in the workspace source directories before building.": "Save all RSGL files in the workspace source directories before building.",
+  "Save the RSGL file before building.": "Save the RSGL file before building.",
+  "Select resource pack output folder": "Select resource pack output folder"
+}

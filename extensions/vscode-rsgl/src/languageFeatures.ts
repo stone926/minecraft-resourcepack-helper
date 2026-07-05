@@ -3,12 +3,21 @@ import * as path from "node:path";
 import { rsglCompletionProvider } from "./completion";
 import { refreshRsglDiagnostics, rsglDocumentSelector, rsglLanguageId } from "./diagnostics";
 import { rsglFormattingProvider } from "./formatter";
-import { RsglWorkspaceSemanticCache } from "./workspaceSemantic";
-import { rsglWorkspaceSourceRootCache } from "./sourceRoot";
-import { rsglWorkspaceBuildSemanticCache } from "./workspaceBuildSemantic";
+import { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
+import { rsglWorkspaceSourceRootCache } from "../../../packages/rsgl-core/src/sourceRoot";
+import { rsglWorkspaceBuildSemanticCache } from "../../../packages/rsgl-core/src/workspaceBuildSemantic";
+import { startRsglLanguageServer } from "./client";
 
 export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): void {
-  const diagnostics = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper RSGL"));
+  if (startRsglLanguageServer(context)) {
+    return;
+  }
+
+  registerInProcessRsglLanguageFeatures(context);
+}
+
+function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext): void {
+  const diagnostics = vscode.languages.createDiagnosticCollection(vscode.l10n.t("RSGL"));
   context.subscriptions.push(diagnostics);
   const semanticCache = RsglWorkspaceSemanticCache.create();
   semanticCache.setOpenTextDocumentProvider(fileName => findOpenRsglDocument(fileName));

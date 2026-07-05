@@ -1,28 +1,28 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import {
   buildRsglResourcePackProgram,
   previewRsglResourcePackProgramBuild,
   type RsglBuildOptions,
   type RsglBuildPreviewResult,
   type RsglBuildResult
-} from "../build";
+} from "../../../../packages/rsgl-core/src/build";
 import { rsglLanguageId } from "../diagnostics";
 import {
   rsglWorkspaceSourceRootCache,
   resolveRsglSourceRootFromFileName,
   type RsglDiscoveredSourceRoot
-} from "../sourceRoot";
-import { rsglWorkspaceBuildSemanticCache } from "../workspaceBuildSemantic";
-import { createRsglWorkspaceValidationOptions } from "../workspaceValidation";
+} from "../../../../packages/rsgl-core/src/sourceRoot";
+import { rsglWorkspaceBuildSemanticCache } from "../../../../packages/rsgl-core/src/workspaceBuildSemantic";
+import { createRsglWorkspaceValidationOptions } from "../../../../packages/rsgl-core/src/workspaceValidation";
 
-export const buildRsglResourcePackCommand = "McResHelper.buildRsglResourcePack";
-export const previewRsglResourcePackBuildCommand = "McResHelper.previewRsglResourcePackBuild";
-export const buildRsglResourcePackDirectoryCommand = "McResHelper.buildRsglResourcePackDirectory";
-export const previewRsglResourcePackDirectoryBuildCommand = "McResHelper.previewRsglResourcePackDirectoryBuild";
-export const buildRsglWorkspaceResourcePacksCommand = "McResHelper.buildRsglWorkspaceResourcePacks";
-export const previewRsglWorkspaceResourcePackBuildsCommand = "McResHelper.previewRsglWorkspaceResourcePackBuilds";
+export const buildRsglResourcePackCommand = "rsgl.build";
+export const previewRsglResourcePackBuildCommand = "rsgl.previewBuild";
+export const buildRsglResourcePackDirectoryCommand = "rsgl.buildDirectory";
+export const previewRsglResourcePackDirectoryBuildCommand = "rsgl.previewDirectoryBuild";
+export const buildRsglWorkspaceResourcePacksCommand = "rsgl.buildWorkspace";
+export const previewRsglWorkspaceResourcePackBuildsCommand = "rsgl.previewWorkspaceBuild";
 
 interface RsglFileBuildContext {
   sourceFileName: string;
@@ -226,7 +226,12 @@ async function resolveRsglDocument(uri: vscode.Uri | undefined): Promise<vscode.
 }
 
 async function resolveOutputRoot(fileName: string): Promise<string | null> {
-  const packRoot = workspaceResourceCache.getPackRoot(fileName);
+  const configuredOutDir = resolveConfiguredOutDir(fileName);
+  if (configuredOutDir) {
+    return configuredOutDir;
+  }
+
+  const packRoot = findNearestPackRoot(path.dirname(path.resolve(fileName)));
   if (packRoot) {
     return packRoot;
   }
@@ -241,12 +246,13 @@ async function resolveOutputRoot(fileName: string): Promise<string | null> {
 }
 
 function createBuildOptions(context: RsglFileBuildContext): RsglBuildOptions {
+  const configuration = vscode.workspace.getConfiguration("rsgl");
   return {
     outputRoot: context.outputRoot,
     ...createRsglWorkspaceValidationOptions({
       sourceFileName: context.sourceFileName,
-      defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
-      resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+      defaultAssetsPath: configuration.get<string | null>("defaultAssetsPath"),
+      resourcePackRoots: configuration.get<string[]>("resourcePackLoadOrder") ?? []
     })
   };
 }
@@ -414,8 +420,9 @@ async function saveRsglDocumentsInSourceRoots(sourceRoots: readonly string[]): P
 }
 
 function resolveWorkspaceOutputRoot(sourceRoot: RsglDiscoveredSourceRoot): string | null {
-  return workspaceResourceCache.getPackRoot(sourceRoot.sampleFileName)
-    ?? workspaceResourceCache.getPackRoot(sourceRoot.sourceRoot);
+  return resolveConfiguredOutDir(sourceRoot.sampleFileName)
+    ?? findNearestPackRoot(path.dirname(path.resolve(sourceRoot.sampleFileName)))
+    ?? findNearestPackRoot(path.resolve(sourceRoot.sourceRoot));
 }
 
 async function findWorkspaceRsglFiles(): Promise<string[]> {
@@ -453,4 +460,34 @@ function isRsglDocument(document: vscode.TextDocument): boolean {
 function isPathInsideOrEqual(fileName: string, directory: string): boolean {
   const relative = path.relative(directory, fileName);
   return relative === "" || (relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function resolveConfiguredOutDir(anchorFileName: string): string | null {
+  const outDir = vscode.workspace.getConfiguration("rsgl").get<string>("outDir");
+  if (!outDir || outDir.trim().length === 0) {
+    return null;
+  }
+
+  if (path.isAbsolute(outDir)) {
+    return path.resolve(outDir);
+  }
+
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(anchorFileName));
+  const baseDirectory = workspaceFolder?.uri.fsPath ?? path.dirname(path.resolve(anchorFileName));
+  return path.resolve(baseDirectory, outDir);
+}
+
+function findNearestPackRoot(startDirectory: string): string | null {
+  let directory = path.resolve(startDirectory);
+  while (true) {
+    if (fs.existsSync(path.join(directory, "pack.mcmeta"))) {
+      return directory;
+    }
+
+    const parent = path.dirname(directory);
+    if (parent === directory) {
+      return null;
+    }
+    directory = parent;
+  }
 }

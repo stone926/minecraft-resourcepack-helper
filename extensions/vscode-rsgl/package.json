@@ -1,0 +1,173 @@
+{
+  "name": "rsgl",
+  "displayName": "RSGL - Resourcepack Generation Language",
+  "publisher": "stone926",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:rsgl",
+    "onCommand:rsgl.build",
+    "onCommand:rsgl.previewBuild",
+    "onCommand:rsgl.buildDirectory",
+    "onCommand:rsgl.previewDirectoryBuild",
+    "onCommand:rsgl.buildWorkspace",
+    "onCommand:rsgl.previewWorkspaceBuild"
+  ],
+  "main": "./out/extensions/vscode-rsgl/src/extension.js",
+  "l10n": "./l10n",
+  "scripts": {
+    "compile": "tsc -p ./tsconfig.json"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "rsgl",
+        "aliases": [
+          "RSGL",
+          "rsgl"
+        ],
+        "extensions": [
+          ".rsgl"
+        ],
+        "configuration": "./language-configuration/rsgl.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rsgl",
+        "scopeName": "source.rsgl",
+        "path": "./syntaxes/rsgl.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "rsgl.build",
+        "title": "RSGL: Build Resourcepack JSON",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rsgl.previewBuild",
+        "title": "RSGL: Preview Build",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "rsgl.buildDirectory",
+        "title": "RSGL: Build Source Directory",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "rsgl.previewDirectoryBuild",
+        "title": "RSGL: Preview Source Directory Build",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "rsgl.buildWorkspace",
+        "title": "RSGL: Build Workspace Source Directories",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "rsgl.previewWorkspaceBuild",
+        "title": "RSGL: Preview Workspace Builds",
+        "icon": "$(diff)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "rsgl.build",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation"
+        },
+        {
+          "command": "rsgl.previewBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rsgl.buildDirectory",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rsgl.previewDirectoryBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "rsgl.build",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation"
+        },
+        {
+          "command": "rsgl.previewBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rsgl.buildDirectory",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rsgl.previewDirectoryBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "RSGL",
+      "properties": {
+        "rsgl.outDir": {
+          "type": "string",
+          "default": "",
+          "description": "Output directory for generated resource pack files. Empty uses the nearest pack.mcmeta directory."
+        },
+        "rsgl.minecraftVersion": {
+          "type": "string",
+          "default": "auto",
+          "description": "Minecraft version used for RSGL validation and generation."
+        },
+        "rsgl.defaultAssetsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Fallback vanilla assets path used when validating generated references."
+        },
+        "rsgl.resourcePackLoadOrder": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional resource pack roots used when validating generated references."
+        },
+        "rsgl.emitSourceMap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Emit RSGL source maps next to generated files."
+        },
+        "rsgl.validateGeneratedJson": {
+          "type": "boolean",
+          "default": true,
+          "description": "Validate generated resource pack JSON."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/vscode": "^1.125.0",
+    "typescript": "^6.0.3"
+  }
+}

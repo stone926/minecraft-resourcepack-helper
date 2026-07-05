@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { RsglWorkspaceSemanticCache } from "../../rsgl/workspaceSemantic";
+import { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
 
 describe("RSGL workspace semantic cache", () => {
   it("reuses the bound program while the source graph is unchanged", () => {

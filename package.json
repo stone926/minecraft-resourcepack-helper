@@ -25,7 +25,6 @@
     "type": "git"
   },
   "activationEvents": [
-    "onLanguage:rsgl",
     "onCommand:McResHelper.buildRsglResourcePack",
     "onCommand:McResHelper.previewRsglResourcePackBuild",
     "onCommand:McResHelper.buildRsglResourcePackDirectory",
@@ -42,33 +41,18 @@
     "assets helper",
     "mc"
   ],
-  "main": "./out/extension.js",
+  "main": "./out/src/extension.js",
   "l10n": "./l10n",
+  "extensionDependencies": [
+    "stone926.rsgl"
+  ],
   "contributes": {
     "languages": [
-      {
-        "id": "rsgl",
-        "aliases": [
-          "RSGL",
-          "rsgl"
-        ],
-        "extensions": [
-          ".rsgl"
-        ],
-        "configuration": "./language-configuration/rsgl.json"
-      },
       {
         "id": "json",
         "extensions": [
           ".mcmeta"
         ]
-      }
-    ],
-    "grammars": [
-      {
-        "language": "rsgl",
-        "scopeName": "source.rsgl",
-        "path": "./syntaxes/rsgl.tmLanguage.json"
       }
     ],
     "jsonValidation": [
@@ -240,26 +224,6 @@
     "menus": {
       "editor/title": [
         {
-          "command": "McResHelper.buildRsglResourcePack",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation"
-        },
-        {
-          "command": "McResHelper.previewRsglResourcePackBuild",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation@1"
-        },
-        {
-          "command": "McResHelper.buildRsglResourcePackDirectory",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation@2"
-        },
-        {
-          "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation@3"
-        },
-        {
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
@@ -271,26 +235,6 @@
         }
       ],
       "editor/context": [
-        {
-          "command": "McResHelper.buildRsglResourcePack",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation"
-        },
-        {
-          "command": "McResHelper.previewRsglResourcePackBuild",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation@1"
-        },
-        {
-          "command": "McResHelper.buildRsglResourcePackDirectory",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation@2"
-        },
-        {
-          "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
-          "when": "resourceLangId == rsgl",
-          "group": "navigation@3"
-        },
         {
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
@@ -366,8 +310,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
-    "lint": "eslint \"src/**/*.ts\"",
-    "test": "mocha \"./out/test/unit/**/*.test.js\"",
+    "lint": "eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"extensions/**/*.ts\"",
+    "test": "mocha \"./out/src/test/unit/**/*.test.js\"",
     "benchmark:model-preview": "npm run compile && node scripts/model-preview-benchmark.mjs",
     "package:vsix": "vsce package",
     "deploy": "vsce publish",
@@ -389,6 +333,9 @@
     "typescript-eslint": "^8.61.1"
   },
   "dependencies": {
-    "@humanwhocodes/momoa": "^3.3.10"
+    "@humanwhocodes/momoa": "^3.3.10",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   }
 }

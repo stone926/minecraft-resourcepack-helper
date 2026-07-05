@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
-import { parseRsgl, RsglDiagnostic, TextRange } from "./parser";
-import { compileRsglModule, compileRsglProgram, type RsglResourceValidationOptions } from "./compiler";
-import { RsglWorkspaceSourceCache } from "./workspaceSource";
-import { RsglWorkspaceSemanticCache } from "./workspaceSemantic";
-import { createRsglWorkspaceValidationOptions } from "./workspaceValidation";
+import { parseRsgl, RsglDiagnostic, TextRange } from "../../../packages/rsgl-core/src/parser";
+import { compileRsglModule, compileRsglProgram, type RsglResourceValidationOptions } from "../../../packages/rsgl-core/src/compiler";
+import { RsglWorkspaceSourceCache } from "../../../packages/rsgl-core/src/workspaceSource";
+import { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
+import { createRsglWorkspaceValidationOptions } from "../../../packages/rsgl-core/src/workspaceValidation";
 
 export const rsglLanguageId = "rsgl";
 export const rsglDocumentSelector: vscode.DocumentSelector = [{ language: rsglLanguageId }];
@@ -65,8 +65,8 @@ export function refreshRsglDiagnostics(
 function workspaceValidationOptions(fileName: string): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata" | "blockstateSchema"> {
   return createRsglWorkspaceValidationOptions({
     sourceFileName: fileName,
-    defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
-    resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
+    defaultAssetsPath: vscode.workspace.getConfiguration("rsgl").get<string | null>("defaultAssetsPath"),
+    resourcePackRoots: vscode.workspace.getConfiguration("rsgl").get<string[]>("resourcePackLoadOrder") ?? []
   });
 }
 

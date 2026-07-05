@@ -23,7 +23,7 @@ export class CitSpecService {
   private readonly locales = new Map<string, LocaleFragments>();
   private readonly effectiveSpecs = new Map<string, ResolvedCitSpec>();
 
-  constructor(private readonly assetRoot = path.join(__dirname, "..", "..", "assets", "cit")) { }
+  constructor(private readonly assetRoot = resolveBundledCitAssetRoot()) { }
 
   getSpecForDocument(fileName: string, citType: CitType = "item", locale?: string): ResolvedCitSpec {
     if (isCitGlobalPropertiesFileName(fileName)) {
@@ -170,6 +170,19 @@ function getLookupKeys(key: string): string[] {
 }
 
 export const citSpecService = new CitSpecService();
+
+function resolveBundledCitAssetRoot(): string {
+  for (const candidate of [
+    path.join(__dirname, "..", "..", "..", "assets", "cit"),
+    path.join(__dirname, "..", "..", "assets", "cit"),
+    path.join(process.cwd(), "assets", "cit")
+  ]) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return path.join(process.cwd(), "assets", "cit");
+}
 
 function mergeFragments(
   scope: CitSpecScope,

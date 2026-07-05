@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { formatRsglText } from "./formatterCore";
+import { formatRsglText } from "../../../packages/rsgl-core/src/formatterCore";
 
 export { formatRsglText };
 

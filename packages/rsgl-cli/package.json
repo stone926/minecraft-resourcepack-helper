@@ -1,0 +1,10 @@
+{
+  "name": "@minecraft-resourcepack-helper/rsgl-cli",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "main": "out/main.js",
+  "types": "out/main.d.ts",
+  "bin": {
+    "rsgl": "out/main.js"
+  }
+}

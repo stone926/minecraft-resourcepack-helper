@@ -1,0 +1,11 @@
+{
+  "name": "@minecraft-resourcepack-helper/rsgl-lsp",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "main": "out/server.js",
+  "types": "out/server.d.ts",
+  "dependencies": {
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  }
+}
