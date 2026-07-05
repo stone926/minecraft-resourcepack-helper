@@ -4471,6 +4471,24 @@ describe("RSGL compiler", () => {
       "    }",
       "  }",
       "}",
+      "item invalid_main_hand_when {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:main_hand,",
+      "      cases: [{ when: \"middle\", model: { type: minecraft:model, model: minecraft:item/base } }]",
+      "    }",
+      "  }",
+      "}",
+      "item invalid_charge_type_when {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:charge_type,",
+      "      cases: [{ when: [\"arrow\", \"bad\"], model: { type: minecraft:model, model: minecraft:item/base } }]",
+      "    }",
+      "  }",
+      "}",
       "item invalid_condition_property {",
       "  raw_json {",
       "    model: {",
@@ -4495,6 +4513,7 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.missingItemPropertyField"));
     assert.ok(codes.includes("rsgl.invalidItemPropertyField"));
     assert.ok(codes.includes("rsgl.invalidItemProperty"));
+    assert.ok(codes.includes("rsgl.invalidItemSelectWhenValue"));
   });
 
   it("validates generated model parent chains and texture variables", () => {

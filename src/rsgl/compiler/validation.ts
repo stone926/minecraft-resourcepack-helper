@@ -125,6 +125,11 @@ const selectRequiredFields = new Map<string, string[]>([
   ["local_time", ["pattern"]]
 ]);
 
+const selectWhenValueDomains = new Map<string, string[]>([
+  ["main_hand", ["left", "right"]],
+  ["charge_type", ["none", "arrow", "rocket", "firework", "firework_rocket"]]
+]);
+
 const rangeDispatchProperties = new Set([
   "bundle/fullness",
   "compass",
@@ -745,6 +750,7 @@ function validateItemSelect(
   validateStringField(model, "locale", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateStringField(model, "time_zone", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateStringField(model, "pattern", "rsgl.invalidItemPropertyField", unit, diagnostics);
+  const property = itemModelType(model.property);
   const cases = Array.isArray(model.cases) ? model.cases : null;
   if (!cases) {
     diagnostics.push({
@@ -763,6 +769,8 @@ function validateItemSelect(
           severity: "error",
           range: unit.sourceMap.mappings[0].sourceRange
         });
+      } else {
+        validateItemSelectCaseWhen(property, caseObject.when, unit, diagnostics);
       }
       validateItemModelDefinition(caseObject?.model, unit, generatedModels, options, diagnostics);
     }
@@ -777,6 +785,34 @@ function validateItemSelect(
     });
   } else {
     validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+  }
+}
+
+function validateItemSelectCaseWhen(
+  property: string | null,
+  value: JsonValue,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!property) {
+    return;
+  }
+  const allowedValues = selectWhenValueDomains.get(property);
+  if (!allowedValues) {
+    return;
+  }
+  const values = Array.isArray(value) ? value : [value];
+  for (const item of values) {
+    const normalized = itemModelType(item);
+    if (!normalized || !allowedValues.includes(normalized)) {
+      diagnostics.push({
+        code: "rsgl.invalidItemSelectWhenValue",
+        message: `Item select property '${property}' has an invalid case value.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+      return;
+    }
   }
 }
 
