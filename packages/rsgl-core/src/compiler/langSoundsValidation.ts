@@ -1,3 +1,4 @@
+import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../rsgl-shared/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface LangSoundsValidationOptions {
@@ -160,7 +161,7 @@ function validateSoundFileReference(
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundReference", "Sound file references should omit the .ogg extension.", "warning");
   }
 
-  const soundId = qualifyResourceId(value, unit.id?.namespace ?? "minecraft");
+  const soundId = qualifyMinecraftResourceId(value, unit.id?.namespace ?? "minecraft");
   if (options.resourceExists && !options.resourceExists("sound", soundId)) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.soundNotFound", `Sound not found: ${soundId}`, "warning");
     return;
@@ -206,7 +207,10 @@ function validateSoundEventReference(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const id = parseResourceId(value, namespace);
+  const id = tryParseMinecraftResourceId(value, namespace);
+  if (!id) {
+    return;
+  }
   if (id.namespace === namespace && !localEvents.has(id.path)) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.soundEventNotFound", `Sound event '${value}' is not defined in this sounds resource.`, "warning");
   }
@@ -276,17 +280,6 @@ function validatePositiveNumberField(
   if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]) || Number(object[field]) <= 0)) {
     pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a positive number.`);
   }
-}
-
-function qualifyResourceId(value: string, defaultNamespace: string): string {
-  return value.includes(":") ? value : `${defaultNamespace}:${value}`;
-}
-
-function parseResourceId(value: string, defaultNamespace: string): { namespace: string; path: string } {
-  const separator = value.indexOf(":");
-  return separator >= 0
-    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
-    : { namespace: defaultNamespace, path: value };
 }
 
 function isPositiveInteger(value: unknown): value is number {

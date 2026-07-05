@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseMinecraftResourceId } from "../../packages/rsgl-shared/src";
 
 export interface ResourceLocation {
   namespace: string;
@@ -8,8 +9,6 @@ export interface ResourceLocation {
 }
 
 const pathPartSeparator = /[\\/]+/;
-const namespacePattern = /^[a-z0-9_.-]+$/;
-const pathSegmentPattern = /^[a-z0-9._-]+$/;
 
 interface ResourceRootCandidateOptions {
   pathExists?: (filePath: string) => boolean;
@@ -51,32 +50,18 @@ const currentLegacyBoundaryFormat = 64;
 const overlayDirectoryPattern = /^[a-z0-9_-]+$/;
 
 export function parseResourceLocation(input: string, targetFileExtension: string | null): ResourceLocation {
-  const [rawNamespace, ...rawPathParts] = input.split(":");
-  const hasNamespace = rawPathParts.length > 0;
-  const namespace = hasNamespace && rawNamespace.trim() ? rawNamespace.trim() : "minecraft";
-  const locationPath = (hasNamespace ? rawPathParts.join(":") : rawNamespace).trim();
-  const rawSegments = locationPath.split(pathPartSeparator);
-  const normalizedSegments = rawSegments.filter(segment => segment.length > 0 && segment !== ".");
-  const isValid = isValidNamespace(namespace) && isValidResourcePath(normalizedSegments);
-  let normalizedPath = normalizedSegments.join(path.sep);
+  const parsed = parseMinecraftResourceId(input);
+  let normalizedPath = parsed.path.replaceAll("/", path.sep);
 
   if (targetFileExtension && !normalizedPath.endsWith(`.${targetFileExtension}`)) {
     normalizedPath += `.${targetFileExtension}`;
   }
 
   return {
-    namespace,
+    namespace: parsed.namespace,
     resourcePath: normalizedPath,
-    isValid
+    isValid: parsed.isValid
   };
-}
-
-function isValidNamespace(namespace: string): boolean {
-  return namespace !== ".." && namespacePattern.test(namespace);
-}
-
-function isValidResourcePath(segments: string[]): boolean {
-  return segments.length > 0 && segments.every(segment => segment !== ".." && pathSegmentPattern.test(segment));
 }
 
 export function findAssetsRoot(fileName: string, source: string): string | null {

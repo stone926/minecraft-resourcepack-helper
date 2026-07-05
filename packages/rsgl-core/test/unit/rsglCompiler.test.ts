@@ -1,11 +1,25 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, createRsglWritePlan, emitRsglFiles, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../src/compiler";
+import { compileRsglFile, compileRsglModule, createRsglWritePlan, emitRsglFiles, parseResourceId, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
 import { createTempDir, emittedContent } from "./rsglTestHelpers";
 
 describe("RSGL compiler", () => {
+  it("uses shared Minecraft resource id rules for compiler ids", () => {
+    assert.deepStrictEqual(parseResourceId("example:block//stone"), {
+      namespace: "example",
+      path: "block/stone"
+    });
+    assert.deepStrictEqual(parseResourceId("block\\stone", "example"), {
+      namespace: "example",
+      path: "block/stone"
+    });
+    assert.strictEqual(parseResourceId("example:../outside"), null);
+    assert.strictEqual(parseResourceId("example:block/Stone"), null);
+    assert.strictEqual(parseResourceId("example:block:name"), null);
+  });
+
   it("emits explicit model, item, and blockstate resources", () => {
     const result = compileRsglModule(parseRsgl([
       "namespace minecraft",

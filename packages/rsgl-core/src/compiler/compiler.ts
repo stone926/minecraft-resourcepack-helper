@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { isValidMinecraftNamespace } from "../../../rsgl-shared/src";
 import {
   BlockNode,
   ExprNode,
@@ -118,8 +119,6 @@ import {
   textResourceTarget,
   withTargetPackFormat
 } from "./compilerHelpers";
-
-const namespacePattern = /^[a-z0-9_.-]+$/;
 
 export interface RsglCompileOptions extends RsglResourceValidationOptions {
   fileName?: string;
@@ -1413,7 +1412,7 @@ export class RsglCompiler {
     if (!idValue) {
       return null;
     }
-    if (namespacePattern.test(idValue)) {
+    if (isValidMinecraftNamespace(idValue)) {
       return idValue;
     }
     const id = parseResourceId(idValue, context.namespace);
@@ -1790,4 +1789,3 @@ export class RsglCompiler {
     });
   }
 }
-

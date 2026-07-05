@@ -1,3 +1,4 @@
+import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../rsgl-shared/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface PostEffectValidationOptions {
@@ -135,7 +136,7 @@ function validateShaderField(
 ): void {
   const shader = stringField(pass, field, "rsgl.invalidPostEffectPassField", "Post effect pass", unit, diagnostics);
   if (shader) {
-    checkResourceExists(kind, qualifyResourceId(shader, namespace), unit, options, diagnostics);
+    checkResourceExists(kind, qualifyMinecraftResourceId(shader, namespace), unit, options, diagnostics);
   }
 }
 
@@ -187,7 +188,7 @@ function validateInput(
 
   const location = stringField(input, "location", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
   if (location) {
-    checkResourceExists("texture", textureIdInFolder(location, namespace, "effect"), unit, options, diagnostics);
+    checkResourceExists("texture", minecraftResourceIdInFolder(location, namespace, "effect"), unit, options, diagnostics);
   }
   validatePositiveIntegerField(input, "width", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
   validatePositiveIntegerField(input, "height", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
@@ -328,23 +329,6 @@ function checkResourceExists(
     return;
   }
   pushUnitDiagnostic(diagnostics, unit, resourceNotFoundCode(kind), `${resourceLabel(kind)} not found: ${id}`, "warning");
-}
-
-function qualifyResourceId(value: string, defaultNamespace: string): string {
-  return value.includes(":") ? value : `${defaultNamespace}:${value}`;
-}
-
-function textureIdInFolder(value: string, defaultNamespace: string, folder: string): string {
-  const id = parseResourceId(value, defaultNamespace);
-  const path = id.path.startsWith(`${folder}/`) ? id.path : `${folder}/${id.path}`;
-  return `${id.namespace}:${path}`;
-}
-
-function parseResourceId(value: string, defaultNamespace: string): { namespace: string; path: string } {
-  const separator = value.indexOf(":");
-  return separator >= 0
-    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
-    : { namespace: defaultNamespace, path: value };
 }
 
 function resourceNotFoundCode(kind: "shaderVertex" | "shaderFragment" | "texture"): string {

@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { isValidMinecraftNamespace } from "../../packages/rsgl-shared/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getCitDocumentNamespace } from "../utils/citPaths";
 import {
@@ -26,7 +27,6 @@ interface ResourceCompletionContext {
   includeQuotes: boolean;
 }
 
-const namespacePattern = /^[a-z0-9_.-]+$/;
 export const triggerResourceCompletionCommand = "McResHelper.triggerResourceCompletion";
 
 const resourceCompletionProvider: vscode.CompletionItemProvider = {
@@ -188,7 +188,7 @@ async function collectNamespaceCompletionItems(
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || !namespacePattern.test(entry.name)) {
+      if (!entry.isDirectory() || !isValidMinecraftNamespace(entry.name)) {
         continue;
       }
 

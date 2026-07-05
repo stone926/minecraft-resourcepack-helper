@@ -42,6 +42,14 @@ describe("resource location utilities", () => {
     assert.strictEqual(parseResourceLocation("example:block stone", "json").isValid, false);
   });
 
+  it("normalizes repeated separators through shared resource id rules", () => {
+    const result = parseResourceLocation("example:block//stone", "json");
+
+    assert.strictEqual(result.namespace, "example");
+    assert.strictEqual(result.resourcePath, path.join("block", "stone.json"));
+    assert.strictEqual(result.isValid, true);
+  });
+
   it("finds assets root from nested source folders", () => {
     const root = path.parse(__dirname).root;
     const fileName = path.join(root, "pack", "assets", "minecraft", "models", "block", "cube.json");

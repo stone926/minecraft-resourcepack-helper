@@ -1,10 +1,10 @@
+import { isMinecraftResourceLocationText } from "../../../rsgl-shared/src";
 import { rsglKeywords } from "./keywords";
 import { LexResult, RsglDiagnostic, RsglToken, RsglTokenKind, Trivia } from "./types";
 
 const twoCharacterOperators = new Set(["->", "==", "!=", "<=", ">=", "&&", "||", ".."]);
 const singleCharacterOperators = new Set(["=", "?", ":", "+", "-", "*", "/", "%", "!", "<", ">", "|"]);
 const punctuationCharacters = new Set(["{", "}", "[", "]", "(", ")", ",", ".", ";", "@"]);
-const resourceLocationPattern = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
 
 export function lexRsgl(text: string): LexResult {
   const lexer = new RsglLexer(text);
@@ -145,7 +145,7 @@ class RsglLexer {
         this.offset++;
       }
       const text = this.text.slice(start, this.offset);
-      const kind: RsglTokenKind = resourceLocationPattern.test(text) ? "resourceLocation" : "identifier";
+      const kind: RsglTokenKind = isMinecraftResourceLocationText(text) ? "resourceLocation" : "identifier";
       return this.createToken(kind, start, leadingTrivia);
     }
 

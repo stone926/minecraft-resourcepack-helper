@@ -9,6 +9,11 @@ import { validatePostEffectMetadata } from "./postEffectValidation";
 import { parseResourceId as parseStrictResourceId } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
+import {
+  minecraftResourceIdInFolder,
+  qualifyMinecraftResourceId,
+  tryParseMinecraftResourceId
+} from "../../../rsgl-shared/src";
 
 export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
 export type RsglResourceContentKind = "model";
@@ -418,7 +423,7 @@ function validateModelParentChain(
     if (typeof parent !== "string") {
       return;
     }
-    const parentId = qualifyResourceId(parent, current.namespace);
+    const parentId = qualifyMinecraftResourceId(parent, current.namespace);
     current = modelResolver(parentId);
     if (!current) {
       checkResourceExists("model", parentId, unit, generatedModels, options, diagnostics);
@@ -1635,17 +1640,17 @@ function validateNestedItemModels(
 
 function itemSpecialTextureId(type: string | null, texture: string, defaultNamespace: string): string | null {
   if (type === "chest") {
-    return textureIdInFolder(texture, defaultNamespace, "entity/chest");
+    return minecraftResourceIdInFolder(texture, defaultNamespace, "entity/chest");
   }
   if (type === "shulker_box") {
-    return textureIdInFolder(texture, defaultNamespace, "entity/shulker");
+    return minecraftResourceIdInFolder(texture, defaultNamespace, "entity/shulker");
   }
   if (type === "head") {
-    return textureIdInFolder(texture, defaultNamespace, "entity");
+    return minecraftResourceIdInFolder(texture, defaultNamespace, "entity");
   }
   if (type === "copper_golem_statue") {
-    const id = parseResourceId(texture, defaultNamespace);
-    return `${id.namespace}:${id.path.replace(/^textures\//, "").replace(/\.png$/, "")}`;
+    const id = tryParseMinecraftResourceId(texture, defaultNamespace);
+    return id ? `${id.namespace}:${id.path.replace(/^textures\//, "").replace(/\.png$/, "")}` : qualifyMinecraftResourceId(texture, defaultNamespace);
   }
   return null;
 }
@@ -1683,7 +1688,7 @@ function validateAtlasUnit(
     if (sourceType === "directory" && typeof sourceObject.source === "string") {
       checkResourceExists(
         "textureDirectory",
-        qualifyResourceId(sourceObject.source, namespace),
+        qualifyMinecraftResourceId(sourceObject.source, namespace),
         unit,
         undefined,
         options,
@@ -1694,7 +1699,7 @@ function validateAtlasUnit(
     if ((sourceType === "single" || sourceType === "unstitch") && typeof sourceObject.resource === "string") {
       checkResourceExists(
         "texture",
-        qualifyResourceId(sourceObject.resource, namespace),
+        qualifyMinecraftResourceId(sourceObject.resource, namespace),
         unit,
         undefined,
         options,
@@ -1711,7 +1716,7 @@ function validateAtlasUnit(
         if (typeof texture === "string") {
           checkResourceExists(
             "texture",
-            qualifyResourceId(texture, namespace),
+            qualifyMinecraftResourceId(texture, namespace),
             unit,
             undefined,
             options,
@@ -1723,7 +1728,7 @@ function validateAtlasUnit(
       if (typeof sourceObject.palette_key === "string") {
         checkResourceExists(
           "texture",
-          qualifyResourceId(sourceObject.palette_key, namespace),
+          qualifyMinecraftResourceId(sourceObject.palette_key, namespace),
           unit,
           undefined,
           options,
@@ -1735,7 +1740,7 @@ function validateAtlasUnit(
         if (typeof texture === "string") {
           checkResourceExists(
             "texture",
-            qualifyResourceId(texture, namespace),
+            qualifyMinecraftResourceId(texture, namespace),
             unit,
             undefined,
             options,
@@ -1772,7 +1777,7 @@ function validateParticlesUnit(
     if (typeof texture === "string") {
       checkResourceExists(
         "texture",
-        textureIdInFolder(texture, namespace, "particle"),
+        minecraftResourceIdInFolder(texture, namespace, "particle"),
         unit,
         undefined,
         options,
@@ -1808,7 +1813,7 @@ function validateEquipmentUnit(
         );
         checkResourceExists(
           "texture",
-          textureIdInFolder(texture, namespace, `entity/equipment/${layerName}`),
+          minecraftResourceIdInFolder(texture, namespace, `entity/equipment/${layerName}`),
           unit,
           undefined,
           options,
@@ -1919,7 +1924,7 @@ function modelDocumentFromUnit(unit: ResourceUnit): ModelDocument | undefined {
 function modelDocumentFromContent(id: string, content: Record<string, JsonValue>): ModelDocument {
   return {
     id,
-    namespace: parseResourceId(id, "minecraft").namespace,
+    namespace: tryParseMinecraftResourceId(id, "minecraft")?.namespace ?? "minecraft",
     content
   };
 }
@@ -1944,7 +1949,7 @@ function resolveTextureVariable(
 
   const parent = content.parent;
   const parentModel = typeof parent === "string"
-    ? modelResolver(qualifyResourceId(parent, model.namespace))
+    ? modelResolver(qualifyMinecraftResourceId(parent, model.namespace))
     : undefined;
   return parentModel ? resolveTextureVariable(parentModel, name, modelResolver, seen) : { kind: "missing" };
 }
@@ -2027,23 +2032,6 @@ function textureVariableReference(value: JsonValue): string | null {
 
 function modelKey(unit: ResourceUnit): string | null {
   return unit.id ? `${unit.id.namespace}:${unit.id.path}` : null;
-}
-
-function qualifyResourceId(value: string, defaultNamespace: string): string {
-  return value.includes(":") ? value : `${defaultNamespace}:${value}`;
-}
-
-function textureIdInFolder(value: string, defaultNamespace: string, folder: string): string {
-  const id = parseResourceId(value, defaultNamespace);
-  const path = id.path.startsWith(`${folder}/`) ? id.path : `${folder}/${id.path}`;
-  return `${id.namespace}:${path}`;
-}
-
-function parseResourceId(value: string, defaultNamespace: string): { namespace: string; path: string } {
-  const separator = value.indexOf(":");
-  return separator >= 0
-    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
-    : { namespace: defaultNamespace, path: value };
 }
 
 function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {

@@ -3,6 +3,7 @@ import {
   ObjectPropertyNode,
   TextRange
 } from "../parser";
+import { tryParseMinecraftResourceId } from "../../../rsgl-shared/src";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import { expandSequencePattern } from "./sequences";
 
@@ -447,14 +448,7 @@ function resourceAssetPath(value: string, namespace: string, root: string, exten
 }
 
 function parseResourceIdValue(value: string, namespace: string): { namespace: string; path: string } | null {
-  if (!value) {
-    return null;
-  }
-  const separator = value.indexOf(":");
-  const id = separator >= 0
-    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
-    : { namespace, path: value };
-  return id.namespace && id.path ? id : null;
+  return tryParseMinecraftResourceId(value, namespace);
 }
 
 function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {

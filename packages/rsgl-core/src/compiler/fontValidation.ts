@@ -1,3 +1,4 @@
+import { qualifyMinecraftResourceId } from "../../../rsgl-shared/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface FontValidationOptions {
@@ -84,24 +85,24 @@ function validateFontProviderFields(
     validateStringField(provider, "file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateStringArrayField(provider, "chars", "rsgl.invalidFontProviderField", unit, diagnostics);
     if (typeof provider.file === "string") {
-      checkFontResourceExists("texture", qualifyResourceId(provider.file, namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists("texture", qualifyMinecraftResourceId(provider.file, namespace), unit, generatedFonts, options, diagnostics);
     }
   } else if (type === "reference") {
     validateStringField(provider, "id", "rsgl.invalidFontProviderField", unit, diagnostics);
     if (typeof provider.id === "string") {
-      checkFontResourceExists("font", qualifyResourceId(provider.id, namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists("font", qualifyMinecraftResourceId(provider.id, namespace), unit, generatedFonts, options, diagnostics);
     }
   } else if (type === "ttf") {
     validateStringField(provider, "file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateSkip(provider.skip, unit, diagnostics);
     if (typeof provider.file === "string") {
-      checkFontResourceExists("fontFile", qualifyResourceId(provider.file, namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists("fontFile", qualifyMinecraftResourceId(provider.file, namespace), unit, generatedFonts, options, diagnostics);
     }
   } else if (type === "unihex") {
     validateStringField(provider, "hex_file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateSizeOverrides(provider["size_overrides"], unit, diagnostics);
     if (typeof provider["hex_file"] === "string") {
-      checkFontResourceExists("fontFile", qualifyResourceId(provider["hex_file"], namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists("fontFile", qualifyMinecraftResourceId(provider["hex_file"], namespace), unit, generatedFonts, options, diagnostics);
     }
   } else if (type === "space") {
     validateAdvances(provider.advances, unit, diagnostics);
@@ -256,10 +257,6 @@ function providerType(value: JsonValue | undefined): string | null {
     return null;
   }
   return value.startsWith("minecraft:") ? value.slice("minecraft:".length) : value;
-}
-
-function qualifyResourceId(value: string, defaultNamespace: string): string {
-  return value.includes(":") ? value : `${defaultNamespace}:${value}`;
 }
 
 function resourceNotFoundCode(kind: "font" | "fontFile" | "texture"): string {

@@ -1,3 +1,4 @@
+import { minecraftResourceIdInFolder } from "../../../rsgl-shared/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface WaypointStyleValidationOptions {
@@ -49,7 +50,7 @@ function validateSprites(
       pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprite", "Waypoint style sprites must be non-empty strings.");
       continue;
     }
-    checkTextureExists(textureIdInFolder(sprite, namespace, spriteTextureFolder), unit, options, diagnostics);
+    checkTextureExists(minecraftResourceIdInFolder(sprite, namespace, spriteTextureFolder), unit, options, diagnostics);
   }
 }
 
@@ -98,19 +99,6 @@ function checkTextureExists(
     return;
   }
   pushUnitDiagnostic(diagnostics, unit, "rsgl.textureNotFound", `Texture not found: ${id}`, "warning");
-}
-
-function textureIdInFolder(value: string, defaultNamespace: string, folder: string): string {
-  const id = parseResourceId(value, defaultNamespace);
-  const path = id.path.startsWith(`${folder}/`) ? id.path : `${folder}/${id.path}`;
-  return `${id.namespace}:${path}`;
-}
-
-function parseResourceId(value: string, defaultNamespace: string): { namespace: string; path: string } {
-  const separator = value.indexOf(":");
-  return separator >= 0
-    ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
-    : { namespace: defaultNamespace, path: value };
 }
 
 function pushUnitDiagnostic(

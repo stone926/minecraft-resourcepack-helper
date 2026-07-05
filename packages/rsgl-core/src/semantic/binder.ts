@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { parseMinecraftResourceId } from "../../../rsgl-shared/src";
 import {
   ArgumentNode,
   BlockNode,
@@ -55,8 +56,6 @@ import {
   unknownType
 } from "./types";
 
-const resourceLocationPattern = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
-const resourcePathPattern = /^[a-z0-9_./-]+$/;
 const builtinFiniteStringDomains = new Map<string, string[]>([
   ["HORIZONTAL", ["north", "east", "south", "west"]],
   ["DIRECTIONS", ["down", "up", "north", "south", "west", "east"]],
@@ -854,11 +853,10 @@ class RsglBinder {
   }
 
   private validateResourceLocationValue(value: string, range: { start: number; end: number }): void {
-    if (value.includes(":")) {
-      if (!resourceLocationPattern.test(value)) {
-        this.diagnostics.push(diagnostic("rsgl.invalidResourceLocation", `Invalid resource location '${value}'.`, range));
-      }
-    } else if (!resourcePathPattern.test(value)) {
+    const parsed = parseMinecraftResourceId(value);
+    if (value.includes(":") && !parsed.isValid) {
+      this.diagnostics.push(diagnostic("rsgl.invalidResourceLocation", `Invalid resource location '${value}'.`, range));
+    } else if (!parsed.isValid) {
       this.diagnostics.push(diagnostic("rsgl.invalidResourcePath", `Invalid resource path '${value}'.`, range));
     }
   }
