@@ -12,7 +12,7 @@ import {
 } from "../build";
 import { rsglLanguageId } from "../diagnostics";
 import {
-  discoverRsglSourceRootsFromFileNames,
+  rsglWorkspaceSourceRootCache,
   resolveRsglSourceRootFromFileName,
   type RsglDiscoveredSourceRoot
 } from "../sourceRoot";
@@ -168,8 +168,7 @@ async function resolveWorkspaceBuildContexts(): Promise<RsglWorkspaceBuildContex
     return null;
   }
 
-  const rsglFiles = await vscode.workspace.findFiles("**/*.rsgl", "{**/.git/**,**/.vscode/**,**/node_modules/**}");
-  const discovered = discoverRsglSourceRootsFromFileNames(rsglFiles.map(uri => uri.fsPath));
+  const discovered = await rsglWorkspaceSourceRootCache.discover(findWorkspaceRsglFiles);
   if (discovered.length === 0) {
     await vscode.window.showInformationMessage(vscode.l10n.t("No RSGL source directories found in the workspace."));
     return null;
@@ -386,6 +385,11 @@ async function saveRsglDocumentsInSourceRoots(sourceRoots: readonly string[]): P
 function resolveWorkspaceOutputRoot(sourceRoot: RsglDiscoveredSourceRoot): string | null {
   return workspaceResourceCache.getPackRoot(sourceRoot.sampleFileName)
     ?? workspaceResourceCache.getPackRoot(sourceRoot.sourceRoot);
+}
+
+async function findWorkspaceRsglFiles(): Promise<string[]> {
+  const rsglFiles = await vscode.workspace.findFiles("**/*.rsgl", "{**/.git/**,**/.vscode/**,**/node_modules/**}");
+  return rsglFiles.map(uri => uri.fsPath);
 }
 
 function summarizeWorkspaceBuild(entries: Array<RsglWorkspaceBuildEntry<RsglBuildResult>>): { create: number; update: number; unchanged: number } {

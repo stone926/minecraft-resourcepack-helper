@@ -6,7 +6,7 @@ import { formatRsglText } from "../../rsgl/formatterCore";
 import { lexRsgl, parseRsgl } from "../../rsgl/parser";
 import { resourceKeywords } from "../../rsgl/parser/keywords";
 import { rsglResourceKinds } from "../../rsgl/resourceKinds";
-import { discoverRsglSourceRootsFromFileNames, resolveRsglSourceRootFromFileName } from "../../rsgl/sourceRoot";
+import { discoverRsglSourceRootsFromFileNames, resolveRsglSourceRootFromFileName, RsglWorkspaceSourceRootCache } from "../../rsgl/sourceRoot";
 
 describe("RSGL language", () => {
   it("contributes the rsgl language and bundled editor assets", () => {
@@ -113,6 +113,31 @@ describe("RSGL language", () => {
         sourceRoot
       ].sort()
     );
+  });
+
+  it("caches RSGL workspace source root discovery until RSGL files change", async () => {
+    const sourceRoot = path.resolve("pack", "src");
+    const cache = new RsglWorkspaceSourceRootCache();
+    let calls = 0;
+    const provider = () => {
+      calls++;
+      return [
+        path.join(sourceRoot, "main.rsgl"),
+        path.join(sourceRoot, "nested", "blocks.rsgl")
+      ];
+    };
+
+    assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [sourceRoot]);
+    assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [sourceRoot]);
+    assert.strictEqual(calls, 1);
+
+    cache.invalidatePath(path.resolve("pack", "assets", "models", "block", "stone.json"));
+    assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [sourceRoot]);
+    assert.strictEqual(calls, 1);
+
+    cache.invalidatePath(path.join(sourceRoot, "new.rsgl"));
+    assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [sourceRoot]);
+    assert.strictEqual(calls, 2);
   });
 
   it("keeps resource keyword registry wired into the parser", () => {

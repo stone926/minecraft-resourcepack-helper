@@ -5,6 +5,39 @@ export interface RsglDiscoveredSourceRoot {
   sampleFileName: string;
 }
 
+export type RsglWorkspaceSourceRootFileProvider = () => readonly string[] | Promise<readonly string[]>;
+
+interface RsglWorkspaceSourceRootCacheEntry {
+  generation: number;
+  roots: RsglDiscoveredSourceRoot[];
+}
+
+export class RsglWorkspaceSourceRootCache {
+  private generation = 0;
+  private cache: RsglWorkspaceSourceRootCacheEntry | null = null;
+
+  public async discover(provider: RsglWorkspaceSourceRootFileProvider): Promise<RsglDiscoveredSourceRoot[]> {
+    if (this.cache?.generation === this.generation) {
+      return this.cache.roots;
+    }
+
+    const roots = discoverRsglSourceRootsFromFileNames(await provider());
+    this.cache = { generation: this.generation, roots };
+    return roots;
+  }
+
+  public invalidatePath(fileName: string): void {
+    if (path.extname(fileName).toLowerCase() === ".rsgl") {
+      this.invalidateAll();
+    }
+  }
+
+  public invalidateAll(): void {
+    this.generation++;
+    this.cache = null;
+  }
+}
+
 export function resolveRsglSourceRootFromFileName(fileName: string): string {
   const resolvedFileName = path.resolve(fileName);
   let directory = path.dirname(resolvedFileName);
@@ -37,6 +70,8 @@ export function discoverRsglSourceRootsFromFileNames(fileNames: readonly string[
   }
   return [...roots.values()].sort((left, right) => compareFileNames(left.sourceRoot, right.sourceRoot));
 }
+
+export const rsglWorkspaceSourceRootCache = new RsglWorkspaceSourceRootCache();
 
 function hasIgnoredPathSegment(fileName: string): boolean {
   return path.resolve(fileName).split(path.sep).some(segment => ignoredDirectoryNames.has(segment.toLowerCase()));

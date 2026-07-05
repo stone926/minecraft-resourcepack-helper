@@ -4,6 +4,7 @@ import { rsglCompletionProvider } from "./completion";
 import { refreshRsglDiagnostics, rsglDocumentSelector, rsglLanguageId } from "./diagnostics";
 import { rsglFormattingProvider } from "./formatter";
 import { RsglWorkspaceSemanticCache } from "./workspaceSemantic";
+import { rsglWorkspaceSourceRootCache } from "./sourceRoot";
 
 export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): void {
   const diagnostics = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper RSGL"));
@@ -56,14 +57,20 @@ export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): 
   const onRsglFileChange = (uri: vscode.Uri) => {
     if (uri.scheme === "file") {
       semanticCache.invalidatePath(uri.fsPath);
+      rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath);
     } else {
       semanticCache.invalidateAll();
+      rsglWorkspaceSourceRootCache.invalidateAll();
     }
     refreshOpenRsglDiagnostics(diagnostics, semanticCache);
   };
   watcher.onDidCreate(onRsglFileChange, null, context.subscriptions);
   watcher.onDidChange(onRsglFileChange, null, context.subscriptions);
   watcher.onDidDelete(onRsglFileChange, null, context.subscriptions);
+
+  context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    rsglWorkspaceSourceRootCache.invalidateAll();
+  }));
 }
 
 function refreshOpenRsglDiagnostics(
