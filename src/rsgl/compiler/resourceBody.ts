@@ -91,7 +91,7 @@ function applyResourceStatement(
     const value = normalizeJsonValue(evaluateExpression(statement.value, context));
     if (isJsonObject(value)) {
       mergeJsonObject(result, value);
-      emitObjectMappings(options, path, value, statement.range, context);
+      emitObjectMappingsDeep(options, path, value, statement.range, context);
     } else {
       options.onError?.("rsgl.invalidRawJsonFragment", "raw_json must evaluate to an object fragment.", statement.value.range);
     }
@@ -178,6 +178,39 @@ function emitObjectMappings(
 ): void {
   for (const key of Object.keys(value)) {
     emitMapping(options, appendGeneratedPath(path, key), sourceRange, context);
+  }
+}
+
+function emitObjectMappingsDeep(
+  options: ResourceBodyCompileOptions,
+  path: string,
+  value: Record<string, JsonValue>,
+  sourceRange: TextRange,
+  context: EvaluationContext
+): void {
+  for (const [key, item] of Object.entries(value)) {
+    emitValueMappingsDeep(options, appendGeneratedPath(path, key), item, sourceRange, context);
+  }
+}
+
+function emitValueMappingsDeep(
+  options: ResourceBodyCompileOptions,
+  path: string,
+  value: JsonValue,
+  sourceRange: TextRange,
+  context: EvaluationContext
+): void {
+  emitMapping(options, path, sourceRange, context);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      emitValueMappingsDeep(options, appendGeneratedPath(path, String(index)), item, sourceRange, context);
+    });
+    return;
+  }
+  if (isJsonObject(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      emitValueMappingsDeep(options, appendGeneratedPath(path, key), item, sourceRange, context);
+    }
   }
 }
 

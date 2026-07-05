@@ -66,6 +66,26 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("records nested source map entries for raw json fragments", () => {
+    const result = compileRsglModule(parseRsgl([
+      "item tinted {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:model,",
+      "      model: minecraft:item/base,",
+      "      tints: [{ type: minecraft:constant, value: [1, 0.5, 0] }]",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")), { fileName: path.resolve("pack", "main.rsgl") });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const paths = result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
+    assert.ok(paths.includes("/model/type"));
+    assert.ok(paths.includes("/model/tints/0/type"));
+    assert.ok(paths.includes("/model/tints/0/value/1"));
+  });
+
   it("emits deterministic files with source maps and manifest", () => {
     const result = compileRsglModule(parseRsgl([
       "namespace minecraft",
