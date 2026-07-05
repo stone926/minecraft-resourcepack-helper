@@ -4506,6 +4506,15 @@ describe("RSGL compiler", () => {
       "    }",
       "  }",
       "}",
+      "item invalid_resource_id_when {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:potion_contents,",
+      "      cases: [{ when: 1, model: { type: minecraft:model, model: minecraft:item/base } }]",
+      "    }",
+      "  }",
+      "}",
       "item invalid_condition_property {",
       "  raw_json {",
       "    model: {",
@@ -4531,6 +4540,7 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemPropertyField"));
     assert.ok(codes.includes("rsgl.invalidItemProperty"));
     assert.ok(codes.includes("rsgl.invalidItemSelectWhenValue"));
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidItemSelectWhenValue" && diagnostic.message.includes("resource ids")));
   });
 
   it("validates generated model parent chains and texture variables", () => {

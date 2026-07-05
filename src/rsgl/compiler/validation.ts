@@ -6,6 +6,7 @@ import { validateMcmetaAnimation } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
 import { validatePostEffectMetadata } from "./postEffectValidation";
+import { parseResourceId as parseStrictResourceId } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
 
@@ -146,6 +147,13 @@ const selectWhenValueDomains = new Map<string, string[]>([
     "ground",
     "fixed"
   ]]
+]);
+
+const selectWhenResourceIdProperties = new Set([
+  "context_dimension",
+  "context_entity_type",
+  "potion_contents",
+  "trim_material"
 ]);
 
 const rangeDispatchProperties = new Set([
@@ -817,6 +825,9 @@ function validateItemSelectCaseWhen(
   }
   const allowedValues = selectWhenValueDomains.get(property);
   if (!allowedValues) {
+    if (selectWhenResourceIdProperties.has(property)) {
+      validateItemSelectCaseResourceIds(property, value, unit, diagnostics);
+    }
     return;
   }
   const values = Array.isArray(value) ? value : [value];
@@ -826,6 +837,27 @@ function validateItemSelectCaseWhen(
       diagnostics.push({
         code: "rsgl.invalidItemSelectWhenValue",
         message: `Item select property '${property}' has an invalid case value.`,
+        severity: "error",
+        range: unit.sourceMap.mappings[0].sourceRange
+      });
+      return;
+    }
+  }
+}
+
+function validateItemSelectCaseResourceIds(
+  property: string,
+  value: JsonValue,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const values = Array.isArray(value) ? value : [value];
+  const namespace = unit.id?.namespace ?? "minecraft";
+  for (const item of values) {
+    if (typeof item !== "string" || !parseStrictResourceId(item, namespace)) {
+      diagnostics.push({
+        code: "rsgl.invalidItemSelectWhenValue",
+        message: `Item select property '${property}' case values must be resource ids.`,
         severity: "error",
         range: unit.sourceMap.mappings[0].sourceRange
       });
