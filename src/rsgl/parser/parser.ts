@@ -9,6 +9,7 @@ import {
   ArgumentNode,
   AtlasDirectoryStmtNode,
   AtlasFilterStmtNode,
+  AtlasPalettedPermutationsStmtNode,
   BlockNode,
   BooleanLiteralNode,
   EquipmentLayerStmtNode,
@@ -817,6 +818,9 @@ class RsglParser extends ParserContext {
     if (owner === "atlas" && token.text === "filter" && this.peekText(1) !== "{" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseAtlasFilterStmt();
     }
+    if (owner === "atlas" && token.text === "paletted_permutations" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parseAtlasPalettedPermutationsStmt();
+    }
     if (owner === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseEquipmentLayerStmt();
     }
@@ -1024,6 +1028,19 @@ class RsglParser extends ParserContext {
       keyword: start.text,
       namespace,
       path,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseAtlasPalettedPermutationsStmt(): AtlasPalettedPermutationsStmtNode {
+    const start = this.advance();
+    const body = this.current().text === "{"
+      ? this.parseResourceBody("atlasPalettedPermutations")
+      : this.emptyResourceBodyAt(this.current(), "Expected paletted_permutations body.");
+    return {
+      kind: "AtlasPalettedPermutationsStmt",
+      keyword: start.text,
+      body,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
@@ -1398,6 +1415,20 @@ class RsglParser extends ParserContext {
     left = this.parsePostfixExpression(left, stopTexts);
 
     while (!this.isExpressionStop(stopTexts)) {
+      if (this.current().text === "in" && left.kind === "IdentifierExpr") {
+        const start = left;
+        this.advance();
+        const iterable = this.parseExpression(options, 1);
+        left = {
+          kind: "ForInExpr",
+          binding: start.name,
+          iterable,
+          range: { start: start.range.start, end: iterable.range.end },
+          fullRange: { start: start.fullRange.start, end: iterable.fullRange.end }
+        };
+        continue;
+      }
+
       if (this.current().text === "?") {
         if (minPrecedence > 1) {
           break;

@@ -372,6 +372,8 @@ class RsglBinder {
       if (statement.path) {
         this.checkExpression(statement.path, scope);
       }
+    } else if (statement.kind === "AtlasPalettedPermutationsStmt") {
+      this.checkResourceBody(statement.body, createChildScope(scope, "block"), "atlasPalettedPermutations");
     } else if (statement.kind === "EquipmentLayerStmt") {
       this.checkEquipmentLayerNameExpression(statement.layer, scope);
       if (statement.texture) {
@@ -649,6 +651,11 @@ class RsglBinder {
     if (expression.kind === "CallExpr") {
       return this.checkCallExpression(expression, scope);
     }
+    if (expression.kind === "ForInExpr") {
+      this.diagnostics.push(diagnostic("rsgl.invalidForInExpression", "'name in iterable' generator expressions are only valid as seq arguments.", expression.range));
+      this.checkExpression(expression.iterable, scope);
+      return unknownType;
+    }
     if (expression.kind === "MemberExpr") {
       this.checkExpression(expression.object, scope);
       return anyType;
@@ -763,6 +770,9 @@ class RsglBinder {
     }
 
     const symbol = lookup(scope, callee.name.text);
+    if (callee.name.text === "seq") {
+      return this.checkSeqCallExpression(expression, scope);
+    }
     if (!symbol?.signature) {
       if (symbol?.kind === "import") {
         return anyType;
@@ -775,6 +785,37 @@ class RsglBinder {
 
     this.checkArguments(symbol.signature, args, scope, expression.range);
     return symbol.signature.returnType;
+  }
+
+  private checkSeqCallExpression(expression: CallExprNode, scope: RsglScope): RsglType {
+    const positionalArgs = expression.args.filter(arg => !arg.name);
+    const patternArg = expression.args.find(arg => arg.name?.text === "pattern") ?? positionalArgs[0];
+    if (!patternArg) {
+      this.diagnostics.push(diagnostic("rsgl.missingArgument", "Missing argument 'pattern'.", expression.range));
+      return { kind: "List", elementType: stringType };
+    }
+
+    const generatorScope = createChildScope(scope, "block");
+    for (const arg of expression.args) {
+      if (arg === patternArg) {
+        continue;
+      }
+      if (arg.name) {
+        this.diagnostics.push(diagnostic("rsgl.unknownArgument", `Unknown argument '${arg.name.text}'.`, arg.name.range));
+        this.checkExpression(arg.value, scope);
+        continue;
+      }
+      if (arg.value.kind !== "ForInExpr") {
+        this.diagnostics.push(diagnostic("rsgl.invalidSeqGenerator", "seq generator arguments must use 'name in iterable'.", arg.value.range));
+        this.checkExpression(arg.value, scope);
+        continue;
+      }
+      this.checkExpression(arg.value.iterable, scope);
+      this.defineIdentifier(generatorScope, arg.value.binding, "variable", stringType, arg.value);
+    }
+
+    this.checkExpression(patternArg.value, generatorScope);
+    return { kind: "List", elementType: stringType };
   }
 
   private checkArguments(signature: RsglSignature, args: ArgumentNode[], scope: RsglScope, callRange: { start: number; end: number }): void {

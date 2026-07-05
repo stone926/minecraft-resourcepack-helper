@@ -112,7 +112,13 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     }
     return values;
   }
+  if (expression.kind === "ForInExpr") {
+    return evaluateExpression(expression.iterable, context);
+  }
   if (expression.kind === "CallExpr") {
+    if (expression.callee.kind === "IdentifierExpr" && expression.callee.name.text === "seq") {
+      return evaluateSeqExpression(expression, context);
+    }
     return evaluateCallExpression(expression.callee, expression.args.map(arg => ({
       name: arg.name?.text,
       value: evaluateExpression(arg.value, context),
@@ -151,6 +157,72 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     return expression.operator === "!" ? !truthy(value) : -Number(value);
   }
   return undefined;
+}
+
+function evaluateSeqExpression(
+  expression: Extract<ExprNode, { kind: "CallExpr" }>,
+  context: EvaluationContext
+): EvaluationValue {
+  const patternArg = expression.args.find(arg => arg.name?.text === "pattern")
+    ?? expression.args.filter(arg => !arg.name)[0];
+  if (!patternArg) {
+    return [];
+  }
+
+  const generatorArgs = expression.args.filter(arg => arg !== patternArg && !arg.name);
+  const generators = generatorArgs
+    .map(arg => arg.value)
+    .filter((value): value is Extract<ExprNode, { kind: "ForInExpr" }> => value.kind === "ForInExpr");
+  if (generators.length === 0) {
+    return expandSequencePattern(String(evaluateExpression(patternArg.value, context) ?? ""));
+  }
+  if (generators.length !== generatorArgs.length) {
+    return [];
+  }
+
+  return evaluateSeqGeneratorPatterns(patternArg.value, generators, context, 0, []);
+}
+
+function evaluateSeqGeneratorPatterns(
+  pattern: ExprNode,
+  generators: Array<Extract<ExprNode, { kind: "ForInExpr" }>>,
+  context: EvaluationContext,
+  index: number,
+  boundNames: string[]
+): string[] {
+  if (index >= generators.length) {
+    const value = String(evaluateExpression(pattern, context) ?? "");
+    return expandSequencePattern(replaceSeqPlaceholders(value, context, boundNames));
+  }
+
+  const generator = generators[index];
+  const iterable = evaluateExpression(generator.iterable, context);
+  if (!Array.isArray(iterable)) {
+    return [];
+  }
+
+  const results: string[] = [];
+  for (const value of iterable) {
+    const name = generator.binding.text;
+    const child = childEvaluationContext(context, { [name]: normalizeJsonValue(value) });
+    results.push(...evaluateSeqGeneratorPatterns(pattern, generators, child, index + 1, [...boundNames, name]));
+  }
+  return results;
+}
+
+function replaceSeqPlaceholders(pattern: string, context: EvaluationContext, boundNames: string[]): string {
+  let result = pattern;
+  for (const name of boundNames) {
+    const value = scalarText(context.variables.get(name));
+    if (value !== null) {
+      result = result.replace(new RegExp(`\\{${escapeRegExp(name)}\\}`, "g"), value);
+    }
+  }
+  return result;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function childEvaluationContext(

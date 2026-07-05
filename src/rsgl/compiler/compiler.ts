@@ -1,8 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  AtlasDirectoryStmtNode,
-  AtlasFilterStmtNode,
   BlockNode,
   ExprNode,
   ForStmtNode,
@@ -33,6 +31,7 @@ import {
   VariantSectionStatementNode
 } from "../parser";
 import { bindRsglArguments, RsglCallableParameter } from "../arguments";
+import { compileAtlasSpecialStatement } from "./atlasSugar";
 import {
   bindRsglModule,
   bindRsglProgram,
@@ -1673,7 +1672,12 @@ class RsglCompiler {
     context: RsglCompileContext
   ): Record<string, JsonValue> | undefined {
     if (kind === "atlas") {
-      return this.compileAtlasSpecialStatement(statement, context);
+      return compileAtlasSpecialStatement(
+        statement,
+        context,
+        (body, bodyContext) => this.resourceBodyToObject(body, bodyContext, this.resourceBodyFragmentOptions("atlas")),
+        { onError: (code, message, range) => this.error(code, message, range) }
+      );
     }
     if (kind === "equipment" && statement.kind === "EquipmentLayerStmt") {
       return compileEquipmentLayerStatement(statement, context, {
@@ -1681,55 +1685,6 @@ class RsglCompiler {
       });
     }
     return undefined;
-  }
-
-  private compileAtlasSpecialStatement(statement: ResourceStatementNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
-    if (statement.kind === "AtlasDirectoryStmt") {
-      return this.compileAtlasDirectoryStatement(statement, context);
-    }
-    if (statement.kind === "AtlasFilterStmt") {
-      return this.compileAtlasFilterStatement(statement, context);
-    }
-    return undefined;
-  }
-
-  private compileAtlasDirectoryStatement(statement: AtlasDirectoryStmtNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
-    const source = statement.source ? this.staticText(statement.source, context) : null;
-    const prefix = statement.prefix ? this.staticText(statement.prefix, context) : null;
-    if (!source) {
-      this.error("rsgl.invalidAtlasDirectorySource", "Atlas directory source requires a static source string.", statement.range);
-      return undefined;
-    }
-    if (statement.prefix && prefix === null) {
-      this.error("rsgl.invalidAtlasDirectoryPrefix", "Atlas directory prefix must be a static string.", statement.prefix.range);
-      return undefined;
-    }
-    const entry: Record<string, JsonValue> = {
-      type: "minecraft:directory",
-      source
-    };
-    if (prefix !== null) {
-      entry.prefix = prefix;
-    }
-    return { sources: [entry] };
-  }
-
-  private compileAtlasFilterStatement(statement: AtlasFilterStmtNode, context: RsglCompileContext): Record<string, JsonValue> | undefined {
-    const namespace = statement.namespace ? this.staticText(statement.namespace, context) : null;
-    const path = statement.path ? this.staticText(statement.path, context) : null;
-    if (!namespace || !path) {
-      this.error("rsgl.invalidAtlasFilter", "Atlas filter requires static namespace and path patterns.", statement.range);
-      return undefined;
-    }
-    return {
-      sources: [{
-        type: "minecraft:filter",
-        pattern: {
-          namespace,
-          path
-        }
-      }]
-    };
   }
 
   private blockstateFragmentOptions(): RsglBlockstateFragmentOptions {

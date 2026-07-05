@@ -76,6 +76,8 @@ export const rsglKeywords = new Set<string>([
   "models",
   "texture",
   "textures",
+  "paletted_permutations",
+  "palette_key",
   "parent",
   "generate"
 ]);

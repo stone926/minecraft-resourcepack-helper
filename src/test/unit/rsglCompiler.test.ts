@@ -1626,17 +1626,72 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("textureDirectory:minecraft:potions"));
   });
 
+  it("lowers atlas paletted permutations sugar statements", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "let trimMaterials = [\"quartz\", \"iron\"]",
+      "table trimPalettes {",
+      "  quartz: minecraft:trims/color_palettes/quartz",
+      "  iron: minecraft:trims/color_palettes/iron",
+      "}",
+      "atlas minecraft:armor_trims {",
+      "  paletted_permutations {",
+      "    textures seq(\"minecraft:trims/items/helmet_trim_{material}\", material in trimMaterials)",
+      "    palette_key minecraft:trims/color_palettes/trim_palette",
+      "    permutations trimPalettes",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const atlas = result.units.find(unit => unit.kind === "atlas");
+    assert.deepStrictEqual(atlas?.content, {
+      sources: [{
+        type: "minecraft:paletted_permutations",
+        textures: [
+          "minecraft:trims/items/helmet_trim_quartz",
+          "minecraft:trims/items/helmet_trim_iron"
+        ],
+        ["palette_key"]: "minecraft:trims/color_palettes/trim_palette",
+        permutations: {
+          quartz: "minecraft:trims/color_palettes/quartz",
+          iron: "minecraft:trims/color_palettes/iron"
+        }
+      }]
+    });
+    assert.deepStrictEqual(atlas?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/sources"
+    ]);
+    assert.ok(checkedResources.includes("texture:minecraft:trims/items/helmet_trim_quartz"));
+    assert.ok(checkedResources.includes("texture:minecraft:trims/items/helmet_trim_iron"));
+    assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/trim_palette"));
+    assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/quartz"));
+    assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/iron"));
+  });
+
   it("reports invalid atlas source sugar statements", () => {
     const result = compileRsglModule(parseRsgl([
       "atlas minecraft:blocks {",
       "  directory prefix \"block/\"",
       "  filter namespace \"minecraft\"",
+      "  paletted_permutations {",
+      "    textures 1",
+      "    palette_key minecraft:trims/color_palettes/trim_palette",
+      "    permutations []",
+      "  }",
       "}"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
       "rsgl.invalidAtlasDirectorySource",
-      "rsgl.invalidAtlasFilter"
+      "rsgl.invalidAtlasFilter",
+      "rsgl.invalidAtlasPalettedPermutations"
     ]);
   });
 

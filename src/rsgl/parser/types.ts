@@ -213,6 +213,12 @@ export interface MatchArmNode extends RsglNode {
   value: ExprNode;
 }
 
+export interface ForInExprNode extends RsglNode {
+  kind: "ForInExpr";
+  binding: IdentifierNode;
+  iterable: ExprNode;
+}
+
 export interface StateKeySugarNode extends RsglNode {
   kind: "StateKeySugar";
   entries: ObjectPropertyNode[];
@@ -253,6 +259,7 @@ export type ExprNode =
   | BinaryExprNode
   | ConditionalExprNode
   | MatchExprNode
+  | ForInExprNode
   | StateKeySugarNode
   | ModelApplySugarNode
   | RandomApplyNode
@@ -468,6 +475,7 @@ export type ResourceStatementNode =
   | PackFilterBlockStmtNode
   | AtlasDirectoryStmtNode
   | AtlasFilterStmtNode
+  | AtlasPalettedPermutationsStmtNode
   | EquipmentLayerStmtNode
   | RawJsonStmtNode
   | OverrideStmtNode
@@ -541,6 +549,11 @@ export interface AtlasFilterStmtNode extends StatementNodeBase {
   kind: "AtlasFilterStmt";
   namespace?: ExprNode;
   path?: ExprNode;
+}
+
+export interface AtlasPalettedPermutationsStmtNode extends StatementNodeBase {
+  kind: "AtlasPalettedPermutationsStmt";
+  body: ResourceBodyNode;
 }
 
 export interface EquipmentLayerStmtNode extends StatementNodeBase {
