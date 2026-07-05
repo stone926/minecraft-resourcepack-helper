@@ -1232,6 +1232,45 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("keeps nested legacy on_false predicates below true branch overrides", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item bow {",
+      "  model: {",
+      "    type: minecraft:condition,",
+      "    property: minecraft:using_item,",
+      "    on_false: {",
+      "      type: minecraft:range_dispatch,",
+      "      property: minecraft:custom_model_data,",
+      "      fallback: { type: minecraft:model, model: minecraft:item/bow },",
+      "      entries: [",
+      "        { threshold: 7, model: { type: minecraft:model, model: minecraft:item/bow_idle_special } }",
+      "      ]",
+      "    },",
+      "    on_true: { type: minecraft:model, model: minecraft:item/bow_pulling }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/bow"
+      },
+      overrides: [
+        {
+          predicate: { ["custom_model_data"]: 7 },
+          model: "minecraft:item/bow_idle_special"
+        },
+        {
+          predicate: { pulling: 1 },
+          model: "minecraft:item/bow_pulling"
+        }
+      ]
+    });
+  });
+
   it("maps additional modern item properties to legacy predicates", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format 64",

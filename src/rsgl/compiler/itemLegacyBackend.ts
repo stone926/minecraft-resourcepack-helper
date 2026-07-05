@@ -304,13 +304,11 @@ function lowerLegacyCondition(
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a supported property and lowerable model branches.");
     return null;
   }
-  if (onFalse.overrides.length > 0) {
-    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a plain on_false model.");
-    return null;
-  }
 
   const overrides = prefixLowering({ [predicate]: 1 }, onTrue, unit, diagnostics);
-  return overrides ? { baseModel: onFalse.baseModel, overrides } : null;
+  return overrides
+    ? { baseModel: onFalse.baseModel, overrides: [...onFalse.overrides, ...overrides] }
+    : null;
 }
 
 function prefixLowering(
