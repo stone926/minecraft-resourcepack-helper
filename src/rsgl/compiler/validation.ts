@@ -1444,8 +1444,8 @@ function validateTintValue(
       });
     }
   }
-  validateNumberInRange(tint, "temperature", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics);
-  validateNumberInRange(tint, "downfall", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics);
+  validateNumberInRange(tint, "temperature", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
+  validateNumberInRange(tint, "downfall", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
   if ("index" in tint && (!Number.isInteger(tint.index) || Number(tint.index) < 0)) {
     diagnostics.push({
       code: "rsgl.invalidItemTintField",
@@ -1501,7 +1501,8 @@ function validateNumberInRange(
   max: number,
   code: string,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const value = object[field];
   if (value === undefined) {
@@ -1512,7 +1513,7 @@ function validateNumberInRange(
       code,
       message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
       severity: "error",
-      range: unit.sourceMap.mappings[0].sourceRange
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
     });
   }
 }

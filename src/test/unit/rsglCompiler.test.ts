@@ -4557,6 +4557,7 @@ describe("RSGL compiler", () => {
       "        { type: minecraft:constant, value: -1 },",
       "        { type: minecraft:constant, value: 16777216 },",
       "        { type: minecraft:grass, temperature: 2 },",
+      "        { type: minecraft:grass, temperature: 0.5, downfall: 2 },",
       "        { type: minecraft:custom_model_data, default: 1, index: -1 },",
       "        { type: minecraft:unknown }",
       "      ]",
@@ -4595,9 +4596,30 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemTint"));
     const invalidTintsUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_tints.json"));
     const tintValueRange = invalidTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/tints/0/value")?.sourceRange;
+    const tintTemperatureRange = invalidTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/tints/3/temperature")?.sourceRange;
+    const tintDownfallRange = invalidTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/tints/4/downfall")?.sourceRange;
+    const tintIndexRange = invalidTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/tints/5/index")?.sourceRange;
     const invalidTintColor = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemTintColor");
     assert.deepStrictEqual(invalidTintColor?.range, tintValueRange);
     assert.notDeepStrictEqual(invalidTintColor?.range, invalidTintsUnit?.sourceMap.mappings[0].sourceRange);
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTintField"
+      && diagnostic.message.includes("'temperature'")
+      && diagnostic.range.start === tintTemperatureRange?.start
+      && diagnostic.range.end === tintTemperatureRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTintField"
+      && diagnostic.message.includes("'downfall'")
+      && diagnostic.range.start === tintDownfallRange?.start
+      && diagnostic.range.end === tintDownfallRange?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTintField"
+      && diagnostic.message.includes("'index'")
+      && diagnostic.range.start === tintIndexRange?.start
+      && diagnostic.range.end === tintIndexRange?.end
+    ));
     const invalidNestedTintsUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_nested_tints.json"));
     const nestedTintValueRange = invalidNestedTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0/model/tints/0/value")?.sourceRange;
     assert.ok(result.diagnostics.some(diagnostic =>
