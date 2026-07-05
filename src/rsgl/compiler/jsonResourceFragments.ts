@@ -9,7 +9,9 @@ import {
 import type { RsglGenericJsonResourceKind } from "../resourceKinds";
 import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
+import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { expandSequencePattern } from "./sequences";
+import { appendGeneratedPath } from "./sourcePaths";
 
 export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
 
@@ -22,7 +24,7 @@ export function compileJsonResourceUseFragment(
   statement: UseDeclNode,
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions = {}
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const call = jsonResourceFragmentCall(statement.expression);
   if (!call) {
     return undefined;
@@ -51,7 +53,7 @@ function compileAtlasDirectory(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const source = stringArg(call, "source", 0, context, options);
   if (!source) {
     return undefined;
@@ -65,14 +67,14 @@ function compileAtlasDirectory(
   if (prefix !== null) {
     entry.prefix = prefix;
   }
-  return { sources: [entry] };
+  return jsonFragment({ sources: [entry] });
 }
 
 function compileParticlesSeq(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const arg = requiredArg(call, "pattern", 0, options);
   if (!arg) {
     return undefined;
@@ -84,25 +86,38 @@ function compileParticlesSeq(
     options.onError?.("rsgl.invalidParticlesSeqArgument", "particlesSeq pattern must evaluate to a texture id string or list of texture id strings.", arg.value.range);
     return undefined;
   }
-  return { textures };
+  const texturesPath = "/textures";
+  const mappings: ResourceBodyMapping[] = [
+    {
+      generatedPath: texturesPath,
+      sourceRange: arg.value.range,
+      context
+    },
+    ...textures.map((_, index) => ({
+      generatedPath: appendGeneratedPath(texturesPath, String(index)),
+      sourceRange: arg.value.range,
+      context
+    }))
+  ];
+  return jsonFragment({ textures }, mappings);
 }
 
 function compileMcmetaAnimation(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext
-): Record<string, JsonValue> {
+): ResourceBodyFragment {
   const animation: Record<string, JsonValue> = {};
   copyOptionalArg(animation, "frametime", call, context, 0);
   copyOptionalArg(animation, "interpolate", call, context, 1);
   copyOptionalArg(animation, "frames", call, context, 2);
-  return { animation };
+  return jsonFragment({ animation });
 }
 
 function compileNineSliceGui(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const width = numberArg(call, "width", 0, context, options);
   const height = numberArg(call, "height", 1, context, options);
   const borderArg = requiredArg(call, "border", 2, options);
@@ -117,18 +132,18 @@ function compileNineSliceGui(
     border: normalizeJsonValue(evaluateExpression(borderArg.value, context))
   };
   copyOptionalArg(scaling, "stretch_inner", call, context, 3);
-  return {
+  return jsonFragment({
     gui: {
       scaling
     }
-  };
+  });
 }
 
 function compileEquipmentLayers(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const texture = stringArg(call, "texture", 0, context, options);
   const layersArg = requiredArg(call, "layers", 1, options);
   if (!texture || !layersArg) {
@@ -164,7 +179,14 @@ function compileEquipmentLayers(
   for (const layer of layers) {
     layerMap[layer] = [{ ...layerEntry }];
   }
-  return { layers: layerMap };
+  return jsonFragment({ layers: layerMap });
+}
+
+function jsonFragment(
+  content: Record<string, JsonValue>,
+  mappings?: ResourceBodyMapping[]
+): ResourceBodyFragment {
+  return { content, mappings };
 }
 
 function jsonResourceFragmentCall(expression: ExprNode): (CallExprNode & { callee: IdentifierExprNode }) | null {

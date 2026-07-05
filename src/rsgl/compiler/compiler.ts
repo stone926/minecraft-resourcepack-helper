@@ -1566,9 +1566,9 @@ class RsglCompiler {
             ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
         }
         if (kind) {
-          return createResourceBodyFragment(compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
+          return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
             onError: (code, message, range) => this.error(code, message, range)
-          }))
+          })
             ?? this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
         }
         return this.compileResourceBodyFragment(useStatement, fragmentContext, kind);

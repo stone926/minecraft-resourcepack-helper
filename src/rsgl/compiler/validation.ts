@@ -1768,9 +1768,17 @@ function validateParticlesUnit(
   const namespace = unit.id?.namespace ?? "minecraft";
   const content = asObject(unit.content);
   const textures = Array.isArray(content?.textures) ? content.textures : [];
-  for (const texture of textures) {
+  for (const [index, texture] of textures.entries()) {
     if (typeof texture === "string") {
-      checkResourceExists("texture", textureIdInFolder(texture, namespace, "particle"), unit, undefined, options, diagnostics);
+      checkResourceExists(
+        "texture",
+        textureIdInFolder(texture, namespace, "particle"),
+        unit,
+        undefined,
+        options,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath("/textures", String(index)))
+      );
     }
   }
 }

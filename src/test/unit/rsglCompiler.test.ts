@@ -1526,13 +1526,19 @@ describe("RSGL compiler", () => {
         { type: "minecraft:directory", source: "item", prefix: "item/" }
       ]
     });
-    assert.deepStrictEqual(result.units.find(unit => unit.kind === "particles")?.content, {
+    const particles = result.units.find(unit => unit.kind === "particles");
+    assert.deepStrictEqual(particles?.content, {
       textures: [
         "minecraft:particle/explosion_00",
         "minecraft:particle/explosion_01",
         "minecraft:particle/explosion_02"
       ]
     });
+    const particleMappingPaths = particles?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(particleMappingPaths.includes("/textures"));
+    assert.ok(particleMappingPaths.includes("/textures/0"));
+    assert.ok(particleMappingPaths.includes("/textures/1"));
+    assert.ok(particleMappingPaths.includes("/textures/2"));
     assert.deepStrictEqual(result.units.find(unit => unit.kind === "mcmeta")?.content, {
       animation: {
         frametime: 5,
@@ -1584,6 +1590,26 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("shaderFragment:minecraft:post/box_blur"));
     assert.ok(checkedResources.includes("texture:minecraft:effect/blur/mask"));
     assert.strictEqual(checkedResources.includes("font:minecraft:include/space"), false);
+  });
+
+  it("reports particlesSeq generated texture diagnostics at sequence positions", () => {
+    const source = [
+      "particles explosion {",
+      "  use particlesSeq(\"minecraft:particle/explosion_{00..02}\")",
+      "}"
+    ].join("\n");
+    const result = compileRsglModule(parseRsgl(source), {
+      resourceExists: (kind, id) => !(kind === "texture" && id === "minecraft:particle/explosion_01")
+    });
+
+    const particles = result.units.find(unit => unit.kind === "particles");
+    const textureRange = particles?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/1")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("explosion_01")
+      && diagnostic.range.start === textureRange?.start
+      && diagnostic.range.end === textureRange?.end
+    ));
   });
 
   it("lowers atlas source sugar statements", () => {
