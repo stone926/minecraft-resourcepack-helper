@@ -7,6 +7,8 @@ import { lexRsgl } from "./lexer";
 import { endRange, ParserContext, tokenRange } from "./parserContext";
 import {
   ArgumentNode,
+  AtlasDirectoryStmtNode,
+  AtlasFilterStmtNode,
   BlockNode,
   BooleanLiteralNode,
   ExprNode,
@@ -795,6 +797,12 @@ class RsglParser extends ParserContext {
     if (owner === "filter" && token.text === "block" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parsePackFilterBlockStmt();
     }
+    if (owner === "atlas" && token.text === "directory" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parseAtlasDirectoryStmt();
+    }
+    if (owner === "atlas" && token.text === "filter" && this.peekText(1) !== "{" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parseAtlasFilterStmt();
+    }
     if (token.text === "range") {
       return this.parseItemRangeStmt();
     }
@@ -941,6 +949,58 @@ class RsglParser extends ParserContext {
     }
     return {
       kind: "PackFilterBlockStmt",
+      keyword: start.text,
+      namespace,
+      path,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseAtlasDirectoryStmt(): AtlasDirectoryStmtNode {
+    const start = this.advance();
+    let source: ExprNode | undefined;
+    let prefix: ExprNode | undefined;
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
+      const mark = this.mark();
+      if (this.matchText("source")) {
+        source = this.parseExpression({ stopTexts: ["prefix", "}"] });
+      } else if (this.matchText("prefix")) {
+        prefix = this.parseExpression({ stopTexts: ["source", "}"] });
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedAtlasDirectoryClause", "Expected 'source' or 'prefix' in atlas directory source.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse atlas directory clause; skipping token.");
+    }
+    return {
+      kind: "AtlasDirectoryStmt",
+      keyword: start.text,
+      source,
+      prefix,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseAtlasFilterStmt(): AtlasFilterStmtNode {
+    const start = this.advance();
+    let namespace: ExprNode | undefined;
+    let path: ExprNode | undefined;
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
+      const mark = this.mark();
+      if (this.matchText("namespace")) {
+        namespace = this.parseExpression({ stopTexts: ["path", "}"] });
+      } else if (this.matchText("path")) {
+        path = this.parseExpression({ stopTexts: ["namespace", "}"] });
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedAtlasFilterClause", "Expected 'namespace' or 'path' in atlas filter source.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse atlas filter clause; skipping token.");
+    }
+    return {
+      kind: "AtlasFilterStmt",
       keyword: start.text,
       namespace,
       path,

@@ -1139,6 +1139,60 @@ describe("RSGL compiler", () => {
     assert.strictEqual(checkedResources.includes("font:minecraft:include/space"), false);
   });
 
+  it("lowers atlas source sugar statements", () => {
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl([
+      "atlas minecraft:blocks {",
+      "  directory source \"block\" prefix \"block/\"",
+      "  directory source \"potions\" prefix \"potions/\"",
+      "  filter namespace \"minecraft\" path \"block/.*_debug\"",
+      "}"
+    ].join("\n")), {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const atlas = result.units.find(unit => unit.kind === "atlas");
+    assert.deepStrictEqual(atlas?.content, {
+      sources: [
+        { type: "minecraft:directory", source: "block", prefix: "block/" },
+        { type: "minecraft:directory", source: "potions", prefix: "potions/" },
+        {
+          type: "minecraft:filter",
+          pattern: {
+            namespace: "minecraft",
+            path: "block/.*_debug"
+          }
+        }
+      ]
+    });
+    assert.deepStrictEqual(atlas?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
+      "",
+      "/sources",
+      "/sources",
+      "/sources"
+    ]);
+    assert.ok(checkedResources.includes("textureDirectory:minecraft:block"));
+    assert.ok(checkedResources.includes("textureDirectory:minecraft:potions"));
+  });
+
+  it("reports invalid atlas source sugar statements", () => {
+    const result = compileRsglModule(parseRsgl([
+      "atlas minecraft:blocks {",
+      "  directory prefix \"block/\"",
+      "  filter namespace \"minecraft\"",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.invalidAtlasDirectorySource",
+      "rsgl.invalidAtlasFilter"
+    ]);
+  });
+
   it("expands mcmeta glob targets relative to the resource pack root", () => {
     const root = createTempDir();
     try {

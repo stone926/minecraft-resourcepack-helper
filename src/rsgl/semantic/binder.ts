@@ -315,6 +315,20 @@ class RsglBinder {
       if (statement.path) {
         this.checkExpression(statement.path, scope);
       }
+    } else if (statement.kind === "AtlasDirectoryStmt") {
+      if (statement.source) {
+        this.checkExpression(statement.source, scope);
+      }
+      if (statement.prefix) {
+        this.checkExpression(statement.prefix, scope);
+      }
+    } else if (statement.kind === "AtlasFilterStmt") {
+      if (statement.namespace) {
+        this.checkExpression(statement.namespace, scope);
+      }
+      if (statement.path) {
+        this.checkExpression(statement.path, scope);
+      }
     } else if (statement.kind === "ItemRangeStmt") {
       this.checkExpression(statement.property, scope);
       statement.options.forEach(option => this.checkExpression(option.value, scope));

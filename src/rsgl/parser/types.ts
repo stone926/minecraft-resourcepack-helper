@@ -465,6 +465,8 @@ export type ResourceStatementNode =
   | PackFormatsStmtNode
   | PackOverlayStmtNode
   | PackFilterBlockStmtNode
+  | AtlasDirectoryStmtNode
+  | AtlasFilterStmtNode
   | RawJsonStmtNode
   | OverrideStmtNode
   | AppendStmtNode
@@ -523,6 +525,18 @@ export interface PackOverlayStmtNode extends StatementNodeBase {
 
 export interface PackFilterBlockStmtNode extends StatementNodeBase {
   kind: "PackFilterBlockStmt";
+  namespace?: ExprNode;
+  path?: ExprNode;
+}
+
+export interface AtlasDirectoryStmtNode extends StatementNodeBase {
+  kind: "AtlasDirectoryStmt";
+  source?: ExprNode;
+  prefix?: ExprNode;
+}
+
+export interface AtlasFilterStmtNode extends StatementNodeBase {
+  kind: "AtlasFilterStmt";
   namespace?: ExprNode;
   path?: ExprNode;
 }

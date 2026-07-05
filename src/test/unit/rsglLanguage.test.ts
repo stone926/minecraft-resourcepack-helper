@@ -300,6 +300,30 @@ describe("RSGL language", () => {
     assert.deepStrictEqual(filter.kind === "SectionStmt" ? filter.body?.statements.map(statement => statement.kind) : [], ["PackFilterBlockStmt"]);
   });
 
+  it("parses atlas source sugar statements", () => {
+    const module = parseRsgl([
+      "atlas minecraft:blocks {",
+      "  directory source \"block\" prefix \"block/\"",
+      "  filter namespace \"minecraft\" path \"block/.*_debug\"",
+      "  sources [",
+      "    { type: minecraft:single, resource: minecraft:block/stone }",
+      "  ]",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const atlas = module.statements[0];
+    assert.strictEqual(atlas.kind, "ResourceDecl");
+    if (atlas.kind !== "ResourceDecl") {
+      throw new Error("Expected atlas resource declaration.");
+    }
+    assert.deepStrictEqual(atlas.body.statements.map(statement => statement.kind), [
+      "AtlasDirectoryStmt",
+      "AtlasFilterStmt",
+      "SectionStmt"
+    ]);
+  });
+
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {
     const source = [
       "let frames = seq(`minecraft:item/clock_${pad(index, 2)}`)",
