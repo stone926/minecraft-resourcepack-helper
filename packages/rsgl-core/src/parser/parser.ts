@@ -794,7 +794,7 @@ class RsglParser extends ParserContext {
     if (token.text === "if") {
       return this.parseIfStmt("resource");
     }
-    if (token.text === "raw_json") {
+    if (token.text === "raw_json" || token.text === "raw_json_file") {
       return this.parseRawLikeStmt("RawJsonStmt");
     }
     if (token.text === "override") {
@@ -909,6 +909,10 @@ class RsglParser extends ParserContext {
     if (this.current().kind === "string") {
       const token = this.advance();
       return this.syntheticIdentifier(token, unquoteString(token.text));
+    }
+    if (this.current().kind === "number") {
+      const token = this.advance();
+      return this.syntheticIdentifier(token, token.text);
     }
     return this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
   }
@@ -1720,6 +1724,9 @@ class RsglParser extends ParserContext {
     }
     if (this.current().kind === "string") {
       return this.parseStringLiteral();
+    }
+    if (this.current().kind === "number") {
+      return this.parseNumberLiteral();
     }
     return this.parseIdentifier("Expected object key.");
   }

@@ -50,6 +50,7 @@ export const rsglKeywords = new Set<string>([
   "random",
   "raw",
   "raw_json",
+  "raw_json_file",
   "override",
   "append",
   "range",

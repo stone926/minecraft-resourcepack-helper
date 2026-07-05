@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { TextRange } from "../parser";
-import { EvaluationContext, EvaluationValue, RawJsonLoader } from "./evaluate";
+import { EvaluationContext, EvaluationValue, RawJsonLoader, RawJsonLoadMode } from "./evaluate";
 
 export interface RsglFileRawJsonLoaderOptions {
   fallbackFileName?: string;
@@ -9,18 +9,23 @@ export interface RsglFileRawJsonLoaderOptions {
 }
 
 export function createFileRawJsonLoader(options: RsglFileRawJsonLoaderOptions = {}): RawJsonLoader {
-  return (request, context, range) => loadRawJsonFile(request, context, range, options);
+  return (request, context, range, mode = "auto") => loadRawJson(request, context, range, options, mode);
 }
 
-function loadRawJsonFile(
+function loadRawJson(
   request: string,
   context: EvaluationContext,
   range: TextRange,
-  options: RsglFileRawJsonLoaderOptions
+  options: RsglFileRawJsonLoaderOptions,
+  mode: RawJsonLoadMode
 ): EvaluationValue {
   if (!request.trim()) {
-    options.onError?.("rsgl.rawJsonInvalidPath", "raw_json requires a non-empty path.", range);
+    options.onError?.("rsgl.rawJsonInvalidPath", `${mode === "file" ? "raw_json_file" : "raw_json"} requires a non-empty path.`, range);
     return undefined;
+  }
+
+  if (mode === "auto" && looksLikeInlineJson(request)) {
+    return parseInlineRawJson(request, range, options);
   }
 
   const resolvedPath = resolveRawJsonPath(request, context.sourceFile, options.fallbackFileName);
@@ -42,6 +47,28 @@ function loadRawJsonFile(
     options.onError?.(
       "rsgl.rawJsonParseFailed",
       `Unable to parse raw JSON '${request}': ${errorMessage(error)}.`,
+      range
+    );
+    return undefined;
+  }
+}
+
+function looksLikeInlineJson(request: string): boolean {
+  const trimmed = request.trimStart();
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
+}
+
+function parseInlineRawJson(
+  request: string,
+  range: TextRange,
+  options: RsglFileRawJsonLoaderOptions
+): EvaluationValue {
+  try {
+    return JSON.parse(request) as EvaluationValue;
+  } catch (error) {
+    options.onError?.(
+      "rsgl.rawJsonParseFailed",
+      `Unable to parse inline raw JSON: ${errorMessage(error)}.`,
       range
     );
     return undefined;

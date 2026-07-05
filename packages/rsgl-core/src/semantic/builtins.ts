@@ -74,6 +74,30 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     builtinFunction("yaw", [{ name: "direction", type: stringType, optional: false }], numberType),
     builtinFunction("glob", [{ name: "pattern", type: stringType, optional: false }], { kind: "List", elementType: stringType }),
     builtinFunction("raw_json", [{ name: "path", type: stringType, optional: false }], jsonType),
+    builtinFunction("raw_json_file", [{ name: "path", type: stringType, optional: false }], jsonType),
+    builtinFunction("startsWith", [
+      { name: "str", type: stringType, optional: false },
+      { name: "prefix", type: stringType, optional: false }
+    ], booleanType),
+    builtinFunction("endsWith", [
+      { name: "str", type: stringType, optional: false },
+      { name: "suffix", type: stringType, optional: false }
+    ], booleanType),
+    builtinFunction("replace", [
+      { name: "str", type: stringType, optional: false },
+      { name: "old", type: stringType, optional: false },
+      { name: "new", type: stringType, optional: false }
+    ], stringType),
+    builtinFunction("padStart", [
+      { name: "str", type: stringType, optional: false },
+      { name: "len", type: numberType, optional: false },
+      { name: "pad", type: stringType, optional: false }
+    ], stringType),
+    builtinFunction("padEnd", [
+      { name: "str", type: stringType, optional: false },
+      { name: "len", type: numberType, optional: false },
+      { name: "pad", type: stringType, optional: false }
+    ], stringType),
     builtinFunction("cubeAll", [
       { name: "id", type: resourceIdType, optional: false },
       { name: "texture", type: textureIdType, optional: true }

@@ -65,6 +65,52 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("emits numeric and quoted model texture keys", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block numbered_textures {",
+      "  parent minecraft:block/cube_all",
+      "  textures {",
+      "    0: minecraft:block/zero",
+      "    \"1\": minecraft:block/one",
+      "    particle: minecraft:block/particle",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        "0": "minecraft:block/zero",
+        "1": "minecraft:block/one",
+        particle: "minecraft:block/particle"
+      }
+    });
+  });
+
+  it("evaluates compile-time string helper functions", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block string_helpers {",
+      "  raw_json {",
+      "    starts: startsWith(\"oak_planks\", \"oak\")",
+      "    ends: endsWith(\"oak_planks\", \"planks\")",
+      "    replaced: replace(\"oak_planks\", \"oak\", \"birch\")",
+      "    left: padStart(\"7\", 3, \"0\")",
+      "    right: padEnd(\"x\", 3, \"_\")",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      starts: true,
+      ends: true,
+      replaced: "birch_planks",
+      left: "007",
+      right: "x__"
+    });
+  });
+
   it("preserves empty list expressions in resource raw json", () => {
     const result = compileRsglModule(parseRsgl([
       "atlas blocks {",
@@ -2537,7 +2583,7 @@ describe("RSGL compiler", () => {
     });
   });
 
-  it("loads raw_json path fragments relative to RSGL source files", () => {
+  it("loads raw_json_file path fragments relative to RSGL source files", () => {
     const root = createTempDir();
     try {
       const packDir = path.join(root, "pack");
@@ -2557,13 +2603,14 @@ describe("RSGL compiler", () => {
         ["hand_animation_on_swap"]: false
       }));
       fs.writeFileSync(valuesFile, [
-        "let itemFragment = raw_json(\"./fragments/item.json\")",
+        "let itemFragment = raw_json_file(\"./fragments/item.json\")",
         "export { itemFragment }"
       ].join("\n"));
       fs.writeFileSync(mainFile, [
         "import { itemFragment } from \"./values.rsgl\"",
         "model block custom_panel {",
-        "  raw_json(\"./fragments/model.json\")",
+        "  raw_json_file(\"./fragments/model.json\")",
+        "  raw_json(\"{\\\"ambientocclusion\\\":false}\")",
         "}",
         "item diamond {",
         "  raw_json itemFragment",
@@ -3548,6 +3595,27 @@ describe("RSGL compiler", () => {
       "/overlays/entries/0",
       "/overlays/entries/1"
     ]);
+  });
+
+  it("expands literal range loops without non-finite loop diagnostics", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block age_layers {",
+      "  textures {",
+      "    for age in 0..2 {",
+      "      raw_json { [`layer${age}`]: `minecraft:block/age_${age}` }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.compileNonFiniteLoop"), false);
+    assert.deepStrictEqual(result.units[0].content, {
+      textures: {
+        layer0: "minecraft:block/age_0",
+        layer1: "minecraft:block/age_1",
+        layer2: "minecraft:block/age_2"
+      }
+    });
   });
 
   it("reports non-finite loops inside resource bodies", () => {

@@ -141,7 +141,7 @@ export interface ObjectExprNode extends RsglNode {
 
 export interface ObjectPropertyNode extends RsglNode {
   kind: "ObjectProperty";
-  key: IdentifierNode | StringLiteralNode | DynamicKeyNode;
+  key: IdentifierNode | StringLiteralNode | NumberLiteralNode | DynamicKeyNode;
   value: ExprNode;
 }
 

@@ -216,6 +216,32 @@ describe("RSGL language", () => {
     assert.strictEqual(model.body.statements[0].kind, "PropertyStmt");
   });
 
+  it("parses numeric and quoted resource body property keys", () => {
+    const module = parseRsgl([
+      "model block numbered_textures {",
+      "  textures {",
+      "    0: minecraft:block/zero",
+      "    \"1\": minecraft:block/one",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const model = module.statements[0];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    if (model.kind !== "ResourceDecl") {
+      return;
+    }
+    const textures = model.body.statements[0];
+    assert.strictEqual(textures.kind, "SectionStmt");
+    assert.deepStrictEqual(
+      textures.kind === "SectionStmt"
+        ? textures.body?.statements.map(statement => statement.kind === "PropertyStmt" ? statement.name.text : "")
+        : [],
+      ["0", "1"]
+    );
+  });
+
   it("parses export declarations", () => {
     const module = parseRsgl([
       "export { cube as cubeModel, woods }",

@@ -8,7 +8,8 @@ import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import { expandSequencePattern } from "./sequences";
 
 export type EvaluationValue = JsonValue | undefined;
-export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange) => EvaluationValue;
+export type RawJsonLoadMode = "auto" | "file";
+export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange, mode?: RawJsonLoadMode) => EvaluationValue;
 export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
 
 export interface EvaluationContext {
@@ -269,6 +270,9 @@ function propertyKeyToString(property: ObjectPropertyNode, context: EvaluationCo
   if (property.key.kind === "StringLiteral") {
     return property.key.value;
   }
+  if (property.key.kind === "NumberLiteral") {
+    return property.key.raw;
+  }
   const value = evaluateExpression(property.key.expression, context);
   return value === undefined ? null : String(value);
 }
@@ -283,6 +287,9 @@ function stateKeyToString(property: ObjectPropertyNode, context: EvaluationConte
   }
   if (property.key.kind === "StringLiteral") {
     return property.key.value;
+  }
+  if (property.key.kind === "NumberLiteral") {
+    return property.key.raw;
   }
   const value = evaluateExpression(property.key.expression, context);
   return scalarText(value);
@@ -359,38 +366,68 @@ function evaluateCallExpression(
     return undefined;
   }
 
-  if (callee.name.text === "raw_json") {
-    const request = args[0]?.value;
-    return typeof request === "string" ? context.rawJsonLoader?.(request, context, range) : undefined;
+  if (callee.name.text === "raw_json" || callee.name.text === "raw_json_file") {
+    const request = argumentValue(args, "path", 0);
+    const mode: RawJsonLoadMode = callee.name.text === "raw_json_file" ? "file" : "auto";
+    return typeof request === "string" ? context.rawJsonLoader?.(request, context, range, mode) : undefined;
   }
   if (callee.name.text === "glob") {
-    const pattern = args[0]?.value;
+    const pattern = argumentValue(args, "pattern", 0);
     return typeof pattern === "string" ? context.globLoader?.(pattern, context, range) ?? [] : [];
   }
   if (callee.name.text === "product") {
-    const source = normalizeJsonValue(args[0]?.value);
+    const source = normalizeJsonValue(argumentValue(args, "source", 0));
     return source && typeof source === "object" && !Array.isArray(source) ? product(source as Record<string, JsonValue>) : [];
   }
   if (callee.name.text === "pad") {
-    const value = String(args[0]?.value ?? "");
-    const width = Number(args[1]?.value ?? 0);
+    const value = String(argumentValue(args, "value", 0) ?? "");
+    const width = Number(argumentValue(args, "width", 1) ?? 0);
     return value.padStart(width, "0");
   }
   if (callee.name.text === "seq") {
-    const pattern = String(args[0]?.value ?? "");
+    const pattern = String(argumentValue(args, "pattern", 0) ?? "");
     return expandSequencePattern(pattern);
   }
   if (callee.name.text === "yaw") {
-    return horizontalYaw[String(args[0]?.value)] ?? 0;
+    return horizontalYaw[String(argumentValue(args, "direction", 0))] ?? 0;
   }
   if (callee.name.text === "model_path") {
-    return resourceAssetPath(String(args[0]?.value ?? ""), context.namespace, "models", "json");
+    return resourceAssetPath(String(argumentValue(args, "id", 0) ?? ""), context.namespace, "models", "json");
   }
   if (callee.name.text === "texture_path") {
-    return resourceAssetPath(String(args[0]?.value ?? ""), context.namespace, "textures", "png");
+    return resourceAssetPath(String(argumentValue(args, "id", 0) ?? ""), context.namespace, "textures", "png");
+  }
+  if (callee.name.text === "startsWith") {
+    return String(argumentValue(args, "str", 0) ?? "").startsWith(String(argumentValue(args, "prefix", 1) ?? ""));
+  }
+  if (callee.name.text === "endsWith") {
+    return String(argumentValue(args, "str", 0) ?? "").endsWith(String(argumentValue(args, "suffix", 1) ?? ""));
+  }
+  if (callee.name.text === "replace") {
+    const source = String(argumentValue(args, "str", 0) ?? "");
+    const oldText = String(argumentValue(args, "old", 1) ?? "");
+    const newText = String(argumentValue(args, "new", 2) ?? "");
+    return oldText ? source.split(oldText).join(newText) : source;
+  }
+  if (callee.name.text === "padStart") {
+    const source = String(argumentValue(args, "str", 0) ?? "");
+    const length = Number(argumentValue(args, "len", 1) ?? 0);
+    const pad = String(argumentValue(args, "pad", 2) ?? "");
+    return source.padStart(length, pad);
+  }
+  if (callee.name.text === "padEnd") {
+    const source = String(argumentValue(args, "str", 0) ?? "");
+    const length = Number(argumentValue(args, "len", 1) ?? 0);
+    const pad = String(argumentValue(args, "pad", 2) ?? "");
+    return source.padEnd(length, pad);
   }
 
   return undefined;
+}
+
+function argumentValue(args: Array<{ name?: string; value: EvaluationValue }>, name: string, positionalIndex: number): EvaluationValue {
+  return args.find(arg => arg.name === name)?.value
+    ?? args.filter(arg => !arg.name)[positionalIndex]?.value;
 }
 
 function evaluateMatchExpression(

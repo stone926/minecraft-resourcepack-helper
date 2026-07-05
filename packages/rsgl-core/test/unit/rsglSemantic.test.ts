@@ -56,6 +56,20 @@ describe("RSGL semantic model", () => {
     assert.ok(codes.includes("rsgl.undefinedSymbol"));
   });
 
+  it("treats bare identifiers in for-in list literals as string constants", () => {
+    const module = parseRsgl([
+      "for wood in [oak, spruce, birch] {",
+      "  model block `${wood}_planks` {",
+      "    textures { all: `minecraft:block/${wood}_planks` }",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    const model = bindRsglModule(module);
+
+    assert.strictEqual(model.diagnostics.some(diagnostic => diagnostic.code === "rsgl.undefinedSymbol"), false);
+  });
+
   it("reports template string interpolation diagnostics at embedded expression ranges", () => {
     const source = "let label = `minecraft:block/${missing.value}`";
     const model = bindRsglModule(parseRsgl(source));

@@ -122,7 +122,7 @@
       "patterns": [
         {
           "name": "support.function.rsgl",
-          "match": "\\b(?:cubeAll|itemGenerated|itemRangeFrames|itemSelectCases|randomVariants|raw_json|product|seq|pad|yaw|glob|model_path|texture_path)\\b"
+          "match": "\\b(?:cubeAll|itemGenerated|itemRangeFrames|itemSelectCases|randomVariants|raw_json|raw_json_file|product|seq|pad|yaw|glob|model_path|texture_path|startsWith|endsWith|replace|padStart|padEnd)\\b"
         },
         {
           "name": "support.constant.rsgl",

@@ -146,7 +146,8 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "when", insertText: "when { ${1:facing}: ${2:north} } apply { model: ${3:minecraft:block/stone} }", detail: "Multipart condition", kind: "snippet" },
   { label: "apply", insertText: "apply { model: ${1:minecraft:block/stone} }", detail: "Multipart model apply", kind: "snippet" },
   { label: "random", insertText: "random [\n  { model: ${1:minecraft:block/stone}, weight: ${2:1} }\n]", detail: "Random variant model list", kind: "snippet" },
-  { label: "raw_json", insertText: "raw_json(\"${1:./resource.json}\")", detail: "JSON escape hatch", kind: "function" },
+  { label: "raw_json", insertText: "raw_json {\n  ${1:key}: ${2:value}\n}", detail: "Inline JSON escape hatch", kind: "snippet" },
+  { label: "raw_json_file", insertText: "raw_json_file(\"${1:./resource.json}\")", detail: "Load a JSON fragment from disk", kind: "function" },
   { label: "@block", insertText: "@block/${1:model} ${2:y=90} ${3:uvlock}", detail: "Model apply sugar", kind: "snippet" }
 ];
 
@@ -177,6 +178,13 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "horizontalFacing", detail: "Builtin horizontal facing blockstate template", kind: "function" },
   { label: "axisRotated", detail: "Builtin axis rotated blockstate template", kind: "function" },
   { label: "randomVariants", detail: "Builtin random variants helper", kind: "function" },
+  { label: "raw_json", insertText: "raw_json { ${1:key}: ${2:value} }", detail: "Inline JSON escape hatch", kind: "function" },
+  { label: "raw_json_file", insertText: "raw_json_file(\"${1:./resource.json}\")", detail: "Load a JSON fragment from disk", kind: "function" },
+  { label: "startsWith", insertText: "startsWith(${1:str}, ${2:prefix})", detail: "Compile-time string prefix predicate", kind: "function" },
+  { label: "endsWith", insertText: "endsWith(${1:str}, ${2:suffix})", detail: "Compile-time string suffix predicate", kind: "function" },
+  { label: "replace", insertText: "replace(${1:str}, ${2:old}, ${3:new})", detail: "Compile-time string replacement", kind: "function" },
+  { label: "padStart", insertText: "padStart(${1:str}, ${2:len}, ${3:pad})", detail: "Compile-time left padding", kind: "function" },
+  { label: "padEnd", insertText: "padEnd(${1:str}, ${2:len}, ${3:pad})", detail: "Compile-time right padding", kind: "function" },
   { label: "HORIZONTAL", detail: "Standard enum: north, east, south, west", kind: "constant" },
   { label: "DIRECTIONS", detail: "Standard enum: down, up, north, south, west, east", kind: "constant" },
   { label: "STAIR_SHAPES", detail: "Standard enum for stair shapes", kind: "constant" },

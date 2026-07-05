@@ -440,7 +440,7 @@ class RsglBinder {
     body: CheckableBody,
     scope: RsglScope
   ): void {
-    this.checkExpression(iterable, scope);
+    this.checkForIterableExpression(iterable, scope);
     const finiteDomain = bindings.length === 1 ? this.finiteStringDomain(iterable, scope) : null;
     const loopScope = createChildScope(scope, "loop");
     for (const binding of bindings) {
@@ -453,6 +453,21 @@ class RsglBinder {
       }
     }
     this.checkBody(body, loopScope);
+  }
+
+  private checkForIterableExpression(expression: ExprNode, scope: RsglScope): RsglType {
+    if (expression.kind !== "ListExpr") {
+      return this.checkExpression(expression, scope);
+    }
+    const elementTypes = expression.elements.map(element => this.checkForIterableListElement(element, scope));
+    return { kind: "List", elementType: elementTypes[0] ?? unknownType };
+  }
+
+  private checkForIterableListElement(expression: ExprNode, scope: RsglScope): RsglType {
+    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
+      return stringType;
+    }
+    return this.checkExpression(expression, scope);
   }
 
   private checkVariantBody(body: VariantBodyNode, scope: RsglScope): void {
@@ -1089,6 +1104,9 @@ function objectKeyName(property: ObjectPropertyNode): string | null {
   }
   if (property.key.kind === "StringLiteral") {
     return property.key.value;
+  }
+  if (property.key.kind === "NumberLiteral") {
+    return property.key.raw;
   }
   return null;
 }
