@@ -4317,6 +4317,10 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.itemModelMissingFallback"));
     assert.ok(codes.includes("rsgl.invalidItemSelectCase"));
     assert.ok(codes.includes("rsgl.invalidItemConditionBranch"));
+    const brokenCompassUnit = result.units.find(unit => unit.outputPath.endsWith("broken_compass.json"));
+    const unsortedThresholdRange = brokenCompassUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/entries/1/threshold")?.sourceRange;
+    const unsortedDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsortedItemRangeThresholds");
+    assert.deepStrictEqual(unsortedDiagnostic?.range, unsortedThresholdRange);
   });
 
   it("validates item composite and terminal model types", () => {

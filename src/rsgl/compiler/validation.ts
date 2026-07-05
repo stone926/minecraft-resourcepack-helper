@@ -754,20 +754,22 @@ function validateItemRangeDispatch(
     }
     let previousThreshold = -Infinity;
     for (const [index, entry] of entries.entries()) {
+      const entryPath = appendGeneratedPath(appendGeneratedPath(generatedPath, "entries"), String(index));
+      const thresholdPath = appendGeneratedPath(entryPath, "threshold");
       const entryObject = asObject(entry);
       if (!entryObject || typeof entryObject.threshold !== "number" || !Number.isFinite(entryObject.threshold)) {
         diagnostics.push({
           code: "rsgl.invalidItemRangeThreshold",
           message: "Item range_dispatch entry threshold must be a finite number.",
           severity: "error",
-          range: unit.sourceMap.mappings[0].sourceRange
+          range: sourceRangeForGeneratedPath(unit, thresholdPath)
         });
       } else if (entryObject.threshold < previousThreshold) {
         diagnostics.push({
           code: "rsgl.unsortedItemRangeThresholds",
           message: "Item range_dispatch entries should be sorted by threshold ascending.",
           severity: "warning",
-          range: unit.sourceMap.mappings[0].sourceRange
+          range: sourceRangeForGeneratedPath(unit, thresholdPath)
         });
       } else {
         previousThreshold = entryObject.threshold;
@@ -778,7 +780,7 @@ function validateItemRangeDispatch(
         generatedModels,
         options,
         diagnostics,
-        appendGeneratedPath(appendGeneratedPath(appendGeneratedPath(generatedPath, "entries"), String(index)), "model")
+        appendGeneratedPath(entryPath, "model")
       );
     }
   }
