@@ -1,8 +1,8 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, createRsglWritePlan, emitRsglFiles, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../../packages/rsgl-core/src/compiler";
-import { parseRsgl } from "../../../packages/rsgl-core/src/parser";
+import { compileRsglFile, compileRsglModule, createRsglWritePlan, emitRsglFiles, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../src/compiler";
+import { parseRsgl } from "../../src/parser";
 import { createTempDir, emittedContent } from "./rsglTestHelpers";
 
 describe("RSGL compiler", () => {

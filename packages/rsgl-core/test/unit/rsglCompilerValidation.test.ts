@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, inferBlockstateSchemaFromContent, validateResourceUnits, type JsonValue } from "../../../packages/rsgl-core/src/compiler";
-import { parseRsgl } from "../../../packages/rsgl-core/src/parser";
-import { createRsglWorkspaceValidationOptions } from "../../../packages/rsgl-core/src/workspaceValidation";
+import { compileRsglFile, compileRsglModule, compileRsglProgram, inferBlockstateSchemaFromContent, validateResourceUnits, type JsonValue } from "../../src/compiler";
+import { parseRsgl } from "../../src/parser";
+import { createRsglWorkspaceValidationOptions } from "../../src/workspaceValidation";
 import { createPngBytes, createTempDir, minimalItemUnit } from "./rsglTestHelpers";
 
 describe("RSGL compiler validation", () => {

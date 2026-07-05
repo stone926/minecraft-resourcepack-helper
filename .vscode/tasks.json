@@ -37,6 +37,16 @@
 			"group": "build"
 		},
 		{
+			"label": "npm: compile:test",
+			"type": "npm",
+			"script": "compile:test",
+			"problemMatcher": "$tsc",
+			"presentation": {
+				"reveal": "never"
+			},
+			"group": "build"
+		},
+		{
 			"label": "npm: watch",
 			"type": "npm",
 			"script": "watch",

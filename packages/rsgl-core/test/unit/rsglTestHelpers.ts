@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { JsonValue, ResourceUnit, RsglEmittedFile } from "../../../packages/rsgl-core/src/compiler";
+import type { JsonValue, ResourceUnit, RsglEmittedFile } from "../../src/compiler";
 
 export function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-"));

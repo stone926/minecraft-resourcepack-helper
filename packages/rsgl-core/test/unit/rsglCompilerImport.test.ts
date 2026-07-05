@@ -1,8 +1,8 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromFile } from "../../../packages/rsgl-core/src/compiler";
-import { parseRsgl } from "../../../packages/rsgl-core/src/parser";
+import { compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromFile } from "../../src/compiler";
+import { parseRsgl } from "../../src/parser";
 import { createTempDir } from "./rsglTestHelpers";
 
 describe("RSGL compiler imports", () => {

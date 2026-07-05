@@ -8,8 +8,8 @@ import {
   buildRsglResourcePackProgram,
   previewRsglResourcePackBuild,
   previewRsglResourcePackDirectoryBuild
-} from "../../../packages/rsgl-core/src/build";
-import { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
+} from "../../src/build";
+import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 
 describe("RSGL build", () => {
   it("writes emitted resources with source maps and a manifest", () => {

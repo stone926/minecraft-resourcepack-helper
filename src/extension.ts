@@ -20,7 +20,6 @@ import { ModelPreviewHostFileSystem } from './modelPreview/host/ModelPreviewHost
 import { openModelPreviewCommand } from './modelPreview/commands/openModelPreview';
 import { captureModelPreviewImageCommand, exportModelPreviewImageCommand } from './modelPreview/commands/exportModelPreviewImage';
 import { workspaceResourceCache } from './services/workspaceResourceCache';
-import { registerRsglBridgeCommands } from './rsglBridge';
 
 const jsonResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { language: "json", pattern: "**/blockstates/*.json" },
@@ -67,7 +66,6 @@ const resourceReferenceSelectors: vscode.DocumentFilter[] = [
 
 export function activate(context: vscode.ExtensionContext) {
   workspaceResourceCache.setOpenTextDocumentProvider(fileName => findOpenTextDocument(fileName));
-  registerRsglBridgeCommands(context);
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     resourceReferenceSelectors,

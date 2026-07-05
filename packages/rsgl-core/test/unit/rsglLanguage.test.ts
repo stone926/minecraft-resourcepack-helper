@@ -1,12 +1,12 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getRsglCompletionCandidates } from "../../../packages/rsgl-core/src/completionData";
-import { formatRsglText } from "../../../packages/rsgl-core/src/formatterCore";
-import { lexRsgl, parseRsgl } from "../../../packages/rsgl-core/src/parser";
-import { resourceKeywords } from "../../../packages/rsgl-core/src/parser/keywords";
-import { rsglResourceKinds } from "../../../packages/rsgl-core/src/resourceKinds";
-import { discoverRsglSourceRootsFromFileNames, resolveRsglSourceRootFromFileName, RsglWorkspaceSourceRootCache } from "../../../packages/rsgl-core/src/sourceRoot";
+import { getRsglCompletionCandidates } from "../../src/completionData";
+import { formatRsglText } from "../../src/formatterCore";
+import { lexRsgl, parseRsgl } from "../../src/parser";
+import { resourceKeywords } from "../../src/parser/keywords";
+import { rsglResourceKinds } from "../../src/resourceKinds";
+import { discoverRsglSourceRootsFromFileNames, resolveRsglSourceRootFromFileName, RsglWorkspaceSourceRootCache } from "../../src/sourceRoot";
 
 describe("RSGL language", () => {
   it("contributes the rsgl language and bundled editor assets", () => {
@@ -25,12 +25,16 @@ describe("RSGL language", () => {
 
     assert.ok(packageJson.extensionDependencies?.includes("stone926.rsgl"));
     assert.strictEqual(packageJson.contributes?.languages?.some(entry => entry.id === "rsgl"), false);
-    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePack"));
-    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackBuild"));
-    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePackDirectory"));
-    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackDirectoryBuild"));
-    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglWorkspaceResourcePacks"));
-    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglWorkspaceResourcePackBuilds"));
+    for (const event of [
+      "onCommand:McResHelper.buildRsglResourcePack",
+      "onCommand:McResHelper.previewRsglResourcePackBuild",
+      "onCommand:McResHelper.buildRsglResourcePackDirectory",
+      "onCommand:McResHelper.previewRsglResourcePackDirectoryBuild",
+      "onCommand:McResHelper.buildRsglWorkspaceResourcePacks",
+      "onCommand:McResHelper.previewRsglWorkspaceResourcePackBuilds"
+    ]) {
+      assert.strictEqual(packageJson.activationEvents?.includes(event), false);
+    }
 
     assert.ok(rsglPackageJson.activationEvents?.includes("onLanguage:rsgl"));
     assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.build"));
@@ -54,24 +58,16 @@ describe("RSGL language", () => {
       assert.ok(JSON.stringify(grammarJson).includes(kind), `Expected RSGL grammar to include resource kind '${kind}'.`);
     }
 
-    assert.ok(packageJson.contributes?.commands?.some(command =>
-      command.command === "McResHelper.buildRsglResourcePack" && command.icon === "$(play)"
-    ));
-    assert.ok(packageJson.contributes?.commands?.some(command =>
-      command.command === "McResHelper.previewRsglResourcePackBuild" && command.icon === "$(diff)"
-    ));
-    assert.ok(packageJson.contributes?.commands?.some(command =>
-      command.command === "McResHelper.buildRsglResourcePackDirectory" && command.icon === "$(run-all)"
-    ));
-    assert.ok(packageJson.contributes?.commands?.some(command =>
-      command.command === "McResHelper.previewRsglResourcePackDirectoryBuild" && command.icon === "$(diff)"
-    ));
-    assert.ok(packageJson.contributes?.commands?.some(command =>
-      command.command === "McResHelper.buildRsglWorkspaceResourcePacks" && command.icon === "$(run-all)"
-    ));
-    assert.ok(packageJson.contributes?.commands?.some(command =>
-      command.command === "McResHelper.previewRsglWorkspaceResourcePackBuilds" && command.icon === "$(diff)"
-    ));
+    for (const command of [
+      "McResHelper.buildRsglResourcePack",
+      "McResHelper.previewRsglResourcePackBuild",
+      "McResHelper.buildRsglResourcePackDirectory",
+      "McResHelper.previewRsglResourcePackDirectoryBuild",
+      "McResHelper.buildRsglWorkspaceResourcePacks",
+      "McResHelper.previewRsglWorkspaceResourcePackBuilds"
+    ]) {
+      assert.strictEqual(packageJson.contributes?.commands?.some(entry => entry.command === command), false);
+    }
 
     assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
       command.command === "rsgl.build" && command.icon === "$(play)"

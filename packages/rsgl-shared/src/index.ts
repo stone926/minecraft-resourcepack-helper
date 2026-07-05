@@ -12,15 +12,6 @@ export const rsglCommands = {
   format: "rsgl.format"
 } as const;
 
-export const legacyRsglCommands = {
-  build: "McResHelper.buildRsglResourcePack",
-  previewBuild: "McResHelper.previewRsglResourcePackBuild",
-  buildDirectory: "McResHelper.buildRsglResourcePackDirectory",
-  previewDirectoryBuild: "McResHelper.previewRsglResourcePackDirectoryBuild",
-  buildWorkspace: "McResHelper.buildRsglWorkspaceResourcePacks",
-  previewWorkspaceBuild: "McResHelper.previewRsglWorkspaceResourcePackBuilds"
-} as const;
-
 export const rsglConfigKeys = {
   outDir: "rsgl.outDir",
   minecraftVersion: "rsgl.minecraftVersion",
@@ -31,4 +22,3 @@ export const rsglConfigKeys = {
 } as const;
 
 export type RsglCommandId = typeof rsglCommands[keyof typeof rsglCommands];
-export type LegacyRsglCommandId = typeof legacyRsglCommands[keyof typeof legacyRsglCommands];

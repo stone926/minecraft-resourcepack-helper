@@ -25,12 +25,6 @@
     "type": "git"
   },
   "activationEvents": [
-    "onCommand:McResHelper.buildRsglResourcePack",
-    "onCommand:McResHelper.previewRsglResourcePackBuild",
-    "onCommand:McResHelper.buildRsglResourcePackDirectory",
-    "onCommand:McResHelper.previewRsglResourcePackDirectoryBuild",
-    "onCommand:McResHelper.buildRsglWorkspaceResourcePacks",
-    "onCommand:McResHelper.previewRsglWorkspaceResourcePackBuilds",
     "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
@@ -172,36 +166,6 @@
         "command": "McResHelper.generateCitForCurrentItem",
         "title": "%command.title.generateCitForCurrentItem%",
         "icon": "$(wand)"
-      },
-      {
-        "command": "McResHelper.buildRsglResourcePack",
-        "title": "%command.title.buildRsglResourcePack%",
-        "icon": "$(play)"
-      },
-      {
-        "command": "McResHelper.previewRsglResourcePackBuild",
-        "title": "%command.title.previewRsglResourcePackBuild%",
-        "icon": "$(diff)"
-      },
-      {
-        "command": "McResHelper.buildRsglResourcePackDirectory",
-        "title": "%command.title.buildRsglResourcePackDirectory%",
-        "icon": "$(run-all)"
-      },
-      {
-        "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
-        "title": "%command.title.previewRsglResourcePackDirectoryBuild%",
-        "icon": "$(diff)"
-      },
-      {
-        "command": "McResHelper.buildRsglWorkspaceResourcePacks",
-        "title": "%command.title.buildRsglWorkspaceResourcePacks%",
-        "icon": "$(run-all)"
-      },
-      {
-        "command": "McResHelper.previewRsglWorkspaceResourcePackBuilds",
-        "title": "%command.title.previewRsglWorkspaceResourcePackBuilds%",
-        "icon": "$(diff)"
       }
     ],
     "viewsContainers": {
@@ -307,14 +271,16 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
+    "clean": "node scripts/clean.mjs",
     "compile": "tsc -p ./",
     "compile:all": "npm run compile && npm run compile:rsgl-extension",
     "compile:rsgl-extension": "npm --prefix extensions/vscode-rsgl run compile",
+    "compile:test": "npm run clean && npm run compile",
     "watch": "tsc -watch -p ./",
     "watch:rsgl-extension": "npm --prefix extensions/vscode-rsgl run watch",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run compile:test && npm run lint",
     "lint": "eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"extensions/**/*.ts\"",
-    "test": "mocha \"./out/src/test/unit/**/*.test.js\"",
+    "test": "mocha \"./out/src/test/unit/**/*.test.js\" \"./out/packages/**/test/**/*.test.js\"",
     "benchmark:model-preview": "npm run compile && node scripts/model-preview-benchmark.mjs",
     "package:vsix": "node scripts/package-vsix.mjs main",
     "package:main:vsix": "node scripts/package-vsix.mjs main",

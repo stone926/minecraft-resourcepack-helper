@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { parseRsgl } from "../../../packages/rsgl-core/src/parser";
-import { bindRsglModule, bindRsglProgram } from "../../../packages/rsgl-core/src/semantic";
+import { parseRsgl } from "../../src/parser";
+import { bindRsglModule, bindRsglProgram } from "../../src/semantic";
 
 describe("RSGL semantic model", () => {
   it("builds symbols, references, imports, and output resource previews", () => {

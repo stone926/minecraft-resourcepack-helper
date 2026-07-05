@@ -2,8 +2,8 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { RsglWorkspaceSourceCache } from "../../../packages/rsgl-core/src/workspaceSource";
-import { bindRsglProgram, RsglSourceFile } from "../../../packages/rsgl-core/src/semantic";
+import { RsglWorkspaceSourceCache } from "../../src/workspaceSource";
+import { bindRsglProgram, RsglSourceFile } from "../../src/semantic";
 
 describe("RSGL workspace source cache", () => {
   it("loads imports and re-exports using open document content", () => {
