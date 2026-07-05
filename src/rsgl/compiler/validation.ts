@@ -2,7 +2,7 @@ import { JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir
 import { validateFontMetadata } from "./fontValidation";
 import { validateBlockstateStateDomains, type RsglBlockstateSchema } from "./blockstateStateValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
-import { validateMcmetaAnimation } from "./mcmetaValidation";
+import { validateMcmetaMetadata } from "./mcmetaValidation";
 import { validateModelStructure } from "./modelStructureValidation";
 import { validatePackMetadata } from "./packMetadataValidation";
 import { validatePostEffectMetadata } from "./postEffectValidation";
@@ -1504,7 +1504,7 @@ function validateMcmetaUnit(
   if (textureId) {
     checkResourceExists("texture", textureId, unit, undefined, options, diagnostics);
   }
-  validateMcmetaAnimation(unit, textureId, options, diagnostics);
+  validateMcmetaMetadata(unit, textureId, options, diagnostics);
 }
 
 function validateParticlesUnit(

@@ -1767,6 +1767,56 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidJsonResourceFragmentArgument"));
   });
 
+  it("validates mcmeta texture metadata and target support", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 74",
+      "mcmeta \"assets/minecraft/textures/block/cutout.png\" {",
+      "  texture {",
+      "    blur \"yes\"",
+      "    clamp true",
+      "    alpha_cutoff_bias 0.1",
+      "  }",
+      "}",
+      "mcmeta \"assets/minecraft/textures/block/bad_alpha.png\" {",
+      "  texture { alpha_cutoff_bias \"high\" }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidMcmetaTextureField"));
+    assert.ok(codes.includes("rsgl.unsupportedMcmetaAlphaCutoffBias"));
+    assert.ok(codes.includes("rsgl.invalidMcmetaAlphaCutoffBias"));
+
+    const cutout = result.units.find(unit => unit.outputPath.endsWith("cutout.png.mcmeta"));
+    const alphaRange = cutout?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/texture/alpha_cutoff_bias")?.sourceRange;
+    const unsupported = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsupportedMcmetaAlphaCutoffBias");
+    assert.deepStrictEqual(unsupported?.range, alphaRange);
+
+    const supported = compileRsglModule(parseRsgl([
+      "target java format [75, 0]",
+      "mcmeta \"assets/minecraft/textures/block/cutout.png\" {",
+      "  texture {",
+      "    blur false",
+      "    clamp true",
+      "    alpha_cutoff_bias 0.1",
+      "  }",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    assert.deepStrictEqual(supported.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(supported.units[0].content, {
+      texture: {
+        blur: false,
+        clamp: true,
+        ["alpha_cutoff_bias"]: 0.1
+      }
+    });
+  });
+
   it("expands mcmeta glob targets relative to the resource pack root", () => {
     const root = createTempDir();
     try {

@@ -820,6 +820,9 @@ class RsglParser extends ParserContext {
     if (owner === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseEquipmentLayerStmt();
     }
+    if (owner === "mcmeta" && token.text === "texture") {
+      return this.parseSectionStmt();
+    }
     if (token.text === "range") {
       return this.parseItemRangeStmt();
     }

@@ -7,7 +7,9 @@ interface McmetaFrameLayout {
   frameHeight: number;
 }
 
-export function validateMcmetaAnimation(
+const alphaCutoffBiasPackFormat = 75;
+
+export function validateMcmetaMetadata(
   unit: ResourceUnit,
   textureId: string | null,
   options: RsglResourceValidationOptions,
@@ -19,6 +21,7 @@ export function validateMcmetaAnimation(
   }
 
   validateMcmetaGui(content.gui, unit, diagnostics);
+  validateMcmetaTexture(content.texture, unit, options, diagnostics);
 
   if (!Object.hasOwn(content, "animation")) {
     return;
@@ -52,6 +55,62 @@ export function validateMcmetaAnimation(
     ? getMcmetaFrameLayout(textureId, animation, frameWidth, frameHeight, options, unit, diagnostics)
     : null;
   validateMcmetaFrames(animation.frames, layout, unit, diagnostics);
+}
+
+function validateMcmetaTexture(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+  const texture = asObject(value);
+  if (!texture) {
+    pushMcmetaDiagnostic(
+      "rsgl.invalidMcmetaTexture",
+      "PNG texture metadata must be an object.",
+      unit,
+      diagnostics,
+      "/texture"
+    );
+    return;
+  }
+
+  validateOptionalBoolean(texture.blur, "Texture blur", "rsgl.invalidMcmetaTextureField", unit, diagnostics, "/texture/blur");
+  validateOptionalBoolean(texture.clamp, "Texture clamp", "rsgl.invalidMcmetaTextureField", unit, diagnostics, "/texture/clamp");
+  validateAlphaCutoffBias(texture, unit, options, diagnostics);
+}
+
+function validateAlphaCutoffBias(
+  texture: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!Object.hasOwn(texture, "alpha_cutoff_bias")) {
+    return;
+  }
+  if (typeof texture.alpha_cutoff_bias !== "number" || !Number.isFinite(texture.alpha_cutoff_bias)) {
+    pushMcmetaDiagnostic(
+      "rsgl.invalidMcmetaAlphaCutoffBias",
+      "Texture alpha_cutoff_bias must be a finite number.",
+      unit,
+      diagnostics,
+      "/texture/alpha_cutoff_bias"
+    );
+    return;
+  }
+  if (options.targetPackFormat && options.targetPackFormat.major < alphaCutoffBiasPackFormat) {
+    pushMcmetaDiagnostic(
+      "rsgl.unsupportedMcmetaAlphaCutoffBias",
+      "Texture alpha_cutoff_bias requires pack format 75.0 or newer.",
+      unit,
+      diagnostics,
+      "/texture/alpha_cutoff_bias"
+    );
+  }
 }
 
 function validateMcmetaGui(
@@ -267,6 +326,19 @@ function validateOptionalPositiveInteger(
   return value;
 }
 
+function validateOptionalBoolean(
+  value: JsonValue | undefined,
+  label: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
+): void {
+  if (value !== undefined && typeof value !== "boolean") {
+    pushMcmetaDiagnostic(code, `${label} must be a boolean.`, unit, diagnostics, generatedPath);
+  }
+}
+
 function validateRequiredPositiveInteger(
   object: Record<string, JsonValue>,
   field: string,
@@ -292,6 +364,26 @@ function pushGuiScalingDiagnostic(
     severity: "error",
     range: unitRange(unit)
   });
+}
+
+function pushMcmetaDiagnostic(
+  code: string,
+  message: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath?: string
+): void {
+  diagnostics.push({
+    code,
+    message,
+    severity: "error",
+    range: generatedPath ? sourceRangeForGeneratedPath(unit, generatedPath) : unitRange(unit)
+  });
+}
+
+function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): RsglCompileDiagnostic["range"] {
+  return unit.sourceMap.mappings.find(mapping => mapping.generatedPath === generatedPath)?.sourceRange
+    ?? unitRange(unit);
 }
 
 function isPositiveDimension(value: number): boolean {
