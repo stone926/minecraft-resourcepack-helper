@@ -6,7 +6,10 @@ node_modules
 .vscode-test/
 *.vsix
 *.psd
-.vscode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 docs
 *.md
 !README.md
