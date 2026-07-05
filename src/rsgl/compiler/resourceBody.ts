@@ -174,25 +174,44 @@ function fragmentArrayOffsets(
   content: Record<string, JsonValue>
 ): Map<string, number> {
   const offsets = new Map<string, number>();
-  for (const [key, value] of Object.entries(content)) {
-    const existing = result[key];
-    if (Array.isArray(existing) && Array.isArray(value) && existing.length > 0) {
-      offsets.set(key, existing.length);
-    }
-  }
+  collectFragmentArrayOffsets(result, content, "", offsets);
   return offsets;
 }
 
+function collectFragmentArrayOffsets(
+  existing: JsonValue | undefined,
+  incoming: JsonValue | undefined,
+  path: string,
+  offsets: Map<string, number>
+): void {
+  if (Array.isArray(existing) && Array.isArray(incoming)) {
+    if (existing.length > 0) {
+      offsets.set(path, existing.length);
+    }
+    return;
+  }
+  if (!isJsonObject(existing) || !isJsonObject(incoming)) {
+    return;
+  }
+  for (const [key, value] of Object.entries(incoming)) {
+    collectFragmentArrayOffsets(existing[key], value, appendGeneratedPath(path, key), offsets);
+  }
+}
+
 function offsetFragmentMappingPath(generatedPath: string, offsets: Map<string, number>): string {
-  const match = /^\/([^/]+)\/(\d+)(\/.*)?$/.exec(generatedPath);
-  if (!match) {
-    return generatedPath;
+  const paths = Array.from(offsets.keys()).sort((left, right) => right.length - left.length);
+  for (const path of paths) {
+    const offset = offsets.get(path);
+    if (!offset || !generatedPath.startsWith(`${path}/`)) {
+      continue;
+    }
+    const rest = generatedPath.slice(path.length + 1);
+    const match = /^(\d+)(\/.*)?$/.exec(rest);
+    if (match) {
+      return `${path}/${Number(match[1]) + offset}${match[2] ?? ""}`;
+    }
   }
-  const offset = offsets.get(match[1]);
-  if (!offset) {
-    return generatedPath;
-  }
-  return `/${match[1]}/${Number(match[2]) + offset}${match[3] ?? ""}`;
+  return generatedPath;
 }
 
 function emitFragmentMappings(

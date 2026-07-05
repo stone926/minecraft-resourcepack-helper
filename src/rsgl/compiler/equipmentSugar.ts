@@ -1,6 +1,8 @@
 import { EquipmentLayerStmtNode, TextRange } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
+import { ResourceBodyFragment } from "./resourceBody";
+import { appendGeneratedPath } from "./sourcePaths";
 
 export interface EquipmentSugarOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -15,7 +17,7 @@ export function compileEquipmentLayerStatement(
   statement: EquipmentLayerStmtNode,
   context: EvaluationContext,
   options: EquipmentSugarOptions = {}
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const layer = evaluateExpression(statement.layer, context);
   if (typeof layer !== "string" || layer.length === 0) {
     options.onError?.("rsgl.invalidEquipmentLayer", "Equipment layer name must evaluate to a non-empty string.", statement.layer.range);
@@ -42,10 +44,14 @@ export function compileEquipmentLayerStatement(
   if (!entry) {
     return undefined;
   }
-  return {
+  const content = {
     layers: {
       [layer]: [entry]
     }
+  };
+  return {
+    content,
+    mappings: equipmentLayerMappings(statement, layer, entry, context)
   };
 }
 
@@ -157,4 +163,48 @@ function isJsonObject(value: JsonValue | undefined): value is Record<string, Jso
 
 function normalizeResourceId(value: string, namespace: string): string {
   return value.includes(":") ? value : `${namespace}:${value}`;
+}
+
+function equipmentLayerMappings(
+  statement: EquipmentLayerStmtNode,
+  layer: string,
+  entry: Record<string, JsonValue>,
+  context: EvaluationContext
+): ResourceBodyFragment["mappings"] {
+  const layerPath = appendGeneratedPath("/layers", layer);
+  const entryPath = appendGeneratedPath(layerPath, "0");
+  const mappings: ResourceBodyFragment["mappings"] = [
+    {
+      generatedPath: layerPath,
+      sourceRange: statement.range,
+      context
+    },
+    {
+      generatedPath: entryPath,
+      sourceRange: statement.range,
+      context
+    }
+  ];
+  if (statement.texture) {
+    mappings.push({
+      generatedPath: appendGeneratedPath(entryPath, "texture"),
+      sourceRange: statement.texture.range,
+      context
+    });
+  }
+  if (entry.dyeable !== undefined) {
+    mappings.push({
+      generatedPath: appendGeneratedPath(entryPath, "dyeable"),
+      sourceRange: (statement.color ?? statement.dyeable ?? statement).range,
+      context
+    });
+  }
+  if (entry.use_player_texture !== undefined) {
+    mappings.push({
+      generatedPath: appendGeneratedPath(entryPath, "use_player_texture"),
+      sourceRange: (statement.usePlayerTexture ?? statement).range,
+      context
+    });
+  }
+  return mappings;
 }

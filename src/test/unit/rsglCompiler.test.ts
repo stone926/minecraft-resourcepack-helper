@@ -1716,8 +1716,7 @@ describe("RSGL compiler", () => {
   });
 
   it("lowers equipment layer sugar statements", () => {
-    const checkedResources: string[] = [];
-    const result = compileRsglModule(parseRsgl([
+    const source = [
       "equipment minecraft:iron {",
       "  layers [horse_body, humanoid]",
       "  texture minecraft:iron",
@@ -1728,7 +1727,9 @@ describe("RSGL compiler", () => {
       "  layer humanoid_leggings texture minecraft:leather_leggings dyeable color 0xA06500",
       "  layer humanoid_leggings texture minecraft:leather_leggings_overlay",
       "}"
-    ].join("\n")), {
+    ].join("\n");
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl(source), {
       resourceExists: (kind, id) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
@@ -1760,9 +1761,25 @@ describe("RSGL compiler", () => {
         ]
       }
     });
+    const leatherMappingPaths = leather?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(leatherMappingPaths.includes("/layers/humanoid/0/texture"));
+    assert.ok(leatherMappingPaths.includes("/layers/humanoid/1/texture"));
+    assert.ok(leatherMappingPaths.includes("/layers/humanoid_leggings/0/texture"));
+    assert.ok(leatherMappingPaths.includes("/layers/humanoid_leggings/1/texture"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/horse_body/iron"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/leather"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/leather_leggings_overlay"));
+
+    const missing = compileRsglModule(parseRsgl(source), {
+      resourceExists: (kind, id) => !(kind === "texture" && id === "minecraft:entity/equipment/humanoid/leather_overlay")
+    });
+    const textureRange = leather?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/layers/humanoid/1/texture")?.sourceRange;
+    assert.ok(missing.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("leather_overlay")
+      && diagnostic.range.start === textureRange?.start
+      && diagnostic.range.end === textureRange?.end
+    ));
   });
 
   it("reports invalid equipment layer sugar statements", () => {

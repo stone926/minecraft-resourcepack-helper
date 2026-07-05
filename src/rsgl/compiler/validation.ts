@@ -1791,10 +1791,22 @@ function validateEquipmentUnit(
     if (!Array.isArray(layerEntries)) {
       continue;
     }
-    for (const layerEntry of layerEntries) {
+    for (const [index, layerEntry] of layerEntries.entries()) {
       const texture = asObject(layerEntry)?.texture;
       if (typeof texture === "string") {
-        checkResourceExists("texture", textureIdInFolder(texture, namespace, `entity/equipment/${layerName}`), unit, undefined, options, diagnostics);
+        const texturePath = appendGeneratedPath(
+          appendGeneratedPath(appendGeneratedPath("/layers", layerName), String(index)),
+          "texture"
+        );
+        checkResourceExists(
+          "texture",
+          textureIdInFolder(texture, namespace, `entity/equipment/${layerName}`),
+          unit,
+          undefined,
+          options,
+          diagnostics,
+          sourceRangeForGeneratedPath(unit, texturePath)
+        );
       }
     }
   }
