@@ -290,6 +290,9 @@ function rangePredicateName(model: Record<string, JsonValue>): string | null {
   if (property === "damage" || property === "damaged" || property === "pull" || property === "pulling" || property === "blocking" || property === "cooldown") {
     return property;
   }
+  if (property === "crossbow/pull") {
+    return "pull";
+  }
   if (property === "compass") {
     return "angle";
   }
@@ -303,6 +306,9 @@ function conditionPredicateName(model: Record<string, JsonValue>): string | null
   const property = normalizedProperty(model.property);
   if (property === "using_item") {
     return "pulling";
+  }
+  if (property === "fishing_rod/cast") {
+    return "cast";
   }
   if (property === "blocking" || property === "damaged" || property === "broken") {
     return property;

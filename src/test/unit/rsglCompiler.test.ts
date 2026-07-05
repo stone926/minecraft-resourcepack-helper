@@ -1199,6 +1199,57 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("maps additional modern item properties to legacy predicates", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item crossbow {",
+      "  range property minecraft:crossbow/pull {",
+      "    frames [0.58, 1.0] model `minecraft:item/crossbow_pulling_${index}`",
+      "    fallback minecraft:item/crossbow",
+      "  }",
+      "}",
+      "item fishing_rod {",
+      "  condition property minecraft:fishing_rod/cast {",
+      "    on_true minecraft:item/fishing_rod_cast",
+      "    on_false minecraft:item/fishing_rod",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const crossbow = result.units.find(unit => unit.outputPath.endsWith("models/item/crossbow.json"));
+    assert.deepStrictEqual(crossbow?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/crossbow"
+      },
+      overrides: [
+        {
+          predicate: { pull: 0.58 },
+          model: "minecraft:item/crossbow_pulling_0"
+        },
+        {
+          predicate: { pull: 1 },
+          model: "minecraft:item/crossbow_pulling_1"
+        }
+      ]
+    });
+
+    const fishingRod = result.units.find(unit => unit.outputPath.endsWith("models/item/fishing_rod.json"));
+    assert.deepStrictEqual(fishingRod?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/fishing_rod"
+      },
+      overrides: [
+        {
+          predicate: { cast: 1 },
+          model: "minecraft:item/fishing_rod_cast"
+        }
+      ]
+    });
+  });
+
   it("reports unsupported item models in the legacy item backend", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format 64",
