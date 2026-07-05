@@ -80,7 +80,7 @@ import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./json
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
 import { createFileRawJsonLoader } from "./rawJson";
-import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, resourceBodyToObject } from "./resourceBody";
+import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import { appendGeneratedPath, prefixGeneratedPath } from "./sourcePaths";
 import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
@@ -1670,12 +1670,12 @@ class RsglCompiler {
     kind: JsonResourceFragmentKind,
     statement: ResourceStatementNode,
     context: RsglCompileContext
-  ): Record<string, JsonValue> | undefined {
+  ): ResourceBodySpecialResult | undefined {
     if (kind === "atlas") {
       return compileAtlasSpecialStatement(
         statement,
         context,
-        (body, bodyContext) => this.resourceBodyToObject(body, bodyContext, this.resourceBodyFragmentOptions("atlas")),
+        (body, bodyContext) => this.resourceBodyToObjectWithRawMappings(body, bodyContext, this.resourceBodyFragmentOptions("atlas")),
         { onError: (code, message, range) => this.error(code, message, range) }
       );
     }

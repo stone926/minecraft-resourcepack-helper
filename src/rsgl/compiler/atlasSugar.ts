@@ -9,6 +9,8 @@ import {
 } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
+import { ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult } from "./resourceBody";
+import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 
 const paletteKeyField = "palette_key";
 
@@ -19,14 +21,14 @@ export interface RsglAtlasSugarOptions {
 export type AtlasBodyCompiler = (
   body: ResourceBodyNode,
   context: EvaluationContext
-) => Record<string, JsonValue>;
+) => { content: Record<string, JsonValue>; mappings: ResourceBodyMapping[] };
 
 export function compileAtlasSpecialStatement(
   statement: ResourceStatementNode,
   context: EvaluationContext,
   compileBody: AtlasBodyCompiler,
   options: RsglAtlasSugarOptions = {}
-): Record<string, JsonValue> | undefined {
+): ResourceBodySpecialResult | undefined {
   if (statement.kind === "AtlasDirectoryStmt") {
     return compileAtlasDirectoryStatement(statement, context, options);
   }
@@ -91,11 +93,11 @@ function compileAtlasPalettedPermutationsStatement(
   context: EvaluationContext,
   compileBody: AtlasBodyCompiler,
   options: RsglAtlasSugarOptions
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const body = compileBody(statement.body, context);
-  const textures = atlasTextureList(body.textures);
-  const paletteKey = typeof body.palette_key === "string" ? body.palette_key : null;
-  const permutations = jsonObject(body.permutations);
+  const textures = atlasTextureList(body.content.textures);
+  const paletteKey = typeof body.content.palette_key === "string" ? body.content.palette_key : null;
+  const permutations = jsonObject(body.content.permutations);
 
   if (!textures) {
     options.onError?.("rsgl.invalidAtlasPalettedPermutations", "Atlas paletted_permutations requires textures to be a string or list of strings.", statement.range);
@@ -110,15 +112,38 @@ function compileAtlasPalettedPermutationsStatement(
     return undefined;
   }
 
-  return {
+  const content = {
     sources: [{
-      ...body,
+      ...body.content,
       type: "minecraft:paletted_permutations",
       textures,
       [paletteKeyField]: paletteKey,
       permutations
     }]
   };
+  return {
+    content,
+    mappings: atlasSourceMappings(statement, context, body.mappings)
+  };
+}
+
+function atlasSourceMappings(
+  statement: AtlasPalettedPermutationsStmtNode,
+  context: EvaluationContext,
+  mappings: ResourceBodyMapping[]
+): ResourceBodyMapping[] {
+  const sourcePath = appendGeneratedPath("/sources", "0");
+  return [
+    {
+      generatedPath: sourcePath,
+      sourceRange: statement.range,
+      context
+    },
+    ...mappings.map(mapping => ({
+      ...mapping,
+      generatedPath: joinGeneratedPath(sourcePath, mapping.generatedPath)
+    }))
+  ];
 }
 
 function atlasTextureList(value: JsonValue | undefined): string[] | null {

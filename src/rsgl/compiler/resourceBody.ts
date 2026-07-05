@@ -17,9 +17,11 @@ import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 export interface ResourceBodyCompileOptions {
   onError?: (code: string, message: string, range: { start: number; end: number }) => void;
   onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => ResourceBodyFragment | undefined;
-  onSpecialStatement?: (statement: ResourceStatementNode, context: EvaluationContext) => Record<string, JsonValue> | undefined;
+  onSpecialStatement?: (statement: ResourceStatementNode, context: EvaluationContext) => ResourceBodySpecialResult | undefined;
   onMapping?: (mapping: ResourceBodyMapping) => void;
 }
+
+export type ResourceBodySpecialResult = ResourceBodyFragment | Record<string, JsonValue>;
 
 export interface ResourceBodyFragment {
   content: Record<string, JsonValue>;
@@ -114,16 +116,83 @@ function applyResourceStatement(
   } else if (statement.kind === "UseDecl") {
     const fragment = options.onUseFragment?.(statement, context);
     if (fragment) {
-      mergeJsonObjectDeep(result, fragment.content);
-      emitFragmentMappings(options, path, fragment, statement.range, context);
+      const mappings = mergeFragmentContent(result, fragment);
+      emitFragmentMappings(options, path, { ...fragment, mappings }, statement.range, context);
     }
   } else {
-    const fragment = options.onSpecialStatement?.(statement, context);
+    const fragment = resourceBodyFragmentFromResult(options.onSpecialStatement?.(statement, context));
     if (fragment) {
-      mergeJsonObjectDeep(result, fragment);
-      emitObjectMappings(options, path, fragment, statement.range, context);
+      const mappings = mergeFragmentContent(result, fragment);
+      emitFragmentMappings(options, path, { ...fragment, mappings }, statement.range, context);
     }
   }
+}
+
+function mergeFragmentContent(
+  result: Record<string, JsonValue>,
+  fragment: ResourceBodyFragment
+): ResourceBodyMapping[] | undefined {
+  const mappings = offsetFragmentMappingsForMerge(result, fragment);
+  mergeJsonObjectDeep(result, fragment.content);
+  return mappings;
+}
+
+function resourceBodyFragmentFromResult(result: ResourceBodySpecialResult | undefined): ResourceBodyFragment | undefined {
+  if (!result) {
+    return undefined;
+  }
+  if (isResourceBodyFragment(result)) {
+    return result;
+  }
+  return { content: result };
+}
+
+function isResourceBodyFragment(value: ResourceBodySpecialResult): value is ResourceBodyFragment {
+  const candidate = value as Partial<ResourceBodyFragment>;
+  return isJsonObject(candidate.content) && Array.isArray(candidate.mappings);
+}
+
+function offsetFragmentMappingsForMerge(
+  result: Record<string, JsonValue>,
+  fragment: ResourceBodyFragment
+): ResourceBodyMapping[] | undefined {
+  if (!fragment.mappings?.length) {
+    return fragment.mappings;
+  }
+  const offsets = fragmentArrayOffsets(result, fragment.content);
+  if (offsets.size === 0) {
+    return fragment.mappings;
+  }
+  return fragment.mappings.map(mapping => ({
+    ...mapping,
+    generatedPath: offsetFragmentMappingPath(mapping.generatedPath, offsets)
+  }));
+}
+
+function fragmentArrayOffsets(
+  result: Record<string, JsonValue>,
+  content: Record<string, JsonValue>
+): Map<string, number> {
+  const offsets = new Map<string, number>();
+  for (const [key, value] of Object.entries(content)) {
+    const existing = result[key];
+    if (Array.isArray(existing) && Array.isArray(value) && existing.length > 0) {
+      offsets.set(key, existing.length);
+    }
+  }
+  return offsets;
+}
+
+function offsetFragmentMappingPath(generatedPath: string, offsets: Map<string, number>): string {
+  const match = /^\/([^/]+)\/(\d+)(\/.*)?$/.exec(generatedPath);
+  if (!match) {
+    return generatedPath;
+  }
+  const offset = offsets.get(match[1]);
+  if (!offset) {
+    return generatedPath;
+  }
+  return `/${match[1]}/${Number(match[2]) + offset}${match[3] ?? ""}`;
 }
 
 function emitFragmentMappings(

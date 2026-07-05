@@ -1627,21 +1627,23 @@ describe("RSGL compiler", () => {
   });
 
   it("lowers atlas paletted permutations sugar statements", () => {
-    const checkedResources: string[] = [];
-    const result = compileRsglModule(parseRsgl([
+    const source = [
       "let trimMaterials = [\"quartz\", \"iron\"]",
       "table trimPalettes {",
       "  quartz: minecraft:trims/color_palettes/quartz",
       "  iron: minecraft:trims/color_palettes/iron",
       "}",
       "atlas minecraft:armor_trims {",
+      "  directory source \"trims/items\" prefix \"trims/items/\"",
       "  paletted_permutations {",
       "    textures seq(\"minecraft:trims/items/helmet_trim_{material}\", material in trimMaterials)",
       "    palette_key minecraft:trims/color_palettes/trim_palette",
       "    permutations trimPalettes",
       "  }",
       "}"
-    ].join("\n")), {
+    ].join("\n");
+    const checkedResources: string[] = [];
+    const result = compileRsglModule(parseRsgl(source), {
       resourceExists: (kind, id) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
@@ -1651,28 +1653,46 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
     const atlas = result.units.find(unit => unit.kind === "atlas");
     assert.deepStrictEqual(atlas?.content, {
-      sources: [{
-        type: "minecraft:paletted_permutations",
-        textures: [
-          "minecraft:trims/items/helmet_trim_quartz",
-          "minecraft:trims/items/helmet_trim_iron"
-        ],
-        ["palette_key"]: "minecraft:trims/color_palettes/trim_palette",
-        permutations: {
-          quartz: "minecraft:trims/color_palettes/quartz",
-          iron: "minecraft:trims/color_palettes/iron"
+      sources: [
+        { type: "minecraft:directory", source: "trims/items", prefix: "trims/items/" },
+        {
+          type: "minecraft:paletted_permutations",
+          textures: [
+            "minecraft:trims/items/helmet_trim_quartz",
+            "minecraft:trims/items/helmet_trim_iron"
+          ],
+          ["palette_key"]: "minecraft:trims/color_palettes/trim_palette",
+          permutations: {
+            quartz: "minecraft:trims/color_palettes/quartz",
+            iron: "minecraft:trims/color_palettes/iron"
+          }
         }
-      }]
+      ]
     });
-    assert.deepStrictEqual(atlas?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
-      "",
-      "/sources"
-    ]);
+    const mappingPaths = atlas?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(mappingPaths.includes("/sources"));
+    assert.ok(mappingPaths.includes("/sources/1"));
+    assert.ok(mappingPaths.includes("/sources/1/textures"));
+    assert.ok(mappingPaths.includes("/sources/1/palette_key"));
+    assert.ok(mappingPaths.includes("/sources/1/permutations"));
+    assert.strictEqual(mappingPaths.includes("/sources/0/textures"), false);
+    assert.ok(checkedResources.includes("textureDirectory:minecraft:trims/items"));
     assert.ok(checkedResources.includes("texture:minecraft:trims/items/helmet_trim_quartz"));
     assert.ok(checkedResources.includes("texture:minecraft:trims/items/helmet_trim_iron"));
     assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/trim_palette"));
     assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/quartz"));
     assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/iron"));
+
+    const missing = compileRsglModule(parseRsgl(source), {
+      resourceExists: (kind, id) => !(kind === "texture" && id === "minecraft:trims/items/helmet_trim_quartz")
+    });
+    const textureRange = atlas?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/sources/1/textures")?.sourceRange;
+    assert.ok(missing.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("helmet_trim_quartz")
+      && diagnostic.range.start === textureRange?.start
+      && diagnostic.range.end === textureRange?.end
+    ));
   });
 
   it("reports invalid atlas source sugar statements", () => {
