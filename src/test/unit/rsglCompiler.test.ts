@@ -1285,6 +1285,98 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("maps charge type selects to legacy crossbow predicates", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item crossbow {",
+      "  model: {",
+      "    type: minecraft:select,",
+      "    property: minecraft:charge_type,",
+      "    cases: [",
+      "      { when: \"arrow\", model: { type: minecraft:model, model: minecraft:item/crossbow_arrow } },",
+      "      { when: \"rocket\", model: { type: minecraft:model, model: minecraft:item/crossbow_firework } }",
+      "    ],",
+      "    fallback: {",
+      "      type: minecraft:condition,",
+      "      property: minecraft:using_item,",
+      "      on_false: { type: minecraft:model, model: minecraft:item/crossbow },",
+      "      on_true: {",
+      "        type: minecraft:range_dispatch,",
+      "        property: minecraft:crossbow/pull,",
+      "        entries: [",
+      "          { threshold: 0.58, model: { type: minecraft:model, model: minecraft:item/crossbow_pulling_1 } },",
+      "          { threshold: 1.0, model: { type: minecraft:model, model: minecraft:item/crossbow_pulling_2 } }",
+      "        ],",
+      "        fallback: { type: minecraft:model, model: minecraft:item/crossbow_pulling_0 }",
+      "      }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/crossbow"
+      },
+      overrides: [
+        {
+          predicate: { pulling: 1 },
+          model: "minecraft:item/crossbow_pulling_0"
+        },
+        {
+          predicate: { pulling: 1, pull: 0.58 },
+          model: "minecraft:item/crossbow_pulling_1"
+        },
+        {
+          predicate: { pulling: 1, pull: 1 },
+          model: "minecraft:item/crossbow_pulling_2"
+        },
+        {
+          predicate: { charged: 1 },
+          model: "minecraft:item/crossbow_arrow"
+        },
+        {
+          predicate: { charged: 1, firework: 1 },
+          model: "minecraft:item/crossbow_firework"
+        }
+      ]
+    });
+
+    const arrowOnly = compileRsglModule(parseRsgl([
+      "target java format 64",
+      "item crossbow {",
+      "  model: {",
+      "    type: minecraft:select,",
+      "    property: minecraft:charge_type,",
+      "    cases: [",
+      "      { when: \"arrow\", model: { type: minecraft:model, model: minecraft:item/crossbow_arrow } }",
+      "    ],",
+      "    fallback: { type: minecraft:model, model: minecraft:item/crossbow }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(arrowOnly.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(arrowOnly.units[0].content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/crossbow"
+      },
+      overrides: [
+        {
+          predicate: { charged: 1 },
+          model: "minecraft:item/crossbow_arrow"
+        },
+        {
+          predicate: { charged: 1, firework: 1 },
+          model: "minecraft:item/crossbow"
+        }
+      ]
+    });
+  });
+
   it("reports unsupported item models in the legacy item backend", () => {
     const result = compileRsglModule(parseRsgl([
       "target java format 64",

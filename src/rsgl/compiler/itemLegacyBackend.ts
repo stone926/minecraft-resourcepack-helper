@@ -137,8 +137,11 @@ function lowerLegacySelect(
   if (property === "main_hand") {
     return lowerLegacyMainHandSelect(model, unit, diagnostics);
   }
+  if (property === "charge_type") {
+    return lowerLegacyChargeTypeSelect(model, unit, diagnostics);
+  }
   if (property !== "custom_model_data") {
-    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering currently supports only custom_model_data cases.");
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering currently supports custom_model_data, main_hand, and charge_type cases.");
     return null;
   }
 
@@ -224,6 +227,67 @@ function lowerLegacyMainHandSelect(
         ? [{ predicate: { lefthanded: 1 }, model: fallback.baseModel }]
         : []),
       ...leftHandOverrides
+    ]
+  };
+}
+
+function lowerLegacyChargeTypeSelect(
+  model: Record<string, JsonValue>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): LegacyItemLowering | null {
+  const cases = Array.isArray(model.cases) ? model.cases : null;
+  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
+  if (!cases || !fallback) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy charge_type select lowering requires cases and a fallback model.");
+    return null;
+  }
+
+  const arrowOverrides: LegacyItemOverride[] = [];
+  const rocketOverrides: LegacyItemOverride[] = [];
+  let hasArrowCase = false;
+  let hasRocketCase = false;
+  for (const itemCase of cases) {
+    const caseObject = isJsonObject(itemCase) ? itemCase : null;
+    const whenValues = legacyChargeTypeValues(caseObject?.when);
+    const branch = isJsonObject(caseObject?.model) ? lowerLegacyItemModel(caseObject.model, unit, diagnostics) : null;
+    if (!whenValues || !branch) {
+      pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy charge_type select cases must use 'arrow', 'rocket', or 'none' values and lowerable model branches.");
+      return null;
+    }
+
+    for (const when of whenValues) {
+      if (when === "none") {
+        if (!sameLowering(branch, fallback)) {
+          pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy charge_type select cannot represent a 'none' case different from the fallback model.");
+          return null;
+        }
+        continue;
+      }
+
+      const branchOverrides = prefixLowering(chargeTypePredicate(when), branch, unit, diagnostics);
+      if (!branchOverrides) {
+        return null;
+      }
+      if (when === "rocket") {
+        hasRocketCase = true;
+        rocketOverrides.push(...branchOverrides);
+      } else {
+        hasArrowCase = true;
+        arrowOverrides.push(...branchOverrides);
+      }
+    }
+  }
+
+  return {
+    baseModel: fallback.baseModel,
+    overrides: [
+      ...fallback.overrides,
+      ...arrowOverrides,
+      ...(hasArrowCase && !hasRocketCase
+        ? [{ predicate: chargeTypePredicate("rocket"), model: fallback.baseModel }]
+        : []),
+      ...rocketOverrides
     ]
   };
 }
@@ -404,6 +468,29 @@ function legacyMainHandValue(value: JsonValue | undefined): "left" | "right" | n
   return normalized === "left" || normalized === "right" ? normalized : null;
 }
 
+function legacyChargeTypeValues(value: JsonValue | undefined): Array<"none" | "arrow" | "rocket"> | null {
+  if (Array.isArray(value)) {
+    const values = value.map(item => legacyChargeTypeValue(item));
+    return values.every((item): item is "none" | "arrow" | "rocket" => item !== null) ? values : null;
+  }
+  const single = legacyChargeTypeValue(value);
+  return single === null ? null : [single];
+}
+
+function legacyChargeTypeValue(value: JsonValue | undefined): "none" | "arrow" | "rocket" | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.replace(/^minecraft:/, "");
+  if (normalized === "none" || normalized === "arrow") {
+    return normalized;
+  }
+  if (normalized === "rocket" || normalized === "firework" || normalized === "firework_rocket") {
+    return "rocket";
+  }
+  return null;
+}
+
 function legacyNumericPredicateValue(value: JsonValue | undefined): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -413,6 +500,16 @@ function legacyNumericPredicateValue(value: JsonValue | undefined): number | nul
     return Number.isFinite(numberValue) ? numberValue : null;
   }
   return null;
+}
+
+function chargeTypePredicate(value: "arrow" | "rocket"): Record<string, number> {
+  return value === "rocket"
+    ? { charged: 1, firework: 1 }
+    : { charged: 1 };
+}
+
+function sameLowering(left: LegacyItemLowering, right: LegacyItemLowering): boolean {
+  return left.baseModel === right.baseModel && JSON.stringify(left.overrides) === JSON.stringify(right.overrides);
 }
 
 function itemModelId(id: ResourceId): string {
