@@ -11,7 +11,10 @@ import {
 } from "./workspaceSource";
 
 export interface RsglWorkspaceSemanticProgram {
-  entryFileName: string;
+  sourceKind: "entry" | "directory";
+  sourceName: string;
+  entryFileName?: string;
+  rootDirectory?: string;
   files: RsglSourceFile[];
   program: RsglProgram;
 }
@@ -19,6 +22,7 @@ export interface RsglWorkspaceSemanticProgram {
 interface RsglCachedSemanticProgram {
   signature: string;
   dependencyKeys: Set<string>;
+  rootDirectoryKey?: string;
   result: RsglWorkspaceSemanticProgram;
 }
 
@@ -43,9 +47,12 @@ export class RsglWorkspaceSemanticCache {
     const key = fileNameKey(normalizedFileName);
     this.sourceCache.invalidatePath(normalizedFileName);
 
-    for (const [entryKey, cached] of this.programs) {
-      if (entryKey === key || cached.dependencyKeys.has(key)) {
-        this.programs.delete(entryKey);
+    for (const [programKey, cached] of this.programs) {
+      if (
+        cached.dependencyKeys.has(key) ||
+        (cached.rootDirectoryKey && isPathInsideOrEqual(normalizedFileName, cached.rootDirectoryKey))
+      ) {
+        this.programs.delete(programKey);
       }
     }
   }
@@ -57,29 +64,53 @@ export class RsglWorkspaceSemanticCache {
 
   public loadProgramFromEntry(entryFileName: string): RsglWorkspaceSemanticProgram {
     const normalizedEntryFileName = normalizeFileName(path.resolve(entryFileName));
-    const entryKey = fileNameKey(normalizedEntryFileName);
     const files = this.sourceCache.loadProgramFromEntry(normalizedEntryFileName);
+    return this.loadProgram("entry", normalizedEntryFileName, files, {
+      entryFileName: normalizedEntryFileName
+    });
+  }
+
+  public loadProgramFromDirectory(rootDirectory: string): RsglWorkspaceSemanticProgram {
+    const normalizedRootDirectory = normalizeFileName(path.resolve(rootDirectory));
+    const files = this.sourceCache.loadProgramFromDirectory(normalizedRootDirectory);
+    return this.loadProgram("directory", normalizedRootDirectory, files, {
+      rootDirectory: normalizedRootDirectory,
+      rootDirectoryKey: fileNameKey(normalizedRootDirectory)
+    });
+  }
+
+  private invalidatePrograms(): void {
+    this.programs.clear();
+  }
+
+  private loadProgram(
+    sourceKind: RsglWorkspaceSemanticProgram["sourceKind"],
+    sourceName: string,
+    files: RsglSourceFile[],
+    options: { entryFileName?: string; rootDirectory?: string; rootDirectoryKey?: string }
+  ): RsglWorkspaceSemanticProgram {
+    const programKey = `${sourceKind}:${fileNameKey(sourceName)}`;
     const signature = this.createProgramSignature(files);
-    const cached = this.programs.get(entryKey);
+    const cached = this.programs.get(programKey);
     if (cached?.signature === signature) {
       return cached.result;
     }
 
     const result = {
-      entryFileName: normalizedEntryFileName,
+      sourceKind,
+      sourceName,
+      entryFileName: options.entryFileName,
+      rootDirectory: options.rootDirectory,
       files,
       program: bindRsglProgram(files)
     };
-    this.programs.set(entryKey, {
+    this.programs.set(programKey, {
       signature,
       dependencyKeys: new Set(files.map(file => fileNameKey(file.fileName))),
+      rootDirectoryKey: options.rootDirectoryKey,
       result
     });
     return result;
-  }
-
-  private invalidatePrograms(): void {
-    this.programs.clear();
   }
 
   private createProgramSignature(files: RsglSourceFile[]): string {
@@ -106,4 +137,9 @@ function normalizeFileName(fileName: string): string {
 function fileNameKey(fileName: string): string {
   const normalized = normalizeFileName(fileName);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function isPathInsideOrEqual(fileName: string, directoryKey: string): boolean {
+  const relative = path.relative(directoryKey, fileNameKey(fileName));
+  return relative === "" || (relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative));
 }

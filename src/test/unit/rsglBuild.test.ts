@@ -5,9 +5,11 @@ import * as path from "node:path";
 import {
   buildRsglResourcePack,
   buildRsglResourcePackDirectory,
+  buildRsglResourcePackProgram,
   previewRsglResourcePackBuild,
   previewRsglResourcePackDirectoryBuild
 } from "../../rsgl/build";
+import { RsglWorkspaceSemanticCache } from "../../rsgl/workspaceSemantic";
 
 describe("RSGL build", () => {
   it("writes emitted resources with source maps and a manifest", () => {
@@ -156,6 +158,39 @@ describe("RSGL build", () => {
       );
       assert.strictEqual(
         fs.existsSync(path.join(outputRoot, "assets", "minecraft", "models", "item", "stick.json")),
+        true
+      );
+      assert.strictEqual(fs.existsSync(path.join(outputRoot, "rsgl.manifest.json")), true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("builds from a pre-bound RSGL semantic program", () => {
+    const root = createTempDirectory();
+    const sourceRoot = path.join(root, "src");
+    const outputRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "blocks.rsgl"), [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/stone }",
+        "}"
+      ].join("\n"));
+
+      const semanticProgram = RsglWorkspaceSemanticCache.create().loadProgramFromDirectory(sourceRoot);
+      const result = buildRsglResourcePackProgram(semanticProgram.files, {
+        outputRoot,
+        sourceRoot,
+        semanticProgram: semanticProgram.program
+      });
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.plan?.summary, { create: 3, update: 0, unchanged: 0 });
+      assert.strictEqual(
+        fs.existsSync(path.join(outputRoot, "assets", "minecraft", "models", "block", "stone.json")),
         true
       );
       assert.strictEqual(fs.existsSync(path.join(outputRoot, "rsgl.manifest.json")), true);

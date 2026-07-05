@@ -2,6 +2,7 @@ import {
   createRsglWritePlan,
   compileRsglDirectory,
   compileRsglFile,
+  compileRsglProgram,
   emitRsglFiles,
   type RsglEmittedFile,
   type RsglCompileDiagnostic,
@@ -10,7 +11,8 @@ import {
   type RsglWritePlan,
   type RsglWritePlanOptions
 } from "./compiler";
-import type { RsglResourceValidationOptions } from "./compiler";
+import type { RsglProgram, RsglSourceFile } from "./semantic";
+import type { RsglProgramCompileOptions, RsglResourceValidationOptions } from "./compiler";
 
 export interface RsglBuildOptions extends RsglResourceValidationOptions, RsglEmitOptions, RsglWritePlanOptions {
   outputRoot: string;
@@ -28,6 +30,16 @@ export function buildRsglResourcePack(entryFileName: string, options: RsglBuildO
 
 export function buildRsglResourcePackDirectory(rootDirectory: string, options: RsglBuildOptions): RsglBuildResult {
   const compiled = compileRsglBuildDirectory(rootDirectory, options);
+  return writeCompiledRsglBuild(compiled, options);
+}
+
+export interface RsglProgramBuildOptions extends RsglBuildOptions, Pick<RsglProgramCompileOptions, "entryFileName" | "namespace"> {
+  sourceRoot?: string;
+  semanticProgram?: RsglProgram;
+}
+
+export function buildRsglResourcePackProgram(files: RsglSourceFile[], options: RsglProgramBuildOptions): RsglBuildResult {
+  const compiled = compileRsglBuildProgram(files, options);
   return writeCompiledRsglBuild(compiled, options);
 }
 
@@ -49,6 +61,14 @@ export function previewRsglResourcePackBuild(entryFileName: string, options: Rsg
 export function previewRsglResourcePackDirectoryBuild(rootDirectory: string, options: RsglBuildOptions): RsglBuildPreviewResult {
   const compiled = compileRsglBuildDirectory(rootDirectory, options);
   return previewCompiledRsglBuild(compiled, options, { sourceRoot: rootDirectory });
+}
+
+export function previewRsglResourcePackProgramBuild(files: RsglSourceFile[], options: RsglProgramBuildOptions): RsglBuildPreviewResult {
+  const compiled = compileRsglBuildProgram(files, options);
+  return previewCompiledRsglBuild(compiled, options, {
+    entryFileName: options.entryFileName,
+    sourceRoot: options.sourceRoot
+  });
 }
 
 export function formatRsglBuildPreview(
@@ -175,6 +195,32 @@ function compileRsglBuildDirectory(
   options: RsglBuildOptions
 ): { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] } {
   const result = compileRsglDirectory(rootDirectory, options);
+  const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
+  if (blockingDiagnostics.length > 0) {
+    return {
+      diagnostics: result.diagnostics
+    };
+  }
+
+  return {
+    diagnostics: result.diagnostics,
+    files: emitRsglFiles(result.units, {
+      ...options,
+      sourceMaps: options.sourceMaps ?? true,
+      manifest: options.manifest ?? true
+    })
+  };
+}
+
+function compileRsglBuildProgram(
+  files: RsglSourceFile[],
+  options: RsglProgramBuildOptions
+): { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] } {
+  const result = compileRsglProgram(files, {
+    ...options,
+    entryFileName: options.entryFileName,
+    semanticProgram: options.semanticProgram
+  });
   const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
   if (blockingDiagnostics.length > 0) {
     return {

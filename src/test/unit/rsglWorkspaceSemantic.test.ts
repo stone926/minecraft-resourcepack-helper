@@ -79,6 +79,37 @@ describe("RSGL workspace semantic cache", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("reuses and refreshes bound directory programs", () => {
+    const root = createTempDir();
+    try {
+      const sourceRoot = path.join(root, "src");
+      const firstFile = path.join(sourceRoot, "first.rsgl");
+      const secondFile = path.join(sourceRoot, "nested", "second.rsgl");
+      fs.mkdirSync(path.dirname(secondFile), { recursive: true });
+      fs.writeFileSync(firstFile, "model block stone { parent minecraft:block/cube_all }");
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const first = cache.loadProgramFromDirectory(sourceRoot);
+      const second = cache.loadProgramFromDirectory(sourceRoot);
+
+      assert.strictEqual(second.program, first.program);
+      assert.strictEqual(second.files[0], first.files[0]);
+      assert.deepStrictEqual(second.files.map(file => path.normalize(file.fileName)), [path.normalize(firstFile)]);
+
+      fs.writeFileSync(secondFile, "model block granite { parent minecraft:block/cube_all }");
+      cache.invalidatePath(secondFile);
+      const third = cache.loadProgramFromDirectory(sourceRoot);
+
+      assert.notStrictEqual(third.program, first.program);
+      assert.deepStrictEqual(third.files.map(file => path.normalize(file.fileName)), [
+        path.normalize(firstFile),
+        path.normalize(secondFile)
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function createTempDir(): string {

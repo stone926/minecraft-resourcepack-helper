@@ -2,10 +2,8 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import {
-  buildRsglResourcePack,
-  buildRsglResourcePackDirectory,
-  previewRsglResourcePackBuild,
-  previewRsglResourcePackDirectoryBuild,
+  buildRsglResourcePackProgram,
+  previewRsglResourcePackProgramBuild,
   type RsglBuildOptions,
   type RsglBuildPreviewResult,
   type RsglBuildResult
@@ -16,6 +14,7 @@ import {
   resolveRsglSourceRootFromFileName,
   type RsglDiscoveredSourceRoot
 } from "../sourceRoot";
+import { rsglWorkspaceBuildSemanticCache } from "../workspaceBuildSemantic";
 import { createRsglWorkspaceValidationOptions } from "../workspaceValidation";
 
 export const buildRsglResourcePackCommand = "McResHelper.buildRsglResourcePack";
@@ -56,7 +55,7 @@ export async function buildActiveRsglResourcePack(uri?: vscode.Uri): Promise<voi
   }
 
   const result = await runRsglBuildProgress(vscode.l10n.t("Building RSGL resource pack"), () =>
-    buildRsglResourcePack(context.sourceFileName, createBuildOptions(context))
+    buildRsglResourcePackProgramForContext(context)
   );
   await showBuildResult(result);
 }
@@ -68,7 +67,7 @@ export async function buildActiveRsglResourcePackDirectory(uri?: vscode.Uri): Pr
   }
 
   const result = await runRsglBuildProgress(vscode.l10n.t("Building RSGL source directory"), () =>
-    buildRsglResourcePackDirectory(context.sourceRoot, createBuildOptions(context))
+    buildRsglResourcePackProgramForContext(context)
   );
   await showBuildResult(result);
 }
@@ -80,7 +79,7 @@ export async function previewActiveRsglResourcePackBuild(uri?: vscode.Uri): Prom
   }
 
   const result = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL resource pack build"), () =>
-    previewRsglResourcePackBuild(context.sourceFileName, createBuildOptions(context))
+    previewRsglResourcePackProgramForContext(context)
   );
   await showBuildPreview(result);
 }
@@ -92,7 +91,7 @@ export async function previewActiveRsglResourcePackDirectoryBuild(uri?: vscode.U
   }
 
   const result = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL source directory build"), () =>
-    previewRsglResourcePackDirectoryBuild(context.sourceRoot, createBuildOptions(context))
+    previewRsglResourcePackProgramForContext(context)
   );
   await showBuildPreview(result);
 }
@@ -106,7 +105,7 @@ export async function buildRsglWorkspaceResourcePacks(): Promise<void> {
   const entries = await runRsglBuildProgress(vscode.l10n.t("Building RSGL workspace source directories"), () =>
     contexts.buildable.map(context => ({
       context,
-      result: buildRsglResourcePackDirectory(context.sourceRoot, createBuildOptions(context))
+      result: buildRsglResourcePackProgramForContext(context)
     }))
   );
   await showWorkspaceBuildResult(entries, contexts.skipped);
@@ -121,7 +120,7 @@ export async function previewRsglWorkspaceResourcePackBuilds(): Promise<void> {
   const entries = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL workspace source directory builds"), () =>
     contexts.buildable.map(context => ({
       context,
-      result: previewRsglResourcePackDirectoryBuild(context.sourceRoot, createBuildOptions(context))
+      result: previewRsglResourcePackProgramForContext(context)
     }))
   );
   await showWorkspaceBuildPreview(entries, contexts.skipped);
@@ -139,6 +138,7 @@ async function resolveFileBuildContext(uri: vscode.Uri | undefined): Promise<Rsg
       await vscode.window.showErrorMessage(vscode.l10n.t("Save the RSGL file before building."));
       return null;
     }
+    rsglWorkspaceBuildSemanticCache.invalidatePath(document.fileName);
   }
 
   const outputRoot = await resolveOutputRoot(document.fileName);
@@ -249,6 +249,36 @@ function createBuildOptions(context: RsglFileBuildContext): RsglBuildOptions {
       resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
     })
   };
+}
+
+function buildRsglResourcePackProgramForContext(context: RsglFileBuildContext): RsglBuildResult {
+  const program = loadSemanticProgramForBuildContext(context);
+  return buildRsglResourcePackProgram(program.files, {
+    ...createBuildOptions(context),
+    entryFileName: program.entryFileName,
+    sourceRoot: program.rootDirectory,
+    semanticProgram: program.program
+  });
+}
+
+function previewRsglResourcePackProgramForContext(context: RsglFileBuildContext): RsglBuildPreviewResult {
+  const program = loadSemanticProgramForBuildContext(context);
+  return previewRsglResourcePackProgramBuild(program.files, {
+    ...createBuildOptions(context),
+    entryFileName: program.entryFileName,
+    sourceRoot: program.rootDirectory,
+    semanticProgram: program.program
+  });
+}
+
+function loadSemanticProgramForBuildContext(context: RsglFileBuildContext) {
+  return isDirectoryBuildContext(context)
+    ? rsglWorkspaceBuildSemanticCache.loadProgramFromDirectory(context.sourceRoot)
+    : rsglWorkspaceBuildSemanticCache.loadProgramFromEntry(context.sourceFileName);
+}
+
+function isDirectoryBuildContext(context: RsglFileBuildContext): context is RsglDirectoryBuildContext {
+  return "sourceRoot" in context;
 }
 
 function runRsglBuildProgress<T>(
@@ -377,6 +407,7 @@ async function saveRsglDocumentsInSourceRoots(sourceRoots: readonly string[]): P
       if (!saved) {
         return false;
       }
+      rsglWorkspaceBuildSemanticCache.invalidatePath(document.fileName);
     }
   }
   return true;
