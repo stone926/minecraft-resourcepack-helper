@@ -4709,9 +4709,26 @@ describe("RSGL compiler", () => {
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
     assert.ok(codes.includes("rsgl.missingItemPropertyField"));
     assert.ok(codes.includes("rsgl.invalidItemPropertyField"));
+    assert.ok(codes.includes("rsgl.unexpectedItemPropertyField"));
     assert.ok(codes.includes("rsgl.invalidItemProperty"));
     assert.ok(codes.includes("rsgl.invalidItemSelectWhenValue"));
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidItemSelectWhenValue" && diagnostic.message.includes("resource ids")));
+    const invalidRangeUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_range_property.json"));
+    const periodRange = invalidRangeUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/period")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.unexpectedItemPropertyField"
+      && diagnostic.message.includes("period")
+      && diagnostic.range.start === periodRange?.start
+      && diagnostic.range.end === periodRange?.end
+    ));
+    const invalidSelectUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_select_property.json"));
+    const componentRange = invalidSelectUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/component")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.unexpectedItemPropertyField"
+      && diagnostic.message.includes("component")
+      && diagnostic.range.start === componentRange?.start
+      && diagnostic.range.end === componentRange?.end
+    ));
     const displayContextUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_display_context_when.json"));
     const displayContextWhenRange = displayContextUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0/when")?.sourceRange;
     assert.ok(result.diagnostics.some(diagnostic =>

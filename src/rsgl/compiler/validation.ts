@@ -113,6 +113,22 @@ const conditionRequiredFields = new Map<string, string[]>([
   ["keybind_down", ["keybind"]]
 ]);
 
+const conditionPropertyFields = new Map<string, string[]>([
+  ["component", ["predicate", "value"]],
+  ["custom_model_data", ["index"]],
+  ["has_component", ["component", "ignore_default"]],
+  ["keybind_down", ["keybind"]]
+]);
+
+const conditionKnownPropertyFields = new Set([
+  "component",
+  "ignore_default",
+  "index",
+  "keybind",
+  "predicate",
+  "value"
+]);
+
 const selectProperties = new Set([
   "block_state",
   "charge_type",
@@ -131,6 +147,23 @@ const selectRequiredFields = new Map<string, string[]>([
   ["block_state", ["block_state_property"]],
   ["component", ["component"]],
   ["local_time", ["pattern"]]
+]);
+
+const selectPropertyFields = new Map<string, string[]>([
+  ["block_state", ["block_state_property"]],
+  ["component", ["component"]],
+  ["custom_model_data", ["index"]],
+  ["local_time", ["locale", "pattern", "time_zone"]],
+  ["potion_contents", ["component"]]
+]);
+
+const selectKnownPropertyFields = new Set([
+  "block_state_property",
+  "component",
+  "index",
+  "locale",
+  "pattern",
+  "time_zone"
 ]);
 
 const selectWhenValueDomains = new Map<string, string[]>([
@@ -183,6 +216,26 @@ const itemModelTypes = new Set([
 const rangeDispatchRequiredFields = new Map<string, string[]>([
   ["compass", ["target"]],
   ["time", ["source"]]
+]);
+
+const rangeDispatchPropertyFields = new Map<string, string[]>([
+  ["compass", ["target", "wobble"]],
+  ["count", ["normalize"]],
+  ["custom_model_data", ["index"]],
+  ["damage", ["normalize"]],
+  ["time", ["source", "wobble"]],
+  ["use_cycle", ["period"]],
+  ["use_duration", ["remaining"]]
+]);
+
+const rangeDispatchKnownPropertyFields = new Set([
+  "index",
+  "normalize",
+  "period",
+  "remaining",
+  "source",
+  "target",
+  "wobble"
 ]);
 
 export interface RsglResourceValidationOptions {
@@ -727,6 +780,16 @@ function validateItemRangeDispatch(
   generatedPath: string
 ): void {
   validateItemProperty(model, "range_dispatch", rangeDispatchProperties, rangeDispatchRequiredFields, unit, diagnostics);
+  validateItemPropertyFields(
+    model,
+    "range_dispatch",
+    rangeDispatchProperties,
+    rangeDispatchKnownPropertyFields,
+    rangeDispatchPropertyFields,
+    unit,
+    diagnostics,
+    generatedPath
+  );
   validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateBooleanField(model, "normalize", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateBooleanField(model, "wobble", "rsgl.invalidItemPropertyField", unit, diagnostics);
@@ -806,6 +869,16 @@ function validateItemSelect(
   generatedPath: string
 ): void {
   validateItemProperty(model, "select", selectProperties, selectRequiredFields, unit, diagnostics);
+  validateItemPropertyFields(
+    model,
+    "select",
+    selectProperties,
+    selectKnownPropertyFields,
+    selectPropertyFields,
+    unit,
+    diagnostics,
+    generatedPath
+  );
   validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateStringField(model, "block_state_property", "rsgl.invalidItemPropertyField", unit, diagnostics);
@@ -921,6 +994,16 @@ function validateItemCondition(
   generatedPath: string
 ): void {
   validateItemProperty(model, "condition", conditionProperties, conditionRequiredFields, unit, diagnostics);
+  validateItemPropertyFields(
+    model,
+    "condition",
+    conditionProperties,
+    conditionKnownPropertyFields,
+    conditionPropertyFields,
+    unit,
+    diagnostics,
+    generatedPath
+  );
   validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateBooleanField(model, "ignore_default", "rsgl.invalidItemPropertyField", unit, diagnostics);
   validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
@@ -1036,6 +1119,37 @@ function validateItemProperty(
         range: unit.sourceMap.mappings[0].sourceRange
       });
     }
+  }
+}
+
+function validateItemPropertyFields(
+  model: Record<string, JsonValue>,
+  modelType: string,
+  knownProperties: Set<string>,
+  knownFields: Set<string>,
+  allowedFieldsByProperty: Map<string, string[]>,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
+): void {
+  const property = itemModelType(model.property);
+  if (!property) {
+    return;
+  }
+  const allowedFields = new Set(allowedFieldsByProperty.get(property) ?? []);
+  if (!knownProperties.has(property)) {
+    return;
+  }
+  for (const field of knownFields) {
+    if (!Object.hasOwn(model, field) || allowedFields.has(field)) {
+      continue;
+    }
+    diagnostics.push({
+      code: "rsgl.unexpectedItemPropertyField",
+      message: `Item ${modelType} property '${property}' does not support field '${field}'.`,
+      severity: "error",
+      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
+    });
   }
 }
 
