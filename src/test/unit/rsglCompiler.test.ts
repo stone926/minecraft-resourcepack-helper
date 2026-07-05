@@ -5229,6 +5229,67 @@ describe("RSGL compiler", () => {
     assert.ok(checkedResources.includes("texture:minecraft:block/missing_anim"));
     assert.ok(checkedResources.includes("texture:minecraft:particle/missing_particle"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/missing_equipment"));
+    const atlasUnit = result.units.find(unit => unit.outputPath.endsWith("atlases/blocks.json"));
+    const atlasRange = (generatedPath: string) => {
+      let current = generatedPath;
+      while (current) {
+        const range = atlasUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === current)?.sourceRange;
+        if (range) {
+          return range;
+        }
+        const slash = current.lastIndexOf("/");
+        current = slash > 0 ? current.slice(0, slash) : "";
+      }
+      return atlasUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "")?.sourceRange;
+    };
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureDirectoryNotFound"
+      && diagnostic.message.includes("missing_directory")
+      && diagnostic.range.start === atlasRange("/sources/0/source")?.start
+      && diagnostic.range.end === atlasRange("/sources/0/source")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_single")
+      && diagnostic.range.start === atlasRange("/sources/1/resource")?.start
+      && diagnostic.range.end === atlasRange("/sources/1/resource")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_unstitch")
+      && diagnostic.range.start === atlasRange("/sources/2/resource")?.start
+      && diagnostic.range.end === atlasRange("/sources/2/resource")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidAtlasFilterPattern"
+      && diagnostic.message.includes("namespace")
+      && diagnostic.range.start === atlasRange("/sources/3/pattern/namespace")?.start
+      && diagnostic.range.end === atlasRange("/sources/3/pattern/namespace")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidAtlasFilterPattern"
+      && diagnostic.message.includes("path")
+      && diagnostic.range.start === atlasRange("/sources/3/pattern/path")?.start
+      && diagnostic.range.end === atlasRange("/sources/3/pattern/path")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_palette")
+      && diagnostic.range.start === atlasRange("/sources/4/textures/0")?.start
+      && diagnostic.range.end === atlasRange("/sources/4/textures/0")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_palette_key")
+      && diagnostic.range.start === atlasRange("/sources/4/palette_key")?.start
+      && diagnostic.range.end === atlasRange("/sources/4/palette_key")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_permutation")
+      && diagnostic.range.start === atlasRange("/sources/4/permutations/red")?.start
+      && diagnostic.range.end === atlasRange("/sources/4/permutations/red")?.end
+    ));
   });
 
   it("validates mcmeta animation frames against texture metadata", () => {

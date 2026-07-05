@@ -1673,31 +1673,75 @@ function validateAtlasUnit(
   const namespace = unit.id?.namespace ?? "minecraft";
   const content = asObject(unit.content);
   const sources = Array.isArray(content?.sources) ? content.sources : [];
-  for (const source of sources) {
+  for (const [index, source] of sources.entries()) {
+    const sourcePath = appendGeneratedPath("/sources", String(index));
     const sourceObject = asObject(source);
     if (!sourceObject) {
       continue;
     }
     const sourceType = atlasSourceType(sourceObject.type);
     if (sourceType === "directory" && typeof sourceObject.source === "string") {
-      checkResourceExists("textureDirectory", qualifyResourceId(sourceObject.source, namespace), unit, undefined, options, diagnostics);
+      checkResourceExists(
+        "textureDirectory",
+        qualifyResourceId(sourceObject.source, namespace),
+        unit,
+        undefined,
+        options,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "source"))
+      );
     }
     if ((sourceType === "single" || sourceType === "unstitch") && typeof sourceObject.resource === "string") {
-      checkResourceExists("texture", qualifyResourceId(sourceObject.resource, namespace), unit, undefined, options, diagnostics);
+      checkResourceExists(
+        "texture",
+        qualifyResourceId(sourceObject.resource, namespace),
+        unit,
+        undefined,
+        options,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "resource"))
+      );
     }
     if (sourceType === "filter") {
-      validateAtlasFilterPattern(sourceObject, unit, diagnostics);
+      validateAtlasFilterPattern(sourceObject, unit, diagnostics, sourcePath);
     }
     if (sourceType === "paletted_permutations") {
-      for (const texture of stringValues(sourceObject.textures)) {
-        checkResourceExists("texture", qualifyResourceId(texture, namespace), unit, undefined, options, diagnostics);
+      const textures = Array.isArray(sourceObject.textures) ? sourceObject.textures : [];
+      for (const [textureIndex, texture] of textures.entries()) {
+        if (typeof texture === "string") {
+          checkResourceExists(
+            "texture",
+            qualifyResourceId(texture, namespace),
+            unit,
+            undefined,
+            options,
+            diagnostics,
+            sourceRangeForGeneratedPath(unit, appendGeneratedPath(appendGeneratedPath(sourcePath, "textures"), String(textureIndex)))
+          );
+        }
       }
       if (typeof sourceObject.palette_key === "string") {
-        checkResourceExists("texture", qualifyResourceId(sourceObject.palette_key, namespace), unit, undefined, options, diagnostics);
+        checkResourceExists(
+          "texture",
+          qualifyResourceId(sourceObject.palette_key, namespace),
+          unit,
+          undefined,
+          options,
+          diagnostics,
+          sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "palette_key"))
+        );
       }
-      for (const texture of Object.values(asObject(sourceObject.permutations) ?? {})) {
+      for (const [key, texture] of Object.entries(asObject(sourceObject.permutations) ?? {})) {
         if (typeof texture === "string") {
-          checkResourceExists("texture", qualifyResourceId(texture, namespace), unit, undefined, options, diagnostics);
+          checkResourceExists(
+            "texture",
+            qualifyResourceId(texture, namespace),
+            unit,
+            undefined,
+            options,
+            diagnostics,
+            sourceRangeForGeneratedPath(unit, appendGeneratedPath(appendGeneratedPath(sourcePath, "permutations"), key))
+          );
         }
       }
     }
@@ -1929,12 +1973,14 @@ function itemModelType(value: JsonValue | undefined): string | null {
 function validateAtlasFilterPattern(
   sourceObject: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const pattern = asObject(sourceObject.pattern);
   if (!pattern) {
     return;
   }
+  const patternPath = appendGeneratedPath(generatedPath, "pattern");
   for (const key of ["namespace", "path"]) {
     const value = pattern[key];
     if (typeof value !== "string") {
@@ -1947,7 +1993,7 @@ function validateAtlasFilterPattern(
         code: "rsgl.invalidAtlasFilterPattern",
         message: `Atlas filter ${key} pattern is not a valid regular expression.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(patternPath, key))
       });
     }
   }
@@ -1978,16 +2024,6 @@ function parseResourceId(value: string, defaultNamespace: string): { namespace: 
   return separator >= 0
     ? { namespace: value.slice(0, separator), path: value.slice(separator + 1) }
     : { namespace: defaultNamespace, path: value };
-}
-
-function stringValues(value: JsonValue | undefined): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
-  }
-  return [];
 }
 
 function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
@@ -2050,8 +2086,25 @@ function visitJsonWithPath(value: JsonValue, visitor: (value: JsonValue, generat
 }
 
 function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): ValidationRange {
-  return unit.sourceMap.mappings.find(mapping => mapping.generatedPath === generatedPath)?.sourceRange
-    ?? unitRange(unit);
+  for (const path of generatedPathFallbacks(generatedPath)) {
+    const range = unit.sourceMap.mappings.find(mapping => mapping.generatedPath === path)?.sourceRange;
+    if (range) {
+      return range;
+    }
+  }
+  return unitRange(unit);
+}
+
+function generatedPathFallbacks(generatedPath: string): string[] {
+  const paths: string[] = [];
+  let current = generatedPath;
+  while (current) {
+    paths.push(current);
+    const slash = current.lastIndexOf("/");
+    current = slash > 0 ? current.slice(0, slash) : "";
+  }
+  paths.push("");
+  return paths;
 }
 
 function blockstateVariantPath(key: string): string {
