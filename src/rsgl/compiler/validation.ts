@@ -127,7 +127,18 @@ const selectRequiredFields = new Map<string, string[]>([
 
 const selectWhenValueDomains = new Map<string, string[]>([
   ["main_hand", ["left", "right"]],
-  ["charge_type", ["none", "arrow", "rocket", "firework", "firework_rocket"]]
+  ["charge_type", ["none", "arrow", "rocket", "firework", "firework_rocket"]],
+  ["display_context", [
+    "none",
+    "thirdperson_lefthand",
+    "thirdperson_righthand",
+    "firstperson_lefthand",
+    "firstperson_righthand",
+    "head",
+    "gui",
+    "ground",
+    "fixed"
+  ]]
 ]);
 
 const rangeDispatchProperties = new Set([
