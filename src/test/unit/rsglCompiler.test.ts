@@ -4368,6 +4368,12 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemModelType"));
     assert.ok(codes.includes("rsgl.invalidItemModelReference"));
     assert.ok(checkedResources.includes("model:minecraft:item/missing_child"));
+    const compositeUnit = result.units.find(unit => unit.outputPath.endsWith("composite_with_missing_child.json"));
+    const missingChildRange = compositeUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/models/0/model")?.sourceRange;
+    const missingChildDiagnostic = result.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.modelNotFound" && diagnostic.message.includes("missing_child")
+    );
+    assert.deepStrictEqual(missingChildDiagnostic?.range, missingChildRange);
 
     const emptyCompositeDiagnostics = validateResourceUnits([minimalItemUnit({
       model: { type: "minecraft:composite", models: [] }

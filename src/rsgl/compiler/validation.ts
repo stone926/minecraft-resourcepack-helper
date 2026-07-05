@@ -613,13 +613,21 @@ function validateItemModelDefinition(
   const type = itemModelType(model.type);
   if (type === "model") {
     if (typeof model.model === "string") {
-      checkResourceExists("model", model.model, unit, generatedModels, options, diagnostics);
+      checkResourceExists(
+        "model",
+        model.model,
+        unit,
+        generatedModels,
+        options,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
+      );
     } else {
       diagnostics.push({
         code: "rsgl.invalidItemModelReference",
         message: "Item model definition must reference a model id.",
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
       });
     }
     return;
@@ -658,7 +666,7 @@ function validateItemModelDefinition(
     code: "rsgl.invalidItemModelType",
     message: "Item model definition must define a known item model type.",
     severity: "error",
-    range: unit.sourceMap.mappings[0].sourceRange
+    range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "type"))
   });
   validateNestedItemModels(model, unit, generatedModels, options, diagnostics, generatedPath);
 }
