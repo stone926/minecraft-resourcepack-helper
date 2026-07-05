@@ -17,6 +17,8 @@
   "command.title.generateCitForCurrentItem": "McResHelper: generate CIT for current item",
   "command.title.buildRsglResourcePack": "McResHelper: build RSGL resource pack",
   "command.title.previewRsglResourcePackBuild": "McResHelper: preview RSGL resource pack build",
+  "command.title.buildRsglResourcePackDirectory": "McResHelper: build RSGL source directory",
+  "command.title.previewRsglResourcePackDirectoryBuild": "McResHelper: preview RSGL source directory build",
   "viewContainer.title.resources": "Minecraft Resources",
   "view.name.resourceGraph": "Resource Relations",
   "schema.packMcmeta.url": "./assets/linters/en/pack.mcmeta.json",

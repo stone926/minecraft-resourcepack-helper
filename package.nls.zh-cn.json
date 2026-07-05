@@ -17,6 +17,8 @@
   "command.title.generateCitForCurrentItem": "McResHelper: 为当前物品生成 CIT",
   "command.title.buildRsglResourcePack": "McResHelper: 构建 RSGL 资源包",
   "command.title.previewRsglResourcePackBuild": "McResHelper: 预览 RSGL 资源包构建",
+  "command.title.buildRsglResourcePackDirectory": "McResHelper: 构建 RSGL 源目录",
+  "command.title.previewRsglResourcePackDirectoryBuild": "McResHelper: 预览 RSGL 源目录构建",
   "viewContainer.title.resources": "Minecraft 资源",
   "view.name.resourceGraph": "资源关系",
   "schema.packMcmeta.url": "./assets/linters/zh-cn/pack.mcmeta.json",

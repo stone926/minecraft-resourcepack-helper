@@ -28,6 +28,8 @@
     "onLanguage:rsgl",
     "onCommand:McResHelper.buildRsglResourcePack",
     "onCommand:McResHelper.previewRsglResourcePackBuild",
+    "onCommand:McResHelper.buildRsglResourcePackDirectory",
+    "onCommand:McResHelper.previewRsglResourcePackDirectoryBuild",
     "workspaceContains:**/pack.mcmeta"
   ],
   "keywords": [
@@ -194,6 +196,16 @@
         "command": "McResHelper.previewRsglResourcePackBuild",
         "title": "%command.title.previewRsglResourcePackBuild%",
         "icon": "$(diff)"
+      },
+      {
+        "command": "McResHelper.buildRsglResourcePackDirectory",
+        "title": "%command.title.buildRsglResourcePackDirectory%",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
+        "title": "%command.title.previewRsglResourcePackDirectoryBuild%",
+        "icon": "$(diff)"
       }
     ],
     "viewsContainers": {
@@ -226,6 +238,16 @@
           "group": "navigation@1"
         },
         {
+          "command": "McResHelper.buildRsglResourcePackDirectory",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@2"
+        },
+        {
+          "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@3"
+        },
+        {
           "command": "McResHelper.openModelPreview",
           "when": "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/",
           "group": "navigation"
@@ -246,6 +268,16 @@
           "command": "McResHelper.previewRsglResourcePackBuild",
           "when": "resourceLangId == rsgl",
           "group": "navigation@1"
+        },
+        {
+          "command": "McResHelper.buildRsglResourcePackDirectory",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@2"
+        },
+        {
+          "command": "McResHelper.previewRsglResourcePackDirectoryBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@3"
         },
         {
           "command": "McResHelper.openModelPreview",

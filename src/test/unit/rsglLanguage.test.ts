@@ -6,6 +6,7 @@ import { formatRsglText } from "../../rsgl/formatterCore";
 import { lexRsgl, parseRsgl } from "../../rsgl/parser";
 import { resourceKeywords } from "../../rsgl/parser/keywords";
 import { rsglResourceKinds } from "../../rsgl/resourceKinds";
+import { resolveRsglSourceRootFromFileName } from "../../rsgl/sourceRoot";
 
 describe("RSGL language", () => {
   it("contributes the rsgl language and bundled editor assets", () => {
@@ -22,6 +23,8 @@ describe("RSGL language", () => {
     assert.ok(packageJson.activationEvents?.includes("onLanguage:rsgl"));
     assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePack"));
     assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackBuild"));
+    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.buildRsglResourcePackDirectory"));
+    assert.ok(packageJson.activationEvents?.includes("onCommand:McResHelper.previewRsglResourcePackDirectoryBuild"));
     const language = packageJson.contributes?.languages?.find(entry => entry.id === "rsgl");
     assert.ok(language);
     assert.ok(language.extensions?.includes(".rsgl"));
@@ -42,11 +45,23 @@ describe("RSGL language", () => {
     assert.ok(packageJson.contributes?.commands?.some(command =>
       command.command === "McResHelper.previewRsglResourcePackBuild" && command.icon === "$(diff)"
     ));
+    assert.ok(packageJson.contributes?.commands?.some(command =>
+      command.command === "McResHelper.buildRsglResourcePackDirectory" && command.icon === "$(run-all)"
+    ));
+    assert.ok(packageJson.contributes?.commands?.some(command =>
+      command.command === "McResHelper.previewRsglResourcePackDirectoryBuild" && command.icon === "$(diff)"
+    ));
     assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
       item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
     ));
     assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
       item.command === "McResHelper.previewRsglResourcePackBuild" && item.when === "resourceLangId == rsgl"
+    ));
+    assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
+      item.command === "McResHelper.buildRsglResourcePackDirectory" && item.when === "resourceLangId == rsgl"
+    ));
+    assert.ok(packageJson.contributes?.menus?.["editor/title"]?.some(item =>
+      item.command === "McResHelper.previewRsglResourcePackDirectoryBuild" && item.when === "resourceLangId == rsgl"
     ));
     assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
       item.command === "McResHelper.buildRsglResourcePack" && item.when === "resourceLangId == rsgl"
@@ -54,6 +69,28 @@ describe("RSGL language", () => {
     assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
       item.command === "McResHelper.previewRsglResourcePackBuild" && item.when === "resourceLangId == rsgl"
     ));
+    assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
+      item.command === "McResHelper.buildRsglResourcePackDirectory" && item.when === "resourceLangId == rsgl"
+    ));
+    assert.ok(packageJson.contributes?.menus?.["editor/context"]?.some(item =>
+      item.command === "McResHelper.previewRsglResourcePackDirectoryBuild" && item.when === "resourceLangId == rsgl"
+    ));
+  });
+
+  it("resolves an RSGL source root from active file paths", () => {
+    const sourceRoot = path.resolve("pack", "src");
+    assert.strictEqual(
+      resolveRsglSourceRootFromFileName(path.join(sourceRoot, "main.rsgl")),
+      sourceRoot
+    );
+    assert.strictEqual(
+      resolveRsglSourceRootFromFileName(path.join(sourceRoot, "nested", "blocks.rsgl")),
+      sourceRoot
+    );
+    assert.strictEqual(
+      resolveRsglSourceRootFromFileName(path.resolve("pack", "rsgl", "blocks.rsgl")),
+      path.resolve("pack", "rsgl")
+    );
   });
 
   it("keeps resource keyword registry wired into the parser", () => {

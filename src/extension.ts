@@ -21,7 +21,16 @@ import { openModelPreviewCommand } from './modelPreview/commands/openModelPrevie
 import { captureModelPreviewImageCommand, exportModelPreviewImageCommand } from './modelPreview/commands/exportModelPreviewImage';
 import { workspaceResourceCache } from './services/workspaceResourceCache';
 import { registerRsglLanguageFeatures } from './rsgl';
-import { buildActiveRsglResourcePack, buildRsglResourcePackCommand, previewActiveRsglResourcePackBuild, previewRsglResourcePackBuildCommand } from './rsgl/commands/build';
+import {
+  buildActiveRsglResourcePack,
+  buildActiveRsglResourcePackDirectory,
+  buildRsglResourcePackCommand,
+  buildRsglResourcePackDirectoryCommand,
+  previewActiveRsglResourcePackBuild,
+  previewActiveRsglResourcePackDirectoryBuild,
+  previewRsglResourcePackBuildCommand,
+  previewRsglResourcePackDirectoryBuildCommand
+} from './rsgl/commands/build';
 
 const jsonResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { language: "json", pattern: "**/blockstates/*.json" },
@@ -121,6 +130,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand(createMissingCitResourceCommand, createMissingCitResource));
   context.subscriptions.push(vscode.commands.registerCommand(buildRsglResourcePackCommand, buildActiveRsglResourcePack));
   context.subscriptions.push(vscode.commands.registerCommand(previewRsglResourcePackBuildCommand, previewActiveRsglResourcePackBuild));
+  context.subscriptions.push(vscode.commands.registerCommand(buildRsglResourcePackDirectoryCommand, buildActiveRsglResourcePackDirectory));
+  context.subscriptions.push(vscode.commands.registerCommand(previewRsglResourcePackDirectoryBuildCommand, previewActiveRsglResourcePackDirectoryBuild));
 
   const modelPreviewService = new ModelPreviewService({
     fileSystem: new ModelPreviewHostFileSystem(),
