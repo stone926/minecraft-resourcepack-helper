@@ -4444,6 +4444,23 @@ describe("RSGL compiler", () => {
       "      ]",
       "    }",
       "  }",
+      "}",
+      "item invalid_nested_tints {",
+      "  raw_json {",
+      "    model: {",
+      "      type: minecraft:select,",
+      "      property: minecraft:main_hand,",
+      "      cases: [{",
+      "        when: \"left\",",
+      "        model: {",
+      "          type: minecraft:model,",
+      "          model: minecraft:item/base,",
+      "          tints: [{ type: minecraft:constant, value: [1, 2, 0] }]",
+      "        }",
+      "      }],",
+      "      fallback: { type: minecraft:model, model: minecraft:item/base }",
+      "    }",
+      "  }",
       "}"
     ].join("\n")), {
       resourceExists: () => true
@@ -4463,6 +4480,13 @@ describe("RSGL compiler", () => {
     const invalidTintColor = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemTintColor");
     assert.deepStrictEqual(invalidTintColor?.range, tintValueRange);
     assert.notDeepStrictEqual(invalidTintColor?.range, invalidTintsUnit?.sourceMap.mappings[0].sourceRange);
+    const invalidNestedTintsUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_nested_tints.json"));
+    const nestedTintValueRange = invalidNestedTintsUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0/model/tints/0/value")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemTintColor"
+      && diagnostic.range.start === nestedTintValueRange?.start
+      && diagnostic.range.end === nestedTintValueRange?.end
+    ));
   });
 
   it("validates item top-level fields and transformations", () => {

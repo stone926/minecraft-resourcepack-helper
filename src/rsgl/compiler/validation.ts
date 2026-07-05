@@ -626,22 +626,22 @@ function validateItemModelDefinition(
   }
 
   if (type === "composite") {
-    validateItemComposite(model, unit, generatedModels, options, diagnostics);
+    validateItemComposite(model, unit, generatedModels, options, diagnostics, generatedPath);
     return;
   }
 
   if (type === "range_dispatch") {
-    validateItemRangeDispatch(model, unit, generatedModels, options, diagnostics);
+    validateItemRangeDispatch(model, unit, generatedModels, options, diagnostics, generatedPath);
     return;
   }
 
   if (type === "select") {
-    validateItemSelect(model, unit, generatedModels, options, diagnostics);
+    validateItemSelect(model, unit, generatedModels, options, diagnostics, generatedPath);
     return;
   }
 
   if (type === "condition") {
-    validateItemCondition(model, unit, generatedModels, options, diagnostics);
+    validateItemCondition(model, unit, generatedModels, options, diagnostics, generatedPath);
     return;
   }
 
@@ -660,7 +660,7 @@ function validateItemModelDefinition(
     severity: "error",
     range: unit.sourceMap.mappings[0].sourceRange
   });
-  validateNestedItemModels(model, unit, generatedModels, options, diagnostics);
+  validateNestedItemModels(model, unit, generatedModels, options, diagnostics, generatedPath);
 }
 
 function validateItemComposite(
@@ -668,7 +668,8 @@ function validateItemComposite(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const models = Array.isArray(model.models) ? model.models : null;
   if (!models) {
@@ -688,7 +689,7 @@ function validateItemComposite(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   }
-  for (const nested of models) {
+  for (const [index, nested] of models.entries()) {
     if (!asObject(nested)) {
       diagnostics.push({
         code: "rsgl.invalidItemCompositeModel",
@@ -698,7 +699,14 @@ function validateItemComposite(
       });
       continue;
     }
-    validateItemModelDefinition(nested, unit, generatedModels, options, diagnostics);
+    validateItemModelDefinition(
+      nested,
+      unit,
+      generatedModels,
+      options,
+      diagnostics,
+      appendGeneratedPath(appendGeneratedPath(generatedPath, "models"), String(index))
+    );
   }
 }
 
@@ -707,7 +715,8 @@ function validateItemRangeDispatch(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   validateItemProperty(model, "range_dispatch", rangeDispatchProperties, rangeDispatchRequiredFields, unit, diagnostics);
   validateNonNegativeIntegerField(model, "index", "rsgl.invalidItemPropertyField", unit, diagnostics);
@@ -736,7 +745,7 @@ function validateItemRangeDispatch(
       });
     }
     let previousThreshold = -Infinity;
-    for (const entry of entries) {
+    for (const [index, entry] of entries.entries()) {
       const entryObject = asObject(entry);
       if (!entryObject || typeof entryObject.threshold !== "number" || !Number.isFinite(entryObject.threshold)) {
         diagnostics.push({
@@ -755,7 +764,14 @@ function validateItemRangeDispatch(
       } else {
         previousThreshold = entryObject.threshold;
       }
-      validateItemModelDefinition(entryObject?.model, unit, generatedModels, options, diagnostics);
+      validateItemModelDefinition(
+        entryObject?.model,
+        unit,
+        generatedModels,
+        options,
+        diagnostics,
+        appendGeneratedPath(appendGeneratedPath(appendGeneratedPath(generatedPath, "entries"), String(index)), "model")
+      );
     }
   }
 
@@ -767,7 +783,7 @@ function validateItemRangeDispatch(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   } else {
-    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "fallback"));
   }
 }
 
@@ -776,7 +792,8 @@ function validateItemSelect(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   validateItemProperty(model, "select", selectProperties, selectRequiredFields, unit, diagnostics);
   validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
@@ -795,7 +812,7 @@ function validateItemSelect(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   } else {
-    for (const itemCase of cases) {
+    for (const [index, itemCase] of cases.entries()) {
       const caseObject = asObject(itemCase);
       if (!caseObject || !("when" in caseObject)) {
         diagnostics.push({
@@ -807,7 +824,14 @@ function validateItemSelect(
       } else {
         validateItemSelectCaseWhen(property, caseObject.when, unit, diagnostics);
       }
-      validateItemModelDefinition(caseObject?.model, unit, generatedModels, options, diagnostics);
+      validateItemModelDefinition(
+        caseObject?.model,
+        unit,
+        generatedModels,
+        options,
+        diagnostics,
+        appendGeneratedPath(appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index)), "model")
+      );
     }
   }
 
@@ -819,7 +843,7 @@ function validateItemSelect(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   } else {
-    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "fallback"));
   }
 }
 
@@ -880,7 +904,8 @@ function validateItemCondition(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   validateItemProperty(model, "condition", conditionProperties, conditionRequiredFields, unit, diagnostics);
   validateStringField(model, "component", "rsgl.invalidItemPropertyField", unit, diagnostics);
@@ -896,7 +921,7 @@ function validateItemCondition(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   } else {
-    validateItemModelDefinition(model["on_true"], unit, generatedModels, options, diagnostics);
+    validateItemModelDefinition(model["on_true"], unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "on_true"));
   }
 
   if (!("on_false" in model)) {
@@ -907,7 +932,7 @@ function validateItemCondition(
       range: unit.sourceMap.mappings[0].sourceRange
     });
   } else {
-    validateItemModelDefinition(model["on_false"], unit, generatedModels, options, diagnostics);
+    validateItemModelDefinition(model["on_false"], unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "on_false"));
   }
 }
 
@@ -1362,19 +1387,27 @@ function validateNestedItemModels(
   unit: ResourceUnit,
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const type = itemModelType(model.type);
   if (type && !itemModelTypes.has(type)) {
     return;
   }
   if (Array.isArray(model.models)) {
-    for (const nested of model.models) {
-      validateItemModelDefinition(nested, unit, generatedModels, options, diagnostics);
+    for (const [index, nested] of model.models.entries()) {
+      validateItemModelDefinition(
+        nested,
+        unit,
+        generatedModels,
+        options,
+        diagnostics,
+        appendGeneratedPath(appendGeneratedPath(generatedPath, "models"), String(index))
+      );
     }
   }
   if ("fallback" in model) {
-    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics);
+    validateItemModelDefinition(model.fallback, unit, generatedModels, options, diagnostics, appendGeneratedPath(generatedPath, "fallback"));
   }
 }
 
