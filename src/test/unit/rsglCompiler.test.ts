@@ -4619,6 +4619,22 @@ describe("RSGL compiler", () => {
     assert.ok(codes.includes("rsgl.invalidItemProperty"));
     assert.ok(codes.includes("rsgl.invalidItemSelectWhenValue"));
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidItemSelectWhenValue" && diagnostic.message.includes("resource ids")));
+    const displayContextUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_display_context_when.json"));
+    const displayContextWhenRange = displayContextUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0/when")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemSelectWhenValue"
+      && diagnostic.message.includes("display_context")
+      && diagnostic.range.start === displayContextWhenRange?.start
+      && diagnostic.range.end === displayContextWhenRange?.end
+    ));
+    const resourceIdWhenUnit = result.units.find(unit => unit.outputPath.endsWith("invalid_resource_id_when.json"));
+    const resourceIdWhenRange = resourceIdWhenUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/model/cases/0/when")?.sourceRange;
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidItemSelectWhenValue"
+      && diagnostic.message.includes("resource ids")
+      && diagnostic.range.start === resourceIdWhenRange?.start
+      && diagnostic.range.end === resourceIdWhenRange?.end
+    ));
   });
 
   it("validates generated model parent chains and texture variables", () => {

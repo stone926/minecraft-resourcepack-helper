@@ -821,16 +821,17 @@ function validateItemSelect(
     });
   } else {
     for (const [index, itemCase] of cases.entries()) {
+      const casePath = appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index));
       const caseObject = asObject(itemCase);
       if (!caseObject || !("when" in caseObject)) {
         diagnostics.push({
           code: "rsgl.invalidItemSelectCase",
           message: "Item select cases must define a when value.",
           severity: "error",
-          range: unit.sourceMap.mappings[0].sourceRange
+          range: sourceRangeForGeneratedPath(unit, casePath)
         });
       } else {
-        validateItemSelectCaseWhen(property, caseObject.when, unit, diagnostics);
+        validateItemSelectCaseWhen(property, caseObject.when, unit, diagnostics, appendGeneratedPath(casePath, "when"));
       }
       validateItemModelDefinition(
         caseObject?.model,
@@ -838,7 +839,7 @@ function validateItemSelect(
         generatedModels,
         options,
         diagnostics,
-        appendGeneratedPath(appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index)), "model")
+        appendGeneratedPath(casePath, "model")
       );
     }
   }
@@ -859,7 +860,8 @@ function validateItemSelectCaseWhen(
   property: string | null,
   value: JsonValue,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (!property) {
     return;
@@ -867,7 +869,7 @@ function validateItemSelectCaseWhen(
   const allowedValues = selectWhenValueDomains.get(property);
   if (!allowedValues) {
     if (selectWhenResourceIdProperties.has(property)) {
-      validateItemSelectCaseResourceIds(property, value, unit, diagnostics);
+      validateItemSelectCaseResourceIds(property, value, unit, diagnostics, generatedPath);
     }
     return;
   }
@@ -879,7 +881,7 @@ function validateItemSelectCaseWhen(
         code: "rsgl.invalidItemSelectWhenValue",
         message: `Item select property '${property}' has an invalid case value.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, generatedPath)
       });
       return;
     }
@@ -890,7 +892,8 @@ function validateItemSelectCaseResourceIds(
   property: string,
   value: JsonValue,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const values = Array.isArray(value) ? value : [value];
   const namespace = unit.id?.namespace ?? "minecraft";
@@ -900,7 +903,7 @@ function validateItemSelectCaseResourceIds(
         code: "rsgl.invalidItemSelectWhenValue",
         message: `Item select property '${property}' case values must be resource ids.`,
         severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
+        range: sourceRangeForGeneratedPath(unit, generatedPath)
       });
       return;
     }
