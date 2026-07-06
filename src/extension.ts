@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import * as path from 'node:path';
+import { normalizePathKey } from '../packages/mc-assets/src';
 import textureVarDefinitionProvider from './providers/textureVarDefinitionProvider';
 import openDefaultMcAssetsPath from './commands/openDefaultMcAssetsPath';
 import createNewResourcePack from './commands/createNewResourcePack';
@@ -233,15 +233,7 @@ export function activate(context: vscode.ExtensionContext) {
   for (const pattern of [
     "**/assets/*/shaders/**/*.vsh",
     "**/assets/*/shaders/**/*.fsh",
-    "**/assets/*/shaders/**/*.glsl"
-  ]) {
-    registerResourceWatcher(context, pattern, uri => {
-      invalidateResourcePath(uri);
-      refreshOpenResourceDiagnosticsSoon();
-      resourceGraphTreeProvider.refreshSoon();
-    });
-  }
-  for (const pattern of [
+    "**/assets/*/shaders/**/*.glsl",
     "**/assets/*/textures/**/*.png",
     "**/assets/*/citresewn/*.png",
     "**/assets/*/citresewn/**/*.png",
@@ -249,15 +241,7 @@ export function activate(context: vscode.ExtensionContext) {
     "**/assets/*/mcpatcher/cit/**/*.png",
     "**/assets/*/textures/**/*.png.mcmeta",
     "**/pack.mcmeta",
-    "**/pack.png"
-  ]) {
-    registerResourceWatcher(context, pattern, uri => {
-      invalidateResourcePath(uri);
-      refreshOpenResourceDiagnosticsSoon();
-      resourceGraphTreeProvider.refreshSoon();
-    });
-  }
-  for (const pattern of [
+    "**/pack.png",
     "**/assets/*/citresewn/*.properties",
     "**/assets/*/citresewn/**/*.properties",
     "**/assets/*/optifine/cit.properties",
@@ -324,13 +308,8 @@ function invalidateResourcePath(uri: vscode.Uri): void {
 }
 
 function findOpenTextDocument(fileName: string): vscode.TextDocument | null {
-  const key = fileNameKey(fileName);
+  const key = normalizePathKey(fileName);
   return vscode.workspace.textDocuments.find(document =>
-    document.uri.scheme === "file" && fileNameKey(document.fileName) === key
+    document.uri.scheme === "file" && normalizePathKey(document.fileName) === key
   ) ?? null;
-}
-
-function fileNameKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
