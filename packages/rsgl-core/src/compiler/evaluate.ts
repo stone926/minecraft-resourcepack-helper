@@ -3,7 +3,7 @@ import {
   ObjectPropertyNode,
   TextRange
 } from "../parser";
-import { tryParseMinecraftResourceId } from "../../../rsgl-shared/src";
+import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
 

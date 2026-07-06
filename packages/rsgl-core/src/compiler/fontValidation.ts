@@ -1,4 +1,4 @@
-import { qualifyMinecraftResourceId } from "../../../rsgl-shared/src";
+import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface FontValidationOptions {

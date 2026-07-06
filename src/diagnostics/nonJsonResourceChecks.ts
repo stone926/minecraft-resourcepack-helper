@@ -3,9 +3,9 @@ import * as path from "node:path";
 import { TextDecoder } from "node:util";
 import { lm, type LocalizedMessage } from "../i18n/messages";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import type { PngMetadata } from "../utils/pngMetadata";
+import type { PngMetadata } from "../../packages/mc-assets/src";
 
-export { readPngMetadata, type PngMetadata } from "../utils/pngMetadata";
+export { readPngMetadata, type PngMetadata } from "../../packages/mc-assets/src";
 
 export type NonJsonIssueSeverity = "warning" | "information";
 

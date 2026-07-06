@@ -9,7 +9,7 @@ import {
   readPngMetadata
 } from "../../diagnostics/nonJsonResourceChecks";
 import type { LocalizedMessage } from "../../i18n/messages";
-import { readOggMetadata } from "../../utils/oggMetadata";
+import { readOggMetadata } from "../../../packages/mc-assets/src";
 
 describe("non-JSON resource checks", () => {
   it("reads PNG dimensions from the IHDR header", () => {

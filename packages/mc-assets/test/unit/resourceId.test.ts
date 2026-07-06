@@ -7,7 +7,7 @@ import {
   parseMinecraftResourceId,
   qualifyMinecraftResourceId,
   tryParseMinecraftResourceId
-} from "../../../packages/rsgl-shared/src";
+} from "../../src";
 
 describe("minecraft resource primitives", () => {
   it("parses explicit and implicit resource ids with shared normalization", () => {

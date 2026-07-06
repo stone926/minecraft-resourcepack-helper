@@ -1,4 +1,4 @@
-import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../rsgl-shared/src";
+import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface PostEffectValidationOptions {

@@ -1,6 +1,6 @@
 import type { PreviewRange, PreviewTransform, PreviewVec3 } from "../ir/PreviewDocument";
 import type { ModelJsonLocations } from "./ModelJsonLocations";
-import type { PackMetadata } from "../../utils/resourceLocation";
+import type { PackMetadata } from "../../../packages/mc-assets/src";
 
 export interface ModelPreviewConfiguration {
   defaultAssetsPath?: string | null;

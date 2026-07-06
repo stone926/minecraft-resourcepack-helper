@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { isValidMinecraftNamespace } from "../../../rsgl-shared/src";
+import { isValidMinecraftNamespace } from "../../../mc-assets/src";
 import {
   BlockNode,
   ArgumentNode,

@@ -1,4 +1,4 @@
-import { minecraftResourceIdInFolder } from "../../../rsgl-shared/src";
+import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface WaypointStyleValidationOptions {

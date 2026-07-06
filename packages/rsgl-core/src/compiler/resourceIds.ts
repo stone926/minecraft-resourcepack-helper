@@ -3,7 +3,7 @@ import {
   minecraftResourceIdToString,
   minecraftResourceOutputPath,
   tryParseMinecraftResourceId
-} from "../../../rsgl-shared/src";
+} from "../../../mc-assets/src";
 
 export function parseResourceId(value: string, defaultNamespace = "minecraft"): ResourceId | null {
   return tryParseMinecraftResourceId(value, defaultNamespace);

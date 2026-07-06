@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { parseMinecraftResourceId } from "../../../rsgl-shared/src";
+import { parseMinecraftResourceId } from "../../../mc-assets/src";
 import {
   ArgumentNode,
   BlockNode,

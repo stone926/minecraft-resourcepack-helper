@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import type { ModelPreviewFileSystem } from "../model/ModelDocument";
 import { fileNameKey } from "../resolve/ResourceDependencyResolver";
-import type { PackMetadata } from "../../utils/resourceLocation";
+import type { PackMetadata } from "../../../packages/mc-assets/src";
 
 export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
   async readTextFile(fileName: string): Promise<string> {

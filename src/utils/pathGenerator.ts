@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { Uri, workspace } from "vscode";
 import { getCitAutoDiscoveryPathCandidates, getCitPathCandidates, type CitResourceType } from "./citPaths";
-import { findPackRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "./resourceLocation";
+import { findPackRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "../../packages/mc-assets/src";
 import { workspaceResourceCache, type WorkspaceResourceCache } from "../services/workspaceResourceCache";
 import type { ResourceReference } from "./resourceReferences";
 

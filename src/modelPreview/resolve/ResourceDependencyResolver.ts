@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../utils/citPaths";
-import { getDocumentResourceRootCandidates, parseResourceLocation } from "../../utils/resourceLocation";
+import { getDocumentResourceRootCandidates, parseResourceLocation } from "../../../packages/mc-assets/src";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 
 export interface ResolvedResourceFile {

@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { defaultPackAttributes } from "../../commands/constants";
+import { defaultPackAttributes, getPackMcmeta, isPackFormatVersion } from "../../commands/constants";
 import { createNamespaceFolders, resourcePackNamespaceDirectories, writePackScaffold } from "../../commands/resourcePackScaffold";
 
 describe("resource pack scaffold", () => {
@@ -48,6 +48,21 @@ describe("resource pack scaffold", () => {
 
   it("uses the current manual resource pack format as the scaffold default", () => {
     assert.strictEqual(defaultPackAttributes.packFormat, "88.0");
+  });
+
+  it("serializes modern pack.mcmeta metadata safely", () => {
+    const result = JSON.parse(getPackMcmeta("86.2", 'quote " and slash \\'));
+
+    assert.deepStrictEqual(result.pack.min_format, [86, 2]);
+    assert.deepStrictEqual(result.pack.max_format, [86, 2]);
+    assert.strictEqual(result.pack.description, 'quote " and slash \\');
+  });
+
+  it("accepts integer and decimal pack format inputs", () => {
+    assert.strictEqual(isPackFormatVersion("69"), true);
+    assert.strictEqual(isPackFormatVersion("86.2"), true);
+    assert.strictEqual(isPackFormatVersion("0"), false);
+    assert.strictEqual(isPackFormatVersion("86.x"), false);
   });
 });
 

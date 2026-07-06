@@ -6,6 +6,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "../../packages/mc-assets/src/**/*.ts",
     "../../packages/rsgl-core/src/**/*.ts",
     "../../packages/rsgl-shared/src/**/*.ts",
     "../../packages/rsgl-lsp/src/**/*.ts"

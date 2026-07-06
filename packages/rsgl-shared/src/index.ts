@@ -22,5 +22,3 @@ export const rsglConfigKeys = {
 } as const;
 
 export type RsglCommandId = typeof rsglCommands[keyof typeof rsglCommands];
-
-export * from "./minecraftResource";

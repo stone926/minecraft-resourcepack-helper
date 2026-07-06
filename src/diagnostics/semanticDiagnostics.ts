@@ -5,7 +5,7 @@ import { lm, type LocalizedMessage } from "../i18n/messages";
 import { localize } from "../i18n/runtime";
 import { workspaceResourceCache, type CachedModelDocument } from "../services/workspaceResourceCache";
 import { getPackImageResourceIssues, getTextResourceIssues, NonJsonIssueSeverity } from "./nonJsonResourceChecks";
-import { findAssetsRoot } from "../utils/resourceLocation";
+import { findAssetsRoot } from "../../packages/mc-assets/src";
 import {
   arrayElements,
   JsonAstNode,

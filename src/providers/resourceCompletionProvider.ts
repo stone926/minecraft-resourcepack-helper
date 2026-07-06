@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { isValidMinecraftNamespace } from "../../packages/rsgl-shared/src";
+import { isValidMinecraftNamespace } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getCitDocumentNamespace } from "../utils/citPaths";
 import {
@@ -18,7 +18,7 @@ import {
   splitResourcePath
 } from "../utils/resourceCompletionPaths";
 import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
-import { getDocumentResourceRootCandidates } from "../utils/resourceLocation";
+import { getDocumentResourceRootCandidates } from "../../packages/mc-assets/src";
 import { rangeInsideString } from "../utils/resourceRange";
 
 interface ResourceCompletionContext {

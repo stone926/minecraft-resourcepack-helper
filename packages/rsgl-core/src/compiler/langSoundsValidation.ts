@@ -1,4 +1,4 @@
-import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../rsgl-shared/src";
+import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface LangSoundsValidationOptions {

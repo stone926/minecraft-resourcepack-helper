@@ -2,8 +2,8 @@ import * as assert from "assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getPackMcmeta, isPackFormatVersion } from "../../commands/constants";
-import { findAssetsRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "../../utils/resourceLocation";
+import { findAssetsRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "../../src";
+
 
 describe("resource location utilities", () => {
   it("parses implicit minecraft namespace and appends extension", () => {
@@ -219,21 +219,6 @@ describe("resource location utilities", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
-  });
-
-  it("serializes modern pack.mcmeta metadata safely", () => {
-    const result = JSON.parse(getPackMcmeta("86.2", 'quote " and slash \\'));
-
-    assert.deepStrictEqual(result.pack.min_format, [86, 2]);
-    assert.deepStrictEqual(result.pack.max_format, [86, 2]);
-    assert.strictEqual(result.pack.description, 'quote " and slash \\');
-  });
-
-  it("accepts integer and decimal pack format inputs", () => {
-    assert.strictEqual(isPackFormatVersion("69"), true);
-    assert.strictEqual(isPackFormatVersion("86.2"), true);
-    assert.strictEqual(isPackFormatVersion("0"), false);
-    assert.strictEqual(isPackFormatVersion("86.x"), false);
   });
 });
 

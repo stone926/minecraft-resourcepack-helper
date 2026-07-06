@@ -13,7 +13,7 @@ import {
   minecraftResourceIdInFolder,
   qualifyMinecraftResourceId,
   tryParseMinecraftResourceId
-} from "../../../rsgl-shared/src";
+} from "../../../mc-assets/src";
 
 export type RsglResourceExistenceKind = ExternalResourceKind | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
 export type RsglResourceContentKind = "model";

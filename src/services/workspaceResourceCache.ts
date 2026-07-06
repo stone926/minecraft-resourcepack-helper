@@ -13,12 +13,14 @@ import {
   getDocumentResourceRootCandidates,
   parsePackMetadata,
   parseResourceLocation,
+  readOggMetadata,
   readPackMetadata,
-  type ResourceLocation,
-  type PackMetadata
-} from "../utils/resourceLocation";
-import { readOggMetadata, type OggMetadata } from "../utils/oggMetadata";
-import { readPngMetadata, type PngMetadata } from "../utils/pngMetadata";
+  readPngMetadata,
+  type OggMetadata,
+  type PackMetadata,
+  type PngMetadata,
+  type ResourceLocation
+} from "../../packages/mc-assets/src";
 
 export interface CacheTextDocument {
   fileName: string;

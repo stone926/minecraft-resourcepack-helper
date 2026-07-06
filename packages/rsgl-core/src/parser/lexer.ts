@@ -1,4 +1,4 @@
-import { isMinecraftResourceLocationText } from "../../../rsgl-shared/src";
+import { isMinecraftResourceLocationText } from "../../../mc-assets/src";
 import { rsglKeywords } from "./keywords";
 import { LexResult, RsglDiagnostic, RsglToken, RsglTokenKind, Trivia } from "./types";
 

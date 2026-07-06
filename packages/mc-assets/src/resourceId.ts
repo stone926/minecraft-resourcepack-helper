@@ -80,28 +80,3 @@ export function minecraftResourceIdInFolder(value: string, defaultNamespace: str
   const path = id.path.startsWith(`${folder}/`) ? id.path : `${folder}/${id.path}`;
   return minecraftResourceIdToString({ namespace: id.namespace, path });
 }
-
-export function minecraftResourceOutputPath(kind: string, id: MinecraftResourceId, extension = "json"): string {
-  if (kind === "model") {
-    return `assets/${id.namespace}/models/${id.path}.${extension}`;
-  }
-  if (kind === "blockstate") {
-    return `assets/${id.namespace}/blockstates/${id.path}.${extension}`;
-  }
-  if (kind === "item") {
-    return `assets/${id.namespace}/items/${id.path}.${extension}`;
-  }
-  if (kind === "atlas") {
-    return `assets/${id.namespace}/atlases/${id.path}.${extension}`;
-  }
-  if (kind === "particles") {
-    return `assets/${id.namespace}/particles/${id.path}.${extension}`;
-  }
-  if (kind === "equipment") {
-    return `assets/${id.namespace}/equipment/${id.path}.${extension}`;
-  }
-  if (kind === "lang") {
-    return `assets/${id.namespace}/lang/${id.path}.${extension}`;
-  }
-  return `assets/${id.namespace}/${kind}/${id.path}.${extension}`;
-}
