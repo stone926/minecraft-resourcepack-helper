@@ -9,8 +9,7 @@ export const rsglStdlibOverrideDirectory = "rsgl-std";
 
 const stdlibDirectoryName = "rsgl";
 
-const stdlibModulePaths = [
-  "constants.rsgl",
+const blockstatePreludeModulePaths = [
   "blockstates/stairs.rsgl",
   "blockstates/slab.rsgl",
   "blockstates/fence.rsgl",
@@ -21,16 +20,8 @@ const stdlibModulePaths = [
   "blockstates/pane.rsgl"
 ] as const;
 
-const preludeModulePaths = [
-  "blockstates/stairs.rsgl",
-  "blockstates/slab.rsgl",
-  "blockstates/fence.rsgl",
-  "blockstates/fence_gate.rsgl",
-  "blockstates/door.rsgl",
-  "blockstates/trapdoor.rsgl",
-  "blockstates/wall.rsgl",
-  "blockstates/pane.rsgl"
-];
+const stdlibModulePaths = [...blockstatePreludeModulePaths] as const;
+const preludeModulePaths = blockstatePreludeModulePaths;
 
 export function isRsglStdlibImportSource(source: string): boolean {
   return source.startsWith(rsglStdlibScheme);

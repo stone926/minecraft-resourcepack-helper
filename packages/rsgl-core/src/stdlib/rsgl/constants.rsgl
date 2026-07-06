@@ -1,5 +1,0 @@
-let HORIZONTAL = [north, east, south, west]
-let DIRECTIONS = [down, up, north, south, west, east]
-let STAIR_SHAPES = [straight, inner_left, inner_right, outer_left, outer_right]
-let COLORS_16 = [white, orange, magenta, light_blue, yellow, lime, pink, gray, light_gray, cyan, purple, blue, brown, green, red, black]
-export { HORIZONTAL, DIRECTIONS, STAIR_SHAPES, COLORS_16 }
