@@ -69,7 +69,10 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     builtinValue("COLORS_16"),
     ...enumConstants.map(name => builtinValue(name, stringType)),
     builtinFunction("product", [{ name: "source", type: jsonType, optional: false }], { kind: "List", elementType: jsonType }),
-    builtinFunction("seq", [{ name: "pattern", type: stringType, optional: false }], { kind: "List", elementType: stringType }),
+    builtinFunction("seq", [
+      { name: "pattern", type: stringType, optional: false },
+      { name: "pad", type: numberType, optional: true }
+    ], { kind: "List", elementType: stringType }),
     builtinFunction("pad", [
       { name: "value", type: numberType, optional: false },
       { name: "width", type: numberType, optional: false }
@@ -220,7 +223,8 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "prefix", type: stringType, optional: true }
     ], jsonType),
     builtinFunction("particlesSeq", [
-      { name: "pattern", type: jsonType, optional: false }
+      { name: "pattern", type: jsonType, optional: false },
+      { name: "pad", type: numberType, optional: true }
     ], jsonType),
     builtinFunction("mcmetaAnimation", [
       { name: "frametime", type: numberType, optional: true },

@@ -20,6 +20,7 @@ export const rsglResourceKinds = [
   "font",
   "waypoint_style",
   "post_effect",
+  "json",
   "pack",
   "lang",
   "sounds",
@@ -85,6 +86,11 @@ export const rsglResourceCompletionDescriptors: RsglResourceCompletionDescriptor
     label: "post_effect",
     insertText: "post_effect ${1:example} {\n  targets {\n    ${2:swap}: {}\n  }\n  passes [\n    { vertex_shader: ${3:minecraft:core/screenquad}, fragment_shader: ${4:minecraft:post/box_blur}, inputs: [{ sampler_name: \"In\", target: minecraft:main }], output: \"${2:swap}\" }\n  ]\n}",
     detail: "Post-processing effect resource"
+  },
+  {
+    label: "json",
+    insertText: "json \"${1:assets/minecraft/optifine/example.json}\" {\n  ${2:key}: ${3:value}\n}",
+    detail: "Arbitrary pack-relative JSON resource"
   },
   {
     label: "pack",

@@ -73,6 +73,7 @@ import { lowerItemUnitsForTarget } from "./itemLegacyBackend";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
 import { mergeResourceUnits } from "./merge";
+import { compileModelGeometryStatement } from "./modelGeometryDsl";
 import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult, resourceBodyToObject } from "./resourceBody";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
@@ -96,6 +97,7 @@ import {
   isExistingFile,
   isItemModelStatement,
   isJsonObject,
+  jsonResourceTarget,
   isMultipartEntryPath,
   isPackRelativeTargetExpression,
   isVariantEntryPath,
@@ -404,6 +406,8 @@ export class RsglCompiler {
       this.pushUnit(this.compileBlockstate(statement, context));
     } else if (isRsglGenericJsonResourceKind(statement.resourceKind)) {
       this.pushUnit(this.compileGenericJsonResource(statement, context));
+    } else if (statement.resourceKind === "json") {
+      this.pushUnit(this.compileArbitraryJsonResource(statement, context));
     } else if (statement.resourceKind === "pack") {
       this.pushUnit(this.compilePack(statement, context));
     } else if (statement.resourceKind === "lang") {
@@ -435,7 +439,7 @@ export class RsglCompiler {
     }
     const modelId = { namespace: id.namespace, path: `${subtype}/${id.path}` };
     const outputPath = resourceOutputPath("model", modelId);
-    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions("model"));
     return {
       id: modelId,
       kind: "model",
@@ -735,6 +739,29 @@ export class RsglCompiler {
       content,
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context, mappings)
+    };
+  }
+
+  private compileArbitraryJsonResource(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
+    const targetValue = statement.id ? this.staticText(statement.id, context) : null;
+    if (!targetValue || !statement.id) {
+      this.error("rsgl.compileMissingResourceId", "JSON declaration requires a static resource id or pack-relative path.", statement.range);
+      return null;
+    }
+    const target = jsonResourceTarget(targetValue, context.namespace, isPackRelativeTargetExpression(statement.id));
+    if (!target) {
+      this.error("rsgl.compileInvalidJsonTarget", `Invalid JSON resource target '${targetValue}'.`, statement.id.range);
+      return null;
+    }
+
+    const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions());
+    return {
+      id: target.id,
+      kind: "json",
+      outputPath: target.outputPath,
+      content: body.content,
+      mergePolicy: { kind: "errorOnConflict" },
+      sourceMap: this.sourceMap(target.outputPath, statement, context, body.mappings)
     };
   }
 
@@ -1190,7 +1217,7 @@ export class RsglCompiler {
   private compileResourceBodyFragment(
     useStatement: Extract<ResourceStatementNode, { kind: "UseDecl" }>,
     context: RsglCompileContext,
-    kind?: "item" | JsonResourceFragmentKind
+    kind?: "model" | "item" | JsonResourceFragmentKind
   ): ResourceBodyFragment | undefined {
     const expansion = this.createTemplateExpansion(useStatement.expression, context);
     if (!expansion) {
@@ -1696,7 +1723,7 @@ export class RsglCompiler {
     };
   }
 
-  private resourceBodyFragmentOptions(kind?: "item" | JsonResourceFragmentKind): ResourceBodyCompileOptions {
+  private resourceBodyFragmentOptions(kind?: "model" | "item" | JsonResourceFragmentKind): ResourceBodyCompileOptions {
     return {
       onUseFragment: (useStatement, fragmentContext) => {
         const templateFragment = this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
@@ -1706,17 +1733,23 @@ export class RsglCompiler {
         if (kind === "item") {
           return createResourceBodyFragment(compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions()));
         }
-        if (kind) {
+        if (kind && kind !== "model") {
           return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
             onError: (code, message, range) => this.error(code, message, range)
           });
         }
         return undefined;
       },
-      onSpecialStatement: (statement, fragmentContext) =>
-        kind === "item" && isItemModelStatement(statement)
+      onSpecialStatement: (statement, fragmentContext) => {
+        if (kind === "model") {
+          return compileModelGeometryStatement(statement, fragmentContext, {
+            onError: (code, message, range) => this.error(code, message, range)
+          });
+        }
+        return kind === "item" && isItemModelStatement(statement)
           ? compileItemSpecialStatement(statement, fragmentContext, this.itemFragmentOptions())
-          : undefined
+          : undefined;
+      }
     };
   }
 

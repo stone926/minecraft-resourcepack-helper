@@ -106,7 +106,7 @@
         },
         {
           "name": "storage.type.rsgl",
-          "match": "\\b(?:target|namespace|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|pack|lang|sounds|text|copy)\\b"
+          "match": "\\b(?:target|namespace|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
         },
         {
           "name": "constant.language.rsgl",
@@ -130,7 +130,7 @@
       "patterns": [
         {
           "name": "variable.other.property.rsgl",
-          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|base|model|x|y|z|uvlock|weight|texture|generate|double)\\b"
+          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|override|append|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|base|model|x|y|z|uvlock|weight|texture|generate|double|box|element|from|to|face|all|down|up|north|south|west|east|uv|rotation|origin|axis|angle|rescale|cullface|shade|tintindex|light_emission|mirror|translate)\\b"
         }
       ]
     },

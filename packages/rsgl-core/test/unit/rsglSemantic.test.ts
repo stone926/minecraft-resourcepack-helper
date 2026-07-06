@@ -72,6 +72,15 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(model.diagnostics.some(diagnostic => diagnostic.code === "rsgl.undefinedSymbol"), false);
   });
 
+  it("binds named seq generators and padding arguments", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let textures = seq(`minecraft:particle/spark_${i}`, i: 0..2, pad: 2)"
+    ].join("\n")));
+
+    assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.ok(model.references.some(reference => reference.name === "i" && reference.symbol?.kind === "variable"));
+  });
+
   it("reports template string interpolation diagnostics at embedded expression ranges", () => {
     const source = "let label = `minecraft:block/${missing.value}`";
     const model = bindRsglModule(parseRsgl(source));

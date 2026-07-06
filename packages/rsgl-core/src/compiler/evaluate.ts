@@ -5,7 +5,7 @@ import {
 } from "../parser";
 import { tryParseMinecraftResourceId } from "../../../rsgl-shared/src";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
-import { expandSequencePattern } from "./sequences";
+import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
 
 export type EvaluationValue = JsonValue | undefined;
 export type RawJsonLoadMode = "auto" | "file";
@@ -53,6 +53,11 @@ const horizontalYaw: Record<string, number> = {
   south: 180,
   west: 270
 };
+
+interface SeqGenerator {
+  name: string;
+  iterable: ExprNode;
+}
 
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
   if (expression.kind === "StringLiteral") {
@@ -171,30 +176,39 @@ function evaluateSeqExpression(
     return [];
   }
 
-  const generatorArgs = expression.args.filter(arg => arg !== patternArg && !arg.name);
-  const generators = generatorArgs
+  const padArg = expression.args.find(arg => arg.name?.text === "pad");
+  const padWidth = padArg ? sequencePadWidth(evaluateExpression(padArg.value, context)) : null;
+  const generatorArgs = expression.args.filter(arg => arg !== patternArg && arg !== padArg);
+  const positionalGeneratorArgs = generatorArgs.filter(arg => !arg.name);
+  const positionalGenerators = positionalGeneratorArgs
     .map(arg => arg.value)
-    .filter((value): value is Extract<ExprNode, { kind: "ForInExpr" }> => value.kind === "ForInExpr");
+    .filter((value): value is Extract<ExprNode, { kind: "ForInExpr" }> => value.kind === "ForInExpr")
+    .map(value => ({ name: value.binding.text, iterable: value.iterable }));
+  const namedGenerators = generatorArgs
+    .filter(arg => arg.name)
+    .map(arg => ({ name: arg.name!.text, iterable: arg.value }));
+  const generators = [...positionalGenerators, ...namedGenerators];
   if (generators.length === 0) {
-    return expandSequencePattern(String(evaluateExpression(patternArg.value, context) ?? ""));
+    return expandSequencePattern(String(evaluateExpression(patternArg.value, context) ?? ""), { pad: padWidth });
   }
-  if (generators.length !== generatorArgs.length) {
+  if (positionalGenerators.length !== positionalGeneratorArgs.length) {
     return [];
   }
 
-  return evaluateSeqGeneratorPatterns(patternArg.value, generators, context, 0, []);
+  return evaluateSeqGeneratorPatterns(patternArg.value, generators, context, 0, [], padWidth);
 }
 
 function evaluateSeqGeneratorPatterns(
   pattern: ExprNode,
-  generators: Array<Extract<ExprNode, { kind: "ForInExpr" }>>,
+  generators: SeqGenerator[],
   context: EvaluationContext,
   index: number,
-  boundNames: string[]
+  boundNames: string[],
+  padWidth: number | null
 ): string[] {
   if (index >= generators.length) {
     const value = String(evaluateExpression(pattern, context) ?? "");
-    return expandSequencePattern(replaceSeqPlaceholders(value, context, boundNames));
+    return expandSequencePattern(replaceSeqPlaceholders(value, context, boundNames), { pad: padWidth });
   }
 
   const generator = generators[index];
@@ -205,11 +219,17 @@ function evaluateSeqGeneratorPatterns(
 
   const results: string[] = [];
   for (const value of iterable) {
-    const name = generator.binding.text;
-    const child = childEvaluationContext(context, { [name]: normalizeJsonValue(value) });
-    results.push(...evaluateSeqGeneratorPatterns(pattern, generators, child, index + 1, [...boundNames, name]));
+    const name = generator.name;
+    const child = childEvaluationContext(context, { [name]: sequenceBindingValue(value, padWidth) });
+    results.push(...evaluateSeqGeneratorPatterns(pattern, generators, child, index + 1, [...boundNames, name], padWidth));
   }
   return results;
+}
+
+function sequenceBindingValue(value: JsonValue, padWidth: number | null): JsonValue {
+  return padWidth !== null && typeof value === "number" && Number.isFinite(value)
+    ? formatSequenceNumber(value, padWidth)
+    : normalizeJsonValue(value);
 }
 
 function replaceSeqPlaceholders(pattern: string, context: EvaluationContext, boundNames: string[]): string {

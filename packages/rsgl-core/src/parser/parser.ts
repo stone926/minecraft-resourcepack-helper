@@ -21,6 +21,10 @@ import {
   LetDeclNode,
   MatchArmNode,
   ModelApplySugarNode,
+  ModelElementStmtNode,
+  ModelFaceClauseNode,
+  ModelGeometryPropertyNode,
+  ModelTextureStmtNode,
   MultipartBodyNode,
   MultipartEntryNode,
   MultipartSectionStatementNode,
@@ -64,6 +68,11 @@ const itemRangeOptionKeywords = ["component", "source", "target", "wobble", "sca
 const itemSelectOptionKeywords = ["component"];
 const itemConditionOptionKeywords = ["component", "ignore_default", "index", "keybind", "predicate", "value"];
 const equipmentLayerClauseKeywords = ["texture", "dyeable", "color", "use_player_texture", "usePlayerTexture"];
+const modelElementHeaderClauseKeywords = ["from", "to", "rotation", "shade", "light_emission", "mirror", "translate", "texture", "uv", "cullface", "tintindex"];
+const modelElementBodyClauseKeywords = ["rotation", "shade", "light_emission", "mirror", "translate", "texture", "uv", "cullface", "tintindex"];
+const modelFaceDirections = new Set(["down", "up", "north", "south", "west", "east"]);
+const modelFaceTargets = new Set([...modelFaceDirections, "all"]);
+const modelGeometryStatementKeywords = new Set(["box", "element"]);
 
 const binaryPrecedence = new Map<string, number>([
   ["||", 2],
@@ -443,6 +452,7 @@ class RsglParser extends ParserContext {
       || text === "empty"
       || text === "selected_item"
       || text === "special"
+      || modelGeometryStatementKeywords.has(text)
       || resourceBodySectionKeywords.has(text);
   }
 
@@ -745,6 +755,12 @@ class RsglParser extends ParserContext {
     if (owner === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseEquipmentLayerStmt();
     }
+    if (owner === "model" && token.text === "texture" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parseModelTextureStmt();
+    }
+    if (owner === "model" && modelGeometryStatementKeywords.has(token.text) && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+      return this.parseModelElementStmt();
+    }
     if (owner === "mcmeta" && token.text === "texture") {
       return this.parseSectionStmt();
     }
@@ -1014,6 +1030,127 @@ class RsglParser extends ParserContext {
       return this.booleanLiteral(start, true);
     }
     return this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
+  }
+
+  private parseModelTextureStmt(): ModelTextureStmtNode {
+    const start = this.advance();
+    const key = this.parseIdentifier("Expected model texture key.") ?? this.syntheticIdentifier(start, "");
+    const value = this.parseExpression({ stopTexts: [] });
+    return {
+      kind: "ModelTextureStmt",
+      keyword: start.text,
+      key,
+      value,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseModelElementStmt(): ModelElementStmtNode {
+    const start = this.advance();
+    const elementKind = start.text === "element" ? "element" : "box";
+    const label = this.current().kind === "string" ? this.parseStringLiteral() : undefined;
+    let from: ExprNode | undefined;
+    let to: ExprNode | undefined;
+    const properties: ModelGeometryPropertyNode[] = [];
+    const faces: ModelFaceClauseNode[] = [];
+
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("{", "}")) {
+      const mark = this.mark();
+      if (this.matchText("from")) {
+        from = this.parseExpression({ stopTexts: [...modelElementHeaderClauseKeywords, "{", "}"] });
+      } else if (this.matchText("to")) {
+        to = this.parseExpression({ stopTexts: [...modelElementHeaderClauseKeywords, "{", "}"] });
+      } else if (modelElementHeaderClauseKeywords.includes(this.current().text)) {
+        properties.push(this.parseModelGeometryProperty(modelElementHeaderClauseKeywords));
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedModelElementClause", "Expected 'from', 'to', or a model element clause.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse model element clause; skipping token.");
+    }
+
+    if (this.current().text === "{") {
+      const body = this.parseModelElementBody();
+      properties.push(...body.properties);
+      faces.push(...body.faces);
+    }
+
+    return {
+      kind: "ModelElementStmt",
+      keyword: start.text,
+      elementKind,
+      label,
+      from,
+      to,
+      properties,
+      faces,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseModelElementBody(): { properties: ModelGeometryPropertyNode[]; faces: ModelFaceClauseNode[] } {
+    this.matchText("{");
+    const properties: ModelGeometryPropertyNode[] = [];
+    const faces: ModelFaceClauseNode[] = [];
+    while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
+      if (this.current().text === "face" || modelFaceTargets.has(this.current().text)) {
+        faces.push(this.parseModelFaceClause());
+      } else if (modelElementBodyClauseKeywords.includes(this.current().text)) {
+        properties.push(this.parseModelGeometryProperty(modelElementBodyClauseKeywords));
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedModelElementBodyClause", "Expected a model element property or face clause.");
+        this.recoverToLineEnd();
+      }
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse model element body clause; skipping token.");
+    }
+    this.expectText("}", "Expected '}' after model element body.");
+    return { properties, faces };
+  }
+
+  private parseModelFaceClause(): ModelFaceClauseNode {
+    const start = this.current();
+    if (this.matchText("face")) {
+      // optional readability keyword
+    }
+    const target = this.parseIdentifier("Expected model face direction or 'all'.") ?? this.syntheticIdentifier(start, "all");
+    if (!modelFaceTargets.has(target.text)) {
+      this.addDiagnostic("rsgl.invalidModelFaceTarget", "Expected model face direction or 'all'.", target.range);
+    }
+    const properties: ModelGeometryPropertyNode[] = [];
+    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
+      const mark = this.mark();
+      if (modelElementBodyClauseKeywords.includes(this.current().text)) {
+        properties.push(this.parseModelGeometryProperty(modelElementBodyClauseKeywords));
+      } else {
+        this.addDiagnosticAtCurrent("rsgl.expectedModelFaceClause", "Expected model face property.");
+        this.recoverToLineEnd();
+        break;
+      }
+      this.ensureProgress(mark, "Unable to parse model face clause; skipping token.");
+    }
+    return {
+      kind: "ModelFaceClause",
+      target,
+      properties,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseModelGeometryProperty(stopClauses: string[]): ModelGeometryPropertyNode {
+    const start = this.current();
+    const name = this.parseIdentifier("Expected model geometry property.") ?? this.syntheticIdentifier(start, start.text);
+    const value = this.isAtEnd() || this.isLineBoundaryOr("}") || stopClauses.includes(this.current().text)
+      ? this.booleanLiteral(start, true)
+      : this.parseExpression({ stopTexts: [...stopClauses, "}"] });
+    return {
+      kind: "ModelGeometryProperty",
+      name,
+      value,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
   }
 
   private parseRawLikeStmt(kind: "RawJsonStmt" | "OverrideStmt" | "AppendStmt"): ResourceStatementNode {

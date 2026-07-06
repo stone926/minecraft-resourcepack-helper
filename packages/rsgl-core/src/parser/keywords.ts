@@ -65,7 +65,31 @@ export const rsglKeywords = new Set<string>([
   "paletted_permutations",
   "palette_key",
   "parent",
-  "generate"
+  "generate",
+  "box",
+  "element",
+  "from",
+  "to",
+  "face",
+  "all",
+  "down",
+  "up",
+  "north",
+  "south",
+  "west",
+  "east",
+  "uv",
+  "rotation",
+  "origin",
+  "axis",
+  "angle",
+  "rescale",
+  "cullface",
+  "shade",
+  "tintindex",
+  "light_emission",
+  "mirror",
+  "translate"
 ]);
 
 export function isTopLevelKeyword(text: string): boolean {

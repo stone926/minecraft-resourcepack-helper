@@ -442,6 +442,8 @@ export type ResourceStatementNode =
   | AtlasFilterStmtNode
   | AtlasPalettedPermutationsStmtNode
   | EquipmentLayerStmtNode
+  | ModelTextureStmtNode
+  | ModelElementStmtNode
   | RawJsonStmtNode
   | OverrideStmtNode
   | AppendStmtNode
@@ -528,6 +530,34 @@ export interface EquipmentLayerStmtNode extends StatementNodeBase {
   dyeable?: ExprNode;
   color?: ExprNode;
   usePlayerTexture?: ExprNode;
+}
+
+export interface ModelTextureStmtNode extends StatementNodeBase {
+  kind: "ModelTextureStmt";
+  key: IdentifierNode;
+  value: ExprNode;
+}
+
+export interface ModelGeometryPropertyNode extends RsglNode {
+  kind: "ModelGeometryProperty";
+  name: IdentifierNode;
+  value: ExprNode;
+}
+
+export interface ModelFaceClauseNode extends RsglNode {
+  kind: "ModelFaceClause";
+  target: IdentifierNode;
+  properties: ModelGeometryPropertyNode[];
+}
+
+export interface ModelElementStmtNode extends StatementNodeBase {
+  kind: "ModelElementStmt";
+  elementKind: "box" | "element";
+  label?: ExprNode;
+  from?: ExprNode;
+  to?: ExprNode;
+  properties: ModelGeometryPropertyNode[];
+  faces: ModelFaceClauseNode[];
 }
 
 export interface ItemOptionNode extends RsglNode {

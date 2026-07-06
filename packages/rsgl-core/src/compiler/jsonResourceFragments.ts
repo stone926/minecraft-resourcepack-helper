@@ -10,7 +10,7 @@ import type { RsglGenericJsonResourceKind } from "../resourceKinds";
 import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
-import { expandSequencePattern } from "./sequences";
+import { expandSequencePattern, sequencePadWidth } from "./sequences";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
@@ -96,7 +96,14 @@ function compileParticlesSeq(
   }
 
   const value = normalizeJsonValue(evaluateExpression(arg.value, context));
-  const textures = textureSequence(value, context.namespace);
+  const padArg = findArg(call, "pad");
+  const padWidth = padArg ? sequencePadWidth(evaluateExpression(padArg.value, context)) : null;
+  if (padArg && padWidth === null) {
+    options.onError?.("rsgl.invalidParticlesSeqPadding", "particlesSeq pad must evaluate to a non-negative integer.", padArg.value.range);
+    return undefined;
+  }
+
+  const textures = textureSequence(value, context.namespace, padWidth);
   if (!textures) {
     options.onError?.("rsgl.invalidParticlesSeqArgument", "particlesSeq pattern must evaluate to a texture id string or list of texture id strings.", arg.value.range);
     return undefined;
@@ -293,14 +300,14 @@ function jsonResourceFragmentCall(expression: ExprNode): (CallExprNode & { calle
     : null;
 }
 
-function textureSequence(value: JsonValue, namespace: string): string[] | null {
+function textureSequence(value: JsonValue, namespace: string, padWidth: number | null): string[] | null {
   if (typeof value === "string") {
-    return expandSequencePattern(value).map(item => normalizeResourceId(item, namespace));
+    return expandSequencePattern(value, { pad: padWidth }).map(item => normalizeResourceId(item, namespace));
   }
   if (!Array.isArray(value) || !value.every(item => typeof item === "string")) {
     return null;
   }
-  return value.map(item => normalizeResourceId(item, namespace));
+  return value.flatMap(item => expandSequencePattern(item, { pad: padWidth }).map(entry => normalizeResourceId(entry, namespace)));
 }
 
 function stringList(value: EvaluationValue): string[] | null {

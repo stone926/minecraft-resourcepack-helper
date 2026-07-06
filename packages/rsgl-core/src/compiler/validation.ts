@@ -44,6 +44,8 @@ interface ModelDocument {
   content: Record<string, JsonValue>;
 }
 
+const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
+
 interface ItemPropertyFieldRule {
   field: string;
   kind: ItemPropertyFieldKind;
@@ -445,6 +447,9 @@ function validateModelParentChain(
       return;
     }
     const parentId = qualifyMinecraftResourceId(parent, current.namespace);
+    if (isVirtualBuiltinModelId(parentId)) {
+      return;
+    }
     current = modelResolver(parentId);
     if (!current) {
       checkResourceExists("model", parentId, unit, generatedModels, options, diagnostics);
@@ -1891,6 +1896,9 @@ function checkResourceExists(
   if (kind === "model" && generatedModels?.has(id)) {
     return;
   }
+  if (kind === "model" && isVirtualBuiltinModelId(id)) {
+    return;
+  }
   if (!options.resourceExists || options.resourceExists(kind, id)) {
     return;
   }
@@ -1911,6 +1919,10 @@ function createModelResolver(
   const externalDocuments = new Map<string, ModelDocument | null>();
 
   return id => {
+    if (isVirtualBuiltinModelId(id)) {
+      return undefined;
+    }
+
     const generated = generatedModels.get(id);
     if (generated) {
       let document = generatedDocuments.get(id);
@@ -1948,6 +1960,10 @@ function modelDocumentFromContent(id: string, content: Record<string, JsonValue>
     namespace: tryParseMinecraftResourceId(id, "minecraft")?.namespace ?? "minecraft",
     content
   };
+}
+
+function isVirtualBuiltinModelId(id: string): boolean {
+  return id.startsWith(virtualVanillaBuiltinModelPrefix);
 }
 
 function resolveTextureVariable(

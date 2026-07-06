@@ -57,6 +57,9 @@ describe("RSGL language", () => {
     for (const kind of rsglResourceKinds) {
       assert.ok(JSON.stringify(grammarJson).includes(kind), `Expected RSGL grammar to include resource kind '${kind}'.`);
     }
+    for (const keyword of ["box", "element", "cullface", "mirror", "translate"]) {
+      assert.ok(JSON.stringify(grammarJson).includes(keyword), `Expected RSGL grammar to include geometry keyword '${keyword}'.`);
+    }
 
     for (const command of [
       "McResHelper.buildRsglResourcePack",
@@ -240,6 +243,37 @@ describe("RSGL language", () => {
         : [],
       ["0", "1"]
     );
+  });
+
+  it("parses model geometry DSL statements", () => {
+    const module = parseRsgl([
+      "model block cauldron_wall {",
+      "  texture wall minecraft:block/cauldron_side",
+      "  box \"north wall\" from [2, 3, 0] to [14, 16, 2] rotation { origin: [8, 8, 8], axis: y, angle: 0 } {",
+      "    all texture \"#wall\"",
+      "    north cullface north uv [2, 0, 14, 13]",
+      "    shade false",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const model = module.statements[0];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    if (model.kind !== "ResourceDecl") {
+      return;
+    }
+    const box = model.body.statements[1];
+    assert.strictEqual(box.kind, "ModelElementStmt");
+    if (box.kind !== "ModelElementStmt") {
+      return;
+    }
+    assert.strictEqual(box.elementKind, "box");
+    assert.strictEqual(box.label?.kind, "StringLiteral");
+    assert.strictEqual(box.from?.kind, "ListExpr");
+    assert.strictEqual(box.to?.kind, "ListExpr");
+    assert.strictEqual(box.properties.map(property => property.name.text).join(","), "rotation,shade");
+    assert.deepStrictEqual(box.faces.map(face => face.target.text), ["all", "north"]);
   });
 
   it("parses export declarations", () => {
@@ -748,6 +782,7 @@ describe("RSGL language", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "font"));
     assert.ok(topLevel.some(candidate => candidate.label === "waypoint_style"));
     assert.ok(topLevel.some(candidate => candidate.label === "post_effect"));
+    assert.ok(topLevel.some(candidate => candidate.label === "json"));
     assert.ok(topLevel.some(candidate => candidate.label === "lang"));
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
     assert.ok(topLevel.some(candidate => candidate.label === "text"));
@@ -756,6 +791,7 @@ describe("RSGL language", () => {
 
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);
     assert.ok(inBlock.some(candidate => candidate.label === "textures"));
+    assert.ok(inBlock.some(candidate => candidate.label === "box"));
     assert.ok(inBlock.some(candidate => candidate.label === "raw_json"));
   });
 

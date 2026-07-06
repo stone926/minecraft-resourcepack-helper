@@ -124,6 +124,10 @@ function ensureTextExtension(outputPath: string): string {
   return /\.[a-z0-9]+$/i.test(fileName) ? outputPath : `${outputPath}.txt`;
 }
 
+function ensureJsonExtension(outputPath: string): string {
+  return outputPath.endsWith(".json") ? outputPath : `${outputPath}.json`;
+}
+
 export function textResourceTarget(value: string, namespace: string): { id?: { namespace: string; path: string }; outputPath: string } | null {
   const normalized = value.replace(/\\/g, "/");
   if (normalized.startsWith("assets/")) {
@@ -168,6 +172,30 @@ export function copyResourceTarget(value: string, namespace: string, packRelativ
   return id ? {
     id,
     outputPath: `assets/${id.namespace}/${id.path}`
+  } : null;
+}
+
+export function jsonResourceTarget(value: string, namespace: string, packRelative: boolean): { id?: { namespace: string; path: string }; outputPath: string } | null {
+  const normalized = value.replace(/\\/g, "/");
+  if (packRelative || normalized.startsWith("assets/")) {
+    const outputPath = ensureJsonExtension(normalized);
+    if (!isSafePackRelativePath(outputPath)) {
+      return null;
+    }
+    const assetId = /^assets\/([^/]+)\/(.+)$/.exec(outputPath);
+    return {
+      id: assetId ? parseResourceId(`${assetId[1]}:${assetId[2]}`, namespace) ?? undefined : undefined,
+      outputPath
+    };
+  }
+
+  const id = parseResourceId(value, namespace);
+  if (id && !isSafeResourcePath(id.path)) {
+    return null;
+  }
+  return id ? {
+    id,
+    outputPath: `assets/${id.namespace}/${ensureJsonExtension(id.path)}`
   } : null;
 }
 

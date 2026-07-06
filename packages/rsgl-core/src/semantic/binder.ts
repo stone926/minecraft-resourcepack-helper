@@ -828,6 +828,7 @@ class RsglBinder {
   private checkSeqCallExpression(expression: CallExprNode, scope: RsglScope): RsglType {
     const positionalArgs = expression.args.filter(arg => !arg.name);
     const patternArg = expression.args.find(arg => arg.name?.text === "pattern") ?? positionalArgs[0];
+    const padArg = expression.args.find(arg => arg.name?.text === "pad");
     if (!patternArg) {
       this.diagnostics.push(diagnostic("rsgl.missingArgument", "Missing argument 'pattern'.", expression.range));
       return { kind: "List", elementType: stringType };
@@ -839,8 +840,17 @@ class RsglBinder {
         continue;
       }
       if (arg.name) {
-        this.diagnostics.push(diagnostic("rsgl.unknownArgument", `Unknown argument '${arg.name.text}'.`, arg.name.range));
+        if (arg === padArg) {
+          const actualType = this.checkExpression(arg.value, scope);
+          this.checkAssignable(numberType, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
+          continue;
+        }
+        if (arg.name.text === "pattern") {
+          this.checkExpression(arg.value, scope);
+          continue;
+        }
         this.checkExpression(arg.value, scope);
+        this.defineIdentifier(generatorScope, arg.name, "variable", stringType, arg);
         continue;
       }
       if (arg.value.kind !== "ForInExpr") {

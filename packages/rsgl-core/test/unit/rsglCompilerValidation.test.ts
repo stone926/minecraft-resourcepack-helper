@@ -1075,6 +1075,41 @@ describe("RSGL compiler validation", () => {
     ));
   });
 
+  it("stops model parent validation at virtual vanilla builtin models", () => {
+    const checkedResources: string[] = [];
+    const loadedModels: string[] = [];
+    const externalModels = new Map<string, JsonValue>([
+      ["minecraft:item/generated", {
+        parent: "minecraft:builtin/generated"
+      }]
+    ]);
+    const result = compileRsglModule(parseRsgl([
+      "model item generated_parent {",
+      "  parent minecraft:item/generated",
+      "}",
+      "model block missing_child {",
+      "  parent minecraft:block/missing_parent",
+      "}"
+    ].join("\n")), {
+      resourceContent: (kind, id) => {
+        assert.strictEqual(kind, "model");
+        loadedModels.push(id);
+        return externalModels.get(id);
+      },
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const modelNotFoundDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.modelNotFound");
+    assert.ok(loadedModels.includes("minecraft:item/generated"));
+    assert.ok(!loadedModels.includes("minecraft:builtin/generated"));
+    assert.ok(!checkedResources.includes("model:minecraft:builtin/generated"));
+    assert.strictEqual(modelNotFoundDiagnostics.length, 1);
+    assert.ok(modelNotFoundDiagnostics[0].message.includes("minecraft:block/missing_parent"));
+  });
+
   it("validates external model parent chains and texture variables", () => {
     const checkedResources: string[] = [];
     const loadedModels: string[] = [];

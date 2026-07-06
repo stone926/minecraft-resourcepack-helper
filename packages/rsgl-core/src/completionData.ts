@@ -142,7 +142,10 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
 
 export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "parent", insertText: "parent ${1:minecraft:block/cube_all}", detail: "Model parent", kind: "property" },
+  { label: "texture", insertText: "texture ${1:all} ${2:minecraft:block/stone}", detail: "Model texture variable", kind: "snippet" },
   { label: "textures", insertText: "textures {\n  ${1:all}: ${2:minecraft:block/stone}\n}", detail: "Model texture map", kind: "snippet" },
+  { label: "box", insertText: "box \"${1:element}\" from [${2:0, 0, 0}] to [${3:16, 16, 16}] {\n  all texture \"#${4:all}\"\n}", detail: "Model element box", kind: "snippet" },
+  { label: "element", insertText: "element from [${1:0, 0, 0}] to [${2:16, 16, 16}] {\n  all texture \"#${3:all}\"\n}", detail: "Model element geometry", kind: "snippet" },
   { label: "variants", insertText: "variants {\n  ${1:{}} -> { model: ${2:minecraft:block/stone} }\n}", detail: "Blockstate variants section", kind: "snippet" },
   { label: "multipart", insertText: "multipart {\n  apply { model: ${1:minecraft:block/stone} }\n}", detail: "Blockstate multipart section", kind: "snippet" },
   { label: "range", insertText: "range property ${1:minecraft:time} source ${2:daytime} wobble ${3:true} {\n  frames ${4:0..31} model ${5:minecraft:item/clock_00}\n  fallback ${6:minecraft:item/clock_00}\n}", detail: "Item range_dispatch model", kind: "snippet" },
@@ -164,6 +167,7 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
 ];
 
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
+  { label: "seq", insertText: "seq(\"${1:minecraft:block/name_{i}}\", ${2:i}: ${3:0..3})", detail: "Compile-time string sequence", kind: "function" },
   { label: "cubeAll", detail: "Builtin block cube model template", kind: "function" },
   { label: "itemGenerated", detail: "Builtin generated item template", kind: "function" },
   { label: "itemModel", detail: "Builtin item mapping template", kind: "function" },
@@ -180,7 +184,7 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "itemRangeFrames", detail: "Builtin range_dispatch item helper", kind: "function" },
   { label: "itemSelectCases", detail: "Builtin select item helper", kind: "function" },
   { label: "atlasDirectory", detail: "Builtin atlas directory source helper", kind: "function" },
-  { label: "particlesSeq", detail: "Builtin particle texture sequence helper", kind: "function" },
+  { label: "particlesSeq", insertText: "particlesSeq(\"${1:minecraft:particle/explosion_{0..2}}\", pad: ${2:0})", detail: "Builtin particle texture sequence helper", kind: "function" },
   { label: "mcmetaAnimation", detail: "Builtin PNG animation metadata helper", kind: "function" },
   { label: "nineSliceGui", detail: "Builtin PNG GUI nine-slice metadata helper", kind: "function" },
   { label: "equipmentLayers", detail: "Builtin equipment layer helper", kind: "function" },

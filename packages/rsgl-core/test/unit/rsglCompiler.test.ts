@@ -100,6 +100,60 @@ describe("RSGL compiler", () => {
     });
   });
 
+  it("lowers model geometry DSL boxes to vanilla model elements", () => {
+    const result = compileRsglModule(parseRsgl([
+      "model block fence_gate_post {",
+      "  texture wood minecraft:block/oak_planks",
+      "  box \"left post\" from [0, 2, 7] to [2, 13, 9] mirror x {",
+      "    all texture \"#wood\"",
+      "    west cullface west uv [0, 0, 2, 11]",
+      "    shade false",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const model = result.units.find(unit => unit.outputPath.endsWith("fence_gate_post.json"));
+    assert.deepStrictEqual(model?.content, {
+      textures: {
+        wood: "minecraft:block/oak_planks"
+      },
+      elements: [
+        {
+          from: [0, 2, 7],
+          to: [2, 13, 9],
+          shade: false,
+          faces: {
+            down: { texture: "#wood" },
+            up: { texture: "#wood" },
+            north: { texture: "#wood" },
+            south: { texture: "#wood" },
+            west: { texture: "#wood", cullface: "west", uv: [0, 0, 2, 11] },
+            east: { texture: "#wood" }
+          }
+        },
+        {
+          from: [14, 2, 7],
+          to: [16, 13, 9],
+          shade: false,
+          faces: {
+            down: { texture: "#wood" },
+            up: { texture: "#wood" },
+            north: { texture: "#wood" },
+            south: { texture: "#wood" },
+            west: { texture: "#wood" },
+            east: { texture: "#wood", cullface: "east", uv: [0, 0, 2, 11] }
+          }
+        }
+      ]
+    });
+    const mappingPaths = model?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
+    assert.ok(mappingPaths.includes("/textures/wood"));
+    assert.ok(mappingPaths.includes("/elements/0/from"));
+    assert.ok(mappingPaths.includes("/elements/0/faces/west/cullface"));
+    assert.ok(mappingPaths.includes("/elements/1/faces/east/cullface"));
+  });
+
   it("evaluates compile-time string helper functions", () => {
     const result = compileRsglModule(parseRsgl([
       "model block string_helpers {",
@@ -1412,6 +1466,75 @@ describe("RSGL compiler", () => {
     assert.deepStrictEqual(result.units, []);
   });
 
+  it("rejects component conditions in the legacy item backend", () => {
+    const result = compileRsglModule(parseRsgl([
+      "target java format 50",
+      "item bundle {",
+      "  condition property minecraft:has_component component minecraft:bundle_contents {",
+      "    on_true minecraft:item/bundle_filled",
+      "    on_false {",
+      "      type: minecraft:condition,",
+      "      property: minecraft:using_item,",
+      "      on_true: { type: minecraft:model, model: minecraft:item/bundle_open },",
+      "      on_false: { type: minecraft:model, model: minecraft:item/bundle }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n")));
+
+    const unsupported = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsupportedLegacyItemModel");
+    assert.ok(unsupported);
+    assert.match(unsupported.message, /supported property/);
+    assert.deepStrictEqual(result.units, []);
+  });
+
+  it("emits arbitrary pack-relative JSON resources", () => {
+    const result = compileRsglModule(parseRsgl([
+      "json \"assets/minecraft/optifine/cit/diamond_gem\" {",
+      "  parent minecraft:item/generated",
+      "  textures {",
+      "    layer0 minecraft:item/diamond",
+      "  }",
+      "}",
+      "json example:config/feature {",
+      "  enabled true",
+      "  weight 2",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    const optifine = result.units.find(unit => unit.outputPath === "assets/minecraft/optifine/cit/diamond_gem.json");
+    assert.strictEqual(optifine?.kind, "json");
+    assert.deepStrictEqual(optifine?.id, { namespace: "minecraft", path: "optifine/cit/diamond_gem.json" });
+    assert.deepStrictEqual(optifine?.content, {
+      parent: "minecraft:item/generated",
+      textures: {
+        layer0: "minecraft:item/diamond"
+      }
+    });
+    assert.ok(optifine?.sourceMap.mappings.some(mapping => mapping.generatedPath === "/textures/layer0"));
+    assert.strictEqual(
+      stableJsonStringify(optifine?.content as JsonValue, "json"),
+      "{\n  \"parent\": \"minecraft:item/generated\",\n  \"textures\": {\n    \"layer0\": \"minecraft:item/diamond\"\n  }\n}\n"
+    );
+
+    const resourceIdTarget = result.units.find(unit => unit.outputPath === "assets/example/config/feature.json");
+    assert.strictEqual(resourceIdTarget?.kind, "json");
+    assert.deepStrictEqual(resourceIdTarget?.id, { namespace: "example", path: "config/feature" });
+    assert.deepStrictEqual(resourceIdTarget?.content, { enabled: true, weight: 2 });
+  });
+
+  it("rejects unsafe arbitrary JSON targets", () => {
+    const result = compileRsglModule(parseRsgl([
+      "json \"../outside\" {",
+      "  value true",
+      "}"
+    ].join("\n")));
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.compileInvalidJsonTarget"));
+    assert.deepStrictEqual(result.units, []);
+  });
+
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl([
@@ -1572,6 +1695,61 @@ describe("RSGL compiler", () => {
       && diagnostic.range.start === textureRange?.start
       && diagnostic.range.end === textureRange?.end
     ));
+  });
+
+  it("expands sequences with explicit padding control", () => {
+    const result = compileRsglModule(parseRsgl([
+      "particles big_smoke {",
+      "  use particlesSeq(\"minecraft:particle/big_smoke_{0..11}\")",
+      "}",
+      "particles padded {",
+      "  use particlesSeq(\"minecraft:particle/explosion_{0..2}\", pad: 2)",
+      "}",
+      "particles named_seq {",
+      "  use particlesSeq(seq(`minecraft:particle/spark_${i}`, i: 0..2, pad: 2))",
+      "}"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("big_smoke.json"))?.content, {
+      textures: [
+        "minecraft:particle/big_smoke_0",
+        "minecraft:particle/big_smoke_1",
+        "minecraft:particle/big_smoke_2",
+        "minecraft:particle/big_smoke_3",
+        "minecraft:particle/big_smoke_4",
+        "minecraft:particle/big_smoke_5",
+        "minecraft:particle/big_smoke_6",
+        "minecraft:particle/big_smoke_7",
+        "minecraft:particle/big_smoke_8",
+        "minecraft:particle/big_smoke_9",
+        "minecraft:particle/big_smoke_10",
+        "minecraft:particle/big_smoke_11"
+      ]
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("padded.json"))?.content, {
+      textures: [
+        "minecraft:particle/explosion_00",
+        "minecraft:particle/explosion_01",
+        "minecraft:particle/explosion_02"
+      ]
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("named_seq.json"))?.content, {
+      textures: [
+        "minecraft:particle/spark_00",
+        "minecraft:particle/spark_01",
+        "minecraft:particle/spark_02"
+      ]
+    });
+
+    const invalid = compileRsglModule(parseRsgl([
+      "particles bad {",
+      "  use particlesSeq(\"minecraft:particle/bad_{0..2}\", pad: -1)",
+      "}"
+    ].join("\n")));
+    assert.ok(invalid.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidParticlesSeqPadding"));
   });
 
   it("reports generic JSON helper diagnostics at helper argument ranges", () => {
