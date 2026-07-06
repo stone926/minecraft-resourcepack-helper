@@ -2,6 +2,7 @@ import { isExternalResourceUnit, JsonValue, ResourceId, ResourceUnit, RsglCompil
 import { isJsonObject } from "./jsonObjectMerge";
 import { resourceOutputPath } from "./resourceIds";
 import { RsglTargetPackFormat } from "./target";
+import { itemModelType } from "./validationShared";
 
 export interface LowerItemUnitsForTargetResult {
   units: ResourceUnit[];
@@ -393,10 +394,6 @@ function modelRef(model: Record<string, JsonValue>): string | null {
   return itemModelType(model.type) === "model" && typeof model.model === "string"
     ? model.model
     : null;
-}
-
-function itemModelType(value: JsonValue | undefined): string {
-  return typeof value === "string" ? value.replace(/^minecraft:/, "") : "";
 }
 
 function rangePredicateName(model: Record<string, JsonValue>): string | null {

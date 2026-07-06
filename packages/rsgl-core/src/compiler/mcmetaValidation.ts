@@ -1,6 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import type { RsglResourceValidationOptions } from "./validation";
+import type { RsglResourceValidationOptions } from "./validationShared";
 
 interface McmetaFrameLayout {
   frameCount: number;
