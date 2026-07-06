@@ -23,6 +23,11 @@ export interface ResourceRootCandidateOptions {
   resourcePackRoots?: string[];
 }
 
+export interface FindPackRootOptions {
+  pathExists?: (filePath: string) => boolean;
+  stopAt?: string | null;
+}
+
 const pathPartSeparator = /[\\/]+/;
 
 export function parseResourceLocation(input: string, targetFileExtension: string | null): ResourceLocation {
@@ -110,22 +115,35 @@ export function getResourceRootCandidates(assetsRoot: string | null, defaultAsse
   return [...new Set(candidates)];
 }
 
-export function findPackRoot(fileName: string, options: ResourceRootCandidateOptions = {}): string | null {
+export function findPackRoot(fileName: string, options: FindPackRootOptions = {}): string | null {
   const pathExists = options.pathExists ?? fs.existsSync;
   let current = path.dirname(path.normalize(fileName));
   const root = path.parse(current).root;
+  const stopAt = options.stopAt ? path.normalize(options.stopAt) : null;
 
   while (true) {
     if (pathExists(path.join(current, "pack.mcmeta"))) {
       return current;
     }
 
-    if (current === root) {
+    if (current === root || (stopAt && isSamePath(current, stopAt))) {
       return null;
     }
 
     current = path.dirname(current);
   }
+}
+
+export function packRootFromAssetsPath(fileName: string): string | null {
+  const normalizedPath = path.normalize(fileName);
+  const parsedPath = path.parse(normalizedPath);
+  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
+  if (assetsIndex < 0) {
+    return null;
+  }
+
+  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
 }
 
 function findSourceIndex(segments: string[], sourceSegments: string[]): number {
