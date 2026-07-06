@@ -1,12 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ExportDeclNode, ImportDeclNode, parseRsgl, RsglModule } from "../parser";
-import { RsglSourceFile } from "../semantic";
+import type { RsglSourceFile } from "../semantic/types";
 
 export const rsglStdlibScheme = "rsgl:";
 export const rsglStdlibVirtualRoot = "<rsgl-stdlib>";
 
 const stdlibDirectoryName = "rsgl";
+
+/** Options for the stdlib discovery entry points; `stdlibRoot` redirects discovery to a different directory (test seam). */
+export interface RsglStdlibDiscoveryOptions {
+  stdlibRoot?: string;
+}
 
 export function isRsglStdlibImportSource(source: string): boolean {
   return source.startsWith(rsglStdlibScheme);
@@ -30,8 +35,8 @@ export function isRsglStdlibVirtualFileName(fileName: string): boolean {
   return path.normalize(fileName).startsWith(path.normalize(rsglStdlibVirtualRoot + path.sep));
 }
 
-export function readRsglStdlibSource(source: string): string | null {
-  const filePath = rsglStdlibSourceFilePath(source);
+export function readRsglStdlibSource(source: string, options: RsglStdlibDiscoveryOptions = {}): string | null {
+  const filePath = rsglStdlibSourceFilePath(source, options);
   if (!filePath) {
     return null;
   }
@@ -42,40 +47,40 @@ export function readRsglStdlibSource(source: string): string | null {
   }
 }
 
-export function createRsglStdlibSourceFile(source: string): RsglSourceFile | null {
+export function createRsglStdlibSourceFile(source: string, options: RsglStdlibDiscoveryOptions = {}): RsglSourceFile | null {
   const fileName = rsglStdlibVirtualFileName(source);
-  const text = readRsglStdlibSource(source);
+  const text = readRsglStdlibSource(source, options);
   return fileName && text !== null ? { fileName, module: parseRsgl(text) } : null;
 }
 
-export function createAllRsglStdlibSourceFiles(): RsglSourceFile[] {
-  return enumerateRsglStdlibModulePaths()
-    .map(source => createRsglStdlibSourceFile(source))
+export function createAllRsglStdlibSourceFiles(options: RsglStdlibDiscoveryOptions = {}): RsglSourceFile[] {
+  return enumerateRsglStdlibModulePaths(options)
+    .map(source => createRsglStdlibSourceFile(source, options))
     .filter((file): file is RsglSourceFile => Boolean(file));
 }
 
-export function createRsglStdlibPreludeSourceFiles(): RsglSourceFile[] {
-  return enumerateRsglStdlibPreludeModulePaths()
-    .map(source => createRsglStdlibSourceFile(source))
+export function createRsglStdlibPreludeSourceFiles(options: RsglStdlibDiscoveryOptions = {}): RsglSourceFile[] {
+  return enumerateRsglStdlibPreludeModulePaths(options)
+    .map(source => createRsglStdlibSourceFile(source, options))
     .filter((file): file is RsglSourceFile => Boolean(file));
 }
 
-export function readRsglStdlibVirtualSource(fileName: string): string | null {
+export function readRsglStdlibVirtualSource(fileName: string, options: RsglStdlibDiscoveryOptions = {}): string | null {
   if (!isRsglStdlibVirtualFileName(fileName)) {
     return null;
   }
   const relative = path.relative(rsglStdlibVirtualRoot, fileName).replace(/\\/g, "/");
-  return readRsglStdlibSource(relative);
+  return readRsglStdlibSource(relative, options);
 }
 
-export function includeRsglStdlibSourceFiles(files: readonly RsglSourceFile[]): RsglSourceFile[] {
+export function includeRsglStdlibSourceFiles(files: readonly RsglSourceFile[], options: RsglStdlibDiscoveryOptions = {}): RsglSourceFile[] {
   const result = [...files];
   const known = new Set(result.map(file => path.normalize(file.fileName)));
 
   for (let index = 0; index < result.length; index++) {
     const file = result[index];
     for (const source of collectRsglStdlibImports(file.module)) {
-      const sourceFile = createRsglStdlibSourceFile(source);
+      const sourceFile = createRsglStdlibSourceFile(source, options);
       if (!sourceFile) {
         continue;
       }
@@ -97,13 +102,13 @@ export function collectRsglStdlibImports(module: RsglModule): string[] {
     .filter((source): source is string => Boolean(source && isRsglStdlibImportSource(source)));
 }
 
-function rsglStdlibSourceFilePath(source: string): string | null {
+function rsglStdlibSourceFilePath(source: string, options: RsglStdlibDiscoveryOptions): string | null {
   const modulePath = normalizeRsglStdlibModulePath(source);
   if (!modulePath) {
     return null;
   }
 
-  for (const root of rsglStdlibRootCandidates()) {
+  for (const root of rsglStdlibRootCandidates(options)) {
     const candidate = path.join(root, ...modulePath.split("/"));
     try {
       if (fs.statSync(candidate).isFile()) {
@@ -116,10 +121,10 @@ function rsglStdlibSourceFilePath(source: string): string | null {
   return null;
 }
 
-function enumerateRsglStdlibModulePaths(): string[] {
+function enumerateRsglStdlibModulePaths(options: RsglStdlibDiscoveryOptions): string[] {
   const modulePaths: string[] = [];
   const known = new Set<string>();
-  for (const root of rsglStdlibRootCandidates()) {
+  for (const root of rsglStdlibRootCandidates(options)) {
     for (const fileName of enumerateRsglFiles(root)) {
       const modulePath = path.relative(root, fileName).replace(/\\/g, "/");
       if (!known.has(modulePath)) {
@@ -131,8 +136,8 @@ function enumerateRsglStdlibModulePaths(): string[] {
   return modulePaths;
 }
 
-function enumerateRsglStdlibPreludeModulePaths(): string[] {
-  return enumerateRsglStdlibModulePaths().filter(isRsglStdlibPreludeModulePath);
+function enumerateRsglStdlibPreludeModulePaths(options: RsglStdlibDiscoveryOptions): string[] {
+  return enumerateRsglStdlibModulePaths(options).filter(isRsglStdlibPreludeModulePath);
 }
 
 function isRsglStdlibPreludeModulePath(modulePath: string): boolean {
@@ -161,7 +166,10 @@ function enumerateRsglFiles(root: string): string[] {
   return result;
 }
 
-function rsglStdlibRootCandidates(): string[] {
+function rsglStdlibRootCandidates(options: RsglStdlibDiscoveryOptions): string[] {
+  if (options.stdlibRoot) {
+    return [path.normalize(path.resolve(options.stdlibRoot))];
+  }
   const candidates = [
     path.join(__dirname, stdlibDirectoryName),
     path.resolve(process.cwd(), "packages", "rsgl-core", "src", "stdlib", stdlibDirectoryName),

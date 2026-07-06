@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { normalizePathKey } from "../../mc-assets/src";
 
 export interface RsglDiscoveredSourceRoot {
   sourceRoot: string;
@@ -63,7 +64,7 @@ export function discoverRsglSourceRootsFromFileNames(fileNames: readonly string[
     }
 
     const sourceRoot = resolveRsglSourceRootFromFileName(fileName);
-    const key = pathKey(sourceRoot);
+    const key = normalizePathKey(sourceRoot);
     if (!roots.has(key)) {
       roots.set(key, { sourceRoot, sampleFileName: fileName });
     }
@@ -78,12 +79,7 @@ function hasIgnoredPathSegment(fileName: string): boolean {
 }
 
 function compareFileNames(left: string, right: string): number {
-  return pathKey(left).localeCompare(pathKey(right));
-}
-
-function pathKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return normalizePathKey(left).localeCompare(normalizePathKey(right));
 }
 
 const ignoredDirectoryNames = new Set([".git", ".vscode", "node_modules"]);

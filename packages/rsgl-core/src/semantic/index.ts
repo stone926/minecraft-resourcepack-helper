@@ -1,7 +1,5 @@
-export {
-  bindRsglModule,
-  bindRsglProgram
-} from "./binder";
+export { bindRsglModule } from "./binder";
+export { bindRsglProgram } from "./program";
 export { createRsglExportMaps } from "./exportResolution";
 export type { RsglExportMapResult } from "./exportResolution";
 export type {

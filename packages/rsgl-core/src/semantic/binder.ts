@@ -1,16 +1,9 @@
-import * as path from "node:path";
-import { parseMinecraftResourceId } from "../../../mc-assets/src";
 import {
-  ArgumentNode,
   BlockNode,
-  CallExprNode,
   ExprNode,
   IdentifierNode,
-  LetDeclNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
-  ObjectExprNode,
-  ObjectPropertyNode,
   ResourceBodyNode,
   ResourceDeclNode,
   ResourceStatementNode,
@@ -22,67 +15,41 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
-import {
-  includeRsglStdlibSourceFiles,
-  isRsglStdlibImportSource,
-  rsglStdlibVirtualFileName
-} from "../stdlib";
-import { bindRsglArguments } from "../arguments";
+import { blockstateTemplateIdParameters } from "./blockstateTemplateUse";
 import { createBuiltinSymbols } from "./builtins";
-import { createRsglExportMaps } from "./exportResolution";
-import { validateResolvedImportCalls } from "./importValidation";
-import { formatType, isAssignable } from "./typeRelations";
+import { diagnostic } from "./diagnostics";
+import { finiteStringDomain } from "./domainChecks";
+import {
+  checkAssignable,
+  checkEquipmentLayerListExpression,
+  checkEquipmentLayerNameExpression,
+  checkExpression,
+  checkLocalLetDecl,
+  checkObject,
+  checkResourceIdExpression,
+  checkStringEnumLikeExpression,
+  RsglExpressionCheckContext,
+  validateResourceLocationLike
+} from "./expressionChecker";
+import { createChildScope, createScope, lookup } from "./scopes";
 import {
   anyType,
-  booleanType,
   identifierName,
-  inferLiteralType,
   jsonType,
-  numberType,
   resourceIdType,
   RsglBindOptions,
   RsglExportRecord,
-  RsglFileDiagnostic,
-  RsglImportGraph,
   RsglImportRecord,
   RsglOutputResourcePreview,
-  RsglProgram,
   RsglReferenceRecord,
   RsglScope,
   RsglSemanticModel,
-  RsglSignature,
-  RsglSourceFile,
   RsglSymbol,
   RsglType,
   stringType,
   typeFromAnnotation,
   unknownType
 } from "./types";
-import { blockstateTemplateIdParameters, isBlockstateTemplateIdCall } from "./blockstateTemplateUse";
-
-const builtinFiniteStringDomains = new Map<string, string[]>([
-  ["HORIZONTAL", ["north", "east", "south", "west"]],
-  ["DIRECTIONS", ["down", "up", "north", "south", "west", "east"]],
-  ["STAIR_SHAPES", ["straight", "inner_left", "inner_right", "outer_left", "outer_right"]],
-  ["COLORS_16", [
-    "white",
-    "orange",
-    "magenta",
-    "light_blue",
-    "yellow",
-    "lime",
-    "pink",
-    "gray",
-    "light_gray",
-    "cyan",
-    "purple",
-    "blue",
-    "brown",
-    "green",
-    "red",
-    "black"
-  ]]
-]);
 
 type CheckableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
@@ -91,38 +58,12 @@ export function bindRsglModule(module: RsglModule, options: RsglBindOptions = {}
   return binder.bind();
 }
 
-export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOptions = {}): RsglProgram {
-  const sourceFiles = includeRsglStdlibSourceFiles(files);
-  const resolver = options.resolver ?? createDefaultResolver(sourceFiles);
-  const models = sourceFiles.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
-  const importGraph = buildImportGraph(sourceFiles, models, resolver);
-  const exportMaps = createRsglExportMaps(models, importGraph);
-  const importDiagnostics = resolveProgramImports(models, importGraph, exportMaps.maps);
-  const importedCallDiagnostics = models.flatMap(model => withFileName(model.fileName, validateResolvedImportCalls(model)));
-  const fileDiagnostics: RsglFileDiagnostic[] = [
-    ...models.flatMap(model => withFileName(model.fileName, model.diagnostics)),
-    ...exportMaps.fileDiagnostics,
-    ...importDiagnostics,
-    ...importedCallDiagnostics,
-    ...importGraph.missing.map(missing => fileDiagnostic(
-      missing.from,
-      "rsgl.missingImport",
-      `RSGL import not found: ${missing.source}`,
-      missing.range
-    )),
-    ...importCycleDiagnostics(importGraph)
-  ];
-  const diagnostics = fileDiagnostics.map(toDiagnostic);
-
-  return { files: sourceFiles, models, importGraph, diagnostics, fileDiagnostics };
-}
-
-class RsglBinder {
-  private readonly diagnostics: RsglDiagnostic[] = [];
+class RsglBinder implements RsglExpressionCheckContext {
+  public readonly diagnostics: RsglDiagnostic[] = [];
+  public readonly references: RsglReferenceRecord[] = [];
   private readonly symbols: RsglSymbol[] = [];
   private readonly imports: RsglImportRecord[] = [];
   private readonly exports: RsglExportRecord[] = [];
-  private readonly references: RsglReferenceRecord[] = [];
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly globalScope: RsglScope = createScope("global");
   private namespace: string | undefined;
@@ -154,6 +95,20 @@ class RsglBinder {
       diagnostics: this.diagnostics,
       namespace: this.namespace
     };
+  }
+
+  public defineIdentifier(
+    scope: RsglScope,
+    identifier: IdentifierNode | null | undefined,
+    kind: RsglSymbol["kind"],
+    type: RsglType,
+    node: RsglNode
+  ): void {
+    const name = identifierName(identifier);
+    if (!name) {
+      return;
+    }
+    this.define(scope, { name, kind, type, node, range: identifier?.range });
   }
 
   private predeclareTopLevel(statements: TopLevelStatementNode[], scope: RsglScope): void {
@@ -188,14 +143,14 @@ class RsglBinder {
       if (statement.kind === "LetDecl") {
         const actualType = this.checkExpression(statement.value, scope);
         const expectedType = typeFromAnnotation(statement.typeAnnotation);
-        this.checkAssignable(expectedType, actualType, statement.value);
+        checkAssignable(this, expectedType, actualType, statement.value);
         const name = identifierName(statement.name);
         const symbol = name ? lookup(scope, name) : undefined;
         if (symbol) {
-          symbol.finiteDomain = this.finiteStringDomain(statement.value, scope) ?? undefined;
+          symbol.finiteDomain = finiteStringDomain(statement.value, scope) ?? undefined;
         }
       } else if (statement.kind === "TableDecl") {
-        this.checkObject(statement.body, scope);
+        checkObject(this, statement.body, scope);
       } else if (statement.kind === "TemplateDecl") {
         this.checkTemplate(statement, scope);
       } else if (statement.kind === "ResourceDecl") {
@@ -247,15 +202,15 @@ class RsglBinder {
       if (parameter.defaultValue) {
         const expectedType = typeFromAnnotation(parameter.typeAnnotation);
         const actualType = this.checkExpression(parameter.defaultValue, scope);
-        this.checkAssignable(expectedType, actualType, parameter.defaultValue);
+        checkAssignable(this, expectedType, actualType, parameter.defaultValue);
       }
     }
   }
 
   private checkResourceDecl(statement: ResourceDeclNode, scope: RsglScope): void {
     if (statement.id) {
-      this.checkResourceIdExpression(statement.id, scope);
-      this.validateResourceLocationLike(statement.id);
+      checkResourceIdExpression(this, statement.id, scope);
+      validateResourceLocationLike(this, statement.id);
     }
     this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.resourceKind);
   }
@@ -291,19 +246,19 @@ class RsglBinder {
   private checkResourceStatement(statement: ResourceStatementNode, scope: RsglScope, owner: string): void {
     if (statement.kind === "PropertyStmt") {
       if (owner === "equipment" && statement.name.text === "layers") {
-        this.checkEquipmentLayerListExpression(statement.value, scope);
+        checkEquipmentLayerListExpression(this, statement.value, scope);
       } else if (owner === "scaling" && statement.name.text === "type") {
-        this.checkStringEnumLikeExpression(statement.value, scope);
+        checkStringEnumLikeExpression(this, statement.value, scope);
       } else {
         this.checkExpression(statement.value, scope);
       }
-      this.validateResourceLocationLike(statement.value);
+      validateResourceLocationLike(this, statement.value);
     } else if (statement.kind === "SectionStmt") {
       if (statement.value) {
         if (owner === "equipment" && statement.name.text === "layers") {
-          this.checkEquipmentLayerListExpression(statement.value, scope);
+          checkEquipmentLayerListExpression(this, statement.value, scope);
         } else if (owner === "scaling" && statement.name.text === "type") {
-          this.checkStringEnumLikeExpression(statement.value, scope);
+          checkStringEnumLikeExpression(this, statement.value, scope);
         } else {
           this.checkExpression(statement.value, scope);
         }
@@ -318,7 +273,7 @@ class RsglBinder {
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "LetDecl") {
-      this.checkLocalLetDecl(statement, scope);
+      checkLocalLetDecl(this, statement, scope);
     } else if (statement.kind === "PackFormatsStmt") {
       if (statement.min) {
         this.checkExpression(statement.min, scope);
@@ -353,7 +308,7 @@ class RsglBinder {
     } else if (statement.kind === "AtlasPalettedPermutationsStmt") {
       this.checkResourceBody(statement.body, createChildScope(scope, "block"), "atlasPalettedPermutations");
     } else if (statement.kind === "EquipmentLayerStmt") {
-      this.checkEquipmentLayerNameExpression(statement.layer, scope);
+      checkEquipmentLayerNameExpression(this, statement.layer, scope);
       if (statement.texture) {
         this.checkExpression(statement.texture, scope);
       }
@@ -420,7 +375,7 @@ class RsglBinder {
     scope: RsglScope
   ): void {
     this.checkForIterableExpression(iterable, scope);
-    const finiteDomain = bindings.length === 1 ? this.finiteStringDomain(iterable, scope) : null;
+    const finiteDomain = bindings.length === 1 ? finiteStringDomain(iterable, scope) : null;
     const loopScope = createChildScope(scope, "loop");
     for (const binding of bindings) {
       this.defineIdentifier(loopScope, binding, "variable", anyType, binding);
@@ -464,7 +419,7 @@ class RsglBinder {
       this.checkExpression(statement.state, scope);
       this.checkExpression(statement.value, scope);
     } else if (statement.kind === "LetDecl") {
-      this.checkLocalLetDecl(statement, scope);
+      checkLocalLetDecl(this, statement, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
@@ -495,7 +450,7 @@ class RsglBinder {
       }
       this.checkExpression(statement.apply, scope);
     } else if (statement.kind === "LetDecl") {
-      this.checkLocalLetDecl(statement, scope);
+      checkLocalLetDecl(this, statement, scope);
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
@@ -509,306 +464,8 @@ class RsglBinder {
     }
   }
 
-  private checkEquipmentLayerListExpression(expression: ExprNode, scope: RsglScope): void {
-    if (expression.kind === "ListExpr") {
-      expression.elements.forEach(element => this.checkEquipmentLayerNameExpression(element, scope));
-      return;
-    }
-    this.checkEquipmentLayerNameExpression(expression, scope);
-  }
-
-  private checkEquipmentLayerNameExpression(expression: ExprNode, scope: RsglScope): void {
-    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-      return;
-    }
-    this.checkExpression(expression, scope);
-  }
-
-  private checkStringEnumLikeExpression(expression: ExprNode, scope: RsglScope): void {
-    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-      return;
-    }
-    this.checkExpression(expression, scope);
-  }
-
-  private checkMatchExhaustiveness(expression: Extract<ExprNode, { kind: "MatchExpr" }>, scope: RsglScope): void {
-    if (expression.arms.some(arm => arm.patterns.some(isWildcardPattern))) {
-      return;
-    }
-
-    const domain = this.finiteStringDomain(expression.expression, scope);
-    if (!domain?.length) {
-      return;
-    }
-
-    const covered = new Set<string>();
-    for (const arm of expression.arms) {
-      for (const pattern of arm.patterns) {
-        const value = this.staticStringPatternValue(pattern, scope);
-        if (value !== null) {
-          covered.add(value);
-        }
-      }
-    }
-
-    const missing = domain.filter(value => !covered.has(value));
-    if (missing.length === 0) {
-      return;
-    }
-
-    const preview = missing.slice(0, 6).join(", ");
-    const suffix = missing.length > 6 ? `, and ${missing.length - 6} more` : "";
-    this.diagnostics.push(diagnostic(
-      "rsgl.nonExhaustiveMatch",
-      `Match expression is missing cases: ${preview}${suffix}.`,
-      expression.range,
-      "warning"
-    ));
-  }
-
-  private finiteStringDomain(expression: ExprNode, scope: RsglScope): string[] | null {
-    if (expression.kind === "IdentifierExpr") {
-      return lookup(scope, expression.name.text)?.finiteDomain
-        ?? builtinFiniteStringDomains.get(expression.name.text)
-        ?? null;
-    }
-    if (expression.kind !== "ListExpr") {
-      return null;
-    }
-
-    const values: string[] = [];
-    for (const element of expression.elements) {
-      const value = this.staticStringPatternValue(element, scope);
-      if (value === null) {
-        return null;
-      }
-      values.push(value);
-    }
-    return values;
-  }
-
-  private staticStringPatternValue(expression: ExprNode, scope: RsglScope): string | null {
-    if (expression.kind === "StringLiteral" || expression.kind === "ResourceLocationExpr") {
-      return expression.value;
-    }
-    if (expression.kind === "IdentifierExpr") {
-      const symbol = lookup(scope, expression.name.text);
-      return !symbol || symbol.kind === "builtin" ? expression.name.text : null;
-    }
-    return null;
-  }
-
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
-    if (expression.kind === "IdentifierExpr") {
-      const symbol = lookup(scope, expression.name.text);
-      this.references.push({ name: expression.name.text, range: expression.range, symbol });
-      if (!symbol) {
-        this.diagnostics.push(diagnostic("rsgl.undefinedSymbol", `Undefined RSGL symbol '${expression.name.text}'.`, expression.range));
-        return unknownType;
-      }
-      return symbol.type;
-    }
-    if (expression.kind === "ResourceLocationExpr") {
-      this.validateResourceLocationValue(expression.value, expression.range);
-      return resourceIdType;
-    }
-    if (expression.kind === "ListExpr") {
-      const elementTypes = expression.elements.map(element => this.checkExpression(element, scope));
-      return { kind: "List", elementType: elementTypes[0] ?? unknownType };
-    }
-    if (expression.kind === "ObjectExpr") {
-      return this.checkObject(expression, scope);
-    }
-    if (expression.kind === "StateKeySugar") {
-      for (const entry of expression.entries) {
-        if (entry.key.kind === "DynamicKey") {
-          this.checkExpression(entry.key.expression, scope);
-        }
-        this.checkStateKeyValueExpression(entry.value, scope);
-      }
-      return jsonType;
-    }
-    if (expression.kind === "ModelApplySugar") {
-      this.checkResourceIdExpression(expression.model, scope);
-      for (const property of expression.properties) {
-        this.checkExpression(property.value, scope);
-      }
-      return jsonType;
-    }
-    if (expression.kind === "RandomApply") {
-      for (const entry of expression.entries) {
-        this.checkExpression(entry, scope);
-      }
-      return jsonType;
-    }
-    if (expression.kind === "CallExpr") {
-      return this.checkCallExpression(expression, scope);
-    }
-    if (expression.kind === "ForInExpr") {
-      this.diagnostics.push(diagnostic("rsgl.invalidForInExpression", "'name in iterable' generator expressions are only valid as seq arguments.", expression.range));
-      this.checkExpression(expression.iterable, scope);
-      return unknownType;
-    }
-    if (expression.kind === "MemberExpr") {
-      this.checkExpression(expression.object, scope);
-      return anyType;
-    }
-    if (expression.kind === "IndexExpr") {
-      this.checkExpression(expression.object, scope);
-      this.checkExpression(expression.index, scope);
-      return anyType;
-    }
-    if (expression.kind === "UnaryExpr") {
-      this.checkExpression(expression.operand, scope);
-      return expression.operator === "!" ? booleanType : numberType;
-    }
-    if (expression.kind === "BinaryExpr") {
-      this.checkExpression(expression.left, scope);
-      this.checkExpression(expression.right, scope);
-      return expression.operator === "&&" || expression.operator === "||" || expression.operator.includes("=") ? booleanType : numberType;
-    }
-    if (expression.kind === "RangeExpr") {
-      const startType = this.checkExpression(expression.startExpr, scope);
-      const endType = this.checkExpression(expression.endExpr, scope);
-      this.checkAssignable(numberType, startType, expression.startExpr);
-      this.checkAssignable(numberType, endType, expression.endExpr);
-      return { kind: "Range", elementType: numberType };
-    }
-    if (expression.kind === "ConditionalExpr") {
-      this.checkExpression(expression.condition, scope);
-      const trueType = this.checkExpression(expression.whenTrue, scope);
-      const falseType = this.checkExpression(expression.whenFalse, scope);
-      return isAssignable(trueType, falseType) ? trueType : anyType;
-    }
-    if (expression.kind === "MatchExpr") {
-      this.checkExpression(expression.expression, scope);
-      for (const arm of expression.arms) {
-        arm.patterns
-          .filter(pattern => !isWildcardPattern(pattern))
-          .forEach(pattern => this.checkExpression(pattern, scope));
-        this.checkExpression(arm.value, scope);
-      }
-      this.checkMatchExhaustiveness(expression, scope);
-      return anyType;
-    }
-    if (expression.kind === "TemplateStringExpr") {
-      for (const part of expression.parts) {
-        if (part.kind === "expression") {
-          this.checkExpression(part.expression, scope);
-        }
-      }
-      return stringType;
-    }
-    return inferLiteralType(expression);
-  }
-
-  private checkResourceIdExpression(expression: ExprNode, scope: RsglScope): RsglType {
-    if (expression.kind === "StringLiteral") {
-      this.validateResourceLocationValue(expression.value, expression.range);
-      return resourceIdType;
-    }
-    if (expression.kind === "TemplateStringExpr") {
-      this.checkExpression(expression, scope);
-      return resourceIdType;
-    }
-    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-      return resourceIdType;
-    }
-    return this.checkExpression(expression, scope);
-  }
-
-  private checkStateKeyValueExpression(expression: ExprNode, scope: RsglScope): RsglType {
-    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-      return stringType;
-    }
-    return this.checkExpression(expression, scope);
-  }
-
-  private checkLocalLetDecl(statement: LetDeclNode, scope: RsglScope): void {
-    const actualType = this.checkExpression(statement.value, scope);
-    const expectedType = typeFromAnnotation(statement.typeAnnotation);
-    this.checkAssignable(expectedType, actualType, statement.value);
-    this.defineIdentifier(scope, statement.name, "variable", expectedType, statement);
-    const name = identifierName(statement.name);
-    const symbol = name ? lookup(scope, name) : undefined;
-    if (symbol) {
-      symbol.finiteDomain = this.finiteStringDomain(statement.value, scope) ?? undefined;
-    }
-  }
-
-  private checkObject(expression: ObjectExprNode, scope: RsglScope): RsglType {
-    const properties = new Map<string, RsglType>();
-    for (const property of expression.properties) {
-      const key = objectKeyName(property);
-      const valueType = this.checkExpression(property.value, scope);
-      if (key) {
-        properties.set(key, valueType);
-      }
-      if (property.key.kind === "DynamicKey") {
-        this.checkExpression(property.key.expression, scope);
-      }
-    }
-    return { kind: "Object", properties };
-  }
-
-  private checkCallExpression(expression: CallExprNode, scope: RsglScope): RsglType {
-    const { callee, args } = expression;
-    const calleeType = this.checkExpression(callee, scope);
-
-    if (callee.kind !== "IdentifierExpr") {
-      for (const arg of args) {
-        this.checkExpression(arg.value, scope);
-      }
-      return calleeType.kind === "Function" ? anyType : unknownType;
-    }
-
-    const symbol = lookup(scope, callee.name.text);
-    if (callee.name.text === "seq") {
-      return this.checkSeqCallExpression(expression, scope);
-    }
-    if (isBlockstateTemplateIdCall(expression)) {
-      return this.checkBlockstateTemplateIdCall(expression, scope);
-    }
-    if (!symbol?.signature) {
-      if (symbol?.kind === "import") {
-        return anyType;
-      }
-      for (const arg of args) {
-        this.checkExpression(arg.value, scope);
-      }
-      return symbol?.type ?? unknownType;
-    }
-
-    this.checkArguments(symbol.signature, args, scope, expression.range);
-    return symbol.signature.returnType;
-  }
-
-  private checkBlockstateTemplateIdCall(expression: CallExprNode, scope: RsglScope): RsglType {
-    const callee = expression.callee;
-    if (callee.kind !== "IdentifierExpr") {
-      return jsonType;
-    }
-    const parameters = blockstateTemplateIdParameters.get(callee.name.text);
-    if (!parameters) {
-      return jsonType;
-    }
-    const binding = bindRsglArguments(parameters, expression.args, { callRange: expression.range });
-    this.diagnostics.push(...binding.diagnostics);
-    const checkedArgs = new Set<ArgumentNode>();
-
-    for (const { parameter, arg } of binding.assignments) {
-      checkedArgs.add(arg);
-      const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId"
-        ? this.checkResourceIdExpression(arg.value, scope)
-        : this.checkExpression(arg.value, scope);
-      this.checkAssignable(parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
-    }
-    for (const arg of binding.unmatchedArgs) {
-      if (!checkedArgs.has(arg)) {
-        this.checkExpression(arg.value, scope);
-      }
-    }
-    return jsonType;
+    return checkExpression(this, expression, scope);
   }
 
   private topLevelBlockstateUseId(statement: Extract<TopLevelStatementNode, { kind: "UseDecl" }>): string | undefined {
@@ -823,91 +480,6 @@ class RsglBinder {
     const positionalId = expression.args.length === 1 && !expression.args[0].name ? expression.args[0] : undefined;
     const arg = namedId ?? positionalId;
     return arg ? expressionToStaticText(arg.value) : undefined;
-  }
-
-  private checkSeqCallExpression(expression: CallExprNode, scope: RsglScope): RsglType {
-    const positionalArgs = expression.args.filter(arg => !arg.name);
-    const patternArg = expression.args.find(arg => arg.name?.text === "pattern") ?? positionalArgs[0];
-    const padArg = expression.args.find(arg => arg.name?.text === "pad");
-    if (!patternArg) {
-      this.diagnostics.push(diagnostic("rsgl.missingArgument", "Missing argument 'pattern'.", expression.range));
-      return { kind: "List", elementType: stringType };
-    }
-
-    const generatorScope = createChildScope(scope, "block");
-    for (const arg of expression.args) {
-      if (arg === patternArg) {
-        continue;
-      }
-      if (arg.name) {
-        if (arg === padArg) {
-          const actualType = this.checkExpression(arg.value, scope);
-          this.checkAssignable(numberType, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
-          continue;
-        }
-        if (arg.name.text === "pattern") {
-          this.checkExpression(arg.value, scope);
-          continue;
-        }
-        this.checkExpression(arg.value, scope);
-        this.defineIdentifier(generatorScope, arg.name, "variable", stringType, arg);
-        continue;
-      }
-      if (arg.value.kind !== "ForInExpr") {
-        this.diagnostics.push(diagnostic("rsgl.invalidSeqGenerator", "seq generator arguments must use 'name in iterable'.", arg.value.range));
-        this.checkExpression(arg.value, scope);
-        continue;
-      }
-      this.checkExpression(arg.value.iterable, scope);
-      this.defineIdentifier(generatorScope, arg.value.binding, "variable", stringType, arg.value);
-    }
-
-    this.checkExpression(patternArg.value, generatorScope);
-    return { kind: "List", elementType: stringType };
-  }
-
-  private checkArguments(signature: RsglSignature, args: ArgumentNode[], scope: RsglScope, callRange: { start: number; end: number }): void {
-    const binding = bindRsglArguments(signature.parameters, args, { callRange });
-    this.diagnostics.push(...binding.diagnostics);
-    const checkedArgs = new Set<ArgumentNode>();
-
-    for (const { parameter, arg } of binding.assignments) {
-      checkedArgs.add(arg);
-      const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId" || parameter.type.kind === "TextureId"
-        ? this.checkResourceIdExpression(arg.value, scope)
-        : this.checkExpression(arg.value, scope);
-      this.checkAssignable(parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
-    }
-    for (const arg of binding.unmatchedArgs) {
-      if (!checkedArgs.has(arg)) {
-        this.checkExpression(arg.value, scope);
-      }
-    }
-  }
-
-  private checkAssignable(expected: RsglType, actual: RsglType, node: RsglNode): void {
-    if (!isAssignable(expected, actual)) {
-      this.diagnostics.push(diagnostic(
-        "rsgl.typeMismatch",
-        `Expected ${formatType(expected)}, got ${formatType(actual)}.`,
-        node.range
-      ));
-    }
-  }
-
-  private validateResourceLocationLike(expression: ExprNode): void {
-    if (expression.kind === "ResourceLocationExpr") {
-      this.validateResourceLocationValue(expression.value, expression.range);
-    }
-  }
-
-  private validateResourceLocationValue(value: string, range: { start: number; end: number }): void {
-    const parsed = parseMinecraftResourceId(value);
-    if (value.includes(":") && !parsed.isValid) {
-      this.diagnostics.push(diagnostic("rsgl.invalidResourceLocation", `Invalid resource location '${value}'.`, range));
-    } else if (!parsed.isValid) {
-      this.diagnostics.push(diagnostic("rsgl.invalidResourcePath", `Invalid resource path '${value}'.`, range));
-    }
   }
 
   private recordImport(statement: Extract<TopLevelStatementNode, { kind: "ImportDecl" }>, scope: RsglScope): void {
@@ -999,20 +571,6 @@ class RsglBinder {
     });
   }
 
-  private defineIdentifier(
-    scope: RsglScope,
-    identifier: IdentifierNode | null | undefined,
-    kind: RsglSymbol["kind"],
-    type: RsglType,
-    node: RsglNode
-  ): void {
-    const name = identifierName(identifier);
-    if (!name) {
-      return;
-    }
-    this.define(scope, { name, kind, type, node, range: identifier?.range });
-  }
-
   private define(scope: RsglScope, symbol: RsglSymbol): void {
     const existing = scope.symbols.get(symbol.name);
     if (existing && existing.kind !== "builtin" && symbol.kind !== "builtin") {
@@ -1026,121 +584,6 @@ class RsglBinder {
   }
 }
 
-function resolveProgramImports(
-  models: RsglSemanticModel[],
-  importGraph: RsglImportGraph,
-  exportMaps: Map<string, Map<string, RsglSymbol>>
-): RsglFileDiagnostic[] {
-  const diagnostics: RsglFileDiagnostic[] = [];
-  const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
-
-  for (const edge of importGraph.edges) {
-    const sourceModel = modelsByFile.get(edge.from);
-    const targetModel = modelsByFile.get(edge.to);
-    if (!sourceModel || !targetModel) {
-      continue;
-    }
-
-    const record = sourceModel.imports.find(item =>
-      item.source === edge.source &&
-      normalizeFileName(item.resolvedFileName ?? edge.to) === edge.to
-    );
-    if (!record) {
-      continue;
-    }
-
-    for (const item of record.namedImports) {
-      const exported = exportMaps.get(normalizeFileName(targetModel.fileName))?.get(item.imported);
-      const localSymbol = sourceModel.scope.symbols.get(item.local);
-      if (!exported) {
-        diagnostics.push(fileDiagnostic(
-          sourceModel.fileName,
-          "rsgl.missingImportedSymbol",
-          `RSGL module '${record.source}' does not export '${item.imported}'.`,
-          item.range
-        ));
-        continue;
-      }
-      if (localSymbol) {
-        localSymbol.type = exported.type;
-        localSymbol.signature = exported.signature;
-        localSymbol.node = exported.node;
-      }
-    }
-    if (record.importAll) {
-      const exportedSymbols = exportMaps.get(normalizeFileName(targetModel.fileName)) ?? new Map();
-      const importedNames = new Set<string>();
-      for (const [name, exported] of exportedSymbols) {
-        if (sourceModel.scope.symbols.has(name)) {
-          continue;
-        }
-        const symbol: RsglSymbol = {
-          name,
-          kind: "import",
-          type: exported.type,
-          node: exported.node,
-          range: record.node.source?.range,
-          signature: exported.signature,
-          finiteDomain: exported.finiteDomain
-        };
-        sourceModel.scope.symbols.set(name, symbol);
-        sourceModel.symbols.push(symbol);
-        importedNames.add(name);
-      }
-      if (importedNames.size > 0) {
-        for (const reference of sourceModel.references) {
-          if (importedNames.has(reference.name)) {
-            reference.symbol = sourceModel.scope.symbols.get(reference.name);
-          }
-        }
-        sourceModel.diagnostics = sourceModel.diagnostics.filter(diagnostic =>
-          diagnostic.code !== "rsgl.undefinedSymbol" ||
-          !sourceModel.references.some(reference =>
-            importedNames.has(reference.name) &&
-            reference.range.start === diagnostic.range.start &&
-            reference.range.end === diagnostic.range.end
-          )
-        );
-      }
-    }
-  }
-
-  return diagnostics;
-}
-
-function createScope(kind: RsglScope["kind"], parent?: RsglScope): RsglScope {
-  return { kind, parent, symbols: new Map() };
-}
-
-function createChildScope(parent: RsglScope, kind: RsglScope["kind"]): RsglScope {
-  return createScope(kind, parent);
-}
-
-function lookup(scope: RsglScope, name: string): RsglSymbol | undefined {
-  let current: RsglScope | undefined = scope;
-  while (current) {
-    const symbol = current.symbols.get(name);
-    if (symbol) {
-      return symbol;
-    }
-    current = current.parent;
-  }
-  return undefined;
-}
-
-function objectKeyName(property: ObjectPropertyNode): string | null {
-  if (property.key.kind === "Identifier") {
-    return property.key.text;
-  }
-  if (property.key.kind === "StringLiteral") {
-    return property.key.value;
-  }
-  if (property.key.kind === "NumberLiteral") {
-    return property.key.raw;
-  }
-  return null;
-}
-
 function expressionToStaticText(expression: ExprNode): string | undefined {
   if (expression.kind === "IdentifierExpr") {
     return expression.name.text;
@@ -1152,159 +595,4 @@ function expressionToStaticText(expression: ExprNode): string | undefined {
     return expression.value;
   }
   return undefined;
-}
-
-function diagnostic(code: string, message: string, range: { start: number; end: number }, severity: RsglDiagnostic["severity"] = "error"): RsglDiagnostic {
-  return { code, message, range, severity };
-}
-
-function fileDiagnostic(fileName: string, code: string, message: string, range: { start: number; end: number }, severity: RsglDiagnostic["severity"] = "error"): RsglFileDiagnostic {
-  return { fileName, code, message, range, severity };
-}
-
-function withFileName(fileName: string, diagnostics: RsglDiagnostic[]): RsglFileDiagnostic[] {
-  return diagnostics.map(item => ({ ...item, fileName }));
-}
-
-function toDiagnostic(diagnostic: RsglFileDiagnostic): RsglDiagnostic {
-  return {
-    code: diagnostic.code,
-    message: diagnostic.message,
-    range: diagnostic.range,
-    severity: diagnostic.severity
-  };
-}
-
-function isWildcardPattern(expression: ExprNode): boolean {
-  return expression.kind === "IdentifierExpr" && expression.name.text === "_";
-}
-
-function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnostic[] {
-  return importGraph.cycles.flatMap(cycle => cycle.map((fileName, index) => {
-    const nextFileName = cycle[(index + 1) % cycle.length];
-    const edge = importGraph.edges.find(item => item.from === fileName && item.to === nextFileName);
-    return fileDiagnostic(
-      fileName,
-      "rsgl.importCycle",
-      `RSGL import cycle includes ${fileName}.`,
-      edge?.range ?? { start: 0, end: 1 }
-    );
-  }));
-}
-
-function createDefaultResolver(files: RsglSourceFile[]) {
-  const fileNames = new Set(files.map(file => normalizeFileName(file.fileName)));
-  return {
-    resolveImport(fromFileName: string, source: string): string | null {
-      if (isRsglStdlibImportSource(source)) {
-        const virtual = rsglStdlibVirtualFileName(source);
-        return virtual && fileNames.has(normalizeFileName(virtual)) ? normalizeFileName(virtual) : null;
-      }
-      if (!source.startsWith(".")) {
-        return null;
-      }
-      const resolved = normalizeFileName(path.resolve(path.dirname(fromFileName), source));
-      return fileNames.has(resolved) ? resolved : null;
-    }
-  };
-}
-
-function buildImportGraph(
-  files: RsglSourceFile[],
-  models: RsglSemanticModel[],
-  resolver: { resolveImport(fromFileName: string, source: string): string | null }
-): RsglImportGraph {
-  const normalizedFiles = files.map(file => normalizeFileName(file.fileName));
-  const edges: RsglImportGraph["edges"] = [];
-  const missing: RsglImportGraph["missing"] = [];
-
-  for (const model of models) {
-    for (const record of model.imports) {
-      const resolved = record.resolvedFileName ?? resolver.resolveImport(model.fileName, record.source);
-      if (resolved) {
-        edges.push({
-          from: normalizeFileName(model.fileName),
-          to: normalizeFileName(resolved),
-          source: record.source,
-          range: record.node.source?.range ?? record.node.range
-        });
-      } else {
-        missing.push({
-          from: normalizeFileName(model.fileName),
-          source: record.source,
-          range: record.node.source?.range ?? record.node.range
-        });
-      }
-    }
-    for (const record of model.exports) {
-      if (!record.source) {
-        continue;
-      }
-      const resolved = record.resolvedFileName ?? resolver.resolveImport(model.fileName, record.source);
-      if (resolved) {
-        edges.push({
-          from: normalizeFileName(model.fileName),
-          to: normalizeFileName(resolved),
-          source: record.source,
-          range: record.node.source?.range ?? record.node.range
-        });
-      } else {
-        missing.push({
-          from: normalizeFileName(model.fileName),
-          source: record.source,
-          range: record.node.source?.range ?? record.node.range
-        });
-      }
-    }
-  }
-
-  return {
-    files: normalizedFiles,
-    edges,
-    cycles: findCycles(normalizedFiles, edges),
-    missing
-  };
-}
-
-function findCycles(files: string[], edges: RsglImportGraph["edges"]): string[][] {
-  const adjacency = new Map<string, string[]>();
-  for (const file of files) {
-    adjacency.set(file, []);
-  }
-  for (const edge of edges) {
-    adjacency.get(edge.from)?.push(edge.to);
-  }
-
-  const cycles: string[][] = [];
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-  const stack: string[] = [];
-
-  const visit = (file: string) => {
-    if (visiting.has(file)) {
-      const start = stack.indexOf(file);
-      if (start >= 0) {
-        cycles.push(stack.slice(start));
-      }
-      return;
-    }
-    if (visited.has(file)) {
-      return;
-    }
-    visiting.add(file);
-    stack.push(file);
-    for (const next of adjacency.get(file) ?? []) {
-      visit(next);
-    }
-    stack.pop();
-    visiting.delete(file);
-    visited.add(file);
-  };
-
-  files.forEach(visit);
-  return cycles;
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
 }

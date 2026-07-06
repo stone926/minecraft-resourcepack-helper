@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { normalizePathKey } from "../../mc-assets/src";
 import {
   bindRsglProgram,
   RsglProgram,
@@ -44,7 +45,7 @@ export class RsglWorkspaceSemanticCache {
 
   public invalidatePath(fileName: string): void {
     const normalizedFileName = normalizeFileName(path.resolve(fileName));
-    const key = fileNameKey(normalizedFileName);
+    const key = normalizePathKey(normalizedFileName);
     this.sourceCache.invalidatePath(normalizedFileName);
 
     for (const [programKey, cached] of this.programs) {
@@ -75,7 +76,7 @@ export class RsglWorkspaceSemanticCache {
     const files = this.sourceCache.loadProgramFromDirectory(normalizedRootDirectory);
     return this.loadProgram("directory", normalizedRootDirectory, files, {
       rootDirectory: normalizedRootDirectory,
-      rootDirectoryKey: fileNameKey(normalizedRootDirectory)
+      rootDirectoryKey: normalizePathKey(normalizedRootDirectory)
     });
   }
 
@@ -89,7 +90,7 @@ export class RsglWorkspaceSemanticCache {
     files: RsglSourceFile[],
     options: { entryFileName?: string; rootDirectory?: string; rootDirectoryKey?: string }
   ): RsglWorkspaceSemanticProgram {
-    const programKey = `${sourceKind}:${fileNameKey(sourceName)}`;
+    const programKey = `${sourceKind}:${normalizePathKey(sourceName)}`;
     const signature = this.createProgramSignature(files);
     const cached = this.programs.get(programKey);
     if (cached?.signature === signature) {
@@ -106,7 +107,7 @@ export class RsglWorkspaceSemanticCache {
     };
     this.programs.set(programKey, {
       signature,
-      dependencyKeys: new Set(files.map(file => fileNameKey(file.fileName))),
+      dependencyKeys: new Set(files.map(file => normalizePathKey(file.fileName))),
       rootDirectoryKey: options.rootDirectoryKey,
       result
     });
@@ -115,7 +116,7 @@ export class RsglWorkspaceSemanticCache {
 
   private createProgramSignature(files: RsglSourceFile[]): string {
     return files
-      .map(file => `${fileNameKey(file.fileName)}@${this.sourceFileId(file)}`)
+      .map(file => `${normalizePathKey(file.fileName)}@${this.sourceFileId(file)}`)
       .join("|");
   }
 
@@ -134,12 +135,7 @@ function normalizeFileName(fileName: string): string {
   return path.normalize(fileName);
 }
 
-function fileNameKey(fileName: string): string {
-  const normalized = normalizeFileName(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
 function isPathInsideOrEqual(fileName: string, directoryKey: string): boolean {
-  const relative = path.relative(directoryKey, fileNameKey(fileName));
+  const relative = path.relative(directoryKey, normalizePathKey(fileName));
   return relative === "" || (relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative));
 }

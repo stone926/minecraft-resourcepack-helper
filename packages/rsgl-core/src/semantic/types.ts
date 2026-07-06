@@ -145,6 +145,8 @@ export interface RsglModuleResolver {
 export interface RsglBindOptions {
   fileName?: string;
   resolver?: RsglModuleResolver;
+  /** Overrides the directory the bundled RSGL stdlib is discovered from (test seam). */
+  stdlibRoot?: string;
 }
 
 export const unknownType: RsglType = { kind: "Unknown" };
