@@ -6,31 +6,7 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "Run Main Extension",
-			"type": "extensionHost",
-			"request": "launch",
-			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}"
-			],
-			"outFiles": [
-				"${workspaceFolder}/out/**/*.js"
-			],
-			"preLaunchTask": "npm: compile"
-		},
-		{
-			"name": "Run RSGL Extension",
-			"type": "extensionHost",
-			"request": "launch",
-			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode-rsgl"
-			],
-			"outFiles": [
-				"${workspaceFolder}/extensions/vscode-rsgl/out/**/*.js"
-			],
-			"preLaunchTask": "npm: compile:rsgl-extension"
-		},
-		{
-			"name": "Run Main + RSGL Extensions",
+			"name": "Run Extensions",
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [

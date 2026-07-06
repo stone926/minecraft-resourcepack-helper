@@ -46,8 +46,8 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Compile split extensions
-        run: npm run compile:all
+      - name: Compile RSGL extension
+        run: npm run compile:rsgl-extension
 
       - name: Package VSIX smoke test
         if: runner.os == 'Linux'
