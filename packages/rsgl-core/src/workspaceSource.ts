@@ -10,7 +10,6 @@ import { RsglSourceFile } from "./semantic";
 import {
   isRsglStdlibImportSource,
   readRsglStdlibVirtualSource,
-  resolveRsglStdlibOverrideFromDisk,
   rsglStdlibVirtualFileName
 } from "./stdlib";
 
@@ -186,8 +185,7 @@ function resolveModuleSourceFileName(fromFileName: string, source: string): stri
     return path.resolve(path.dirname(fromFileName), source);
   }
   if (isRsglStdlibImportSource(source)) {
-    return resolveRsglStdlibOverrideFromDisk(fromFileName, source)
-      ?? rsglStdlibVirtualFileName(source);
+    return rsglStdlibVirtualFileName(source);
   }
   return null;
 }

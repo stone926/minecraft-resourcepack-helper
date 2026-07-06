@@ -25,7 +25,6 @@ import {
 import {
   includeRsglStdlibSourceFiles,
   isRsglStdlibImportSource,
-  resolveRsglStdlibOverrideFromFiles,
   rsglStdlibVirtualFileName
 } from "../stdlib";
 import { bindRsglArguments } from "../arguments";
@@ -1185,14 +1184,9 @@ function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnosti
 
 function createDefaultResolver(files: RsglSourceFile[]) {
   const fileNames = new Set(files.map(file => normalizeFileName(file.fileName)));
-  const orderedFileNames = files.map(file => file.fileName);
   return {
     resolveImport(fromFileName: string, source: string): string | null {
       if (isRsglStdlibImportSource(source)) {
-        const override = resolveRsglStdlibOverrideFromFiles(source, orderedFileNames);
-        if (override) {
-          return normalizeFileName(override);
-        }
         const virtual = rsglStdlibVirtualFileName(source);
         return virtual && fileNames.has(normalizeFileName(virtual)) ? normalizeFileName(virtual) : null;
       }

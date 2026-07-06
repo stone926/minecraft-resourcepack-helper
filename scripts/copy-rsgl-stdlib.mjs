@@ -12,10 +12,6 @@ const outputRoots = [
   path.join(repoRoot, "extensions", "vscode-rsgl", "out")
 ];
 
-if (!existsSync(source)) {
-  throw new Error(`RSGL stdlib source directory not found: ${source}`);
-}
-
 for (const outputRoot of outputRoots) {
   const compiledCoreRoot = path.join(outputRoot, "packages", "rsgl-core", "src");
   if (!existsSync(compiledCoreRoot)) {
@@ -24,5 +20,9 @@ for (const outputRoot of outputRoots) {
   const target = path.join(compiledCoreRoot, "stdlib", "rsgl");
   rmSync(target, { recursive: true, force: true });
   mkdirSync(path.dirname(target), { recursive: true });
-  cpSync(source, target, { recursive: true });
+  if (existsSync(source)) {
+    cpSync(source, target, { recursive: true });
+  } else {
+    mkdirSync(target, { recursive: true });
+  }
 }

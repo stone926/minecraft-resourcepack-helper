@@ -1,8 +1,0 @@
-template slab(bottom: ModelId, top: ModelId, double: ModelId) {
-  variants {
-    [type="bottom"] -> @bottom
-    [type="top"] -> @top
-    [type="double"] -> @double
-  }
-}
-export { slab }

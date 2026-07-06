@@ -5,23 +5,8 @@ import { RsglSourceFile } from "../semantic";
 
 export const rsglStdlibScheme = "rsgl:";
 export const rsglStdlibVirtualRoot = "<rsgl-stdlib>";
-export const rsglStdlibOverrideDirectory = "rsgl-std";
 
 const stdlibDirectoryName = "rsgl";
-
-const blockstatePreludeModulePaths = [
-  "blockstates/stairs.rsgl",
-  "blockstates/slab.rsgl",
-  "blockstates/fence.rsgl",
-  "blockstates/fence_gate.rsgl",
-  "blockstates/door.rsgl",
-  "blockstates/trapdoor.rsgl",
-  "blockstates/wall.rsgl",
-  "blockstates/pane.rsgl"
-] as const;
-
-const stdlibModulePaths = [...blockstatePreludeModulePaths] as const;
-const preludeModulePaths = blockstatePreludeModulePaths;
 
 export function isRsglStdlibImportSource(source: string): boolean {
   return source.startsWith(rsglStdlibScheme);
@@ -64,27 +49,15 @@ export function createRsglStdlibSourceFile(source: string): RsglSourceFile | nul
 }
 
 export function createAllRsglStdlibSourceFiles(): RsglSourceFile[] {
-  return stdlibModulePaths
+  return enumerateRsglStdlibModulePaths()
     .map(source => createRsglStdlibSourceFile(source))
     .filter((file): file is RsglSourceFile => Boolean(file));
 }
 
-export function createRsglStdlibPreludeSourceFiles(fromFileName?: string): RsglSourceFile[] {
-  return preludeModulePaths
-    .map(source => createRsglStdlibPreludeSourceFile(source, fromFileName))
+export function createRsglStdlibPreludeSourceFiles(): RsglSourceFile[] {
+  return enumerateRsglStdlibPreludeModulePaths()
+    .map(source => createRsglStdlibSourceFile(source))
     .filter((file): file is RsglSourceFile => Boolean(file));
-}
-
-function createRsglStdlibPreludeSourceFile(source: string, fromFileName: string | undefined): RsglSourceFile | null {
-  const override = fromFileName ? resolveRsglStdlibOverrideFromDisk(fromFileName, source) : null;
-  if (override) {
-    try {
-      return { fileName: path.normalize(override), module: parseRsgl(fs.readFileSync(override, "utf8")) };
-    } catch {
-      return null;
-    }
-  }
-  return createRsglStdlibSourceFile(source);
 }
 
 export function readRsglStdlibVirtualSource(fileName: string): string | null {
@@ -95,39 +68,6 @@ export function readRsglStdlibVirtualSource(fileName: string): string | null {
   return readRsglStdlibSource(relative);
 }
 
-export function resolveRsglStdlibOverrideFromDisk(fromFileName: string, source: string): string | null {
-  const modulePath = normalizeRsglStdlibModulePath(source);
-  if (!modulePath || isRsglStdlibVirtualFileName(fromFileName)) {
-    return null;
-  }
-
-  let directory = path.dirname(path.resolve(fromFileName));
-  while (true) {
-    const candidate = path.join(directory, rsglStdlibOverrideDirectory, ...modulePath.split("/"));
-    try {
-      if (fs.statSync(candidate).isFile()) {
-        return path.normalize(candidate);
-      }
-    } catch {
-      // Keep walking parent directories.
-    }
-    const parent = path.dirname(directory);
-    if (parent === directory) {
-      return null;
-    }
-    directory = parent;
-  }
-}
-
-export function resolveRsglStdlibOverrideFromFiles(source: string, fileNames: readonly string[]): string | null {
-  const modulePath = normalizeRsglStdlibModulePath(source);
-  if (!modulePath) {
-    return null;
-  }
-  const suffix = path.join(rsglStdlibOverrideDirectory, ...modulePath.split("/")).toLowerCase();
-  return fileNames.find(fileName => path.normalize(fileName).toLowerCase().endsWith(suffix)) ?? null;
-}
-
 export function includeRsglStdlibSourceFiles(files: readonly RsglSourceFile[]): RsglSourceFile[] {
   const result = [...files];
   const known = new Set(result.map(file => path.normalize(file.fileName)));
@@ -135,9 +75,6 @@ export function includeRsglStdlibSourceFiles(files: readonly RsglSourceFile[]): 
   for (let index = 0; index < result.length; index++) {
     const file = result[index];
     for (const source of collectRsglStdlibImports(file.module)) {
-      if (resolveRsglStdlibOverrideFromFiles(source, result.map(item => item.fileName))) {
-        continue;
-      }
       const sourceFile = createRsglStdlibSourceFile(source);
       if (!sourceFile) {
         continue;
@@ -177,6 +114,51 @@ function rsglStdlibSourceFilePath(source: string): string | null {
     }
   }
   return null;
+}
+
+function enumerateRsglStdlibModulePaths(): string[] {
+  const modulePaths: string[] = [];
+  const known = new Set<string>();
+  for (const root of rsglStdlibRootCandidates()) {
+    for (const fileName of enumerateRsglFiles(root)) {
+      const modulePath = path.relative(root, fileName).replace(/\\/g, "/");
+      if (!known.has(modulePath)) {
+        known.add(modulePath);
+        modulePaths.push(modulePath);
+      }
+    }
+  }
+  return modulePaths;
+}
+
+function enumerateRsglStdlibPreludeModulePaths(): string[] {
+  return enumerateRsglStdlibModulePaths().filter(isRsglStdlibPreludeModulePath);
+}
+
+function isRsglStdlibPreludeModulePath(modulePath: string): boolean {
+  return modulePath === "prelude.rsgl" || modulePath.endsWith("/prelude.rsgl");
+}
+
+function enumerateRsglFiles(root: string): string[] {
+  const result: string[] = [];
+  const visit = (directory: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const fileName = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(fileName);
+      } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".rsgl") {
+        result.push(path.normalize(fileName));
+      }
+    }
+  };
+  visit(root);
+  return result;
 }
 
 function rsglStdlibRootCandidates(): string[] {

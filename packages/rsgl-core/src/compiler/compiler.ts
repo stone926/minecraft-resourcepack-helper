@@ -80,7 +80,7 @@ import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
 import { RsglResourceValidationOptions, validateResourceUnits } from "./validation";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
 import { isRsglGenericJsonResourceKind } from "../resourceKinds";
-import { createRsglStdlibPreludeSourceFiles, includeRsglStdlibSourceFiles, isRsglStdlibVirtualFileName } from "../stdlib";
+import { createRsglStdlibPreludeSourceFiles, includeRsglStdlibSourceFiles } from "../stdlib";
 import {
   blockstateMultipartPath,
   blockstateVariantPath,
@@ -173,24 +173,17 @@ type MultipartEntriesCompileResult = {
   mappings: RsglMapping[];
 };
 
-let cachedStdlibPreludeTemplates: RsglTemplateDefinition[] | null = null;
-
-function rsglStdlibPreludeTemplates(fileName: string): RsglTemplateDefinition[] {
-  const files = createRsglStdlibPreludeSourceFiles(fileName);
-  const hasOverride = files.some(file => !isRsglStdlibVirtualFileName(file.fileName));
-  if (!hasOverride && cachedStdlibPreludeTemplates) {
-    return cachedStdlibPreludeTemplates;
+function rsglStdlibPreludeTemplates(): RsglTemplateDefinition[] {
+  const files = createRsglStdlibPreludeSourceFiles();
+  if (files.length === 0) {
+    return [];
   }
 
   const program = bindRsglProgram(files);
   const environments = createProgramCompileEnvironments(program, undefined);
-  const templates = program.models.flatMap(model =>
+  return program.models.flatMap(model =>
     Array.from(environments.get(normalizeFileName(model.fileName))?.exportedTemplates.values() ?? [])
   );
-  if (!hasOverride) {
-    cachedStdlibPreludeTemplates = templates;
-  }
-  return templates;
 }
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
@@ -348,7 +341,7 @@ export class RsglCompiler {
   ) { }
 
   public compile(): RsglCompileResult {
-    for (const template of rsglStdlibPreludeTemplates(this.options.fileName)) {
+    for (const template of rsglStdlibPreludeTemplates()) {
       this.templates.set(template.name, template);
     }
     for (const template of this.options.externalTemplates ?? []) {

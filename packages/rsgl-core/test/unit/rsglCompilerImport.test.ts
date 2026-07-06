@@ -3,18 +3,19 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromFile } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
+import { createAllRsglStdlibSourceFiles } from "../../src/stdlib";
 import { createTempDir } from "./rsglTestHelpers";
 
 describe("RSGL compiler imports", () => {
-  it("expands templates imported from the bundled RSGL stdlib", () => {
+  it("does not bundle vanilla blockstate templates in the RSGL stdlib", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const result = compileRsglProgram([
       {
         fileName: mainFile,
         module: parseRsgl([
-          "import { slab } from \"rsgl:blockstates/slab.rsgl\"",
+          "import { slab as bundledSlab } from \"rsgl:blockstates/slab.rsgl\"",
           "blockstate acacia_slab {",
-          "  use slab(",
+          "  use bundledSlab(",
           "    bottom: minecraft:block/acacia_slab,",
           "    top: minecraft:block/acacia_slab_top,",
           "    double: minecraft:block/acacia_planks",
@@ -24,31 +25,57 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.deepStrictEqual(result.units[0].content, {
-      variants: {
-        ["type=bottom"]: { model: "minecraft:block/acacia_slab" },
-        ["type=top"]: { model: "minecraft:block/acacia_slab_top" },
-        ["type=double"]: { model: "minecraft:block/acacia_planks" }
-      }
-    });
-    assert.ok(result.units[0].sourceMap.mappings.some(mapping =>
-      mapping.sourceFile.includes(`${path.normalize("<rsgl-stdlib>")}${path.sep}blockstates${path.sep}slab.rsgl`)
-    ));
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
   });
 
-  it("prefers project rsgl-std overrides for stdlib imports", () => {
+  it("discovers bundled stdlib files from disk without a TypeScript list", () => {
+    const stdlibFile = path.resolve("packages", "rsgl-core", "src", "stdlib", "rsgl", "__dynamic_test.rsgl");
+    fs.mkdirSync(path.dirname(stdlibFile), { recursive: true });
+    try {
+      fs.writeFileSync(stdlibFile, [
+        "template dynamicStdlibCube(id: ResourceId) {",
+        "  model block id {",
+        "    parent minecraft:block/cube_all",
+        "  }",
+        "}",
+        "export { dynamicStdlibCube }"
+      ].join("\n"));
+
+      const stdlibFiles = createAllRsglStdlibSourceFiles();
+      assert.ok(stdlibFiles.some(file => file.fileName === path.join("<rsgl-stdlib>", "__dynamic_test.rsgl")));
+
+      const mainFile = path.resolve("pack", "main.rsgl");
+      const result = compileRsglProgram([
+        {
+          fileName: mainFile,
+          module: parseRsgl([
+            "import { dynamicStdlibCube } from \"rsgl:__dynamic_test.rsgl\"",
+            "use dynamicStdlibCube(stone)"
+          ].join("\n"))
+        }
+      ], { entryFileName: mainFile });
+
+      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+      assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+        "assets/minecraft/models/block/stone.json"
+      ]);
+    } finally {
+      fs.rmSync(stdlibFile, { force: true });
+    }
+  });
+
+  it("does not load project rsgl-std modules for rsgl imports", () => {
     const root = createTempDir();
     const mainFile = path.join(root, "main.rsgl");
-    const overrideFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
-    fs.mkdirSync(path.dirname(overrideFile), { recursive: true });
+    const projectStdlibFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
+    fs.mkdirSync(path.dirname(projectStdlibFile), { recursive: true });
     fs.writeFileSync(mainFile, [
-      "import { slab } from \"rsgl:blockstates/slab.rsgl\"",
+      "import { slab as projectSlab } from \"rsgl:blockstates/slab.rsgl\"",
       "blockstate custom_slab {",
-      "  use slab(bottom: minecraft:block/custom_bottom, top: minecraft:block/custom_top, double: minecraft:block/custom_double)",
+      "  use projectSlab(bottom: minecraft:block/custom_bottom, top: minecraft:block/custom_top, double: minecraft:block/custom_double)",
       "}"
     ].join("\n"));
-    fs.writeFileSync(overrideFile, [
+    fs.writeFileSync(projectStdlibFile, [
       "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
       "  variants {",
       "    [custom=\"override\"] -> @double",
@@ -57,41 +84,14 @@ describe("RSGL compiler imports", () => {
       "export { slab }"
     ].join("\n"));
 
+    const loadedFiles = loadRsglSourceFilesFromFile(mainFile);
     const result = compileRsglFile(mainFile);
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.deepStrictEqual(result.units[0].content, {
-      variants: {
-        ["custom=override"]: { model: "minecraft:block/custom_double" }
-      }
-    });
-    assert.ok(result.units[0].sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(overrideFile)));
-  });
-
-  it("uses project rsgl-std overrides for top-level stdlib uses", () => {
-    const root = createTempDir();
-    const mainFile = path.join(root, "main.rsgl");
-    const overrideFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
-    fs.mkdirSync(path.dirname(overrideFile), { recursive: true });
-    fs.writeFileSync(mainFile, "use slab(id: custom_slab, double: minecraft:block/custom_double)");
-    fs.writeFileSync(overrideFile, [
-      "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
-      "  variants {",
-      "    [custom=\"sugar\"] -> @top",
-      "  }",
-      "}",
-      "export { slab }"
-    ].join("\n"));
-
-    const result = compileRsglFile(mainFile);
-
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.deepStrictEqual(result.units[0].content, {
-      variants: {
-        ["custom=sugar"]: { model: "minecraft:block/custom_slab_top" }
-      }
-    });
-    assert.ok(result.units[0].sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(overrideFile)));
+    assert.deepStrictEqual(loadedFiles.map(file => file.fileName), [path.normalize(path.resolve(mainFile))]);
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
+    assert.strictEqual(result.units.some(unit =>
+      unit.sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(projectStdlibFile))
+    ), false);
   });
 
   it("expands templates imported from another RSGL file", () => {
