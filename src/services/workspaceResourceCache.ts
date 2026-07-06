@@ -6,11 +6,12 @@ import {
   JsonDocumentNode,
   memberName,
   objectMembers,
-  parseJsonAst,
-  stringValue
+  parseJsonAst
 } from "../utils/jsonAst";
 import {
+  findPackRoot,
   getDocumentResourceRootCandidates,
+  normalizePathKey,
   parsePackMetadata,
   parseResourceLocation,
   readOggMetadata,
@@ -21,6 +22,17 @@ import {
   type PngMetadata,
   type ResourceLocation
 } from "../../packages/mc-assets/src";
+import { DependencyIndex } from "./dependencyIndex";
+import { LruCache } from "./lruCache";
+import {
+  collectModelTextureVariableDefinitions,
+  loadModelParentChain,
+  modelSourceForFile,
+  type CachedModelDocument,
+  type CachedTextureVariableDefinition
+} from "./modelParentChain";
+
+export type { CachedModelDocument, CachedTextureVariableDefinition } from "./modelParentChain";
 
 export interface CacheTextDocument {
   fileName: string;
@@ -47,18 +59,6 @@ export interface ResourceResolveRequest {
 export interface ResourceConfiguration {
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
-}
-
-export interface CachedModelDocument {
-  ast: JsonDocumentNode;
-  fileName: string;
-  source: string;
-}
-
-export interface CachedTextureVariableDefinition {
-  fileName: string;
-  line: number;
-  character: number;
 }
 
 export interface CacheStatsSnapshot {
@@ -89,64 +89,6 @@ type OpenTextDocumentProvider = (fileName: string) => CacheTextDocument | null;
 
 const emptyPackMetadata: PackMetadata = { overlays: [], filters: [] };
 
-class LruCache<K, V> {
-  private readonly values = new Map<K, V>();
-
-  constructor(
-    private readonly maxEntries: number,
-    private readonly onEvict?: (key: K, value: V) => void
-  ) { }
-
-  get(key: K): V | undefined {
-    const value = this.values.get(key);
-    if (value !== undefined) {
-      this.values.delete(key);
-      this.values.set(key, value);
-    }
-    return value;
-  }
-
-  set(key: K, value: V): void {
-    if (this.values.has(key)) {
-      this.values.delete(key);
-    }
-
-    this.values.set(key, value);
-    while (this.values.size > this.maxEntries) {
-      const oldestKey = this.values.keys().next().value as K | undefined;
-      if (oldestKey === undefined) {
-        break;
-      }
-      const oldestValue = this.values.get(oldestKey);
-      this.values.delete(oldestKey);
-      if (oldestValue !== undefined) {
-        this.onEvict?.(oldestKey, oldestValue);
-      }
-    }
-  }
-
-  delete(key: K): void {
-    const value = this.values.get(key);
-    this.values.delete(key);
-    if (value !== undefined) {
-      this.onEvict?.(key, value);
-    }
-  }
-
-  clear(): void {
-    if (this.onEvict) {
-      for (const [key, value] of this.values) {
-        this.onEvict(key, value);
-      }
-    }
-    this.values.clear();
-  }
-
-  get size(): number {
-    return this.values.size;
-  }
-}
-
 export class WorkspaceResourceCache {
   private configurationVersion = 0;
   private resourceFsGeneration = 0;
@@ -162,23 +104,21 @@ export class WorkspaceResourceCache {
   private readonly resourceRootCandidatesCache = new LruCache<string, CacheEntry<string[]>>(4096);
   private readonly resourceResolutionCache = new LruCache<string, CacheEntry<string | null>>(
     8192,
-    key => this.clearResourceResolutionDependencies(key)
+    key => this.resourceResolutionDependencies.release(key)
   );
-  private readonly resourceResolutionDependenciesByPath = new Map<string, Set<string>>();
-  private readonly resourceResolutionDependencyPathsByKey = new Map<string, Set<string>>();
+  private readonly resourceResolutionDependencies = new DependencyIndex();
   private readonly soundEventsCache = new LruCache<string, VersionedCacheEntry<Set<string> | null>>(512);
   private readonly oggMetadataCache = new LruCache<string, VersionedCacheEntry<OggMetadata | null>>(2048);
   private readonly pngMetadataCache = new LruCache<string, VersionedCacheEntry<PngMetadata | null>>(2048);
   private readonly modelParentChainCache = new LruCache<string, CacheEntry<CachedModelDocument[]>>(
     1024,
-    key => this.clearModelCacheDependencies(`chain\0${key}`)
+    key => this.modelCacheDependencies.release(`chain\0${key}`)
   );
   private readonly modelTextureDefinitionsCache = new LruCache<string, CacheEntry<ReadonlyMap<string, CachedTextureVariableDefinition>>>(
     1024,
-    key => this.clearModelCacheDependencies(`definitions\0${key}`)
+    key => this.modelCacheDependencies.release(`definitions\0${key}`)
   );
-  private readonly modelCacheDependenciesByPath = new Map<string, Set<string>>();
-  private readonly modelCacheDependencyPathsByKey = new Map<string, Set<string>>();
+  private readonly modelCacheDependencies = new DependencyIndex();
   private readonly hits = new Map<string, number>();
   private readonly misses = new Map<string, number>();
 
@@ -195,21 +135,11 @@ export class WorkspaceResourceCache {
   }
 
   getPathExists(fileName: string): boolean {
-    const key = pathKey(fileName);
-    const cached = this.pathExistsCache.get(key);
-    if (cached && cached.generation === this.resourceFsGeneration) {
-      this.hit("pathExists");
-      return cached.value;
-    }
-
-    this.miss("pathExists");
-    const exists = fs.existsSync(fileName);
-    this.pathExistsCache.set(key, { generation: this.resourceFsGeneration, value: exists });
-    return exists;
+    return this.getGenerationalValue("pathExists", this.pathExistsCache, normalizePathKey(fileName), () => fs.existsSync(fileName));
   }
 
   getDirectoryEntries(directory: string): Promise<Dirent[] | null> {
-    const key = pathKey(directory);
+    const key = normalizePathKey(directory);
     const cached = this.directoryEntriesCache.get(key);
     if (cached) {
       this.hit("directoryEntries");
@@ -223,22 +153,13 @@ export class WorkspaceResourceCache {
   }
 
   getDirectoryEntriesSync(directory: string): Dirent[] | null {
-    const key = pathKey(directory);
-    const cached = this.directoryEntriesSyncCache.get(key);
-    if (cached && cached.generation === this.resourceFsGeneration) {
-      this.hit("directoryEntriesSync");
-      return cached.value;
-    }
-
-    this.miss("directoryEntriesSync");
-    let entries: Dirent[] | null;
-    try {
-      entries = fs.readdirSync(directory, { withFileTypes: true });
-    } catch {
-      entries = null;
-    }
-    this.directoryEntriesSyncCache.set(key, { generation: this.resourceFsGeneration, value: entries });
-    return entries;
+    return this.getGenerationalValue("directoryEntriesSync", this.directoryEntriesSyncCache, normalizePathKey(directory), () => {
+      try {
+        return fs.readdirSync(directory, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+    });
   }
 
   getJsonAst(document: CacheTextDocument): JsonDocumentNode | null {
@@ -265,23 +186,13 @@ export class WorkspaceResourceCache {
       return this.getJsonAst(openDocument);
     }
 
-    const key = pathKey(fileName);
-    const version = this.getFileVersion(fileName) ?? `missing:${this.resourceFsGeneration}`;
-    const cached = this.fileAstCache.get(key);
-    if (cached && cached.version === version) {
-      this.hit("fileAst");
-      return cached.value;
-    }
-
-    this.miss("fileAst");
-    let ast: JsonDocumentNode | null;
-    try {
-      ast = parseJsonAst(fs.readFileSync(fileName, "utf8"));
-    } catch {
-      ast = null;
-    }
-    this.fileAstCache.set(key, { version, value: ast });
-    return ast;
+    return this.getVersionedFileValue("fileAst", this.fileAstCache, fileName, () => {
+      try {
+        return parseJsonAst(fs.readFileSync(fileName, "utf8"));
+      } catch {
+        return null;
+      }
+    });
   }
 
   getFileVersion(fileName: string): string | null {
@@ -299,36 +210,21 @@ export class WorkspaceResourceCache {
   }
 
   getPackRoot(fileName: string): string | null {
-    const key = pathKey(fileName);
-    const cached = this.packRootCache.get(key);
-    if (cached && cached.generation === this.resourceFsGeneration) {
-      this.hit("packRoot");
-      return cached.value;
-    }
-
-    this.miss("packRoot");
-    const packRoot = this.findPackRoot(fileName, null);
-    this.packRootCache.set(key, { generation: this.resourceFsGeneration, value: packRoot });
-    return packRoot;
+    return this.getGenerationalValue("packRoot", this.packRootCache, normalizePathKey(fileName), () =>
+      findPackRoot(fileName, { pathExists: candidate => this.getPathExists(candidate) }));
   }
 
   getPackRootWithin(fileName: string, workspaceRoot: string): string | null {
     const normalizedWorkspaceRoot = path.normalize(workspaceRoot);
-    const key = `${pathKey(fileName)}\0${pathKey(normalizedWorkspaceRoot)}`;
-    const cached = this.packRootCache.get(key);
-    if (cached && cached.generation === this.resourceFsGeneration) {
-      this.hit("packRoot");
-      return cached.value;
-    }
-
-    this.miss("packRoot");
-    const packRoot = this.findPackRoot(fileName, normalizedWorkspaceRoot);
-    this.packRootCache.set(key, { generation: this.resourceFsGeneration, value: packRoot });
-    return packRoot;
+    const key = `${normalizePathKey(fileName)}\0${normalizePathKey(normalizedWorkspaceRoot)}`;
+    return this.getGenerationalValue("packRoot", this.packRootCache, key, () => findPackRoot(fileName, {
+      pathExists: candidate => this.getPathExists(candidate),
+      stopAt: normalizedWorkspaceRoot
+    }));
   }
 
   getPackMetadata(packRoot: string): PackMetadata {
-    const key = pathKey(packRoot);
+    const key = normalizePathKey(packRoot);
     const mcmetaPath = path.join(packRoot, "pack.mcmeta");
     const version = this.getFileVersion(mcmetaPath) ?? `missing:${this.resourceFsGeneration}`;
     const cached = this.packMetadataCache.get(key);
@@ -348,38 +244,30 @@ export class WorkspaceResourceCache {
 
   getResourceRootCandidates(request: ResourceResolveRequest, resourcePath: string, namespace: string): string[] {
     const key = [
-      pathKey(request.sourceFileName),
+      normalizePathKey(request.sourceFileName),
       request.source,
       request.target,
       namespace,
       resourcePath,
       normalizeOptionalPath(request.defaultAssetsPath),
-      (request.resourcePackRoots ?? []).map(root => pathKey(root)).join("|"),
+      (request.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
       this.configurationVersion
     ].join("\0");
-    const cached = this.resourceRootCandidatesCache.get(key);
-    if (cached && cached.generation === this.resourceFsGeneration) {
-      this.hit("resourceRootCandidates");
-      return cached.value;
-    }
-
-    this.miss("resourceRootCandidates");
-    const candidates = getDocumentResourceRootCandidates(
-      request.sourceFileName,
-      request.source,
-      request.defaultAssetsPath,
-      namespace,
-      request.target,
-      {
-        pathExists: fileName => this.getPathExists(fileName),
-        getPackRoot: fileName => this.getPackRoot(fileName),
-        getPackMetadata: packRoot => this.getPackMetadata(packRoot),
-        resourcePackRoots: request.resourcePackRoots,
-        resourcePath
-      }
-    );
-    this.resourceRootCandidatesCache.set(key, { generation: this.resourceFsGeneration, value: candidates });
-    return candidates;
+    return this.getGenerationalValue("resourceRootCandidates", this.resourceRootCandidatesCache, key, () =>
+      getDocumentResourceRootCandidates(
+        request.sourceFileName,
+        request.source,
+        request.defaultAssetsPath,
+        namespace,
+        request.target,
+        {
+          pathExists: fileName => this.getPathExists(fileName),
+          getPackRoot: fileName => this.getPackRoot(fileName),
+          getPackMetadata: packRoot => this.getPackMetadata(packRoot),
+          resourcePackRoots: request.resourcePackRoots,
+          resourcePath
+        }
+      ));
   }
 
   resolveResourcePath(request: ResourceResolveRequest): string | null {
@@ -393,7 +281,7 @@ export class WorkspaceResourceCache {
       location.resourcePath.replaceAll(path.sep, "/")
     );
     const key = [
-      pathKey(request.sourceFileName),
+      normalizePathKey(request.sourceFileName),
       request.source,
       request.target,
       request.targetFileExtension ?? "",
@@ -401,7 +289,7 @@ export class WorkspaceResourceCache {
       location.namespace,
       location.resourcePath,
       normalizeOptionalPath(request.defaultAssetsPath),
-      (request.resourcePackRoots ?? []).map(root => pathKey(root)).join("|"),
+      (request.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
       this.configurationVersion
     ].join("\0");
     const cached = this.resourceResolutionCache.get(key);
@@ -415,7 +303,7 @@ export class WorkspaceResourceCache {
       .map(root => path.join(root, location.resourcePath));
     const resolvedPath = unique(candidates).find(candidate => this.getPathExists(candidate)) ?? null;
     this.resourceResolutionCache.set(key, { generation: this.resourceFsGeneration, value: resolvedPath });
-    this.setResourceResolutionDependencies(key, [
+    this.resourceResolutionDependencies.register(key, [
       request.sourceFileName,
       ...candidates
     ]);
@@ -437,61 +325,20 @@ export class WorkspaceResourceCache {
   }
 
   getSoundEvents(soundsJsonPath: string): Set<string> | null {
-    const key = pathKey(soundsJsonPath);
-    const version = this.getFileVersion(soundsJsonPath) ?? `missing:${this.resourceFsGeneration}`;
-    const cached = this.soundEventsCache.get(key);
-    if (cached && cached.version === version) {
-      this.hit("soundEvents");
-      return cached.value;
-    }
-
-    this.miss("soundEvents");
-    const ast = this.getJsonFileAst(soundsJsonPath);
-    const events = ast
-      ? new Set(objectMembers(ast.body).map(member => memberName(member)).filter((name): name is string => Boolean(name)))
-      : null;
-    this.soundEventsCache.set(key, { version, value: events });
-    return events;
+    return this.getVersionedFileValue("soundEvents", this.soundEventsCache, soundsJsonPath, () => {
+      const ast = this.getJsonFileAst(soundsJsonPath);
+      return ast
+        ? new Set(objectMembers(ast.body).map(member => memberName(member)).filter((name): name is string => Boolean(name)))
+        : null;
+    });
   }
 
   getPngMetadata(fileName: string): PngMetadata | null {
-    const key = pathKey(fileName);
-    const version = this.getFileVersion(fileName) ?? `missing:${this.resourceFsGeneration}`;
-    const cached = this.pngMetadataCache.get(key);
-    if (cached && cached.version === version) {
-      this.hit("pngMetadata");
-      return cached.value;
-    }
-
-    this.miss("pngMetadata");
-    let metadata: PngMetadata | null;
-    try {
-      metadata = readPngMetadata(fs.readFileSync(fileName));
-    } catch {
-      metadata = null;
-    }
-    this.pngMetadataCache.set(key, { version, value: metadata });
-    return metadata;
+    return this.getVersionedFileValue("pngMetadata", this.pngMetadataCache, fileName, () => readFileMetadata(fileName, readPngMetadata));
   }
 
   getOggMetadata(fileName: string): OggMetadata | null {
-    const key = pathKey(fileName);
-    const version = this.getFileVersion(fileName) ?? `missing:${this.resourceFsGeneration}`;
-    const cached = this.oggMetadataCache.get(key);
-    if (cached && cached.version === version) {
-      this.hit("oggMetadata");
-      return cached.value;
-    }
-
-    this.miss("oggMetadata");
-    let metadata: OggMetadata | null;
-    try {
-      metadata = readOggMetadata(fs.readFileSync(fileName));
-    } catch {
-      metadata = null;
-    }
-    this.oggMetadataCache.set(key, { version, value: metadata });
-    return metadata;
+    return this.getVersionedFileValue("oggMetadata", this.oggMetadataCache, fileName, () => readFileMetadata(fileName, readOggMetadata));
   }
 
   getModelParentChain(
@@ -500,17 +347,7 @@ export class WorkspaceResourceCache {
     configuration: ResourceConfiguration,
     source = modelSourceForFile(document.fileName)
   ): CachedModelDocument[] {
-    const version = typeof document.version === "number"
-      ? `open:${document.version}`
-      : this.getFileVersion(document.fileName) ?? "unknown";
-    const key = [
-      pathKey(document.fileName),
-      version,
-      source,
-      normalizeOptionalPath(configuration.defaultAssetsPath),
-      (configuration.resourcePackRoots ?? []).map(root => pathKey(root)).join("|"),
-      this.configurationVersion
-    ].join("\0");
+    const key = this.modelCacheKey(document, source, configuration);
     const cached = this.modelParentChainCache.get(key);
     if (cached && cached.generation === this.resourceFsGeneration) {
       this.hit("modelParentChain");
@@ -518,9 +355,9 @@ export class WorkspaceResourceCache {
     }
 
     this.miss("modelParentChain");
-    const chain = this.loadModelParentChain(document.fileName, ast, source, configuration);
+    const chain = loadModelParentChain(this, document.fileName, ast, source, configuration);
     this.modelParentChainCache.set(key, { generation: this.resourceFsGeneration, value: chain });
-    this.setModelCacheDependencies(`chain\0${key}`, chain.map(model => model.fileName));
+    this.modelCacheDependencies.register(`chain\0${key}`, chain.map(model => model.fileName));
     return chain;
   }
 
@@ -530,17 +367,7 @@ export class WorkspaceResourceCache {
     configuration: ResourceConfiguration,
     source = modelSourceForFile(document.fileName)
   ): ReadonlyMap<string, CachedTextureVariableDefinition> {
-    const version = typeof document.version === "number"
-      ? `open:${document.version}`
-      : this.getFileVersion(document.fileName) ?? "unknown";
-    const key = [
-      pathKey(document.fileName),
-      version,
-      source,
-      normalizeOptionalPath(configuration.defaultAssetsPath),
-      (configuration.resourcePackRoots ?? []).map(root => pathKey(root)).join("|"),
-      this.configurationVersion
-    ].join("\0");
+    const key = this.modelCacheKey(document, source, configuration);
     const cached = this.modelTextureDefinitionsCache.get(key);
     if (cached && cached.generation === this.resourceFsGeneration) {
       this.hit("modelTextureDefinitions");
@@ -549,24 +376,9 @@ export class WorkspaceResourceCache {
 
     this.miss("modelTextureDefinitions");
     const chain = this.getModelParentChain(document, ast, configuration, source);
-    const definitions = new Map<string, CachedTextureVariableDefinition>();
-    for (const model of chain) {
-      const textures = objectMembers(model.ast.body).find(member => memberName(member) === "textures");
-      for (const texture of objectMembers(textures?.value)) {
-        const name = memberName(texture);
-        const location = texture.name?.loc ?? texture.loc;
-        if (name && location && !definitions.has(name)) {
-          definitions.set(name, {
-            fileName: model.fileName,
-            line: location.start.line - 1,
-            character: location.start.column - 1
-          });
-        }
-      }
-    }
-
+    const definitions = collectModelTextureVariableDefinitions(chain);
     this.modelTextureDefinitionsCache.set(key, { generation: this.resourceFsGeneration, value: definitions });
-    this.setModelCacheDependencies(`definitions\0${key}`, chain.map(model => model.fileName));
+    this.modelCacheDependencies.register(`definitions\0${key}`, chain.map(model => model.fileName));
     return definitions;
   }
 
@@ -582,35 +394,32 @@ export class WorkspaceResourceCache {
     this.packMetadataCache.clear();
     this.resourceRootCandidatesCache.clear();
     this.resourceResolutionCache.clear();
-    this.resourceResolutionDependenciesByPath.clear();
-    this.resourceResolutionDependencyPathsByKey.clear();
+    this.resourceResolutionDependencies.clear();
     this.soundEventsCache.clear();
     this.oggMetadataCache.clear();
     this.pngMetadataCache.clear();
     this.modelParentChainCache.clear();
     this.modelTextureDefinitionsCache.clear();
-    this.modelCacheDependenciesByPath.clear();
-    this.modelCacheDependencyPathsByKey.clear();
+    this.modelCacheDependencies.clear();
   }
 
   invalidatePath(fileName: string): void {
-    const key = pathKey(fileName);
+    const key = normalizePathKey(fileName);
     this.pathExistsCache.delete(key);
     this.fileAstCache.delete(key);
     this.documentAstCache.delete(key);
     this.soundEventsCache.delete(key);
     this.oggMetadataCache.delete(key);
     this.pngMetadataCache.delete(key);
-    this.directoryEntriesCache.delete(pathKey(path.dirname(fileName)));
-    this.directoryEntriesSyncCache.delete(pathKey(path.dirname(fileName)));
+    this.directoryEntriesCache.delete(normalizePathKey(path.dirname(fileName)));
+    this.directoryEntriesSyncCache.delete(normalizePathKey(path.dirname(fileName)));
 
     if (/[\\/]pack\.mcmeta$/i.test(fileName)) {
-      this.packMetadataCache.delete(pathKey(path.dirname(fileName)));
+      this.packMetadataCache.delete(normalizePathKey(path.dirname(fileName)));
       this.packRootCache.clear();
       this.resourceRootCandidatesCache.clear();
       this.resourceResolutionCache.clear();
-      this.resourceResolutionDependenciesByPath.clear();
-      this.resourceResolutionDependencyPathsByKey.clear();
+      this.resourceResolutionDependencies.clear();
     } else {
       this.deleteResourceResolutionDependenciesForPath(key);
     }
@@ -620,24 +429,22 @@ export class WorkspaceResourceCache {
 
   invalidateDocument(document: CacheTextDocument): void {
     this.documentAstCache.delete(documentKey(document));
-    this.fileAstCache.delete(pathKey(document.fileName));
-    this.soundEventsCache.delete(pathKey(document.fileName));
-    this.oggMetadataCache.delete(pathKey(document.fileName));
-    this.deleteModelCacheDependenciesForPath(pathKey(document.fileName));
+    this.fileAstCache.delete(normalizePathKey(document.fileName));
+    this.soundEventsCache.delete(normalizePathKey(document.fileName));
+    this.oggMetadataCache.delete(normalizePathKey(document.fileName));
+    this.deleteModelCacheDependenciesForPath(normalizePathKey(document.fileName));
   }
 
   invalidateConfiguration(): void {
     this.configurationVersion++;
     this.resourceRootCandidatesCache.clear();
     this.resourceResolutionCache.clear();
-    this.resourceResolutionDependenciesByPath.clear();
-    this.resourceResolutionDependencyPathsByKey.clear();
+    this.resourceResolutionDependencies.clear();
     this.directoryEntriesCache.clear();
     this.directoryEntriesSyncCache.clear();
     this.modelParentChainCache.clear();
     this.modelTextureDefinitionsCache.clear();
-    this.modelCacheDependenciesByPath.clear();
-    this.modelCacheDependencyPathsByKey.clear();
+    this.modelCacheDependencies.clear();
   }
 
   getStats(): CacheStatsSnapshot {
@@ -678,76 +485,46 @@ export class WorkspaceResourceCache {
     return this.openTextDocumentProvider?.(fileName) ?? null;
   }
 
-  private findPackRoot(fileName: string, stopAt: string | null): string | null {
-    let current = path.dirname(path.normalize(fileName));
-    const root = path.parse(current).root;
-    const normalizedStopAt = stopAt ? path.normalize(stopAt) : null;
-
-    while (true) {
-      if (this.getPathExists(path.join(current, "pack.mcmeta"))) {
-        return current;
-      }
-
-      if (current === root || (normalizedStopAt && isSamePath(current, normalizedStopAt))) {
-        return null;
-      }
-
-      current = path.dirname(current);
+  private getGenerationalValue<T>(cacheName: string, cache: LruCache<string, CacheEntry<T>>, key: string, compute: () => T): T {
+    const cached = cache.get(key);
+    if (cached && cached.generation === this.resourceFsGeneration) {
+      this.hit(cacheName);
+      return cached.value;
     }
+
+    this.miss(cacheName);
+    const value = compute();
+    cache.set(key, { generation: this.resourceFsGeneration, value });
+    return value;
   }
 
-  private loadModelParentChain(
-    fileName: string,
-    ast: JsonDocumentNode,
-    source: string,
-    configuration: ResourceConfiguration
-  ): CachedModelDocument[] {
-    const models: CachedModelDocument[] = [{
-      ast,
-      fileName,
-      source
-    }];
-    const visited = new Set([pathKey(fileName)]);
-
-    while (models.length <= 11) {
-      const current = models[models.length - 1];
-      const parent = findParentModel(current.ast);
-      if (!parent) {
-        break;
-      }
-
-      const parentFileName = this.resolveResourcePath({
-        resourcePath: parent,
-        sourceFileName: current.fileName,
-        target: "models",
-        source: current.source,
-        targetFileExtension: "json",
-        defaultAssetsPath: configuration.defaultAssetsPath,
-        resourcePackRoots: configuration.resourcePackRoots
-      });
-      if (!parentFileName) {
-        break;
-      }
-
-      const parentKey = pathKey(parentFileName);
-      if (visited.has(parentKey)) {
-        break;
-      }
-      visited.add(parentKey);
-
-      const parentAst = this.getJsonFileAst(parentFileName);
-      if (!parentAst) {
-        break;
-      }
-
-      models.push({
-        ast: parentAst,
-        fileName: parentFileName,
-        source: modelSourceForFile(parentFileName)
-      });
+  private getVersionedFileValue<T>(cacheName: string, cache: LruCache<string, VersionedCacheEntry<T>>, fileName: string, compute: () => T): T {
+    const key = normalizePathKey(fileName);
+    const version = this.getFileVersion(fileName) ?? `missing:${this.resourceFsGeneration}`;
+    const cached = cache.get(key);
+    if (cached && cached.version === version) {
+      this.hit(cacheName);
+      return cached.value;
     }
 
-    return models;
+    this.miss(cacheName);
+    const value = compute();
+    cache.set(key, { version, value });
+    return value;
+  }
+
+  private modelCacheKey(document: CacheTextDocument, source: string, configuration: ResourceConfiguration): string {
+    const version = typeof document.version === "number"
+      ? `open:${document.version}`
+      : this.getFileVersion(document.fileName) ?? "unknown";
+    return [
+      normalizePathKey(document.fileName),
+      version,
+      source,
+      normalizeOptionalPath(configuration.defaultAssetsPath),
+      (configuration.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
+      this.configurationVersion
+    ].join("\0");
   }
 
   private hit(cacheName: string): void {
@@ -758,92 +535,22 @@ export class WorkspaceResourceCache {
     this.misses.set(cacheName, (this.misses.get(cacheName) ?? 0) + 1);
   }
 
-  private setResourceResolutionDependencies(cacheKey: string, fileNames: string[]): void {
-    this.clearResourceResolutionDependencies(cacheKey);
-    const dependencyKeys = new Set(fileNames.map(fileName => pathKey(fileName)));
-    this.resourceResolutionDependencyPathsByKey.set(cacheKey, dependencyKeys);
-    for (const dependencyKey of dependencyKeys) {
-      const cacheKeys = this.resourceResolutionDependenciesByPath.get(dependencyKey);
-      if (cacheKeys) {
-        cacheKeys.add(cacheKey);
-      } else {
-        this.resourceResolutionDependenciesByPath.set(dependencyKey, new Set([cacheKey]));
-      }
-    }
-  }
-
   private deleteResourceResolutionDependenciesForPath(fileKey: string): void {
-    const cacheKeys = this.resourceResolutionDependenciesByPath.get(fileKey);
-    if (!cacheKeys) {
-      return;
-    }
-
-    for (const cacheKey of [...cacheKeys]) {
+    for (const cacheKey of this.resourceResolutionDependencies.affectedCacheKeys(fileKey)) {
       this.resourceResolutionCache.delete(cacheKey);
-      this.clearResourceResolutionDependencies(cacheKey);
-    }
-  }
-
-  private clearResourceResolutionDependencies(cacheKey: string): void {
-    const dependencyKeys = this.resourceResolutionDependencyPathsByKey.get(cacheKey);
-    if (!dependencyKeys) {
-      return;
-    }
-
-    for (const dependencyKey of dependencyKeys) {
-      const cacheKeys = this.resourceResolutionDependenciesByPath.get(dependencyKey);
-      cacheKeys?.delete(cacheKey);
-      if (cacheKeys?.size === 0) {
-        this.resourceResolutionDependenciesByPath.delete(dependencyKey);
-      }
-    }
-    this.resourceResolutionDependencyPathsByKey.delete(cacheKey);
-  }
-
-  private setModelCacheDependencies(cacheKey: string, fileNames: string[]): void {
-    this.clearModelCacheDependencies(cacheKey);
-    const dependencyKeys = new Set(fileNames.map(fileName => pathKey(fileName)));
-    this.modelCacheDependencyPathsByKey.set(cacheKey, dependencyKeys);
-    for (const dependencyKey of dependencyKeys) {
-      const cacheKeys = this.modelCacheDependenciesByPath.get(dependencyKey);
-      if (cacheKeys) {
-        cacheKeys.add(cacheKey);
-      } else {
-        this.modelCacheDependenciesByPath.set(dependencyKey, new Set([cacheKey]));
-      }
+      this.resourceResolutionDependencies.release(cacheKey);
     }
   }
 
   private deleteModelCacheDependenciesForPath(fileKey: string): void {
-    const cacheKeys = this.modelCacheDependenciesByPath.get(fileKey);
-    if (!cacheKeys) {
-      return;
-    }
-
-    for (const cacheKey of [...cacheKeys]) {
+    for (const cacheKey of this.modelCacheDependencies.affectedCacheKeys(fileKey)) {
       if (cacheKey.startsWith("chain\0")) {
         this.modelParentChainCache.delete(cacheKey.slice("chain\0".length));
       } else if (cacheKey.startsWith("definitions\0")) {
         this.modelTextureDefinitionsCache.delete(cacheKey.slice("definitions\0".length));
       }
-      this.clearModelCacheDependencies(cacheKey);
+      this.modelCacheDependencies.release(cacheKey);
     }
-  }
-
-  private clearModelCacheDependencies(cacheKey: string): void {
-    const dependencyKeys = this.modelCacheDependencyPathsByKey.get(cacheKey);
-    if (!dependencyKeys) {
-      return;
-    }
-
-    for (const dependencyKey of dependencyKeys) {
-      const cacheKeys = this.modelCacheDependenciesByPath.get(dependencyKey);
-      cacheKeys?.delete(cacheKey);
-      if (cacheKeys?.size === 0) {
-        this.modelCacheDependenciesByPath.delete(dependencyKey);
-      }
-    }
-    this.modelCacheDependencyPathsByKey.delete(cacheKey);
   }
 }
 
@@ -857,42 +564,24 @@ function parsePackMetadataSafely(text: string): PackMetadata {
   }
 }
 
-function findParentModel(ast: JsonDocumentNode): string | null {
-  const parent = objectMembers(ast.body).find(member => memberName(member) === "parent");
-  return stringValue(parent?.value) ?? null;
-}
-
-function modelSourceForFile(fileName: string): string {
-  if (/[\\/]models[\\/]item[\\/]/i.test(fileName)) {
-    return "models/item";
-  }
-
-  if (/[\\/]models[\\/]block[\\/]/i.test(fileName)) {
-    return "models/block";
-  }
-
-  return "models";
-}
-
 function documentKey(document: CacheTextDocument): string {
   if (document.uri) {
     return document.uri.toString();
   }
 
-  return pathKey(document.fileName);
-}
-
-function pathKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return normalizePathKey(document.fileName);
 }
 
 function normalizeOptionalPath(value: string | null | undefined): string {
-  return value ? pathKey(value) : "";
+  return value ? normalizePathKey(value) : "";
 }
 
-function isSamePath(left: string, right: string): boolean {
-  return pathKey(left) === pathKey(right);
+function readFileMetadata<T>(fileName: string, read: (bytes: Buffer) => T): T | null {
+  try {
+    return read(fs.readFileSync(fileName));
+  } catch {
+    return null;
+  }
 }
 
 function unique(values: string[]): string[] {

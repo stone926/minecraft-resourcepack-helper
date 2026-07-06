@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { normalizePathKey, packRootFromAssetsPath } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "./workspaceResourceCache";
 
 export interface CitResourceIdConfiguration {
@@ -294,7 +295,7 @@ function collectJsonIds(directory: string, namespace: string, prefix: string, ta
 
 function getAssetsRoots(documentFileName: string, configuration: CitResourceIdConfiguration): string[] {
   const roots: string[] = [];
-  const packRoot = workspaceResourceCache.getPackRoot(documentFileName) ?? getPackRootFromAssetsPath(documentFileName);
+  const packRoot = workspaceResourceCache.getPackRoot(documentFileName) ?? packRootFromAssetsPath(documentFileName);
   if (packRoot) {
     addAssetsRootCandidates(roots, packRoot);
   }
@@ -319,18 +320,6 @@ function addAssetsRootCandidates(roots: string[], candidate: string): void {
   roots.push(path.join(normalized, "assets"));
 }
 
-function getPackRootFromAssetsPath(fileName: string): string | null {
-  const normalizedPath = path.normalize(fileName);
-  const parsedPath = path.parse(normalizedPath);
-  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0) {
-    return null;
-  }
-
-  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
-}
-
 function normalizeResourceId(value: string): string {
   const clean = value.trim();
   return clean.includes(":") ? clean : `minecraft:${clean}`;
@@ -342,27 +331,12 @@ function joinResourcePath(left: string, right: string): string {
 
 function getCacheKey(documentFileName: string, configuration: CitResourceIdConfiguration): string {
   return [
-    pathKey(documentFileName),
-    configuration.defaultAssetsPath ? pathKey(configuration.defaultAssetsPath) : "",
-    (configuration.resourcePackRoots ?? []).map(root => pathKey(root)).join("|")
+    normalizePathKey(documentFileName),
+    configuration.defaultAssetsPath ? normalizePathKey(configuration.defaultAssetsPath) : "",
+    (configuration.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|")
   ].join("\0");
-}
-
-function pathKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function unique(values: string[]): string[] {
   return [...new Set(values.map(value => path.normalize(value)))];
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }
