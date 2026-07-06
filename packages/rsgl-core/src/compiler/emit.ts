@@ -1,4 +1,4 @@
-import { BinaryCopyRef, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
+import { BinaryCopyRef, isExternalResourceUnit, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
 
 const objectFieldOrder: Record<string, string[]> = {
   model: ["parent", "ambientocclusion", "gui_light", "display", "textures", "elements"],
@@ -40,6 +40,9 @@ export function emitRsglFiles(units: ResourceUnit[], options: RsglEmitOptions = 
   const files: RsglEmittedFile[] = [];
 
   for (const unit of sortedUnits) {
+    if (isExternalResourceUnit(unit)) {
+      continue;
+    }
     files.push(resourceFile(unit, indent));
 
     if (options.sourceMaps) {
@@ -143,14 +146,25 @@ function sourceMapStringify(sourceMap: RsglSourceMap, indent: number): string {
 }
 
 function manifestStringify(units: ResourceUnit[], sourceMapExtension: string | undefined, indent: number): string {
+  const emittedUnits = units.filter(unit => !isExternalResourceUnit(unit));
+  const externalUnits = units.filter(isExternalResourceUnit);
   return `${JSON.stringify({
     version: 1,
     generator: "minecraft-resourcepack-helper/rsgl",
-    files: units.map(unit => ({
+    files: emittedUnits.map(unit => ({
       outputPath: unit.outputPath,
       kind: unit.kind,
       id: unit.id ? `${unit.id.namespace}:${unit.id.path}` : undefined,
       sourceMap: sourceMapExtension ? `${unit.outputPath}${sourceMapExtension}` : undefined
+    })),
+    externalResources: externalUnits.map(unit => ({
+      outputPath: unit.outputPath,
+      kind: unit.kind,
+      id: unit.id ? `${unit.id.namespace}:${unit.id.path}` : undefined,
+      source: unit.external ? {
+        kind: unit.external.resourceKind,
+        id: unit.external.id
+      } : undefined
     }))
   }, null, indent)}\n`;
 }

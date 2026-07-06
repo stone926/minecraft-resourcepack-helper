@@ -1,4 +1,4 @@
-import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { isExternalResourceUnit, JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 
 export interface MergeResourceUnitsResult {
   units: ResourceUnit[];
@@ -20,8 +20,23 @@ export function mergeResourceUnits(units: ResourceUnit[]): MergeResourceUnitsRes
 
   const mergedUnits: ResourceUnit[] = [];
   for (const group of groups.values()) {
-    if (group.length === 1) {
-      mergedUnits.push(group[0]);
+    const fileUnits = group.filter(unit => !isExternalResourceUnit(unit));
+    if (fileUnits.length > 0 && fileUnits.length !== group.length) {
+      if (fileUnits.length === 1) {
+        mergedUnits.push(fileUnits[0]);
+        continue;
+      }
+      const merged = tryMergeGroup(fileUnits, diagnostics);
+      if (merged) {
+        mergedUnits.push(merged);
+      } else {
+        mergedUnits.push(...fileUnits);
+      }
+      continue;
+    }
+
+    if (group.length === 1 || group.every(unit => isExternalResourceUnit(unit))) {
+      mergedUnits.push(mergeExternalGroup(group));
       continue;
     }
 
@@ -34,6 +49,19 @@ export function mergeResourceUnits(units: ResourceUnit[]): MergeResourceUnitsRes
   }
 
   return { units: mergedUnits, diagnostics };
+}
+
+function mergeExternalGroup(units: ResourceUnit[]): ResourceUnit {
+  if (units.length === 1) {
+    return units[0];
+  }
+  return {
+    ...units[0],
+    sourceMap: {
+      generatedFile: units[0].outputPath,
+      mappings: units.flatMap(unit => unit.sourceMap.mappings)
+    }
+  };
 }
 
 function tryMergeGroup(

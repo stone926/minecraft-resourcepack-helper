@@ -16,6 +16,7 @@ import {
 } from "../../../../packages/rsgl-core/src/sourceRoot";
 import { rsglWorkspaceBuildSemanticCache } from "../../../../packages/rsgl-core/src/workspaceBuildSemantic";
 import { createRsglWorkspaceValidationOptions } from "../../../../packages/rsgl-core/src/workspaceValidation";
+import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "../configuration";
 
 export const buildRsglResourcePackCommand = "rsgl.build";
 export const previewRsglResourcePackBuildCommand = "rsgl.previewBuild";
@@ -246,13 +247,12 @@ async function resolveOutputRoot(fileName: string): Promise<string | null> {
 }
 
 function createBuildOptions(context: RsglFileBuildContext): RsglBuildOptions {
-  const configuration = vscode.workspace.getConfiguration("rsgl");
   return {
     outputRoot: context.outputRoot,
     ...createRsglWorkspaceValidationOptions({
       sourceFileName: context.sourceFileName,
-      defaultAssetsPath: configuration.get<string | null>("defaultAssetsPath"),
-      resourcePackRoots: configuration.get<string[]>("resourcePackLoadOrder") ?? []
+      defaultAssetsPath: configuredDefaultAssetsPath(),
+      resourcePackRoots: configuredResourcePackLoadOrder()
     })
   };
 }

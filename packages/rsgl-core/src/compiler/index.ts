@@ -12,6 +12,8 @@ export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOpt
 export type {
   ExpansionFrame,
   BinaryCopyRef,
+  ExternalResourceKind,
+  ExternalResourceRef,
   JsonValue,
   MergePolicy,
   ResourceContent,

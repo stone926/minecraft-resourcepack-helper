@@ -13,6 +13,14 @@ export interface BinaryCopyRef {
   sourcePath: string;
 }
 
+export type ExternalResourceKind = "model" | "blockstate" | "item";
+
+export interface ExternalResourceRef {
+  kind: "external";
+  resourceKind: ExternalResourceKind;
+  id: string;
+}
+
 export type ResourceContent = JsonValue | TextValue | BinaryCopyRef;
 
 export interface ResourceId {
@@ -27,6 +35,7 @@ export interface ResourceUnit {
   kind: ResourceKind;
   outputPath: string;
   content: ResourceContent;
+  external?: ExternalResourceRef;
   mergePolicy: MergePolicy;
   sourceMap: RsglSourceMap;
 }
@@ -66,4 +75,8 @@ export interface RsglCompileDiagnostic {
   severity: "error" | "warning" | "info";
   range: TextRange;
   fileName?: string;
+}
+
+export function isExternalResourceUnit(unit: ResourceUnit): boolean {
+  return unit.external?.kind === "external";
 }

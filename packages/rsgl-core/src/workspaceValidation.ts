@@ -192,6 +192,12 @@ function resourceTarget(kind: RsglResourceExistenceKind | RsglResourceContentKin
   if (kind === "model") {
     return { target: "models", extension: "json", directory: false };
   }
+  if (kind === "blockstate") {
+    return { target: "blockstates", extension: "json", directory: false };
+  }
+  if (kind === "item") {
+    return { target: "items", extension: "json", directory: false };
+  }
   if (kind === "textureDirectory") {
     return { target: "textures", extension: null, directory: true };
   }

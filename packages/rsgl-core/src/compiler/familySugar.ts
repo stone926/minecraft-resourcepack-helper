@@ -5,6 +5,7 @@ import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
   createButtonBlockstate,
   createDoorBlockstate,
+  createExternalResource,
   createFenceBlockstate,
   createFenceGateBlockstate,
   createHangingSignBlockstate,
@@ -45,10 +46,26 @@ interface FamilyContext {
   namespace: string;
   texture: string;
   hangingSignParticle: string;
+  useVanillaExternalResources: boolean;
   sourceFile: string;
   sourceRange: TextRange;
   expansionStack: ExpansionFrame[];
 }
+
+const vanillaFamilyBases = new Set([
+  "oak",
+  "spruce",
+  "birch",
+  "jungle",
+  "acacia",
+  "dark_oak",
+  "mangrove",
+  "cherry",
+  "pale_oak",
+  "bamboo",
+  "crimson",
+  "warped"
+]);
 
 export function compileBlockFamilyUse(
   call: CallExprNode,
@@ -71,6 +88,7 @@ export function compileBlockFamilyUse(
     namespace: base.namespace,
     texture,
     hangingSignParticle,
+    useVanillaExternalResources: usesDefaultVanillaFamilyResources(base, texture, hangingSignParticle),
     sourceFile: context.sourceFile ?? "<anonymous>",
     sourceRange: call.range,
     expansionStack: [
@@ -99,6 +117,10 @@ function compileFamilyMembers(
 }
 
 function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContext): ResourceUnit[] {
+  if (family.useVanillaExternalResources && isVanillaExternalFamilyMember(member)) {
+    return createExternalFamilyMember(member, family);
+  }
+
   if (member === "planks") {
     return compact([
       createCubeModel(family, `${family.baseName}_planks`, "minecraft:block/cube_all", { all: family.texture }),
@@ -276,6 +298,103 @@ function compileFamilyMember(member: SupportedFamilyMember, family: FamilyContex
   ]);
 }
 
+function createExternalFamilyMember(member: SupportedFamilyMember, family: FamilyContext): ResourceUnit[] {
+  const blockModels: string[] = [];
+  const blockstates: string[] = [];
+  const itemModels: string[] = [];
+  const items: string[] = [];
+  const id = (suffix: string) => `${family.baseName}${suffix}`;
+
+  if (member === "planks") {
+    blockModels.push(id("_planks"));
+    blockstates.push(id("_planks"));
+    items.push(id("_planks"));
+  } else if (member === "slab") {
+    blockModels.push(id("_slab"), id("_slab_top"));
+    blockstates.push(id("_slab"));
+    items.push(id("_slab"));
+  } else if (member === "stairs") {
+    blockModels.push(id("_stairs"), id("_stairs_inner"), id("_stairs_outer"));
+    blockstates.push(id("_stairs"));
+    items.push(id("_stairs"));
+  } else if (member === "fence") {
+    blockModels.push(id("_fence_post"), id("_fence_side"), id("_fence_inventory"));
+    blockstates.push(id("_fence"));
+    items.push(id("_fence"));
+  } else if (member === "fence_gate") {
+    blockModels.push(id("_fence_gate"), id("_fence_gate_open"), id("_fence_gate_wall"), id("_fence_gate_wall_open"));
+    blockstates.push(id("_fence_gate"));
+    items.push(id("_fence_gate"));
+  } else if (member === "door") {
+    blockModels.push(
+      id("_door_bottom_left"),
+      id("_door_bottom_left_open"),
+      id("_door_bottom_right"),
+      id("_door_bottom_right_open"),
+      id("_door_top_left"),
+      id("_door_top_left_open"),
+      id("_door_top_right"),
+      id("_door_top_right_open")
+    );
+    blockstates.push(id("_door"));
+    itemModels.push(id("_door"));
+    items.push(id("_door"));
+  } else if (member === "trapdoor") {
+    blockModels.push(id("_trapdoor_bottom"), id("_trapdoor_top"), id("_trapdoor_open"));
+    blockstates.push(id("_trapdoor"));
+    items.push(id("_trapdoor"));
+  } else if (member === "button") {
+    blockModels.push(id("_button"), id("_button_pressed"), id("_button_inventory"));
+    blockstates.push(id("_button"));
+    items.push(id("_button"));
+  } else if (member === "pressure_plate") {
+    blockModels.push(id("_pressure_plate"), id("_pressure_plate_down"));
+    blockstates.push(id("_pressure_plate"));
+    items.push(id("_pressure_plate"));
+  } else if (member === "sign") {
+    blockModels.push(id("_sign_rot_0"), id("_sign_rot_1"), id("_sign_rot_2"), id("_sign_rot_3"), id("_wall_sign"));
+    blockstates.push(id("_sign"), id("_wall_sign"));
+    itemModels.push(id("_sign"));
+    items.push(id("_sign"));
+  } else if (member === "hanging_sign") {
+    blockModels.push(
+      id("_hanging_sign_rot_0"),
+      id("_hanging_sign_rot_1"),
+      id("_hanging_sign_rot_2"),
+      id("_hanging_sign_rot_3"),
+      id("_hanging_sign_attached_rot_0"),
+      id("_hanging_sign_attached_rot_1"),
+      id("_hanging_sign_attached_rot_2"),
+      id("_hanging_sign_attached_rot_3"),
+      id("_wall_hanging_sign")
+    );
+    blockstates.push(id("_hanging_sign"), id("_wall_hanging_sign"));
+    itemModels.push(id("_hanging_sign"));
+    items.push(id("_hanging_sign"));
+  } else if (member === "boat") {
+    itemModels.push(id("_boat"));
+    items.push(id("_boat"));
+  } else if (member === "chest_boat") {
+    itemModels.push(id("_chest_boat"));
+    items.push(id("_chest_boat"));
+  }
+
+  return compact([
+    ...blockModels.map(path => createExternalFamilyResource("model", `${family.namespace}:block/${path}`, family)),
+    ...itemModels.map(path => createExternalFamilyResource("model", `${family.namespace}:item/${path}`, family)),
+    ...blockstates.map(path => createExternalFamilyResource("blockstate", `${family.namespace}:${path}`, family)),
+    ...items.map(path => createExternalFamilyResource("item", `${family.namespace}:${path}`, family))
+  ]);
+}
+
+function createExternalFamilyResource(
+  kind: "model" | "blockstate" | "item",
+  id: string,
+  family: FamilyContext
+): ResourceUnit | null {
+  return createExternalResource(kind, id, family.namespace, family.sourceFile, family.sourceRange, family.expansionStack);
+}
+
 function createCubeModel(
   family: FamilyContext,
   path: string,
@@ -432,6 +551,13 @@ function defaultHangingSignParticle(namespace: string, baseName: string): string
   return `${namespace}:block/stripped_${baseName}_log`;
 }
 
+function usesDefaultVanillaFamilyResources(base: ResourceId, texture: string, hangingSignParticle: string): boolean {
+  return base.namespace === "minecraft"
+    && vanillaFamilyBases.has(base.path)
+    && texture === `minecraft:block/${base.path}_planks`
+    && hangingSignParticle === defaultHangingSignParticle(base.namespace, base.path);
+}
+
 function createItemModel(
   family: FamilyContext,
   path: string,
@@ -496,6 +622,10 @@ function isSupportedFamilyMember(value: string): value is SupportedFamilyMember 
     || value === "hanging_sign"
     || value === "boat"
     || value === "chest_boat";
+}
+
+function isVanillaExternalFamilyMember(value: SupportedFamilyMember): boolean {
+  return value !== "wall" && value !== "pane";
 }
 
 function isFamilyItemUnit(unit: ResourceUnit): boolean {

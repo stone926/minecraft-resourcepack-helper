@@ -50,6 +50,9 @@ const enumConstants = [
   "hanging_sign",
   "boat",
   "chest_boat",
+  "model",
+  "blockstate",
+  "item",
   "bitmap",
   "space",
   "ttf",
@@ -117,6 +120,19 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "itemModels", type: booleanType, optional: true },
       { name: "hangingSignParticle", type: textureIdType, optional: true },
       { name: "hanging_sign_particle", type: textureIdType, optional: true }
+    ], jsonType),
+    builtinFunction("externalResource", [
+      { name: "kind", type: stringType, optional: false },
+      { name: "id", type: resourceIdType, optional: false }
+    ], jsonType),
+    builtinFunction("externalModel", [
+      { name: "id", type: modelIdType, optional: false }
+    ], jsonType),
+    builtinFunction("externalBlockstate", [
+      { name: "id", type: resourceIdType, optional: false }
+    ], jsonType),
+    builtinFunction("externalItem", [
+      { name: "id", type: resourceIdType, optional: false }
     ], jsonType),
     builtinFunction("stairs", [
       { name: "base", type: modelIdType, optional: false },

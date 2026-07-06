@@ -1,4 +1,4 @@
-import { ExpansionFrame, JsonValue, ResourceUnit } from "./ir";
+import { ExpansionFrame, ExternalResourceKind, JsonValue, ResourceUnit } from "./ir";
 import { blockstateVariantKey } from "./blockstateKeys";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 
@@ -762,6 +762,35 @@ export function createGeneratedItemModel(
       textures: {
         layer0: texture
       }
+    },
+    mergePolicy: { kind: "errorOnConflict" },
+    sourceMap: sourceMap(outputPath, sourceFile, sourceRange, "builtin", expansionStack)
+  };
+}
+
+export function createExternalResource(
+  resourceKind: ExternalResourceKind,
+  idValue: string,
+  namespace: string,
+  sourceFile: string,
+  sourceRange: { start: number; end: number },
+  expansionStack: ExpansionFrame[] = []
+): ResourceUnit | null {
+  const id = parseResourceId(idValue, namespace);
+  if (!id) {
+    return null;
+  }
+  const externalId = `${id.namespace}:${id.path}`;
+  const outputPath = resourceOutputPath(resourceKind, id);
+  return {
+    id,
+    kind: resourceKind,
+    outputPath,
+    content: null,
+    external: {
+      kind: "external",
+      resourceKind,
+      id: externalId
     },
     mergePolicy: { kind: "errorOnConflict" },
     sourceMap: sourceMap(outputPath, sourceFile, sourceRange, "builtin", expansionStack)

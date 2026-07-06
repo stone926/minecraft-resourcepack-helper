@@ -9,6 +9,7 @@ import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { compileBlockFamilyUse } from "./familySugar";
 import { ExpansionFrame, ResourceUnit } from "./ir";
 import {
+  createExternalResource,
   createCubeAllModel,
   createGeneratedItemModel,
   createItemMapping
@@ -70,7 +71,44 @@ export function compileBuiltinUse(
     });
   }
 
+  if (call.callee.name.text === "externalModel") {
+    return externalResourceUnits(call, "model", context, options);
+  }
+
+  if (call.callee.name.text === "externalBlockstate") {
+    return externalResourceUnits(call, "blockstate", context, options);
+  }
+
+  if (call.callee.name.text === "externalItem") {
+    return externalResourceUnits(call, "item", context, options);
+  }
+
+  if (call.callee.name.text === "externalResource") {
+    const kind = requiredTextArg(call, "kind", 0, context, options);
+    if (!isExternalResourceKind(kind)) {
+      options.onError?.("rsgl.invalidExternalResourceKind", "External resource kind must be 'model', 'blockstate', or 'item'.", findArg(call, "kind", 0)?.value.range ?? call.range);
+      return [];
+    }
+    return externalResourceUnits(call, kind, context, options, 1);
+  }
+
   return null;
+}
+
+function externalResourceUnits(
+  call: CallExprNode,
+  kind: "model" | "blockstate" | "item",
+  context: EvaluationContext,
+  options: RsglBuiltinUseOptions,
+  positionalIndex = 0
+): ResourceUnit[] {
+  const id = requiredTextArg(call, "id", positionalIndex, context, options);
+  if (!id) {
+    return [];
+  }
+  return compact([
+    createExternalResource(kind, id, context.namespace, options.sourceFile, call.range, options.expansionStack)
+  ]);
 }
 
 function builtinUseCall(expression: ExprNode): (CallExprNode & { callee: IdentifierExprNode }) | null {
@@ -122,6 +160,10 @@ function staticText(
 function findArg(call: CallExprNode, name: string, positionalIndex: number): ArgumentNode | undefined {
   return call.args.find(arg => arg.name?.text === name)
     ?? call.args.filter(arg => !arg.name)[positionalIndex];
+}
+
+function isExternalResourceKind(value: string | null): value is "model" | "blockstate" | "item" {
+  return value === "model" || value === "blockstate" || value === "item";
 }
 
 function compact<T>(values: Array<T | null>): T[] {

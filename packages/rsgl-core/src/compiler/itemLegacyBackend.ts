@@ -1,4 +1,4 @@
-import { JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { isExternalResourceUnit, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { isJsonObject } from "./jsonObjectMerge";
 import { resourceOutputPath } from "./resourceIds";
 import { RsglTargetPackFormat } from "./target";
@@ -30,9 +30,9 @@ export function lowerItemUnitsForTarget(
 
   const diagnostics: RsglCompileDiagnostic[] = [];
   const modelOutputPaths = new Set(units
-    .filter(unit => unit.kind === "model")
+    .filter(unit => unit.kind === "model" && !isExternalResourceUnit(unit))
     .map(unit => normalizedPath(unit.outputPath)));
-  const lowered = units.flatMap(unit => unit.kind === "item"
+  const lowered = units.flatMap(unit => unit.kind === "item" && !isExternalResourceUnit(unit)
     ? lowerItemUnitToLegacy(unit, modelOutputPaths, diagnostics)
     : [unit]);
   return { units: lowered, diagnostics };

@@ -85,6 +85,24 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "use externalModel",
+    insertText: "use externalModel(id: ${1:minecraft:block/stone})",
+    detail: "Reference an existing model without emitting it",
+    kind: "snippet"
+  },
+  {
+    label: "use externalBlockstate",
+    insertText: "use externalBlockstate(id: ${1:minecraft:stone})",
+    detail: "Reference an existing blockstate without emitting it",
+    kind: "snippet"
+  },
+  {
+    label: "use externalItem",
+    insertText: "use externalItem(id: ${1:minecraft:diamond})",
+    detail: "Reference an existing item definition without emitting it",
+    kind: "snippet"
+  },
+  {
     label: "use stairs",
     insertText: "use stairs(id: ${1:acacia_stairs})",
     detail: "Generate a conventional stairs blockstate",
@@ -149,6 +167,10 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "cubeAll", detail: "Builtin block cube model template", kind: "function" },
   { label: "itemGenerated", detail: "Builtin generated item template", kind: "function" },
   { label: "itemModel", detail: "Builtin item mapping template", kind: "function" },
+  { label: "externalResource", insertText: "externalResource(kind: ${1:model}, id: ${2:minecraft:block/stone})", detail: "Reference an existing external resource without emitting it", kind: "function" },
+  { label: "externalModel", insertText: "externalModel(id: ${1:minecraft:block/stone})", detail: "Reference an existing model without emitting it", kind: "function" },
+  { label: "externalBlockstate", insertText: "externalBlockstate(id: ${1:minecraft:stone})", detail: "Reference an existing blockstate without emitting it", kind: "function" },
+  { label: "externalItem", insertText: "externalItem(id: ${1:minecraft:diamond})", detail: "Reference an existing item definition without emitting it", kind: "function" },
   {
     label: "blockFamily",
     insertText: "blockFamily(base: ${1:minecraft:acacia}, texture: ${2:minecraft:block/acacia_planks}, variants: [${3:cube, slab, stairs}], itemModels: true)",

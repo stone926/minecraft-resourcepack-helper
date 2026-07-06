@@ -1,4 +1,4 @@
-import { JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { ExternalResourceKind, isExternalResourceUnit, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { validateFontMetadata } from "./fontValidation";
 import { validateBlockstateStateDomains, type RsglBlockstateSchema } from "./blockstateStateValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
@@ -15,7 +15,7 @@ import {
   tryParseMinecraftResourceId
 } from "../../../rsgl-shared/src";
 
-export type RsglResourceExistenceKind = "model" | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
+export type RsglResourceExistenceKind = ExternalResourceKind | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
 export type RsglResourceContentKind = "model";
 
 export interface RsglTextureMetadata {
@@ -306,7 +306,9 @@ export function validateResourceUnits(
 
   for (const unit of units) {
     const diagnosticStart = diagnostics.length;
-    if (unit.kind === "model") {
+    if (isExternalResourceUnit(unit)) {
+      validateExternalResourceUnit(unit, options, diagnostics);
+    } else if (unit.kind === "model") {
       validateModelUnit(unit, generatedModels, modelResolver, options, diagnostics);
     } else if (unit.kind === "item") {
       validateItemUnit(unit, generatedModels, options, diagnostics);
@@ -337,6 +339,25 @@ export function validateResourceUnits(
   }
 
   return diagnostics;
+}
+
+function validateExternalResourceUnit(
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!unit.external || !options.resourceExists) {
+    return;
+  }
+  if (options.resourceExists(unit.external.resourceKind, unit.external.id)) {
+    return;
+  }
+  diagnostics.push({
+    code: resourceNotFoundCode(unit.external.resourceKind),
+    message: `${resourceLabel(unit.external.resourceKind)} not found: ${unit.external.id}`,
+    severity: "warning",
+    range: unitRange(unit)
+  });
 }
 
 function attachSourceFile(diagnostics: RsglCompileDiagnostic[], start: number, fileName: string | undefined): void {
@@ -2038,6 +2059,12 @@ function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
   if (kind === "model") {
     return "rsgl.modelNotFound";
   }
+  if (kind === "blockstate") {
+    return "rsgl.blockstateNotFound";
+  }
+  if (kind === "item") {
+    return "rsgl.itemNotFound";
+  }
   if (kind === "textureDirectory") {
     return "rsgl.textureDirectoryNotFound";
   }
@@ -2062,6 +2089,12 @@ function resourceNotFoundCode(kind: RsglResourceExistenceKind): string {
 function resourceLabel(kind: RsglResourceExistenceKind): string {
   if (kind === "model") {
     return "Model";
+  }
+  if (kind === "blockstate") {
+    return "Blockstate";
+  }
+  if (kind === "item") {
+    return "Item";
   }
   if (kind === "textureDirectory") {
     return "Texture directory";

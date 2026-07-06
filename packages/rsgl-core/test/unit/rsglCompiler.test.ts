@@ -1,9 +1,21 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, createRsglWritePlan, emitRsglFiles, parseResourceId, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../src/compiler";
+import { compileRsglFile, compileRsglModule, createRsglWritePlan, emitRsglFiles, parseResourceId, stableJsonStringify, type JsonValue, type ResourceUnit, writeRsglFiles } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
 import { createTempDir, emittedContent } from "./rsglTestHelpers";
+
+function assertExternalResource(
+  units: readonly ResourceUnit[],
+  outputPath: string,
+  resourceKind: "model" | "blockstate" | "item",
+  id: string
+): void {
+  const unit = units.find(candidate => candidate.outputPath === outputPath);
+  assert.ok(unit, `Expected external resource unit for ${outputPath}`);
+  assert.deepStrictEqual(unit.external, { kind: "external", resourceKind, id });
+  assert.strictEqual(unit.content, null);
+}
 
 describe("RSGL compiler", () => {
   it("uses shared Minecraft resource id rules for compiler ids", () => {
@@ -343,6 +355,104 @@ describe("RSGL compiler", () => {
     }
   });
 
+  it("references external resources without emitting files", () => {
+    const result = compileRsglModule(parseRsgl([
+      "use externalModel(id: minecraft:block/stone)",
+      "use externalBlockstate(id: minecraft:stone)",
+      "use externalItem(id: minecraft:stone)"
+    ].join("\n")), {
+      resourceExists: () => true
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.deepStrictEqual(result.units.map(unit => ({
+      kind: unit.kind,
+      outputPath: unit.outputPath,
+      external: unit.external
+    })), [
+      {
+        kind: "model",
+        outputPath: "assets/minecraft/models/block/stone.json",
+        external: { kind: "external", resourceKind: "model", id: "minecraft:block/stone" }
+      },
+      {
+        kind: "blockstate",
+        outputPath: "assets/minecraft/blockstates/stone.json",
+        external: { kind: "external", resourceKind: "blockstate", id: "minecraft:stone" }
+      },
+      {
+        kind: "item",
+        outputPath: "assets/minecraft/items/stone.json",
+        external: { kind: "external", resourceKind: "item", id: "minecraft:stone" }
+      }
+    ]);
+
+    const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
+    assert.deepStrictEqual(files.map(file => file.outputPath), ["rsgl.manifest.json"]);
+    const manifest = JSON.parse(emittedContent(files[0])) as {
+      files?: unknown[];
+      externalResources?: Array<{ outputPath?: string; kind?: string; id?: string; source?: { kind?: string; id?: string } }>;
+    };
+    assert.deepStrictEqual(manifest.files, []);
+    assert.deepStrictEqual(manifest.externalResources, [
+      {
+        outputPath: "assets/minecraft/blockstates/stone.json",
+        kind: "blockstate",
+        id: "minecraft:stone",
+        source: { kind: "blockstate", id: "minecraft:stone" }
+      },
+      {
+        outputPath: "assets/minecraft/items/stone.json",
+        kind: "item",
+        id: "minecraft:stone",
+        source: { kind: "item", id: "minecraft:stone" }
+      },
+      {
+        outputPath: "assets/minecraft/models/block/stone.json",
+        kind: "model",
+        id: "minecraft:block/stone",
+        source: { kind: "model", id: "minecraft:block/stone" }
+      }
+    ]);
+  });
+
+  it("validates missing external resource references", () => {
+    const result = compileRsglModule(parseRsgl([
+      "use externalResource(kind: model, id: minecraft:block/missing_model)",
+      "use externalResource(kind: blockstate, id: minecraft:missing_block)",
+      "use externalResource(kind: item, id: minecraft:missing_item)"
+    ].join("\n")), {
+      resourceExists: () => false
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.modelNotFound",
+      "rsgl.blockstateNotFound",
+      "rsgl.itemNotFound"
+    ]);
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.severity), ["warning", "warning", "warning"]);
+  });
+
+  it("lets generated resources override external references", () => {
+    const result = compileRsglModule(parseRsgl([
+      "use externalModel(id: minecraft:block/stone)",
+      "model block stone {",
+      "  parent minecraft:block/cube_all",
+      "  textures { all: minecraft:block/custom_stone }",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(result.units.length, 1);
+    assert.strictEqual(result.units[0].external, undefined);
+    assert.deepStrictEqual(result.units[0].content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "minecraft:block/custom_stone"
+      }
+    });
+  });
+
   it("plans and writes emitted files to a pack directory", () => {
     const root = createTempDir();
     try {
@@ -495,21 +605,9 @@ describe("RSGL compiler", () => {
     assert.ok(outputPaths.includes("assets/minecraft/blockstates/acacia_stairs.json"));
     assert.ok(outputPaths.includes("assets/minecraft/items/acacia_planks.json"));
     assert.ok(outputPaths.includes("assets/minecraft/models/block/acacia_stairs_inner.json"));
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_planks.json"))?.content, {
-      parent: "minecraft:block/cube_all",
-      textures: {
-        all: "minecraft:block/acacia_planks"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_planks.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:block/acacia_planks"
-      }
-    });
-    assert.deepStrictEqual(result.units[0].sourceMap.mappings[0].expansionStack.map(frame => frame.label), [
-      "blockFamily acacia"
-    ]);
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_planks.json", "model", "minecraft:block/acacia_planks");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_planks.json", "item", "minecraft:acacia_planks");
+    assert.ok(result.units[0].sourceMap.mappings[0].expansionStack.some(frame => frame.label === "blockFamily acacia"));
   });
 
   it("lowers blockFamily use to linked resources", () => {
@@ -548,57 +646,13 @@ describe("RSGL compiler", () => {
       "assets/minecraft/models/block/acacia_stairs_outer.json"
     ]);
 
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_planks.json"))?.content, {
-      parent: "minecraft:block/cube_all",
-      textures: {
-        all: "minecraft:block/acacia_planks"
-      }
-    });
-    const defaultVariantKey = "";
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_planks.json"))?.content, {
-      variants: {
-        [defaultVariantKey]: {
-          model: "minecraft:block/acacia_planks"
-        }
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_stairs_inner.json"))?.content, {
-      parent: "minecraft:block/inner_stairs",
-      textures: {
-        bottom: "minecraft:block/acacia_planks",
-        top: "minecraft:block/acacia_planks",
-        side: "minecraft:block/acacia_planks"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_fence.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:block/acacia_fence_inventory"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_fence_gate_wall_open.json"))?.content, {
-      parent: "minecraft:block/template_fence_gate_wall_open",
-      textures: {
-        texture: "minecraft:block/acacia_planks"
-      }
-    });
-    const fenceGateVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_fence_gate.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(fenceGateVariants).length, 16);
-    assert.deepStrictEqual(fenceGateVariants["facing=east,in_wall=true,open=true"], {
-      model: "minecraft:block/acacia_fence_gate_wall_open",
-      uvlock: true,
-      y: 270
-    });
-    assert.deepStrictEqual(fenceGateVariants["facing=south,in_wall=false,open=false"], {
-      model: "minecraft:block/acacia_fence_gate",
-      uvlock: true
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_fence_gate.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:block/acacia_fence_gate"
-      }
-    });
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_planks.json", "model", "minecraft:block/acacia_planks");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_planks.json", "blockstate", "minecraft:acacia_planks");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_stairs_inner.json", "model", "minecraft:block/acacia_stairs_inner");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_fence.json", "item", "minecraft:acacia_fence");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_fence_gate_wall_open.json", "model", "minecraft:block/acacia_fence_gate_wall_open");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_fence_gate.json", "blockstate", "minecraft:acacia_fence_gate");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_fence_gate.json", "item", "minecraft:acacia_fence_gate");
   });
 
   it("reports unsupported family members", () => {
@@ -667,58 +721,13 @@ describe("RSGL compiler", () => {
     assert.ok(outputPaths.includes("assets/minecraft/items/acacia_trapdoor.json"));
     assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_door.json"));
 
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_door_bottom_left.json"))?.content, {
-      parent: "minecraft:block/door_bottom_left",
-      textures: {
-        bottom: "minecraft:block/acacia_door_bottom",
-        top: "minecraft:block/acacia_door_top"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_trapdoor_open.json"))?.content, {
-      parent: "minecraft:block/template_orientable_trapdoor_open",
-      textures: {
-        texture: "minecraft:block/acacia_trapdoor"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/acacia_door.json"))?.content, {
-      parent: "minecraft:item/generated",
-      textures: {
-        layer0: "minecraft:item/acacia_door"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_door.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:item/acacia_door"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_trapdoor.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:block/acacia_trapdoor_bottom"
-      }
-    });
-
-    const doorVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_door.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(doorVariants).length, 32);
-    assert.deepStrictEqual(doorVariants["facing=east,half=lower,hinge=right,open=true"], {
-      model: "minecraft:block/acacia_door_bottom_right_open",
-      y: 270
-    });
-    assert.deepStrictEqual(doorVariants["facing=north,half=upper,hinge=left,open=true"], {
-      model: "minecraft:block/acacia_door_top_left_open"
-    });
-
-    const trapdoorVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_trapdoor.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(trapdoorVariants).length, 16);
-    assert.deepStrictEqual(trapdoorVariants["facing=east,half=top,open=true"], {
-      model: "minecraft:block/acacia_trapdoor_open",
-      x: 180,
-      y: 270
-    });
-    assert.deepStrictEqual(trapdoorVariants["facing=north,half=bottom,open=false"], {
-      model: "minecraft:block/acacia_trapdoor_bottom"
-    });
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_door_bottom_left.json", "model", "minecraft:block/acacia_door_bottom_left");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_trapdoor_open.json", "model", "minecraft:block/acacia_trapdoor_open");
+    assertExternalResource(result.units, "assets/minecraft/models/item/acacia_door.json", "model", "minecraft:item/acacia_door");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_door.json", "item", "minecraft:acacia_door");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_trapdoor.json", "item", "minecraft:acacia_trapdoor");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_door.json", "blockstate", "minecraft:acacia_door");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_trapdoor.json", "blockstate", "minecraft:acacia_trapdoor");
   });
 
   it("lowers button, pressure plate, and sign family members", () => {
@@ -738,69 +747,15 @@ describe("RSGL compiler", () => {
     assert.ok(outputPaths.includes("assets/minecraft/items/acacia_sign.json"));
     assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_sign.json"));
 
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_button_pressed.json"))?.content, {
-      parent: "minecraft:block/button_pressed",
-      textures: {
-        texture: "minecraft:block/acacia_planks"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_pressure_plate_down.json"))?.content, {
-      parent: "minecraft:block/pressure_plate_down",
-      textures: {
-        texture: "minecraft:block/acacia_planks"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_sign_rot_2.json"))?.content, {
-      parent: "minecraft:block/template_sign_rot_2",
-      textures: {
-        all: "minecraft:block/acacia_sign",
-        particle: "minecraft:block/acacia_planks"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_wall_sign.json"))?.content, {
-      parent: "minecraft:block/template_wall_sign",
-      textures: {
-        all: "minecraft:block/acacia_sign",
-        particle: "minecraft:block/acacia_planks"
-      }
-    });
-
-    const buttonVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_button.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(buttonVariants).length, 24);
-    assert.deepStrictEqual(buttonVariants["face=wall,facing=west,powered=true"], {
-      model: "minecraft:block/acacia_button_pressed",
-      x: 90,
-      uvlock: true,
-      y: 270
-    });
-
-    const poweredFalse = "powered=false";
-    const poweredTrue = "powered=true";
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_pressure_plate.json"))?.content, {
-      variants: {
-        [poweredFalse]: { model: "minecraft:block/acacia_pressure_plate" },
-        [poweredTrue]: { model: "minecraft:block/acacia_pressure_plate_down" }
-      }
-    });
-
-    const signVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(signVariants).length, 16);
-    assert.deepStrictEqual(signVariants["rotation=12"], {
-      model: "minecraft:block/acacia_sign_rot_0",
-      y: 270
-    });
-    const wallSignVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_wall_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.deepStrictEqual(wallSignVariants["facing=east"], {
-      model: "minecraft:block/acacia_wall_sign",
-      y: 270
-    });
-
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_sign.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:item/acacia_sign"
-      }
-    });
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_button_pressed.json", "model", "minecraft:block/acacia_button_pressed");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_pressure_plate_down.json", "model", "minecraft:block/acacia_pressure_plate_down");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_sign_rot_2.json", "model", "minecraft:block/acacia_sign_rot_2");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_wall_sign.json", "model", "minecraft:block/acacia_wall_sign");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_button.json", "blockstate", "minecraft:acacia_button");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_pressure_plate.json", "blockstate", "minecraft:acacia_pressure_plate");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_sign.json", "blockstate", "minecraft:acacia_sign");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_wall_sign.json", "blockstate", "minecraft:acacia_wall_sign");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_sign.json", "item", "minecraft:acacia_sign");
   });
 
   it("lowers hanging sign and boat family members", () => {
@@ -820,55 +775,13 @@ describe("RSGL compiler", () => {
     assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_boat.json"));
     assert.ok(outputPaths.includes("assets/minecraft/models/item/acacia_chest_boat.json"));
 
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_hanging_sign_attached_rot_0.json"))?.content, {
-      parent: "minecraft:block/template_attached_hanging_sign_rot_0",
-      textures: {
-        all: "minecraft:block/acacia_hanging_sign",
-        particle: "minecraft:block/stripped_acacia_log"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/acacia_wall_hanging_sign.json"))?.content, {
-      parent: "minecraft:block/template_wall_hanging_sign",
-      textures: {
-        all: "minecraft:block/acacia_hanging_sign",
-        particle: "minecraft:block/stripped_acacia_log"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/item/acacia_chest_boat.json"))?.content, {
-      parent: "minecraft:item/generated",
-      textures: {
-        layer0: "minecraft:item/acacia_chest_boat"
-      }
-    });
-
-    const hangingSignVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_hanging_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(hangingSignVariants).length, 32);
-    assert.deepStrictEqual(hangingSignVariants["attached=true,rotation=12"], {
-      model: "minecraft:block/acacia_hanging_sign_attached_rot_0",
-      y: 270
-    });
-    assert.deepStrictEqual(hangingSignVariants["attached=false,rotation=3"], {
-      model: "minecraft:block/acacia_hanging_sign_rot_3"
-    });
-
-    const wallHangingSignVariants = (result.units.find(unit => unit.outputPath.endsWith("blockstates/acacia_wall_hanging_sign.json"))?.content as { variants: Record<string, unknown> }).variants;
-    assert.deepStrictEqual(wallHangingSignVariants["facing=north"], {
-      model: "minecraft:block/acacia_wall_hanging_sign",
-      y: 180
-    });
-
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_boat.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:item/acacia_boat"
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("items/acacia_chest_boat.json"))?.content, {
-      model: {
-        type: "minecraft:model",
-        model: "minecraft:item/acacia_chest_boat"
-      }
-    });
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_hanging_sign_attached_rot_0.json", "model", "minecraft:block/acacia_hanging_sign_attached_rot_0");
+    assertExternalResource(result.units, "assets/minecraft/models/block/acacia_wall_hanging_sign.json", "model", "minecraft:block/acacia_wall_hanging_sign");
+    assertExternalResource(result.units, "assets/minecraft/models/item/acacia_chest_boat.json", "model", "minecraft:item/acacia_chest_boat");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_hanging_sign.json", "blockstate", "minecraft:acacia_hanging_sign");
+    assertExternalResource(result.units, "assets/minecraft/blockstates/acacia_wall_hanging_sign.json", "blockstate", "minecraft:acacia_wall_hanging_sign");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_boat.json", "item", "minecraft:acacia_boat");
+    assertExternalResource(result.units, "assets/minecraft/items/acacia_chest_boat.json", "item", "minecraft:acacia_chest_boat");
   });
 
   it("uses hanging sign particle defaults and overrides", () => {
@@ -885,13 +798,7 @@ describe("RSGL compiler", () => {
 
     assert.deepStrictEqual(bamboo.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.deepStrictEqual(custom.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.deepStrictEqual(bamboo.units.find(unit => unit.outputPath.endsWith("models/block/bamboo_hanging_sign_rot_0.json"))?.content, {
-      parent: "minecraft:block/template_hanging_sign_rot_0",
-      textures: {
-        all: "minecraft:block/bamboo_hanging_sign",
-        particle: "minecraft:block/bamboo_planks"
-      }
-    });
+    assertExternalResource(bamboo.units, "assets/minecraft/models/block/bamboo_hanging_sign_rot_0.json", "model", "minecraft:block/bamboo_hanging_sign_rot_0");
     assert.deepStrictEqual(custom.units.find(unit => unit.outputPath.endsWith("models/block/acacia_hanging_sign_rot_0.json"))?.content, {
       parent: "minecraft:block/template_hanging_sign_rot_0",
       textures: {

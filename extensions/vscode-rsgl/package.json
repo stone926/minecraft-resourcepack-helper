@@ -145,7 +145,7 @@
         "rsgl.defaultAssetsPath": {
           "type": "string",
           "default": "",
-          "description": "Fallback vanilla assets path used when validating generated references."
+          "description": "Fallback vanilla assets path used when validating generated references. Empty falls back to McResHelper.defaultMcAssetsPath when available."
         },
         "rsgl.resourcePackLoadOrder": {
           "type": "array",
@@ -153,7 +153,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Additional resource pack roots used when validating generated references."
+          "description": "Additional resource pack roots used when validating generated references. Empty falls back to McResHelper.resourcePackLoadOrder when available."
         },
         "rsgl.emitSourceMap": {
           "type": "boolean",
