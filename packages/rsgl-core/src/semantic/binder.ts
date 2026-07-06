@@ -17,7 +17,6 @@ import {
   RsglDiagnostic,
   RsglModule,
   RsglNode,
-  SugarDeclNode,
   TemplateDeclNode,
   TopLevelStatementNode,
   VariantBodyNode,
@@ -176,8 +175,6 @@ class RsglBinder {
         const id = statement.id ? expressionToStaticText(statement.id) : undefined;
         this.outputResources.push({ kind: statement.resourceKind, id, node: statement });
         this.defineResource(scope, statement, id);
-      } else if (statement.kind === "SugarDecl") {
-        this.outputResources.push({ kind: "sugar", id: statement.id ? expressionToStaticText(statement.id) : undefined, node: statement });
       } else if (statement.kind === "UseDecl") {
         const id = this.topLevelBlockstateUseId(statement);
         if (id) {
@@ -204,8 +201,6 @@ class RsglBinder {
         this.checkTemplate(statement, scope);
       } else if (statement.kind === "ResourceDecl") {
         this.checkResourceDecl(statement, scope);
-      } else if (statement.kind === "SugarDecl") {
-        this.checkSugarDecl(statement, scope);
       } else if (statement.kind === "UseDecl") {
         this.checkExpression(statement.expression, scope);
       } else if (statement.kind === "ForStmt") {
@@ -273,27 +268,6 @@ class RsglBinder {
       return;
     }
     this.checkExpression(expression, scope);
-  }
-
-  private checkSugarDecl(statement: SugarDeclNode, scope: RsglScope): void {
-    if (statement.id) {
-      this.checkResourceIdExpression(statement.id, scope);
-      this.validateResourceLocationLike(statement.id);
-    }
-    for (const entry of statement.entries) {
-      this.checkResourceIdExpression(entry.id, scope);
-      if (entry.target) {
-        this.checkResourceIdExpression(entry.target, scope);
-      }
-    }
-    for (const option of statement.options) {
-      if (option.value) {
-        this.checkExpression(option.value, scope);
-      }
-    }
-    if (statement.body) {
-      this.checkResourceBody(statement.body, createChildScope(scope, "block"));
-    }
   }
 
   private checkBody(body: CheckableBody, scope: RsglScope): void {

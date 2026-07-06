@@ -295,10 +295,12 @@ describe("RSGL language", () => {
     assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unexpectedToken"));
   });
 
-  it("rejects legacy bare blockstate sugar declarations", () => {
-    const module = parseRsgl("stairs acacia_stairs");
+  it("rejects legacy bare sugar declarations", () => {
+    const blockstate = parseRsgl("stairs acacia_stairs");
+    const batch = parseRsgl("cube_all [stone]");
 
-    assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unexpectedToken"));
+    assert.ok(blockstate.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unexpectedToken"));
+    assert.ok(batch.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unexpectedToken"));
   });
 
   it("parses item range and select statements", () => {

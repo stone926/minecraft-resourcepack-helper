@@ -64,7 +64,6 @@ export type TopLevelStatementNode =
   | TableDeclNode
   | TemplateDeclNode
   | ResourceDeclNode
-  | SugarDeclNode
   | OverlayDeclNode
   | UseDeclNode
   | ForStmtNode
@@ -393,33 +392,6 @@ export interface ResourceDeclNode extends StatementNodeBase {
   subtype?: IdentifierNode;
   id?: ExprNode;
   body: ResourceBodyNode;
-}
-
-export type SugarKind =
-  | "batchModel"
-  | "batchItemModel"
-  | "family";
-
-export interface SugarDeclNode extends StatementNodeBase {
-  kind: "SugarDecl";
-  sugarKind: SugarKind;
-  sugarName: IdentifierNode;
-  id?: ExprNode;
-  entries: SugarEntryNode[];
-  options: SugarOptionNode[];
-  body?: ResourceBodyNode;
-}
-
-export interface SugarEntryNode extends RsglNode {
-  kind: "SugarEntry";
-  id: ExprNode;
-  target?: ExprNode;
-}
-
-export interface SugarOptionNode extends RsglNode {
-  kind: "SugarOption";
-  name: IdentifierNode;
-  value?: ExprNode;
 }
 
 export interface UseDeclNode extends StatementNodeBase {

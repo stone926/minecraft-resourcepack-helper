@@ -1,4 +1,4 @@
-import { ArgumentNode, CallExprNode, ExprNode, SugarDeclNode, TextRange } from "../parser";
+import { ArgumentNode, CallExprNode, ExprNode, TextRange } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { ExpansionFrame, JsonValue, ResourceId, ResourceUnit, RsglMapping } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
@@ -50,34 +50,6 @@ interface FamilyContext {
   expansionStack: ExpansionFrame[];
 }
 
-export function compileFamilySugar(
-  statement: SugarDeclNode,
-  context: EvaluationContext,
-  options: RsglFamilySugarOptions = {}
-): ResourceUnit[] {
-  const idValue = statement.id ? staticText(statement.id, context) : null;
-  const id = idValue ? parseResourceId(idValue, context.namespace) : null;
-  if (!id || !statement.id) {
-    options.onError?.("rsgl.compileMissingResourceId", "Family sugar requires a static id.", statement.range);
-    return [];
-  }
-
-  const family: FamilyContext = {
-    baseName: id.path,
-    namespace: id.namespace,
-    texture: textureValue(statement, context, id.path),
-    hangingSignParticle: hangingSignParticleValue(statement, context, id.path),
-    sourceFile: context.sourceFile ?? "<anonymous>",
-    sourceRange: statement.range,
-    expansionStack: [
-      ...(context.expansionStack ?? []),
-      { label: `${statement.sugarName.text} ${id.path}`, sourceRange: statement.range }
-    ]
-  };
-
-  return compileFamilyMembers(familyMembers(statement, context), family, options);
-}
-
 export function compileBlockFamilyUse(
   call: CallExprNode,
   context: EvaluationContext,
@@ -90,12 +62,15 @@ export function compileBlockFamilyUse(
 
   const texture = optionalResourceArgument(call, "texture", 1, context, "block")
     ?? `${base.namespace}:block/${base.path}_planks`;
+  const hangingSignParticle = optionalResourceArgument(call, "hangingSignParticle", 4, context, "block")
+    ?? optionalResourceArgument(call, "hanging_sign_particle", -1, context, "block")
+    ?? defaultHangingSignParticle(base.namespace, base.path);
   const members = blockFamilyMembers(call, context, options);
   const family: FamilyContext = {
     baseName: base.path,
     namespace: base.namespace,
     texture,
-    hangingSignParticle: defaultHangingSignParticle(base.namespace, base.path),
+    hangingSignParticle,
     sourceFile: context.sourceFile ?? "<anonymous>",
     sourceRange: call.range,
     expansionStack: [
@@ -348,17 +323,6 @@ function createSingleVariantBlockstate(
   };
 }
 
-function familyMembers(statement: SugarDeclNode, context: EvaluationContext): string[] {
-  const generateStatement = statement.body?.statements.find(item =>
-    item.kind === "PropertyStmt" && item.name.text === "generate"
-  );
-  if (generateStatement?.kind === "PropertyStmt") {
-    const value = evaluateExpression(generateStatement.value, context);
-    return Array.isArray(value) ? value.map(item => String(item)) : [];
-  }
-  return ["planks"];
-}
-
 function blockFamilyMembers(
   call: CallExprNode,
   context: EvaluationContext,
@@ -427,32 +391,6 @@ function optionalResourceArgument(
 function findArgument(call: CallExprNode, name: string, positionalIndex: number): ArgumentNode | undefined {
   return call.args.find(arg => arg.name?.text === name)
     ?? call.args.filter(arg => !arg.name)[positionalIndex];
-}
-
-function textureValue(statement: SugarDeclNode, context: EvaluationContext, baseName: string): string {
-  return propertyResourceValue(statement, context, "texture", `${context.namespace}:block/${baseName}_planks`, "block");
-}
-
-function hangingSignParticleValue(statement: SugarDeclNode, context: EvaluationContext, baseName: string): string {
-  return propertyResourceValue(statement, context, "hanging_sign_particle", defaultHangingSignParticle(context.namespace, baseName), "block");
-}
-
-function propertyResourceValue(
-  statement: SugarDeclNode,
-  context: EvaluationContext,
-  propertyName: string,
-  defaultValue: string,
-  defaultFolder: string
-): string {
-  const propertyStatement = statement.body?.statements.find(item =>
-    item.kind === "PropertyStmt" && item.name.text === propertyName
-  );
-  const value = propertyStatement?.kind === "PropertyStmt"
-    ? evaluateExpression(propertyStatement.value, context)
-    : undefined;
-  return typeof value === "string"
-    ? normalizeResourceValue(value, context.namespace, defaultFolder)
-    : defaultValue;
 }
 
 function slabTextures(texture: string): Record<string, JsonValue> {

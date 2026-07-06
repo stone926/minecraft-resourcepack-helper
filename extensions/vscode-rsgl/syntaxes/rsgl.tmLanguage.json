@@ -109,10 +109,6 @@
           "match": "\\b(?:target|namespace|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|pack|lang|sounds|text|copy)\\b"
         },
         {
-          "name": "support.type.sugar.rsgl",
-          "match": "\\b(?:cube_all|item_generated|items|wood_family|block_family)\\b"
-        },
-        {
           "name": "constant.language.rsgl",
           "match": "\\b(?:true|false|null)\\b"
         }

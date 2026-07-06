@@ -67,15 +67,21 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
-    label: "cube_all",
-    insertText: "cube_all [\n  ${1:stone}\n]",
-    detail: "Batch cube_all model sugar",
+    label: "use cubeAll",
+    insertText: "use cubeAll(id: ${1:stone}, texture: minecraft:block/${1:stone})",
+    detail: "Generate a cube_all block model",
     kind: "snippet"
   },
   {
-    label: "items model",
-    insertText: "items model [\n  ${1:diamond}\n]",
-    detail: "Batch item mapping sugar",
+    label: "use itemGenerated",
+    insertText: "use itemGenerated(id: ${1:diamond}, texture: minecraft:item/${1:diamond})",
+    detail: "Generate an item model and item mapping",
+    kind: "snippet"
+  },
+  {
+    label: "use itemModel",
+    insertText: "use itemModel(id: ${1:acacia_stairs}, model: minecraft:block/${1:acacia_stairs})",
+    detail: "Generate an item mapping",
     kind: "snippet"
   },
   {
@@ -109,15 +115,9 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
-    label: "wood_family",
-    insertText: "wood_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, wall, pane, door, trapdoor, button, pressure_plate, sign, hanging_sign, boat, chest_boat]\n}",
-    detail: "Wood family sugar",
-    kind: "snippet"
-  },
-  {
-    label: "block_family",
-    insertText: "block_family ${1:acacia} {\n  texture block/${1:acacia}_planks\n  generate [planks, slab, stairs, fence, fence_gate, wall, pane, door, trapdoor, button, pressure_plate, sign, hanging_sign, boat, chest_boat]\n}",
-    detail: "Block family sugar",
+    label: "use blockFamily",
+    insertText: "use blockFamily(base: ${1:acacia}, texture: minecraft:block/${1:acacia}_planks, variants: [planks, slab, stairs, fence, fence_gate, wall, pane, door, trapdoor, button, pressure_plate, sign, hanging_sign, boat, chest_boat])",
+    detail: "Generate a linked block family",
     kind: "snippet"
   }
 ];
@@ -148,6 +148,7 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "cubeAll", detail: "Builtin block cube model template", kind: "function" },
   { label: "itemGenerated", detail: "Builtin generated item template", kind: "function" },
+  { label: "itemModel", detail: "Builtin item mapping template", kind: "function" },
   {
     label: "blockFamily",
     insertText: "blockFamily(base: ${1:minecraft:acacia}, texture: ${2:minecraft:block/acacia_planks}, variants: [${3:cube, slab, stairs}], itemModels: true)",

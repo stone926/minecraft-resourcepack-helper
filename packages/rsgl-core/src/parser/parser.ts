@@ -1,6 +1,5 @@
 import {
   isResourceKeyword,
-  isSugarKeyword,
   isTopLevelKeyword
 } from "./keywords";
 import { lexRsgl } from "./lexer";
@@ -40,9 +39,6 @@ import {
   RsglNode,
   RsglToken,
   StringLiteralNode,
-  SugarEntryNode,
-  SugarKind,
-  SugarOptionNode,
   SugarPropertyNode,
   TemplateStringPart,
   TopLevelStatementNode,
@@ -157,9 +153,6 @@ class RsglParser extends ParserContext {
     }
     if (isResourceKeyword(keyword)) {
       return this.parseResourceDecl();
-    }
-    if (isSugarKeyword(keyword)) {
-      return this.parseSugarDecl();
     }
     if (keyword === "use") {
       return this.parseUseDecl();
@@ -499,94 +492,6 @@ class RsglParser extends ParserContext {
       subtype,
       id,
       body,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseSugarDecl(): TopLevelStatementNode {
-    const start = this.advance();
-    const sugarName = this.syntheticIdentifier(start, start.text);
-    const sugarKind = this.getSugarKind(start.text);
-    const options: SugarOptionNode[] = [];
-    const entries: SugarEntryNode[] = [];
-    let id: ExprNode | undefined;
-    let body: ResourceBodyNode | undefined;
-
-    if (sugarKind === "batchItemModel") {
-      if (!this.matchText("model")) {
-        this.addDiagnosticAtCurrent("rsgl.expectedItemsModel", "Expected 'model' after items.");
-      }
-      entries.push(...this.parseSugarEntryList());
-    } else if (sugarKind === "batchModel") {
-      entries.push(...this.parseSugarEntryList());
-    } else {
-      id = this.parseExpression({ stopTexts: ["{", "["] });
-      while (!this.isAtEnd() && !this.isLineBoundaryOr("}", "{", "[")) {
-        const mark = this.mark();
-        const option = this.parseSugarOption();
-        if (option) {
-          options.push(option);
-        } else {
-          break;
-        }
-        this.ensureProgress(mark, "Unable to parse sugar option; skipping token.");
-      }
-      if (this.current().text === "{") {
-        body = this.parseResourceBody(start.text);
-      }
-    }
-
-    return {
-      kind: "SugarDecl",
-      keyword: start.text,
-      sugarKind,
-      sugarName,
-      id,
-      entries,
-      options,
-      body,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseSugarEntryList(): SugarEntryNode[] {
-    const entries: SugarEntryNode[] = [];
-    if (!this.matchText("[")) {
-      this.addDiagnosticAtCurrent("rsgl.expectedSugarList", "Expected '[' for batch declaration.");
-      return entries;
-    }
-
-    while (!this.isAtEnd() && this.current().text !== "]") {
-      const mark = this.mark();
-      const start = this.current();
-      const id = this.parseExpression({ stopTexts: ["->", ",", "]"] });
-      const target = this.matchText("->") ? this.parseExpression({ stopTexts: [",", "]"] }) : undefined;
-      entries.push({
-        kind: "SugarEntry",
-        id,
-        target,
-        ...this.nodeRanges(start, this.previousOr(start))
-      });
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse batch entry; skipping token.");
-    }
-    this.expectText("]", "Expected ']' after batch declaration.");
-    return entries;
-  }
-
-  private parseSugarOption(): SugarOptionNode | null {
-    const start = this.current();
-    const name = this.parseIdentifier("Expected sugar option name.");
-    if (!name) {
-      return null;
-    }
-    const value = this.current().text === "="
-      ? (this.advance(), this.parseExpression({ stopTexts: [] }))
-      : this.parseExpression({ stopTexts: [] });
-    return {
-      kind: "SugarOption",
-      name,
-      value,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
@@ -2090,19 +1995,6 @@ class RsglParser extends ParserContext {
         "warning"
       );
     }
-  }
-
-  private getSugarKind(keyword: string): SugarKind {
-    if (keyword === "cube_all" || keyword === "item_generated") {
-      return "batchModel";
-    }
-    if (keyword === "items") {
-      return "batchItemModel";
-    }
-    if (keyword === "wood_family" || keyword === "block_family") {
-      return "family";
-    }
-    return "batchModel";
   }
 
   private consumeOptionalSeparator(): void {

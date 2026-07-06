@@ -21,7 +21,6 @@ import {
   ResourceStatementNode,
   RsglModule,
   StringLiteralNode,
-  SugarDeclNode,
   TableDeclNode,
   TemplateBodyNode,
   TopLevelStatementNode,
@@ -67,7 +66,6 @@ import {
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
-import { compileFamilySugar } from "./familySugar";
 import { compileBuiltinUse } from "./builtinUse";
 import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
 import { BinaryCopyRef, JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
@@ -79,10 +77,6 @@ import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, 
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
 import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
-import {
-  createCubeAllModel,
-  createItemMapping,
-} from "./templates";
 import { RsglResourceValidationOptions, validateResourceUnits } from "./validation";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
 import { isRsglGenericJsonResourceKind } from "../resourceKinds";
@@ -385,8 +379,6 @@ export class RsglCompiler {
   private compileStatement(statement: TopLevelStatementNode, context: RsglCompileContext): void {
     if (statement.kind === "ResourceDecl") {
       this.compileResourceDecl(statement, context);
-    } else if (statement.kind === "SugarDecl") {
-      this.compileSugarDecl(statement, context);
     } else if (statement.kind === "LetDecl") {
       this.compileLetDecl(statement, context);
     } else if (statement.kind === "TableDecl") {
@@ -956,38 +948,6 @@ export class RsglCompiler {
     }
     this.error("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
     return null;
-  }
-
-  private compileSugarDecl(statement: SugarDeclNode, context: RsglCompileContext): void {
-    if (statement.sugarKind === "family") {
-      for (const unit of compileFamilySugar(statement, context, {
-        onError: (code, message, range) => this.error(code, message, range)
-      })) {
-        this.pushUnit(unit);
-      }
-    } else if (statement.sugarKind === "batchModel") {
-      for (const entry of statement.entries) {
-        this.pushUnit(createCubeAllModel(
-          this.staticText(entry.id, context) ?? "",
-          entry.target ? (this.staticText(entry.target, context) ?? undefined) : undefined,
-          context.namespace,
-          context.sourceFile ?? this.options.fileName,
-          entry.range,
-          context.expansionStack ?? []
-        ));
-      }
-    } else if (statement.sugarKind === "batchItemModel") {
-      for (const entry of statement.entries) {
-        this.pushUnit(createItemMapping(
-          this.staticText(entry.id, context) ?? "",
-          entry.target ? (this.staticText(entry.target, context) ?? undefined) : undefined,
-          context.namespace,
-          context.sourceFile ?? this.options.fileName,
-          entry.range,
-          context.expansionStack ?? []
-        ));
-      }
-    }
   }
 
   private compileTopLevelBlockstateTemplateUse(expression: ExprNode, context: RsglCompileContext): ResourceUnit | null | undefined {

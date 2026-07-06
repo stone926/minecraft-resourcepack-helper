@@ -11,18 +11,9 @@ const declarationKeywords = [
   "template"
 ] as const;
 
-export const sugarKeywords = [
-  "cube_all",
-  "item_generated",
-  "items",
-  "wood_family",
-  "block_family"
-] as const;
-
 export const topLevelKeywords = [
   ...declarationKeywords,
   ...rsglResourceKinds,
-  ...sugarKeywords,
   "use",
   "for",
   "if"
@@ -83,8 +74,4 @@ export function isTopLevelKeyword(text: string): boolean {
 
 export function isResourceKeyword(text: string): boolean {
   return (resourceKeywords as readonly string[]).includes(text);
-}
-
-export function isSugarKeyword(text: string): boolean {
-  return (sugarKeywords as readonly string[]).includes(text);
 }

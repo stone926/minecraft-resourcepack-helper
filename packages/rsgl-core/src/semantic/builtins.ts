@@ -106,11 +106,17 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "id", type: resourceIdType, optional: false },
       { name: "texture", type: textureIdType, optional: true }
     ], jsonType),
+    builtinFunction("itemModel", [
+      { name: "id", type: resourceIdType, optional: false },
+      { name: "model", type: modelIdType, optional: true }
+    ], jsonType),
     builtinFunction("blockFamily", [
       { name: "base", type: resourceIdType, optional: false },
       { name: "texture", type: textureIdType, optional: true },
       { name: "variants", type: { kind: "List", elementType: stringType }, optional: true },
-      { name: "itemModels", type: booleanType, optional: true }
+      { name: "itemModels", type: booleanType, optional: true },
+      { name: "hangingSignParticle", type: textureIdType, optional: true },
+      { name: "hanging_sign_particle", type: textureIdType, optional: true }
     ], jsonType),
     builtinFunction("stairs", [
       { name: "base", type: modelIdType, optional: false },

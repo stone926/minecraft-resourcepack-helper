@@ -689,7 +689,7 @@ describe("RSGL compiler imports", () => {
     const result = compileRsglProgram([
       {
         fileName: firstFile,
-        module: parseRsgl("cube_all [stone]")
+        module: parseRsgl("use cubeAll(id: stone)")
       },
       {
         fileName: secondFile,
@@ -702,7 +702,7 @@ describe("RSGL compiler imports", () => {
 
   it("reports output path conflicts", () => {
     const result = compileRsglModule(parseRsgl([
-      "cube_all [stone]",
+      "use cubeAll(id: stone)",
       "model block stone { parent minecraft:block/cube_all }"
     ].join("\n")));
 

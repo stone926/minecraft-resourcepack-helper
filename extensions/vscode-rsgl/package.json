@@ -27,6 +27,7 @@
   "l10n": "./l10n",
   "scripts": {
     "compile": "tsc -p ./tsconfig.json",
+    "postcompile": "node ../../scripts/copy-rsgl-stdlib.mjs",
     "watch": "tsc -watch -p ./tsconfig.json"
   },
   "contributes": {

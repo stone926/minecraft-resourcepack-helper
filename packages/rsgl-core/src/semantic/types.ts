@@ -19,8 +19,7 @@ export type RsglSymbolKind =
   | "table"
   | "template"
   | "parameter"
-  | "resource"
-  | "sugar";
+  | "resource";
 
 export type RsglTypeKind =
   | "Unknown"
@@ -104,7 +103,7 @@ export interface RsglReferenceRecord {
 }
 
 export interface RsglOutputResourcePreview {
-  kind: ResourceDeclNode["resourceKind"] | "sugar";
+  kind: ResourceDeclNode["resourceKind"];
   id?: string;
   node: RsglNode;
 }

@@ -428,16 +428,12 @@ describe("RSGL compiler", () => {
     assert.strictEqual(variants["facing=east,half=bottom,shape=outer_left"].model, "minecraft:block/stair/acacia_stairs_outer");
   });
 
-  it("lowers cube_all and items model batch sugar", () => {
+  it("lowers cube and item mapping use declarations", () => {
     const result = compileRsglModule(parseRsgl([
-      "cube_all [",
-      "  stone",
-      "  smooth_stone -> block/smooth_stone",
-      "]",
-      "items model [",
-      "  diamond",
-      "  acacia_stairs -> block/acacia_stairs",
-      "]"
+      "use cubeAll(id: stone)",
+      "use cubeAll(id: smooth_stone, texture: block/smooth_stone)",
+      "use itemModel(id: diamond)",
+      "use itemModel(id: acacia_stairs, model: block/acacia_stairs)"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -516,12 +512,13 @@ describe("RSGL compiler", () => {
     ]);
   });
 
-  it("lowers wood family sugar to linked resources", () => {
+  it("lowers blockFamily use to linked resources", () => {
     const result = compileRsglModule(parseRsgl([
-      "wood_family acacia {",
-      "  texture minecraft:block/acacia_planks",
-      "  generate [planks, slab, stairs, fence, fence_gate]",
-      "}"
+      "use blockFamily(",
+      "  base: acacia,",
+      "  texture: minecraft:block/acacia_planks,",
+      "  variants: [planks, slab, stairs, fence, fence_gate]",
+      ")"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -606,10 +603,11 @@ describe("RSGL compiler", () => {
 
   it("reports unsupported family members", () => {
     const result = compileRsglModule(parseRsgl([
-      "wood_family acacia {",
-      "  texture minecraft:block/acacia_planks",
-      "  generate [recipe]",
-      "}"
+      "use blockFamily(",
+      "  base: acacia,",
+      "  texture: minecraft:block/acacia_planks,",
+      "  variants: [recipe]",
+      ")"
     ].join("\n")));
 
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unsupportedFamilyMember"));
@@ -617,10 +615,7 @@ describe("RSGL compiler", () => {
 
   it("lowers wall and pane family members", () => {
     const result = compileRsglModule(parseRsgl([
-      "block_family glass {",
-      "  texture minecraft:block/glass",
-      "  generate [wall, pane]",
-      "}"
+      "use blockFamily(base: glass, texture: minecraft:block/glass, variants: [wall, pane])"
     ].join("\n")));
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -660,9 +655,7 @@ describe("RSGL compiler", () => {
 
   it("lowers door and trapdoor family members", () => {
     const result = compileRsglModule(parseRsgl([
-      "wood_family acacia {",
-      "  generate [door, trapdoor]",
-      "}"
+      "use blockFamily(base: acacia, variants: [door, trapdoor])"
     ].join("\n")));
     const outputPaths = result.units.map(unit => unit.outputPath).sort();
 
@@ -730,9 +723,7 @@ describe("RSGL compiler", () => {
 
   it("lowers button, pressure plate, and sign family members", () => {
     const result = compileRsglModule(parseRsgl([
-      "wood_family acacia {",
-      "  generate [button, pressure_plate, sign]",
-      "}"
+      "use blockFamily(base: acacia, variants: [button, pressure_plate, sign])"
     ].join("\n")));
     const outputPaths = result.units.map(unit => unit.outputPath).sort();
 
@@ -814,9 +805,7 @@ describe("RSGL compiler", () => {
 
   it("lowers hanging sign and boat family members", () => {
     const result = compileRsglModule(parseRsgl([
-      "wood_family acacia {",
-      "  generate [hanging_sign, boat, chest_boat]",
-      "}"
+      "use blockFamily(base: acacia, variants: [hanging_sign, boat, chest_boat])"
     ].join("\n")));
     const outputPaths = result.units.map(unit => unit.outputPath).sort();
 
@@ -884,15 +873,14 @@ describe("RSGL compiler", () => {
 
   it("uses hanging sign particle defaults and overrides", () => {
     const bamboo = compileRsglModule(parseRsgl([
-      "wood_family bamboo {",
-      "  generate [hanging_sign]",
-      "}"
+      "use blockFamily(base: bamboo, variants: [hanging_sign])"
     ].join("\n")));
     const custom = compileRsglModule(parseRsgl([
-      "wood_family acacia {",
-      "  hanging_sign_particle custom:block/hanging_post",
-      "  generate [hanging_sign]",
-      "}"
+      "use blockFamily(",
+      "  base: acacia,",
+      "  hangingSignParticle: custom:block/hanging_post,",
+      "  variants: [hanging_sign]",
+      ")"
     ].join("\n")));
 
     assert.deepStrictEqual(bamboo.diagnostics.map(diagnostic => diagnostic.code), []);
@@ -1152,9 +1140,7 @@ describe("RSGL compiler", () => {
     const result = compileRsglModule(parseRsgl([
       "target java mc \"1.21.8\"",
       "use itemGenerated(id: diamond, texture: minecraft:item/diamond)",
-      "items model [",
-      "  acacia_stairs -> block/acacia_stairs",
-      "]",
+      "use itemModel(id: acacia_stairs, model: block/acacia_stairs)",
       "item custom_tool {",
       "  model minecraft:item/diamond",
       "}"
@@ -2269,7 +2255,7 @@ describe("RSGL compiler", () => {
   it("expands finite for loops over lists", () => {
     const result = compileRsglModule(parseRsgl([
       "for block in [minecraft:stone, minecraft:dirt] {",
-      "  cube_all [block]",
+      "  use cubeAll(id: block)",
       "}"
     ].join("\n")));
 

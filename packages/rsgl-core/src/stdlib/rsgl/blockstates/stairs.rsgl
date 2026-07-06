@@ -1,0 +1,27 @@
+template stairs(base: ModelId, inner: ModelId, outer: ModelId, uvlock: Boolean = false) {
+  variants {
+    for half in [bottom, top] {
+      for shape in STAIR_SHAPES {
+        for facing in HORIZONTAL {
+          let model = match shape {
+            inner_left | inner_right -> inner
+            outer_left | outer_right -> outer
+            _ -> base
+          }
+          let x = half == top ? 180 : 0
+          let y = match `${half}:${shape}:${facing}` {
+            "bottom:straight:north" | "bottom:inner_right:north" | "bottom:outer_right:north" | "top:straight:north" | "top:inner_left:north" | "top:outer_left:north" -> 270
+            "bottom:straight:south" | "bottom:inner_right:south" | "bottom:outer_right:south" | "top:straight:south" | "top:inner_left:south" | "top:outer_left:south" -> 90
+            "bottom:straight:west" | "bottom:inner_right:west" | "bottom:outer_right:west" | "top:straight:west" | "top:inner_left:west" | "top:outer_left:west" -> 180
+            "bottom:inner_left:north" | "bottom:outer_left:north" | "top:inner_right:south" | "top:outer_right:south" -> 180
+            "bottom:inner_left:east" | "bottom:outer_left:east" | "top:inner_right:west" | "top:outer_right:west" -> 270
+            "bottom:inner_left:west" | "bottom:outer_left:west" | "top:inner_right:east" | "top:outer_right:east" -> 90
+            _ -> 0
+          }
+          [facing=facing half=half shape=shape] -> @model x=x y=y uvlock=(uvlock || x != 0 || y != 0)
+        }
+      }
+    }
+  }
+}
+export { stairs }

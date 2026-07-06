@@ -273,6 +273,7 @@
     "vscode:prepublish": "npm run compile",
     "clean": "node scripts/clean.mjs",
     "compile": "tsc -p ./",
+    "postcompile": "node scripts/copy-rsgl-stdlib.mjs",
     "compile:all": "npm run compile && npm run compile:rsgl-extension",
     "compile:rsgl-extension": "npm --prefix extensions/vscode-rsgl run compile",
     "compile:test": "npm run clean && npm run compile",

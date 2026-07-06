@@ -60,8 +60,6 @@ class ResolvedImportCallValidator {
         this.validateExpression(statement.id);
       }
       this.validateBody(statement.body);
-    } else if (statement.kind === "SugarDecl") {
-      this.validateSugarStatement(statement);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
@@ -139,26 +137,6 @@ class ResolvedImportCallValidator {
       }
     } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt" || statement.kind === "AppendStmt") {
       this.validateExpression(statement.value);
-    }
-  }
-
-  private validateSugarStatement(statement: Extract<TopLevelStatementNode, { kind: "SugarDecl" }>): void {
-    if (statement.id) {
-      this.validateExpression(statement.id);
-    }
-    statement.entries.forEach(entry => {
-      this.validateExpression(entry.id);
-      if (entry.target) {
-        this.validateExpression(entry.target);
-      }
-    });
-    statement.options.forEach(option => {
-      if (option.value) {
-        this.validateExpression(option.value);
-      }
-    });
-    if (statement.body) {
-      this.validateBody(statement.body);
     }
   }
 

@@ -53,6 +53,17 @@ export function compileBuiltinUse(
     ]);
   }
 
+  if (call.callee.name.text === "itemModel") {
+    const id = requiredTextArg(call, "id", 0, context, options);
+    if (!id) {
+      return [];
+    }
+    const model = optionalTextArg(call, "model", 1, context, options);
+    return compact([
+      createItemMapping(id, model ?? undefined, context.namespace, options.sourceFile, call.range, options.expansionStack)
+    ]);
+  }
+
   if (call.callee.name.text === "blockFamily") {
     return compileBlockFamilyUse(call, context, {
       onError: options.onError
