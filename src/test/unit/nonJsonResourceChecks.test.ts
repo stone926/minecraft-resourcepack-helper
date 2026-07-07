@@ -1,6 +1,5 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
   getPackImageResourceIssues,
@@ -10,6 +9,7 @@ import {
 } from "../../diagnostics/nonJsonResourceChecks";
 import type { LocalizedMessage } from "../../i18n/messages";
 import { readOggMetadata } from "../../../packages/mc-assets/src";
+import { createOggVorbisBytes, createPngBytes, createTempDirectory } from "./helpers/tempPack";
 
 describe("non-JSON resource checks", () => {
   it("reads PNG dimensions from the IHDR header", () => {
@@ -95,43 +95,3 @@ function messageKey(message: LocalizedMessage): string {
   return message.message;
 }
 
-function createPngBytes(width: number, height: number): Buffer {
-  const bytes = Buffer.alloc(24);
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0);
-  bytes.writeUInt32BE(13, 8);
-  bytes.write("IHDR", 12, "ascii");
-  bytes.writeUInt32BE(width, 16);
-  bytes.writeUInt32BE(height, 20);
-  return bytes;
-}
-
-function createOggVorbisBytes(channels: number, sampleRate: number, samples: number): Buffer {
-  const identification = Buffer.alloc(30);
-  identification[0] = 1;
-  identification.write("vorbis", 1, "ascii");
-  identification.writeUInt32LE(0, 7);
-  identification[11] = channels;
-  identification.writeUInt32LE(sampleRate, 12);
-  identification[29] = 1;
-  return Buffer.concat([
-    createOggPage(identification, 0n, 0, 2),
-    createOggPage(Buffer.from([0]), BigInt(samples), 1, 4)
-  ]);
-}
-
-function createOggPage(packet: Buffer, granule: bigint, sequence: number, headerType: number): Buffer {
-  const segments = [packet.length];
-  const header = Buffer.alloc(27 + segments.length);
-  header.write("OggS", 0, "ascii");
-  header[5] = headerType;
-  header.writeBigUInt64LE(granule, 6);
-  header.writeUInt32LE(1, 14);
-  header.writeUInt32LE(sequence, 18);
-  header[26] = segments.length;
-  header[27] = packet.length;
-  return Buffer.concat([header, packet]);
-}
-
-function createTempDirectory(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-"));
-}

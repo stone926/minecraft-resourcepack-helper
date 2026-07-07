@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { errorMsg, promptMsg } from "../../commands/constants";
 import type { LocalizedMessage } from "../../i18n/messages";
+import { readCombinedModelPreviewScript } from "./helpers/webviewScripts";
 
 interface PackageJson {
   displayName?: string;
@@ -54,7 +55,7 @@ describe("i18n", () => {
 
   it("keeps model preview webview UI strings behind l10n helpers", () => {
     const webviewSource = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
-    const scriptSource = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const scriptSource = readCombinedModelPreviewScript();
 
     assert.ok(webviewSource.includes("__MC_RES_HELPER_L10N__"), "webview HTML should inject the host l10n dictionary");
     assert.strictEqual(webviewSource.includes('<html lang="en">'), false, "webview language should follow VS Code");

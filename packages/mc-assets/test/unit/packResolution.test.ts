@@ -2,7 +2,14 @@ import * as assert from "assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findAssetsRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "../../src";
+import {
+  findAssetsRoot,
+  findPackRoot,
+  getDocumentResourceRootCandidates,
+  packRootFromAssetsPath,
+  parseAssetsPath,
+  parseResourceLocation
+} from "../../src";
 
 
 describe("resource location utilities", () => {
@@ -219,6 +226,63 @@ describe("resource location utilities", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("parses assets paths into assets root, namespace, and relative segments", () => {
+    const parsed = parseAssetsPath(path.join("pack", "assets", "minecraft", "textures", "block", "stone.png"));
+
+    assert.deepStrictEqual(parsed, {
+      assetsRoot: path.join("pack", "assets"),
+      namespace: "minecraft",
+      relativeSegments: ["textures", "block", "stone.png"]
+    });
+  });
+
+  it("uses the innermost assets directory and matches it case-insensitively", () => {
+    const nested = parseAssetsPath(path.join("outer", "assets", "a", "assets", "ns", "file.png"));
+    const uppercase = parseAssetsPath(path.join("pack", "Assets", "custom", "sounds.json"));
+
+    assert.deepStrictEqual(nested, {
+      assetsRoot: path.join("outer", "assets", "a", "assets"),
+      namespace: "ns",
+      relativeSegments: ["file.png"]
+    });
+    assert.strictEqual(uppercase?.namespace, "custom");
+    assert.strictEqual(uppercase?.assetsRoot, path.join("pack", "Assets"));
+  });
+
+  it("returns null for paths without an assets namespace", () => {
+    assert.strictEqual(parseAssetsPath(path.join("pack", "data", "recipes", "stone.json")), null);
+    assert.strictEqual(parseAssetsPath(path.join("pack", "assets")), null);
+    assert.deepStrictEqual(parseAssetsPath(path.join("pack", "assets", "minecraft"))?.relativeSegments, []);
+  });
+
+  it("derives pack roots from assets paths without touching the filesystem", () => {
+    assert.strictEqual(
+      packRootFromAssetsPath(path.join("packs", "example", "assets", "minecraft", "models", "block", "cube.json")),
+      path.join("packs", "example")
+    );
+    assert.strictEqual(packRootFromAssetsPath(path.join("packs", "example", "models", "cube.json")), null);
+  });
+
+  it("finds pack roots upward from a file, checking the stopAt directory itself", () => {
+    const root = path.parse(__dirname).root;
+    const packRoot = path.join(root, "packs", "example");
+    const fileName = path.join(packRoot, "assets", "minecraft", "models", "block", "cube.json");
+    const pathExists = (filePath: string) => filePath === path.join(packRoot, "pack.mcmeta");
+
+    assert.strictEqual(findPackRoot(fileName, { pathExists }), packRoot);
+    assert.strictEqual(findPackRoot(fileName, { pathExists, stopAt: packRoot }), packRoot);
+  });
+
+  it("does not search above the stopAt directory for pack.mcmeta", () => {
+    const root = path.parse(__dirname).root;
+    const packRoot = path.join(root, "packs", "example");
+    const fileName = path.join(packRoot, "assets", "minecraft", "models", "block", "cube.json");
+    const pathExists = (filePath: string) => filePath === path.join(root, "packs", "pack.mcmeta");
+
+    assert.strictEqual(findPackRoot(fileName, { pathExists }), path.join(root, "packs"));
+    assert.strictEqual(findPackRoot(fileName, { pathExists, stopAt: packRoot }), null);
   });
 });
 

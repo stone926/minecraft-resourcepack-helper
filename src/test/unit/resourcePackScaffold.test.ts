@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { defaultPackAttributes, getPackMcmeta, isPackFormatVersion } from "../../commands/constants";
 import { createNamespaceFolders, resourcePackNamespaceDirectories, writePackScaffold } from "../../commands/resourcePackScaffold";
+import { createTempDirectory } from "./helpers/tempPack";
 
 describe("resource pack scaffold", () => {
   it("creates current Java resource pack namespace directories", () => {
@@ -66,6 +66,3 @@ describe("resource pack scaffold", () => {
   });
 });
 
-function createTempDirectory(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-"));
-}

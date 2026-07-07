@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { readCombinedModelPreviewScript, readModelPreviewScripts } from "../helpers/webviewScripts";
 
 interface PackageJson {
   dependencies?: Record<string, string>;
@@ -38,10 +39,13 @@ describe("model preview manifest", () => {
 
   it("ships webview static assets and vendored Three.js runtime files", () => {
     const packageJson = readPackageJson();
+    const scriptNames = readModelPreviewScripts().map(script => script.fileName);
 
     assert.strictEqual(packageJson.dependencies?.three, undefined, "three should not ship through node_modules");
     assert.ok(packageJson.devDependencies?.three, "three should remain available for vendor updates");
-    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js")));
+    for (const moduleName of ["main.js", "previewRenderer.js", "previewScene.js", "detailsPanel.js", "webviewApi.js"]) {
+      assert.ok(scriptNames.includes(moduleName), `webview should ship ${moduleName}`);
+    }
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.module.js")));
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.core.js")));
@@ -61,7 +65,7 @@ describe("model preview manifest", () => {
 
   it("keeps preview camera padded and the details panel adjustable", () => {
     const webviewHtml = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
-    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const script = readCombinedModelPreviewScript();
     const styles = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css"), "utf8");
     const padding = script.match(/const CAMERA_FIT_PADDING = ([\d.]+);/);
 
@@ -84,7 +88,7 @@ describe("model preview manifest", () => {
   it("exposes clickable issue/dependency resources and structured screenshot failures", () => {
     const messageTypes = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewMessages.ts"), "utf8");
     const panelSource = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewPanel.ts"), "utf8");
-    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const script = readCombinedModelPreviewScript();
 
     assert.ok(messageTypes.includes('{ type: "openResource"; uri: string; range?: PreviewRange }'));
     assert.ok(messageTypes.includes('{ type: "screenshotError"; requestId: string; error: ModelPreviewError }'));
@@ -96,7 +100,7 @@ describe("model preview manifest", () => {
 
   it("supports export sizing, background options, and explicit webview disposal", () => {
     const webviewHtml = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
-    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const script = readCombinedModelPreviewScript();
     const styles = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css"), "utf8");
 
     assert.ok(webviewHtml.includes('id="exportDialog"'), "export UI should expose configurable options");
@@ -115,7 +119,7 @@ describe("model preview manifest", () => {
   });
 
   it("uses the Minecraft missing texture colors and quadrant layout", () => {
-    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "main.js"), "utf8");
+    const script = readCombinedModelPreviewScript();
 
     assert.ok(script.includes("const MISSING_TEXTURE_SIZE = 16"), "missing texture should match Minecraft's 16x16 sprite size");
     assert.ok(script.includes("const MISSING_TEXTURE_MAGENTA = [248, 0, 248]"), "missing texture should use Minecraft magenta");
