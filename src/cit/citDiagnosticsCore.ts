@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { parseAssetsPath } from "../../packages/mc-assets/src";
 import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
 import { parseCitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
 import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
@@ -421,15 +422,13 @@ function getGlobalPriorityDiagnostics(
     return [];
   }
 
-  const normalized = path.normalize(fileName);
-  const segments = normalized.split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0) {
+  const parsed = parseAssetsPath(fileName);
+  if (!parsed) {
     return [];
   }
 
-  const packRoot = path.join(path.parse(normalized).root, ...segments.slice(0, assetsIndex));
-  const currentRelative = segments.slice(assetsIndex + 2).join("/").toLowerCase();
+  const packRoot = path.dirname(parsed.assetsRoot);
+  const currentRelative = parsed.relativeSegments.join("/").toLowerCase();
   const currentIndex = globalPriority.indexOf(currentRelative);
   if (currentIndex <= 0) {
     return [];

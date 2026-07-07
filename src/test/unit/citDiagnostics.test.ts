@@ -160,6 +160,26 @@ describe("CIT diagnostics", () => {
     assert.ok(diagnostics.some(message => message.includes("minecraft:stick") && message.includes("not an armor item")));
     assert.strictEqual(diagnostics.some(message => message.includes("minecraft:diamond_helmet") && message.includes("not an armor item")), false);
   });
+
+  it("reports shadowed global cit.properties for absolute pack paths", () => {
+    const packRoot = path.resolve("pack");
+    const fileName = path.join(packRoot, "assets", "minecraft", "optifine", "cit.properties");
+    const higherPriority = path.join(packRoot, "assets", "minecraft", "citresewn", "cit.properties");
+    const document: CitLanguageDocument = {
+      fileName,
+      getText: () => "useGlint=true"
+    };
+
+    const diagnostics = getCitDiagnostics(document, {
+      locale: "en",
+      fileExists: candidate => candidate === higherPriority
+    }).map(diagnostic => diagnostic.message);
+
+    assert.ok(
+      diagnostics.some(message => message.includes("higher-priority file exists")),
+      `expected shadowed-global diagnostic, got: ${JSON.stringify(diagnostics)}`
+    );
+  });
 });
 
 function getMessages(
