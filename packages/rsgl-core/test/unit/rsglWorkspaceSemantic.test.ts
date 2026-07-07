@@ -1,12 +1,12 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
+import { createTempDir } from "./helpers/fs";
 
 describe("RSGL workspace semantic cache", () => {
   it("reuses the bound program while the source graph is unchanged", () => {
-    const root = createTempDir();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-");
     try {
       const mainFile = path.join(root, "main.rsgl");
       const templatesFile = path.join(root, "templates.rsgl");
@@ -33,7 +33,7 @@ describe("RSGL workspace semantic cache", () => {
   });
 
   it("invalidates dependent semantic programs when an imported file changes", () => {
-    const root = createTempDir();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-");
     try {
       const mainFile = path.join(root, "main.rsgl");
       const templatesFile = path.join(root, "templates.rsgl");
@@ -81,7 +81,7 @@ describe("RSGL workspace semantic cache", () => {
   });
 
   it("reuses and refreshes bound directory programs", () => {
-    const root = createTempDir();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-");
     try {
       const sourceRoot = path.join(root, "src");
       const firstFile = path.join(sourceRoot, "first.rsgl");
@@ -111,7 +111,3 @@ describe("RSGL workspace semantic cache", () => {
     }
   });
 });
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-semantic-"));
-}

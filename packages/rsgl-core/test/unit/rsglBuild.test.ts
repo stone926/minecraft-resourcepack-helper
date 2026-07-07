@@ -1,6 +1,5 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
   buildRsglResourcePack,
@@ -10,10 +9,11 @@ import {
   previewRsglResourcePackDirectoryBuild
 } from "../../src/build";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
+import { createTempDir } from "./helpers/fs";
 
 describe("RSGL build", () => {
   it("writes emitted resources with source maps and a manifest", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const entry = path.join(root, "src", "main.rsgl");
     const outputRoot = path.join(root, "pack");
 
@@ -45,7 +45,7 @@ describe("RSGL build", () => {
   });
 
   it("does not write files when compilation has errors", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const entry = path.join(root, "main.rsgl");
     const outputRoot = path.join(root, "pack");
 
@@ -63,7 +63,7 @@ describe("RSGL build", () => {
   });
 
   it("previews planned changes without writing output files", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const entry = path.join(root, "src", "main.rsgl");
     const outputRoot = path.join(root, "pack");
     const modelPath = path.join(outputRoot, "assets", "minecraft", "models", "block", "stone.json");
@@ -102,7 +102,7 @@ describe("RSGL build", () => {
   });
 
   it("previews binary copy resources without writing output files", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const entry = path.join(root, "src", "main.rsgl");
     const outputRoot = path.join(root, "pack");
     const source = path.join(root, "src", "pack.png");
@@ -129,7 +129,7 @@ describe("RSGL build", () => {
   });
 
   it("builds every RSGL source file in a source directory", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const sourceRoot = path.join(root, "src");
     const outputRoot = path.join(root, "pack");
 
@@ -167,7 +167,7 @@ describe("RSGL build", () => {
   });
 
   it("builds from a pre-bound RSGL semantic program", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const sourceRoot = path.join(root, "src");
     const outputRoot = path.join(root, "pack");
 
@@ -200,7 +200,7 @@ describe("RSGL build", () => {
   });
 
   it("previews directory builds without writing output files", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const sourceRoot = path.join(root, "src");
     const outputRoot = path.join(root, "pack");
     const modelPath = path.join(outputRoot, "assets", "minecraft", "models", "block", "stone.json");
@@ -237,7 +237,7 @@ describe("RSGL build", () => {
   });
 
   it("reports an error for an empty RSGL source directory", () => {
-    const root = createTempDirectory();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const sourceRoot = path.join(root, "src");
     const outputRoot = path.join(root, "pack");
 
@@ -254,7 +254,3 @@ describe("RSGL build", () => {
     }
   });
 });
-
-function createTempDirectory(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-build-"));
-}

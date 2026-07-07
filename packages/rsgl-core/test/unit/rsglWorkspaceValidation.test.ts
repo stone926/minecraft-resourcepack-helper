@@ -1,0 +1,332 @@
+import * as assert from "node:assert";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { compileRsglFile } from "../../src/compiler";
+import { createRsglWorkspaceValidationOptions } from "../../src/workspaceValidation";
+import { compileSource } from "./helpers/compile";
+import { createPngBytes } from "./helpers/fixtures";
+import { createTempDir } from "./helpers/fs";
+
+describe("RSGL workspace validation", () => {
+  it("uses filesystem workspace validation for RSGL resources", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const mainFile = path.join(packRoot, "main.rsgl");
+    const externalChild = path.join(packRoot, "assets", "minecraft", "models", "block", "external_child.json");
+    const externalRoot = path.join(packRoot, "assets", "minecraft", "models", "block", "external_root.json");
+    const texture = path.join(packRoot, "assets", "minecraft", "textures", "block", "external_texture.png");
+    const vertexShader = path.join(packRoot, "assets", "minecraft", "shaders", "core", "screenquad.vsh");
+    const fragmentShader = path.join(packRoot, "assets", "minecraft", "shaders", "post", "box_blur.fsh");
+    const effectTexture = path.join(packRoot, "assets", "minecraft", "textures", "effect", "blur", "mask.png");
+
+    try {
+      fs.mkdirSync(path.dirname(externalChild), { recursive: true });
+      fs.mkdirSync(path.dirname(texture), { recursive: true });
+      fs.mkdirSync(path.dirname(vertexShader), { recursive: true });
+      fs.mkdirSync(path.dirname(fragmentShader), { recursive: true });
+      fs.mkdirSync(path.dirname(effectTexture), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(mainFile, [
+        "model block workspace_child {",
+        "  parent minecraft:block/external_child",
+        "  textures { all: \"#alias\" }",
+        "}",
+        "post_effect workspace_shader {",
+        "  targets { swap: {} }",
+        "  passes [",
+        "    { vertex_shader: minecraft:core/screenquad, fragment_shader: minecraft:post/box_blur, inputs: [{ sampler_name: \"Mask\", location: minecraft:blur/mask }], output: \"swap\" }",
+        "  ]",
+        "}"
+      ].join("\n"));
+      fs.writeFileSync(externalChild, JSON.stringify({
+        parent: "minecraft:block/external_root",
+        textures: { alias: "#root" }
+      }));
+      fs.writeFileSync(externalRoot, JSON.stringify({
+        textures: { root: "minecraft:block/external_texture" }
+      }));
+      fs.writeFileSync(texture, Buffer.alloc(0));
+      fs.writeFileSync(vertexShader, "");
+      fs.writeFileSync(fragmentShader, "");
+      fs.writeFileSync(effectTexture, Buffer.alloc(0));
+
+      const result = compileRsglFile(mainFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: mainFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: []
+      }));
+      const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+      assert.strictEqual(codes.includes("rsgl.modelNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.textureNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.vertexShaderNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.fragmentShaderNotFound"), false);
+      assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("validates sound, atlas, mcmeta, and overlay resources", () => {
+    const checkedResources: string[] = [];
+    const result = compileSource([
+      "sounds custom {",
+      "  \"entity.example.ambient\" {",
+      "    sounds: [",
+      "      \"entity/example/ambient1\",",
+      "      { name: \"entity/example/ambient2\" },",
+      "      { name: \"entity/example/event\", type: event }",
+      "    ]",
+      "  }",
+      "}",
+      "atlas minecraft:blocks {",
+      "  sources [",
+      "    { type: minecraft:directory, source: block/missing_directory },",
+      "    { type: single, resource: minecraft:block/missing_single },",
+      "    { type: minecraft:unstitch, resource: minecraft:block/missing_unstitch, regions: [{ sprite: block/slice, x: 0, y: 0, width: 16, height: 16 }] },",
+      "    { type: filter, pattern: { namespace: \"[\", path: \"*\" } },",
+      "    { type: paletted_permutations, textures: [minecraft:block/missing_palette], palette_key: minecraft:block/missing_palette_key, permutations: { red: minecraft:block/missing_permutation } }",
+      "  ]",
+      "}",
+      "mcmeta \"assets/minecraft/textures/block/missing_anim.png\" {",
+      "  animation { frametime 2 }",
+      "}",
+      "particles missing_particles {",
+      "  textures [minecraft:particle/missing_particle]",
+      "}",
+      "equipment missing_equipment {",
+      "  layers {",
+      "    humanoid [",
+      "      { texture: minecraft:missing_equipment }",
+      "    ]",
+      "  }",
+      "}",
+      "pack {",
+      "  pack { description: \"Generated\" }",
+      "  overlays {",
+      "    entries: [",
+      "      { directory: \"Bad/Overlay\", min_format: [90, 0], max_format: [89, 0] },",
+      "      { directory: \"future\", min_format: [90, 0], max_format: [91, 0] }",
+      "    ]",
+      "  }",
+      "}"
+    ], {
+      targetPackFormat: { major: 88 },
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.soundNotFound"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.ok(codes.includes("rsgl.textureDirectoryNotFound"));
+    assert.ok(codes.includes("rsgl.invalidAtlasFilterPattern"));
+    assert.ok(codes.includes("rsgl.invalidOverlayDirectory"));
+    assert.ok(codes.includes("rsgl.invalidOverlayFormatRange"));
+    assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
+    assert.ok(checkedResources.includes("sound:custom:entity/example/ambient1"));
+    assert.ok(checkedResources.includes("sound:custom:entity/example/ambient2"));
+    assert.strictEqual(checkedResources.includes("sound:custom:entity/example/event"), false);
+    assert.ok(checkedResources.includes("textureDirectory:minecraft:block/missing_directory"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_single"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_unstitch"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_palette"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_palette_key"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_permutation"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_anim"));
+    assert.ok(checkedResources.includes("texture:minecraft:particle/missing_particle"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid/missing_equipment"));
+    const atlasUnit = result.units.find(unit => unit.outputPath.endsWith("atlases/blocks.json"));
+    const atlasRange = (generatedPath: string) => {
+      let current = generatedPath;
+      while (current) {
+        const range = atlasUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === current)?.sourceRange;
+        if (range) {
+          return range;
+        }
+        const slash = current.lastIndexOf("/");
+        current = slash > 0 ? current.slice(0, slash) : "";
+      }
+      return atlasUnit?.sourceMap.mappings.find(mapping => mapping.generatedPath === "")?.sourceRange;
+    };
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureDirectoryNotFound"
+      && diagnostic.message.includes("missing_directory")
+      && diagnostic.range.start === atlasRange("/sources/0/source")?.start
+      && diagnostic.range.end === atlasRange("/sources/0/source")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_single")
+      && diagnostic.range.start === atlasRange("/sources/1/resource")?.start
+      && diagnostic.range.end === atlasRange("/sources/1/resource")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_unstitch")
+      && diagnostic.range.start === atlasRange("/sources/2/resource")?.start
+      && diagnostic.range.end === atlasRange("/sources/2/resource")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidAtlasFilterPattern"
+      && diagnostic.message.includes("namespace")
+      && diagnostic.range.start === atlasRange("/sources/3/pattern/namespace")?.start
+      && diagnostic.range.end === atlasRange("/sources/3/pattern/namespace")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidAtlasFilterPattern"
+      && diagnostic.message.includes("path")
+      && diagnostic.range.start === atlasRange("/sources/3/pattern/path")?.start
+      && diagnostic.range.end === atlasRange("/sources/3/pattern/path")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_palette")
+      && diagnostic.range.start === atlasRange("/sources/4/textures/0")?.start
+      && diagnostic.range.end === atlasRange("/sources/4/textures/0")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_palette_key")
+      && diagnostic.range.start === atlasRange("/sources/4/palette_key")?.start
+      && diagnostic.range.end === atlasRange("/sources/4/palette_key")?.end
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("missing_permutation")
+      && diagnostic.range.start === atlasRange("/sources/4/permutations/red")?.start
+      && diagnostic.range.end === atlasRange("/sources/4/permutations/red")?.end
+    ));
+  });
+
+  it("validates mcmeta animation frames against texture metadata", () => {
+    const result = compileSource([
+      "mcmeta \"assets/minecraft/textures/block/animated.png\" {",
+      "  animation {",
+      "    width 16",
+      "    height 16",
+      "    frametime 0",
+      "    interpolate \"yes\"",
+      "    frames [0, 4, { index: 2, time: 0 }, { index: -1 }]",
+      "  }",
+      "}"
+    ], {
+      resourceExists: () => true,
+      textureMetadata: id => id === "minecraft:block/animated" ? { width: 16, height: 48 } : null
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.invalidMcmetaFrameTime"));
+    assert.ok(codes.includes("rsgl.invalidMcmetaInterpolate"));
+    assert.ok(codes.includes("rsgl.invalidMcmetaFrameIndex"));
+    assert.ok(codes.includes("rsgl.mcmetaFrameIndexOutOfRange"));
+    assert.strictEqual(codes.includes("rsgl.invalidMcmetaFrameStrip"), false);
+  });
+
+  it("validates mcmeta animation frame strip dimensions", () => {
+    const result = compileSource([
+      "mcmeta \"assets/minecraft/textures/block/bad_strip.png\" {",
+      "  animation {",
+      "    frames [0]",
+      "  }",
+      "}"
+    ], {
+      resourceExists: () => true,
+      textureMetadata: id => id === "minecraft:block/bad_strip" ? { width: 16, height: 20 } : null
+    });
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidMcmetaFrameStrip"));
+  });
+
+  it("reads mcmeta texture metadata through the workspace validation adapter", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const sourceFile = path.join(packRoot, "main.rsgl");
+    const textureFile = path.join(packRoot, "assets", "minecraft", "textures", "block", "adapter_bad_strip.png");
+    try {
+      fs.mkdirSync(path.dirname(textureFile), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(textureFile, createPngBytes(16, 20));
+      fs.writeFileSync(sourceFile, [
+        "mcmeta \"assets/minecraft/textures/block/adapter_bad_strip.png\" {",
+        "  animation { frames [0] }",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: []
+      }));
+
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidMcmetaFrameStrip"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads sound metadata through the workspace validation adapter", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const sourceFile = path.join(packRoot, "main.rsgl");
+    const soundFile = path.join(packRoot, "assets", "minecraft", "sounds", "entity", "example", "bad.ogg");
+    try {
+      fs.mkdirSync(path.dirname(soundFile), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(soundFile, Buffer.from("not ogg"));
+      fs.writeFileSync(sourceFile, [
+        "sounds minecraft {",
+        "  \"entity.example.bad\" { sounds: [\"entity/example/bad\"] }",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: []
+      }));
+
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidSoundMetadata"));
+      assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.soundNotFound"), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("infers blockstate schemas through the workspace validation adapter", () => {
+    const root = createTempDir();
+    const packRoot = path.join(root, "pack");
+    const sourceFile = path.join(packRoot, "main.rsgl");
+    const blockstateFile = path.join(packRoot, "assets", "minecraft", "blockstates", "lamp.json");
+    try {
+      fs.mkdirSync(path.dirname(blockstateFile), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(blockstateFile, JSON.stringify({
+        variants: {
+          ["facing=north,lit=true"]: { model: "minecraft:block/lamp" },
+          ["facing=south,lit=false"]: { model: "minecraft:block/lamp" }
+        }
+      }));
+      fs.writeFileSync(sourceFile, [
+        "blockstate lamp {",
+        "  variants {",
+        "    [facing=up lit=true extra=true] -> { model: minecraft:block/lamp }",
+        "  }",
+        "}"
+      ].join("\n"));
+
+      const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: null,
+        resourcePackRoots: []
+      }));
+
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidBlockstateStateSchemaValue"));
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unknownBlockstateStateProperty"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

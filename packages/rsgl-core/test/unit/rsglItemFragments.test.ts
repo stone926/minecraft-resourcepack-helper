@@ -1,0 +1,239 @@
+import * as assert from "node:assert";
+import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+
+describe("RSGL item model fragments", () => {
+  it("lowers item range and select fragments", () => {
+    const result = compileSource([
+      "table potionCases {",
+      "  healing: minecraft:item/potion_healing",
+      "  strong_healing: minecraft:item/potion_strong_healing",
+      "}",
+      "item compass {",
+      "  use itemRangeFrames(",
+      "    property: minecraft:compass,",
+      "    target: spawn,",
+      "    wobble: true,",
+      "    frames: 0..2,",
+      "    threshold: index / 3,",
+      "    model: `minecraft:item/compass_${pad(index, 2)}`,",
+      "    fallback: minecraft:item/compass_00",
+      "  )",
+      "}",
+      "item potion {",
+      "  use itemSelectCases(",
+      "    property: minecraft:potion_contents,",
+      "    component: minecraft:potion_contents,",
+      "    cases: potionCases,",
+      "    fallback: minecraft:item/potion",
+      "  )",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      "assets/minecraft/items/compass.json",
+      "assets/minecraft/items/potion.json"
+    ]);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("compass.json"))?.content, {
+      model: {
+        type: "minecraft:range_dispatch",
+        property: "minecraft:compass",
+        target: "spawn",
+        wobble: true,
+        entries: [
+          { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
+          { threshold: 1 / 3, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } },
+          { threshold: 2 / 3, model: { type: "minecraft:model", model: "minecraft:item/compass_02" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/compass_00"
+        }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("potion.json"))?.content, {
+      model: {
+        type: "minecraft:select",
+        property: "minecraft:potion_contents",
+        component: "minecraft:potion_contents",
+        cases: [
+          { when: "healing", model: { type: "minecraft:model", model: "minecraft:item/potion_healing" } },
+          { when: "strong_healing", model: { type: "minecraft:model", model: "minecraft:item/potion_strong_healing" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/potion"
+        }
+      }
+    });
+  });
+
+  it("lowers item range and select statements", () => {
+    const result = compileSource([
+      "item compass {",
+      "  range property minecraft:compass target spawn wobble true {",
+      "    frames 0..2 model `minecraft:item/compass_${pad(index, 2)}`",
+      "    fallback minecraft:item/compass_00",
+      "  }",
+      "}",
+      "item potion {",
+      "  select property minecraft:potion_contents component minecraft:potion_contents {",
+      "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
+      "    case \"minecraft:strong_healing\" -> minecraft:item/potion_strong_healing",
+      "    fallback minecraft:item/potion",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("compass.json"))?.content, {
+      model: {
+        type: "minecraft:range_dispatch",
+        property: "minecraft:compass",
+        target: "spawn",
+        wobble: true,
+        entries: [
+          { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
+          { threshold: 1, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } },
+          { threshold: 2, model: { type: "minecraft:model", model: "minecraft:item/compass_02" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/compass_00"
+        }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("potion.json"))?.content, {
+      model: {
+        type: "minecraft:select",
+        property: "minecraft:potion_contents",
+        component: "minecraft:potion_contents",
+        cases: [
+          { when: "minecraft:healing", model: { type: "minecraft:model", model: "minecraft:item/potion_healing" } },
+          { when: "minecraft:strong_healing", model: { type: "minecraft:model", model: "minecraft:item/potion_strong_healing" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/potion"
+        }
+      }
+    });
+  });
+
+  it("lowers item statements inside user templates", () => {
+    const result = compileSource([
+      "template compassModel(frames: Json = 0..1) {",
+      "  range property minecraft:compass target spawn {",
+      "    frames frames model `minecraft:item/compass_${pad(index, 2)}`",
+      "    fallback minecraft:item/compass_00",
+      "  }",
+      "}",
+      "item compass {",
+      "  use compassModel()",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units[0].content, {
+      model: {
+        type: "minecraft:range_dispatch",
+        property: "minecraft:compass",
+        target: "spawn",
+        entries: [
+          { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
+          { threshold: 1, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } }
+        ],
+        fallback: {
+          type: "minecraft:model",
+          model: "minecraft:item/compass_00"
+        }
+      }
+    });
+  });
+
+  it("lowers item condition and composite statements", () => {
+    const result = compileSource([
+      "item bow {",
+      "  condition property minecraft:using_item {",
+      "    on_true minecraft:item/bow_pulling_0",
+      "    on_false minecraft:item/bow",
+      "  }",
+      "}",
+      "item layered {",
+      "  composite {",
+      "    model minecraft:item/base",
+      "    model { model: minecraft:item/overlay, weight: 2 }",
+      "  }",
+      "}"
+    ], {
+      resourceExists: () => true
+    });
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("bow.json"))?.content, {
+      model: {
+        type: "minecraft:condition",
+        property: "minecraft:using_item",
+        ["on_true"]: { type: "minecraft:model", model: "minecraft:item/bow_pulling_0" },
+        ["on_false"]: { type: "minecraft:model", model: "minecraft:item/bow" }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("layered.json"))?.content, {
+      model: {
+        type: "minecraft:composite",
+        models: [
+          { type: "minecraft:model", model: "minecraft:item/base" },
+          { type: "minecraft:model", model: "minecraft:item/overlay", weight: 2 }
+        ]
+      }
+    });
+  });
+
+  it("lowers item special, empty, and selected item statements", () => {
+    const checkedResources: string[] = [];
+    const result = compileSource([
+      "item shield {",
+      "  special base minecraft:item/shield model { type: minecraft:shield }",
+      "}",
+      "item chest {",
+      "  special base minecraft:item/chest model { type: minecraft:chest, texture: \"christmas\" }",
+      "}",
+      "item hidden {",
+      "  empty",
+      "}",
+      "item bundle {",
+      "  selected_item",
+      "}"
+    ], {
+      resourceExists: (kind, id) => {
+        checkedResources.push(`${kind}:${id}`);
+        return true;
+      }
+    });
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("shield.json"))?.content, {
+      model: {
+        type: "minecraft:special",
+        base: "minecraft:item/shield",
+        model: { type: "minecraft:shield" }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("chest.json"))?.content, {
+      model: {
+        type: "minecraft:special",
+        base: "minecraft:item/chest",
+        model: { type: "minecraft:chest", texture: "christmas" }
+      }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("hidden.json"))?.content, {
+      model: { type: "minecraft:empty" }
+    });
+    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("bundle.json"))?.content, {
+      model: { type: "minecraft:bundle/selected_item" }
+    });
+    assert.ok(checkedResources.includes("model:minecraft:item/shield"));
+    assert.ok(checkedResources.includes("model:minecraft:item/chest"));
+    assert.ok(checkedResources.includes("texture:minecraft:entity/chest/christmas"));
+  });
+});

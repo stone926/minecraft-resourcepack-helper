@@ -1,13 +1,13 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { RsglWorkspaceSourceCache } from "../../src/workspaceSource";
 import { bindRsglProgram, RsglSourceFile } from "../../src/semantic";
+import { createTempDir } from "./helpers/fs";
 
 describe("RSGL workspace source cache", () => {
   it("loads imports and re-exports using open document content", () => {
-    const root = createTempDir();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-source-");
     try {
       const mainFile = path.join(root, "main.rsgl");
       const barrelFile = path.join(root, "barrel.rsgl");
@@ -47,7 +47,7 @@ describe("RSGL workspace source cache", () => {
   });
 
   it("invalidates cached source files by path", () => {
-    const root = createTempDir();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-source-");
     try {
       const mainFile = path.join(root, "main.rsgl");
       fs.writeFileSync(mainFile, "let value = 1");
@@ -66,7 +66,7 @@ describe("RSGL workspace source cache", () => {
   });
 
   it("reloads unversioned open document content with the same length", () => {
-    const root = createTempDir();
+    const root = createTempDir("mc-resourcepack-helper-rsgl-source-");
     try {
       const mainFile = path.join(root, "main.rsgl");
       let text = "let value = 1";
@@ -96,8 +96,4 @@ function readLetNumber(sourceFile: RsglSourceFile | undefined): number | undefin
     return statement.value.value;
   }
   return undefined;
-}
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-source-"));
 }

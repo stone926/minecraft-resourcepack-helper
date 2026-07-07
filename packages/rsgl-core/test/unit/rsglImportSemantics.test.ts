@@ -1,99 +1,10 @@
 import * as assert from "node:assert";
-import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromFile } from "../../src/compiler";
+import { compileRsglProgram } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { createAllRsglStdlibSourceFiles } from "../../src/stdlib";
-import { createTempDir } from "./rsglTestHelpers";
+import { expectNoDiagnostics } from "./helpers/compile";
 
-describe("RSGL compiler imports", () => {
-  it("does not bundle vanilla blockstate templates in the RSGL stdlib", () => {
-    const mainFile = path.resolve("pack", "main.rsgl");
-    const result = compileRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import { slab as bundledSlab } from \"rsgl:blockstates/slab.rsgl\"",
-          "blockstate acacia_slab {",
-          "  use bundledSlab(",
-          "    bottom: minecraft:block/acacia_slab,",
-          "    top: minecraft:block/acacia_slab_top,",
-          "    double: minecraft:block/acacia_planks",
-          "  )",
-          "}"
-        ].join("\n"))
-      }
-    ], { entryFileName: mainFile });
-
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
-  });
-
-  it("discovers bundled stdlib files from disk without a TypeScript list", () => {
-    const stdlibFile = path.resolve("packages", "rsgl-core", "src", "stdlib", "rsgl", "__dynamic_test.rsgl");
-    fs.mkdirSync(path.dirname(stdlibFile), { recursive: true });
-    try {
-      fs.writeFileSync(stdlibFile, [
-        "template dynamicStdlibCube(id: ResourceId) {",
-        "  model block id {",
-        "    parent minecraft:block/cube_all",
-        "  }",
-        "}",
-        "export { dynamicStdlibCube }"
-      ].join("\n"));
-
-      const stdlibFiles = createAllRsglStdlibSourceFiles();
-      assert.ok(stdlibFiles.some(file => file.fileName === path.join("<rsgl-stdlib>", "__dynamic_test.rsgl")));
-
-      const mainFile = path.resolve("pack", "main.rsgl");
-      const result = compileRsglProgram([
-        {
-          fileName: mainFile,
-          module: parseRsgl([
-            "import { dynamicStdlibCube } from \"rsgl:__dynamic_test.rsgl\"",
-            "use dynamicStdlibCube(stone)"
-          ].join("\n"))
-        }
-      ], { entryFileName: mainFile });
-
-      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
-        "assets/minecraft/models/block/stone.json"
-      ]);
-    } finally {
-      fs.rmSync(stdlibFile, { force: true });
-    }
-  });
-
-  it("does not load project rsgl-std modules for rsgl imports", () => {
-    const root = createTempDir();
-    const mainFile = path.join(root, "main.rsgl");
-    const projectStdlibFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
-    fs.mkdirSync(path.dirname(projectStdlibFile), { recursive: true });
-    fs.writeFileSync(mainFile, [
-      "import { slab as projectSlab } from \"rsgl:blockstates/slab.rsgl\"",
-      "blockstate custom_slab {",
-      "  use projectSlab(bottom: minecraft:block/custom_bottom, top: minecraft:block/custom_top, double: minecraft:block/custom_double)",
-      "}"
-    ].join("\n"));
-    fs.writeFileSync(projectStdlibFile, [
-      "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
-      "  variants {",
-      "    [custom=\"override\"] -> @double",
-      "  }",
-      "}",
-      "export { slab }"
-    ].join("\n"));
-
-    const loadedFiles = loadRsglSourceFilesFromFile(mainFile);
-    const result = compileRsglFile(mainFile);
-
-    assert.deepStrictEqual(loadedFiles.map(file => file.fileName), [path.normalize(path.resolve(mainFile))]);
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
-    assert.strictEqual(result.units.some(unit =>
-      unit.sourceMap.mappings.some(mapping => mapping.sourceFile === path.normalize(projectStdlibFile))
-    ), false);
-  });
-
+describe("RSGL import semantics", () => {
   it("expands templates imported from another RSGL file", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");
@@ -118,7 +29,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
       "assets/minecraft/models/block/stone.json"
     ]);
@@ -162,7 +73,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
       "assets/app/models/block/stone.json"
     ]);
@@ -206,7 +117,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
@@ -267,7 +178,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
       "assets/app/models/item/layered.json"
     ]);
@@ -323,7 +234,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
       "assets/app/blockstates/lamp.json",
       "assets/app/blockstates/pane.json"
@@ -396,7 +307,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, {
       variants: {
         ["tilt=full"]: { model: "minecraft:block/lamp" }
@@ -445,7 +356,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
       "assets/custom/models/block/oak_planks.json"
     ]);
@@ -502,7 +413,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
       "assets/minecraft/models/block/acacia_planks.json"
     ]);
@@ -545,7 +456,7 @@ describe("RSGL compiler imports", () => {
       }
     ], { entryFileName: mainFile });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
       "assets/minecraft/models/block/acacia_planks.json",
       "assets/minecraft/models/block/spruce_planks.json"
@@ -563,150 +474,4 @@ describe("RSGL compiler imports", () => {
       }
     });
   });
-
-  it("loads imported RSGL files from a filesystem entry", () => {
-    const root = createTempDir();
-    try {
-      const packDir = path.join(root, "pack");
-      const mainFile = path.join(packDir, "main.rsgl");
-      const templatesFile = path.join(packDir, "templates.rsgl");
-      const tablesFile = path.join(packDir, "tables.rsgl");
-      fs.mkdirSync(packDir, { recursive: true });
-      fs.writeFileSync(tablesFile, [
-        "namespace custom",
-        "let defaultParent = minecraft:block/cube_all",
-        "table woods {",
-        "  acacia: block/acacia_planks",
-        "}"
-      ].join("\n"));
-      fs.writeFileSync(templatesFile, [
-        "template cube(id: ResourceId, texture: TextureId = id) {",
-        "  model block id {",
-        "    parent minecraft:block/cube_all",
-        "    textures { all: texture }",
-        "  }",
-        "}"
-      ].join("\n"));
-      fs.writeFileSync(mainFile, [
-        "import { cube } from \"./templates.rsgl\"",
-        "import { woods, defaultParent } from \"./tables.rsgl\"",
-        "use cube(acacia_planks, texture: woods.acacia)",
-        "model block spruce_planks {",
-        "  parent defaultParent",
-        "  textures { all: minecraft:block/spruce_planks }",
-        "}"
-      ].join("\n"));
-
-      const loadedFiles = loadRsglSourceFilesFromFile(mainFile);
-      assert.deepStrictEqual(loadedFiles.map(file => file.fileName).sort(), [
-        mainFile,
-        tablesFile,
-        templatesFile
-      ].map(fileName => path.normalize(path.resolve(fileName))).sort());
-
-      const result = compileRsglFile(mainFile);
-
-      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
-        "assets/minecraft/models/block/acacia_planks.json",
-        "assets/minecraft/models/block/spruce_planks.json"
-      ]);
-      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("acacia_planks.json"))?.content, {
-        parent: "minecraft:block/cube_all",
-        textures: {
-          all: "custom:block/acacia_planks"
-        }
-      });
-      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("spruce_planks.json"))?.content, {
-        parent: "minecraft:block/cube_all",
-        textures: {
-          all: "minecraft:block/spruce_planks"
-        }
-      });
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("loads re-exported RSGL files from a filesystem entry", () => {
-    const root = createTempDir();
-    try {
-      const packDir = path.join(root, "pack");
-      const mainFile = path.join(packDir, "main.rsgl");
-      const barrelFile = path.join(packDir, "barrel.rsgl");
-      const templatesFile = path.join(packDir, "templates.rsgl");
-      fs.mkdirSync(packDir, { recursive: true });
-      fs.writeFileSync(templatesFile, [
-        "template cube(id: ResourceId) {",
-        "  model block id {",
-        "    parent minecraft:block/cube_all",
-        "  }",
-        "}",
-        "export { cube }"
-      ].join("\n"));
-      fs.writeFileSync(barrelFile, "export { cube } from \"./templates.rsgl\"");
-      fs.writeFileSync(mainFile, [
-        "import { cube } from \"./barrel.rsgl\"",
-        "use cube(stone)"
-      ].join("\n"));
-
-      const result = compileRsglFile(mainFile);
-
-      assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
-        "assets/minecraft/models/block/stone.json"
-      ]);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("reports missing and cyclic imports from a filesystem entry", () => {
-    const root = createTempDir();
-    try {
-      const mainFile = path.join(root, "main.rsgl");
-      const cycleFile = path.join(root, "cycle.rsgl");
-      fs.writeFileSync(mainFile, [
-        "import \"./missing.rsgl\"",
-        "import \"./cycle.rsgl\"",
-        "model block stone { parent minecraft:block/cube_all }"
-      ].join("\n"));
-      fs.writeFileSync(cycleFile, "import \"./main.rsgl\"\n");
-
-      const result = compileRsglFile(mainFile);
-      const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-
-      assert.ok(codes.includes("rsgl.missingImport"));
-      assert.ok(codes.includes("rsgl.importCycle"));
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("reports output conflicts across compiled RSGL files", () => {
-    const firstFile = path.resolve("pack", "first.rsgl");
-    const secondFile = path.resolve("pack", "second.rsgl");
-    const result = compileRsglProgram([
-      {
-        fileName: firstFile,
-        module: parseRsgl("use cubeAll(id: stone)")
-      },
-      {
-        fileName: secondFile,
-        module: parseRsgl("model block stone { parent minecraft:block/cube_all }")
-      }
-    ]);
-
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.outputConflict"));
-  });
-
-  it("reports output path conflicts", () => {
-    const result = compileRsglModule(parseRsgl([
-      "use cubeAll(id: stone)",
-      "model block stone { parent minecraft:block/cube_all }"
-    ].join("\n")));
-
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.outputConflict"));
-  });
-
 });
