@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { stripDefaultCitNamespace } from "../utils/citKeys";
-import { isCitGlobalPropertiesFileName } from "../utils/citPaths";
+import { stripDefaultCitNamespace } from "./citKeys";
+import { isCitGlobalPropertiesFileName } from "./citPaths";
 import type {
   CitSpecFragment,
   CitSpecKey,
@@ -10,7 +10,7 @@ import type {
   CitType,
   ResolvedCitSpec,
   ResolvedCitSpecKey
-} from "../utils/citSpecTypes";
+} from "./citSpecTypes";
 
 const citTypes: CitType[] = ["item", "armor", "elytra", "enchantment"];
 const requiredFragments = ["base", ...citTypes, "global-properties"];

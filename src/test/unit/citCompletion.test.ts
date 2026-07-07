@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getCitCompletionResult, getCitHoverInfo, type CitLanguageDocument } from "../../utils/citLanguage";
+import { getCitCompletionResult, getCitHoverInfo, type CitLanguageDocument } from "../../cit/citLanguage";
 
 describe("CIT completion and hover", () => {
   it("completes keys from the effective item spec", () => {

@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { parseCitProperties, parseCitPropertiesDocument } from "../../utils/citPropertiesParser";
+import { parseCitProperties, parseCitPropertiesDocument } from "../../cit/citPropertiesParser";
 
 describe("CIT properties parser", () => {
   it("returns key, value, and ranges for property entries", () => {

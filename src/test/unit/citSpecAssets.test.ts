@@ -1,8 +1,8 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CitSpecService } from "../../services/citSpecService";
-import type { CitSpecFragment } from "../../utils/citSpecTypes";
+import { CitSpecService } from "../../cit/citSpecService";
+import type { CitSpecFragment } from "../../cit/citSpecTypes";
 
 type JsonObject = Record<string, unknown>;
 

@@ -1,5 +1,5 @@
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
-import { getCitPropertyReferences } from "../citProperties";
+import { getCitPropertyReferences } from "../../cit/citProperties";
 import { isInArea } from "../locationChecker";
 import { getReferencesForDocumentKind } from "./dispatch";
 import { getShaderDocumentSource, getShaderReferences, isShaderDocumentKind } from "./shaderRefs";

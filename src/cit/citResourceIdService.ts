@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { normalizePathKey, packRootFromAssetsPath } from "../../packages/mc-assets/src";
-import { workspaceResourceCache } from "./workspaceResourceCache";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
 
 export interface CitResourceIdConfiguration {
   defaultAssetsPath?: string | null;

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { isCitPropertiesFileName } from "./citPaths";
+import { isCitPropertiesFileName } from "../cit/citPaths";
 import {
   createResourceReferencePathResolver,
   generateReferenceRedirectPath,

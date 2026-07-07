@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { citResourceIdService } from "../services/citResourceIdService";
+import { citResourceIdService } from "./citResourceIdService";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import {
   getCitDiagnostics as getCoreCitDiagnostics,

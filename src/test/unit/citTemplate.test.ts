@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { createCitTemplate, generateCitForResource } from "../../commands/citTemplate";
+import { createCitTemplate, generateCitForResource } from "../../cit/commands/citTemplate";
 
 describe("CIT template commands", () => {
   it("creates type-specific CIT templates", () => {

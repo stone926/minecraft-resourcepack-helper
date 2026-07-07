@@ -4,7 +4,7 @@ import { localize } from "../i18n/runtime";
 import { createResourceReferencePathResolver } from "../utils/pathGenerator";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
-import { getCitDiagnostics } from "./citDiagnostics";
+import { getCitDiagnostics } from "../cit/citDiagnostics";
 import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
 
 const resolveResourcePath = createResourceReferencePathResolver();

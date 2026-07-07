@@ -6,7 +6,7 @@ import {
   getCitPathCandidates,
   getCitResourceType,
   isCitPropertiesFileName
-} from "../../utils/citPaths";
+} from "../../cit/citPaths";
 
 describe("OptiFine CIT path utilities", () => {
   const packRoot = path.join("workspace", "pack");

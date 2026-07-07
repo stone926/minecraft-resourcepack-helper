@@ -1,4 +1,4 @@
-import { isCitPropertiesFileName } from "../../utils/citPaths";
+import { isCitPropertiesFileName } from "../../cit/citPaths";
 
 export function isModelPreviewFileName(fileName: string): boolean {
   return /[\\/]assets[\\/][^\\/]+[\\/]models[\\/].+\.json$/i.test(fileName) ||

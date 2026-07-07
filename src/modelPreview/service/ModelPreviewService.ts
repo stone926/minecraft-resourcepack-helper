@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
-import { isCitPropertiesFileName } from "../../utils/citPaths";
+import { isCitPropertiesFileName } from "../../cit/citPaths";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency, ResolvedModel } from "../model/ModelDocument";

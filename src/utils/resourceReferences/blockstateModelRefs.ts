@@ -1,4 +1,4 @@
-import { getCitDocumentSource } from "../citPaths";
+import { getCitDocumentSource } from "../../cit/citPaths";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "../jsonAst";
 import { pushReference } from "./shared";
 import { ResourceReference } from "./types";

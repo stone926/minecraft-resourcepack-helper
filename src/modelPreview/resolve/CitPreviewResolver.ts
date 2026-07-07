@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
-import { getCitPathCandidates, type CitResourceType } from "../../utils/citPaths";
-import { parseCitProperties, type CitPropertyEntry } from "../../utils/citPropertiesParser";
+import { getCitPathCandidates, type CitResourceType } from "../../cit/citPaths";
+import { parseCitProperties, type CitPropertyEntry } from "../../cit/citPropertiesParser";
 import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
 import type { ModelPreviewFileSystem, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";

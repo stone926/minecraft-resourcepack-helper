@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { citResourceIdService } from "../services/citResourceIdService";
-import { getCitCompletionResult, type CitCompletionCandidate, type CitTextRange } from "../utils/citLanguage";
+import { citResourceIdService } from "../citResourceIdService";
+import { getCitCompletionResult, type CitCompletionCandidate, type CitTextRange } from "../citLanguage";
 
 const citCompletionProvider: vscode.CompletionItemProvider = {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {

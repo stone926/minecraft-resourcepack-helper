@@ -30,7 +30,7 @@ export function isCitModelFileName(fileName: string): boolean {
 export function isCitGlobalPropertiesFileName(fileName: string): boolean {
   const normalizedPath = path.normalize(fileName);
   const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
   if (assetsIndex < 0 || segments.length <= assetsIndex + 3) {
     return false;
   }
@@ -56,7 +56,7 @@ export function getCitDocumentNamespace(fileName: string): string {
 export function getCitDocumentInfo(fileName: string): CitDocumentInfo | null {
   const normalizedPath = path.normalize(fileName);
   const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
   if (assetsIndex < 0 || segments.length <= assetsIndex + 3) {
     return null;
   }
@@ -191,16 +191,6 @@ function isCitRelativePath(segments: string[], fileName: string): boolean {
   }
 
   return second === "cit" || (segments.length === 1 && fileName.toLowerCase() === "cit.properties");
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }
 
 function unique(values: string[]): string[] {

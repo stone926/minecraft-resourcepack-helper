@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { getCitHoverInfo, type CitHoverInfo } from "../utils/citLanguage";
+import { getCitHoverInfo, type CitHoverInfo } from "../citLanguage";
 
 const citHoverProvider: vscode.HoverProvider = {
   provideHover(document: vscode.TextDocument, position: vscode.Position) {

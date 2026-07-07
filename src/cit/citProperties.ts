@@ -1,6 +1,6 @@
 import { getCitDocumentSource, getCitResourceType } from "./citPaths";
 import { parseCitProperties, type CitPropertyEntry } from "./citPropertiesParser";
-import type { ResourceReference } from "./resourceReferences";
+import type { ResourceReference } from "../utils/resourceReferences";
 
 export function getCitPropertyReferences(text: string, fileName: string): ResourceReference[] {
   const references: ResourceReference[] = [];

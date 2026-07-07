@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { isCitPropertiesFileName } from "../../utils/citPaths";
+import { isCitPropertiesFileName } from "../../cit/citPaths";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
 import { isModelPreviewFileName } from "./modelPreviewFiles";
 

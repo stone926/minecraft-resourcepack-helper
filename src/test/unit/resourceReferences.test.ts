@@ -5,7 +5,7 @@ import {
   getResourceReferences,
   ResourceReferenceDocument
 } from "../../utils/resourceReferences";
-import { getCitAutoDiscoveryPathCandidates } from "../../utils/citPaths";
+import { getCitAutoDiscoveryPathCandidates } from "../../cit/citPaths";
 
 describe("resource references", () => {
   it("skips unrelated JSON documents without reading their contents", () => {

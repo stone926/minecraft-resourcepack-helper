@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { isCitPropertiesFileName } from "../utils/citPaths";
+import { isCitPropertiesFileName } from "../cit/citPaths";
 import {
   getAssetResource,
   groupReferencesBySource,

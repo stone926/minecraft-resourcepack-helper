@@ -1,4 +1,4 @@
-import type { AstLocation } from "./locationChecker";
+import type { AstLocation } from "../utils/locationChecker";
 
 export interface CitPropertyEntry {
   key: string;

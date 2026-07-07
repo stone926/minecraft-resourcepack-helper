@@ -1,12 +1,12 @@
 import * as path from "node:path";
-import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "../utils/citPaths";
-import { parseCitPropertiesDocument, type CitPropertyEntry } from "../utils/citPropertiesParser";
-import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "../utils/citLanguage";
-import { stripDefaultCitNamespace } from "../utils/citKeys";
-import { citSpecService } from "../services/citSpecService";
-import { citResourceIdService, type CitResourceIds } from "../services/citResourceIdService";
+import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
+import { parseCitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
+import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
+import { stripDefaultCitNamespace } from "./citKeys";
+import { citSpecService } from "./citSpecService";
+import { citResourceIdService, type CitResourceIds } from "./citResourceIdService";
 import type { AstLocation } from "../utils/locationChecker";
-import type { ResolvedCitSpecKey } from "../utils/citSpecTypes";
+import type { ResolvedCitSpecKey } from "./citSpecTypes";
 
 export type CitDiagnosticSeverity = "error" | "warning" | "information";
 
@@ -423,7 +423,7 @@ function getGlobalPriorityDiagnostics(
 
   const normalized = path.normalize(fileName);
   const segments = normalized.split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
   if (assetsIndex < 0) {
     return [];
   }
@@ -451,14 +451,4 @@ function getGlobalPriorityDiagnostics(
 
 function createDiagnostic(range: AstLocation, message: string, severity: CitDiagnosticSeverity): CitDiagnostic {
   return { range, message, severity };
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }

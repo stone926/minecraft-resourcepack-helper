@@ -1,4 +1,4 @@
-import { isCitModelFileName, isCitPropertiesFileName } from "../citPaths";
+import { isCitModelFileName, isCitPropertiesFileName } from "../../cit/citPaths";
 import { AstLocation } from "../locationChecker";
 
 export interface ResourceReference {

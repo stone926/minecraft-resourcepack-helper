@@ -1,9 +1,10 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { getCitPathCandidates, type CitResourceType } from "../utils/citPaths";
-import { generateReferenceRedirectPath } from "../utils/pathGenerator";
-import { getResourceReferences, type ResourceReference } from "../utils/resourceReferences";
+import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
+import { workspaceResourceCache } from "../../services/workspaceResourceCache";
+import { getCitPathCandidates, type CitResourceType } from "../citPaths";
+import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
+import { getResourceReferences, type ResourceReference } from "../../utils/resourceReferences";
 
 export const createMissingCitResourceCommand = "McResHelper.createMissingCitResource";
 
@@ -76,7 +77,7 @@ function getCreateTargetPath(documentFileName: string, reference: ResourceRefere
     return null;
   }
 
-  const packRoot = workspaceResourceCache.getPackRoot(documentFileName) ?? getPackRootFromAssetsPath(documentFileName);
+  const packRoot = workspaceResourceCache.getPackRoot(documentFileName) ?? packRootFromAssetsPath(documentFileName);
   if (!packRoot) {
     return null;
   }
@@ -121,26 +122,4 @@ function referenceRangeIntersects(reference: ResourceReference, range: vscode.Ra
     new vscode.Position(loc.start.line - 1, loc.start.column),
     new vscode.Position(loc.end.line - 1, loc.end.column)
   ).intersection(range) !== undefined;
-}
-
-function getPackRootFromAssetsPath(fileName: string): string | null {
-  const normalizedPath = path.normalize(fileName);
-  const parsedPath = path.parse(normalizedPath);
-  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0) {
-    return null;
-  }
-
-  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }

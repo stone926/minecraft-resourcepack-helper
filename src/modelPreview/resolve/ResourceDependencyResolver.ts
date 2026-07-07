@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../utils/citPaths";
+import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../cit/citPaths";
 import { getDocumentResourceRootCandidates, packRootFromAssetsPath, parseResourceLocation } from "../../../packages/mc-assets/src";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 

@@ -78,7 +78,7 @@ export function getAssetResourceInfo(fileName: string): AssetResourceInfo | null
   const normalized = path.normalize(fileName);
   const parsed = path.parse(normalized);
   const segments = path.relative(parsed.root, normalized).split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
   if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
     return null;
   }
@@ -129,14 +129,4 @@ function inferItemResource(resource: AssetResourceInfo): {
 function stripExtension(value: string): string {
   const extension = path.posix.extname(value);
   return extension ? value.slice(0, -extension.length) : value;
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }

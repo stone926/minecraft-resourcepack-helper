@@ -11,7 +11,7 @@ import {
   type CitPropertiesPosition,
   type CitPropertyEntry
 } from "./citPropertiesParser";
-import { citSpecService } from "../services/citSpecService";
+import { citSpecService } from "./citSpecService";
 import type { CitResourceKind, CitType, ResolvedCitSpec, ResolvedCitSpecKey } from "./citSpecTypes";
 
 export interface CitLanguageDocument {

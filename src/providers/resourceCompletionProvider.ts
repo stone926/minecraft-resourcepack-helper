@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidMinecraftNamespace } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { getCitDocumentNamespace } from "../utils/citPaths";
+import { getCitDocumentNamespace } from "../cit/citPaths";
 import {
   inferIncompleteResourceCompletionContext,
   ResourceCompletionTextRange

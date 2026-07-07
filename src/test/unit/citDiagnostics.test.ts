@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getCitDiagnostics } from "../../diagnostics/citDiagnosticsCore";
-import type { CitLanguageDocument } from "../../utils/citLanguage";
+import { getCitDiagnostics } from "../../cit/citDiagnosticsCore";
+import type { CitLanguageDocument } from "../../cit/citLanguage";
 
 describe("CIT diagnostics", () => {
   it("reports unknown keys and invalid values", () => {
