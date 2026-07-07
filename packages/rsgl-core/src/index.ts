@@ -3,6 +3,7 @@ export * from "./build";
 export * from "./completionData";
 export * from "./formatterCore";
 export * from "./resourceKinds";
+export * from "./semanticTokens";
 export * from "./sourceRoot";
 export * from "./workspaceBuildSemantic";
 export * from "./workspaceSemantic";

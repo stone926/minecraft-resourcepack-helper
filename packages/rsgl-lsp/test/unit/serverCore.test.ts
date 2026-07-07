@@ -4,11 +4,19 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { CompletionItemKind, DiagnosticSeverity } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { RsglWorkspaceSemanticCache, type RsglSymbol } from "../../../rsgl-core/src";
+import {
+  RsglWorkspaceSemanticCache,
+  rsglSemanticTokenModifiers,
+  rsglSemanticTokenTypes,
+  type RsglSemanticToken,
+  type RsglSymbol
+} from "../../../rsgl-core/src";
 import {
   clampOffset,
   completionItemsForContent,
   computeDocumentDiagnostics,
+  computeDocumentSemanticTokens,
+  encodeSemanticTokens,
   toLspDiagnostic,
   toLspSeverity,
   toValidationSettings,
@@ -189,5 +197,41 @@ describe("RSGL LSP server core", () => {
     const matches = items.filter(item => item.label === "target");
     assert.strictEqual(matches.length, 1);
     assert.strictEqual(matches[0].kind, CompletionItemKind.Snippet);
+  });
+
+  it("encodes semantic tokens relative to the previous token across lines", () => {
+    const document = documentOf("let aa = bb\nuse aa bb");
+    const token = (start: number): RsglSemanticToken =>
+      ({ start, length: 2, tokenType: 3, tokenModifiers: 1 });
+
+    const data = encodeSemanticTokens([token(4), token(9), token(16), token(19)], document);
+
+    assert.deepStrictEqual(data, [
+      0, 4, 2, 3, 1,
+      0, 5, 2, 3, 1,
+      1, 4, 2, 3, 1,
+      0, 3, 2, 3, 1
+    ]);
+  });
+
+  it("encodes an empty token list as an empty data array", () => {
+    assert.deepStrictEqual(encodeSemanticTokens([], documentOf("let a = 1")), []);
+  });
+
+  it("computes encoded semantic tokens for a document via the single-module fallback", () => {
+    const missingFile = path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-missing", "untracked.rsgl");
+    const text = "template cube() {}\nuse cube()";
+    const cache = RsglWorkspaceSemanticCache.create();
+
+    const data = computeDocumentSemanticTokens(documentOf(text), missingFile, {
+      loadProgramFromEntry: fileName => cache.loadProgramFromEntry(fileName)
+    });
+
+    const functionType = rsglSemanticTokenTypes.indexOf("function");
+    const declaration = 1 << rsglSemanticTokenModifiers.indexOf("declaration");
+    assert.deepStrictEqual(data, [
+      0, 9, 4, functionType, declaration,
+      1, 4, 4, functionType, 0
+    ]);
   });
 });

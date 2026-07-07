@@ -7,10 +7,17 @@ import {
   type CompletionItem
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { formatRsglText, RsglWorkspaceSemanticCache, type RsglSymbol } from "../../rsgl-core/src";
+import {
+  formatRsglText,
+  rsglSemanticTokenModifiers,
+  rsglSemanticTokenTypes,
+  RsglWorkspaceSemanticCache,
+  type RsglSymbol
+} from "../../rsgl-core/src";
 import {
   completionItemsForContent,
   computeDocumentDiagnostics,
+  computeDocumentSemanticTokens,
   fileNameFromUri,
   normalizeFileName,
   semanticModelForFile,
@@ -35,7 +42,14 @@ connection.onInitialize(params => {
         triggerCharacters: [" ", ".", ":", "@", "[", "("]
       },
       hoverProvider: true,
-      documentFormattingProvider: true
+      documentFormattingProvider: true,
+      semanticTokensProvider: {
+        legend: {
+          tokenTypes: [...rsglSemanticTokenTypes],
+          tokenModifiers: [...rsglSemanticTokenModifiers]
+        },
+        full: true
+      }
     }
   };
 });
@@ -87,6 +101,18 @@ connection.onHover(params => {
   }
   const candidate = completionItemsForDocument(document, offset).find(item => item.label === word);
   return candidate?.detail ? { contents: candidate.detail } : null;
+});
+
+connection.languages.semanticTokens.on(params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return { data: [] };
+  }
+  return {
+    data: computeDocumentSemanticTokens(document, fileNameFromUri(document.uri), {
+      loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName)
+    })
+  };
 });
 
 connection.onDocumentFormatting(params => {

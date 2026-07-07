@@ -6,6 +6,7 @@ import { rsglFormattingProvider } from "./formatter";
 import { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
 import { rsglWorkspaceSourceRootCache } from "../../../packages/rsgl-core/src/sourceRoot";
 import { rsglWorkspaceBuildSemanticCache } from "../../../packages/rsgl-core/src/workspaceBuildSemantic";
+import { createRsglSemanticTokensProvider, rsglSemanticTokensLegend } from "./semanticTokens";
 import { startRsglLanguageServer } from "./client";
 
 export function registerRsglLanguageFeatures(context: vscode.ExtensionContext): void {
@@ -36,6 +37,12 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.languages.registerDocumentFormattingEditProvider(
     rsglDocumentSelector,
     rsglFormattingProvider
+  ));
+
+  context.subscriptions.push(vscode.languages.registerDocumentSemanticTokensProvider(
+    rsglDocumentSelector,
+    createRsglSemanticTokensProvider(semanticCache),
+    rsglSemanticTokensLegend
   ));
 
   for (const document of vscode.workspace.textDocuments) {

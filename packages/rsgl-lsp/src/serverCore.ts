@@ -8,13 +8,16 @@ import {
   type Position
 } from "vscode-languageserver/node";
 import {
+  bindRsglModule,
   compileRsglModule,
   compileRsglProgram,
   getRsglCompletionCandidates,
+  getRsglSemanticTokens,
   parseRsgl,
   type RsglCompletionCandidate,
   type RsglDiagnostic,
   type RsglSemanticModel,
+  type RsglSemanticToken,
   type RsglSymbol,
   type RsglWorkspaceSemanticProgram
 } from "../../rsgl-core/src";
@@ -115,6 +118,51 @@ export function semanticModelForFile(
 ): RsglSemanticModel | undefined {
   const normalized = normalizeFileName(path.resolve(fileName));
   return semanticProgram.program.models.find(model => normalizeFileName(path.resolve(model.fileName)) === normalized);
+}
+
+/** Injected collaborators for semantic token computation. */
+export interface RsglDocumentSemanticTokenDeps {
+  loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
+}
+
+/**
+ * Computes the LSP-encoded semantic tokens for a document, resolving the
+ * bound model through the workspace cache with a single-module bind fallback.
+ * Never throws; any failure yields an empty token stream.
+ */
+export function computeDocumentSemanticTokens(
+  document: RsglLspDocument,
+  fileName: string,
+  deps: RsglDocumentSemanticTokenDeps
+): number[] {
+  try {
+    const semanticProgram = deps.loadProgramFromEntry(fileName);
+    const model = semanticModelForFile(semanticProgram, fileName)
+      ?? bindRsglModule(parseRsgl(document.getText()), { fileName });
+    return encodeSemanticTokens(getRsglSemanticTokens(model), document);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Encodes absolute-offset tokens into the LSP relative representation
+ * (deltaLine, deltaStartChar, length, tokenType, tokenModifiers). Tokens must
+ * already be sorted by start offset, which `getRsglSemanticTokens` guarantees.
+ */
+export function encodeSemanticTokens(tokens: readonly RsglSemanticToken[], document: RsglLspDocument): number[] {
+  const data: number[] = [];
+  let previousLine = 0;
+  let previousCharacter = 0;
+  for (const token of tokens) {
+    const position = document.positionAt(token.start);
+    const deltaLine = position.line - previousLine;
+    const deltaStartChar = deltaLine === 0 ? position.character - previousCharacter : position.character;
+    data.push(deltaLine, deltaStartChar, token.length, token.tokenType, token.tokenModifiers);
+    previousLine = position.line;
+    previousCharacter = position.character;
+  }
+  return data;
 }
 
 /** Maps a syntactic completion candidate to an LSP completion item. */
