@@ -821,7 +821,7 @@ function blockstateUnit(
   };
 }
 
-function normalizeResourceValue(value: string, namespace: string, defaultFolder: string): string {
+export function normalizeResourceValue(value: string, namespace: string, defaultFolder: string): string {
   if (value.includes(":")) {
     return value;
   }

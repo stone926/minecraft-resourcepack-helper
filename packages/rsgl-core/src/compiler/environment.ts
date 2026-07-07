@@ -17,7 +17,7 @@ import {
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
-import { JsonValue } from "./ir";
+import { normalizeJsonValue } from "./compilerHelpers";
 
 export interface RsglModuleCompileEnvironment {
   fileName: string;
@@ -289,10 +289,6 @@ function copyTemplates(target: Map<string, RsglTemplateDefinition>, source: Map<
       target.set(name, template);
     }
   }
-}
-
-function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
-  return value === undefined ? null : value;
 }
 
 function normalizeFileName(fileName: string): string {

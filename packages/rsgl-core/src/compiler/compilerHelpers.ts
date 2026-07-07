@@ -12,7 +12,8 @@ import type {
   ResourceStatementNode,
   RsglModule
 } from "../parser";
-import type { RawGlobLoader, RawJsonLoader } from "./evaluate";
+import { evaluateExpression } from "./evaluate";
+import type { EvaluationContext, RawGlobLoader, RawJsonLoader } from "./evaluate";
 import { createFileGlobLoader } from "./fileGlob";
 import { createFileRawJsonLoader } from "./rawJson";
 import { appendGeneratedPath, prefixGeneratedPath } from "./sourcePaths";
@@ -25,6 +26,11 @@ import type { RsglTargetPackFormat } from "./target";
 
 export function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
   return value === undefined ? null : value;
+}
+
+export function staticText(expression: ExprNode, context: EvaluationContext): string | null {
+  const value = evaluateExpression(expression, context);
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
 }
 
 export const packRootFields = new Set(["description", "pack_format", "supported_formats", "min_format", "max_format"]);

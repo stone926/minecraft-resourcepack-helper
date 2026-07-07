@@ -19,6 +19,7 @@ import {
   childEvaluationContext,
   evaluateExpression
 } from "./evaluate";
+import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { JsonValue } from "./ir";
 
 export interface RsglItemFragmentOptions {
@@ -495,17 +496,9 @@ function expressionString(
   return value;
 }
 
-function normalizeJsonValue(value: EvaluationValue): JsonValue {
-  return value === undefined ? null : value;
-}
-
 function normalizeModelId(value: string, namespace: string): string {
   if (value.includes(":")) {
     return value;
   }
   return `${namespace}:${value.includes("/") ? value : `item/${value}`}`;
-}
-
-function isJsonObject(value: unknown): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

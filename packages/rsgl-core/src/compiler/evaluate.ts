@@ -4,6 +4,7 @@ import {
   TextRange
 } from "../parser";
 import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
+import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
 
@@ -329,10 +330,6 @@ function scalarText(value: EvaluationValue): string | null {
     : null;
 }
 
-function normalizeJsonValue(value: EvaluationValue): JsonValue {
-  return value === undefined ? null : value;
-}
-
 function evaluateBinaryExpression(operator: string, left: EvaluationValue, right: EvaluationValue): EvaluationValue {
   if (operator === "+") {
     return typeof left === "string" || typeof right === "string" ? `${left ?? ""}${right ?? ""}` : Number(left) + Number(right);
@@ -506,10 +503,6 @@ function resourceAssetPath(value: string, namespace: string, root: string, exten
 
 function parseResourceIdValue(value: string, namespace: string): { namespace: string; path: string } | null {
   return tryParseMinecraftResourceId(value, namespace);
-}
-
-function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function jsonEquals(left: JsonValue, right: JsonValue): boolean {

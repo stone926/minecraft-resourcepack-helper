@@ -1,5 +1,6 @@
-import { ArgumentNode, CallExprNode, ExprNode, TextRange } from "../parser";
+import { ArgumentNode, CallExprNode, TextRange } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
+import { staticText } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, ResourceId, ResourceUnit, RsglMapping } from "./ir";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import {
@@ -17,7 +18,8 @@ import {
   createStairsBlockstate,
   createTrapdoorBlockstate,
   createWallBlockstate,
-  createWallSignBlockstate
+  createWallSignBlockstate,
+  normalizeResourceValue
 } from "./templates";
 
 type SupportedFamilyMember =
@@ -592,18 +594,6 @@ function familySourceMap(outputPath: string, family: FamilyContext) {
     generatedFile: outputPath,
     mappings: [mapping]
   };
-}
-
-function staticText(expression: ExprNode, context: EvaluationContext): string | null {
-  const value = evaluateExpression(expression, context);
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
-}
-
-function normalizeResourceValue(value: string, namespace: string, defaultFolder: string): string {
-  if (value.includes(":")) {
-    return value;
-  }
-  return `${namespace}:${value.includes("/") ? value : `${defaultFolder}/${value}`}`;
 }
 
 function isSupportedFamilyMember(value: string): value is SupportedFamilyMember {

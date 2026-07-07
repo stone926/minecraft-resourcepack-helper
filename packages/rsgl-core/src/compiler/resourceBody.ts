@@ -6,9 +6,9 @@ import {
 } from "../parser";
 import {
   EvaluationContext,
-  EvaluationValue,
   evaluateExpression
 } from "./evaluate";
+import { normalizeJsonValue } from "./compilerHelpers";
 import { JsonValue } from "./ir";
 import { appendJsonObject, isJsonObject, mergeJsonObject, mergeJsonObjectDeep, overrideJsonObject } from "./jsonObjectMerge";
 import { createLoopBindings, createLoopContext } from "./looping";
@@ -309,8 +309,4 @@ function emitMapping(
   context: EvaluationContext
 ): void {
   options.onMapping?.({ generatedPath, sourceRange, context });
-}
-
-function normalizeJsonValue(value: EvaluationValue): JsonValue {
-  return value === undefined ? null : value;
 }
