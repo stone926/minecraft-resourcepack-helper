@@ -2,6 +2,8 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { isCitPropertiesFileName } from "../utils/citPaths";
 import {
+  getAssetResource,
+  groupReferencesBySource,
   isResourceGraphDocumentPath,
   isModelDocumentPath,
   loadResourceGraphDocument,
@@ -179,23 +181,19 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     visitedResources: Set<string>,
     documentOverride?: ResourceGraphDocument
   ): Promise<ResourceGraphNode[]> {
-    if (visitedResources.has(resourceUriKey(uri))) {
-      return [createAlreadyShownNode(uri)];
-    }
+    return visitResourceOnce(visitedResources, uri, async nextVisitedResources => {
+      const document = await this.tryLoadResourceDocument(uri, documentOverride);
+      const nodes = [
+        await this.createOutgoingReferencesGroup(nextVisitedResources, document),
+        this.createIncomingReferencesGroup(uri, nextVisitedResources)
+      ];
 
-    const nextVisitedResources = new Set(visitedResources);
-    nextVisitedResources.add(resourceUriKey(uri));
-    const document = await this.tryLoadResourceDocument(uri, documentOverride);
-    const nodes = [
-      await this.createOutgoingReferencesGroup(nextVisitedResources, document),
-      this.createIncomingReferencesGroup(uri, nextVisitedResources)
-    ];
+      if (document && isModelDocumentPath(uri.fsPath)) {
+        nodes.push(this.createModelInheritanceGroup(uri, document));
+      }
 
-    if (document && isModelDocumentPath(uri.fsPath)) {
-      nodes.push(this.createModelInheritanceGroup(uri, document));
-    }
-
-    return nodes;
+      return nodes;
+    });
   }
 
   private async createOutgoingReferencesGroup(
@@ -360,21 +358,15 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
       {
         description: alreadyVisited ? vscode.l10n.t("already shown") : getResourcePathLabel(uri),
         uri,
-        children: async () => {
-          if (alreadyVisited) {
-            return [createAlreadyShownNode(uri)];
-          }
-
+        children: () => visitResourceOnce(visitedModels, uri, async nextVisitedModels => {
           const document = await this.tryLoadResourceDocument(uri);
           if (!document) {
             return [];
           }
 
-          const nextVisitedModels = new Set(visitedModels);
-          nextVisitedModels.add(resourceUriKey(uri));
           const nodes = await this.createParentModelNodes(document, nextVisitedModels);
           return nodes.length > 0 ? nodes : [createEmptyNode(vscode.l10n.t("No parent model"))];
-        },
+        }),
         iconPath: new vscode.ThemeIcon("file-code")
       }
     );
@@ -422,16 +414,10 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
             ? getReferenceLabel(references[0].reference)
             : vscode.l10n.t("{0} references", references.length),
         uri,
-        children: async () => {
-          if (alreadyVisited) {
-            return [createAlreadyShownNode(uri)];
-          }
-
-          const nextVisitedModels = new Set(visitedModels);
-          nextVisitedModels.add(resourceUriKey(uri));
+        children: () => visitResourceOnce(visitedModels, uri, async nextVisitedModels => {
           const nodes = await this.createChildModelNodes(uri, nextVisitedModels);
           return nodes.length > 0 ? nodes : [createEmptyNode(vscode.l10n.t("No child models"))];
-        },
+        }),
         iconPath: new vscode.ThemeIcon("file-code")
       }
     );
@@ -561,46 +547,8 @@ function isUnsupportedPreviewResourcePath(fileName: string): boolean {
 }
 
 function getResourcePathLabel(uri: vscode.Uri): string {
-  const normalizedPath = path.normalize(uri.fsPath);
-  const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
-
-  if (assetsIndex >= 0 && segments.length > assetsIndex + 2) {
-    const namespace = segments[assetsIndex + 1];
-    const resourcePath = segments.slice(assetsIndex + 2).join("/");
-    return `${namespace}:${resourcePath}`;
-  }
-
-  return path.basename(uri.fsPath);
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-function groupReferencesBySource(references: ResolvedResourceReference[]): Array<{
-  sourceUri: vscode.Uri;
-  references: ResolvedResourceReference[];
-}> {
-  const groups = new Map<string, { sourceUri: vscode.Uri; references: ResolvedResourceReference[] }>();
-
-  for (const reference of references) {
-    const key = resourceUriKey(reference.sourceUri);
-    const group = groups.get(key);
-    if (group) {
-      group.references.push(reference);
-    } else {
-      groups.set(key, { sourceUri: reference.sourceUri, references: [reference] });
-    }
-  }
-
-  return [...groups.values()];
+  const resource = getAssetResource(uri.fsPath);
+  return resource ? `${resource.namespace}:${resource.resourcePath}` : path.basename(uri.fsPath);
 }
 
 function createEmptyNode(label: string): ResourceGraphNode {
@@ -621,6 +569,20 @@ function createAlreadyShownNode(uri: vscode.Uri): ResourceGraphNode {
       iconPath: getResourceIcon(uri.fsPath)
     }
   );
+}
+
+async function visitResourceOnce(
+  visitedResources: ReadonlySet<string>,
+  uri: vscode.Uri,
+  createChildren: (nextVisitedResources: Set<string>) => Promise<ResourceGraphNode[]>
+): Promise<ResourceGraphNode[]> {
+  if (visitedResources.has(resourceUriKey(uri))) {
+    return [createAlreadyShownNode(uri)];
+  }
+
+  const nextVisitedResources = new Set(visitedResources);
+  nextVisitedResources.add(resourceUriKey(uri));
+  return createChildren(nextVisitedResources);
 }
 
 function compareNodes(left: ResourceGraphNode, right: ResourceGraphNode): number {

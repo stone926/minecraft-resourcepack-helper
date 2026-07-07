@@ -1,7 +1,4 @@
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import * as vscode from "vscode";
-import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { isCitPropertiesFileName } from "./citPaths";
 import {
   createResourceReferencePathResolver,
@@ -9,11 +6,32 @@ import {
   type ResourceReferencePathResolver
 } from "./pathGenerator";
 import {
+  collectModelDocumentUris,
+  collectResourceReferenceUris,
+  collectWorkspaceBlockstateUris
+} from "./resourceGraphScan";
+import {
+  createIncomingReferenceSearch,
+  type IncomingReferenceSearch,
+  isModelDocumentPath,
+  isResourceGraphDocumentPath,
+  resourceUriKey
+} from "./resourceGraphSearch";
+import {
   getResourceReferences,
   isResourceReferenceFileName,
   ResourceReference,
   ResourceReferenceDocument
 } from "./resourceReferences";
+
+export {
+  type AssetResource,
+  getAssetResource,
+  isModelDocumentPath,
+  isResourceGraphDocumentPath,
+  isResourceJsonDocumentPath,
+  resourceUriKey
+} from "./resourceGraphSearch";
 
 export interface ResourceGraphDocument extends ResourceReferenceDocument {
   uri: vscode.Uri;
@@ -25,9 +43,9 @@ export interface ResolvedResourceReference {
   targetUri: vscode.Uri | null;
 }
 
-interface IncomingReferenceSearch {
-  readonly values: Set<string>;
-  matchesText(text: string): boolean;
+export interface ResourceReferenceSourceGroup {
+  sourceUri: vscode.Uri;
+  references: ResolvedResourceReference[];
 }
 
 interface ResolvedReferencesCacheEntry {
@@ -210,194 +228,20 @@ export async function loadResourceGraphDocument(uri: vscode.Uri): Promise<Resour
   };
 }
 
-export function isModelDocumentPath(fileName: string): boolean {
-  return /[\\/]models[\\/].+\.json$/i.test(fileName);
-}
+export function groupReferencesBySource(references: ResolvedResourceReference[]): ResourceReferenceSourceGroup[] {
+  const groups = new Map<string, ResourceReferenceSourceGroup>();
 
-export function resourceUriKey(uri: vscode.Uri): string {
-  const key = uri.scheme === "file" ? path.normalize(uri.fsPath) : uri.toString();
-  return process.platform === "win32" ? key.toLowerCase() : key;
-}
-
-function createIncomingReferenceSearch(targetUri: vscode.Uri): IncomingReferenceSearch | null {
-  const targetResource = getAssetResource(targetUri);
-  if (!targetResource) {
-    return null;
-  }
-
-  const values = new Set<string>();
-  for (const rawPath of getPossibleReferencePaths(targetResource.resourcePath)) {
-    addSearchValues(values, targetResource.namespace, rawPath);
-  }
-
-  return {
-    values,
-    matchesText: (text: string) => {
-      if (text.includes("\\u")) {
-        return true;
-      }
-
-      for (const value of values) {
-        if (text.includes(value)) {
-          return true;
-        }
-      }
-
-      return false;
-    }
-  };
-}
-
-function getAssetResource(uri: vscode.Uri): { namespace: string; resourcePath: string } | null {
-  if (uri.scheme !== "file") {
-    return null;
-  }
-
-  const normalizedPath = path.normalize(uri.fsPath);
-  const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
-
-  if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
-    return null;
-  }
-
-  return {
-    namespace: segments[assetsIndex + 1],
-    resourcePath: segments.slice(assetsIndex + 2).join("/")
-  };
-}
-
-function getPossibleReferencePaths(resourcePath: string): Set<string> {
-  const paths = new Set<string>();
-  const normalizedResourcePath = resourcePath.replaceAll("\\", "/");
-  const pathWithoutExtension = stripExtension(normalizedResourcePath);
-  const basenameWithoutExtension = path.posix.basename(pathWithoutExtension);
-  const basename = path.posix.basename(normalizedResourcePath);
-  const targetRoots = [
-    "",
-    "models",
-    "textures",
-    "textures/particle",
-    "textures/entity",
-    "textures/entity/bed",
-    "textures/entity/chest",
-    "textures/entity/shulker",
-    "textures/entity/signs",
-    "textures/entity/signs/hanging",
-    "textures/effect",
-    "textures/gui/sprites/hud/locator_bar_dot",
-    "font",
-    "shaders",
-    "shaders/core",
-    "shaders/include",
-    "sounds"
-  ];
-
-  for (const targetRoot of targetRoots) {
-    addReferencePathForTargetRoot(paths, normalizedResourcePath, pathWithoutExtension, targetRoot);
-  }
-
-  if (basenameWithoutExtension.length > 0) {
-    paths.add(basenameWithoutExtension);
-  }
-  if (basename.length > 0) {
-    paths.add(basename);
-  }
-
-  addEquipmentReferencePath(paths, normalizedResourcePath, pathWithoutExtension);
-  return paths;
-}
-
-function addReferencePathForTargetRoot(
-  paths: Set<string>,
-  resourcePath: string,
-  pathWithoutExtension: string,
-  targetRoot: string
-): void {
-  const normalizedRoot = targetRoot.length > 0 ? `${targetRoot}/` : "";
-  if (targetRoot.length > 0 && !resourcePath.startsWith(normalizedRoot)) {
-    return;
-  }
-
-  const rawPath = targetRoot.length > 0 ? resourcePath.slice(normalizedRoot.length) : resourcePath;
-  const rawPathWithoutExtension = targetRoot.length > 0
-    ? pathWithoutExtension.slice(normalizedRoot.length)
-    : pathWithoutExtension;
-
-  if (rawPathWithoutExtension.length > 0) {
-    paths.add(rawPathWithoutExtension);
-  }
-
-  if (rawPath.length > 0) {
-    paths.add(rawPath);
-  }
-}
-
-function addEquipmentReferencePath(paths: Set<string>, resourcePath: string, pathWithoutExtension: string): void {
-  const equipmentRoot = "textures/entity/equipment/";
-  if (!resourcePath.startsWith(equipmentRoot)) {
-    return;
-  }
-
-  const rawPath = resourcePath.slice(equipmentRoot.length);
-  const rawPathWithoutExtension = pathWithoutExtension.slice(equipmentRoot.length);
-  const slashIndex = rawPath.indexOf("/");
-
-  if (slashIndex < 0) {
-    return;
-  }
-
-  const texturePath = rawPath.slice(slashIndex + 1);
-  const texturePathWithoutExtension = rawPathWithoutExtension.slice(slashIndex + 1);
-
-  if (texturePathWithoutExtension.length > 0) {
-    paths.add(texturePathWithoutExtension);
-  }
-
-  if (texturePath.length > 0) {
-    paths.add(texturePath);
-  }
-}
-
-function addSearchValues(values: Set<string>, namespace: string, rawPath: string): void {
-  const normalizedPath = rawPath.replaceAll("\\", "/");
-  addJsonStringValues(values, `${namespace}:${normalizedPath}`);
-  addJsonStringValues(values, `${namespace.toLowerCase()}:${normalizedPath.toLowerCase()}`);
-  values.add(`${namespace}:${normalizedPath}`);
-  values.add(`${namespace.toLowerCase()}:${normalizedPath.toLowerCase()}`);
-  values.add(`assets/${namespace}/${normalizedPath}`);
-  values.add(`assets/${namespace.toLowerCase()}/${normalizedPath.toLowerCase()}`);
-  values.add(normalizedPath);
-  values.add(normalizedPath.toLowerCase());
-
-  if (namespace === "minecraft") {
-    addJsonStringValues(values, normalizedPath);
-    addJsonStringValues(values, normalizedPath.toLowerCase());
-  }
-}
-
-function addJsonStringValues(values: Set<string>, value: string): void {
-  values.add(JSON.stringify(value));
-
-  if (value.includes("/")) {
-    values.add(JSON.stringify(value.replaceAll("/", "\\")));
-    values.add(JSON.stringify(value).replaceAll("/", "\\/"));
-  }
-}
-
-function stripExtension(value: string): string {
-  const extension = path.posix.extname(value);
-  return extension ? value.slice(0, -extension.length) : value;
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
+  for (const reference of references) {
+    const key = resourceUriKey(reference.sourceUri);
+    const group = groups.get(key);
+    if (group) {
+      group.references.push(reference);
+    } else {
+      groups.set(key, { sourceUri: reference.sourceUri, references: [reference] });
     }
   }
 
-  return -1;
+  return [...groups.values()];
 }
 
 function resolveDocumentReferences(
@@ -490,122 +334,6 @@ async function loadResourceGraphDocumentIfMatching(
     fileName: uri.fsPath,
     getText: () => text
   };
-}
-
-async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
-  const urisByKey = new Map<string, vscode.Uri>();
-  const workspaceUris = [
-    ...(await vscode.workspace.findFiles("**/assets/**/*.json", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/**/*.properties", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.vsh", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.fsh", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.glsl", "**/node_modules/**"))
-  ];
-
-  for (const uri of workspaceUris) {
-    if (isResourceReferenceFileName(uri.fsPath)) {
-      urisByKey.set(resourceUriKey(uri), uri);
-    }
-  }
-
-  const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
-  if (defaultAssetsPath) {
-    for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
-      for (const uri of await collectResourceReferenceUrisInRoot(root)) {
-        urisByKey.set(resourceUriKey(uri), uri);
-      }
-    }
-  }
-
-  return [...urisByKey.values()];
-}
-
-async function collectWorkspaceBlockstateUris(): Promise<vscode.Uri[]> {
-  return vscode.workspace.findFiles("**/assets/*/blockstates/*.json", "**/node_modules/**");
-}
-
-async function collectModelDocumentUris(): Promise<vscode.Uri[]> {
-  const urisByKey = new Map<string, vscode.Uri>();
-  const workspaceUris = [
-    ...(await vscode.workspace.findFiles("**/assets/*/models/**/*.json", "**/node_modules/**"))
-  ];
-
-  for (const uri of workspaceUris) {
-    urisByKey.set(resourceUriKey(uri), uri);
-  }
-
-  const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
-  if (defaultAssetsPath) {
-    for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
-      for (const uri of await collectResourceReferenceUrisInRoot(root)) {
-        if (isModelDocumentPath(uri.fsPath)) {
-          urisByKey.set(resourceUriKey(uri), uri);
-        }
-      }
-    }
-  }
-
-  return [...urisByKey.values()];
-}
-
-async function getDefaultAssetsRoots(configuredPath: string): Promise<string[]> {
-  const normalizedPath = path.normalize(configuredPath);
-  const candidates = [
-    path.basename(normalizedPath).toLowerCase() === "assets" ? normalizedPath : null,
-    path.basename(path.dirname(normalizedPath)).toLowerCase() === "assets" ? path.dirname(normalizedPath) : null,
-    path.join(normalizedPath, "assets")
-  ].filter((candidate): candidate is string => candidate !== null);
-
-  const roots: string[] = [];
-  for (const candidate of [...new Set(candidates)]) {
-    try {
-      const stat = await fs.stat(candidate);
-      if (stat.isDirectory()) {
-        roots.push(candidate);
-      }
-    } catch {
-      // Ignore invalid configuration paths here; diagnostics already surface unresolved references.
-    }
-  }
-
-  return roots;
-}
-
-async function collectResourceReferenceUrisInRoot(directory: string): Promise<vscode.Uri[]> {
-  const uris: vscode.Uri[] = [];
-  await collectResourceReferenceUrisInto(directory, uris);
-  return uris;
-}
-
-async function collectResourceReferenceUrisInto(directory: string, uris: vscode.Uri[]): Promise<void> {
-  const entries = await workspaceResourceCache.getDirectoryEntries(directory);
-  if (!entries) {
-    return;
-  }
-
-  for (const entry of entries) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      if (!shouldSkipDirectory(entry.name)) {
-        await collectResourceReferenceUrisInto(entryPath, uris);
-      }
-    } else if (entry.isFile() && isResourceReferenceFileName(entryPath)) {
-      uris.push(vscode.Uri.file(entryPath));
-    }
-  }
-}
-
-function shouldSkipDirectory(name: string): boolean {
-  return name === ".git" || name === "node_modules" || name === "out";
-}
-
-export function isResourceJsonDocumentPath(fileName: string): boolean {
-  return /[\\/]assets[\\/][^\\/]+[\\/].+\.json$/i.test(fileName);
-}
-
-export function isResourceGraphDocumentPath(fileName: string): boolean {
-  return isResourceReferenceFileName(fileName) ||
-    /[\\/]assets[\\/][^\\/]+[\\/]shaders[\\/]include[\\/].+\.(?:glsl|vsh|fsh)$/i.test(fileName);
 }
 
 function uniqueResolvedReferences(references: ResolvedResourceReference[]): ResolvedResourceReference[] {
