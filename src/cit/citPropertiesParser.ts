@@ -1,3 +1,4 @@
+import { lm, type LocalizedMessage } from "../i18n/messages";
 import type { AstLocation } from "../utils/locationChecker";
 
 export interface CitPropertyEntry {
@@ -13,7 +14,7 @@ export interface CitPropertyEntry {
 }
 
 export interface CitPropertySyntaxError {
-  message: string;
+  message: LocalizedMessage;
   range: AstLocation;
   line: number;
 }
@@ -142,7 +143,7 @@ function parseLogicalCitPropertyLine(
   const separatorIndex = findPropertySeparator(line, contentStart);
   if (separatorIndex < 0) {
     errors.push({
-      message: "Missing CIT property separator '=' or ':'.",
+      message: lm("Missing CIT property separator '=' or ':'."),
       range: createLogicalLocation(logicalLine, contentStart, line.length),
       line: locationAtLogicalOffset(logicalLine, contentStart).line
     });
@@ -180,7 +181,7 @@ function validatePropertyKey(
 ): void {
   if (key.length === 0) {
     errors.push({
-      message: "CIT property key cannot be empty.",
+      message: lm("CIT property key cannot be empty."),
       range,
       line: range.start.line
     });
@@ -189,7 +190,7 @@ function validatePropertyKey(
 
   if (/\s/.test(key)) {
     errors.push({
-      message: "CIT property key cannot contain whitespace.",
+      message: lm("CIT property key cannot contain whitespace."),
       range,
       line: range.start.line
     });
@@ -318,7 +319,7 @@ function unescapeProperty(
       }
 
       errors.push({
-        message: "Invalid unicode escape in CIT property; expected \\uXXXX.",
+        message: lm("Invalid unicode escape in CIT property; expected \\uXXXX."),
         range: createLogicalLocation(
           logicalLine,
           baseOffset + index,

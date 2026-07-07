@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import { getCitDiagnostics } from "../../cit/citDiagnosticsCore";
 import type { CitLanguageDocument } from "../../cit/citLanguage";
+import { formatDefaultMessage } from "./helpers/localizedMessages";
 
 describe("CIT diagnostics", () => {
   it("reports unknown keys and invalid values", () => {
@@ -173,7 +174,7 @@ describe("CIT diagnostics", () => {
     const diagnostics = getCitDiagnostics(document, {
       locale: "en",
       fileExists: candidate => candidate === higherPriority
-    }).map(diagnostic => diagnostic.message);
+    }).map(diagnostic => formatDefaultMessage(diagnostic.message));
 
     assert.ok(
       diagnostics.some(message => message.includes("higher-priority file exists")),
@@ -191,5 +192,5 @@ function getMessages(
     fileName,
     getText: () => text
   };
-  return getCitDiagnostics(document, { locale: "en", resourceIds }).map(diagnostic => diagnostic.message);
+  return getCitDiagnostics(document, { locale: "en", resourceIds }).map(diagnostic => formatDefaultMessage(diagnostic.message));
 }

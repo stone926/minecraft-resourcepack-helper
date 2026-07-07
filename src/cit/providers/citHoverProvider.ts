@@ -18,21 +18,21 @@ function toMarkdown(info: CitHoverInfo): vscode.MarkdownString {
   const markdown = new vscode.MarkdownString(undefined, true);
   markdown.appendMarkdown(`**${info.title}**\n\n`);
   markdown.appendMarkdown(`${info.description}\n\n`);
-  markdown.appendMarkdown(`Value type: \`${info.valueType}\``);
+  markdown.appendMarkdown(vscode.l10n.t("Value type: {0}", `\`${info.valueType}\``));
   if (info.defaultValue !== undefined) {
-    markdown.appendMarkdown(`\n\nDefault: \`${info.defaultValue}\``);
+    markdown.appendMarkdown(`\n\n${vscode.l10n.t("Default: {0}", `\`${info.defaultValue}\``)}`);
   }
   if (info.appliesTo.length > 0) {
-    markdown.appendMarkdown(`\n\nApplies to: ${info.appliesTo.map(value => `\`${value}\``).join(", ")}`);
+    markdown.appendMarkdown(`\n\n${vscode.l10n.t("Applies to: {0}", info.appliesTo.map(value => `\`${value}\``).join(", "))}`);
   }
   if (info.aliases.length > 0) {
-    markdown.appendMarkdown(`\n\nAliases: ${info.aliases.map(value => `\`${value}\``).join(", ")}`);
+    markdown.appendMarkdown(`\n\n${vscode.l10n.t("Aliases: {0}", info.aliases.map(value => `\`${value}\``).join(", "))}`);
   }
   if (info.citResewnOnly) {
-    markdown.appendMarkdown("\n\nCIT Resewn only.");
+    markdown.appendMarkdown(`\n\n${vscode.l10n.t("CIT Resewn only.")}`);
   }
   if (info.runtimeStatus) {
-    markdown.appendMarkdown(`\n\nRuntime status: \`${info.runtimeStatus}\``);
+    markdown.appendMarkdown(`\n\n${vscode.l10n.t("Runtime status: {0}", `\`${info.runtimeStatus}\``)}`);
   }
   if (info.runtimeNote) {
     markdown.appendMarkdown(`\n\n${info.runtimeNote}`);

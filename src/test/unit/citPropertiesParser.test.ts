@@ -1,5 +1,6 @@
 import * as assert from "node:assert";
 import { parseCitProperties, parseCitPropertiesDocument } from "../../cit/citPropertiesParser";
+import { formatDefaultMessage } from "./helpers/localizedMessages";
 
 describe("CIT properties parser", () => {
   it("returns key, value, and ranges for property entries", () => {
@@ -69,8 +70,8 @@ describe("CIT properties parser", () => {
 
     assert.strictEqual(result.entries.length, 1);
     assert.strictEqual(result.errors.length, 2);
-    assert.ok(result.errors.some(error => error.message.includes("Missing CIT property separator")));
-    assert.ok(result.errors.some(error => error.message.includes("Invalid unicode escape")));
+    assert.ok(result.errors.some(error => formatDefaultMessage(error.message).includes("Missing CIT property separator")));
+    assert.ok(result.errors.some(error => formatDefaultMessage(error.message).includes("Invalid unicode escape")));
   });
 
   it("reports malformed keys even when equals or colon separators are present", () => {
@@ -82,7 +83,7 @@ describe("CIT properties parser", () => {
 
     assert.strictEqual(result.entries.length, 3);
     assert.strictEqual(result.entries.every(entry => entry.hasSyntaxError), true);
-    assert.ok(result.errors.some(error => error.message.includes("cannot contain whitespace")));
-    assert.ok(result.errors.some(error => error.message.includes("cannot be empty")));
+    assert.ok(result.errors.some(error => formatDefaultMessage(error.message).includes("cannot contain whitespace")));
+    assert.ok(result.errors.some(error => formatDefaultMessage(error.message).includes("cannot be empty")));
   });
 });

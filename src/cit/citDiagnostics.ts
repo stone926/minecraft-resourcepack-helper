@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { citResourceIdService } from "./citResourceIdService";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
+import { localize } from "../i18n/runtime";
 import {
   getCitDiagnostics as getCoreCitDiagnostics,
   type CitDiagnostic,
@@ -22,7 +23,7 @@ function toVsCodeDiagnostic(diagnostic: CitDiagnostic): vscode.Diagnostic {
       new vscode.Position(diagnostic.range.start.line - 1, diagnostic.range.start.column),
       new vscode.Position(diagnostic.range.end.line - 1, diagnostic.range.end.column)
     ),
-    diagnostic.message,
+    localize(diagnostic.message),
     toVsCodeSeverity(diagnostic.severity)
   );
 }

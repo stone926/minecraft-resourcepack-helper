@@ -1,6 +1,6 @@
 {
   "name": "rsgl",
-  "displayName": "RSGL - Resourcepack Generation Language",
+  "displayName": "%extension.displayName%",
   "publisher": "stone926",
   "version": "2.3.1",
   "license": "UNLICENSED",
@@ -54,32 +54,32 @@
     "commands": [
       {
         "command": "rsgl.build",
-        "title": "RSGL: Build Resourcepack JSON",
+        "title": "%command.title.build%",
         "icon": "$(play)"
       },
       {
         "command": "rsgl.previewBuild",
-        "title": "RSGL: Preview Build",
+        "title": "%command.title.previewBuild%",
         "icon": "$(diff)"
       },
       {
         "command": "rsgl.buildDirectory",
-        "title": "RSGL: Build Source Directory",
+        "title": "%command.title.buildDirectory%",
         "icon": "$(run-all)"
       },
       {
         "command": "rsgl.previewDirectoryBuild",
-        "title": "RSGL: Preview Source Directory Build",
+        "title": "%command.title.previewDirectoryBuild%",
         "icon": "$(diff)"
       },
       {
         "command": "rsgl.buildWorkspace",
-        "title": "RSGL: Build Workspace Source Directories",
+        "title": "%command.title.buildWorkspace%",
         "icon": "$(run-all)"
       },
       {
         "command": "rsgl.previewWorkspaceBuild",
-        "title": "RSGL: Preview Workspace Builds",
+        "title": "%command.title.previewWorkspaceBuild%",
         "icon": "$(diff)"
       }
     ],
@@ -130,22 +130,22 @@
       ]
     },
     "configuration": {
-      "title": "RSGL",
+      "title": "%config.title%",
       "properties": {
         "rsgl.outDir": {
           "type": "string",
           "default": "",
-          "description": "Output directory for generated resource pack files. Empty uses the nearest pack.mcmeta directory."
+          "description": "%config.desc.outDir%"
         },
         "rsgl.minecraftVersion": {
           "type": "string",
           "default": "auto",
-          "description": "Minecraft version used for RSGL validation and generation."
+          "description": "%config.desc.minecraftVersion%"
         },
         "rsgl.defaultAssetsPath": {
           "type": "string",
           "default": "",
-          "description": "Fallback vanilla assets path used when validating generated references. Empty falls back to McResHelper.defaultMcAssetsPath when available."
+          "description": "%config.desc.defaultAssetsPath%"
         },
         "rsgl.resourcePackLoadOrder": {
           "type": "array",
@@ -153,17 +153,17 @@
           "items": {
             "type": "string"
           },
-          "description": "Additional resource pack roots used when validating generated references. Empty falls back to McResHelper.resourcePackLoadOrder when available."
+          "description": "%config.desc.resourcePackLoadOrder%"
         },
         "rsgl.emitSourceMap": {
           "type": "boolean",
           "default": true,
-          "description": "Emit RSGL source maps next to generated files."
+          "description": "%config.desc.emitSourceMap%"
         },
         "rsgl.validateGeneratedJson": {
           "type": "boolean",
           "default": true,
-          "description": "Validate generated resource pack JSON."
+          "description": "%config.desc.validateGeneratedJson%"
         }
       }
     }

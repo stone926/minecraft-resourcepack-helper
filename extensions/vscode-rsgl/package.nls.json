@@ -1,0 +1,16 @@
+{
+  "extension.displayName": "RSGL - Resourcepack Generation Language",
+  "config.title": "RSGL",
+  "config.desc.outDir": "Output directory for generated resource pack files. Empty uses the nearest pack.mcmeta directory.",
+  "config.desc.minecraftVersion": "Minecraft version used for RSGL validation and generation.",
+  "config.desc.defaultAssetsPath": "Fallback vanilla assets path used when validating generated references. Empty falls back to McResHelper.defaultMcAssetsPath when available.",
+  "config.desc.resourcePackLoadOrder": "Additional resource pack roots used when validating generated references. Empty falls back to McResHelper.resourcePackLoadOrder when available.",
+  "config.desc.emitSourceMap": "Emit RSGL source maps next to generated files.",
+  "config.desc.validateGeneratedJson": "Validate generated resource pack JSON.",
+  "command.title.build": "RSGL: Build Resourcepack JSON",
+  "command.title.previewBuild": "RSGL: Preview Build",
+  "command.title.buildDirectory": "RSGL: Build Source Directory",
+  "command.title.previewDirectoryBuild": "RSGL: Preview Source Directory Build",
+  "command.title.buildWorkspace": "RSGL: Build Workspace Source Directories",
+  "command.title.previewWorkspaceBuild": "RSGL: Preview Workspace Builds"
+}

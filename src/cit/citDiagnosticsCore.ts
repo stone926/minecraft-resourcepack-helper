@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { parseAssetsPath } from "../../packages/mc-assets/src";
+import { lm, type LocalizedMessage } from "../i18n/messages";
 import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
 import { parseCitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
 import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
@@ -13,7 +14,7 @@ export type CitDiagnosticSeverity = "error" | "warning" | "information";
 
 export interface CitDiagnostic {
   range: AstLocation;
-  message: string;
+  message: LocalizedMessage;
   severity: CitDiagnosticSeverity;
 }
 
@@ -58,23 +59,23 @@ export function getCitDiagnostics(
       if (globalFile && knownCit) {
         diagnostics.push(createDiagnostic(
           entry.keyRange,
-          `CIT key '${entry.key}' is not valid in global cit.properties.`,
+          lm("CIT key '{0}' is not valid in global cit.properties.", entry.key),
           "warning"
         ));
       } else if (!globalFile && knownGlobal) {
         diagnostics.push(createDiagnostic(
           entry.keyRange,
-          `Global key '${entry.key}' is only valid in cit.properties.`,
+          lm("Global key '{0}' is only valid in cit.properties.", entry.key),
           "warning"
         ));
       } else if (knownCit) {
         diagnostics.push(createDiagnostic(
           entry.keyRange,
-          `CIT key '${entry.key}' is not valid for type '${citType}'.`,
+          lm("CIT key '{0}' is not valid for type '{1}'.", entry.key, citType),
           "warning"
         ));
       } else {
-        diagnostics.push(createDiagnostic(entry.keyRange, `Unknown CIT key '${entry.key}'.`, "warning"));
+        diagnostics.push(createDiagnostic(entry.keyRange, lm("Unknown CIT key '{0}'.", entry.key), "warning"));
       }
       continue;
     }
@@ -85,7 +86,7 @@ export function getCitDiagnostics(
       if (first) {
         diagnostics.push(createDiagnostic(
           entry.keyRange,
-          `Duplicate CIT key '${entry.key}'.`,
+          lm("Duplicate CIT key '{0}'.", entry.key),
           "warning"
         ));
       } else {
@@ -94,7 +95,7 @@ export function getCitDiagnostics(
     }
 
     if (entry.value.trim().length === 0 && requiresValue(lookup.spec)) {
-      diagnostics.push(createDiagnostic(entry.valueRange, `CIT key '${entry.key}' requires a value.`, "warning"));
+      diagnostics.push(createDiagnostic(entry.valueRange, lm("CIT key '{0}' requires a value.", entry.key), "warning"));
       continue;
     }
 
@@ -132,7 +133,9 @@ function validateResourceIds(
     .filter(value => !known.has(value))
     .map(value => createDiagnostic(
       entry.valueRange,
-      `Unknown ${spec.resourceKind} id '${value}'.`,
+      spec.resourceKind === "item"
+        ? lm("Unknown item id '{0}'.", value)
+        : lm("Unknown enchantment id '{0}'.", value),
       "warning"
     ));
 }
@@ -173,7 +176,7 @@ function validateItemCitRules(
 
   return [createDiagnostic(
     entries[0]?.keyRange ?? { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-    `type=item requires items unless the file name is a valid item id.`,
+    lm("type=item requires items unless the file name is a valid item id."),
     "warning"
   )];
 }
@@ -182,12 +185,12 @@ function validateElytraCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
   const diagnostics: CitDiagnostic[] = [];
   const items = entries.find(entry => isItemsKey(entry.key));
   if (items) {
-    diagnostics.push(createDiagnostic(items.keyRange, `items is ignored for type=elytra; the target is minecraft:elytra.`, "information"));
+    diagnostics.push(createDiagnostic(items.keyRange, lm("items is ignored for type=elytra; the target is minecraft:elytra."), "information"));
   }
   if (!entries.some(entry => stripDefaultCitNamespace(entry.key) === "texture")) {
     diagnostics.push(createDiagnostic(
       entries[0]?.keyRange ?? { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-      `type=elytra should declare texture.`,
+      lm("type=elytra should declare texture."),
       "warning"
     ));
   }
@@ -205,7 +208,7 @@ function validateArmorCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
     .filter(value => !citResourceIdService.isArmorItem(value))
     .map(value => createDiagnostic(
       items.valueRange,
-      `Item '${citResourceIdService.normalizeItemId(value)}' is not an armor item.`,
+      lm("Item '{0}' is not an armor item.", citResourceIdService.normalizeItemId(value)),
       "warning"
     ));
 }
@@ -215,10 +218,12 @@ function validateRuntimeStatus(entry: CitPropertyEntry, spec: ResolvedCitSpecKey
     return [];
   }
 
-  const note = spec.runtimeNote ? ` ${spec.runtimeNote}` : "";
+  const status = spec.runtimeStatus;
   return [createDiagnostic(
     entry.keyRange,
-    `CIT key '${entry.key}' has runtime status '${spec.runtimeStatus}'.${note}`,
+    spec.runtimeNote
+      ? lm("CIT key '{0}' has runtime status '{1}'. {2}", entry.key, status, spec.runtimeNote)
+      : lm("CIT key '{0}' has runtime status '{1}'.", entry.key, status),
     "warning"
   )];
 }
@@ -231,13 +236,13 @@ function validateValue(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDi
     if (!(spec.enum ?? []).includes(value)) {
       diagnostics.push(createDiagnostic(
         entry.valueRange,
-        `Invalid value '${value}'. Expected one of: ${(spec.enum ?? []).join(", ")}.`,
+        lm("Invalid value '{0}'. Expected one of: {1}.", value, (spec.enum ?? []).join(", ")),
         "warning"
       ));
     }
   } else if (spec.valueType === "boolean") {
     if (value !== "true" && value !== "false") {
-      diagnostics.push(createDiagnostic(entry.valueRange, `Invalid boolean value '${value}'.`, "warning"));
+      diagnostics.push(createDiagnostic(entry.valueRange, lm("Invalid boolean value '{0}'.", value), "warning"));
     }
   } else if (spec.valueType === "integer" || spec.valueType === "positiveInteger") {
     diagnostics.push(...validateInteger(entry, spec));
@@ -263,18 +268,18 @@ function validateValue(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDi
 function validateInteger(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
   const value = entry.value.trim();
   if (!integerPattern.test(value)) {
-    return [createDiagnostic(entry.valueRange, `Invalid integer value '${value}'.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Invalid integer value '{0}'.", value), "warning")];
   }
 
   const numberValue = Number(value);
   if (spec.valueType === "positiveInteger" && numberValue <= 0) {
-    return [createDiagnostic(entry.valueRange, `Value must be greater than 0.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be greater than 0."), "warning")];
   }
   if (spec.minimum !== undefined && numberValue < spec.minimum) {
-    return [createDiagnostic(entry.valueRange, `Value must be at least ${spec.minimum}.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", spec.minimum), "warning")];
   }
   if (spec.maximum !== undefined && numberValue > spec.maximum) {
-    return [createDiagnostic(entry.valueRange, `Value must be at most ${spec.maximum}.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be at most {0}.", spec.maximum), "warning")];
   }
   return [];
 }
@@ -282,21 +287,21 @@ function validateInteger(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): Cit
 function validateNumber(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
   const value = entry.value.trim();
   if (!numberPattern.test(value)) {
-    return [createDiagnostic(entry.valueRange, `Invalid number value '${value}'.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Invalid number value '{0}'.", value), "warning")];
   }
 
   const numberValue = Number(value);
   if (spec.valueType === "positiveNumber" && numberValue <= 0) {
-    return [createDiagnostic(entry.valueRange, `Value must be greater than 0.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be greater than 0."), "warning")];
   }
   if (spec.valueType === "nonNegativeNumber" && numberValue < 0) {
-    return [createDiagnostic(entry.valueRange, `Value must be at least 0.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", 0), "warning")];
   }
   if (spec.minimum !== undefined && numberValue < spec.minimum) {
-    return [createDiagnostic(entry.valueRange, `Value must be at least ${spec.minimum}.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", spec.minimum), "warning")];
   }
   if (spec.maximum !== undefined && numberValue > spec.maximum) {
-    return [createDiagnostic(entry.valueRange, `Value must be at most ${spec.maximum}.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Value must be at most {0}.", spec.maximum), "warning")];
   }
   return [];
 }
@@ -304,12 +309,12 @@ function validateNumber(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitD
 function validateRangeList(entry: CitPropertyEntry, spec: ResolvedCitSpecKey, allowList: boolean): CitDiagnostic[] {
   const tokens = entry.value.trim().split(/\s+/).filter(Boolean);
   if (!allowList && tokens.length > 1) {
-    return [createDiagnostic(entry.valueRange, `Expected a single range value.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Expected a single range value."), "warning")];
   }
 
   for (const token of tokens) {
     if (!isValidRangeToken(token, spec)) {
-      return [createDiagnostic(entry.valueRange, `Invalid range value '${token}'.`, "warning")];
+      return [createDiagnostic(entry.valueRange, lm("Invalid range value '{0}'.", token), "warning")];
     }
   }
 
@@ -324,11 +329,11 @@ function validateBlendFunc(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): C
 
   const parts = value.split(/\s+/).filter(Boolean);
   if (parts.length !== 2 && parts.length !== 4) {
-    return [createDiagnostic(entry.valueRange, `Blend must be a named mode or 2/4 OpenGL parameters.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Blend must be a named mode or 2/4 OpenGL parameters."), "warning")];
   }
 
   if (!parts.every(isBlendParameter)) {
-    return [createDiagnostic(entry.valueRange, `Blend contains an invalid OpenGL parameter.`, "warning")];
+    return [createDiagnostic(entry.valueRange, lm("Blend contains an invalid OpenGL parameter."), "warning")];
   }
 
   return [];
@@ -337,7 +342,7 @@ function validateBlendFunc(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): C
 function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
   const normalizedKey = stripDefaultCitNamespace(entry.key);
   if (!/^(?:nbt|component|components)\.[A-Za-z0-9_.*:~-]+(?:\.[A-Za-z0-9_.*:~-]+)*$/.test(normalizedKey)) {
-    return [createDiagnostic(entry.keyRange, `CIT component/NBT key must include a valid path after its prefix.`, "warning")];
+    return [createDiagnostic(entry.keyRange, lm("CIT component/NBT key must include a valid path after its prefix."), "warning")];
   }
 
   const regexPrefix = /^(?:regex|iregex):/.exec(entry.value);
@@ -346,7 +351,7 @@ function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
     try {
       new RegExp(pattern);
     } catch {
-      return [createDiagnostic(entry.valueRange, `Invalid regular expression.`, "warning")];
+      return [createDiagnostic(entry.valueRange, lm("Invalid regular expression."), "warning")];
     }
   }
 
@@ -356,7 +361,7 @@ function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
       try {
         JSON.parse(value);
       } catch {
-        return [createDiagnostic(entry.valueRange, `Invalid JSON text component.`, "warning")];
+        return [createDiagnostic(entry.valueRange, lm("Invalid JSON text component."), "warning")];
       }
     }
   }
@@ -443,11 +448,11 @@ function getGlobalPriorityDiagnostics(
 
   return [createDiagnostic(
     { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-    `This global cit.properties is ignored because a higher-priority file exists: ${higherPriority}.`,
+    lm("This global cit.properties is ignored because a higher-priority file exists: {0}.", higherPriority),
     "information"
   )];
 }
 
-function createDiagnostic(range: AstLocation, message: string, severity: CitDiagnosticSeverity): CitDiagnostic {
+function createDiagnostic(range: AstLocation, message: LocalizedMessage, severity: CitDiagnosticSeverity): CitDiagnostic {
   return { range, message, severity };
 }
