@@ -3,7 +3,7 @@ import { lm } from "../../i18n/messages";
 import type { ModelPreviewFileSystem, RawElement, RawFace, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
-import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
+import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
 import { readPngAlphaMask, type PngAlphaMask } from "./PngAlpha";
 
 const itemLayers = ["layer0", "layer1", "layer2", "layer3", "layer4"];

@@ -1,8 +1,8 @@
 import * as path from "node:path";
-import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { modelPreviewWebviewMessages } from "../../i18n/messages";
 import { localize } from "../../i18n/runtime";
+import { findPackRoot } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewMaterial, WebviewModelPreviewDocument } from "../ir/PreviewDocument";
 
 export class ModelPreviewWebview {
@@ -168,20 +168,6 @@ export function getModelPreviewLocalResourceRoots(extensionUri: vscode.Uri, mode
   }
 
   return uniqueRoots(roots);
-}
-
-function findPackRoot(fileName: string): string | null {
-  let current = path.dirname(path.normalize(fileName));
-  const root = path.parse(current).root;
-
-  while (current !== root) {
-    if (fs.existsSync(path.join(current, "pack.mcmeta"))) {
-      return current;
-    }
-    current = path.dirname(current);
-  }
-
-  return null;
 }
 
 function uniqueRoots(roots: vscode.Uri[]): vscode.Uri[] {

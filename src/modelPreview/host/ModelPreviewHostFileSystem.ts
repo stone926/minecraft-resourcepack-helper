@@ -3,8 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import type { ModelPreviewFileSystem } from "../model/ModelDocument";
-import { fileNameKey } from "../resolve/ResourceDependencyResolver";
-import type { PackMetadata } from "../../../packages/mc-assets/src";
+import { normalizePathKey, type PackMetadata } from "../../../packages/mc-assets/src";
 
 export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
   async readTextFile(fileName: string): Promise<string> {
@@ -38,8 +37,8 @@ export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
 }
 
 function findOpenTextDocument(fileName: string): vscode.TextDocument | null {
-  const key = fileNameKey(path.normalize(fileName));
+  const key = normalizePathKey(path.normalize(fileName));
   return vscode.workspace.textDocuments.find(document =>
-    document.uri.scheme === "file" && fileNameKey(document.uri.fsPath) === key
+    document.uri.scheme === "file" && normalizePathKey(document.uri.fsPath) === key
   ) ?? null;
 }

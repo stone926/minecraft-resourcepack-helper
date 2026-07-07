@@ -2,8 +2,8 @@ import type { PreviewBounds, PreviewDirection, PreviewMesh, PreviewVec3 } from "
 import { lm } from "../../i18n/messages";
 import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
-import { fileUriString } from "../resolve/ResourceDependencyResolver";
-import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
+import { fileUriString } from "../paths";
+import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { getDefaultUv, getFaceUvs } from "./DefaultUv";
 

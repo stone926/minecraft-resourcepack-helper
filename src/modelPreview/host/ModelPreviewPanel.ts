@@ -9,7 +9,7 @@ import {
   isCancellationError,
   ModelPreviewCancellationSource,
   throwIfCancellationRequested
-} from "../service/ModelPreviewCancellation";
+} from "../cancellation";
 import type { WebviewToHost, ScreenshotOptions } from "./ModelPreviewMessages";
 import { getModelPreviewLocalResourceRoots, ModelPreviewWebview } from "./ModelPreviewWebview";
 import { ModelPreviewWatcher } from "./ModelPreviewWatcher";

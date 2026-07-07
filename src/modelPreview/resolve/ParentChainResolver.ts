@@ -13,8 +13,9 @@ import type {
 import { lm } from "../../i18n/messages";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { collectModelJsonLocations } from "../model/ModelJsonLocations";
-import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../service/ModelPreviewCancellation";
-import { fileNameKey, modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
+import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
+import { normalizePathKey } from "../../../packages/mc-assets/src";
+import { modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
 
 const maxParentDepth = 10;
@@ -53,7 +54,7 @@ export class ParentChainResolver {
 
   private async loadParentChain(fileName: string, visited: Set<string>, depth: number): Promise<LoadedModelNode[]> {
     throwIfCancellationRequested(this.cancellationToken);
-    const key = fileNameKey(fileName);
+    const key = normalizePathKey(fileName);
     if (visited.has(key)) {
       this.issues.error(lm("Parent model cycle detected"), fileName);
       return [];

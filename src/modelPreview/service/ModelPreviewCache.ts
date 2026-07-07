@@ -1,8 +1,8 @@
 import type { ModelPreviewDocument } from "../ir/PreviewDocument";
 import type { RawModelDocument, ResolvedModel } from "../model/ModelDocument";
-import { fileNameKey } from "../resolve/ResourceDependencyResolver";
+import { normalizePathKey } from "../../../packages/mc-assets/src";
+import { dependencyKey } from "../paths";
 import type { PngAlphaMask } from "../bake/PngAlpha";
-import { fileURLToPath } from "node:url";
 
 interface PreviewCacheEntry {
   document: Promise<ModelPreviewDocument>;
@@ -28,11 +28,11 @@ export class ModelPreviewCache {
   private readonly textureAlphaMasks = new Map<string, VersionedCacheEntry<PngAlphaMask | null>>();
 
   get(fileName: string): Promise<ModelPreviewDocument> | null {
-    return this.previews.get(fileNameKey(fileName))?.document ?? null;
+    return this.previews.get(normalizePathKey(fileName))?.document ?? null;
   }
 
   set(fileName: string, document: Promise<ModelPreviewDocument>): void {
-    const key = fileNameKey(fileName);
+    const key = normalizePathKey(fileName);
     this.previews.set(key, {
       document: document.then(preview => {
         const entry = this.previews.get(key);
@@ -41,17 +41,17 @@ export class ModelPreviewCache {
         }
         return preview;
       }),
-      dependencyKeys: new Set([fileNameKey(fileName)])
+      dependencyKeys: new Set([normalizePathKey(fileName)])
     });
   }
 
   getRawModel(fileName: string, version: string | null): Promise<RawModelDocument> | null {
-    const entry = this.rawModels.get(fileNameKey(fileName));
+    const entry = this.rawModels.get(normalizePathKey(fileName));
     return entry && entry.version === version ? entry.value : null;
   }
 
   setRawModel(fileName: string, version: string | null, document: Promise<RawModelDocument>): void {
-    this.rawModels.set(fileNameKey(fileName), {
+    this.rawModels.set(normalizePathKey(fileName), {
       version,
       value: document
     });
@@ -62,7 +62,7 @@ export class ModelPreviewCache {
     configurationKey: string,
     getVersion: (fileName: string) => string | null
   ): Promise<ResolvedModel | null> | null {
-    const entry = this.resolvedModels.get(fileNameKey(fileName));
+    const entry = this.resolvedModels.get(normalizePathKey(fileName));
     if (!entry || entry.configurationKey !== configurationKey) {
       return null;
     }
@@ -84,7 +84,7 @@ export class ModelPreviewCache {
     model: Promise<ResolvedModel | null>,
     getVersion: (fileName: string) => string | null
   ): void {
-    const key = fileNameKey(fileName);
+    const key = normalizePathKey(fileName);
     this.resolvedModels.set(key, {
       model: model.then(resolvedModel => {
         const entry = this.resolvedModels.get(key);
@@ -93,31 +93,31 @@ export class ModelPreviewCache {
             fileName,
             ...(resolvedModel?.dependencies.map(dependency => dependency.fileName) ?? [])
           ]);
-          entry.dependencyKeys = new Set([...dependencies].map(dependency => fileNameKey(dependency)));
-          entry.dependencyVersions = new Map([...dependencies].map(dependency => [fileNameKey(dependency), getVersion(dependency)]));
+          entry.dependencyKeys = new Set([...dependencies].map(dependency => normalizePathKey(dependency)));
+          entry.dependencyVersions = new Map([...dependencies].map(dependency => [normalizePathKey(dependency), getVersion(dependency)]));
         }
         return resolvedModel;
       }),
       configurationKey,
-      dependencyKeys: new Set([fileNameKey(fileName)]),
+      dependencyKeys: new Set([normalizePathKey(fileName)]),
       dependencyVersions: null
     });
   }
 
   getTextureAlphaMask(fileName: string, version: string | null): Promise<PngAlphaMask | null> | null {
-    const entry = this.textureAlphaMasks.get(fileNameKey(fileName));
+    const entry = this.textureAlphaMasks.get(normalizePathKey(fileName));
     return entry && entry.version === version ? entry.value : null;
   }
 
   setTextureAlphaMask(fileName: string, version: string | null, alphaMask: Promise<PngAlphaMask | null>): void {
-    this.textureAlphaMasks.set(fileNameKey(fileName), {
+    this.textureAlphaMasks.set(normalizePathKey(fileName), {
       version,
       value: alphaMask
     });
   }
 
   invalidate(fileName: string): void {
-    this.previews.delete(fileNameKey(fileName));
+    this.previews.delete(normalizePathKey(fileName));
   }
 
   invalidateAll(): void {
@@ -142,16 +142,4 @@ export class ModelPreviewCache {
       }
     }
   }
-}
-
-function dependencyKey(value: string): string {
-  if (value.startsWith("file://")) {
-    try {
-      return fileNameKey(fileURLToPath(value));
-    } catch {
-      return value.toLowerCase();
-    }
-  }
-
-  return fileNameKey(value);
 }

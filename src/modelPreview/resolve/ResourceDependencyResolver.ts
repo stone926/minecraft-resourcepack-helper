@@ -1,7 +1,6 @@
 import * as path from "node:path";
-import { pathToFileURL } from "node:url";
 import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../utils/citPaths";
-import { getDocumentResourceRootCandidates, parseResourceLocation } from "../../../packages/mc-assets/src";
+import { getDocumentResourceRootCandidates, packRootFromAssetsPath, parseResourceLocation } from "../../../packages/mc-assets/src";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 
 export interface ResolvedResourceFile {
@@ -80,7 +79,7 @@ function resolveCitResourceFileName(
   resourceType: CitResourceType,
   fileSystem: ModelPreviewFileSystem
 ): ResolvedResourceFile | null {
-  const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? getPackRootFromAssetsPath(sourceFileName);
+  const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? packRootFromAssetsPath(sourceFileName);
   if (!packRoot) {
     return null;
   }
@@ -106,15 +105,6 @@ export function modelResourceIdFromFileName(fileName: string): string {
   return `${assetResource.namespace}:${stripExtension(assetResource.resourcePath.slice("models/".length))}`;
 }
 
-export function fileUriString(fileName: string): string {
-  return pathToFileURL(path.resolve(fileName)).href;
-}
-
-export function fileNameKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
 export function modelSourceForFile(fileName: string): string {
   if (/[\\/]models[\\/]item[\\/]/i.test(fileName)) {
     return "models/item";
@@ -130,7 +120,7 @@ export function modelSourceForFile(fileName: string): string {
 function getAssetResource(fileName: string): { namespace: string; resourcePath: string } | null {
   const normalized = path.normalize(fileName);
   const segments = normalized.split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
 
   if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
     return null;
@@ -168,29 +158,7 @@ function getCitResourceType(target: string, extension: string | null): CitResour
   return null;
 }
 
-function getPackRootFromAssetsPath(fileName: string): string | null {
-  const normalizedPath = path.normalize(fileName);
-  const parsedPath = path.parse(normalizedPath);
-  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0) {
-    return null;
-  }
-
-  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
-}
-
 function stripExtension(value: string): string {
   const extension = path.posix.extname(value);
   return extension ? value.slice(0, -extension.length) : value;
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }

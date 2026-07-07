@@ -1,6 +1,6 @@
 import type { LocalizedMessage } from "../../i18n/messages";
 import type { PreviewIssue, PreviewRange } from "../ir/PreviewDocument";
-import { fileUriString } from "../resolve/ResourceDependencyResolver";
+import { fileUriString } from "../paths";
 
 export class ModelIssueCollector {
   private readonly issues: PreviewIssue[] = [];

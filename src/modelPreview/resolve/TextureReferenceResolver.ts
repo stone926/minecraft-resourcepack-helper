@@ -9,7 +9,9 @@ import type {
 } from "../model/ModelDocument";
 import { isTextureObject } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
-import { fileNameKey, fileUriString, resolveTextureFileName } from "./ResourceDependencyResolver";
+import { normalizePathKey } from "../../../packages/mc-assets/src";
+import { fileUriString } from "../paths";
+import { resolveTextureFileName } from "./ResourceDependencyResolver";
 
 export interface TextureMaterialResolution {
   material: PreviewMaterial;
@@ -51,7 +53,7 @@ export class TextureReferenceResolver {
     const dependencies = new Map<string, ResolvedDependency>();
     for (const resolution of this.materials.values()) {
       for (const dependency of resolution.dependencies) {
-        dependencies.set(`${dependency.kind}\0${fileNameKey(dependency.fileName)}`, dependency);
+        dependencies.set(`${dependency.kind}\0${normalizePathKey(dependency.fileName)}`, dependency);
       }
     }
     return [...dependencies.values()];
@@ -122,7 +124,7 @@ export class TextureReferenceResolver {
       this.issues.info(lm("Animated texture metadata is detected; MVP previews the first loaded PNG frame"), metadataFileName);
     }
 
-    const normalizedKey = fileNameKey(textureFile.fileName);
+    const normalizedKey = normalizePathKey(textureFile.fileName);
     return {
       material: {
         id: `texture:${normalizedKey}`,

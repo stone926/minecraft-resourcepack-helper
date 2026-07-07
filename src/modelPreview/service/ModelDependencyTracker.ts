@@ -1,6 +1,5 @@
-import { fileURLToPath } from "node:url";
 import type { ModelPreviewDocument } from "../ir/PreviewDocument";
-import { fileNameKey } from "../resolve/ResourceDependencyResolver";
+import { dependencyKey } from "../paths";
 
 export class ModelDependencyTracker {
   private readonly dependencyKeys = new Set<string>();
@@ -9,28 +8,16 @@ export class ModelDependencyTracker {
     this.dependencyKeys.clear();
     for (const dependency of document.dependencies) {
       if (dependency.kind !== "configuration") {
-        this.dependencyKeys.add(toDependencyKey(dependency.uri));
+        this.dependencyKeys.add(dependencyKey(dependency.uri));
       }
     }
   }
 
   hasFile(fileNameOrUri: string): boolean {
-    return this.dependencyKeys.has(toDependencyKey(fileNameOrUri));
+    return this.dependencyKeys.has(dependencyKey(fileNameOrUri));
   }
 
   hasConfiguration(section: string): boolean {
     return section === "McResHelper.defaultMcAssetsPath" || section === "McResHelper.resourcePackLoadOrder";
   }
-}
-
-function toDependencyKey(value: string): string {
-  if (value.startsWith("file://")) {
-    try {
-      return fileNameKey(fileURLToPath(value));
-    } catch {
-      return value.toLowerCase();
-    }
-  }
-
-  return fileNameKey(value);
 }
