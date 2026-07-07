@@ -1,37 +1,26 @@
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
-  CompletionItemKind,
   createConnection,
-  DiagnosticSeverity,
   ProposedFeatures,
   TextDocuments,
   TextDocumentSyncKind,
-  type CompletionItem,
-  type Diagnostic
+  type CompletionItem
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { formatRsglText, RsglWorkspaceSemanticCache, type RsglSymbol } from "../../rsgl-core/src";
 import {
-  compileRsglModule,
-  compileRsglProgram,
-  formatRsglText,
-  getRsglCompletionCandidates,
-  parseRsgl,
-  RsglWorkspaceSemanticCache,
-  type RsglDiagnostic,
-  type RsglSemanticModel,
-  type RsglSymbol
-} from "../../rsgl-core/src";
-import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
+  completionItemsForContent,
+  computeDocumentDiagnostics,
+  fileNameFromUri,
+  normalizeFileName,
+  semanticModelForFile,
+  toValidationSettings,
+  type RsglValidationSettings
+} from "./serverCore";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const semanticCache = RsglWorkspaceSemanticCache.create();
-
-interface RsglValidationSettings {
-  defaultAssetsPath: string | null;
-  resourcePackRoots: string[];
-}
 
 let validationSettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
 
@@ -123,50 +112,11 @@ connection.listen();
 
 function validateDocument(document: TextDocument): void {
   const fileName = fileNameFromUri(document.uri);
-  const currentFileName = normalizeFileName(path.resolve(fileName));
-  const semanticProgram = semanticCache.loadProgramFromEntry(fileName);
-  if (semanticProgram.files.length > 0) {
-    const result = compileRsglProgram(semanticProgram.files, {
-      entryFileName: fileName,
-      semanticProgram: semanticProgram.program,
-      ...workspaceValidationOptions(fileName)
-    });
-    const diagnostics = result.diagnostics
-      .filter(diagnostic => !diagnostic.fileName || normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
-      .map(diagnostic => toLspDiagnostic(document, diagnostic));
-    connection.sendDiagnostics({ uri: document.uri, diagnostics });
-    return;
-  }
-
-  const parsed = parseRsgl(document.getText());
-  const result = compileRsglModule(parsed, {
-    fileName,
-    ...workspaceValidationOptions(fileName)
+  const diagnostics = computeDocumentDiagnostics(document, fileName, {
+    loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName),
+    settings: validationSettings
   });
-  connection.sendDiagnostics({
-    uri: document.uri,
-    diagnostics: result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic))
-  });
-}
-
-function workspaceValidationOptions(sourceFileName: string): ReturnType<typeof createRsglWorkspaceValidationOptions> {
-  return createRsglWorkspaceValidationOptions({
-    sourceFileName,
-    defaultAssetsPath: validationSettings.defaultAssetsPath,
-    resourcePackRoots: validationSettings.resourcePackRoots
-  });
-}
-
-function toValidationSettings(value: unknown): RsglValidationSettings {
-  const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
-  const defaultAssetsPath = typeof record.defaultAssetsPath === "string" && record.defaultAssetsPath.trim().length > 0
-    ? record.defaultAssetsPath
-    : null;
-  const roots = record.resourcePackRoots;
-  const resourcePackRoots = Array.isArray(roots)
-    ? roots.filter((root): root is string => typeof root === "string")
-    : [];
-  return { defaultAssetsPath, resourcePackRoots };
+  connection.sendDiagnostics({ uri: document.uri, diagnostics });
 }
 
 function refreshOpenDocuments(excludeUri?: string): void {
@@ -183,107 +133,13 @@ function invalidateDocument(document: TextDocument): void {
 }
 
 function completionItemsForDocument(document: TextDocument, offset: number): CompletionItem[] {
-  const items = new Map<string, CompletionItem>();
-  for (const candidate of getRsglCompletionCandidates(document.getText(), offset)) {
-    items.set(candidate.label, toCompletionItem(candidate));
-  }
-  for (const symbol of semanticSymbolsForDocument(document)) {
-    if (!items.has(symbol.name)) {
-      items.set(symbol.name, symbolCompletionItem(symbol));
-    }
-  }
-  return [...items.values()];
+  return completionItemsForContent(document.getText(), offset, semanticSymbolsForDocument(document));
 }
 
 function semanticSymbolsForDocument(document: TextDocument): RsglSymbol[] {
-  const model = semanticModelForDocument(document);
-  return model?.symbols ?? [];
-}
-
-function semanticModelForDocument(document: TextDocument): RsglSemanticModel | undefined {
   const fileName = fileNameFromUri(document.uri);
-  const normalized = normalizeFileName(path.resolve(fileName));
   const semanticProgram = semanticCache.loadProgramFromEntry(fileName);
-  return semanticProgram.program.models.find(model => normalizeFileName(path.resolve(model.fileName)) === normalized);
-}
-
-function toCompletionItem(candidate: ReturnType<typeof getRsglCompletionCandidates>[number]): CompletionItem {
-  return {
-    label: candidate.label,
-    kind: toCompletionKind(candidate.kind),
-    detail: candidate.detail,
-    insertText: candidate.insertText
-  };
-}
-
-function toCompletionKind(kind: ReturnType<typeof getRsglCompletionCandidates>[number]["kind"]): CompletionItemKind {
-  if (kind === "snippet") {
-    return CompletionItemKind.Snippet;
-  }
-  if (kind === "function") {
-    return CompletionItemKind.Function;
-  }
-  if (kind === "constant") {
-    return CompletionItemKind.Constant;
-  }
-  if (kind === "property") {
-    return CompletionItemKind.Property;
-  }
-  return CompletionItemKind.Keyword;
-}
-
-function symbolCompletionItem(symbol: RsglSymbol): CompletionItem {
-  return {
-    label: symbol.name,
-    kind: symbol.kind === "template" ? CompletionItemKind.Function
-      : symbol.kind === "table" ? CompletionItemKind.Struct
-        : symbol.kind === "resource" ? CompletionItemKind.File
-          : CompletionItemKind.Variable,
-    detail: `${symbol.kind}: ${formatSymbolType(symbol)}`
-  };
-}
-
-function formatSymbolType(symbol: RsglSymbol): string {
-  if (symbol.signature) {
-    return "function";
-  }
-  return symbol.type.kind;
-}
-
-function toLspDiagnostic(document: TextDocument, diagnostic: RsglDiagnostic): Diagnostic {
-  const start = clampOffset(document, diagnostic.range.start);
-  const end = Math.max(start + 1, clampOffset(document, diagnostic.range.end));
-  return {
-    range: {
-      start: document.positionAt(start),
-      end: document.positionAt(end)
-    },
-    severity: toLspSeverity(diagnostic.severity),
-    code: diagnostic.code,
-    source: "RSGL",
-    message: diagnostic.message
-  };
-}
-
-function toLspSeverity(severity: RsglDiagnostic["severity"]): DiagnosticSeverity {
-  if (severity === "warning") {
-    return DiagnosticSeverity.Warning;
-  }
-  if (severity === "info") {
-    return DiagnosticSeverity.Information;
-  }
-  return DiagnosticSeverity.Error;
-}
-
-function clampOffset(document: TextDocument, offset: number): number {
-  return Math.max(0, Math.min(document.getText().length, offset));
-}
-
-function fileNameFromUri(uri: string): string {
-  if (uri.startsWith("file:")) {
-    return fileURLToPath(uri);
-  }
-  return uri;
+  return semanticModelForFile(semanticProgram, fileName)?.symbols ?? [];
 }
 
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {
@@ -301,8 +157,4 @@ function openDocumentForFileName(fileName: string): { fileName: string; version?
       getText: () => document.getText()
     }
     : null;
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
 }
