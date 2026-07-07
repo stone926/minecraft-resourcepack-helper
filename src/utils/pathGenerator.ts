@@ -1,9 +1,10 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { Uri, workspace } from "vscode";
+import { Uri } from "vscode";
 import { getCitAutoDiscoveryPathCandidates, getCitPathCandidates, type CitResourceType } from "../cit/citPaths";
-import { findPackRoot, getDocumentResourceRootCandidates, parseResourceLocation } from "../../packages/mc-assets/src";
+import { findPackRoot, getDocumentResourceRootCandidates, packRootFromAssetsPath, parseResourceLocation } from "../../packages/mc-assets/src";
 import { workspaceResourceCache, type WorkspaceResourceCache } from "../services/workspaceResourceCache";
+import { getResourceConfiguration } from "./resourceConfiguration";
 import type { ResourceReference } from "./resourceReferences";
 
 interface ResourcePathDocument {
@@ -64,8 +65,9 @@ export function generateRedirectPath(
   targetFileExtension: string | null,
   options: ResourcePathResolverOptions = {}
 ): Uri | null {
-  const configuredDefaultPath = workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath");
-  const configuredResourcePackRoots = workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? [];
+  const configuration = getResourceConfiguration();
+  const configuredDefaultPath = configuration.defaultAssetsPath;
+  const configuredResourcePackRoots = configuration.resourcePackRoots ?? [];
   const cache = shouldUseWorkspaceCache(options) ? (options.cache ?? workspaceResourceCache) : null;
   if (cache) {
     const resolvedPath = cache.resolveResourcePath({
@@ -187,19 +189,7 @@ function getCitPackRoot(
   return options.getPackRoot?.(fileName) ??
     cache?.getPackRoot(fileName) ??
     findPackRoot(fileName, { pathExists }) ??
-    getPackRootFromAssetsPath(fileName);
-}
-
-function getPackRootFromAssetsPath(fileName: string): string | null {
-  const normalizedPath = path.normalize(fileName);
-  const parsedPath = path.parse(normalizedPath);
-  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
-  const assetsIndex = findLastIndex(segments, segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0) {
-    return null;
-  }
-
-  return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
+    packRootFromAssetsPath(fileName);
 }
 
 function shouldTryCitTypedResourceFallback(value: string): boolean {
@@ -217,16 +207,6 @@ function shouldTryCitTypedResourceFallback(value: string): boolean {
 function startsWithPathSegment(value: string, segment: string): boolean {
   const [firstSegment] = value.split(path.sep);
   return firstSegment?.toLowerCase() === segment.toLowerCase();
-}
-
-function findLastIndex<T>(values: T[], predicate: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) {
-    if (predicate(values[index])) {
-      return index;
-    }
-  }
-
-  return -1;
 }
 
 function shouldUseWorkspaceCache(options: ResourcePathResolverOptions): boolean {

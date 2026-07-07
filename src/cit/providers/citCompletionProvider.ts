@@ -1,13 +1,11 @@
 import * as vscode from "vscode";
 import { citResourceIdService } from "../citResourceIdService";
+import { getResourceConfiguration } from "../../utils/resourceConfiguration";
 import { getCitCompletionResult, type CitCompletionCandidate, type CitTextRange } from "../citLanguage";
 
 const citCompletionProvider: vscode.CompletionItemProvider = {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
-    const resources = citResourceIdService.getResourceIds(document.fileName, {
-      defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
-      resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
-    });
+    const resources = citResourceIdService.getResourceIds(document.fileName, getResourceConfiguration());
     const result = getCitCompletionResult(document, position, vscode.env.language, resources);
     if (!result || result.candidates.length === 0) {
       return null;

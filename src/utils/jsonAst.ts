@@ -22,6 +22,18 @@ export function arrayElements(node: JsonAstNode | null | undefined): JsonAstNode
   return unwrappedNode?.type === "Array" ? unwrappedNode.elements : [];
 }
 
+export function getObjectMember(node: JsonAstNode | null | undefined, name: string): MemberNode | null {
+  return objectMembers(node).find(member => memberName(member) === name) ?? null;
+}
+
+export function getObjectMemberValue(node: JsonAstNode | null | undefined, name: string): JsonAstNode | null {
+  return getObjectMember(node, name)?.value ?? null;
+}
+
+export function getObjectString(node: JsonAstNode | null | undefined, name: string): string | null {
+  return stringValue(getObjectMemberValue(node, name)) ?? null;
+}
+
 export function memberName(member: JsonAstNode | null | undefined): string | undefined {
   if (member?.type !== "Member") {
     return undefined;

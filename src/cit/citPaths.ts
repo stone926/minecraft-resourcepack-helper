@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { parseAssetsPath } from "../../packages/mc-assets/src";
 
 export type CitResourceType = "textures" | "models";
 
@@ -28,15 +29,13 @@ export function isCitModelFileName(fileName: string): boolean {
 }
 
 export function isCitGlobalPropertiesFileName(fileName: string): boolean {
-  const normalizedPath = path.normalize(fileName);
-  const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0 || segments.length <= assetsIndex + 3) {
+  const parsed = parseAssetsPath(fileName);
+  if (!parsed || parsed.relativeSegments.length < 2) {
     return false;
   }
 
-  const namespace = segments[assetsIndex + 1].toLowerCase();
-  const relativePath = segments.slice(assetsIndex + 2).map(segment => segment.toLowerCase()).join("/");
+  const namespace = parsed.namespace.toLowerCase();
+  const relativePath = parsed.relativeSegments.map(segment => segment.toLowerCase()).join("/");
 
   return namespace === "minecraft" && (
     relativePath === "citresewn/cit.properties" ||
@@ -54,21 +53,18 @@ export function getCitDocumentNamespace(fileName: string): string {
 }
 
 export function getCitDocumentInfo(fileName: string): CitDocumentInfo | null {
-  const normalizedPath = path.normalize(fileName);
-  const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0 || segments.length <= assetsIndex + 3) {
+  const parsed = parseAssetsPath(fileName);
+  if (!parsed || parsed.relativeSegments.length < 2) {
     return null;
   }
 
-  const namespace = segments[assetsIndex + 1];
-  const relativeSegments = segments.slice(assetsIndex + 2, -1);
-  if (!isCitRelativePath(relativeSegments, segments[segments.length - 1])) {
+  const relativeSegments = parsed.relativeSegments.slice(0, -1);
+  if (!isCitRelativePath(relativeSegments, parsed.relativeSegments[parsed.relativeSegments.length - 1])) {
     return null;
   }
 
   return {
-    namespace,
+    namespace: parsed.namespace,
     source: relativeSegments.join("/")
   };
 }

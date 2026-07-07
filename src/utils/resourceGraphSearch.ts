@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { parseAssetsPath } from "../../packages/mc-assets/src";
 import { isResourceReferenceFileName } from "./resourceReferences";
 
 export interface AssetResource {
@@ -46,17 +47,14 @@ export function createIncomingReferenceSearch(targetUri: AssetUriLike): Incoming
 }
 
 export function getAssetResource(fsPath: string): AssetResource | null {
-  const normalizedPath = path.normalize(fsPath);
-  const segments = normalizedPath.split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
-
-  if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
+  const parsed = parseAssetsPath(fsPath);
+  if (!parsed || parsed.relativeSegments.length === 0) {
     return null;
   }
 
   return {
-    namespace: segments[assetsIndex + 1],
-    resourcePath: segments.slice(assetsIndex + 2).join("/")
+    namespace: parsed.namespace,
+    resourcePath: parsed.relativeSegments.join("/")
   };
 }
 

@@ -146,6 +146,28 @@ export function packRootFromAssetsPath(fileName: string): string | null {
   return path.join(parsedPath.root, ...segments.slice(0, assetsIndex));
 }
 
+export interface ParsedAssetsPath {
+  assetsRoot: string;
+  namespace: string;
+  relativeSegments: string[];
+}
+
+export function parseAssetsPath(fileName: string): ParsedAssetsPath | null {
+  const normalizedPath = path.normalize(fileName);
+  const parsedPath = path.parse(normalizedPath);
+  const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
+  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
+  if (assetsIndex < 0 || segments.length <= assetsIndex + 1) {
+    return null;
+  }
+
+  return {
+    assetsRoot: path.join(parsedPath.root, ...segments.slice(0, assetsIndex + 1)),
+    namespace: segments[assetsIndex + 1],
+    relativeSegments: segments.slice(assetsIndex + 2)
+  };
+}
+
 function findSourceIndex(segments: string[], sourceSegments: string[]): number {
   for (let index = segments.length - sourceSegments.length; index >= 0; index--) {
     const matches = sourceSegments.every((segment, offset) => segments[index + offset] === segment);

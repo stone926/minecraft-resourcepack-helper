@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { citResourceIdService } from "./citResourceIdService";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import {
   getCitDiagnostics as getCoreCitDiagnostics,
   type CitDiagnostic,
@@ -11,10 +12,7 @@ export function getCitDiagnostics(document: vscode.TextDocument): vscode.Diagnos
   return getCoreCitDiagnostics(document, {
     locale: vscode.env.language,
     fileExists: fileName => workspaceResourceCache.getPathExists(fileName),
-    resourceIds: citResourceIdService.getResourceIds(document.fileName, {
-      defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
-      resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
-    })
+    resourceIds: citResourceIdService.getResourceIds(document.fileName, getResourceConfiguration())
   }).map(toVsCodeDiagnostic);
 }
 

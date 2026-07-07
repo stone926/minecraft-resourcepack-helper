@@ -15,6 +15,7 @@ import citCodeActionProvider, { createMissingCitResource, createMissingCitResour
 import { refreshResourceDiagnostics } from './diagnostics/resourceDiagnostics';
 import { getResourceGraphNodeUri, ResourceGraphTreeProvider } from './views/resourceGraphTree';
 import { isResourceGraphDocumentPath } from './utils/resourceGraph';
+import { getResourceConfiguration } from './utils/resourceConfiguration';
 import { ModelPreviewService } from './modelPreview/service/ModelPreviewService';
 import { ModelPreviewHostFileSystem } from './modelPreview/host/ModelPreviewHostFileSystem';
 import { openModelPreviewCommand } from './modelPreview/commands/openModelPreview';
@@ -118,10 +119,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand(createMissingCitResourceCommand, createMissingCitResource));
   const modelPreviewService = new ModelPreviewService({
     fileSystem: new ModelPreviewHostFileSystem(),
-    configuration: () => ({
-      defaultAssetsPath: vscode.workspace.getConfiguration().get<string | null>("McResHelper.defaultMcAssetsPath"),
-      resourcePackRoots: vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? []
-    })
+    configuration: getResourceConfiguration
   });
   const openModelPreview = openModelPreviewCommand(context.extensionUri, modelPreviewService);
   context.subscriptions.push(vscode.commands.registerCommand(

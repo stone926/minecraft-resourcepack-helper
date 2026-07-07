@@ -19,6 +19,7 @@ import {
 } from "../utils/resourceCompletionPaths";
 import { findResourceReferenceAtPosition, ResourceReference } from "../utils/resourceReferences";
 import { getDocumentResourceRootCandidates } from "../../packages/mc-assets/src";
+import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { rangeInsideString } from "../utils/resourceRange";
 
 interface ResourceCompletionContext {
@@ -38,8 +39,7 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
 
     const partialPath = parsePartialResourcePath(context.reference.value);
     const lookupNamespace = getCompletionLookupNamespace(document.fileName, context.reference, partialPath);
-    const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
-    const resourcePackRoots = vscode.workspace.getConfiguration().get<string[]>("McResHelper.resourcePackLoadOrder") ?? [];
+    const { defaultAssetsPath, resourcePackRoots } = getResourceConfiguration();
     const roots = getDocumentResourceRootCandidates(
       document.fileName,
       context.reference.source,

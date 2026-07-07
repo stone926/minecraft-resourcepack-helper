@@ -1,5 +1,7 @@
-import { JsonAstNode, memberName, objectMembers, stringValue } from "../jsonAst";
+import { getObjectMemberValue, getObjectString, JsonAstNode, stringValue } from "../jsonAst";
 import { ResourceReference, ResourceReferenceKind, ResourceReferenceRelationship } from "./types";
+
+export { getObjectMemberValue, getObjectString };
 
 export function pushReference(
   references: ResourceReference[],
@@ -18,14 +20,6 @@ export function pushReference(
     }
     references.push(reference);
   }
-}
-
-export function getObjectString(node: JsonAstNode, name: string): string | null {
-  return stringValue(getObjectMemberValue(node, name)) ?? null;
-}
-
-export function getObjectMemberValue(node: JsonAstNode, name: string): JsonAstNode | null {
-  return objectMembers(node).find(item => memberName(item) === name)?.value ?? null;
 }
 
 export function getMinecraftType(node: JsonAstNode): string | null {

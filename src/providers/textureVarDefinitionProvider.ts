@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { workspaceResourceCache } from '../services/workspaceResourceCache';
 import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from '../utils/jsonAst';
 import { isInArea } from '../utils/locationChecker';
-import { resolveTextureVariableDefinition } from '../utils/modelTexture';
+import { resolveTextureVariableDefinition, type CachedTextureVariableDefinition } from '../utils/modelTexture';
+import { getResourceConfiguration } from '../utils/resourceConfiguration';
 
 export default (document: vscode.TextDocument, position: vscode.Position) => {
   const ast = workspaceResourceCache.getJsonAst(document);
@@ -16,12 +17,30 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
   for (const textureReference of getTextureVariableReferences(ast.body)) {
     if (isInArea(line, character, textureReference.loc)) {
       const texture = stringValue(textureReference);
-      return texture ? resolveTextureVariableDefinition(ast, document, texture) : null;
+      const definition = texture
+        ? resolveTextureVariableDefinition(ast, document, texture, getResourceConfiguration)
+        : null;
+      return definition ? toLocation(document, definition) : null;
     }
   }
 
   return null;
 };
+
+function toLocation(document: vscode.TextDocument, definition: CachedTextureVariableDefinition): vscode.Location {
+  const uri = isSamePath(definition.fileName, document.fileName)
+    ? document.uri
+    : vscode.Uri.file(definition.fileName);
+  return new vscode.Location(uri, new vscode.Position(definition.line, definition.character));
+}
+
+function isSamePath(left: string, right: string): boolean {
+  const normalizedLeft = vscode.Uri.file(left).fsPath;
+  const normalizedRight = vscode.Uri.file(right).fsPath;
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
 
 function getTextureVariableReferences(modelBody: JsonAstNode): JsonAstNode[] {
   const references: JsonAstNode[] = [];

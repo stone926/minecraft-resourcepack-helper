@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from "../utils/jsonAst";
 import { createTextureVariableDefinitionResolver, modelSourceForFile } from "../utils/modelTexture";
+import { getResourceConfiguration } from "../utils/resourceConfiguration";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
 let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
@@ -28,7 +29,7 @@ export function applyDecoration(editor: vscode.TextEditor) {
       .filter((name): name is string => typeof name === "string" && name !== "particle")
   );
   const ranges: vscode.Range[] = [];
-  const textureVariableResolver = createTextureVariableDefinitionResolver(ast, editor.document, modelSource);
+  const textureVariableResolver = createTextureVariableDefinitionResolver(ast, editor.document, getResourceConfiguration, modelSource);
 
   for (const item of objectMembers(ast.body)) {
     if (memberName(item) !== "elements") {
