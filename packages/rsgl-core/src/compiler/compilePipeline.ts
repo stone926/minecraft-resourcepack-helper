@@ -30,12 +30,14 @@ import { RsglResourceValidationOptions, validateResourceUnits } from "./validati
 export interface RsglCompileOptions extends RsglResourceValidationOptions {
   fileName?: string;
   namespace?: string;
+  stdlibRoot?: string;
 }
 
 export interface RsglProgramCompileOptions extends RsglResourceValidationOptions {
   entryFileName?: string;
   namespace?: string;
   semanticProgram?: RsglProgram;
+  stdlibRoot?: string;
 }
 
 export interface RsglFileLoadOptions {
@@ -69,7 +71,8 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     environment,
     rawJsonLoader,
     globLoader,
-    targetPackFormat: target.targetPackFormat
+    targetPackFormat: target.targetPackFormat,
+    stdlibRoot: options.stdlibRoot
   });
   const result = compiler.compile();
   const finished = finishCompilation(result.units, target.targetPackFormat, options);
@@ -120,7 +123,7 @@ export function loadRsglSourceFilesFromDirectory(rootDirectory: string, options:
 }
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
-  const sourceFiles = includeRsglStdlibSourceFiles(files);
+  const sourceFiles = includeRsglStdlibSourceFiles(files, { stdlibRoot: options.stdlibRoot });
   const syntaxDiagnostics = sourceFiles.flatMap(file => moduleSyntaxDiagnostics(file.module, file.fileName));
   if (hasErrors(syntaxDiagnostics)) {
     return { units: [], diagnostics: syntaxDiagnostics };
@@ -128,7 +131,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
 
   const program = semanticProgramMatchesFiles(options.semanticProgram, sourceFiles)
     ? options.semanticProgram
-    : bindRsglProgram(sourceFiles);
+    : bindRsglProgram(sourceFiles, { stdlibRoot: options.stdlibRoot });
   const units: ResourceUnit[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
     ...program.fileDiagnostics.map(diagnostic => ({ ...diagnostic }))
@@ -164,7 +167,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       environment,
       rawJsonLoader,
       globLoader,
-      targetPackFormat: target.targetPackFormat
+      targetPackFormat: target.targetPackFormat,
+      stdlibRoot: options.stdlibRoot
     });
     const result = compiler.compile();
     units.push(...result.units);

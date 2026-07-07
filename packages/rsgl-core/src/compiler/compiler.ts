@@ -126,6 +126,7 @@ interface RsglCompilerOptions {
   rawJsonLoader?: RawJsonLoader;
   globLoader?: RawGlobLoader;
   targetPackFormat?: RsglTargetPackFormat;
+  stdlibRoot?: string;
 }
 
 type BlockstateBodyCompileResult = {
@@ -155,7 +156,7 @@ export class RsglCompiler {
   ) { }
 
   public compile(): RsglCompileResult {
-    for (const template of rsglStdlibPreludeTemplates()) {
+    for (const template of rsglStdlibPreludeTemplates(this.options.stdlibRoot)) {
       this.templates.set(template.name, template);
     }
     for (const template of this.options.externalTemplates ?? []) {
@@ -1245,13 +1246,13 @@ export class RsglCompiler {
   }
 }
 
-function rsglStdlibPreludeTemplates(): RsglTemplateDefinition[] {
-  const files = createRsglStdlibPreludeSourceFiles();
+function rsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTemplateDefinition[] {
+  const files = createRsglStdlibPreludeSourceFiles({ stdlibRoot });
   if (files.length === 0) {
     return [];
   }
 
-  const program = bindRsglProgram(files);
+  const program = bindRsglProgram(files, { stdlibRoot });
   const environments = createProgramCompileEnvironments(program, undefined);
   return program.models.flatMap(model =>
     Array.from(environments.get(normalizeFileName(model.fileName))?.exportedTemplates.values() ?? [])
