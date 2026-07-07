@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
+import { rsglConfigKeys } from "../../../packages/rsgl-shared/src";
 
 export function configuredDefaultAssetsPath(): string | null {
-  const rsglValue = vscode.workspace.getConfiguration("rsgl").get<string | null>("defaultAssetsPath");
+  const rsglValue = vscode.workspace.getConfiguration().get<string | null>(rsglConfigKeys.defaultAssetsPath);
   if (typeof rsglValue === "string" && rsglValue.trim().length > 0) {
     return rsglValue;
   }
@@ -10,7 +11,7 @@ export function configuredDefaultAssetsPath(): string | null {
 }
 
 export function configuredResourcePackLoadOrder(): string[] {
-  const rsglValue = vscode.workspace.getConfiguration("rsgl").get<string[]>("resourcePackLoadOrder") ?? [];
+  const rsglValue = vscode.workspace.getConfiguration().get<string[]>(rsglConfigKeys.resourcePackLoadOrder) ?? [];
   if (rsglValue.length > 0) {
     return rsglValue;
   }

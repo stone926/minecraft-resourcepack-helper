@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import * as path from "node:path";
+import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { rsglCompletionProvider } from "./completion";
 import { refreshRsglDiagnostics, rsglDocumentSelector, rsglLanguageId } from "./diagnostics";
 import { rsglFormattingProvider } from "./formatter";
@@ -100,15 +100,10 @@ function refreshOpenRsglDiagnostics(
 }
 
 function findOpenRsglDocument(fileName: string): vscode.TextDocument | null {
-  const key = fileNameKey(fileName);
+  const key = normalizePathKey(fileName);
   return vscode.workspace.textDocuments.find(document =>
     document.languageId === rsglLanguageId &&
     document.uri.scheme === "file" &&
-    fileNameKey(document.fileName) === key
+    normalizePathKey(document.fileName) === key
   ) ?? null;
-}
-
-function fileNameKey(fileName: string): string {
-  const normalized = path.normalize(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }

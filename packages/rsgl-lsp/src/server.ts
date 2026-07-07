@@ -28,23 +28,33 @@ const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const semanticCache = RsglWorkspaceSemanticCache.create();
 
+interface RsglValidationSettings {
+  defaultAssetsPath: string | null;
+  resourcePackRoots: string[];
+}
+
+let validationSettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
+
 semanticCache.setOpenTextDocumentProvider(fileName => openDocumentForFileName(fileName));
 
-connection.onInitialize(() => ({
-  capabilities: {
-    textDocumentSync: TextDocumentSyncKind.Incremental,
-    completionProvider: {
-      triggerCharacters: [" ", ".", ":", "@", "[", "("]
-    },
-    hoverProvider: true,
-    documentFormattingProvider: true,
-    definitionProvider: true,
-    referencesProvider: true,
-    renameProvider: true,
-    documentSymbolProvider: true,
-    workspaceSymbolProvider: true
-  }
-}));
+connection.onInitialize(params => {
+  validationSettings = toValidationSettings(params.initializationOptions);
+  return {
+    capabilities: {
+      textDocumentSync: TextDocumentSyncKind.Incremental,
+      completionProvider: {
+        triggerCharacters: [" ", ".", ":", "@", "[", "("]
+      },
+      hoverProvider: true,
+      documentFormattingProvider: true
+    }
+  };
+});
+
+connection.onDidChangeConfiguration(params => {
+  validationSettings = toValidationSettings(params.settings);
+  refreshOpenDocuments();
+});
 
 documents.onDidOpen(event => {
   invalidateDocument(event.document);
@@ -108,12 +118,6 @@ connection.onDocumentFormatting(params => {
     }];
 });
 
-connection.onDefinition(() => null);
-connection.onReferences(() => []);
-connection.onRenameRequest(() => null);
-connection.onDocumentSymbol(() => []);
-connection.onWorkspaceSymbol(() => []);
-
 documents.listen(connection);
 connection.listen();
 
@@ -125,9 +129,7 @@ function validateDocument(document: TextDocument): void {
     const result = compileRsglProgram(semanticProgram.files, {
       entryFileName: fileName,
       semanticProgram: semanticProgram.program,
-      ...createRsglWorkspaceValidationOptions({
-        sourceFileName: fileName
-      })
+      ...workspaceValidationOptions(fileName)
     });
     const diagnostics = result.diagnostics
       .filter(diagnostic => !diagnostic.fileName || normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
@@ -139,14 +141,32 @@ function validateDocument(document: TextDocument): void {
   const parsed = parseRsgl(document.getText());
   const result = compileRsglModule(parsed, {
     fileName,
-    ...createRsglWorkspaceValidationOptions({
-      sourceFileName: fileName
-    })
+    ...workspaceValidationOptions(fileName)
   });
   connection.sendDiagnostics({
     uri: document.uri,
     diagnostics: result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic))
   });
+}
+
+function workspaceValidationOptions(sourceFileName: string): ReturnType<typeof createRsglWorkspaceValidationOptions> {
+  return createRsglWorkspaceValidationOptions({
+    sourceFileName,
+    defaultAssetsPath: validationSettings.defaultAssetsPath,
+    resourcePackRoots: validationSettings.resourcePackRoots
+  });
+}
+
+function toValidationSettings(value: unknown): RsglValidationSettings {
+  const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  const defaultAssetsPath = typeof record.defaultAssetsPath === "string" && record.defaultAssetsPath.trim().length > 0
+    ? record.defaultAssetsPath
+    : null;
+  const roots = record.resourcePackRoots;
+  const resourcePackRoots = Array.isArray(roots)
+    ? roots.filter((root): root is string => typeof root === "string")
+    : [];
+  return { defaultAssetsPath, resourcePackRoots };
 }
 
 function refreshOpenDocuments(excludeUri?: string): void {
