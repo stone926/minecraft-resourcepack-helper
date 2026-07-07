@@ -14,6 +14,7 @@ out/extensions/**
 out/packages/**
 !out/packages/mc-assets/src/**/*.js
 out/test/**
+out/src/test/**
 src/**
 scripts/**
 dist/**
