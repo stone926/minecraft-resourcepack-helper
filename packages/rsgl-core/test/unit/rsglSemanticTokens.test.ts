@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
 import { parseRsgl } from "../../src/parser";
-import { bindRsglModule, bindRsglProgram } from "../../src/semantic";
+import { bindRsglModule, bindRsglProgram, type RsglSemanticModel, type RsglSymbol } from "../../src/semantic";
 import {
   getRsglSemanticTokens,
   rsglSemanticTokenModifiers,
@@ -171,5 +171,37 @@ describe("RSGL semantic tokens", () => {
     for (const name of rsglSemanticTokenModifiers) {
       assert.ok(standardModifiers.has(name), `non-standard token modifier '${name}'`);
     }
+  });
+
+  it("drops overlapping candidates deterministically and keeps adjacent tokens", () => {
+    const variableSymbol: RsglSymbol = {
+      name: "value",
+      kind: "variable",
+      type: { kind: "String" },
+      range: { start: 10, end: 14 }
+    };
+    const model: RsglSemanticModel = {
+      fileName: "synthetic.rsgl",
+      module: parseRsgl(""),
+      scope: { kind: "module", symbols: new Map() },
+      symbols: [variableSymbol],
+      imports: [],
+      exports: [],
+      references: [
+        // Same start as the declaration but longer: declaration must win the tie.
+        { name: "value", range: { start: 10, end: 18 }, symbol: variableSymbol },
+        // Enclosed by the declaration range: must be dropped.
+        { name: "value", range: { start: 12, end: 15 }, symbol: variableSymbol },
+        // Starts exactly at the declaration's end: adjacent, must be kept.
+        { name: "value", range: { start: 14, end: 17 }, symbol: variableSymbol }
+      ],
+      outputResources: [],
+      diagnostics: []
+    };
+
+    assert.deepStrictEqual(getRsglSemanticTokens(model), [
+      { start: 10, length: 4, tokenType: tokenType("variable"), tokenModifiers: readonlyFlag | declaration },
+      { start: 14, length: 3, tokenType: tokenType("variable"), tokenModifiers: readonlyFlag }
+    ]);
   });
 });

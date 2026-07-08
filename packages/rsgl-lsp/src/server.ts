@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { normalizePathKey } from "../../mc-assets/src";
 import {
   createConnection,
   ProposedFeatures,
@@ -152,6 +153,8 @@ function refreshOpenDocuments(excludeUri?: string): void {
     }
     validateDocument(document);
   }
+  // Cross-file edits can reclassify identifiers in other open documents.
+  connection.languages.semanticTokens.refresh();
 }
 
 function invalidateDocument(document: TextDocument): void {
@@ -169,16 +172,16 @@ function semanticSymbolsForDocument(document: TextDocument): RsglSymbol[] {
 }
 
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {
-  const normalized = normalizeFileName(path.resolve(fileName));
+  const key = normalizePathKey(path.resolve(fileName));
   const document = documents.all().find(item => {
     if (!item.uri.startsWith("file:")) {
       return false;
     }
-    return normalizeFileName(path.resolve(fileNameFromUri(item.uri))) === normalized;
+    return normalizePathKey(path.resolve(fileNameFromUri(item.uri))) === key;
   });
   return document
     ? {
-      fileName: normalized,
+      fileName: normalizeFileName(path.resolve(fileName)),
       version: document.version,
       getText: () => document.getText()
     }

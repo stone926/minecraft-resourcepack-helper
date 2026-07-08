@@ -22,6 +22,8 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
   context.subscriptions.push(diagnostics);
   const semanticCache = RsglWorkspaceSemanticCache.create();
   semanticCache.setOpenTextDocumentProvider(fileName => findOpenRsglDocument(fileName));
+  const semanticTokensChanged = new vscode.EventEmitter<void>();
+  context.subscriptions.push(semanticTokensChanged);
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     rsglDocumentSelector,
@@ -41,7 +43,7 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
 
   context.subscriptions.push(vscode.languages.registerDocumentSemanticTokensProvider(
     rsglDocumentSelector,
-    createRsglSemanticTokensProvider(semanticCache),
+    createRsglSemanticTokensProvider(semanticCache, semanticTokensChanged.event),
     rsglSemanticTokensLegend
   ));
 
@@ -53,12 +55,18 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
     semanticCache.invalidatePath(document.fileName);
     refreshRsglDiagnostics(document, diagnostics, undefined, semanticCache);
     refreshOpenRsglDiagnostics(diagnostics, semanticCache, document);
+    if (document.languageId === rsglLanguageId) {
+      semanticTokensChanged.fire();
+    }
   }));
 
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
     semanticCache.invalidatePath(event.document.fileName);
     refreshRsglDiagnostics(event.document, diagnostics, undefined, semanticCache);
     refreshOpenRsglDiagnostics(diagnostics, semanticCache, event.document);
+    if (event.document.languageId === rsglLanguageId) {
+      semanticTokensChanged.fire();
+    }
   }));
 
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(document => {
@@ -66,6 +74,7 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
     if (document.languageId === rsglLanguageId) {
       diagnostics.delete(document.uri);
       refreshOpenRsglDiagnostics(diagnostics, semanticCache, document);
+      semanticTokensChanged.fire();
     }
   }));
 
@@ -82,6 +91,7 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
       rsglWorkspaceSourceRootCache.invalidateAll();
     }
     refreshOpenRsglDiagnostics(diagnostics, semanticCache);
+    semanticTokensChanged.fire();
   };
   watcher.onDidCreate(onRsglFileChange, null, context.subscriptions);
   watcher.onDidChange(onRsglFileChange, null, context.subscriptions);

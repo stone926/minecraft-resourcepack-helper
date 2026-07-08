@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
+import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { parseRsgl } from "../../../packages/rsgl-core/src/parser";
 import { bindRsglModule, type RsglSemanticModel } from "../../../packages/rsgl-core/src/semantic";
 import {
@@ -18,12 +19,15 @@ export const rsglSemanticTokensLegend = new vscode.SemanticTokensLegend(
 /**
  * Creates the in-process fallback semantic tokens provider. It resolves the
  * bound model through the same workspace semantic cache used for diagnostics,
- * so both transports highlight identical token sets.
+ * so both transports highlight identical token sets. `onDidChangeSemanticTokens`
+ * lets the host re-request tokens after cross-file edits reclassify identifiers.
  */
 export function createRsglSemanticTokensProvider(
-  semanticCache: RsglWorkspaceSemanticCache
+  semanticCache: RsglWorkspaceSemanticCache,
+  onDidChangeSemanticTokens?: vscode.Event<void>
 ): vscode.DocumentSemanticTokensProvider {
   return {
+    onDidChangeSemanticTokens,
     provideDocumentSemanticTokens(document: vscode.TextDocument): vscode.SemanticTokens {
       const builder = new vscode.SemanticTokensBuilder(rsglSemanticTokensLegend);
       try {
@@ -46,13 +50,9 @@ function semanticModelForDocument(
 ): RsglSemanticModel {
   const fileName = document.uri.fsPath || document.fileName;
   const semanticProgram = semanticCache.loadProgramFromEntry(fileName);
-  const normalized = normalizeFileName(path.resolve(fileName));
+  const key = normalizePathKey(path.resolve(fileName));
   const model = semanticProgram.program.models.find(candidate =>
-    normalizeFileName(path.resolve(candidate.fileName)) === normalized
+    normalizePathKey(path.resolve(candidate.fileName)) === key
   );
   return model ?? bindRsglModule(parseRsgl(document.getText()), { fileName });
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
 }

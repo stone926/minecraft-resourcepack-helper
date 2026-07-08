@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizePathKey } from "../../mc-assets/src";
 import {
   CompletionItemKind,
   DiagnosticSeverity,
@@ -116,8 +117,8 @@ export function semanticModelForFile(
   semanticProgram: RsglWorkspaceSemanticProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const normalized = normalizeFileName(path.resolve(fileName));
-  return semanticProgram.program.models.find(model => normalizeFileName(path.resolve(model.fileName)) === normalized);
+  const key = normalizePathKey(path.resolve(fileName));
+  return semanticProgram.program.models.find(model => normalizePathKey(path.resolve(model.fileName)) === key);
 }
 
 /** Injected collaborators for semantic token computation. */
