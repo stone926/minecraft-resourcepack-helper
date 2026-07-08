@@ -42,6 +42,8 @@ export interface RsglType {
   kind: RsglTypeKind;
   elementType?: RsglType;
   properties?: Map<string, RsglType>;
+  parameters?: RsglType[];
+  returnType?: RsglType;
 }
 
 export interface RsglSignature {
@@ -67,7 +69,7 @@ export interface RsglSymbol {
 }
 
 export interface RsglScope {
-  kind: "global" | "module" | "block" | "template" | "loop";
+  kind: "global" | "module" | "block" | "template" | "loop" | "lambda";
   parent?: RsglScope;
   symbols: Map<string, RsglSymbol>;
 }
@@ -103,7 +105,7 @@ export interface RsglReferenceRecord {
 }
 
 export interface RsglOutputResourcePreview {
-  kind: ResourceDeclNode["resourceKind"];
+  kind: ResourceDeclNode["resourceKind"] | "texture";
   id?: string;
   node: RsglNode;
 }
@@ -174,6 +176,13 @@ export function typeFromAnnotation(typeNode: TypeNode | undefined): RsglType {
     }
     return namedType(name);
   }
+  if (typeNode.kind === "FunctionType") {
+    return {
+      kind: "Function",
+      parameters: typeNode.parameters.map(typeFromAnnotation),
+      returnType: typeFromAnnotation(typeNode.returnType)
+    };
+  }
   if (typeNode.kind === "UnionType") {
     return anyType;
   }
@@ -187,7 +196,7 @@ export function namedType(name: string): RsglType {
   if (name === "String" || name === "Path") {
     return { kind: name };
   }
-  if (name === "Number" || name === "Boolean" || name === "Json") {
+  if (name === "Number" || name === "Boolean" || name === "Json" || name === "Function") {
     return { kind: name };
   }
   if (name === "ResourceId") {

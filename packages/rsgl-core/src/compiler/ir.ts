@@ -13,7 +13,7 @@ export interface BinaryCopyRef {
   sourcePath: string;
 }
 
-export type ExternalResourceKind = "model" | "blockstate" | "item";
+export type ExternalResourceKind = "model" | "blockstate" | "item" | "texture";
 
 export interface ExternalResourceRef {
   kind: "external";
@@ -28,7 +28,7 @@ export interface ResourceId {
   path: string;
 }
 
-export type ResourceKind = RsglResourceKind | "raw";
+export type ResourceKind = RsglResourceKind | ExternalResourceKind | "raw";
 
 export interface ResourceUnit {
   id?: ResourceId;

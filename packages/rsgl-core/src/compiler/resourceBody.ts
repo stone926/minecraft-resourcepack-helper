@@ -11,7 +11,7 @@ import {
 import { normalizeJsonValue } from "./compilerHelpers";
 import { JsonValue } from "./ir";
 import { appendJsonObject, isJsonObject, mergeJsonObject, mergeJsonObjectDeep, overrideJsonObject } from "./jsonObjectMerge";
-import { createLoopBindings, createLoopContext } from "./looping";
+import { forEachLoopContext } from "./looping";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 
 export interface ResourceBodyCompileOptions {
@@ -242,19 +242,13 @@ function applyForStatement(
   options: ResourceBodyCompileOptions,
   path: string
 ): void {
-  const iterable = evaluateExpression(statement.iterable, context);
-  if (!Array.isArray(iterable)) {
-    options.onError?.("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
-    return;
-  }
   if (statement.body.kind !== "ResourceBody") {
     return;
   }
-  for (const value of iterable) {
-    const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-    const loopContext = createLoopContext(context, bindings, statement.range);
-    mergeJsonObjectDeep(result, resourceBodyToObjectAtPath(statement.body, loopContext, options, path));
-  }
+  const body = statement.body;
+  forEachLoopContext(statement, context, (code, message, range) => options.onError?.(code, message, range), loopContext => {
+    mergeJsonObjectDeep(result, resourceBodyToObjectAtPath(body, loopContext, options, path));
+  });
 }
 
 function emitObjectMappings(

@@ -11,6 +11,7 @@ import {
 import { StatementParser } from "./statementParser";
 import {
   BlockNode,
+  ExternDeclNode,
   ExportSpecifierNode,
   ExprNode,
   IdentifierNode,
@@ -74,6 +75,9 @@ class RsglParser extends StatementParser {
     }
     if (keyword === "export") {
       return this.parseExportDecl();
+    }
+    if (keyword === "extern") {
+      return this.parseExternDecl();
     }
     if (keyword === "overlay") {
       return this.parseOverlayDecl();
@@ -266,6 +270,37 @@ class RsglParser extends StatementParser {
     };
   }
 
+  private parseExternDecl(): ExternDeclNode {
+    const start = this.advance();
+    const resourceKind = this.parseIdentifier("Expected extern resource kind.");
+    let args: ExternDeclNode["args"] = [];
+    if (resourceKind && this.current().text === "(") {
+      const call = this.finishCallExpression({
+        kind: "IdentifierExpr",
+        name: resourceKind,
+        range: resourceKind.range,
+        fullRange: resourceKind.fullRange
+      });
+      if (call.kind === "CallExpr") {
+        args = call.args;
+      }
+    }
+
+    if (!resourceKind || args.length === 0) {
+      if (this.current().text !== "(") {
+        this.addDiagnosticAtCurrent("rsgl.expectedExternArguments", "Expected extern argument list.");
+      }
+    }
+
+    return {
+      kind: "ExternDecl",
+      keyword: start.text,
+      resourceKind,
+      args,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
   private parseExportSpecifiers(): ExportSpecifierNode[] {
     const specifiers: ExportSpecifierNode[] = [];
     this.matchText("{");
@@ -393,10 +428,14 @@ class RsglParser extends StatementParser {
     const resourceKind = start.text as ResourceKind;
     let subtype: IdentifierNode | undefined;
     let id: ExprNode | undefined;
+    let impl: ExprNode | undefined;
 
     if (resourceKind === "model") {
       subtype = this.parseIdentifier("Expected model subtype.") ?? undefined;
-      id = this.parseExpression({ stopTexts: ["{"] });
+      id = this.parseExpression({ stopTexts: ["impl", "{"] });
+      if (this.matchText("impl")) {
+        impl = this.parseExpression({ stopTexts: ["{"] });
+      }
     } else if (resourceKind !== "pack") {
       id = this.parseExpression({ stopTexts: ["{"] });
     }
@@ -410,6 +449,7 @@ class RsglParser extends StatementParser {
       resourceKind,
       subtype,
       id,
+      impl,
       body,
       ...this.nodeRanges(start, this.previousOr(start))
     };

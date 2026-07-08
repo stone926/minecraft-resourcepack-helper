@@ -35,7 +35,7 @@ export function compileEquipmentLayerStatement(
     context,
     {
       dyeable: statement.dyeable ? Boolean(evaluateExpression(statement.dyeable, context)) : undefined,
-      color: statement.color ? evaluateExpression(statement.color, context) : undefined,
+      color: statement.color ? normalizeOptionalJsonValue(evaluateExpression(statement.color, context)) : undefined,
       usePlayerTexture: statement.usePlayerTexture ? Boolean(evaluateExpression(statement.usePlayerTexture, context)) : undefined,
       colorRange: statement.color?.range
     },
@@ -53,6 +53,13 @@ export function compileEquipmentLayerStatement(
     content,
     mappings: equipmentLayerMappings(statement, layer, entry, context)
   };
+}
+
+function normalizeOptionalJsonValue(value: unknown): JsonValue | undefined {
+  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda")) {
+    return undefined;
+  }
+  return value as JsonValue;
 }
 
 export function lowerEquipmentBodySugar(

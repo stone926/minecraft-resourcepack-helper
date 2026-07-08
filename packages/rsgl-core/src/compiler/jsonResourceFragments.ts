@@ -414,7 +414,10 @@ function copyOptionalArg(
 }
 
 function normalizeJsonValue(value: EvaluationValue): JsonValue {
-  return value === undefined ? null : value;
+  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && value.kind === "lambda")) {
+    return null;
+  }
+  return value as JsonValue;
 }
 
 function normalizeResourceId(value: string, namespace: string): string {

@@ -1,6 +1,8 @@
 import {
   BlockNode,
   ExprNode,
+  ExternDeclNode,
+  ForStmtNode,
   IdentifierNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
@@ -15,7 +17,6 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
-import { blockstateTemplateIdParameters } from "./blockstateTemplateUse";
 import { createBuiltinSymbols } from "./builtins";
 import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
@@ -36,6 +37,7 @@ import {
   anyType,
   identifierName,
   jsonType,
+  numberType,
   resourceIdType,
   RsglBindOptions,
   RsglExportRecord,
@@ -117,6 +119,12 @@ class RsglBinder implements RsglExpressionCheckContext {
         this.recordImport(statement, scope);
       } else if (statement.kind === "ExportDecl") {
         this.recordExport(statement);
+      } else if (statement.kind === "ExternDecl") {
+        const id = this.externDeclId(statement);
+        const kind = this.externDeclKind(statement);
+        if (id && kind) {
+          this.outputResources.push({ kind, id, node: statement });
+        }
       } else if (statement.kind === "LetDecl") {
         this.defineIdentifier(scope, statement.name, "variable", typeFromAnnotation(statement.typeAnnotation), statement);
       } else if (statement.kind === "TableDecl") {
@@ -129,11 +137,6 @@ class RsglBinder implements RsglExpressionCheckContext {
         const id = statement.id ? expressionToStaticText(statement.id) : undefined;
         this.outputResources.push({ kind: statement.resourceKind, id, node: statement });
         this.defineResource(scope, statement, id);
-      } else if (statement.kind === "UseDecl") {
-        const id = this.topLevelBlockstateUseId(statement);
-        if (id) {
-          this.outputResources.push({ kind: "blockstate", id, node: statement });
-        }
       }
     }
   }
@@ -153,12 +156,14 @@ class RsglBinder implements RsglExpressionCheckContext {
         checkObject(this, statement.body, scope);
       } else if (statement.kind === "TemplateDecl") {
         this.checkTemplate(statement, scope);
+      } else if (statement.kind === "ExternDecl") {
+        this.checkExternDecl(statement, scope);
       } else if (statement.kind === "ResourceDecl") {
         this.checkResourceDecl(statement, scope);
       } else if (statement.kind === "UseDecl") {
         this.checkExpression(statement.expression, scope);
       } else if (statement.kind === "ForStmt") {
-        this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
+        this.checkForStatement(statement, scope);
       } else if (statement.kind === "IfStmt") {
         this.checkExpression(statement.condition, scope);
         this.checkBody(statement.thenBody, createChildScope(scope, "block"));
@@ -212,7 +217,47 @@ class RsglBinder implements RsglExpressionCheckContext {
       checkResourceIdExpression(this, statement.id, scope);
       validateResourceLocationLike(this, statement.id);
     }
+    if (statement.impl) {
+      this.checkModelImpl(statement.impl, scope);
+    }
     this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.resourceKind);
+  }
+
+  private checkModelImpl(expression: ExprNode, scope: RsglScope): void {
+    if (expression.kind === "CallExpr") {
+      checkResourceIdExpression(this, expression.callee, scope);
+      expression.args.forEach(arg => checkResourceIdExpression(this, arg.value, scope));
+      return;
+    }
+    checkResourceIdExpression(this, expression, scope);
+  }
+
+  private checkExternDecl(statement: ExternDeclNode, scope: RsglScope): void {
+    const kind = this.externDeclKind(statement);
+    if (!kind) {
+      this.diagnostics.push(diagnostic("rsgl.invalidExternKind", "Extern resource kind must be 'model', 'blockstate', 'item', or 'texture'.", statement.resourceKind?.range ?? statement.range));
+    }
+    const idArg = this.externIdArgument(statement);
+    if (!idArg) {
+      this.diagnostics.push(diagnostic("rsgl.missingArgument", "Missing extern argument 'id'.", statement.range));
+      return;
+    }
+    checkResourceIdExpression(this, idArg.value, scope);
+  }
+
+  private externDeclKind(statement: ExternDeclNode): "model" | "blockstate" | "item" | "texture" | null {
+    const kind = statement.resourceKind?.text;
+    return kind === "model" || kind === "blockstate" || kind === "item" || kind === "texture" ? kind : null;
+  }
+
+  private externIdArgument(statement: ExternDeclNode): ExternDeclNode["args"][number] | undefined {
+    return statement.args.find(arg => arg.name?.text === "id")
+      ?? statement.args.filter(arg => !arg.name)[0];
+  }
+
+  private externDeclId(statement: ExternDeclNode): string | undefined {
+    const arg = this.externIdArgument(statement);
+    return arg ? expressionToStaticText(arg.value) : undefined;
   }
 
   private checkOverlayFormatExpression(expression: ExprNode, scope: RsglScope): void {
@@ -326,7 +371,10 @@ class RsglBinder implements RsglExpressionCheckContext {
       statement.options.forEach(option => this.checkExpression(option.value, scope));
       if (statement.frames) {
         this.checkExpression(statement.frames.frames, scope);
-        this.checkExpression(statement.frames.model, scope);
+        const frameScope = createChildScope(scope, "block");
+        this.defineIdentifier(frameScope, this.syntheticIdentifier("index", statement.frames.range), "variable", numberType, statement.frames);
+        this.defineIdentifier(frameScope, this.syntheticIdentifier("frame", statement.frames.range), "variable", anyType, statement.frames);
+        this.checkExpression(statement.frames.model, frameScope);
       }
       if (statement.fallback) {
         this.checkExpression(statement.fallback, scope);
@@ -356,7 +404,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       this.checkExpression(statement.base, scope);
       this.checkExpression(statement.model, scope);
     } else if (statement.kind === "ForStmt") {
-      this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
+      this.checkForStatement(statement, scope);
     } else if (statement.kind === "IfStmt") {
       this.checkExpression(statement.condition, scope);
       this.checkBody(statement.thenBody, createChildScope(scope, "block"));
@@ -368,25 +416,34 @@ class RsglBinder implements RsglExpressionCheckContext {
     }
   }
 
-  private checkForStatement(
-    bindings: IdentifierNode[],
-    iterable: ExprNode,
-    body: CheckableBody,
-    scope: RsglScope
-  ): void {
-    this.checkForIterableExpression(iterable, scope);
-    const finiteDomain = bindings.length === 1 ? finiteStringDomain(iterable, scope) : null;
+  private checkForStatement(statement: ForStmtNode, scope: RsglScope): void {
     const loopScope = createChildScope(scope, "loop");
-    for (const binding of bindings) {
-      this.defineIdentifier(loopScope, binding, "variable", anyType, binding);
-      if (finiteDomain) {
-        const symbol = lookup(loopScope, binding.text);
-        if (symbol) {
-          symbol.finiteDomain = finiteDomain;
+    const seen = new Set<string>();
+    const forDimensions = statement.dimensions.length ? statement.dimensions : [{
+      kind: "ForDimension" as const,
+      bindings: statement.bindings,
+      iterable: statement.iterable,
+      range: statement.range,
+      fullRange: statement.fullRange
+    }];
+    for (const dimension of forDimensions) {
+      this.checkForIterableExpression(dimension.iterable, loopScope);
+      const finiteDomain = dimension.bindings.length === 1 ? finiteStringDomain(dimension.iterable, loopScope) : null;
+      for (const binding of dimension.bindings) {
+        if (seen.has(binding.text)) {
+          this.diagnostics.push(diagnostic("rsgl.duplicateLoopBinding", `Duplicate loop binding '${binding.text}'.`, binding.range));
+        }
+        seen.add(binding.text);
+        this.defineIdentifier(loopScope, binding, "variable", anyType, binding);
+        if (finiteDomain) {
+          const symbol = lookup(loopScope, binding.text);
+          if (symbol) {
+            symbol.finiteDomain = finiteDomain;
+          }
         }
       }
     }
-    this.checkBody(body, loopScope);
+    this.checkBody(statement.body, loopScope);
   }
 
   private checkForIterableExpression(expression: ExprNode, scope: RsglScope): RsglType {
@@ -423,7 +480,7 @@ class RsglBinder implements RsglExpressionCheckContext {
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
-      this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
+      this.checkForStatement(statement, scope);
     } else if (statement.kind === "IfStmt") {
       this.checkExpression(statement.condition, scope);
       this.checkBody(statement.thenBody, createChildScope(scope, "block"));
@@ -454,7 +511,7 @@ class RsglBinder implements RsglExpressionCheckContext {
     } else if (statement.kind === "UseDecl") {
       this.checkExpression(statement.expression, scope);
     } else if (statement.kind === "ForStmt") {
-      this.checkForStatement(statement.bindings, statement.iterable, statement.body, scope);
+      this.checkForStatement(statement, scope);
     } else if (statement.kind === "IfStmt") {
       this.checkExpression(statement.condition, scope);
       this.checkBody(statement.thenBody, createChildScope(scope, "block"));
@@ -468,18 +525,13 @@ class RsglBinder implements RsglExpressionCheckContext {
     return checkExpression(this, expression, scope);
   }
 
-  private topLevelBlockstateUseId(statement: Extract<TopLevelStatementNode, { kind: "UseDecl" }>): string | undefined {
-    const expression = statement.expression;
-    if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
-      return undefined;
-    }
-    if (!blockstateTemplateIdParameters.has(expression.callee.name.text)) {
-      return undefined;
-    }
-    const namedId = expression.args.find(arg => arg.name?.text === "id");
-    const positionalId = expression.args.length === 1 && !expression.args[0].name ? expression.args[0] : undefined;
-    const arg = namedId ?? positionalId;
-    return arg ? expressionToStaticText(arg.value) : undefined;
+  private syntheticIdentifier(text: string, range: { start: number; end: number }): IdentifierNode {
+    return {
+      kind: "Identifier",
+      text,
+      range,
+      fullRange: range
+    };
   }
 
   private recordImport(statement: Extract<TopLevelStatementNode, { kind: "ImportDecl" }>, scope: RsglScope): void {

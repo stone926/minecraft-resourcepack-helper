@@ -53,6 +53,11 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   if (hasErrors(syntaxDiagnostics)) {
     return { units: [], diagnostics: syntaxDiagnostics };
   }
+  const fileName = options.fileName ?? "<anonymous>";
+  const sourceFiles = includeRsglStdlibSourceFiles([{ fileName, module }], { stdlibRoot: options.stdlibRoot });
+  if (sourceFiles.length > 1) {
+    return compileRsglProgram(sourceFiles, { ...options, entryFileName: fileName });
+  }
 
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
   const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";

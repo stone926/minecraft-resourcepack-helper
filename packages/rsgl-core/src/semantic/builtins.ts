@@ -104,120 +104,6 @@ export function createBuiltinSymbols(): RsglSymbol[] {
       { name: "len", type: numberType, optional: false },
       { name: "pad", type: stringType, optional: false }
     ], stringType),
-    builtinFunction("cubeAll", [
-      { name: "id", type: resourceIdType, optional: false },
-      { name: "texture", type: textureIdType, optional: true }
-    ], jsonType),
-    builtinFunction("itemGenerated", [
-      { name: "id", type: resourceIdType, optional: false },
-      { name: "texture", type: textureIdType, optional: true }
-    ], jsonType),
-    builtinFunction("itemModel", [
-      { name: "id", type: resourceIdType, optional: false },
-      { name: "model", type: modelIdType, optional: true }
-    ], jsonType),
-    builtinFunction("blockFamily", [
-      { name: "base", type: resourceIdType, optional: false },
-      { name: "texture", type: textureIdType, optional: true },
-      { name: "variants", type: { kind: "List", elementType: stringType }, optional: true },
-      { name: "itemModels", type: booleanType, optional: true },
-      { name: "hangingSignParticle", type: textureIdType, optional: true },
-      { name: "hanging_sign_particle", type: textureIdType, optional: true }
-    ], jsonType),
-    builtinFunction("externalResource", [
-      { name: "kind", type: stringType, optional: false },
-      { name: "id", type: resourceIdType, optional: false }
-    ], jsonType),
-    builtinFunction("externalModel", [
-      { name: "id", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("externalBlockstate", [
-      { name: "id", type: resourceIdType, optional: false }
-    ], jsonType),
-    builtinFunction("externalItem", [
-      { name: "id", type: resourceIdType, optional: false }
-    ], jsonType),
-    builtinFunction("stairs", [
-      { name: "base", type: modelIdType, optional: false },
-      { name: "inner", type: modelIdType, optional: false },
-      { name: "outer", type: modelIdType, optional: false },
-      { name: "uvlock", type: booleanType, optional: true }
-    ], jsonType),
-    builtinFunction("slab", [
-      { name: "bottom", type: modelIdType, optional: false },
-      { name: "top", type: modelIdType, optional: false },
-      { name: "double", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("fence", [
-      { name: "post", type: modelIdType, optional: false },
-      { name: "side", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("fenceGate", [
-      { name: "base", type: modelIdType, optional: false },
-      { name: "open", type: modelIdType, optional: false },
-      { name: "wall", type: modelIdType, optional: false },
-      { name: "wallOpen", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("door", [
-      { name: "bottomLeft", type: modelIdType, optional: false },
-      { name: "bottomLeftOpen", type: modelIdType, optional: false },
-      { name: "bottomRight", type: modelIdType, optional: false },
-      { name: "bottomRightOpen", type: modelIdType, optional: false },
-      { name: "topLeft", type: modelIdType, optional: false },
-      { name: "topLeftOpen", type: modelIdType, optional: false },
-      { name: "topRight", type: modelIdType, optional: false },
-      { name: "topRightOpen", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("trapdoor", [
-      { name: "bottom", type: modelIdType, optional: false },
-      { name: "top", type: modelIdType, optional: false },
-      { name: "open", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("wall", [
-      { name: "post", type: modelIdType, optional: false },
-      { name: "side", type: modelIdType, optional: false },
-      { name: "sideTall", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("pane", [
-      { name: "post", type: modelIdType, optional: false },
-      { name: "side", type: modelIdType, optional: false },
-      { name: "sideAlt", type: modelIdType, optional: false },
-      { name: "noSide", type: modelIdType, optional: false },
-      { name: "noSideAlt", type: modelIdType, optional: false }
-    ], jsonType),
-    builtinFunction("horizontalFacing", [
-      { name: "model", type: modelIdType, optional: false },
-      { name: "state", type: jsonType, optional: true },
-      { name: "uvlock", type: booleanType, optional: true }
-    ], jsonType),
-    builtinFunction("axisRotated", [
-      { name: "vertical", type: modelIdType, optional: false },
-      { name: "horizontal", type: modelIdType, optional: false },
-      { name: "state", type: jsonType, optional: true },
-      { name: "uvlock", type: booleanType, optional: true }
-    ], jsonType),
-    builtinFunction("randomVariants", [
-      { name: "models", type: { kind: "List", elementType: jsonType }, optional: false },
-      { name: "state", type: jsonType, optional: true }
-    ], jsonType),
-    builtinFunction("itemRangeFrames", [
-      { name: "property", type: resourceIdType, optional: false },
-      { name: "frames", type: jsonType, optional: false },
-      { name: "model", type: resourceIdType, optional: false },
-      { name: "threshold", type: jsonType, optional: true },
-      { name: "fallback", type: resourceIdType, optional: true },
-      { name: "component", type: resourceIdType, optional: true },
-      { name: "source", type: stringType, optional: true },
-      { name: "target", type: stringType, optional: true },
-      { name: "wobble", type: booleanType, optional: true },
-      { name: "scale", type: numberType, optional: true }
-    ], jsonType),
-    builtinFunction("itemSelectCases", [
-      { name: "property", type: resourceIdType, optional: false },
-      { name: "cases", type: jsonType, optional: false },
-      { name: "fallback", type: resourceIdType, optional: true },
-      { name: "component", type: resourceIdType, optional: true }
-    ], jsonType),
     builtinFunction("atlasDirectory", [
       { name: "source", type: stringType, optional: false },
       { name: "prefix", type: stringType, optional: true }
@@ -246,6 +132,8 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     ], jsonType),
     builtinFunction("model_path", [{ name: "id", type: modelIdType, optional: false }], stringType),
     builtinFunction("texture_path", [{ name: "id", type: textureIdType, optional: false }], stringType),
+    builtinFunction("resource_namespace", [{ name: "id", type: resourceIdType, optional: false }], stringType),
+    builtinFunction("resource_path", [{ name: "id", type: resourceIdType, optional: false }], stringType),
     builtinValue("index", numberType)
   ];
 }

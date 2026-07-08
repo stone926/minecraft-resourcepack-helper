@@ -108,7 +108,7 @@ function targetPackFormatFromDecl(
     return null;
   }
 
-  const value = evaluateExpression(statement.value, targetEvaluationContext(namespace));
+  const value = normalizeJsonValue(evaluateExpression(statement.value, targetEvaluationContext(namespace)));
   const target = targetPackFormatValue(value);
   if (!target) {
     diagnostics.push({
@@ -120,6 +120,13 @@ function targetPackFormatFromDecl(
     return null;
   }
   return target;
+}
+
+function normalizeJsonValue(value: unknown): JsonValue {
+  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda")) {
+    return null;
+  }
+  return value as JsonValue;
 }
 
 function targetPackFormatFromMinecraftVersion(

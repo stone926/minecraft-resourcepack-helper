@@ -1,0 +1,14 @@
+template simpleModelItem(id: ResourceId, model: ModelId) {
+  item id {
+    model model
+  }
+}
+
+template rangeFrames(id: ResourceId, property: ResourceId, values: Json, model: Function, fallback: ModelId) {
+  item id {
+    range property property {
+      frames values model model(frame)
+      fallback fallback
+    }
+  }
+}

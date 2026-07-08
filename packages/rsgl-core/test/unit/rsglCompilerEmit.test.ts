@@ -289,9 +289,9 @@ describe("RSGL compiler emit and write pipeline", () => {
 
   it("references external resources without emitting files", () => {
     const result = compileSource([
-      "use externalModel(id: minecraft:block/stone)",
-      "use externalBlockstate(id: minecraft:stone)",
-      "use externalItem(id: minecraft:stone)"
+      "extern model(id: minecraft:block/stone)",
+      "extern blockstate(id: minecraft:stone)",
+      "extern item(id: minecraft:stone)"
     ], {
       resourceExists: () => true
     });
@@ -350,9 +350,9 @@ describe("RSGL compiler emit and write pipeline", () => {
 
   it("validates missing external resource references", () => {
     const result = compileSource([
-      "use externalResource(kind: model, id: minecraft:block/missing_model)",
-      "use externalResource(kind: blockstate, id: minecraft:missing_block)",
-      "use externalResource(kind: item, id: minecraft:missing_item)"
+      "extern model(id: minecraft:block/missing_model)",
+      "extern blockstate(id: minecraft:missing_block)",
+      "extern item(id: minecraft:missing_item)"
     ], {
       resourceExists: () => false
     });
@@ -367,7 +367,7 @@ describe("RSGL compiler emit and write pipeline", () => {
 
   it("lets generated resources override external references", () => {
     const result = compileSource([
-      "use externalModel(id: minecraft:block/stone)",
+      "extern model(id: minecraft:block/stone)",
       "model block stone {",
       "  parent minecraft:block/cube_all",
       "  textures { all: minecraft:block/custom_stone }",

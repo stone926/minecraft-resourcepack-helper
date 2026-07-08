@@ -12,7 +12,6 @@ import {
   TextRange
 } from "../parser";
 import { bindRsglArguments } from "../arguments";
-import { blockstateTemplateIdParameters, isBlockstateTemplateIdCall } from "./blockstateTemplateUse";
 import { diagnostic } from "./diagnostics";
 import { checkMatchExhaustiveness, finiteStringDomain, isWildcardPattern } from "./domainChecks";
 import { createChildScope, lookup } from "./scopes";
@@ -92,6 +91,24 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
   }
   if (expression.kind === "CallExpr") {
     return checkCallExpression(context, expression, scope);
+  }
+  if (expression.kind === "LambdaExpr") {
+    const lambdaScope = createChildScope(scope, "lambda");
+    const seen = new Set<string>();
+    for (const parameter of expression.parameters) {
+      if (seen.has(parameter.text)) {
+        context.diagnostics.push(diagnostic("rsgl.duplicateParameter", `Duplicate lambda parameter '${parameter.text}'.`, parameter.range));
+      }
+      seen.add(parameter.text);
+      context.defineIdentifier(lambdaScope, parameter, "parameter", anyType, parameter);
+    }
+    const returnType = checkExpression(context, expression.body, lambdaScope);
+    checkLambdaPurity(context, expression.body);
+    return {
+      kind: "Function",
+      parameters: expression.parameters.map(() => anyType),
+      returnType
+    };
   }
   if (expression.kind === "ForInExpr") {
     context.diagnostics.push(diagnostic("rsgl.invalidForInExpression", "'name in iterable' generator expressions are only valid as seq arguments.", expression.range));
@@ -246,15 +263,16 @@ function checkCallExpression(context: RsglExpressionCheckContext, expression: Ca
     for (const arg of args) {
       checkExpression(context, arg.value, scope);
     }
-    return calleeType.kind === "Function" ? anyType : unknownType;
+    if (calleeType.kind === "Function") {
+      checkFunctionCallArguments(context, calleeType, args, expression.range);
+      return calleeType.returnType ?? anyType;
+    }
+    return unknownType;
   }
 
   const symbol = lookup(scope, callee.name.text);
   if (callee.name.text === "seq") {
     return checkSeqCallExpression(context, expression, scope);
-  }
-  if (isBlockstateTemplateIdCall(expression)) {
-    return checkBlockstateTemplateIdCall(context, expression, scope);
   }
   if (!symbol?.signature) {
     if (symbol?.kind === "import") {
@@ -263,6 +281,17 @@ function checkCallExpression(context: RsglExpressionCheckContext, expression: Ca
     for (const arg of args) {
       checkExpression(context, arg.value, scope);
     }
+    if (symbol?.type.kind === "Function") {
+      checkFunctionCallArguments(context, symbol.type, args, expression.range);
+      return symbol.type.returnType ?? anyType;
+    }
+    if (symbol) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.notCallable",
+        `RSGL symbol '${callee.name.text}' is not callable.`,
+        callee.range
+      ));
+    }
     return symbol?.type ?? unknownType;
   }
 
@@ -270,33 +299,86 @@ function checkCallExpression(context: RsglExpressionCheckContext, expression: Ca
   return symbol.signature.returnType;
 }
 
-function checkBlockstateTemplateIdCall(context: RsglExpressionCheckContext, expression: CallExprNode, scope: RsglScope): RsglType {
-  const callee = expression.callee;
-  if (callee.kind !== "IdentifierExpr") {
-    return jsonType;
+function checkFunctionCallArguments(
+  context: RsglExpressionCheckContext,
+  type: RsglType,
+  args: ArgumentNode[],
+  callRange: TextRange
+): void {
+  if (!type.parameters) {
+    return;
   }
-  const parameters = blockstateTemplateIdParameters.get(callee.name.text);
-  if (!parameters) {
-    return jsonType;
+  if (args.length !== type.parameters.length) {
+    context.diagnostics.push(diagnostic(
+      "rsgl.lambdaArityMismatch",
+      `Expected ${type.parameters.length} lambda argument(s), got ${args.length}.`,
+      callRange
+    ));
   }
-  const binding = bindRsglArguments(parameters, expression.args, { callRange: expression.range });
-  context.diagnostics.push(...binding.diagnostics);
-  const checkedArgs = new Set<ArgumentNode>();
-
-  for (const { parameter, arg } of binding.assignments) {
-    checkedArgs.add(arg);
-    const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId"
-      ? checkResourceIdExpression(context, arg.value, scope)
-      : checkExpression(context, arg.value, scope);
-    checkAssignable(context, parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
-  }
-  for (const arg of binding.unmatchedArgs) {
-    if (!checkedArgs.has(arg)) {
-      checkExpression(context, arg.value, scope);
-    }
-  }
-  return jsonType;
 }
+
+function checkLambdaPurity(context: RsglExpressionCheckContext, expression: ExprNode): void {
+  if (expression.kind === "CallExpr") {
+    if (expression.callee.kind === "IdentifierExpr" && lambdaImpureCalls.has(expression.callee.name.text)) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.lambdaImpureCall",
+        `Lambda body cannot call impure builtin '${expression.callee.name.text}'.`,
+        expression.callee.range
+      ));
+    }
+    checkLambdaPurity(context, expression.callee);
+    expression.args.forEach(arg => checkLambdaPurity(context, arg.value));
+  } else if (expression.kind === "ListExpr") {
+    expression.elements.forEach(element => checkLambdaPurity(context, element));
+  } else if (expression.kind === "ObjectExpr") {
+    expression.properties.forEach(property => {
+      if (property.key.kind === "DynamicKey") {
+        checkLambdaPurity(context, property.key.expression);
+      }
+      checkLambdaPurity(context, property.value);
+    });
+  } else if (expression.kind === "TemplateStringExpr") {
+    expression.parts.forEach(part => {
+      if (part.kind === "expression") {
+        checkLambdaPurity(context, part.expression);
+      }
+    });
+  } else if (expression.kind === "MemberExpr") {
+    checkLambdaPurity(context, expression.object);
+  } else if (expression.kind === "IndexExpr") {
+    checkLambdaPurity(context, expression.object);
+    checkLambdaPurity(context, expression.index);
+  } else if (expression.kind === "UnaryExpr") {
+    checkLambdaPurity(context, expression.operand);
+  } else if (expression.kind === "BinaryExpr") {
+    checkLambdaPurity(context, expression.left);
+    checkLambdaPurity(context, expression.right);
+  } else if (expression.kind === "ConditionalExpr") {
+    checkLambdaPurity(context, expression.condition);
+    checkLambdaPurity(context, expression.whenTrue);
+    checkLambdaPurity(context, expression.whenFalse);
+  } else if (expression.kind === "MatchExpr") {
+    checkLambdaPurity(context, expression.expression);
+    expression.arms.forEach(arm => {
+      arm.patterns.forEach(pattern => checkLambdaPurity(context, pattern));
+      checkLambdaPurity(context, arm.value);
+    });
+  } else if (expression.kind === "RangeExpr") {
+    checkLambdaPurity(context, expression.startExpr);
+    checkLambdaPurity(context, expression.endExpr);
+  } else if (expression.kind === "LambdaExpr") {
+    checkLambdaPurity(context, expression.body);
+  } else if (expression.kind === "StateKeySugar") {
+    expression.entries.forEach(entry => checkLambdaPurity(context, entry.value));
+  } else if (expression.kind === "ModelApplySugar") {
+    checkLambdaPurity(context, expression.model);
+    expression.properties.forEach(property => checkLambdaPurity(context, property.value));
+  } else if (expression.kind === "RandomApply") {
+    expression.entries.forEach(entry => checkLambdaPurity(context, entry));
+  }
+}
+
+const lambdaImpureCalls = new Set(["raw_json", "raw_json_file", "glob"]);
 
 function checkSeqCallExpression(context: RsglExpressionCheckContext, expression: CallExprNode, scope: RsglScope): RsglType {
   const positionalArgs = expression.args.filter(arg => !arg.name);

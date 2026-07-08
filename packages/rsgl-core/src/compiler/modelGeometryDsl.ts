@@ -418,6 +418,9 @@ function mapping(generatedPath: string, sourceRange: TextRange, context: Evaluat
   return { generatedPath, sourceRange, context };
 }
 
-function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
-  return value === undefined ? null : value;
+function normalizeJsonValue(value: unknown): JsonValue {
+  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda")) {
+    return null;
+  }
+  return value as JsonValue;
 }

@@ -24,7 +24,11 @@ describe("RSGL semantic model", () => {
       "  parent minecraft:block/cube_all",
       "  textures { all: id }",
       "}",
-      "use stairs(id: acacia_stairs)"
+      "blockstate acacia_stairs {",
+      "  variants {",
+      "    {} -> @minecraft:block/acacia_stairs",
+      "  }",
+      "}"
     ].join("\n"));
 
     const model = bindRsglModule(module, { fileName: path.join("pack", "main.rsgl") });
@@ -117,22 +121,31 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(withFallback.diagnostics.some(item => item.code === "rsgl.nonExhaustiveMatch"), false);
   });
 
-  it("checks builtin template signatures", () => {
+  it("checks builtin helper signatures and removed use callables", () => {
     const module = parseRsgl([
-      "blockstate minecraft:bad_stairs {",
-      "  use stairs(base: minecraft:block/base)",
-      "}",
       "equipment minecraft:bad_equipment {",
       "  use equipmentLayers(texture: minecraft:iron)",
       "}",
-      "use blockFamily(texture: minecraft:block/oak_planks)"
+      "use stairs(id: acacia_stairs)"
     ].join("\n"));
 
     const model = bindRsglModule(module);
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.ok(codes.includes("rsgl.missingArgument"));
-    assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 4);
+    assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 1);
+    assert.ok(codes.includes("rsgl.notCallable"));
+  });
+
+  it("checks lambda arity and purity diagnostics", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let wrongArity = (value => value)(\"one\", \"two\")",
+      "let impure = value => raw_json_file(\"./fragment.json\")"
+    ].join("\n")));
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.lambdaArityMismatch"));
+    assert.ok(codes.includes("rsgl.lambdaImpureCall"));
   });
 
   it("reports unknown, duplicate, and excessive template call arguments", () => {

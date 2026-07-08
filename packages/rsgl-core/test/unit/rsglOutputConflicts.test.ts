@@ -11,7 +11,7 @@ describe("RSGL output conflicts", () => {
     const result = compileRsglProgram([
       {
         fileName: firstFile,
-        module: parseRsgl("use cubeAll(id: stone)")
+        module: parseRsgl("model block stone impl cube_all(all: minecraft:block/stone) {}")
       },
       {
         fileName: secondFile,
@@ -24,7 +24,7 @@ describe("RSGL output conflicts", () => {
 
   it("reports output path conflicts", () => {
     const result = compileSource([
-      "use cubeAll(id: stone)",
+      "model block stone impl cube_all(all: minecraft:block/stone) {}",
       "model block stone { parent minecraft:block/cube_all }"
     ]);
 

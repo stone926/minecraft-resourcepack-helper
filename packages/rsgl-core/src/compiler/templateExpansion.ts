@@ -18,6 +18,8 @@ import {
   evaluateExpression
 } from "./evaluate";
 import { RsglCompileDiagnostic } from "./ir";
+import { RsglType, typeFromAnnotation } from "../semantic/types";
+import { isRsglStdlibVirtualFileName } from "../stdlib";
 
 export type RsglCompileContext = EvaluationContext & {
   templates?: Map<string, RsglTemplateDefinition>;
@@ -30,6 +32,7 @@ export type TemplateExpansion = {
 
 type TemplateCallParameter = RsglCallableParameter & {
   parameterNode: ParameterNode;
+  type: RsglType;
 };
 
 export interface TemplateExpansionOptions {
@@ -67,17 +70,19 @@ export function createTemplateExpansion(
   const templateBaseContext = createTemplateBaseContext(template, options);
   const parameters = template.node.parameters
     .filter(parameter => parameter.name)
-    .map((parameter): TemplateCallParameter => ({
-      name: parameter.name!.text,
-      optional: Boolean(parameter.defaultValue),
-      node: parameter,
-      parameterNode: parameter
+        .map((parameter): TemplateCallParameter => ({
+          name: parameter.name!.text,
+          type: typeFromAnnotation(parameter.typeAnnotation),
+          optional: Boolean(parameter.defaultValue),
+          node: parameter,
+          parameterNode: parameter
     }));
   const values = bindCallableValues(
     parameters,
     expression,
     context,
     templateBaseContext,
+    template.fileName,
     "template",
     options
   );
@@ -109,6 +114,7 @@ function bindCallableValues(
   expression: Extract<ExprNode, { kind: "CallExpr" }>,
   callContext: RsglCompileContext,
   definitionContext: RsglCompileContext,
+  definitionFileName: string,
   label: "template",
   options: TemplateExpansionOptions
 ): Record<string, EvaluationValue> | null {
@@ -136,16 +142,34 @@ function bindCallableValues(
   }
 
   const argsByParameter = new Map(binding.primaryAssignments.map(assignment => [assignment.parameter.name, assignment.arg]));
+  const argumentNamespace = isRsglStdlibVirtualFileName(definitionFileName)
+    ? callContext.namespace
+    : definitionContext.namespace;
   for (const parameter of parameters) {
     const name = parameter.name;
     const arg = argsByParameter.get(name);
     if (arg) {
-      values[name] = evaluateExpression(arg.value, callContext);
+      values[name] = normalizeCallableValue(evaluateExpression(arg.value, callContext), parameter.type, argumentNamespace);
     } else if (parameter.parameterNode.defaultValue) {
-      values[name] = evaluateExpression(parameter.parameterNode.defaultValue, options.createChildContext(definitionContext, values));
+      values[name] = normalizeCallableValue(
+        evaluateExpression(parameter.parameterNode.defaultValue, options.createChildContext(definitionContext, values)),
+        parameter.type,
+        definitionContext.namespace
+      );
     }
   }
   return values;
+}
+
+function normalizeCallableValue(value: EvaluationValue, type: RsglType, namespace: string): EvaluationValue {
+  if (
+    (type.kind === "ResourceId" || type.kind === "ModelId" || type.kind === "TextureId") &&
+    (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+  ) {
+    const text = String(value);
+    return text.includes(":") ? text : `${namespace}:${text}`;
+  }
+  return value;
 }
 
 function createTemplateBaseContext(

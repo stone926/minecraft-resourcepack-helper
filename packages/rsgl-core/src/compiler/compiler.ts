@@ -1,7 +1,10 @@
 import { isValidMinecraftNamespace } from "../../../mc-assets/src";
 import {
+  ArgumentNode,
   BlockNode,
+  CallExprNode,
   ExprNode,
+  ExternDeclNode,
   ForStmtNode,
   LetDeclNode,
   MultipartBodyNode,
@@ -11,6 +14,7 @@ import {
   ResourceStatementNode,
   RsglModule,
   TableDeclNode,
+  TextRange,
   TopLevelStatementNode,
   UseDeclNode,
   VariantBodyNode,
@@ -27,8 +31,6 @@ import {
 } from "./environment";
 import { compileEquipmentLayerStatement, lowerEquipmentBodySugar } from "./equipmentSugar";
 import {
-  compileBlockstateUseFragment,
-  compileBlockstateValueFragment,
   appendBlockstateContent,
   mergeBlockstateContent,
   mergeBlockstateFragment,
@@ -38,11 +40,6 @@ import {
 } from "./blockstateFragments";
 import { blockstateVariantKey } from "./blockstateKeys";
 import {
-  compileTopLevelBlockstateTemplateUse,
-  normalizedBlockstateTemplateUseStatement,
-  TopLevelBlockstateTemplateUseOptions
-} from "./blockstateTemplateUse";
-import {
   childEvaluationContext,
   EvaluationContext,
   EvaluationValue,
@@ -50,11 +47,10 @@ import {
   RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
-import { compileBuiltinUse } from "./builtinUse";
-import { compileItemSpecialStatement, compileItemUseFragment } from "./itemFragments";
+import { compileItemSpecialStatement } from "./itemFragments";
 import { BinaryCopyRef, JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
-import { createLoopBindings, createLoopContext as createEvaluationLoopContext } from "./looping";
+import { createLoopContext as createEvaluationLoopContext, forEachLoopContext } from "./looping";
 import { compileModelGeometryStatement } from "./modelGeometryDsl";
 import {
   compileOverlayDecl,
@@ -75,6 +71,7 @@ import {
   TemplateExpansion,
   TemplateExpansionOptions
 } from "./templateExpansion";
+import { createExternalResource, normalizeResourceValue } from "./templates";
 import { isRsglGenericJsonResourceKind } from "../resourceKinds";
 import { createRsglStdlibPreludeSourceFiles } from "../stdlib";
 import {
@@ -83,7 +80,6 @@ import {
   compactEquipmentSourceMappings,
   copyResourceTarget,
   copySourcePath,
-  createResourceBodyFragment,
   currentMultipartLength,
   isExistingFile,
   isItemModelStatement,
@@ -187,6 +183,8 @@ export class RsglCompiler {
   private compileStatement(statement: TopLevelStatementNode, context: RsglCompileContext): void {
     if (statement.kind === "ResourceDecl") {
       this.compileResourceDecl(statement, context);
+    } else if (statement.kind === "ExternDecl") {
+      this.compileExternDecl(statement, context);
     } else if (statement.kind === "LetDecl") {
       this.compileLetDecl(statement, context);
     } else if (statement.kind === "TableDecl") {
@@ -253,13 +251,73 @@ export class RsglCompiler {
     const modelId = { namespace: id.namespace, path: `${subtype}/${id.path}` };
     const outputPath = resourceOutputPath("model", modelId);
     const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions("model"));
+    const content = statement.impl
+      ? this.applyModelImpl(statement, subtype, body.content, context)
+      : body.content;
     return {
       id: modelId,
       kind: "model",
       outputPath,
-      content: body.content,
+      content,
       mergePolicy: { kind: "errorOnConflict" },
       sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
+    };
+  }
+
+  private compileExternDecl(statement: ExternDeclNode, context: RsglCompileContext): void {
+    const kind = externResourceKind(statement);
+    if (!kind) {
+      this.error("rsgl.invalidExternKind", "Extern resource kind must be 'model', 'blockstate', 'item', or 'texture'.", statement.resourceKind?.range ?? statement.range);
+      return;
+    }
+    const idArg = statement.args.find(arg => arg.name?.text === "id")
+      ?? statement.args.filter(arg => !arg.name)[0];
+    if (!idArg) {
+      this.error("rsgl.compileMissingArgument", "Missing extern argument 'id'.", statement.range);
+      return;
+    }
+    const idValue = staticText(idArg.value, context);
+    if (!idValue) {
+      this.error("rsgl.compileInvalidResourceId", "Extern id must evaluate to a static resource id.", idArg.value.range);
+      return;
+    }
+    this.pushUnit(createExternalResource(
+      kind,
+      idValue,
+      context.namespace,
+      context.sourceFile ?? this.options.fileName,
+      statement.range,
+      context.expansionStack ?? [],
+      context.mappingReason ?? "direct"
+    ));
+  }
+
+  private applyModelImpl(
+    statement: ResourceDeclNode,
+    subtype: string,
+    body: Record<string, JsonValue>,
+    context: RsglCompileContext
+  ): Record<string, JsonValue> {
+    if (!statement.impl) {
+      return body;
+    }
+    const impl = modelImplContent(statement.impl, subtype, context, (code, message, range) => this.error(code, message, range));
+    if (!impl) {
+      return body;
+    }
+    if (Object.hasOwn(body, "parent")) {
+      this.error("rsgl.duplicateModelParent", "Model body must not declare 'parent' when using impl.", statement.impl.range);
+    }
+    const { textures: bodyTextures, ...rest } = body;
+    delete rest.parent;
+    const mergedTextures = {
+      ...impl.textures,
+      ...(isJsonObject(bodyTextures) ? bodyTextures : {})
+    };
+    return {
+      parent: impl.parent,
+      ...(Object.keys(mergedTextures).length > 0 ? { textures: mergedTextures } : {}),
+      ...rest
     };
   }
 
@@ -334,21 +392,16 @@ export class RsglCompiler {
     } else if (statement.kind === "LetDecl") {
       this.compileLetDecl(statement, context);
     } else if (statement.kind === "ForStmt") {
-      const iterable = evaluateExpression(statement.iterable, context);
-      if (!Array.isArray(iterable)) {
-        this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+      const body = statement.body;
+      if (body.kind !== "ResourceBody") {
         return;
       }
-      if (statement.body.kind !== "ResourceBody") {
-        return;
-      }
-      for (const value of iterable) {
-        const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-        const loopContent = this.compileBlockstateBody(statement.body, this.createLoopContext(context, bindings, statement.range));
+      forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
+        const loopContent = this.compileBlockstateBody(body, loopContext);
         const multipartOffset = currentMultipartLength(result.content);
         mergeBlockstateContent(result.content, loopContent.content, statement.range, fragmentOptions);
         result.mappings.push(...offsetMultipartMappings(loopContent.mappings, multipartOffset));
-      }
+      });
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
       if (body?.kind === "ResourceBody") {
@@ -413,10 +466,7 @@ export class RsglCompiler {
   ): void {
     if (statement.kind === "VariantEntry") {
       const state = blockstateVariantKey(normalizeJsonValue(evaluateExpression(statement.state, context)));
-      const fragmentValue = compileBlockstateValueFragment(statement.value, context, this.blockstateFragmentOptions());
-      result.entries[state] = fragmentValue?.handled
-        ? fragmentValue.value
-        : normalizeJsonValue(evaluateExpression(statement.value, context));
+      result.entries[state] = normalizeJsonValue(evaluateExpression(statement.value, context));
       result.mappings.push(this.sourceMapping(blockstateVariantPath(state), statement.range, context));
     } else if (statement.kind === "LetDecl") {
       this.compileLetDecl(statement, context);
@@ -430,18 +480,13 @@ export class RsglCompiler {
         result.mappings.push(...this.blockstateFragmentVariantMappings(fragment, statement.range, context));
       }
     } else if (statement.kind === "ForStmt") {
-      const iterable = evaluateExpression(statement.iterable, context);
-      if (!Array.isArray(iterable)) {
-        this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+      const body = statement.body;
+      if (body.kind !== "VariantBody") {
         return;
       }
-      if (statement.body.kind !== "VariantBody") {
-        return;
-      }
-      for (const value of iterable) {
-        const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-        this.compileVariantBody(statement.body, this.createLoopContext(context, bindings, statement.range), result);
-      }
+      forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
+        this.compileVariantBody(body, loopContext, result);
+      });
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
       if (body?.kind === "VariantBody") {
@@ -502,18 +547,13 @@ export class RsglCompiler {
         result.mappings.push(...this.blockstateFragmentMultipartMappings(fragment, statement.range, context, offset));
       }
     } else if (statement.kind === "ForStmt") {
-      const iterable = evaluateExpression(statement.iterable, context);
-      if (!Array.isArray(iterable)) {
-        this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+      const body = statement.body;
+      if (body.kind !== "MultipartBody") {
         return;
       }
-      if (statement.body.kind !== "MultipartBody") {
-        return;
-      }
-      for (const value of iterable) {
-        const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-        this.compileMultipartBody(statement.body, this.createLoopContext(context, bindings, statement.range), result, startIndex);
-      }
+      forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
+        this.compileMultipartBody(body, loopContext, result, startIndex);
+      });
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
       if (body?.kind === "MultipartBody") {
@@ -760,12 +800,6 @@ export class RsglCompiler {
   }
 
   private compileUseDecl(expression: ExprNode, context: RsglCompileContext): void {
-    const blockstateUnit = compileTopLevelBlockstateTemplateUse(expression, context, this.blockstateTemplateUseOptions());
-    if (blockstateUnit !== undefined) {
-      this.pushUnit(blockstateUnit);
-      return;
-    }
-
     const expansion = this.createTemplateExpansion(expression, context);
     if (expansion) {
       if (expansion.definition.node.body.kind !== "Block") {
@@ -779,16 +813,7 @@ export class RsglCompiler {
       this.compileBlock(expansion.definition.node.body, expansion.context);
       return;
     }
-
-    const builtinUnits = compileBuiltinUse(expression, context, {
-      sourceFile: context.sourceFile ?? this.options.fileName,
-      expansionStack: context.expansionStack ?? [],
-      onError: (code, message, range) => this.error(code, message, range)
-    });
-    if (builtinUnits) {
-      builtinUnits.forEach(unit => this.pushUnit(unit));
-      return;
-    }
+    this.error("rsgl.unknownTemplate", "Top-level use must expand a known template.", expression.range);
   }
 
   private compileResourceBodyFragment(
@@ -824,21 +849,14 @@ export class RsglCompiler {
     useStatement: UseDeclNode,
     context: RsglCompileContext
   ): RsglBlockstateFragment {
-    return this.compileBlockstateUserFragment(useStatement, context)
-      ?? compileBlockstateUseFragment(useStatement, context, this.blockstateFragmentOptions());
+    return this.compileBlockstateUserFragment(useStatement, context) ?? {};
   }
 
   private compileBlockstateUserFragment(
     useStatement: UseDeclNode,
     context: RsglCompileContext
   ): RsglBlockstateFragment | undefined {
-    const normalizedUseStatement = normalizedBlockstateTemplateUseStatement(useStatement, context, {
-      onError: (code, message, range) => this.error(code, message, range)
-    });
-    if (normalizedUseStatement === null) {
-      return {};
-    }
-    const expansion = this.createTemplateExpansion((normalizedUseStatement ?? useStatement).expression, context);
+    const expansion = this.createTemplateExpansion(useStatement.expression, context);
     if (!expansion) {
       return undefined;
     }
@@ -951,19 +969,13 @@ export class RsglCompiler {
   }
 
   private compileForStmt(statement: ForStmtNode, context: RsglCompileContext): void {
-    const iterable = evaluateExpression(statement.iterable, context);
-    const values = Array.isArray(iterable) ? iterable : [];
-    if (!Array.isArray(iterable)) {
-      this.error("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", statement.iterable.range);
+    const body = statement.body;
+    if (body.kind !== "Block") {
       return;
     }
-    if (statement.body.kind !== "Block") {
-      return;
-    }
-    for (const value of values) {
-      const bindings = createLoopBindings(statement.bindings.map(binding => binding.text), value);
-      this.compileBlock(statement.body, this.createLoopContext(context, bindings, statement.range));
-    }
+    forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
+      this.compileBlock(body, loopContext);
+    });
   }
 
   private compileBlock(body: BlockNode, context: RsglCompileContext): void {
@@ -1017,6 +1029,7 @@ export class RsglCompiler {
       expansionStack: [],
       rawJsonLoader: this.options.rawJsonLoader,
       globLoader: this.options.globLoader,
+      onError: (code, message, range) => this.error(code, message, range),
       templates: this.templates
     };
   }
@@ -1104,10 +1117,7 @@ export class RsglCompiler {
         if (templateFragment) {
           return templateFragment;
         }
-        if (kind === "item") {
-          return createResourceBodyFragment(compileItemUseFragment(useStatement, fragmentContext, this.itemFragmentOptions()));
-        }
-        if (kind && kind !== "model") {
+        if (kind && kind !== "model" && kind !== "item") {
           return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
             onError: (code, message, range) => this.error(code, message, range)
           });
@@ -1187,16 +1197,6 @@ export class RsglCompiler {
     };
   }
 
-  private blockstateTemplateUseOptions(): TopLevelBlockstateTemplateUseOptions {
-    return {
-      onError: (code, message, range) => this.error(code, message, range),
-      compileBlockstateUse: (useStatement, context) => this.compileBlockstateUse(useStatement, context),
-      blockstateFragmentMappings: (fragment, sourceRange, context, multipartOffset) =>
-        this.blockstateFragmentMappings(fragment, sourceRange, context, multipartOffset),
-      sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings)
-    };
-  }
-
   private packOverlayOptions(): PackOverlayCompileOptions {
     return {
       fileName: this.options.fileName,
@@ -1257,4 +1257,86 @@ function rsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTemplateDefinition
   return program.models.flatMap(model =>
     Array.from(environments.get(normalizeFileName(model.fileName))?.exportedTemplates.values() ?? [])
   );
+}
+
+function externResourceKind(statement: ExternDeclNode): "model" | "blockstate" | "item" | "texture" | null {
+  const kind = statement.resourceKind?.text;
+  return kind === "model" || kind === "blockstate" || kind === "item" || kind === "texture" ? kind : null;
+}
+
+function modelImplContent(
+  expression: ExprNode,
+  subtype: string,
+  context: RsglCompileContext,
+  onError: (code: string, message: string, range: TextRange) => void
+): { parent: string; textures: Record<string, JsonValue> } | null {
+  const call = expression.kind === "CallExpr" ? expression : undefined;
+  const parentExpression = call?.callee ?? expression;
+  const parentValue = scalarText(evaluateExpression(parentExpression, context));
+  if (!parentValue) {
+    onError("rsgl.invalidModelImplParent", "Model impl parent must evaluate to a static model id.", parentExpression.range);
+    return null;
+  }
+  const textures = modelImplTextures(call, subtype, context, onError);
+  return {
+    parent: normalizeModelParent(parentValue, subtype, context.namespace),
+    textures
+  };
+}
+
+function modelImplTextures(
+  call: CallExprNode | undefined,
+  subtype: string,
+  context: RsglCompileContext,
+  onError: (code: string, message: string, range: TextRange) => void
+): Record<string, JsonValue> {
+  if (!call) {
+    return {};
+  }
+  const textures: Record<string, JsonValue> = {};
+  const positional = call.args.filter(arg => !arg.name);
+  if (positional.length > 1) {
+    onError("rsgl.invalidModelImplArgument", "Model impl allows named texture arguments, or one positional texture argument.", call.range);
+  }
+  if (positional.length === 1) {
+    const value = modelImplTextureValue(positional[0], subtype, context, onError);
+    if (value) {
+      textures[subtype === "item" ? "layer0" : "all"] = value;
+    }
+  }
+  for (const arg of call.args.filter(arg => arg.name)) {
+    const value = modelImplTextureValue(arg, subtype, context, onError);
+    if (value && arg.name) {
+      textures[arg.name.text] = value;
+    }
+  }
+  return textures;
+}
+
+function modelImplTextureValue(
+  arg: ArgumentNode,
+  subtype: string,
+  context: RsglCompileContext,
+  onError: (code: string, message: string, range: TextRange) => void
+): string | null {
+  const value = scalarText(evaluateExpression(arg.value, context));
+  if (!value) {
+    onError("rsgl.invalidModelImplArgument", "Model impl texture argument must evaluate to a static texture id.", arg.value.range);
+    return null;
+  }
+  return normalizeResourceValue(value, context.namespace, subtype === "item" ? "item" : "block");
+}
+
+function normalizeModelParent(value: string, subtype: string, namespace: string): string {
+  if (value.includes(":")) {
+    return value;
+  }
+  if (value.includes("/")) {
+    return `${namespace}:${value}`;
+  }
+  return `minecraft:${subtype}/${value}`;
+}
+
+function scalarText(value: EvaluationValue): string | null {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
 }

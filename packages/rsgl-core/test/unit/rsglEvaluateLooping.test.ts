@@ -29,7 +29,8 @@ describe("RSGL expression evaluation and loops", () => {
   it("expands finite for loops over lists", () => {
     const result = compileSource([
       "for block in [minecraft:stone, minecraft:dirt] {",
-      "  use cubeAll(id: block)",
+      "  model block block impl minecraft:block/cube_all(all: `minecraft:block/${resource_path(block)}`) {",
+      "  }",
       "}"
     ]);
 
@@ -66,6 +67,33 @@ describe("RSGL expression evaluation and loops", () => {
         }
       }
     });
+  });
+
+  it("expands multidimensional for loops in stable cartesian order", () => {
+    const result = compileSource([
+      "for base in [stone, dirt], variant in [smooth, cut] {",
+      "  model block `${base}_${variant}` impl cube_all(all: `minecraft:block/${base}_${variant}`) {",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/models/block/stone_smooth.json",
+      "assets/minecraft/models/block/stone_cut.json",
+      "assets/minecraft/models/block/dirt_smooth.json",
+      "assets/minecraft/models/block/dirt_cut.json"
+    ]);
+  });
+
+  it("reports duplicate bindings in multidimensional for loops", () => {
+    const result = compileSource([
+      "for item in [stone], item in [dirt] {",
+      "  model block item impl cube_all(all: minecraft:block/stone) {}",
+      "}"
+    ]);
+
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.duplicateLoopBinding"));
   });
 
   it("evaluates match expressions, builtin constants, comparisons, and path helpers", () => {

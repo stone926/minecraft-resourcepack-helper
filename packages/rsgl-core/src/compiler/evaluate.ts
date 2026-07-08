@@ -1,4 +1,5 @@
 import {
+  ArgumentNode,
   ExprNode,
   ObjectPropertyNode,
   TextRange
@@ -8,7 +9,14 @@ import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
 
-export type EvaluationValue = JsonValue | undefined;
+export interface LambdaValue {
+  kind: "lambda";
+  parameters: string[];
+  body: ExprNode;
+  context: EvaluationContext;
+}
+
+export type EvaluationValue = JsonValue | LambdaValue | undefined;
 export type RawJsonLoadMode = "auto" | "file";
 export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange, mode?: RawJsonLoadMode) => EvaluationValue;
 export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
@@ -22,6 +30,7 @@ export interface EvaluationContext {
   expansionStack?: ExpansionFrame[];
   rawJsonLoader?: RawJsonLoader;
   globLoader?: RawGlobLoader;
+  onError?: (code: string, message: string, range: TextRange) => void;
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -77,7 +86,10 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     return expression.value.includes(":") ? expression.value : `${context.namespace}:${expression.value}`;
   }
   if (expression.kind === "IdentifierExpr") {
-    return context.variables.get(expression.name.text) ?? builtinValues.get(expression.name.text) ?? expression.name.text;
+    if (context.variables.has(expression.name.text)) {
+      return context.variables.get(expression.name.text);
+    }
+    return builtinValues.get(expression.name.text) ?? expression.name.text;
   }
   if (expression.kind === "TemplateStringExpr") {
     return expression.parts.map(part => {
@@ -127,15 +139,28 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     if (expression.callee.kind === "IdentifierExpr" && expression.callee.name.text === "seq") {
       return evaluateSeqExpression(expression, context);
     }
-    return evaluateCallExpression(expression.callee, expression.args.map(arg => ({
+    const args = expression.args.map(arg => ({
       name: arg.name?.text,
       value: evaluateExpression(arg.value, context),
       range: arg.value.range
-    })), context, expression.range);
+    }));
+    const calleeValue = evaluateExpression(expression.callee, context);
+    if (isLambdaValue(calleeValue)) {
+      return evaluateLambdaCall(calleeValue, expression.args, args, context, expression.range);
+    }
+    return evaluateCallExpression(expression.callee, args, context, expression.range);
+  }
+  if (expression.kind === "LambdaExpr") {
+    return {
+      kind: "lambda",
+      parameters: expression.parameters.map(parameter => parameter.text),
+      body: expression.body,
+      context: captureEvaluationContext(context)
+    };
   }
   if (expression.kind === "MemberExpr") {
     const objectValue = evaluateExpression(expression.object, context);
-    if (objectValue && typeof objectValue === "object" && !Array.isArray(objectValue)) {
+    if (isJsonObject(objectValue)) {
       return objectValue[expression.property.text] as EvaluationValue;
     }
     return undefined;
@@ -146,7 +171,7 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     if (Array.isArray(objectValue) && typeof indexValue === "number") {
       return objectValue[indexValue] as EvaluationValue;
     }
-    if (objectValue && typeof objectValue === "object" && !Array.isArray(objectValue)) {
+    if (isJsonObject(objectValue)) {
       return objectValue[String(indexValue)] as EvaluationValue;
     }
     return undefined;
@@ -251,7 +276,7 @@ function escapeRegExp(value: string): string {
 export function childEvaluationContext(
   context: EvaluationContext,
   values: Record<string, EvaluationValue>,
-  metadata: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack">> = {}
+  metadata: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack" | "onError">> = {}
 ): EvaluationContext {
   return {
     ...context,
@@ -259,6 +284,7 @@ export function childEvaluationContext(
     sourceFile: metadata.sourceFile ?? context.sourceFile,
     mappingReason: metadata.mappingReason ?? context.mappingReason,
     expansionStack: metadata.expansionStack ?? context.expansionStack,
+    onError: metadata.onError ?? context.onError
   };
 }
 
@@ -414,6 +440,12 @@ function evaluateCallExpression(
   if (callee.name.text === "texture_path") {
     return resourceAssetPath(String(argumentValue(args, "id", 0) ?? ""), context.namespace, "textures", "png");
   }
+  if (callee.name.text === "resource_namespace") {
+    return parseResourceIdValue(String(argumentValue(args, "id", 0) ?? ""), context.namespace)?.namespace ?? "";
+  }
+  if (callee.name.text === "resource_path") {
+    return parseResourceIdValue(String(argumentValue(args, "id", 0) ?? ""), context.namespace)?.path ?? "";
+  }
   if (callee.name.text === "startsWith") {
     return String(argumentValue(args, "str", 0) ?? "").startsWith(String(argumentValue(args, "prefix", 1) ?? ""));
   }
@@ -440,6 +472,48 @@ function evaluateCallExpression(
   }
 
   return undefined;
+}
+
+function evaluateLambdaCall(
+  lambda: LambdaValue,
+  rawArgs: ArgumentNode[],
+  args: Array<{ name?: string; value: EvaluationValue; range: TextRange }>,
+  callContext: EvaluationContext,
+  range: TextRange
+): EvaluationValue {
+  if (rawArgs.length !== lambda.parameters.length) {
+    callContext.onError?.(
+      "rsgl.lambdaArityMismatch",
+      `Expected ${lambda.parameters.length} lambda argument(s), got ${rawArgs.length}.`,
+      range
+    );
+  }
+
+  const positional = args.filter(arg => !arg.name);
+  const values: Record<string, EvaluationValue> = {};
+  lambda.parameters.forEach((parameter, index) => {
+    values[parameter] = args.find(arg => arg.name === parameter)?.value
+      ?? positional[index]?.value;
+  });
+
+  return evaluateExpression(lambda.body, childEvaluationContext(lambda.context, values, {
+    sourceFile: lambda.context.sourceFile,
+    mappingReason: lambda.context.mappingReason,
+    expansionStack: lambda.context.expansionStack,
+    onError: callContext.onError
+  }));
+}
+
+function isLambdaValue(value: EvaluationValue): value is LambdaValue {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda");
+}
+
+function captureEvaluationContext(context: EvaluationContext): EvaluationContext {
+  return {
+    ...context,
+    variables: new Map(context.variables),
+    stateKeyAliases: context.stateKeyAliases ? new Set(context.stateKeyAliases) : undefined
+  };
 }
 
 function argumentValue(args: Array<{ name?: string; value: EvaluationValue }>, name: string, positionalIndex: number): EvaluationValue {

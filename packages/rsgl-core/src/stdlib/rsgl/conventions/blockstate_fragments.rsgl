@@ -1,0 +1,66 @@
+template slab(bottom: ModelId, top: ModelId, double: ModelId) {
+  variants {
+    [type="bottom"] -> @bottom
+    [type="top"] -> @top
+    [type="double"] -> @double
+  }
+}
+
+template stairs(base: ModelId, inner: ModelId, outer: ModelId, uvlock: Boolean = false) {
+  variants {
+    let stairsYaw = {
+      "bottom_straight_north": 270,
+      "bottom_straight_east": 0,
+      "bottom_straight_south": 90,
+      "bottom_straight_west": 180,
+      "bottom_inner_left_north": 180,
+      "bottom_inner_left_east": 270,
+      "bottom_inner_left_south": 0,
+      "bottom_inner_left_west": 90,
+      "bottom_inner_right_north": 270,
+      "bottom_inner_right_east": 0,
+      "bottom_inner_right_south": 90,
+      "bottom_inner_right_west": 180,
+      "bottom_outer_left_north": 180,
+      "bottom_outer_left_east": 270,
+      "bottom_outer_left_south": 0,
+      "bottom_outer_left_west": 90,
+      "bottom_outer_right_north": 270,
+      "bottom_outer_right_east": 0,
+      "bottom_outer_right_south": 90,
+      "bottom_outer_right_west": 180,
+      "top_straight_north": 270,
+      "top_straight_east": 0,
+      "top_straight_south": 90,
+      "top_straight_west": 180,
+      "top_inner_left_north": 270,
+      "top_inner_left_east": 0,
+      "top_inner_left_south": 90,
+      "top_inner_left_west": 180,
+      "top_inner_right_north": 0,
+      "top_inner_right_east": 90,
+      "top_inner_right_south": 180,
+      "top_inner_right_west": 270,
+      "top_outer_left_north": 270,
+      "top_outer_left_east": 0,
+      "top_outer_left_south": 90,
+      "top_outer_left_west": 180,
+      "top_outer_right_north": 0,
+      "top_outer_right_east": 90,
+      "top_outer_right_south": 180,
+      "top_outer_right_west": 270
+    }
+    for half in [bottom, top],
+        shape in STAIR_SHAPES,
+        facing in HORIZONTAL {
+      let entryModel = match shape {
+        inner_left | inner_right -> inner
+        outer_left | outer_right -> outer
+        _ -> base
+      }
+      let x = half == top ? 180 : 0
+      let y = stairsYaw[`${half}_${shape}_${facing}`]
+      [facing=facing, half=half, shape=shape] -> @entryModel x=x y=y uvlock=(uvlock || x != 0 || y != 0)
+    }
+  }
+}

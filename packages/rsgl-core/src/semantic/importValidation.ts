@@ -25,7 +25,6 @@ import {
   unknownType
 } from "./types";
 import { formatType, isAssignable } from "./typeRelations";
-import { blockstateTemplateIdParameters, isBlockstateTemplateIdCall } from "./blockstateTemplateUse";
 
 type ValidatableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
@@ -53,17 +52,22 @@ class ResolvedImportCallValidator {
       this.validateExpression(statement.name);
     } else if (statement.kind === "TargetDecl") {
       this.validateExpression(statement.value);
+    } else if (statement.kind === "ExternDecl") {
+      statement.args.forEach(arg => this.validateExpression(arg.value));
     } else if (statement.kind === "TemplateDecl") {
       this.validateBody(statement.body);
     } else if (statement.kind === "ResourceDecl") {
       if (statement.id) {
         this.validateExpression(statement.id);
       }
+      if (statement.impl) {
+        this.validateExpression(statement.impl);
+      }
       this.validateBody(statement.body);
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
-      this.validateExpression(statement.iterable);
+      this.validateForStatement(statement);
       this.validateBody(statement.body);
     } else if (statement.kind === "IfStmt") {
       this.validateExpression(statement.condition);
@@ -127,7 +131,7 @@ class ResolvedImportCallValidator {
       this.validateExpression(statement.base);
       this.validateExpression(statement.model);
     } else if (statement.kind === "ForStmt") {
-      this.validateExpression(statement.iterable);
+      this.validateForStatement(statement);
       this.validateBody(statement.body);
     } else if (statement.kind === "IfStmt") {
       this.validateExpression(statement.condition);
@@ -169,7 +173,7 @@ class ResolvedImportCallValidator {
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
-      this.validateExpression(statement.iterable);
+      this.validateForStatement(statement);
       this.validateBody(statement.body);
     } else if (statement.kind === "IfStmt") {
       this.validateExpression(statement.condition);
@@ -199,7 +203,7 @@ class ResolvedImportCallValidator {
     } else if (statement.kind === "UseDecl") {
       this.validateExpression(statement.expression);
     } else if (statement.kind === "ForStmt") {
-      this.validateExpression(statement.iterable);
+      this.validateForStatement(statement);
       this.validateBody(statement.body);
     } else if (statement.kind === "IfStmt") {
       this.validateExpression(statement.condition);
@@ -215,6 +219,8 @@ class ResolvedImportCallValidator {
       this.validateCallExpression(expression);
       this.validateExpression(expression.callee);
       expression.args.forEach(arg => this.validateExpression(arg.value));
+    } else if (expression.kind === "LambdaExpr") {
+      this.validateExpression(expression.body);
     } else if (expression.kind === "ListExpr") {
       expression.elements.forEach(element => this.validateExpression(element));
     } else if (expression.kind === "ObjectExpr") {
@@ -263,26 +269,17 @@ class ResolvedImportCallValidator {
     if (callee.kind !== "IdentifierExpr") {
       return;
     }
-    if (isBlockstateTemplateIdCall(expression)) {
-      this.validateBlockstateTemplateIdCall(expression);
-      return;
-    }
     const symbol = this.model.scope.symbols.get(callee.name.text);
     if (symbol?.kind === "import" && symbol.signature) {
       this.validateImportedArguments(symbol.signature, args, expression.range);
     }
   }
 
-  private validateBlockstateTemplateIdCall(expression: Extract<ExprNode, { kind: "CallExpr" }>): void {
-    const callee = expression.callee;
-    if (callee.kind !== "IdentifierExpr") {
-      return;
-    }
-    const parameters = blockstateTemplateIdParameters.get(callee.name.text);
-    if (!parameters) {
-      return;
-    }
-    this.validateImportedArguments({ parameters, returnType: jsonType }, expression.args, expression.range);
+  private validateForStatement(statement: Extract<TopLevelStatementNode | ResourceStatementNode | VariantSectionStatementNode | MultipartSectionStatementNode, { kind: "ForStmt" }>): void {
+    const dimensions = statement.dimensions.length
+      ? statement.dimensions
+      : [{ iterable: statement.iterable }];
+    dimensions.forEach(dimension => this.validateExpression(dimension.iterable));
   }
 
   private validateObjectProperty(property: ObjectPropertyNode): void {

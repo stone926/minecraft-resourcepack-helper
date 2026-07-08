@@ -102,11 +102,11 @@
       "patterns": [
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|range|select|condition|composite|empty|selected_item|special)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|impl|range|select|condition|composite|empty|selected_item|special)\\b"
         },
         {
           "name": "storage.type.rsgl",
-          "match": "\\b(?:target|namespace|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
+          "match": "\\b(?:target|namespace|extern|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
         },
         {
           "name": "constant.language.rsgl",
@@ -118,7 +118,7 @@
       "patterns": [
         {
           "name": "support.function.rsgl",
-          "match": "\\b(?:cubeAll|itemGenerated|itemRangeFrames|itemSelectCases|randomVariants|raw_json|raw_json_file|product|seq|pad|yaw|glob|model_path|texture_path|startsWith|endsWith|replace|padStart|padEnd)\\b"
+          "match": "\\b(?:raw_json|raw_json_file|product|seq|pad|yaw|glob|model_path|texture_path|resource_namespace|resource_path|startsWith|endsWith|replace|padStart|padEnd|atlasDirectory|particlesSeq|mcmetaAnimation|nineSliceGui|equipmentLayers)\\b"
         },
         {
           "name": "support.constant.rsgl",
@@ -138,7 +138,7 @@
       "patterns": [
         {
           "name": "keyword.operator.rsgl",
-          "match": "->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!]"
+          "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!]"
         },
         {
           "name": "keyword.operator.model-apply.rsgl",

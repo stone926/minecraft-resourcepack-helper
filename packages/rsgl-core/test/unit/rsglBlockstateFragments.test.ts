@@ -108,168 +108,49 @@ describe("RSGL blockstate bodies and fragments", () => {
       .map(mapping => mapping.reason), ["loop", "loop"]);
   });
 
-  it("expands built-in blockstate fragments from use declarations", () => {
+  it("expands stdlib blockstate fragments from imported templates", () => {
     const result = compileSource([
+      "import { stairs, slab } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
       "blockstate acacia_stairs {",
       "  use stairs(base: minecraft:block/acacia_stairs, inner: minecraft:block/acacia_stairs_inner, outer: minecraft:block/acacia_stairs_outer)",
       "}",
-      "blockstate oak_fence {",
-      "  multipart {",
-      "    use fence(post: minecraft:block/oak_fence_post, side: minecraft:block/oak_fence_side)",
-      "  }",
-      "}",
-      "blockstate acacia_fence_gate {",
-      "  use fenceGate(",
-      "    base: minecraft:block/acacia_fence_gate,",
-      "    open: minecraft:block/acacia_fence_gate_open,",
-      "    wall: minecraft:block/acacia_fence_gate_wall,",
-      "    wallOpen: minecraft:block/acacia_fence_gate_wall_open",
-      "  )",
-      "}",
-      "blockstate acacia_door {",
-      "  use door(",
-      "    bottomLeft: minecraft:block/acacia_door_bottom_left,",
-      "    bottomLeftOpen: minecraft:block/acacia_door_bottom_left_open,",
-      "    bottomRight: minecraft:block/acacia_door_bottom_right,",
-      "    bottomRightOpen: minecraft:block/acacia_door_bottom_right_open,",
-      "    topLeft: minecraft:block/acacia_door_top_left,",
-      "    topLeftOpen: minecraft:block/acacia_door_top_left_open,",
-      "    topRight: minecraft:block/acacia_door_top_right,",
-      "    topRightOpen: minecraft:block/acacia_door_top_right_open",
-      "  )",
-      "}",
-      "blockstate acacia_trapdoor {",
-      "  use trapdoor(",
-      "    bottom: minecraft:block/acacia_trapdoor_bottom,",
-      "    top: minecraft:block/acacia_trapdoor_top,",
-      "    open: minecraft:block/acacia_trapdoor_open",
-      "  )",
-      "}",
-      "blockstate glass_pane {",
-      "  use pane(",
-      "    post: minecraft:block/glass_pane_post,",
-      "    side: minecraft:block/glass_pane_side,",
-      "    sideAlt: minecraft:block/glass_pane_side_alt,",
-      "    noSide: minecraft:block/glass_pane_noside,",
-      "    noSideAlt: minecraft:block/glass_pane_noside_alt",
-      "  )",
-      "}",
-      "blockstate furnace {",
-      "  use horizontalFacing(model: minecraft:block/furnace, state: { lit: false })",
-      "}",
-      "blockstate oak_log {",
-      "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal)",
-      "}",
-      "blockstate oak_leaves {",
-      "  use randomVariants(",
-      "    state: { persistent: false },",
-      "    models: [",
-      "      { model: minecraft:block/oak_leaves, weight: 2 },",
-      "      { model: minecraft:block/oak_leaves_2 }",
-      "    ]",
-      "  )",
+      "blockstate acacia_slab {",
+      "  use slab(bottom: minecraft:block/acacia_slab, top: minecraft:block/acacia_slab_top, double: minecraft:block/acacia_planks)",
       "}"
     ]);
 
     expectNoDiagnostics(result);
     const stairs = result.units.find(unit => unit.outputPath.endsWith("acacia_stairs.json"));
-    const fence = result.units.find(unit => unit.outputPath.endsWith("oak_fence.json"));
-    const fenceGate = result.units.find(unit => unit.outputPath.endsWith("acacia_fence_gate.json"));
-    const door = result.units.find(unit => unit.outputPath.endsWith("acacia_door.json"));
-    const trapdoor = result.units.find(unit => unit.outputPath.endsWith("acacia_trapdoor.json"));
-    const pane = result.units.find(unit => unit.outputPath.endsWith("glass_pane.json"));
-    const furnace = result.units.find(unit => unit.outputPath.endsWith("furnace.json"));
-    const log = result.units.find(unit => unit.outputPath.endsWith("oak_log.json"));
-    const leaves = result.units.find(unit => unit.outputPath.endsWith("oak_leaves.json"));
+    const slab = result.units.find(unit => unit.outputPath.endsWith("acacia_slab.json"));
     assert.ok(stairs);
-    assert.ok(fence);
-    assert.ok(fenceGate);
-    assert.ok(door);
-    assert.ok(trapdoor);
-    assert.ok(pane);
-    assert.ok(furnace);
-    assert.ok(log);
-    assert.ok(leaves);
+    assert.ok(slab);
     const variants = (stairs.content as { variants: Record<string, unknown> }).variants;
     assert.strictEqual(Object.keys(variants).length, 40);
     assert.deepStrictEqual(variants["facing=east,half=bottom,shape=straight"], {
       model: "minecraft:block/acacia_stairs"
     });
-    assert.deepStrictEqual(fence.content, {
-      multipart: [
-        { apply: { model: "minecraft:block/oak_fence_post" } },
-        { when: { north: true }, apply: { model: "minecraft:block/oak_fence_side" } },
-        { when: { east: true }, apply: { model: "minecraft:block/oak_fence_side", y: 90, uvlock: true } },
-        { when: { south: true }, apply: { model: "minecraft:block/oak_fence_side", y: 180, uvlock: true } },
-        { when: { west: true }, apply: { model: "minecraft:block/oak_fence_side", y: 270, uvlock: true } }
-      ]
-    });
-    const fenceGateVariants = (fenceGate.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(fenceGateVariants).length, 16);
-    assert.deepStrictEqual(fenceGateVariants["facing=west,in_wall=false,open=true"], {
-      model: "minecraft:block/acacia_fence_gate_open",
+    assert.deepStrictEqual(variants["facing=north,half=bottom,shape=straight"], {
+      model: "minecraft:block/acacia_stairs",
       uvlock: true,
-      y: 90
+      y: 270
     });
-    const doorVariants = (door.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(doorVariants).length, 32);
-    assert.deepStrictEqual(doorVariants["facing=south,half=upper,hinge=left,open=true"], {
-      model: "minecraft:block/acacia_door_top_left_open",
-      y: 180
-    });
-    const trapdoorVariants = (trapdoor.content as { variants: Record<string, unknown> }).variants;
-    assert.strictEqual(Object.keys(trapdoorVariants).length, 16);
-    assert.deepStrictEqual(trapdoorVariants["facing=west,half=top,open=true"], {
-      model: "minecraft:block/acacia_trapdoor_open",
-      x: 180,
-      y: 90
-    });
-    assert.deepStrictEqual(pane.content, {
-      multipart: [
-        { apply: { model: "minecraft:block/glass_pane_post" } },
-        { when: { north: true }, apply: { model: "minecraft:block/glass_pane_side" } },
-        { when: { east: true }, apply: { model: "minecraft:block/glass_pane_side", y: 90 } },
-        { when: { south: true }, apply: { model: "minecraft:block/glass_pane_side_alt" } },
-        { when: { west: true }, apply: { model: "minecraft:block/glass_pane_side_alt", y: 90 } },
-        { when: { north: false }, apply: { model: "minecraft:block/glass_pane_noside" } },
-        { when: { east: false }, apply: { model: "minecraft:block/glass_pane_noside_alt" } },
-        { when: { south: false }, apply: { model: "minecraft:block/glass_pane_noside_alt", y: 90 } },
-        { when: { west: false }, apply: { model: "minecraft:block/glass_pane_noside", y: 270 } }
-      ]
-    });
-    assert.deepStrictEqual(furnace.content, {
+    assert.deepStrictEqual(slab.content, {
       variants: {
-        ["facing=east,lit=false"]: { model: "minecraft:block/furnace", y: 90 },
-        ["facing=north,lit=false"]: { model: "minecraft:block/furnace" },
-        ["facing=south,lit=false"]: { model: "minecraft:block/furnace", y: 180 },
-        ["facing=west,lit=false"]: { model: "minecraft:block/furnace", y: 270 }
-      }
-    });
-    assert.deepStrictEqual(log.content, {
-      variants: {
-        ["axis=x"]: { model: "minecraft:block/oak_log_horizontal", x: 90, y: 90 },
-        ["axis=y"]: { model: "minecraft:block/oak_log" },
-        ["axis=z"]: { model: "minecraft:block/oak_log_horizontal", x: 90 }
-      }
-    });
-    assert.deepStrictEqual(leaves.content, {
-      variants: {
-        ["persistent=false"]: [
-          { model: "minecraft:block/oak_leaves", weight: 2 },
-          { model: "minecraft:block/oak_leaves_2" }
-        ]
+        ["type=bottom"]: { model: "minecraft:block/acacia_slab" },
+        ["type=double"]: { model: "minecraft:block/acacia_planks" },
+        ["type=top"]: { model: "minecraft:block/acacia_slab_top" }
       }
     });
   });
 
-  it("lowers randomVariants inside explicit blockstate variants", () => {
+  it("lowers random apply sugar inside explicit blockstate variants", () => {
     const result = compileSource([
       "blockstate stone {",
       "  variants {",
-      "    {} -> randomVariants([",
-      "      { model: minecraft:block/stone, weight: 3 },",
-      "      { model: minecraft:block/stone_mirrored, y: 180, weight: 1 }",
-      "    ])",
+      "    {} -> random [",
+      "      @minecraft:block/stone weight=3,",
+      "      @minecraft:block/stone_mirrored y=180",
+      "    ]",
       "  }",
       "}"
     ]);
@@ -280,7 +161,7 @@ describe("RSGL blockstate bodies and fragments", () => {
       variants: {
         [defaultVariantKey]: [
           { model: "minecraft:block/stone", weight: 3 },
-          { model: "minecraft:block/stone_mirrored", y: 180, weight: 1 }
+          { model: "minecraft:block/stone_mirrored", y: 180 }
         ]
       }
     });
@@ -409,9 +290,10 @@ describe("RSGL blockstate bodies and fragments", () => {
 
   it("reports incompatible blockstate template use in section contexts", () => {
     const result = compileSource([
+      "import { stairs } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
       "blockstate broken {",
-      "  variants {",
-      "    use fence(post: minecraft:block/fence_post, side: minecraft:block/fence_side)",
+      "  multipart {",
+      "    use stairs(base: minecraft:block/stairs, inner: minecraft:block/stairs_inner, outer: minecraft:block/stairs_outer)",
       "  }",
       "}"
     ]);
@@ -419,31 +301,28 @@ describe("RSGL blockstate bodies and fragments", () => {
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"));
   });
 
-  it("reports invalid randomVariants arguments", () => {
+  it("reports removed randomVariants function calls", () => {
     const result = compileSource([
       "blockstate broken {",
       "  variants {",
       "    {} -> randomVariants({ bad: true })",
       "  }",
-      "  use randomVariants(models: [{ bad: true }])",
       "}"
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
-    assert.ok(codes.includes("rsgl.invalidRandomVariantsArgument"));
-    assert.ok(codes.includes("rsgl.invalidRandomVariantEntry"));
+    assert.ok(codes.includes("rsgl.undefinedSymbol"));
   });
 
-  it("reports invalid blockstate template state arguments", () => {
+  it("reports undefined symbols for removed hardcoded blockstate fragments", () => {
     const result = compileSource([
       "blockstate broken {",
       "  use horizontalFacing(model: minecraft:block/furnace, state: [north])",
-      "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal, state: { axis: x })",
+      "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal)",
       "}",
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
-    assert.ok(codes.includes("rsgl.invalidTemplateStateArgument"));
-    assert.ok(codes.includes("rsgl.templateStateConflict"));
+    assert.strictEqual(codes.filter(code => code === "rsgl.undefinedSymbol").length, 2);
   });
 });

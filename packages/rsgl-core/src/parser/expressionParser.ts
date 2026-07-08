@@ -6,7 +6,9 @@ import {
   BlockNode,
   BooleanLiteralNode,
   ExprNode,
+  FunctionTypeNode,
   IdentifierNode,
+  LambdaExprNode,
   MatchArmNode,
   ModelApplySugarNode,
   NumberLiteralNode,
@@ -58,6 +60,14 @@ export class ExpressionParser extends ParserContext {
     left = this.parsePostfixExpression(left, stopTexts);
 
     while (!this.isExpressionStop(stopTexts)) {
+      if (this.current().text === "=>" && left.kind === "IdentifierExpr") {
+        if (minPrecedence > 0) {
+          break;
+        }
+        left = this.finishSingleParameterLambda(left, stopTexts);
+        continue;
+      }
+
       if (this.current().text === "in" && left.kind === "IdentifierExpr") {
         const start = left;
         this.advance();
@@ -138,6 +148,9 @@ export class ExpressionParser extends ParserContext {
     }
 
     if (token.text === "(") {
+      if (this.looksLikeParenthesizedLambda()) {
+        return this.parseParenthesizedLambda(stopTexts);
+      }
       this.advance();
       const expression = this.parseExpression({ stopTexts: [")"] });
       this.expectText(")", "Expected ')' after expression.");
@@ -238,6 +251,43 @@ export class ExpressionParser extends ParserContext {
       }
     }
     return result;
+  }
+
+  private finishSingleParameterLambda(parameter: Extract<ExprNode, { kind: "IdentifierExpr" }>, stopTexts: readonly string[]): LambdaExprNode {
+    this.expectText("=>", "Expected '=>' in lambda expression.");
+    const body = this.parseExpression({ stopTexts });
+    return {
+      kind: "LambdaExpr",
+      parameters: [parameter.name],
+      body,
+      range: { start: parameter.range.start, end: body.range.end },
+      fullRange: { start: parameter.fullRange.start, end: body.fullRange.end }
+    };
+  }
+
+  private parseParenthesizedLambda(stopTexts: readonly string[]): LambdaExprNode {
+    const start = this.current();
+    const parameters: IdentifierNode[] = [];
+    this.expectText("(", "Expected lambda parameter list.");
+    while (!this.isAtEnd() && this.current().text !== ")") {
+      const mark = this.mark();
+      const parameter = this.parseIdentifier("Expected lambda parameter.");
+      if (parameter) {
+        parameters.push(parameter);
+      }
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse lambda parameter; skipping token.");
+    }
+    this.expectText(")", "Expected ')' after lambda parameters.");
+    this.expectText("=>", "Expected '=>' in lambda expression.");
+    const body = this.parseExpression({ stopTexts });
+    return {
+      kind: "LambdaExpr",
+      parameters,
+      body,
+      range: { start: start.offset, end: body.range.end },
+      fullRange: { start: this.fullStart(start), end: body.fullRange.end }
+    };
   }
 
   protected finishCallExpression(callee: ExprNode): ExprNode {
@@ -577,6 +627,9 @@ export class ExpressionParser extends ParserContext {
 
   private parsePrimaryType(): TypeNode {
     const start = this.current();
+    if (this.current().text === "(") {
+      return this.parseFunctionType();
+    }
     if (this.current().kind === "string") {
       return { kind: "LiteralType", value: this.parseStringLiteral(), ...this.nodeRanges(start, this.previousOr(start)) };
     }
@@ -613,6 +666,27 @@ export class ExpressionParser extends ParserContext {
     return {
       kind: "NamedType",
       name,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseFunctionType(): FunctionTypeNode {
+    const start = this.current();
+    const parameters: TypeNode[] = [];
+    this.expectText("(", "Expected function parameter type list.");
+    while (!this.isAtEnd() && this.current().text !== ")") {
+      const mark = this.mark();
+      parameters.push(this.parseType());
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse function parameter type; skipping token.");
+    }
+    this.expectText(")", "Expected ')' after function parameter types.");
+    this.expectText("->", "Expected '->' in function type.");
+    const returnType = this.parseType();
+    return {
+      kind: "FunctionType",
+      parameters,
+      returnType,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
@@ -766,6 +840,33 @@ export class ExpressionParser extends ParserContext {
   private tokenOffset(): number {
     const current = this.current();
     return this.tokens.indexOf(current);
+  }
+
+  private looksLikeParenthesizedLambda(): boolean {
+    if (this.current().text !== "(") {
+      return false;
+    }
+    let index = this.tokenOffset() + 1;
+    let expectParameter = true;
+    while (index < this.tokens.length) {
+      const token = this.tokens[index];
+      if (token.text === ")") {
+        return this.tokens[index + 1]?.text === "=>";
+      }
+      if (expectParameter) {
+        if (token.kind !== "identifier" && token.kind !== "keyword") {
+          return false;
+        }
+        expectParameter = false;
+      } else {
+        if (token.text !== ",") {
+          return false;
+        }
+        expectParameter = true;
+      }
+      index++;
+    }
+    return false;
   }
 }
 

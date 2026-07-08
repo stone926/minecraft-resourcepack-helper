@@ -2,67 +2,34 @@ import * as assert from "node:assert";
 import { compileSource, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL item model fragments", () => {
-  it("lowers item range and select fragments", () => {
+  it("lowers stdlib range frames with lambda model mapping", () => {
     const result = compileSource([
-      "table potionCases {",
-      "  healing: minecraft:item/potion_healing",
-      "  strong_healing: minecraft:item/potion_strong_healing",
-      "}",
-      "item compass {",
-      "  use itemRangeFrames(",
-      "    property: minecraft:compass,",
-      "    target: spawn,",
-      "    wobble: true,",
-      "    frames: 0..2,",
-      "    threshold: index / 3,",
-      "    model: `minecraft:item/compass_${pad(index, 2)}`,",
-      "    fallback: minecraft:item/compass_00",
-      "  )",
-      "}",
-      "item potion {",
-      "  use itemSelectCases(",
-      "    property: minecraft:potion_contents,",
-      "    component: minecraft:potion_contents,",
-      "    cases: potionCases,",
-      "    fallback: minecraft:item/potion",
-      "  )",
-      "}"
+      "import { rangeFrames } from \"rsgl:conventions/item_definitions.rsgl\"",
+      "use rangeFrames(",
+      "  id: compass,",
+      "  property: minecraft:custom_model_data,",
+      "  values: 0..2,",
+      "  model: frame => `minecraft:item/compass_${pad(frame, 2)}`,",
+      "  fallback: minecraft:item/compass_00",
+      ")"
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
-      "assets/minecraft/items/compass.json",
-      "assets/minecraft/items/potion.json"
+    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      "assets/minecraft/items/compass.json"
     ]);
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("compass.json"))?.content, {
+    assert.deepStrictEqual(result.units[0].content, {
       model: {
         type: "minecraft:range_dispatch",
-        property: "minecraft:compass",
-        target: "spawn",
-        wobble: true,
+        property: "minecraft:custom_model_data",
         entries: [
           { threshold: 0, model: { type: "minecraft:model", model: "minecraft:item/compass_00" } },
-          { threshold: 1 / 3, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } },
-          { threshold: 2 / 3, model: { type: "minecraft:model", model: "minecraft:item/compass_02" } }
+          { threshold: 1, model: { type: "minecraft:model", model: "minecraft:item/compass_01" } },
+          { threshold: 2, model: { type: "minecraft:model", model: "minecraft:item/compass_02" } }
         ],
         fallback: {
           type: "minecraft:model",
           model: "minecraft:item/compass_00"
-        }
-      }
-    });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("potion.json"))?.content, {
-      model: {
-        type: "minecraft:select",
-        property: "minecraft:potion_contents",
-        component: "minecraft:potion_contents",
-        cases: [
-          { when: "healing", model: { type: "minecraft:model", model: "minecraft:item/potion_healing" } },
-          { when: "strong_healing", model: { type: "minecraft:model", model: "minecraft:item/potion_strong_healing" } }
-        ],
-        fallback: {
-          type: "minecraft:model",
-          model: "minecraft:item/potion"
         }
       }
     });

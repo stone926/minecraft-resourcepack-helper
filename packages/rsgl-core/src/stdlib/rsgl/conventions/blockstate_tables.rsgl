@@ -1,0 +1,7 @@
+template stateSequence(key: String, values: List<Json>, model: Function) {
+  variants {
+    for value in values {
+      [key=value] -> { model: model(value) }
+    }
+  }
+}

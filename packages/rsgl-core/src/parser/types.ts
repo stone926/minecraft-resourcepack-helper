@@ -60,6 +60,7 @@ export type TopLevelStatementNode =
   | NamespaceDeclNode
   | ImportDeclNode
   | ExportDeclNode
+  | ExternDeclNode
   | LetDeclNode
   | TableDeclNode
   | TemplateDeclNode
@@ -199,6 +200,12 @@ export interface ConditionalExprNode extends RsglNode {
   whenFalse: ExprNode;
 }
 
+export interface LambdaExprNode extends RsglNode {
+  kind: "LambdaExpr";
+  parameters: IdentifierNode[];
+  body: ExprNode;
+}
+
 export interface MatchExprNode extends RsglNode {
   kind: "MatchExpr";
   expression: ExprNode;
@@ -256,6 +263,7 @@ export type ExprNode =
   | UnaryExprNode
   | BinaryExprNode
   | ConditionalExprNode
+  | LambdaExprNode
   | MatchExprNode
   | ForInExprNode
   | StateKeySugarNode
@@ -263,7 +271,7 @@ export type ExprNode =
   | RandomApplyNode
   | MissingExprNode;
 
-export type TypeNode = NamedTypeNode | GenericTypeNode | UnionTypeNode | LiteralTypeNode | MissingTypeNode;
+export type TypeNode = NamedTypeNode | GenericTypeNode | FunctionTypeNode | UnionTypeNode | LiteralTypeNode | MissingTypeNode;
 
 export interface NamedTypeNode extends RsglNode {
   kind: "NamedType";
@@ -274,6 +282,12 @@ export interface GenericTypeNode extends RsglNode {
   kind: "GenericType";
   name: IdentifierNode;
   args: TypeNode[];
+}
+
+export interface FunctionTypeNode extends RsglNode {
+  kind: "FunctionType";
+  parameters: TypeNode[];
+  returnType: TypeNode;
 }
 
 export interface UnionTypeNode extends RsglNode {
@@ -357,6 +371,14 @@ export interface ExportDeclNode extends StatementNodeBase {
   exportAll: boolean;
 }
 
+export type ExternResourceKind = "model" | "blockstate" | "item" | "texture";
+
+export interface ExternDeclNode extends StatementNodeBase {
+  kind: "ExternDecl";
+  resourceKind: IdentifierNode | null;
+  args: ArgumentNode[];
+}
+
 export interface LetDeclNode extends StatementNodeBase {
   kind: "LetDecl";
   name: IdentifierNode | null;
@@ -391,7 +413,14 @@ export interface ResourceDeclNode extends StatementNodeBase {
   resourceKind: ResourceKind;
   subtype?: IdentifierNode;
   id?: ExprNode;
+  impl?: ExprNode;
   body: ResourceBodyNode;
+}
+
+export interface ForDimensionNode extends RsglNode {
+  kind: "ForDimension";
+  bindings: IdentifierNode[];
+  iterable: ExprNode;
 }
 
 export interface UseDeclNode extends StatementNodeBase {
@@ -403,6 +432,7 @@ export interface ForStmtNode extends StatementNodeBase {
   kind: "ForStmt";
   bindings: IdentifierNode[];
   iterable: ExprNode;
+  dimensions: ForDimensionNode[];
   body: BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
 }
 

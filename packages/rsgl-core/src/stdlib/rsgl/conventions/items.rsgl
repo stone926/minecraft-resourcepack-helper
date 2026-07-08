@@ -1,0 +1,28 @@
+template generatedItemModel(id: ResourceId, layer0: TextureId) {
+  model item id impl minecraft:item/generated(layer0: layer0) {
+  }
+}
+
+template cubeAllModel(id: ResourceId, all: TextureId) {
+  model block id impl minecraft:block/cube_all(all: all) {
+  }
+}
+
+template simpleItem(id: ResourceId, model: ModelId) {
+  item id {
+    model model
+  }
+}
+
+template itemModelDefinition(id: ResourceId, model: ModelId) {
+  item id {
+    model model
+  }
+}
+
+template generatedItem(id: ResourceId, layer0: TextureId) {
+  use generatedItemModel(id: id, layer0: layer0)
+  item id {
+    model `${resource_namespace(id)}:item/${resource_path(id)}`
+  }
+}

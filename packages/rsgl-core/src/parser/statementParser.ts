@@ -19,6 +19,7 @@ import {
   BlockNode,
   EquipmentLayerStmtNode,
   ExprNode,
+  ForDimensionNode,
   ForStmtNode,
   IdentifierNode,
   IfStmtNode,
@@ -77,6 +78,26 @@ export abstract class StatementParser extends ExpressionParser {
 
   protected parseForStmt(mode: BodyMode): ForStmtNode {
     const start = this.advance();
+    const dimensions: ForDimensionNode[] = [];
+    dimensions.push(this.parseForDimension(start));
+    while (this.current().text === "," && this.nextForDimensionStartsBeforeBody()) {
+      this.advance();
+      dimensions.push(this.parseForDimension(this.current()));
+    }
+    const body = this.parseBodyForMode(mode, "for");
+    const first = dimensions[0];
+    return {
+      kind: "ForStmt",
+      keyword: start.text,
+      bindings: first.bindings,
+      iterable: first.iterable,
+      dimensions,
+      body,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseForDimension(startToken: RsglToken): ForDimensionNode {
     const bindings: IdentifierNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "in" && this.current().text !== "{") {
       const mark = this.mark();
@@ -88,16 +109,30 @@ export abstract class StatementParser extends ExpressionParser {
       this.ensureProgress(mark, "Unable to parse loop binding; skipping token.");
     }
     this.expectText("in", "Expected 'in' in for statement.");
-    const iterable = this.parseExpression({ stopTexts: ["{"] });
-    const body = this.parseBodyForMode(mode, "for");
+    const iterable = this.parseExpression({ stopTexts: [",", "{"] });
     return {
-      kind: "ForStmt",
-      keyword: start.text,
+      kind: "ForDimension",
       bindings,
       iterable,
-      body,
-      ...this.nodeRanges(start, this.previousOr(start))
+      ...this.nodeRanges(startToken, this.previousOr(startToken))
     };
+  }
+
+  private nextForDimensionStartsBeforeBody(): boolean {
+    if (this.current().text !== ",") {
+      return false;
+    }
+    let offset = 1;
+    while (this.peekText(offset) !== "" && this.peekText(offset) !== "{" && this.peekText(offset) !== "}") {
+      if (this.peekText(offset) === "in") {
+        return true;
+      }
+      if (this.peekText(offset) === ",") {
+        return false;
+      }
+      offset++;
+    }
+    return false;
   }
 
   protected parseIfStmt(mode: BodyMode): IfStmtNode {

@@ -24,8 +24,15 @@ import type { ResourceBodyFragment } from "./resourceBody";
 import type { RsglResourceValidationOptions } from "./validation";
 import type { RsglTargetPackFormat } from "./target";
 
-export function normalizeJsonValue(value: JsonValue | undefined): JsonValue {
-  return value === undefined ? null : value;
+export function normalizeJsonValue(value: unknown): JsonValue {
+  if (value === undefined || isLambdaLikeValue(value)) {
+    return null;
+  }
+  return value as JsonValue;
+}
+
+function isLambdaLikeValue(value: unknown): boolean {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda");
 }
 
 export function staticText(expression: ExprNode, context: EvaluationContext): string | null {
@@ -292,8 +299,8 @@ export function isMultipartEntryPath(pathValue: string): boolean {
   return /^\/multipart\/\d+(?:\/|$)/.test(pathValue);
 }
 
-export function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+export function isJsonObject(value: unknown): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind !== "lambda");
 }
 
 export function selectProgramModels(program: RsglProgram, entryFileName: string | undefined): RsglSemanticModel[] {

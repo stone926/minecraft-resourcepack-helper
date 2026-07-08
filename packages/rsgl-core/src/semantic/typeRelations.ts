@@ -5,6 +5,16 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return true;
   }
   if (expected.kind === actual.kind) {
+    if (expected.kind === "Function" && actual.kind === "Function") {
+      const expectedParameters = expected.parameters ?? [];
+      const actualParameters = actual.parameters ?? [];
+      if (expectedParameters.length > 0 && actualParameters.length > 0 && expectedParameters.length !== actualParameters.length) {
+        return false;
+      }
+      if (expected.returnType && actual.returnType) {
+        return isAssignable(expected.returnType, actual.returnType);
+      }
+    }
     return true;
   }
   if (expected.kind === "Json") {
@@ -22,6 +32,9 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
 export function formatType(type: RsglType): string {
   if (type.kind === "List") {
     return `List<${formatType(type.elementType ?? unknownType)}>`;
+  }
+  if (type.kind === "Function" && type.parameters && type.returnType) {
+    return `(${type.parameters.map(formatType).join(", ")}) -> ${formatType(type.returnType)}`;
   }
   return type.kind;
 }

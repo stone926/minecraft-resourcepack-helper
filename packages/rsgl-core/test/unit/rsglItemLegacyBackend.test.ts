@@ -5,8 +5,10 @@ describe("RSGL legacy item model backend", () => {
   it("lowers item mappings to legacy item model files for older targets", () => {
     const result = compileSource([
       "target java mc \"1.21.8\"",
-      "use itemGenerated(id: diamond, texture: minecraft:item/diamond)",
-      "use itemModel(id: acacia_stairs, model: block/acacia_stairs)",
+      "model item diamond impl generated(layer0: minecraft:item/diamond) {}",
+      "item acacia_stairs {",
+      "  model block/acacia_stairs",
+      "}",
       "item custom_tool {",
       "  model minecraft:item/diamond",
       "}"

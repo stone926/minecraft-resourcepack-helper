@@ -18,11 +18,14 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
     assert.ok(topLevel.some(candidate => candidate.label === "text"));
     assert.ok(topLevel.some(candidate => candidate.label === "copy"));
-    assert.ok(topLevel.some(candidate => candidate.label === "cubeAll"));
+    assert.ok(topLevel.some(candidate => candidate.label === "extern model"));
+    assert.ok(topLevel.some(candidate => candidate.label === "model block impl"));
+    assert.strictEqual(topLevel.some(candidate => candidate.label === "cubeAll"), false);
 
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);
     assert.ok(inBlock.some(candidate => candidate.label === "textures"));
     assert.ok(inBlock.some(candidate => candidate.label === "box"));
     assert.ok(inBlock.some(candidate => candidate.label === "raw_json"));
+    assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
   });
 });
