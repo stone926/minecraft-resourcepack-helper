@@ -5,6 +5,7 @@ import {
   TextRange
 } from "../parser";
 import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
+import { findLambdaImpureCalls, LambdaImpureCall } from "../semantic/lambdaPurity";
 import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
@@ -14,6 +15,9 @@ export interface LambdaValue {
   parameters: string[];
   body: ExprNode;
   context: EvaluationContext;
+  /** Impure builtin calls found in the body; a non-empty list blocks execution. */
+  impureCalls: LambdaImpureCall[];
+  arityReported?: boolean;
 }
 
 export type EvaluationValue = JsonValue | LambdaValue | undefined;
@@ -30,7 +34,7 @@ export interface EvaluationContext {
   expansionStack?: ExpansionFrame[];
   rawJsonLoader?: RawJsonLoader;
   globLoader?: RawGlobLoader;
-  onError?: (code: string, message: string, range: TextRange) => void;
+  onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -155,7 +159,8 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
       kind: "lambda",
       parameters: expression.parameters.map(parameter => parameter.text),
       body: expression.body,
-      context: captureEvaluationContext(context)
+      context: captureEvaluationContext(context),
+      impureCalls: findLambdaImpureCalls(expression.body)
     };
   }
   if (expression.kind === "MemberExpr") {
@@ -481,11 +486,24 @@ function evaluateLambdaCall(
   callContext: EvaluationContext,
   range: TextRange
 ): EvaluationValue {
-  if (rawArgs.length !== lambda.parameters.length) {
-    callContext.onError?.(
+  if (lambda.impureCalls.length > 0) {
+    // Enforcement only: the semantic layer reports rsgl.lambdaImpureCall at the
+    // lambda's definition site, so the gate refuses execution without adding a
+    // duplicate diagnostic.
+    return undefined;
+  }
+  const onError = callContext.onError ?? lambda.context.onError;
+  if (rawArgs.length !== lambda.parameters.length && onError && !lambda.arityReported) {
+    // Report at the call, attributed to the file containing it, once per
+    // lambda value: template bodies invoke the same mapper once per
+    // frame/variant. The pipeline dedupes this against the semantic layer's
+    // identical call-site report when the callee type was statically known.
+    lambda.arityReported = true;
+    onError(
       "rsgl.lambdaArityMismatch",
       `Expected ${lambda.parameters.length} lambda argument(s), got ${rawArgs.length}.`,
-      range
+      range,
+      callContext.sourceFile
     );
   }
 
@@ -496,12 +514,12 @@ function evaluateLambdaCall(
       ?? positional[index]?.value;
   });
 
-  return evaluateExpression(lambda.body, childEvaluationContext(lambda.context, values, {
-    sourceFile: lambda.context.sourceFile,
-    mappingReason: lambda.context.mappingReason,
-    expansionStack: lambda.context.expansionStack,
-    onError: callContext.onError
-  }));
+  const bodyContext = childEvaluationContext(lambda.context, values, { onError });
+  // Defense in depth: even if the purity scan misses a pattern, the body
+  // cannot reach filesystem loaders.
+  bodyContext.rawJsonLoader = undefined;
+  bodyContext.globLoader = undefined;
+  return evaluateExpression(lambda.body, bodyContext);
 }
 
 function isLambdaValue(value: EvaluationValue): value is LambdaValue {

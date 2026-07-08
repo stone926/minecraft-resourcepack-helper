@@ -67,6 +67,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly imports: RsglImportRecord[] = [];
   private readonly exports: RsglExportRecord[] = [];
   private readonly outputResources: RsglOutputResourcePreview[] = [];
+  private readonly importCallScopes = new Map<ExprNode, RsglScope>();
   private readonly globalScope: RsglScope = createScope("global");
   private namespace: string | undefined;
 
@@ -95,8 +96,13 @@ class RsglBinder implements RsglExpressionCheckContext {
       references: this.references,
       outputResources: this.outputResources,
       diagnostics: this.diagnostics,
-      namespace: this.namespace
+      namespace: this.namespace,
+      importCallScopes: this.importCallScopes
     };
+  }
+
+  public recordImportCallScope(expression: ExprNode, scope: RsglScope): void {
+    this.importCallScopes.set(expression, snapshotScope(scope));
   }
 
   public defineIdentifier(
@@ -149,7 +155,10 @@ class RsglBinder implements RsglExpressionCheckContext {
         checkAssignable(this, expectedType, actualType, statement.value);
         const name = identifierName(statement.name);
         const symbol = name ? lookup(scope, name) : undefined;
-        if (symbol) {
+        if (symbol && symbol.node === statement) {
+          if (!statement.typeAnnotation) {
+            symbol.type = actualType;
+          }
           symbol.finiteDomain = finiteStringDomain(statement.value, scope) ?? undefined;
         }
       } else if (statement.kind === "TableDecl") {
@@ -647,4 +656,22 @@ function expressionToStaticText(expression: ExprNode): string | undefined {
     return expression.value;
   }
   return undefined;
+}
+
+/**
+ * Freezes the scope chain as the call site sees it. Local scopes (resource
+ * bodies have no predeclare pass) keep accreting symbols after the call is
+ * bound, so a live reference would let post-resolution validation accept
+ * forward references the bind-time check rejects. The complete global scope is
+ * shared as-is.
+ */
+function snapshotScope(scope: RsglScope): RsglScope {
+  if (scope.kind === "global") {
+    return scope;
+  }
+  return {
+    kind: scope.kind,
+    parent: scope.parent ? snapshotScope(scope.parent) : undefined,
+    symbols: new Map(scope.symbols)
+  };
 }

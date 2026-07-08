@@ -36,7 +36,8 @@ export type RsglTypeKind =
   | "List"
   | "Object"
   | "Range"
-  | "Function";
+  | "Function"
+  | "Union";
 
 export interface RsglType {
   kind: RsglTypeKind;
@@ -44,6 +45,7 @@ export interface RsglType {
   properties?: Map<string, RsglType>;
   parameters?: RsglType[];
   returnType?: RsglType;
+  options?: RsglType[];
 }
 
 export interface RsglSignature {
@@ -121,6 +123,12 @@ export interface RsglSemanticModel {
   outputResources: RsglOutputResourcePreview[];
   diagnostics: RsglDiagnostic[];
   namespace?: string;
+  /**
+   * Enclosing scope of each imported-template call whose arguments the binder
+   * skipped (signature unknown at bind time). Lets post-resolution validation
+   * check lambda arguments with the captures the call site actually sees.
+   */
+  importCallScopes?: ReadonlyMap<ExprNode, RsglScope>;
 }
 
 export interface RsglSourceFile {
@@ -184,7 +192,7 @@ export function typeFromAnnotation(typeNode: TypeNode | undefined): RsglType {
     };
   }
   if (typeNode.kind === "UnionType") {
-    return anyType;
+    return { kind: "Union", options: typeNode.options.map(typeFromAnnotation) };
   }
   if (typeNode.kind === "LiteralType") {
     return inferLiteralType(typeNode.value);
@@ -207,6 +215,9 @@ export function namedType(name: string): RsglType {
   }
   if (name === "TextureId") {
     return textureIdType;
+  }
+  if (name === "Range") {
+    return { kind: "Range", elementType: numberType };
   }
   return unknownType;
 }

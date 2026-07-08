@@ -121,6 +121,9 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(withFallback.diagnostics.some(item => item.code === "rsgl.nonExhaustiveMatch"), false);
   });
 
+  // `use stairs(...)` at top level is intentionally unimported: stairs is a
+  // stdlib blockstate fragment, not a builtin, so the bare name must resolve
+  // to nothing callable. Pins the removed-use-builtin diagnostic behavior.
   it("checks builtin helper signatures and removed use callables", () => {
     const module = parseRsgl([
       "equipment minecraft:bad_equipment {",
@@ -146,6 +149,58 @@ describe("RSGL semantic model", () => {
 
     assert.ok(codes.includes("rsgl.lambdaArityMismatch"));
     assert.ok(codes.includes("rsgl.lambdaImpureCall"));
+  });
+
+  it("infers unannotated let bindings from their initializers", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let toModel = value => value",
+      "let resolved = toModel(1)"
+    ].join("\n")));
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.strictEqual(codes.includes("rsgl.notCallable"), false);
+    assert.strictEqual(model.scope.symbols.get("toModel")?.type.kind, "Function");
+  });
+
+  it("infers local let lambda bindings as callable", () => {
+    const model = bindRsglModule(parseRsgl([
+      "model block ruby {",
+      "  let toModel = value => `minecraft:block/${value}`",
+      "  parent toModel(1)",
+      "}"
+    ].join("\n")));
+
+    assert.strictEqual(model.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.notCallable"), false);
+  });
+
+  it("keeps explicit let annotations over inferred initializer types", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let count: Number = \"nope\""
+    ].join("\n")));
+
+    assert.ok(model.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.typeMismatch"));
+    assert.strictEqual(model.scope.symbols.get("count")?.type.kind, "Number");
+  });
+
+  it("does not clobber annotated let types from duplicate declarations", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let count: Number = 1",
+      "let count = \"hello\"",
+      "let use_it: Number = count"
+    ].join("\n")));
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.duplicateSymbol"));
+    assert.strictEqual(codes.includes("rsgl.typeMismatch"), false);
+    assert.strictEqual(model.scope.symbols.get("count")?.type.kind, "Number");
+  });
+
+  it("flags impure calls in dynamic state keys inside lambdas", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let mk = m => [age = m, [glob(\"keys/*\")[0]] = m]"
+    ].join("\n")));
+
+    assert.ok(model.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.lambdaImpureCall"));
   });
 
   it("reports unknown, duplicate, and excessive template call arguments", () => {

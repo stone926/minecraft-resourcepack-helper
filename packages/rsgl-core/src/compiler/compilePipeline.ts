@@ -83,13 +83,13 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const finished = finishCompilation(result.units, target.targetPackFormat, options);
   return {
     units: finished.units,
-    diagnostics: [
+    diagnostics: dedupeCompileDiagnostics([
       ...semanticModel.diagnostics.map(diagnostic => ({ ...diagnostic })),
       ...target.diagnostics,
       ...rawJsonDiagnostics,
       ...result.diagnostics,
       ...finished.diagnostics
-    ]
+    ])
   };
 }
 
@@ -182,7 +182,30 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
 
   const finished = finishCompilation(units, target.targetPackFormat, options);
   diagnostics.push(...target.diagnostics, ...finished.diagnostics);
-  return { units: finished.units, diagnostics };
+  return { units: finished.units, diagnostics: dedupeCompileDiagnostics(diagnostics) };
+}
+
+/**
+ * The semantic checker and the compile-time evaluator intentionally guard the
+ * same rules (lambda arity, purity); when both fire for one defect they
+ * produce byte-identical diagnostics. Exact duplicates carry no information,
+ * so the merged result keeps the first occurrence. A diagnostic without a
+ * fileName matches one with any fileName (single-module semantic diagnostics
+ * are unattributed while evaluator diagnostics name their file).
+ */
+function dedupeCompileDiagnostics(diagnostics: RsglCompileDiagnostic[]): RsglCompileDiagnostic[] {
+  const seen = new Map<string, RsglCompileDiagnostic[]>();
+  const result: RsglCompileDiagnostic[] = [];
+  for (const diagnostic of diagnostics) {
+    const key = [diagnostic.code, diagnostic.severity, diagnostic.range.start, diagnostic.range.end, diagnostic.message].join(" ");
+    const matches = seen.get(key);
+    if (matches?.some(existing => !existing.fileName || !diagnostic.fileName || existing.fileName === diagnostic.fileName)) {
+      continue;
+    }
+    seen.set(key, [...(matches ?? []), diagnostic]);
+    result.push(diagnostic);
+  }
+  return result;
 }
 
 function finishCompilation(

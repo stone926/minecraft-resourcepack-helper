@@ -13,12 +13,15 @@ import {
   VariantSectionStatementNode
 } from "../parser";
 import { bindRsglArguments } from "../arguments";
+import { checkExpression, RsglExpressionCheckContext } from "./expressionChecker";
 import {
   anyType,
+  identifierName,
   inferLiteralType,
   jsonType,
   numberType,
   resourceIdType,
+  RsglScope,
   RsglSemanticModel,
   RsglSignature,
   RsglType,
@@ -35,8 +38,27 @@ export function validateResolvedImportCalls(model: RsglSemanticModel): RsglDiagn
 
 class ResolvedImportCallValidator {
   private readonly diagnostics: RsglDiagnostic[] = [];
+  /** Lambda arguments already fully checked against the resolved signature; the structural walk skips their bodies. */
+  private readonly checkedLambdaArgs = new Set<ExprNode>();
+  private readonly checkContext: RsglExpressionCheckContext;
+  private readonly hasImportAllImports: boolean;
 
-  public constructor(private readonly model: RsglSemanticModel) { }
+  public constructor(private readonly model: RsglSemanticModel) {
+    this.hasImportAllImports = model.imports.some(record => record.importAll);
+    this.checkContext = {
+      diagnostics: this.diagnostics,
+      references: model.references,
+      defineIdentifier: (scope, identifier, kind, type, node) => {
+        const name = identifierName(identifier);
+        if (!name) {
+          return;
+        }
+        const symbol = { name, kind, type, node, range: identifier?.range };
+        scope.symbols.set(name, symbol);
+        model.symbols.push(symbol);
+      }
+    };
+  }
 
   public validate(): RsglDiagnostic[] {
     this.model.module.statements.forEach(statement => this.validateTopLevelStatement(statement));
@@ -55,6 +77,11 @@ class ResolvedImportCallValidator {
     } else if (statement.kind === "ExternDecl") {
       statement.args.forEach(arg => this.validateExpression(arg.value));
     } else if (statement.kind === "TemplateDecl") {
+      statement.parameters.forEach(parameter => {
+        if (parameter.defaultValue) {
+          this.validateExpression(parameter.defaultValue);
+        }
+      });
       this.validateBody(statement.body);
     } else if (statement.kind === "ResourceDecl") {
       if (statement.id) {
@@ -75,6 +102,12 @@ class ResolvedImportCallValidator {
       if (statement.elseBody) {
         this.validateBody(statement.elseBody);
       }
+    } else if (statement.kind === "OverlayDecl") {
+      this.validateExpression(statement.directory);
+      if (statement.formatRange) {
+        this.validateExpression(statement.formatRange);
+      }
+      this.validateBody(statement.body);
     }
   }
 
@@ -141,6 +174,53 @@ class ResolvedImportCallValidator {
       }
     } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt" || statement.kind === "AppendStmt") {
       this.validateExpression(statement.value);
+    } else if (statement.kind === "PackFormatsStmt") {
+      if (statement.min) {
+        this.validateExpression(statement.min);
+      }
+      if (statement.max) {
+        this.validateExpression(statement.max);
+      }
+    } else if (statement.kind === "PackOverlayStmt") {
+      this.validateExpression(statement.directory);
+      this.validateBody(statement.body);
+    } else if (statement.kind === "PackFilterBlockStmt") {
+      if (statement.namespace) {
+        this.validateExpression(statement.namespace);
+      }
+      if (statement.path) {
+        this.validateExpression(statement.path);
+      }
+    } else if (statement.kind === "AtlasDirectoryStmt") {
+      if (statement.source) {
+        this.validateExpression(statement.source);
+      }
+      if (statement.prefix) {
+        this.validateExpression(statement.prefix);
+      }
+    } else if (statement.kind === "AtlasFilterStmt") {
+      if (statement.namespace) {
+        this.validateExpression(statement.namespace);
+      }
+      if (statement.path) {
+        this.validateExpression(statement.path);
+      }
+    } else if (statement.kind === "AtlasPalettedPermutationsStmt") {
+      this.validateBody(statement.body);
+    } else if (statement.kind === "EquipmentLayerStmt") {
+      this.validateExpression(statement.layer);
+      if (statement.texture) {
+        this.validateExpression(statement.texture);
+      }
+      if (statement.dyeable) {
+        this.validateExpression(statement.dyeable);
+      }
+      if (statement.color) {
+        this.validateExpression(statement.color);
+      }
+      if (statement.usePlayerTexture) {
+        this.validateExpression(statement.usePlayerTexture);
+      }
     }
   }
 
@@ -220,7 +300,9 @@ class ResolvedImportCallValidator {
       this.validateExpression(expression.callee);
       expression.args.forEach(arg => this.validateExpression(arg.value));
     } else if (expression.kind === "LambdaExpr") {
-      this.validateExpression(expression.body);
+      if (!this.checkedLambdaArgs.has(expression)) {
+        this.validateExpression(expression.body);
+      }
     } else if (expression.kind === "ListExpr") {
       expression.elements.forEach(element => this.validateExpression(element));
     } else if (expression.kind === "ObjectExpr") {
@@ -270,9 +352,28 @@ class ResolvedImportCallValidator {
       return;
     }
     const symbol = this.model.scope.symbols.get(callee.name.text);
-    if (symbol?.kind === "import" && symbol.signature) {
-      this.validateImportedArguments(symbol.signature, args, expression.range);
+    if (symbol?.kind !== "import") {
+      return;
     }
+    const callScope = this.model.importCallScopes?.get(expression);
+    if (!symbol.signature) {
+      // Imported values (e.g. let-bound lambdas) carry no signature, but lambda
+      // arguments still deserve body checking when the binder confirmed the
+      // callee resolved to the import.
+      if (callScope) {
+        for (const arg of args) {
+          this.checkLambdaArgument(arg.value, callScope);
+        }
+      }
+      return;
+    }
+    if (!callScope && !this.hasImportAllImports) {
+      // The binder records a scope for every call it resolved to an import.
+      // No record without an import-all form means the name was shadowed by a
+      // local binding at the call site — the import's signature does not apply.
+      return;
+    }
+    this.validateImportedArguments(symbol.signature, args, expression.range, callScope);
   }
 
   private validateForStatement(statement: Extract<TopLevelStatementNode | ResourceStatementNode | VariantSectionStatementNode | MultipartSectionStatementNode, { kind: "ForStmt" }>): void {
@@ -289,12 +390,17 @@ class ResolvedImportCallValidator {
     this.validateExpression(property.value);
   }
 
-  private validateImportedArguments(signature: RsglSignature, args: ArgumentNode[], callRange: { start: number; end: number }): void {
+  private validateImportedArguments(
+    signature: RsglSignature,
+    args: ArgumentNode[],
+    callRange: { start: number; end: number },
+    callScope: RsglScope | undefined
+  ): void {
     const binding = bindRsglArguments(signature.parameters, args, { callRange });
     this.diagnostics.push(...binding.diagnostics);
 
     for (const { parameter, arg } of binding.assignments) {
-      const actualType = inferImportedArgumentType(arg.value, parameter.type);
+      const actualType = this.inferArgumentType(arg.value, parameter.type, callScope);
       if (!isAssignable(parameter.type, actualType)) {
         this.diagnostics.push(diagnostic(
           "rsgl.typeMismatch",
@@ -303,6 +409,30 @@ class ResolvedImportCallValidator {
         ));
       }
     }
+  }
+
+  /**
+   * Lambda arguments get the full expression check (parameter scoping, body
+   * resolution, purity) against the scope snapshot the binder recorded at the
+   * call site, so captures of loop variables, template parameters, and local
+   * lets resolve. Without a recorded scope (import-all form) the binder
+   * already checked the arguments at bind time; everything else keeps the
+   * shallow structural inference that tolerates bare identifiers in id-like
+   * positions.
+   */
+  private inferArgumentType(expression: ExprNode, expectedType: RsglType, callScope: RsglScope | undefined): RsglType {
+    if (expression.kind === "LambdaExpr" && callScope) {
+      return this.checkLambdaArgument(expression, callScope) ?? inferImportedArgumentType(expression, expectedType);
+    }
+    return inferImportedArgumentType(expression, expectedType);
+  }
+
+  private checkLambdaArgument(expression: ExprNode, callScope: RsglScope): RsglType | null {
+    if (expression.kind !== "LambdaExpr") {
+      return null;
+    }
+    this.checkedLambdaArgs.add(expression);
+    return checkExpression(this.checkContext, expression, callScope);
   }
 }
 

@@ -1,8 +1,6 @@
 import { isValidMinecraftNamespace } from "../../../mc-assets/src";
 import {
-  ArgumentNode,
   BlockNode,
-  CallExprNode,
   ExprNode,
   ExternDeclNode,
   ForStmtNode,
@@ -14,7 +12,6 @@ import {
   ResourceStatementNode,
   RsglModule,
   TableDeclNode,
-  TextRange,
   TopLevelStatementNode,
   UseDeclNode,
   VariantBodyNode,
@@ -52,6 +49,7 @@ import { BinaryCopyRef, JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglComp
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopContext as createEvaluationLoopContext, forEachLoopContext } from "./looping";
 import { compileModelGeometryStatement } from "./modelGeometryDsl";
+import { applyModelImpl } from "./modelImpl";
 import {
   compileOverlayDecl,
   compilePackResource,
@@ -71,7 +69,7 @@ import {
   TemplateExpansion,
   TemplateExpansionOptions
 } from "./templateExpansion";
-import { createExternalResource, normalizeResourceValue } from "./templates";
+import { createExternalResource } from "./templates";
 import { isRsglGenericJsonResourceKind } from "../resourceKinds";
 import { createRsglStdlibPreludeSourceFiles } from "../stdlib";
 import {
@@ -251,16 +249,17 @@ export class RsglCompiler {
     const modelId = { namespace: id.namespace, path: `${subtype}/${id.path}` };
     const outputPath = resourceOutputPath("model", modelId);
     const body = this.resourceBodyToObjectWithMappings(statement.body, context, this.resourceBodyFragmentOptions("model"));
-    const content = statement.impl
-      ? this.applyModelImpl(statement, subtype, body.content, context)
-      : body.content;
+    const { content, mappings } = applyModelImpl(statement, subtype, body, context, {
+      onError: (code, message, range) => this.error(code, message, range),
+      createMapping: (generatedPath, sourceRange) => this.sourceMapping(generatedPath, sourceRange, context)
+    });
     return {
       id: modelId,
       kind: "model",
       outputPath,
       content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: this.sourceMap(outputPath, statement, context, body.mappings)
+      sourceMap: this.sourceMap(outputPath, statement, context, mappings)
     };
   }
 
@@ -281,6 +280,10 @@ export class RsglCompiler {
       this.error("rsgl.compileInvalidResourceId", "Extern id must evaluate to a static resource id.", idArg.value.range);
       return;
     }
+    if (!parseResourceId(idValue, context.namespace)) {
+      this.error("rsgl.compileInvalidResourceId", `Invalid extern resource id '${idValue}'.`, idArg.value.range);
+      return;
+    }
     this.pushUnit(createExternalResource(
       kind,
       idValue,
@@ -290,35 +293,6 @@ export class RsglCompiler {
       context.expansionStack ?? [],
       context.mappingReason ?? "direct"
     ));
-  }
-
-  private applyModelImpl(
-    statement: ResourceDeclNode,
-    subtype: string,
-    body: Record<string, JsonValue>,
-    context: RsglCompileContext
-  ): Record<string, JsonValue> {
-    if (!statement.impl) {
-      return body;
-    }
-    const impl = modelImplContent(statement.impl, subtype, context, (code, message, range) => this.error(code, message, range));
-    if (!impl) {
-      return body;
-    }
-    if (Object.hasOwn(body, "parent")) {
-      this.error("rsgl.duplicateModelParent", "Model body must not declare 'parent' when using impl.", statement.impl.range);
-    }
-    const { textures: bodyTextures, ...rest } = body;
-    delete rest.parent;
-    const mergedTextures = {
-      ...impl.textures,
-      ...(isJsonObject(bodyTextures) ? bodyTextures : {})
-    };
-    return {
-      parent: impl.parent,
-      ...(Object.keys(mergedTextures).length > 0 ? { textures: mergedTextures } : {}),
-      ...rest
-    };
   }
 
   private compileItem(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
@@ -1029,7 +1003,7 @@ export class RsglCompiler {
       expansionStack: [],
       rawJsonLoader: this.options.rawJsonLoader,
       globLoader: this.options.globLoader,
-      onError: (code, message, range) => this.error(code, message, range),
+      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       templates: this.templates
     };
   }
@@ -1190,7 +1164,7 @@ export class RsglCompiler {
       rawJsonLoader: this.options.rawJsonLoader,
       globLoader: this.options.globLoader,
       createChildContext: (context, values, metadata) => this.createChildContext(context, values, metadata),
-      onError: (code, message, range) => this.error(code, message, range),
+      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       onDiagnostic: diagnostic => {
         this.diagnostics.push(diagnostic);
       }
@@ -1241,8 +1215,8 @@ export class RsglCompiler {
     };
   }
 
-  private error(code: string, message: string, range: { start: number; end: number }): void {
-    this.diagnostics.push({ code, message, range, severity: "error" });
+  private error(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
+    this.diagnostics.push({ code, message, range, severity: "error", ...(fileName ? { fileName } : {}) });
   }
 }
 
@@ -1264,79 +1238,3 @@ function externResourceKind(statement: ExternDeclNode): "model" | "blockstate" |
   return kind === "model" || kind === "blockstate" || kind === "item" || kind === "texture" ? kind : null;
 }
 
-function modelImplContent(
-  expression: ExprNode,
-  subtype: string,
-  context: RsglCompileContext,
-  onError: (code: string, message: string, range: TextRange) => void
-): { parent: string; textures: Record<string, JsonValue> } | null {
-  const call = expression.kind === "CallExpr" ? expression : undefined;
-  const parentExpression = call?.callee ?? expression;
-  const parentValue = scalarText(evaluateExpression(parentExpression, context));
-  if (!parentValue) {
-    onError("rsgl.invalidModelImplParent", "Model impl parent must evaluate to a static model id.", parentExpression.range);
-    return null;
-  }
-  const textures = modelImplTextures(call, subtype, context, onError);
-  return {
-    parent: normalizeModelParent(parentValue, subtype, context.namespace),
-    textures
-  };
-}
-
-function modelImplTextures(
-  call: CallExprNode | undefined,
-  subtype: string,
-  context: RsglCompileContext,
-  onError: (code: string, message: string, range: TextRange) => void
-): Record<string, JsonValue> {
-  if (!call) {
-    return {};
-  }
-  const textures: Record<string, JsonValue> = {};
-  const positional = call.args.filter(arg => !arg.name);
-  if (positional.length > 1) {
-    onError("rsgl.invalidModelImplArgument", "Model impl allows named texture arguments, or one positional texture argument.", call.range);
-  }
-  if (positional.length === 1) {
-    const value = modelImplTextureValue(positional[0], subtype, context, onError);
-    if (value) {
-      textures[subtype === "item" ? "layer0" : "all"] = value;
-    }
-  }
-  for (const arg of call.args.filter(arg => arg.name)) {
-    const value = modelImplTextureValue(arg, subtype, context, onError);
-    if (value && arg.name) {
-      textures[arg.name.text] = value;
-    }
-  }
-  return textures;
-}
-
-function modelImplTextureValue(
-  arg: ArgumentNode,
-  subtype: string,
-  context: RsglCompileContext,
-  onError: (code: string, message: string, range: TextRange) => void
-): string | null {
-  const value = scalarText(evaluateExpression(arg.value, context));
-  if (!value) {
-    onError("rsgl.invalidModelImplArgument", "Model impl texture argument must evaluate to a static texture id.", arg.value.range);
-    return null;
-  }
-  return normalizeResourceValue(value, context.namespace, subtype === "item" ? "item" : "block");
-}
-
-function normalizeModelParent(value: string, subtype: string, namespace: string): string {
-  if (value.includes(":")) {
-    return value;
-  }
-  if (value.includes("/")) {
-    return `${namespace}:${value}`;
-  }
-  return `minecraft:${subtype}/${value}`;
-}
-
-function scalarText(value: EvaluationValue): string | null {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
-}

@@ -44,7 +44,7 @@ export interface TemplateExpansionOptions {
     values: Record<string, EvaluationValue>,
     metadata?: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack">>
   ) => RsglCompileContext;
-  onError: (code: string, message: string, range: { start: number; end: number }) => void;
+  onError: (code: string, message: string, range: { start: number; end: number }, fileName?: string) => void;
   onDiagnostic: (diagnostic: RsglCompileDiagnostic) => void;
 }
 
@@ -184,6 +184,9 @@ function createTemplateBaseContext(
     expansionStack: [],
     rawJsonLoader: options.rawJsonLoader,
     globLoader: options.globLoader,
+    // Invariant: compile-phase contexts always carry onError so diagnostics
+    // raised inside template bodies and parameter defaults are not swallowed.
+    onError: options.onError,
     templates: template.templates
   };
 }

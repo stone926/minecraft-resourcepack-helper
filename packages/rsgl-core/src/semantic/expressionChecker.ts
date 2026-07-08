@@ -14,6 +14,7 @@ import {
 import { bindRsglArguments } from "../arguments";
 import { diagnostic } from "./diagnostics";
 import { checkMatchExhaustiveness, finiteStringDomain, isWildcardPattern } from "./domainChecks";
+import { findLambdaImpureCalls, lambdaImpureCallMessage } from "./lambdaPurity";
 import { createChildScope, lookup } from "./scopes";
 import { formatType, isAssignable } from "./typeRelations";
 import {
@@ -44,6 +45,8 @@ export interface RsglExpressionCheckContext {
     type: RsglType,
     node: RsglNode
   ): void;
+  /** Called for imported-template calls whose arguments are skipped at bind time. */
+  recordImportCallScope?(expression: CallExprNode, scope: RsglScope): void;
 }
 
 export function checkExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
@@ -209,10 +212,11 @@ export function checkLocalLetDecl(context: RsglExpressionCheckContext, statement
   const actualType = checkExpression(context, statement.value, scope);
   const expectedType = typeFromAnnotation(statement.typeAnnotation);
   checkAssignable(context, expectedType, actualType, statement.value);
-  context.defineIdentifier(scope, statement.name, "variable", expectedType, statement);
+  const declaredType = statement.typeAnnotation ? expectedType : actualType;
+  context.defineIdentifier(scope, statement.name, "variable", declaredType, statement);
   const name = identifierName(statement.name);
   const symbol = name ? lookup(scope, name) : undefined;
-  if (symbol) {
+  if (symbol && symbol.node === statement) {
     symbol.finiteDomain = finiteStringDomain(statement.value, scope) ?? undefined;
   }
 }
@@ -276,6 +280,7 @@ function checkCallExpression(context: RsglExpressionCheckContext, expression: Ca
   }
   if (!symbol?.signature) {
     if (symbol?.kind === "import") {
+      context.recordImportCallScope?.(expression, scope);
       return anyType;
     }
     for (const arg of args) {
@@ -318,67 +323,10 @@ function checkFunctionCallArguments(
 }
 
 function checkLambdaPurity(context: RsglExpressionCheckContext, expression: ExprNode): void {
-  if (expression.kind === "CallExpr") {
-    if (expression.callee.kind === "IdentifierExpr" && lambdaImpureCalls.has(expression.callee.name.text)) {
-      context.diagnostics.push(diagnostic(
-        "rsgl.lambdaImpureCall",
-        `Lambda body cannot call impure builtin '${expression.callee.name.text}'.`,
-        expression.callee.range
-      ));
-    }
-    checkLambdaPurity(context, expression.callee);
-    expression.args.forEach(arg => checkLambdaPurity(context, arg.value));
-  } else if (expression.kind === "ListExpr") {
-    expression.elements.forEach(element => checkLambdaPurity(context, element));
-  } else if (expression.kind === "ObjectExpr") {
-    expression.properties.forEach(property => {
-      if (property.key.kind === "DynamicKey") {
-        checkLambdaPurity(context, property.key.expression);
-      }
-      checkLambdaPurity(context, property.value);
-    });
-  } else if (expression.kind === "TemplateStringExpr") {
-    expression.parts.forEach(part => {
-      if (part.kind === "expression") {
-        checkLambdaPurity(context, part.expression);
-      }
-    });
-  } else if (expression.kind === "MemberExpr") {
-    checkLambdaPurity(context, expression.object);
-  } else if (expression.kind === "IndexExpr") {
-    checkLambdaPurity(context, expression.object);
-    checkLambdaPurity(context, expression.index);
-  } else if (expression.kind === "UnaryExpr") {
-    checkLambdaPurity(context, expression.operand);
-  } else if (expression.kind === "BinaryExpr") {
-    checkLambdaPurity(context, expression.left);
-    checkLambdaPurity(context, expression.right);
-  } else if (expression.kind === "ConditionalExpr") {
-    checkLambdaPurity(context, expression.condition);
-    checkLambdaPurity(context, expression.whenTrue);
-    checkLambdaPurity(context, expression.whenFalse);
-  } else if (expression.kind === "MatchExpr") {
-    checkLambdaPurity(context, expression.expression);
-    expression.arms.forEach(arm => {
-      arm.patterns.forEach(pattern => checkLambdaPurity(context, pattern));
-      checkLambdaPurity(context, arm.value);
-    });
-  } else if (expression.kind === "RangeExpr") {
-    checkLambdaPurity(context, expression.startExpr);
-    checkLambdaPurity(context, expression.endExpr);
-  } else if (expression.kind === "LambdaExpr") {
-    checkLambdaPurity(context, expression.body);
-  } else if (expression.kind === "StateKeySugar") {
-    expression.entries.forEach(entry => checkLambdaPurity(context, entry.value));
-  } else if (expression.kind === "ModelApplySugar") {
-    checkLambdaPurity(context, expression.model);
-    expression.properties.forEach(property => checkLambdaPurity(context, property.value));
-  } else if (expression.kind === "RandomApply") {
-    expression.entries.forEach(entry => checkLambdaPurity(context, entry));
+  for (const impureCall of findLambdaImpureCalls(expression)) {
+    context.diagnostics.push(diagnostic("rsgl.lambdaImpureCall", lambdaImpureCallMessage(impureCall.name), impureCall.range));
   }
 }
-
-const lambdaImpureCalls = new Set(["raw_json", "raw_json_file", "glob"]);
 
 function checkSeqCallExpression(context: RsglExpressionCheckContext, expression: CallExprNode, scope: RsglScope): RsglType {
   const positionalArgs = expression.args.filter(arg => !arg.name);
