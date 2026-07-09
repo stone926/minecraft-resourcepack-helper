@@ -21,9 +21,21 @@ export interface RsglTextDocumentLike {
 
 export interface RsglWorkspaceSourceCacheOptions {
   encoding?: BufferEncoding;
+  fileSystem?: RsglWorkspaceSourceFileSystem;
 }
 
 export type RsglOpenTextDocumentProvider = (fileName: string) => RsglTextDocumentLike | null;
+
+export interface RsglWorkspaceSourceFileStat {
+  mtimeMs: number;
+  size: number;
+  isFile(): boolean;
+}
+
+export interface RsglWorkspaceSourceFileSystem {
+  statFile(fileName: string): RsglWorkspaceSourceFileStat;
+  readTextFile(fileName: string, encoding: BufferEncoding): string;
+}
 
 interface RsglCachedSourceFile {
   versionKey: string;
@@ -38,8 +50,11 @@ interface RsglSourceReadResult {
 export class RsglWorkspaceSourceCache {
   private readonly sourceFiles = new Map<string, RsglCachedSourceFile>();
   private openTextDocumentProvider: RsglOpenTextDocumentProvider | null = null;
+  private readonly fileSystem: RsglWorkspaceSourceFileSystem;
 
-  public constructor(private readonly options: RsglWorkspaceSourceCacheOptions = {}) { }
+  public constructor(private readonly options: RsglWorkspaceSourceCacheOptions = {}) {
+    this.fileSystem = options.fileSystem ?? nodeSourceFileSystem;
+  }
 
   public setOpenTextDocumentProvider(provider: RsglOpenTextDocumentProvider | null): void {
     this.openTextDocumentProvider = provider;
@@ -116,13 +131,18 @@ export class RsglWorkspaceSourceCache {
 
   private readSourceFile(fileName: string): RsglSourceFile | null {
     const normalizedFileName = normalizeFileName(isVirtualSourceFileName(fileName) ? fileName : path.resolve(fileName));
+    const cached = this.sourceFiles.get(normalizedFileName);
+    const trustedVersionKey = this.currentTrustedVersionKey(normalizedFileName);
+    if (cached && trustedVersionKey && cached.versionKey === trustedVersionKey) {
+      return cached.sourceFile;
+    }
+
     const readResult = this.readText(normalizedFileName);
     if (!readResult) {
       this.sourceFiles.delete(normalizedFileName);
       return null;
     }
 
-    const cached = this.sourceFiles.get(normalizedFileName);
     if (cached?.versionKey === readResult.versionKey) {
       return cached.sourceFile;
     }
@@ -149,20 +169,38 @@ export class RsglWorkspaceSourceCache {
       const text = openDocument.getText();
       return {
         text,
-        versionKey: `open:${openDocument.version ?? "unknown"}:${hashText(text)}`
+        versionKey: openDocumentVersionKey(openDocument, text)
       };
     }
 
     try {
-      const stat = fs.statSync(fileName);
+      const stat = this.fileSystem.statFile(fileName);
       if (!stat.isFile()) {
         return null;
       }
-      const text = fs.readFileSync(fileName, this.options.encoding ?? "utf8");
+      const text = this.fileSystem.readTextFile(fileName, this.options.encoding ?? "utf8");
       return {
         text,
-        versionKey: `fs:${stat.mtimeMs}:${stat.size}:${hashText(text)}`
+        versionKey: fsVersionKey(stat)
       };
+    } catch {
+      return null;
+    }
+  }
+
+  private currentTrustedVersionKey(fileName: string): string | null {
+    const openDocument = this.openTextDocumentProvider?.(fileName);
+    if (openDocument && typeof openDocument.version === "number") {
+      return `open:${openDocument.version}`;
+    }
+
+    if (openDocument) {
+      return null;
+    }
+
+    try {
+      const stat = this.fileSystem.statFile(fileName);
+      return stat.isFile() ? fsVersionKey(stat) : null;
     } catch {
       return null;
     }
@@ -250,3 +288,18 @@ function hashText(text: string): string {
   }
   return hash.toString(36);
 }
+
+function fsVersionKey(stat: RsglWorkspaceSourceFileStat): string {
+  return `fs:${stat.mtimeMs}:${stat.size}`;
+}
+
+function openDocumentVersionKey(document: RsglTextDocumentLike, text: string): string {
+  return typeof document.version === "number"
+    ? `open:${document.version}`
+    : `open:unknown:${hashText(text)}`;
+}
+
+const nodeSourceFileSystem: RsglWorkspaceSourceFileSystem = {
+  statFile: fileName => fs.statSync(fileName),
+  readTextFile: (fileName, encoding) => fs.readFileSync(fileName, encoding)
+};
