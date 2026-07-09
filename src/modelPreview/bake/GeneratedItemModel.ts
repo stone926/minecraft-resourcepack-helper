@@ -1,8 +1,7 @@
-import type { PreviewDirection, PreviewVec3 } from "../ir/PreviewDocument";
+import type { PreviewDirection, PreviewRange, PreviewVec3 } from "../ir/PreviewDocument";
 import { lm } from "../../i18n/messages";
 import type { RawElement, RawFace, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
-import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
 import type { PngAlphaMask } from "./AlphaMask";
 
@@ -36,9 +35,15 @@ type TextureAlphaReader = (
   token?: ModelPreviewCancellationToken
 ) => Promise<PngAlphaMask | null>;
 
+export interface GeneratedItemTextureResolver {
+  resolve(textureReference: string, sourceModelFileName: string, referenceRange?: PreviewRange): {
+    textureFileName?: string;
+  };
+}
+
 export async function createGeneratedItemElements(
   model: ResolvedModel,
-  textureResolver: TextureReferenceResolver,
+  textureResolver: GeneratedItemTextureResolver,
   issues: ModelIssueCollector,
   readTextureAlpha: TextureAlphaReader,
   cancellationToken?: ModelPreviewCancellationToken
@@ -62,7 +67,7 @@ export async function createGeneratedItemElements(
 
 async function resolveGeneratedLayers(
   model: ResolvedModel,
-  textureResolver: TextureReferenceResolver,
+  textureResolver: GeneratedItemTextureResolver,
   issues: ModelIssueCollector,
   readTextureAlpha: TextureAlphaReader,
   cancellationToken?: ModelPreviewCancellationToken

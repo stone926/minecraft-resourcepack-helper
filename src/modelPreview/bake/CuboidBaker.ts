@@ -1,10 +1,9 @@
-import type { PreviewBounds, PreviewDirection, PreviewMesh, PreviewVec3 } from "../ir/PreviewDocument";
+import type { PreviewBounds, PreviewDirection, PreviewMaterial, PreviewMesh, PreviewRange, PreviewVec3 } from "../ir/PreviewDocument";
 import { lm } from "../../i18n/messages";
 import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { fileUriString } from "../paths";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
-import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { getDefaultUv, getFaceUvs } from "./DefaultUv";
 
 const directions: PreviewDirection[] = ["down", "up", "north", "south", "west", "east"];
@@ -22,9 +21,13 @@ export interface BakeResult {
   bounds: PreviewBounds;
 }
 
+export interface MaterialResolver {
+  resolveMaterial(textureReference: string, sourceModelFileName: string, referenceRange?: PreviewRange): PreviewMaterial;
+}
+
 export class CuboidBaker {
   constructor(
-    private readonly textureResolver: TextureReferenceResolver,
+    private readonly materialResolver: MaterialResolver,
     private readonly issues: ModelIssueCollector,
     private readonly cancellationToken?: ModelPreviewCancellationToken
   ) { }
@@ -108,7 +111,7 @@ export class CuboidBaker {
         bounds.include(position);
       }
 
-      const material = this.textureResolver.resolve(face.texture, resolvedElement.sourceModelFileName, face.textureRange).material;
+      const material = this.materialResolver.resolveMaterial(face.texture, resolvedElement.sourceModelFileName, face.textureRange);
       previewMesh.faces.push({
         direction,
         positions,

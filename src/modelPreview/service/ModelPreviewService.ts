@@ -112,7 +112,10 @@ export class ModelPreviewService {
     }
     throwIfCancellationRequested(cancellationToken);
 
-    const baker = new CuboidBaker(textureResolver, issues, cancellationToken);
+    const baker = new CuboidBaker({
+      resolveMaterial: (textureReference, sourceModelFileName, referenceRange) =>
+        textureResolver.resolve(textureReference, sourceModelFileName, referenceRange).material
+    }, issues, cancellationToken);
     const bakeResult = baker.bake(renderModel);
     throwIfCancellationRequested(cancellationToken);
 

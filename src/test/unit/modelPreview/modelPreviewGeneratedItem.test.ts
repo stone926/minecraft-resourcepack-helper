@@ -2,9 +2,8 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import type { ResolvedModel } from "../../../modelPreview/model/ModelDocument";
 import { ModelIssueCollector } from "../../../modelPreview/model/ModelIssues";
-import type { TextureReferenceResolver } from "../../../modelPreview/resolve/TextureReferenceResolver";
 import { ModelPreviewCancellationSource } from "../../../modelPreview/cancellation";
-import { createGeneratedItemElements } from "../../../modelPreview/bake/GeneratedItemModel";
+import { createGeneratedItemElements, type GeneratedItemTextureResolver } from "../../../modelPreview/bake/GeneratedItemModel";
 import type { PngAlphaMask } from "../../../modelPreview/bake/AlphaMask";
 import { createPack, createRgbaPng, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
@@ -235,17 +234,10 @@ function createGeneratedModel(): ResolvedModel {
   };
 }
 
-function createTextureResolverStub(textureFileName: string): TextureReferenceResolver {
+function createTextureResolverStub(textureFileName: string): GeneratedItemTextureResolver {
   return {
     resolve: () => ({
-      material: {
-        id: "texture:stub",
-        textureUri: `file:///${textureFileName}`,
-        fallback: "texture",
-        transparent: false
-      },
-      dependencies: [],
       textureFileName
     })
-  } as unknown as TextureReferenceResolver;
+  };
 }
