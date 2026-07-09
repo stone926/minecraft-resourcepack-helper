@@ -161,9 +161,6 @@ export function activate(context: vscode.ExtensionContext) {
 
   const resourceDiagnostics = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper resources"));
   context.subscriptions.push(resourceDiagnostics);
-  for (const document of vscode.workspace.textDocuments) {
-    refreshResourceDiagnostics(document, resourceDiagnostics);
-  }
   let diagnosticsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   const refreshOpenResourceDiagnosticsSoon = (delay = 250) => {
     if (diagnosticsRefreshTimer) {
@@ -185,6 +182,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   });
+  refreshOpenResourceDiagnosticsSoon();
 
   let activeEditor: vscode.TextEditor | undefined;
 
