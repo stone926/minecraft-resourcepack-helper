@@ -11,7 +11,7 @@ import { isTextureObject } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { fileUriString } from "../paths";
-import { getTextureFileCandidates, resolveTextureFileName } from "./ResourceDependencyResolver";
+import { ResourceDependencyResolver } from "./ResourceDependencyResolver";
 
 export interface TextureMaterialResolution {
   material: PreviewMaterial;
@@ -21,13 +21,16 @@ export interface TextureMaterialResolution {
 
 export class TextureReferenceResolver {
   private readonly materials = new Map<string, TextureMaterialResolution>();
+  private readonly resources: ResourceDependencyResolver;
 
   constructor(
     private readonly model: ResolvedModel,
     private readonly fileSystem: ModelPreviewFileSystem,
     private readonly configuration: ModelPreviewConfiguration,
     private readonly issues: ModelIssueCollector
-  ) { }
+  ) {
+    this.resources = new ResourceDependencyResolver(fileSystem, configuration);
+  }
 
   resolve(textureReference: string, sourceModelFileName: string, referenceRange?: PreviewRange): TextureMaterialResolution {
     const cacheKey = `${sourceModelFileName}\0${textureReference}`;
@@ -111,9 +114,9 @@ export class TextureReferenceResolver {
     forceTranslucent: boolean,
     referenceRange?: PreviewRange
   ): TextureMaterialResolution {
-    const textureFile = resolveTextureFileName(textureResource, sourceModelFileName, this.fileSystem, this.configuration);
+    const textureFile = this.resources.resolveTextureFileName(textureResource, sourceModelFileName);
     if (!textureFile) {
-      const missingDependencies = getTextureFileCandidates(textureResource, sourceModelFileName, this.fileSystem, this.configuration)
+      const missingDependencies = this.resources.getTextureFileCandidates(textureResource, sourceModelFileName)
         .map(fileName => ({ fileName, kind: "texture" as const }));
       this.issues.warning(lm("Texture not found: {0}", textureResource), sourceModelFileName, referenceRange);
       return missingMaterial(textureResource, missingDependencies);

@@ -8,13 +8,93 @@ export interface ResolvedResourceFile {
   resourceId: string;
 }
 
+export class ResourceDependencyResolver {
+  private readonly resolvedFiles = new Map<string, ResolvedResourceFile | null>();
+  private readonly candidateFiles = new Map<string, string[]>();
+
+  constructor(
+    private readonly fileSystem: ModelPreviewFileSystem,
+    private readonly configuration: ModelPreviewConfiguration
+  ) { }
+
+  resolveModelFileName(resourcePath: string, sourceFileName: string): ResolvedResourceFile | null {
+    return this.resolveResourceFileName(resourcePath, sourceFileName, "models", modelSourceForFile(sourceFileName), "json");
+  }
+
+  resolveTextureFileName(resourcePath: string, sourceFileName: string): ResolvedResourceFile | null {
+    return this.resolveResourceFileName(resourcePath, sourceFileName, "textures", modelSourceForFile(sourceFileName), "png");
+  }
+
+  getModelFileCandidates(resourcePath: string, sourceFileName: string): string[] {
+    return this.getResourceFileCandidates(resourcePath, sourceFileName, "models", modelSourceForFile(sourceFileName), "json");
+  }
+
+  getTextureFileCandidates(resourcePath: string, sourceFileName: string): string[] {
+    return this.getResourceFileCandidates(resourcePath, sourceFileName, "textures", modelSourceForFile(sourceFileName), "png");
+  }
+
+  resolveResourceFileName(
+    resourcePath: string,
+    sourceFileName: string,
+    target: string,
+    source: string,
+    extension: string | null
+  ): ResolvedResourceFile | null {
+    const key = resourceResolutionKey(resourcePath, sourceFileName, target, source, extension);
+    if (this.resolvedFiles.has(key)) {
+      return this.resolvedFiles.get(key) ?? null;
+    }
+
+    const candidates = this.getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension);
+    for (const candidate of candidates) {
+      if (this.fileSystem.fileExists(candidate)) {
+        const resolved = {
+          fileName: candidate,
+          resourceId: resourceIdForResolvedCandidate(resourcePath, candidate, target, extension)
+        };
+        this.resolvedFiles.set(key, resolved);
+        return resolved;
+      }
+    }
+
+    this.resolvedFiles.set(key, null);
+    return null;
+  }
+
+  getResourceFileCandidates(
+    resourcePath: string,
+    sourceFileName: string,
+    target: string,
+    source: string,
+    extension: string | null
+  ): string[] {
+    const key = resourceResolutionKey(resourcePath, sourceFileName, target, source, extension);
+    const cached = this.candidateFiles.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const candidates = getResourceFileCandidatesUncached(
+      resourcePath,
+      sourceFileName,
+      target,
+      source,
+      extension,
+      this.fileSystem,
+      this.configuration
+    );
+    this.candidateFiles.set(key, candidates);
+    return candidates;
+  }
+}
+
 export function resolveModelFileName(
   resourcePath: string,
   sourceFileName: string,
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): ResolvedResourceFile | null {
-  return resolveResourceFileName(resourcePath, sourceFileName, "models", modelSourceForFile(sourceFileName), "json", fileSystem, configuration);
+  return new ResourceDependencyResolver(fileSystem, configuration).resolveModelFileName(resourcePath, sourceFileName);
 }
 
 export function resolveTextureFileName(
@@ -23,7 +103,7 @@ export function resolveTextureFileName(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): ResolvedResourceFile | null {
-  return resolveResourceFileName(resourcePath, sourceFileName, "textures", modelSourceForFile(sourceFileName), "png", fileSystem, configuration);
+  return new ResourceDependencyResolver(fileSystem, configuration).resolveTextureFileName(resourcePath, sourceFileName);
 }
 
 export function getModelFileCandidates(
@@ -32,7 +112,7 @@ export function getModelFileCandidates(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): string[] {
-  return getResourceFileCandidates(resourcePath, sourceFileName, "models", modelSourceForFile(sourceFileName), "json", fileSystem, configuration);
+  return new ResourceDependencyResolver(fileSystem, configuration).getModelFileCandidates(resourcePath, sourceFileName);
 }
 
 export function getTextureFileCandidates(
@@ -41,7 +121,7 @@ export function getTextureFileCandidates(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): string[] {
-  return getResourceFileCandidates(resourcePath, sourceFileName, "textures", modelSourceForFile(sourceFileName), "png", fileSystem, configuration);
+  return new ResourceDependencyResolver(fileSystem, configuration).getTextureFileCandidates(resourcePath, sourceFileName);
 }
 
 export function resolveResourceFileName(
@@ -53,20 +133,23 @@ export function resolveResourceFileName(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): ResolvedResourceFile | null {
-  const candidates = getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension, fileSystem, configuration);
-  for (const candidate of candidates) {
-    if (fileSystem.fileExists(candidate)) {
-      return {
-        fileName: candidate,
-        resourceId: resourceIdForResolvedCandidate(resourcePath, candidate, target, extension)
-      };
-    }
-  }
-
-  return null;
+  const resolver = new ResourceDependencyResolver(fileSystem, configuration);
+  return resolver.resolveResourceFileName(resourcePath, sourceFileName, target, source, extension);
 }
 
 export function getResourceFileCandidates(
+  resourcePath: string,
+  sourceFileName: string,
+  target: string,
+  source: string,
+  extension: string | null,
+  fileSystem: ModelPreviewFileSystem,
+  configuration: ModelPreviewConfiguration
+): string[] {
+  return new ResourceDependencyResolver(fileSystem, configuration).getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension);
+}
+
+function getResourceFileCandidatesUncached(
   resourcePath: string,
   sourceFileName: string,
   target: string,
@@ -101,6 +184,22 @@ export function getResourceFileCandidates(
   );
 
   return unique(candidateRoots.map(root => path.join(root, location.resourcePath)));
+}
+
+function resourceResolutionKey(
+  resourcePath: string,
+  sourceFileName: string,
+  target: string,
+  source: string,
+  extension: string | null
+): string {
+  return [
+    sourceFileName,
+    source,
+    target,
+    extension ?? "",
+    resourcePath
+  ].join("\0");
 }
 
 function getCitResourceFileCandidates(

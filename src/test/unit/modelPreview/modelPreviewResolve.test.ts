@@ -1,6 +1,8 @@
 import * as assert from "node:assert";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PreviewIssue } from "../../../modelPreview/ir/PreviewDocument";
+import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
 import { createPack, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
 
@@ -80,6 +82,42 @@ describe("model preview parent and texture resolution", () => {
       assert.strictEqual(preview.materials[0].transparent, true);
       assert.ok(preview.dependencies.some(dependency => dependency.kind === "textureMetadata"));
       assert.ok(preview.issues.some(issue => issue.severity === "info" && issueMessageKey(issue).includes("Animated texture metadata")));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("caches texture resource resolution within one preview build", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const modelFileName = path.join(pack, "assets", "minecraft", "models", "block", "cached_textures.json");
+      const textureFileName = path.join(pack, "assets", "minecraft", "textures", "block", "shared.png");
+      writeJson(pack, "assets/minecraft/models/block/cached_textures.json", {
+        textures: {
+          north: "minecraft:block/shared",
+          south: "minecraft:block/shared"
+        },
+        elements: [
+          {
+            from: [0, 0, 0],
+            to: [16, 16, 16],
+            faces: {
+              north: { texture: "#north" },
+              south: { texture: "#south" }
+            }
+          }
+        ]
+      });
+      writeFile(pack, "assets/minecraft/textures/block/shared.png", "png");
+
+      let textureExistsChecks = 0;
+      const fileSystem = createCountingTextureFileSystem(textureFileName, () => textureExistsChecks++);
+      const preview = await createService({}, fileSystem).getPreviewDocument(modelFileName);
+
+      assert.strictEqual(preview.materials.length, 1);
+      assert.strictEqual(textureExistsChecks, 1);
     } finally {
       removeTempDirectory(root);
     }
@@ -254,4 +292,25 @@ describe("model preview parent and texture resolution", () => {
 
 function issueMessageKey(issue: PreviewIssue): string {
   return issue.message.message;
+}
+
+function createCountingTextureFileSystem(textureFileName: string, onTextureExistsCheck: () => void): ModelPreviewFileSystem {
+  return {
+    readTextFile: fileName => fs.promises.readFile(fileName, "utf8"),
+    readBinaryFile: fileName => fs.promises.readFile(fileName),
+    fileExists: fileName => {
+      if (fileName === textureFileName) {
+        onTextureExistsCheck();
+      }
+      return fs.existsSync(fileName);
+    },
+    fileVersion: fileName => {
+      try {
+        const stat = fs.statSync(fileName);
+        return `${stat.mtimeMs}:${stat.size}`;
+      } catch {
+        return null;
+      }
+    }
+  };
 }
