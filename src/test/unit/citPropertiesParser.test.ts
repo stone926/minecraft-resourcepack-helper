@@ -1,5 +1,11 @@
 import * as assert from "node:assert";
-import { parseCitProperties, parseCitPropertiesDocument } from "../../cit/citPropertiesParser";
+import {
+  getCitPropertiesEntries,
+  getCitPropertiesParseResult,
+  parseCitProperties,
+  parseCitPropertiesDocument,
+  type CitPropertiesDocument
+} from "../../cit/citPropertiesParser";
 import { formatDefaultMessage } from "./helpers/localizedMessages";
 
 describe("CIT properties parser", () => {
@@ -86,4 +92,54 @@ describe("CIT properties parser", () => {
     assert.ok(result.errors.some(error => formatDefaultMessage(error.message).includes("cannot contain whitespace")));
     assert.ok(result.errors.some(error => formatDefaultMessage(error.message).includes("cannot be empty")));
   });
+
+  it("caches parsed document snapshots by uri and version", () => {
+    let reads = 0;
+    const document = createCachedDocument("file:///pack/assets/minecraft/citresewn/cit/sword.properties", 7, () => {
+      reads++;
+      return "type=item\nitems=minecraft:stick";
+    });
+
+    const first = getCitPropertiesParseResult(document);
+    const second = getCitPropertiesParseResult(document);
+    const entries = getCitPropertiesEntries(document);
+
+    assert.strictEqual(second, first);
+    assert.strictEqual(entries, first.entries);
+    assert.strictEqual(reads, 1);
+
+    const nextVersion = createCachedDocument(document.uri?.toString() ?? "", 8, () => {
+      reads++;
+      return "type=armor";
+    });
+
+    assert.notStrictEqual(getCitPropertiesParseResult(nextVersion), first);
+    assert.strictEqual(getCitPropertiesEntries(nextVersion)[0].value, "armor");
+    assert.strictEqual(reads, 2);
+  });
+
+  it("does not cache unversioned document snapshots", () => {
+    let reads = 0;
+    const document: CitPropertiesDocument = {
+      fileName: "pack/assets/minecraft/citresewn/cit/sword.properties",
+      getText: () => {
+        reads++;
+        return "type=item";
+      }
+    };
+
+    assert.notStrictEqual(getCitPropertiesParseResult(document), getCitPropertiesParseResult(document));
+    assert.strictEqual(reads, 2);
+  });
 });
+
+function createCachedDocument(uri: string, version: number, getText: () => string): CitPropertiesDocument {
+  return {
+    fileName: "pack/assets/minecraft/citresewn/cit/sword.properties",
+    version,
+    uri: {
+      toString: () => uri
+    },
+    getText
+  };
+}

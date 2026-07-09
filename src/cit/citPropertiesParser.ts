@@ -24,6 +24,15 @@ export interface CitPropertiesParseResult {
   errors: CitPropertySyntaxError[];
 }
 
+export interface CitPropertiesDocument {
+  fileName: string;
+  version?: number;
+  uri?: {
+    toString(): string;
+  };
+  getText(): string;
+}
+
 export interface CitPropertiesPosition {
   line: number;
   character: number;
@@ -41,6 +50,14 @@ interface LogicalCitPropertyLine {
   startColumn: number;
 }
 
+interface CachedCitPropertiesParseResult {
+  version: number;
+  result: CitPropertiesParseResult;
+}
+
+const maxCachedCitPropertiesDocuments = 128;
+const citPropertiesDocumentCache = new Map<string, CachedCitPropertiesParseResult>();
+
 export function parseCitProperties(text: string): CitPropertyEntry[] {
   return parseCitPropertiesDocument(text).entries;
 }
@@ -57,6 +74,29 @@ export function parseCitPropertiesDocument(text: string): CitPropertiesParseResu
   }
 
   return { entries, errors };
+}
+
+export function getCitPropertiesParseResult(document: CitPropertiesDocument, text?: string): CitPropertiesParseResult {
+  if (typeof document.version !== "number") {
+    return parseCitPropertiesDocument(text ?? document.getText());
+  }
+
+  const key = citPropertiesCacheKey(document);
+  const cached = citPropertiesDocumentCache.get(key);
+  if (cached && cached.version === document.version) {
+    citPropertiesDocumentCache.delete(key);
+    citPropertiesDocumentCache.set(key, cached);
+    return cached.result;
+  }
+
+  const result = parseCitPropertiesDocument(text ?? document.getText());
+  citPropertiesDocumentCache.set(key, { version: document.version, result });
+  trimCitPropertiesDocumentCache();
+  return result;
+}
+
+export function getCitPropertiesEntries(document: CitPropertiesDocument): CitPropertyEntry[] {
+  return getCitPropertiesParseResult(document).entries;
 }
 
 export function parseCitPropertyLine(line: string, lineNumber: number): CitPropertyEntry | null {
@@ -108,6 +148,20 @@ function findUnescapedSeparator(line: string, separator: "=" | ":", start: numbe
   }
 
   return -1;
+}
+
+function citPropertiesCacheKey(document: CitPropertiesDocument): string {
+  return document.uri?.toString() ?? document.fileName;
+}
+
+function trimCitPropertiesDocumentCache(): void {
+  while (citPropertiesDocumentCache.size > maxCachedCitPropertiesDocuments) {
+    const oldest = citPropertiesDocumentCache.keys().next().value;
+    if (oldest === undefined) {
+      return;
+    }
+    citPropertiesDocumentCache.delete(oldest);
+  }
 }
 
 export function firstNonWhitespaceIndex(value: string, start = 0): number {

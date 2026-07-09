@@ -4,20 +4,19 @@ import {
   findCitPropertyEntryAtPosition,
   findPropertySeparator,
   firstNonWhitespaceIndex,
+  getCitPropertiesEntries,
+  getCitPropertiesParseResult,
   isPositionInLocation,
-  parseCitProperties,
   parseCitPropertyLine,
   trimEndIndex,
+  type CitPropertiesDocument,
   type CitPropertiesPosition,
   type CitPropertyEntry
 } from "./citPropertiesParser";
 import { citSpecService } from "./citSpecService";
 import type { CitResourceKind, CitType, ResolvedCitSpec, ResolvedCitSpecKey } from "./citSpecTypes";
 
-export interface CitLanguageDocument {
-  fileName: string;
-  getText(): string;
-}
+export type CitLanguageDocument = CitPropertiesDocument;
 
 export interface CitTextRange {
   start: CitPropertiesPosition;
@@ -75,7 +74,7 @@ export function getCitCompletionResult(
     return null;
   }
 
-  const entries = parseCitProperties(text);
+  const entries = getCitPropertiesParseResult(document, text).entries;
   const spec = getEffectiveSpec(document.fileName, entries, locale);
   if (lineContext.kind === "key") {
     return {
@@ -105,7 +104,7 @@ export function getCitHoverInfo(
   position: CitPropertiesPosition,
   locale?: string
 ): CitHoverInfo | null {
-  const entries = parseCitProperties(document.getText());
+  const entries = getCitPropertiesEntries(document);
   const entry = findCitPropertyEntryAtPosition(entries, position);
   if (!entry) {
     return null;

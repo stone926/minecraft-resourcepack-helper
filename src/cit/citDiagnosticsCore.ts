@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
 import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
-import { parseCitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
+import { getCitPropertiesParseResult, type CitPropertyEntry } from "./citPropertiesParser";
 import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
 import { stripDefaultCitNamespace } from "./citKeys";
 import { citSpecService } from "./citSpecService";
@@ -33,7 +33,7 @@ export function getCitDiagnostics(
     return [];
   }
 
-  const parseResult = parseCitPropertiesDocument(document.getText());
+  const parseResult = getCitPropertiesParseResult(document);
   const entries = parseResult.entries;
   const spec = getEffectiveSpec(document.fileName, entries, options.locale);
   const allCitSpec = citSpecService.getAllCitSpec(options.locale);

@@ -52,7 +52,7 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
   }
 
   if (documentKind === "citProperties") {
-    const references = getCitPropertyReferences(document.getText(), document.fileName);
+    const references = getCitPropertyReferences(document);
     setCachedResourceReferences(document, references);
     return references;
   }
