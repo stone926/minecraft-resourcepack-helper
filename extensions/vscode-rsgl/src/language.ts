@@ -1,0 +1,1 @@
+export const rsglLanguageId = "rsgl";

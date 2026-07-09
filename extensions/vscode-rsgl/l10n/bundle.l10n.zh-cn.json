@@ -9,7 +9,7 @@
   "Previewing RSGL resource pack build": "正在预览 RSGL 资源包构建",
   "Previewing RSGL source directory build": "正在预览 RSGL 源目录构建",
   "Previewing RSGL workspace source directory builds": "正在预览工作区 RSGL 源目录构建",
-  "RSGL": "RSGL",
+  "RSGL language server not found. Reinstall the RSGL extension.": "未找到 RSGL 语言服务器。请重新安装 RSGL 扩展。",
   "RSGL build complete: {0} created, {1} updated, {2} unchanged.": "RSGL 构建完成：新建 {0} 个，更新 {1} 个，未变更 {2} 个。",
   "RSGL build failed with {0} error(s).": "RSGL 构建失败：{0} 个错误。",
   "RSGL workspace build complete: {0} source directories, {1} created, {2} updated, {3} unchanged, {4} skipped.": "RSGL 工作区构建完成：构建 {0} 个源目录，新建 {1} 个，更新 {2} 个，未变更 {3} 个，跳过 {4} 个。",

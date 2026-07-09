@@ -8,7 +8,7 @@ import {
 } from "../../../../packages/rsgl-core/src/sourceRoot";
 import { rsglWorkspaceBuildSemanticCache } from "../../../../packages/rsgl-core/src/workspaceBuildSemantic";
 import { rsglConfigKeys } from "../../../../packages/rsgl-shared/src";
-import { rsglLanguageId } from "../diagnostics";
+import { rsglLanguageId } from "../language";
 
 export interface RsglFileBuildContext {
   sourceFileName: string;

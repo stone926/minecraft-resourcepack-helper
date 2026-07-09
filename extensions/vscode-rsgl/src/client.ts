@@ -15,10 +15,11 @@ interface RsglValidationSettings {
   resourcePackRoots: string[];
 }
 
-export function startRsglLanguageServer(context: vscode.ExtensionContext): boolean {
+export function startRsglLanguageServer(context: vscode.ExtensionContext): void {
   const serverModule = context.asAbsolutePath(path.join("out", "packages", "rsgl-lsp", "src", "server.js"));
   if (!fs.existsSync(serverModule)) {
-    return false;
+    void vscode.window.showErrorMessage(vscode.l10n.t("RSGL language server not found. Reinstall the RSGL extension."));
+    return;
   }
 
   const serverOptions: ServerOptions = {
@@ -42,7 +43,6 @@ export function startRsglLanguageServer(context: vscode.ExtensionContext): boole
     }
   }));
   context.subscriptions.push({ dispose: () => void client.stop() });
-  return true;
 }
 
 function currentRsglValidationSettings(): RsglValidationSettings {
