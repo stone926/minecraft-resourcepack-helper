@@ -1,8 +1,7 @@
 import * as path from "node:path";
-import * as fs from "node:fs";
 import { Uri } from "vscode";
 import { getCitAutoDiscoveryPathCandidates, getCitPathCandidates, type CitResourceType } from "../cit/citPaths";
-import { findPackRoot, getDocumentResourceRootCandidates, packRootFromAssetsPath, parseResourceLocation } from "../../packages/mc-assets/src";
+import { packRootFromAssetsPath } from "../../packages/mc-assets/src";
 import { workspaceResourceCache, type WorkspaceResourceCache } from "../services/workspaceResourceCache";
 import { getResourceConfiguration } from "./resourceConfiguration";
 import type { ResourceReference } from "./resourceReferences";
@@ -23,14 +22,17 @@ export type ResourceReferencePathResolver = (
   document: ResourcePathDocument
 ) => Uri | null;
 
-interface ResourcePathResolverOptions {
-  pathExists?: (filePath: string) => boolean;
-  getPackRoot?: (fileName: string) => string | null;
-  getPackMetadata?: (packRoot: string) => ReturnType<WorkspaceResourceCache["getPackMetadata"]>;
-  cache?: WorkspaceResourceCache;
+export interface ResourcePathResolutionHost {
+  resolveResourcePath(request: Parameters<WorkspaceResourceCache["resolveResourcePath"]>[0]): string | null;
+  getPathExists(fileName: string): boolean;
+  getPackRoot(fileName: string): string | null;
 }
 
-export function createResourcePathResolver(cache: WorkspaceResourceCache = workspaceResourceCache): ResourcePathResolver {
+interface ResourcePathResolverOptions {
+  cache?: ResourcePathResolutionHost;
+}
+
+export function createResourcePathResolver(cache: ResourcePathResolutionHost = workspaceResourceCache): ResourcePathResolver {
   return (resourcePath, document, target, source, targetFileExtension) => generateRedirectPath(
     resourcePath,
     document,
@@ -41,7 +43,7 @@ export function createResourcePathResolver(cache: WorkspaceResourceCache = works
   );
 }
 
-export function createResourceReferencePathResolver(cache: WorkspaceResourceCache = workspaceResourceCache): ResourceReferencePathResolver {
+export function createResourceReferencePathResolver(cache: ResourcePathResolutionHost = workspaceResourceCache): ResourceReferencePathResolver {
   return (reference, document) => generateReferenceRedirectPath(reference, document, { cache });
 }
 
@@ -68,50 +70,16 @@ export function generateRedirectPath(
   const configuration = getResourceConfiguration();
   const configuredDefaultPath = configuration.defaultAssetsPath;
   const configuredResourcePackRoots = configuration.resourcePackRoots ?? [];
-  const cache = shouldUseWorkspaceCache(options) ? (options.cache ?? workspaceResourceCache) : null;
-  if (cache) {
-    const resolvedPath = cache.resolveResourcePath({
-      resourcePath,
-      sourceFileName: document.fileName,
-      target,
-      source,
-      targetFileExtension,
-      defaultAssetsPath: configuredDefaultPath,
-      resourcePackRoots: configuredResourcePackRoots
-    });
-    return resolvedPath ? Uri.file(resolvedPath) : null;
-  }
-
-  const location = parseResourceLocation(resourcePath, targetFileExtension);
-  if (!location.isValid) {
-    return null;
-  }
-
-  const candidates: string[] = [];
-  for (const root of getDocumentResourceRootCandidates(
-    document.fileName,
+  const resolvedPath = getResolutionHost(options).resolveResourcePath({
+    resourcePath,
+    sourceFileName: document.fileName,
     source,
-    configuredDefaultPath,
-    location.namespace,
     target,
-    {
-      pathExists: options.pathExists,
-      getPackRoot: options.getPackRoot,
-      getPackMetadata: options.getPackMetadata,
-      resourcePath: path.posix.join(target.replaceAll("\\", "/"), location.resourcePath.replaceAll(path.sep, "/")),
-      resourcePackRoots: configuredResourcePackRoots
-    }
-  )) {
-    candidates.push(path.join(root, location.resourcePath));
-  }
-
-  for (const candidate of unique(candidates)) {
-    if ((options.pathExists ?? fs.existsSync)(candidate)) {
-      return Uri.file(candidate);
-    }
-  }
-
-  return null;
+    targetFileExtension,
+    defaultAssetsPath: configuredDefaultPath,
+    resourcePackRoots: configuredResourcePackRoots
+  });
+  return resolvedPath ? Uri.file(resolvedPath) : null;
 }
 
 function generateCitRedirectPath(
@@ -128,13 +96,12 @@ function generateCitRedirectPath(
     return null;
   }
 
-  const cache = shouldUseWorkspaceCache(options) ? (options.cache ?? workspaceResourceCache) : null;
-  const pathExists = options.pathExists ?? (fileName => cache ? cache.getPathExists(fileName) : fs.existsSync(fileName));
-  const packRoot = getCitPackRoot(document.fileName, options, cache, pathExists);
+  const host = getResolutionHost(options);
+  const packRoot = getCitPackRoot(document.fileName, host);
 
   if (packRoot) {
     for (const candidate of getCitPathCandidates(document.fileName, packRoot, reference.value, resourceType)) {
-      if (pathExists(candidate)) {
+      if (host.getPathExists(candidate)) {
         return Uri.file(candidate);
       }
     }
@@ -152,15 +119,14 @@ function generateCitAutoDiscoveryRedirectPath(
   document: ResourcePathDocument,
   options: ResourcePathResolverOptions
 ): Uri | null {
-  const cache = shouldUseWorkspaceCache(options) ? (options.cache ?? workspaceResourceCache) : null;
-  const pathExists = options.pathExists ?? (fileName => cache ? cache.getPathExists(fileName) : fs.existsSync(fileName));
-  const packRoot = getCitPackRoot(document.fileName, options, cache, pathExists);
+  const host = getResolutionHost(options);
+  const packRoot = getCitPackRoot(document.fileName, host);
   if (!packRoot) {
     return null;
   }
 
   for (const candidate of getCitAutoDiscoveryPathCandidates(document.fileName, packRoot, reference.value)) {
-    if (pathExists(candidate)) {
+    if (host.getPathExists(candidate)) {
       return Uri.file(candidate);
     }
   }
@@ -182,14 +148,9 @@ function getCitResourceTypeFromReference(reference: ResourceReference): CitResou
 
 function getCitPackRoot(
   fileName: string,
-  options: ResourcePathResolverOptions,
-  cache: WorkspaceResourceCache | null,
-  pathExists: (filePath: string) => boolean
+  host: ResourcePathResolutionHost
 ): string | null {
-  return options.getPackRoot?.(fileName) ??
-    cache?.getPackRoot(fileName) ??
-    findPackRoot(fileName, { pathExists }) ??
-    packRootFromAssetsPath(fileName);
+  return host.getPackRoot(fileName) ?? packRootFromAssetsPath(fileName);
 }
 
 function shouldTryCitTypedResourceFallback(value: string): boolean {
@@ -209,10 +170,6 @@ function startsWithPathSegment(value: string, segment: string): boolean {
   return firstSegment?.toLowerCase() === segment.toLowerCase();
 }
 
-function shouldUseWorkspaceCache(options: ResourcePathResolverOptions): boolean {
-  return !options.pathExists && !options.getPackRoot && !options.getPackMetadata;
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
+function getResolutionHost(options: ResourcePathResolverOptions): ResourcePathResolutionHost {
+  return options.cache ?? workspaceResourceCache;
 }
