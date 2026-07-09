@@ -102,7 +102,11 @@ export class WorkspaceResourceCache {
   private readonly resourceLocationCache = new LruCache<string, ResourceLocation>(4096);
   private readonly packRootCache = new LruCache<string, CacheEntry<string | null>>(4096);
   private readonly packMetadataCache = new LruCache<string, VersionedCacheEntry<PackMetadata>>(256);
-  private readonly resourceRootCandidatesCache = new LruCache<string, CacheEntry<string[]>>(4096);
+  private readonly resourceRootCandidatesCache = new LruCache<string, CacheEntry<string[]>>(
+    4096,
+    key => this.resourceRootCandidateDependencies.release(key)
+  );
+  private readonly resourceRootCandidateDependencies = new DependencyIndex();
   private readonly resourceResolutionCache = new LruCache<string, CacheEntry<string | null>>(
     8192,
     key => this.resourceResolutionDependencies.release(key)
@@ -258,21 +262,30 @@ export class WorkspaceResourceCache {
       (request.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
       this.configurationVersion
     ].join("\0");
-    return this.getGenerationalValue("resourceRootCandidates", this.resourceRootCandidatesCache, key, () =>
-      getDocumentResourceRootCandidates(
-        request.sourceFileName,
-        request.source,
-        request.defaultAssetsPath,
-        namespace,
-        request.target,
-        {
-          pathExists: fileName => this.getPathExists(fileName),
-          getPackRoot: fileName => this.getPackRoot(fileName),
-          getPackMetadata: packRoot => this.getPackMetadata(packRoot),
-          resourcePackRoots: request.resourcePackRoots,
-          resourcePath
-        }
-      ));
+    const cached = this.resourceRootCandidatesCache.get(key);
+    if (cached && cached.generation === this.resourceFsGeneration) {
+      this.hit("resourceRootCandidates");
+      return cached.value;
+    }
+
+    this.miss("resourceRootCandidates");
+    const candidates = getDocumentResourceRootCandidates(
+      request.sourceFileName,
+      request.source,
+      request.defaultAssetsPath,
+      namespace,
+      request.target,
+      {
+        pathExists: fileName => this.getPathExists(fileName),
+        getPackRoot: fileName => this.getPackRoot(fileName),
+        getPackMetadata: packRoot => this.getPackMetadata(packRoot),
+        resourcePackRoots: request.resourcePackRoots,
+        resourcePath
+      }
+    );
+    this.resourceRootCandidatesCache.set(key, { generation: this.resourceFsGeneration, value: candidates });
+    this.resourceRootCandidateDependencies.register(key, this.getResourceRootDependencyFiles(request));
+    return candidates;
   }
 
   resolveResourcePath(request: ResourceResolveRequest): string | null {
@@ -309,7 +322,7 @@ export class WorkspaceResourceCache {
     const resolvedPath = unique(candidates).find(candidate => this.getPathExists(candidate)) ?? null;
     this.resourceResolutionCache.set(key, { generation: this.resourceFsGeneration, value: resolvedPath });
     this.resourceResolutionDependencies.register(key, [
-      request.sourceFileName,
+      ...this.getResourceRootDependencyFiles(request),
       ...candidates
     ]);
     return resolvedPath;
@@ -399,6 +412,7 @@ export class WorkspaceResourceCache {
     this.packRootCache.clear();
     this.packMetadataCache.clear();
     this.resourceRootCandidatesCache.clear();
+    this.resourceRootCandidateDependencies.clear();
     this.resourceResolutionCache.clear();
     this.resourceResolutionDependencies.clear();
     this.soundEventsCache.clear();
@@ -423,10 +437,10 @@ export class WorkspaceResourceCache {
     if (/[\\/]pack\.mcmeta$/i.test(fileName)) {
       this.packMetadataCache.delete(normalizePathKey(path.dirname(fileName)));
       this.packRootCache.clear();
-      this.resourceRootCandidatesCache.clear();
-      this.resourceResolutionCache.clear();
-      this.resourceResolutionDependencies.clear();
+      this.deleteResourceRootCandidateDependenciesForPath(key);
+      this.deleteResourceResolutionDependenciesForPath(key);
     } else {
+      this.deleteResourceRootCandidateDependenciesForPath(key);
       this.deleteResourceResolutionDependenciesForPath(key);
     }
 
@@ -438,12 +452,19 @@ export class WorkspaceResourceCache {
     this.fileAstCache.delete(normalizePathKey(document.fileName));
     this.soundEventsCache.delete(normalizePathKey(document.fileName));
     this.oggMetadataCache.delete(normalizePathKey(document.fileName));
+    if (/[\\/]pack\.mcmeta$/i.test(document.fileName)) {
+      const key = normalizePathKey(document.fileName);
+      this.packMetadataCache.delete(normalizePathKey(path.dirname(document.fileName)));
+      this.deleteResourceRootCandidateDependenciesForPath(key);
+      this.deleteResourceResolutionDependenciesForPath(key);
+    }
     this.deleteModelCacheDependenciesForPath(normalizePathKey(document.fileName));
   }
 
   invalidateConfiguration(): void {
     this.configurationVersion++;
     this.resourceRootCandidatesCache.clear();
+    this.resourceRootCandidateDependencies.clear();
     this.resourceResolutionCache.clear();
     this.resourceResolutionDependencies.clear();
     this.directoryEntriesCache.clear();
@@ -548,6 +569,21 @@ export class WorkspaceResourceCache {
     }
   }
 
+  private deleteResourceRootCandidateDependenciesForPath(fileKey: string): void {
+    for (const cacheKey of this.resourceRootCandidateDependencies.affectedCacheKeys(fileKey)) {
+      this.resourceRootCandidatesCache.delete(cacheKey);
+      this.resourceRootCandidateDependencies.release(cacheKey);
+    }
+  }
+
+  private getResourceRootDependencyFiles(request: ResourceResolveRequest): string[] {
+    return unique([
+      request.sourceFileName,
+      ...getAncestorPackMetadataCandidates(request.sourceFileName),
+      ...(request.resourcePackRoots ?? []).map(root => path.join(root, "pack.mcmeta"))
+    ]);
+  }
+
   private deleteModelCacheDependenciesForPath(fileKey: string): void {
     for (const cacheKey of this.modelCacheDependencies.affectedCacheKeys(fileKey)) {
       if (cacheKey.startsWith("chain\0")) {
@@ -596,6 +632,20 @@ function documentKey(document: CacheTextDocument): string {
 
 function normalizeOptionalPath(value: string | null | undefined): string {
   return value ? normalizePathKey(value) : "";
+}
+
+function getAncestorPackMetadataCandidates(fileName: string): string[] {
+  let directory = path.dirname(path.normalize(fileName));
+  const root = path.parse(directory).root;
+  const candidates: string[] = [];
+
+  while (true) {
+    candidates.push(path.join(directory, "pack.mcmeta"));
+    if (directory === root) {
+      return candidates;
+    }
+    directory = path.dirname(directory);
+  }
 }
 
 function unique(values: string[]): string[] {

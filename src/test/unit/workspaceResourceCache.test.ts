@@ -152,6 +152,108 @@ describe("workspace resource cache", () => {
     }
   });
 
+  it("invalidates resource resolution entries when pack filters change", () => {
+    const root = createTempDirectory();
+    const currentPack = path.join(root, "current");
+    const lowerPack = path.join(root, "lower");
+    const currentPackMcmeta = path.join(currentPack, "pack.mcmeta");
+    const sourceModel = path.join(currentPack, "assets", "minecraft", "models", "block", "cube.json");
+    const lowerTexture = path.join(lowerPack, "assets", "minecraft", "textures", "block", "stone.png");
+
+    try {
+      fs.mkdirSync(path.dirname(sourceModel), { recursive: true });
+      fs.mkdirSync(path.dirname(lowerTexture), { recursive: true });
+      fs.writeFileSync(currentPackMcmeta, "{}");
+      fs.writeFileSync(path.join(lowerPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(sourceModel, "{}");
+      fs.writeFileSync(lowerTexture, createPngBytes(16, 16));
+
+      const cache = new WorkspaceResourceCache();
+      const request = {
+        resourcePath: "minecraft:block/stone",
+        sourceFileName: sourceModel,
+        target: "textures",
+        source: "models/block",
+        targetFileExtension: "png",
+        defaultAssetsPath: null,
+        resourcePackRoots: [lowerPack]
+      };
+
+      assert.strictEqual(cache.resolveResourcePath(request), lowerTexture);
+
+      fs.writeFileSync(currentPackMcmeta, JSON.stringify({
+        filter: {
+          block: [
+            {
+              namespace: "minecraft",
+              path: "textures/block/stone.*"
+            }
+          ]
+        }
+      }));
+      cache.invalidatePath(currentPackMcmeta);
+
+      assert.strictEqual(cache.resolveResourcePath(request), null);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retains unrelated resource resolution entries when pack metadata changes", () => {
+    const root = createTempDirectory();
+    const packA = path.join(root, "pack-a");
+    const packB = path.join(root, "pack-b");
+    const packAMcmeta = path.join(packA, "pack.mcmeta");
+    const sourceA = path.join(packA, "assets", "minecraft", "models", "block", "cube.json");
+    const sourceB = path.join(packB, "assets", "minecraft", "models", "block", "cube.json");
+    const textureA = path.join(packA, "assets", "minecraft", "textures", "block", "stone.png");
+    const textureB = path.join(packB, "assets", "minecraft", "textures", "block", "stone.png");
+
+    try {
+      for (const fileName of [sourceA, sourceB, textureA, textureB]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+      }
+      fs.writeFileSync(packAMcmeta, "{}");
+      fs.writeFileSync(path.join(packB, "pack.mcmeta"), "{}");
+      fs.writeFileSync(sourceA, "{}");
+      fs.writeFileSync(sourceB, "{}");
+      fs.writeFileSync(textureA, createPngBytes(16, 16));
+      fs.writeFileSync(textureB, createPngBytes(16, 16));
+
+      const cache = new WorkspaceResourceCache();
+      const requestA = {
+        resourcePath: "minecraft:block/stone",
+        sourceFileName: sourceA,
+        target: "textures",
+        source: "models/block",
+        targetFileExtension: "png",
+        defaultAssetsPath: null,
+        resourcePackRoots: []
+      };
+      const requestB = {
+        resourcePath: "minecraft:block/stone",
+        sourceFileName: sourceB,
+        target: "textures",
+        source: "models/block",
+        targetFileExtension: "png",
+        defaultAssetsPath: null,
+        resourcePackRoots: []
+      };
+
+      assert.strictEqual(cache.resolveResourcePath(requestA), textureA);
+      assert.strictEqual(cache.resolveResourcePath(requestB), textureB);
+
+      const hitsBefore = cache.getStats().hits.resourceResolution ?? 0;
+      fs.writeFileSync(packAMcmeta, JSON.stringify({ filter: { block: [] } }));
+      cache.invalidatePath(packAMcmeta);
+
+      assert.strictEqual(cache.resolveResourcePath(requestB), textureB);
+      assert.strictEqual(cache.getStats().hits.resourceResolution ?? 0, hitsBefore + 1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("invalidates resource resolution entries by candidate path", () => {
     const root = createTempDirectory();
     const packRoot = path.join(root, "pack");
