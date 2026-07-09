@@ -7,11 +7,9 @@ import {
   type RsglEmittedFile
 } from "../../../packages/rsgl-core/src";
 import { createRsglWorkspaceValidationOptions } from "../../../packages/rsgl-core/src/workspaceValidation";
-import { rsglApiVersion } from "../../../packages/rsgl-shared/src";
 
 export interface RsglApi {
   version: string;
-  apiVersion: typeof rsglApiVersion;
   compileFile(uri: vscode.Uri, options?: RsglApiCompileOptions): RsglApiCompileResult;
   compileWorkspace(workspace: vscode.Uri, options?: RsglApiCompileOptions): RsglApiCompileResult;
   checkWorkspace(workspace: vscode.Uri, options?: RsglApiCheckOptions): RsglApiCheckResult;
@@ -48,7 +46,6 @@ export interface RsglApiCheckResult {
 export function createRsglApi(context: vscode.ExtensionContext): RsglApi {
   return {
     version: extensionVersion(context),
-    apiVersion: rsglApiVersion,
     compileFile: (uri, options) => compileFile(uri, options),
     compileWorkspace: (workspace, options) => compileWorkspace(workspace, options),
     checkWorkspace: (workspace, options) => checkWorkspace(workspace, options),

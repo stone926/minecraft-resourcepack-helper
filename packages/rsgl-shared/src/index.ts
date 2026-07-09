@@ -1,5 +1,4 @@
 export const rsglExtensionId = "stone926.rsgl";
-export const rsglApiVersion = 2;
 
 export const rsglCommands = {
   build: "rsgl.build",

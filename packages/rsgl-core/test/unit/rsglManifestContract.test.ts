@@ -110,6 +110,7 @@ describe("RSGL extension manifest contract", () => {
     assert.match(apiSource, /compileFile\(uri: vscode\.Uri, options\?: RsglApiCompileOptions\): RsglApiCompileResult/);
     assert.match(apiSource, /compileWorkspace\(workspace: vscode\.Uri, options\?: RsglApiCompileOptions\): RsglApiCompileResult/);
     assert.match(apiSource, /checkWorkspace\(workspace: vscode\.Uri, options\?: RsglApiCheckOptions\): RsglApiCheckResult/);
-    assert.match(sharedSource, /export const rsglApiVersion = 2;/);
+    assert.strictEqual(apiSource.includes("apiVersion"), false);
+    assert.strictEqual(sharedSource.includes("rsglApiVersion"), false);
   });
 });
