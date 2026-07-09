@@ -15,7 +15,7 @@ import {
   semanticProgramMatchesFiles,
   withTargetPackFormat
 } from "./compilerHelpers";
-import { RsglCompiler } from "./compiler";
+import { createRsglStdlibPreludeTemplates, RsglCompiler } from "./compiler";
 import {
   createProgramCompileEnvironments,
   createStandaloneCompileEnvironment,
@@ -144,6 +144,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   const rawJsonLoader = createCompileRawJsonLoader(options.entryFileName ?? "<anonymous>", diagnostics);
   const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
   const environments = createProgramCompileEnvironments(program, options.namespace, { rawJsonLoader, globLoader });
+  const stdlibTemplates = createRsglStdlibPreludeTemplates(options.stdlibRoot);
   const selectedModels = selectProgramModels(program, options.entryFileName);
   const target = resolveTargetPackFormat(selectedModels.map(model => ({
     module: model.module,
@@ -167,6 +168,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     const compiler = new RsglCompiler(model.module, {
       fileName: model.fileName,
       namespace,
+      stdlibTemplates,
       externalTemplates: Array.from(environment.importedTemplates.values()),
       externalValues: mapToExternalValues(environment.importedValues),
       environment,

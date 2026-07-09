@@ -61,6 +61,24 @@ describe("RSGL stdlib discovery", () => {
     });
   });
 
+  it("creates stdlib prelude templates once per program compile", () => {
+    const pipelineSource = fs.readFileSync(
+      path.join(process.cwd(), "packages", "rsgl-core", "src", "compiler", "compilePipeline.ts"),
+      "utf8"
+    );
+    const compilerSource = fs.readFileSync(
+      path.join(process.cwd(), "packages", "rsgl-core", "src", "compiler", "compiler.ts"),
+      "utf8"
+    );
+
+    const preludeCreation = pipelineSource.indexOf("const stdlibTemplates = createRsglStdlibPreludeTemplates");
+    const modelLoop = pipelineSource.indexOf("for (const model of selectedModels)");
+    assert.ok(preludeCreation >= 0, "compileRsglProgram should precompute stdlib templates");
+    assert.ok(modelLoop > preludeCreation, "stdlib templates must be created outside the per-model compile loop");
+    assert.ok(pipelineSource.includes("stdlibTemplates,"));
+    assert.ok(compilerSource.includes("this.options.stdlibTemplates ?? createRsglStdlibPreludeTemplates"));
+  });
+
   it("does not load project rsgl-std modules for rsgl imports", () => {
     const root = createTempDir();
     const mainFile = path.join(root, "main.rsgl");

@@ -114,6 +114,7 @@ export type {
 interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
+  stdlibTemplates?: RsglTemplateDefinition[];
   externalTemplates?: RsglTemplateDefinition[];
   externalValues?: RsglExternalValueDefinition[];
   environment?: RsglModuleCompileEnvironment;
@@ -150,7 +151,7 @@ export class RsglCompiler {
   ) { }
 
   public compile(): RsglCompileResult {
-    for (const template of rsglStdlibPreludeTemplates(this.options.stdlibRoot)) {
+    for (const template of this.options.stdlibTemplates ?? createRsglStdlibPreludeTemplates(this.options.stdlibRoot)) {
       this.templates.set(template.name, template);
     }
     for (const template of this.options.externalTemplates ?? []) {
@@ -1220,7 +1221,7 @@ export class RsglCompiler {
   }
 }
 
-function rsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTemplateDefinition[] {
+export function createRsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTemplateDefinition[] {
   const files = createRsglStdlibPreludeSourceFiles({ stdlibRoot });
   if (files.length === 0) {
     return [];
