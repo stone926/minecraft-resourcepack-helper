@@ -36,7 +36,7 @@ export function startRsglLanguageServer(context: vscode.ExtensionContext): void 
   const client = new LanguageClient("rsgl", "RSGL", serverOptions, clientOptions);
   void client.start();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration("rsgl") || event.affectsConfiguration("McResHelper")) {
+    if (event.affectsConfiguration("rsgl")) {
       void client.sendNotification(DidChangeConfigurationNotification.type, {
         settings: currentRsglValidationSettings()
       });

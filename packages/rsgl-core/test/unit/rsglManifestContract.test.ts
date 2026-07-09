@@ -17,9 +17,16 @@ describe("RSGL extension manifest contract", () => {
     };
     const rsglPackageRoot = path.join(process.cwd(), "extensions", "vscode-rsgl");
     const rsglPackageJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, "package.json"), "utf8")) as typeof packageJson;
+    const rsglConfigurationSurface = [
+      "package.nls.json",
+      "package.nls.zh-cn.json",
+      path.join("src", "configuration.ts"),
+      path.join("src", "client.ts")
+    ].map(file => fs.readFileSync(path.join(rsglPackageRoot, file), "utf8")).join("\n");
 
     assert.strictEqual(packageJson.extensionDependencies?.includes("stone926.rsgl") ?? false, false);
     assert.strictEqual(packageJson.contributes?.languages?.some(entry => entry.id === "rsgl"), false);
+    assert.strictEqual(rsglConfigurationSurface.includes("McResHelper."), false);
     for (const event of [
       "onCommand:McResHelper.buildRsglResourcePack",
       "onCommand:McResHelper.previewRsglResourcePackBuild",
