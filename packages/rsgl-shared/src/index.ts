@@ -12,11 +12,8 @@ export const rsglCommands = {
 
 export const rsglConfigKeys = {
   outDir: "rsgl.outDir",
-  minecraftVersion: "rsgl.minecraftVersion",
   defaultAssetsPath: "rsgl.defaultAssetsPath",
-  resourcePackLoadOrder: "rsgl.resourcePackLoadOrder",
-  emitSourceMap: "rsgl.emitSourceMap",
-  validateGeneratedJson: "rsgl.validateGeneratedJson"
+  resourcePackLoadOrder: "rsgl.resourcePackLoadOrder"
 } as const;
 
 export type RsglCommandId = typeof rsglCommands[keyof typeof rsglCommands];

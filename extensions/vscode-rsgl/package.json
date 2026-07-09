@@ -137,11 +137,6 @@
           "default": "",
           "description": "%config.desc.outDir%"
         },
-        "rsgl.minecraftVersion": {
-          "type": "string",
-          "default": "auto",
-          "description": "%config.desc.minecraftVersion%"
-        },
         "rsgl.defaultAssetsPath": {
           "type": "string",
           "default": "",
@@ -154,16 +149,6 @@
             "type": "string"
           },
           "description": "%config.desc.resourcePackLoadOrder%"
-        },
-        "rsgl.emitSourceMap": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.desc.emitSourceMap%"
-        },
-        "rsgl.validateGeneratedJson": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.desc.validateGeneratedJson%"
         }
       }
     }
