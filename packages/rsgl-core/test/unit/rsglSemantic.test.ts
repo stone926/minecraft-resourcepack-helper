@@ -78,11 +78,21 @@ describe("RSGL semantic model", () => {
 
   it("binds named seq generators and padding arguments", () => {
     const model = bindRsglModule(parseRsgl([
-      "let textures = seq(`minecraft:particle/spark_${i}`, i: 0..2, pad: 2)"
+      "let textures = seq(i => `minecraft:particle/spark_${i}`, i: 0..2, pad: 2)"
     ].join("\n")));
 
     assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), []);
-    assert.ok(model.references.some(reference => reference.name === "i" && reference.symbol?.kind === "variable"));
+    assert.ok(model.references.some(reference => reference.name === "i" && reference.symbol?.kind === "parameter"));
+  });
+
+  it("rejects legacy seq generator template patterns", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let brace = seq(\"minecraft:particle/spark_{i}\", i: 0..2)",
+      "let template = seq(`minecraft:particle/spark_${i}`, i: 0..2)"
+    ].join("\n")));
+    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.strictEqual(codes.filter(code => code === "rsgl.invalidSeqPattern").length, 2);
   });
 
   it("reports template string interpolation diagnostics at embedded expression ranges", () => {

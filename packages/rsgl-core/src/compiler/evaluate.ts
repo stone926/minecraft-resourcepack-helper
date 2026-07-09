@@ -1,5 +1,4 @@
 import {
-  ArgumentNode,
   ExprNode,
   ObjectPropertyNode,
   TextRange
@@ -150,7 +149,7 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     }));
     const calleeValue = evaluateExpression(expression.callee, context);
     if (isLambdaValue(calleeValue)) {
-      return evaluateLambdaCall(calleeValue, expression.args, args, context, expression.range);
+      return evaluateLambdaCall(calleeValue, expression.args.length, args, context, expression.range);
     }
     return evaluateCallExpression(expression.callee, args, context, expression.range);
   }
@@ -220,26 +219,38 @@ function evaluateSeqExpression(
     .map(arg => ({ name: arg.name!.text, iterable: arg.value }));
   const generators = [...positionalGenerators, ...namedGenerators];
   if (generators.length === 0) {
-    return expandSequencePattern(String(evaluateExpression(patternArg.value, context) ?? ""), { pad: padWidth });
+    const patternValue = evaluateExpression(patternArg.value, context);
+    if (isLambdaValue(patternValue)) {
+      const value = evaluateLambdaCall(patternValue, 0, [], context, patternArg.value.range);
+      return expandSequencePattern(String(value ?? ""), { pad: padWidth });
+    }
+    return expandSequencePattern(String(patternValue ?? ""), { pad: padWidth });
   }
   if (positionalGenerators.length !== positionalGeneratorArgs.length) {
     return [];
   }
 
-  return evaluateSeqGeneratorPatterns(patternArg.value, generators, context, 0, [], padWidth);
+  const lambdaPattern = evaluateSeqLambdaPattern(patternArg.value, context);
+  if (!lambdaPattern) {
+    return [];
+  }
+
+  return evaluateSeqGeneratorPatterns(lambdaPattern, patternArg.value.range, generators, context, 0, [], padWidth);
 }
 
 function evaluateSeqGeneratorPatterns(
-  pattern: ExprNode,
+  lambdaPattern: LambdaValue,
+  patternRange: TextRange,
   generators: SeqGenerator[],
   context: EvaluationContext,
   index: number,
-  boundNames: string[],
+  boundValues: EvaluationValue[],
   padWidth: number | null
 ): string[] {
   if (index >= generators.length) {
-    const value = String(evaluateExpression(pattern, context) ?? "");
-    return expandSequencePattern(replaceSeqPlaceholders(value, context, boundNames), { pad: padWidth });
+    const args = boundValues.map(value => ({ value, range: patternRange }));
+    const value = evaluateLambdaCall(lambdaPattern, boundValues.length, args, context, patternRange);
+    return expandSequencePattern(String(value ?? ""), { pad: padWidth });
   }
 
   const generator = generators[index];
@@ -251,31 +262,33 @@ function evaluateSeqGeneratorPatterns(
   const results: string[] = [];
   for (const value of iterable) {
     const name = generator.name;
-    const child = childEvaluationContext(context, { [name]: sequenceBindingValue(value, padWidth) });
-    results.push(...evaluateSeqGeneratorPatterns(pattern, generators, child, index + 1, [...boundNames, name], padWidth));
+    const bindingValue = sequenceBindingValue(value, padWidth);
+    const child = childEvaluationContext(context, { [name]: bindingValue });
+    results.push(...evaluateSeqGeneratorPatterns(
+      lambdaPattern,
+      patternRange,
+      generators,
+      child,
+      index + 1,
+      [...boundValues, bindingValue],
+      padWidth
+    ));
   }
   return results;
+}
+
+function evaluateSeqLambdaPattern(pattern: ExprNode, context: EvaluationContext): LambdaValue | null {
+  if (pattern.kind !== "LambdaExpr" && pattern.kind !== "IdentifierExpr") {
+    return null;
+  }
+  const value = evaluateExpression(pattern, context);
+  return isLambdaValue(value) ? value : null;
 }
 
 function sequenceBindingValue(value: JsonValue, padWidth: number | null): JsonValue {
   return padWidth !== null && typeof value === "number" && Number.isFinite(value)
     ? formatSequenceNumber(value, padWidth)
     : normalizeJsonValue(value);
-}
-
-function replaceSeqPlaceholders(pattern: string, context: EvaluationContext, boundNames: string[]): string {
-  let result = pattern;
-  for (const name of boundNames) {
-    const value = scalarText(context.variables.get(name));
-    if (value !== null) {
-      result = result.replace(new RegExp(`\\{${escapeRegExp(name)}\\}`, "g"), value);
-    }
-  }
-  return result;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function childEvaluationContext(
@@ -481,7 +494,7 @@ function evaluateCallExpression(
 
 function evaluateLambdaCall(
   lambda: LambdaValue,
-  rawArgs: ArgumentNode[],
+  argCount: number,
   args: Array<{ name?: string; value: EvaluationValue; range: TextRange }>,
   callContext: EvaluationContext,
   range: TextRange
@@ -493,7 +506,7 @@ function evaluateLambdaCall(
     return undefined;
   }
   const onError = callContext.onError ?? lambda.context.onError;
-  if (rawArgs.length !== lambda.parameters.length && onError && !lambda.arityReported) {
+  if (argCount !== lambda.parameters.length && onError && !lambda.arityReported) {
     // Report at the call, attributed to the file containing it, once per
     // lambda value: template bodies invoke the same mapper once per
     // frame/variant. The pipeline dedupes this against the semantic layer's
@@ -501,7 +514,7 @@ function evaluateLambdaCall(
     lambda.arityReported = true;
     onError(
       "rsgl.lambdaArityMismatch",
-      `Expected ${lambda.parameters.length} lambda argument(s), got ${rawArgs.length}.`,
+      `Expected ${lambda.parameters.length} lambda argument(s), got ${argCount}.`,
       range,
       callContext.sourceFile
     );

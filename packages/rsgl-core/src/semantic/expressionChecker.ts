@@ -338,6 +338,7 @@ function checkSeqCallExpression(context: RsglExpressionCheckContext, expression:
   }
 
   const generatorScope = createChildScope(scope, "block");
+  let generatorCount = 0;
   for (const arg of expression.args) {
     if (arg === patternArg) {
       continue;
@@ -354,6 +355,7 @@ function checkSeqCallExpression(context: RsglExpressionCheckContext, expression:
       }
       checkExpression(context, arg.value, scope);
       context.defineIdentifier(generatorScope, arg.name, "variable", stringType, arg);
+      generatorCount++;
       continue;
     }
     if (arg.value.kind !== "ForInExpr") {
@@ -363,10 +365,35 @@ function checkSeqCallExpression(context: RsglExpressionCheckContext, expression:
     }
     checkExpression(context, arg.value.iterable, scope);
     context.defineIdentifier(generatorScope, arg.value.binding, "variable", stringType, arg.value);
+    generatorCount++;
   }
 
-  checkExpression(context, patternArg.value, generatorScope);
+  const patternType = checkExpression(context, patternArg.value, scope);
+  if (generatorCount > 0 && patternType.kind !== "Function") {
+    context.diagnostics.push(diagnostic(
+      "rsgl.invalidSeqPattern",
+      "seq generator form requires a lambda pattern.",
+      patternArg.value.range
+    ));
+  }
+  checkSeqLambdaPattern(context, patternType, generatorCount, patternArg.value);
   return { kind: "List", elementType: stringType };
+}
+
+function checkSeqLambdaPattern(
+  context: RsglExpressionCheckContext,
+  patternType: RsglType,
+  generatorCount: number,
+  pattern: ExprNode
+): void {
+  if (patternType.kind !== "Function" || !patternType.parameters || patternType.parameters.length === generatorCount) {
+    return;
+  }
+  context.diagnostics.push(diagnostic(
+    "rsgl.lambdaArityMismatch",
+    `Expected ${patternType.parameters.length} lambda argument(s), got ${generatorCount}.`,
+    pattern.range
+  ));
 }
 
 function checkArguments(context: RsglExpressionCheckContext, signature: RsglSignature, args: ArgumentNode[], scope: RsglScope, callRange: TextRange): void {

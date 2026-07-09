@@ -168,7 +168,7 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
 ];
 
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
-  { label: "seq", insertText: "seq(\"${1:minecraft:block/name_{i}}\", ${2:i}: ${3:0..3})", detail: "Compile-time string sequence", kind: "function" },
+  { label: "seq", insertText: "seq(${1:i} => \"minecraft:block/name_\" + ${1:i}, ${1:i}: ${2:0..3})", detail: "Compile-time string sequence", kind: "function" },
   { label: "atlasDirectory", detail: "Atlas directory source helper", kind: "function" },
   { label: "particlesSeq", insertText: "particlesSeq(\"${1:minecraft:particle/explosion_{0..2}}\", pad: ${2:0})", detail: "Particle texture sequence helper", kind: "function" },
   { label: "mcmetaAnimation", detail: "PNG animation metadata helper", kind: "function" },

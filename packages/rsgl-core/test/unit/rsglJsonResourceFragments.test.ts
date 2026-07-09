@@ -222,7 +222,7 @@ describe("RSGL JSON resources and generic fragments", () => {
       "  use particlesSeq(\"minecraft:particle/explosion_{0..2}\", pad: 2)",
       "}",
       "particles named_seq {",
-      "  use particlesSeq(seq(`minecraft:particle/spark_${i}`, i: 0..2, pad: 2))",
+      "  use particlesSeq(seq(i => `minecraft:particle/spark_${i}`, i: 0..2, pad: 2))",
       "}"
     ], {
       resourceExists: () => true

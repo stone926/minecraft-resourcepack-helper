@@ -57,7 +57,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "atlas minecraft:armor_trims {",
       "  directory source \"trims/items\" prefix \"trims/items/\"",
       "  paletted_permutations {",
-      "    textures seq(\"minecraft:trims/items/helmet_trim_{material}\", material in trimMaterials)",
+      "    textures seq(material => `minecraft:trims/items/helmet_trim_${material}`, material in trimMaterials)",
       "    palette_key minecraft:trims/color_palettes/trim_palette",
       "    permutations trimPalettes",
       "  }",

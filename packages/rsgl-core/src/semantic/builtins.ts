@@ -70,7 +70,7 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     ...enumConstants.map(name => builtinValue(name, stringType)),
     builtinFunction("product", [{ name: "source", type: jsonType, optional: false }], { kind: "List", elementType: jsonType }),
     builtinFunction("seq", [
-      { name: "pattern", type: stringType, optional: false },
+      { name: "pattern", type: { kind: "Union", options: [stringType, { kind: "Function" }] }, optional: false },
       { name: "pad", type: numberType, optional: true }
     ], { kind: "List", elementType: stringType }),
     builtinFunction("pad", [
