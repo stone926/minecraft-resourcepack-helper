@@ -98,4 +98,18 @@ describe("RSGL extension manifest contract", () => {
       item.command === "rsgl.previewDirectoryBuild" && item.when === "resourceLangId == rsgl"
     ));
   });
+
+  it("exposes an honest synchronous extension API contract", () => {
+    const apiSource = fs.readFileSync(
+      path.join(process.cwd(), "extensions", "vscode-rsgl", "src", "api.ts"),
+      "utf8"
+    );
+    const sharedSource = fs.readFileSync(path.join(process.cwd(), "packages", "rsgl-shared", "src", "index.ts"), "utf8");
+
+    assert.strictEqual(apiSource.includes("Promise.resolve("), false);
+    assert.match(apiSource, /compileFile\(uri: vscode\.Uri, options\?: RsglApiCompileOptions\): RsglApiCompileResult/);
+    assert.match(apiSource, /compileWorkspace\(workspace: vscode\.Uri, options\?: RsglApiCompileOptions\): RsglApiCompileResult/);
+    assert.match(apiSource, /checkWorkspace\(workspace: vscode\.Uri, options\?: RsglApiCheckOptions\): RsglApiCheckResult/);
+    assert.match(sharedSource, /export const rsglApiVersion = 2;/);
+  });
 });

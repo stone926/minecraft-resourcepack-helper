@@ -12,9 +12,9 @@ import { rsglApiVersion } from "../../../packages/rsgl-shared/src";
 export interface RsglApi {
   version: string;
   apiVersion: typeof rsglApiVersion;
-  compileFile(uri: vscode.Uri, options?: RsglApiCompileOptions): Promise<RsglApiCompileResult>;
-  compileWorkspace(workspace: vscode.Uri, options?: RsglApiCompileOptions): Promise<RsglApiCompileResult>;
-  checkWorkspace(workspace: vscode.Uri, options?: RsglApiCheckOptions): Promise<RsglApiCheckResult>;
+  compileFile(uri: vscode.Uri, options?: RsglApiCompileOptions): RsglApiCompileResult;
+  compileWorkspace(workspace: vscode.Uri, options?: RsglApiCompileOptions): RsglApiCompileResult;
+  checkWorkspace(workspace: vscode.Uri, options?: RsglApiCheckOptions): RsglApiCheckResult;
   createWatcher(workspace: vscode.Uri, options?: RsglApiWatchOptions): vscode.Disposable;
 }
 
@@ -49,9 +49,9 @@ export function createRsglApi(context: vscode.ExtensionContext): RsglApi {
   return {
     version: extensionVersion(context),
     apiVersion: rsglApiVersion,
-    compileFile: (uri, options) => Promise.resolve(compileFile(uri, options)),
-    compileWorkspace: (workspace, options) => Promise.resolve(compileWorkspace(workspace, options)),
-    checkWorkspace: (workspace, options) => Promise.resolve(checkWorkspace(workspace, options)),
+    compileFile: (uri, options) => compileFile(uri, options),
+    compileWorkspace: (workspace, options) => compileWorkspace(workspace, options),
+    checkWorkspace: (workspace, options) => checkWorkspace(workspace, options),
     createWatcher: (workspace, options) => createWatcher(workspace, options)
   };
 }
