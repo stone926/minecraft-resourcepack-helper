@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import { isCitPropertiesFileName } from "../cit/citPaths";
 import {
   createResourceReferencePathResolver,
   generateReferenceRedirectPath,
@@ -11,8 +10,6 @@ import {
   collectWorkspaceBlockstateUris
 } from "./resourceGraphScan";
 import {
-  createIncomingReferenceSearch,
-  type IncomingReferenceSearch,
   isModelDocumentPath,
   isResourceGraphDocumentPath,
   resourceUriKey
@@ -99,7 +96,7 @@ export class ResourceGraphWorkspaceCache {
 }
 
 export class ResourceGraphIndex {
-  private readonly incomingReferencesByTarget = new Map<string, Promise<ResolvedResourceReference[]>>();
+  private incomingReferencesByTarget: Promise<ReadonlyMap<string, ResolvedResourceReference[]>> | null = null;
   private readonly referencesByDocument = new Map<string, ResolvedReferencesCacheEntry>();
   private resourcePathResolver: ResourceReferencePathResolver | null = null;
   private childModelReferencesByParent: Promise<ReadonlyMap<string, ResolvedResourceReference[]>> | null = null;
@@ -108,7 +105,7 @@ export class ResourceGraphIndex {
 
   invalidate(): void {
     this.workspaceCache.invalidate();
-    this.incomingReferencesByTarget.clear();
+    this.incomingReferencesByTarget = null;
     this.referencesByDocument.clear();
     this.resourcePathResolver = null;
     this.childModelReferencesByParent = null;
@@ -128,18 +125,20 @@ export class ResourceGraphIndex {
   }
 
   async getIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
-    const targetKey = resourceUriKey(targetUri);
-    const cachedReferences = this.incomingReferencesByTarget.get(targetKey);
-    if (cachedReferences) {
-      return cachedReferences;
+    const referencesByTarget = await this.getIncomingReferencesByTarget();
+    return referencesByTarget.get(resourceUriKey(targetUri)) ?? [];
+  }
+
+  private getIncomingReferencesByTarget(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
+    if (this.incomingReferencesByTarget) {
+      return this.incomingReferencesByTarget;
     }
 
-    const references = this.collectIncomingReferences(targetUri).catch(error => {
-      this.incomingReferencesByTarget.delete(targetKey);
+    this.incomingReferencesByTarget = this.collectIncomingReferencesByTarget().catch(error => {
+      this.incomingReferencesByTarget = null;
       throw error;
     });
-    this.incomingReferencesByTarget.set(targetKey, references);
-    return references;
+    return this.incomingReferencesByTarget;
   }
 
   async getChildModelReferences(modelUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
@@ -185,20 +184,28 @@ export class ResourceGraphIndex {
     return referencesByParent;
   }
 
-  private async collectIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
-    const targetKey = resourceUriKey(targetUri);
-    const search = createIncomingReferenceSearch(targetUri);
-    if (!search || search.values.size === 0) {
-      return [];
+  private async collectIncomingReferencesByTarget(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
+    const documents = await collectResourceDocuments(this.workspaceCache);
+    const references = uniqueResolvedReferences(documents.flatMap(document =>
+      this.getReferences(document).filter(reference => reference.targetUri !== null)
+    ));
+    const referencesByTarget = new Map<string, ResolvedResourceReference[]>();
+
+    for (const reference of references) {
+      if (!reference.targetUri) {
+        continue;
+      }
+
+      const targetKey = resourceUriKey(reference.targetUri);
+      const targetReferences = referencesByTarget.get(targetKey);
+      if (targetReferences) {
+        targetReferences.push(reference);
+      } else {
+        referencesByTarget.set(targetKey, [reference]);
+      }
     }
 
-    const documents = await collectResourceDocuments(this.workspaceCache, search);
-    const references = documents.flatMap(document =>
-      this.getReferences(document)
-        .filter(reference => reference.targetUri !== null && resourceUriKey(reference.targetUri) === targetKey)
-    );
-
-    return uniqueResolvedReferences(references);
+    return referencesByTarget;
   }
 
   private getResourcePathResolver(): ResourceReferencePathResolver {
@@ -258,16 +265,12 @@ function resolveDocumentReferences(
 }
 
 async function collectResourceDocuments(
-  workspaceCache: ResourceGraphWorkspaceCache,
-  search?: IncomingReferenceSearch
+  workspaceCache: ResourceGraphWorkspaceCache
 ): Promise<ResourceGraphDocument[]> {
   const documentsByKey = new Map<string, ResourceGraphDocument>();
 
   for (const document of vscode.workspace.textDocuments) {
-    if (
-      isResourceReferenceFileName(document.fileName) &&
-      (!search || search.matchesText(document.getText()) || isCitPropertiesFileName(document.fileName))
-    ) {
+    if (isResourceReferenceFileName(document.fileName)) {
       documentsByKey.set(resourceUriKey(document.uri), document);
     }
   }
@@ -275,7 +278,7 @@ async function collectResourceDocuments(
   const fileUris = (await workspaceCache.getResourceReferenceUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
   const fileDocuments = await mapLimit(fileUris, 24, async uri => {
     try {
-      return await loadResourceGraphDocumentIfMatching(uri, search);
+      return await loadResourceGraphDocument(uri);
     } catch {
       return null;
     }
@@ -315,25 +318,6 @@ async function collectModelDocuments(workspaceCache: ResourceGraphWorkspaceCache
   }
 
   return [...documentsByKey.values()];
-}
-
-async function loadResourceGraphDocumentIfMatching(
-  uri: vscode.Uri,
-  search?: IncomingReferenceSearch
-): Promise<ResourceGraphDocument | null> {
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  const text = Buffer.from(bytes).toString("utf8");
-
-  if (search && !search.matchesText(text) && !isCitPropertiesFileName(uri.fsPath)) {
-    return null;
-  }
-
-  return {
-    uri,
-    languageId: "json",
-    fileName: uri.fsPath,
-    getText: () => text
-  };
 }
 
 function uniqueResolvedReferences(references: ResolvedResourceReference[]): ResolvedResourceReference[] {
