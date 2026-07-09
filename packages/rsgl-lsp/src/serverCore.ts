@@ -12,10 +12,10 @@ import {
   bindRsglModule,
   compileRsglModule,
   compileRsglProgram,
-  getRsglCompletionCandidates,
+  getRsglCompletionItems,
   getRsglSemanticTokens,
   parseRsgl,
-  type RsglCompletionCandidate,
+  type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglSemanticModel,
   type RsglSemanticToken,
@@ -100,16 +100,7 @@ export function completionItemsForContent(
   offset: number,
   semanticSymbols: readonly RsglSymbol[]
 ): CompletionItem[] {
-  const items = new Map<string, CompletionItem>();
-  for (const candidate of getRsglCompletionCandidates(text, offset)) {
-    items.set(candidate.label, toCompletionItem(candidate));
-  }
-  for (const symbol of semanticSymbols) {
-    if (!items.has(symbol.name)) {
-      items.set(symbol.name, symbolCompletionItem(symbol));
-    }
-  }
-  return [...items.values()];
+  return getRsglCompletionItems(text, offset, semanticSymbols).map(toCompletionItem);
 }
 
 /** Finds the semantic model belonging to the given file within a bound workspace program. */
@@ -167,16 +158,19 @@ export function encodeSemanticTokens(tokens: readonly RsglSemanticToken[], docum
 }
 
 /** Maps a syntactic completion candidate to an LSP completion item. */
-export function toCompletionItem(candidate: RsglCompletionCandidate): CompletionItem {
-  return {
+export function toCompletionItem(candidate: RsglCompletionItem): CompletionItem {
+  const item: CompletionItem = {
     label: candidate.label,
     kind: toCompletionKind(candidate.kind),
-    detail: candidate.detail,
-    insertText: candidate.insertText
+    detail: candidate.detail
   };
+  if (candidate.insertText) {
+    item.insertText = candidate.insertText;
+  }
+  return item;
 }
 
-function toCompletionKind(kind: RsglCompletionCandidate["kind"]): CompletionItemKind {
+function toCompletionKind(kind: RsglCompletionItem["kind"]): CompletionItemKind {
   if (kind === "snippet") {
     return CompletionItemKind.Snippet;
   }
@@ -189,26 +183,16 @@ function toCompletionKind(kind: RsglCompletionCandidate["kind"]): CompletionItem
   if (kind === "property") {
     return CompletionItemKind.Property;
   }
-  return CompletionItemKind.Keyword;
-}
-
-/** Maps a workspace symbol to an LSP completion item. */
-export function symbolCompletionItem(symbol: RsglSymbol): CompletionItem {
-  return {
-    label: symbol.name,
-    kind: symbol.kind === "template" ? CompletionItemKind.Function
-      : symbol.kind === "table" ? CompletionItemKind.Struct
-        : symbol.kind === "resource" ? CompletionItemKind.File
-          : CompletionItemKind.Variable,
-    detail: `${symbol.kind}: ${formatSymbolType(symbol)}`
-  };
-}
-
-function formatSymbolType(symbol: RsglSymbol): string {
-  if (symbol.signature) {
-    return "function";
+  if (kind === "struct") {
+    return CompletionItemKind.Struct;
   }
-  return symbol.type.kind;
+  if (kind === "file") {
+    return CompletionItemKind.File;
+  }
+  if (kind === "variable") {
+    return CompletionItemKind.Variable;
+  }
+  return CompletionItemKind.Keyword;
 }
 
 /** Converts an RSGL diagnostic to an LSP diagnostic, clamping offsets to the document. */

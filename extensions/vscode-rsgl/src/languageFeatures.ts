@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
-import { rsglCompletionProvider } from "./completion";
+import { createRsglCompletionProvider } from "./completion";
 import { refreshRsglDiagnostics, rsglDocumentSelector, rsglLanguageId } from "./diagnostics";
 import { rsglFormattingProvider } from "./formatter";
 import { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
@@ -27,7 +27,7 @@ function registerInProcessRsglLanguageFeatures(context: vscode.ExtensionContext)
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     rsglDocumentSelector,
-    rsglCompletionProvider,
+    createRsglCompletionProvider(semanticCache),
     " ",
     ".",
     ":",

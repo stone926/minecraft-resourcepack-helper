@@ -1,14 +1,11 @@
 import * as vscode from "vscode";
-import * as path from "node:path";
-import { normalizePathKey } from "../../../packages/mc-assets/src";
-import { parseRsgl } from "../../../packages/rsgl-core/src/parser";
-import { bindRsglModule, type RsglSemanticModel } from "../../../packages/rsgl-core/src/semantic";
 import {
   getRsglSemanticTokens,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes
 } from "../../../packages/rsgl-core/src/semanticTokens";
 import type { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
+import { semanticModelForRsglDocument } from "./semanticWorkspace";
 
 /** Legend mirroring the transport-neutral RSGL semantic token legend. */
 export const rsglSemanticTokensLegend = new vscode.SemanticTokensLegend(
@@ -31,7 +28,7 @@ export function createRsglSemanticTokensProvider(
     provideDocumentSemanticTokens(document: vscode.TextDocument): vscode.SemanticTokens {
       const builder = new vscode.SemanticTokensBuilder(rsglSemanticTokensLegend);
       try {
-        const model = semanticModelForDocument(document, semanticCache);
+        const model = semanticModelForRsglDocument(document, semanticCache);
         for (const token of getRsglSemanticTokens(model)) {
           const start = document.positionAt(token.start);
           builder.push(start.line, start.character, token.length, token.tokenType, token.tokenModifiers);
@@ -42,17 +39,4 @@ export function createRsglSemanticTokensProvider(
       return builder.build();
     }
   };
-}
-
-function semanticModelForDocument(
-  document: vscode.TextDocument,
-  semanticCache: RsglWorkspaceSemanticCache
-): RsglSemanticModel {
-  const fileName = document.uri.fsPath || document.fileName;
-  const semanticProgram = semanticCache.loadProgramFromEntry(fileName);
-  const key = normalizePathKey(path.resolve(fileName));
-  const model = semanticProgram.program.models.find(candidate =>
-    normalizePathKey(path.resolve(candidate.fileName)) === key
-  );
-  return model ?? bindRsglModule(parseRsgl(document.getText()), { fileName });
 }

@@ -1,6 +1,7 @@
 export * from "./arguments";
 export * from "./build";
 export * from "./completionData";
+export * from "./completionService";
 export * from "./formatterCore";
 export * from "./resourceKinds";
 export * from "./semanticTokens";

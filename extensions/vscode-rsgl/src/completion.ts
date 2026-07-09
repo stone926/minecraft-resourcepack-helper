@@ -1,14 +1,39 @@
 import * as vscode from "vscode";
-import { getRsglCompletionCandidates, RsglCompletionCandidate } from "../../../packages/rsgl-core/src/completionData";
+import {
+  getRsglCompletionItems,
+  type RsglCompletionItem
+} from "../../../packages/rsgl-core/src/completionService";
+import type { RsglSymbol } from "../../../packages/rsgl-core/src/semantic";
+import type { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
+import { semanticModelForRsglDocument } from "./semanticWorkspace";
 
-export const rsglCompletionProvider: vscode.CompletionItemProvider = {
-  provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
-    const offset = document.offsetAt(position);
-    return getRsglCompletionCandidates(document.getText(), offset).map(toCompletionItem);
+export function createRsglCompletionProvider(
+  semanticCache: RsglWorkspaceSemanticCache
+): vscode.CompletionItemProvider {
+  return {
+    provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
+      const offset = document.offsetAt(position);
+      return getRsglCompletionItems(
+        document.getText(),
+        offset,
+        semanticSymbolsForDocument(document, semanticCache)
+      ).map(toCompletionItem);
+    }
+  };
+}
+
+function semanticSymbolsForDocument(
+  document: vscode.TextDocument,
+  semanticCache: RsglWorkspaceSemanticCache
+): RsglSymbol[] {
+  try {
+    return semanticModelForRsglDocument(document, semanticCache).symbols;
+  } catch {
+    return [];
   }
-};
+}
 
-function toCompletionItem(candidate: RsglCompletionCandidate): vscode.CompletionItem {
+function toCompletionItem(candidate: RsglCompletionItem): vscode.CompletionItem {
   const item = new vscode.CompletionItem(candidate.label, toCompletionKind(candidate.kind));
   item.detail = candidate.detail;
   if (candidate.insertText) {
@@ -17,7 +42,7 @@ function toCompletionItem(candidate: RsglCompletionCandidate): vscode.Completion
   return item;
 }
 
-function toCompletionKind(kind: RsglCompletionCandidate["kind"]): vscode.CompletionItemKind {
+function toCompletionKind(kind: RsglCompletionItem["kind"]): vscode.CompletionItemKind {
   if (kind === "snippet") {
     return vscode.CompletionItemKind.Snippet;
   }
@@ -29,6 +54,15 @@ function toCompletionKind(kind: RsglCompletionCandidate["kind"]): vscode.Complet
   }
   if (kind === "property") {
     return vscode.CompletionItemKind.Property;
+  }
+  if (kind === "struct") {
+    return vscode.CompletionItemKind.Struct;
+  }
+  if (kind === "file") {
+    return vscode.CompletionItemKind.File;
+  }
+  if (kind === "variable") {
+    return vscode.CompletionItemKind.Variable;
   }
   return vscode.CompletionItemKind.Keyword;
 }
