@@ -139,7 +139,6 @@
   "Texture variable '{0}' contains a cyclic # reference chain.": "纹理变量“{0}”包含循环 # 引用链。",
   "Texture variable cycle detected: {0}": "检测到纹理变量循环：{0}",
   "Texture variable not found: {0}": "未找到纹理变量：{0}",
-  "This global cit.properties is ignored because a higher-priority file exists: {0}.": "此全局 cit.properties 已被忽略，因为存在更高优先级的文件：{0}。",
   "This splashes.txt line has Java hashCode 125780783 and will never be displayed.": "此 splashes.txt 行的 Java hashCode 为 125780783，永远不会显示。",
   "Top": "顶部",
   "Transparent": "透明",

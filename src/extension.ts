@@ -44,18 +44,12 @@ const shaderResourceReferenceSelectors: vscode.DocumentFilter[] = [
 
 const citResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { pattern: "**/assets/*/citresewn/*.properties" },
-  { pattern: "**/assets/*/citresewn/**/*.properties" },
-  { pattern: "**/assets/*/optifine/cit.properties" },
-  { pattern: "**/assets/*/optifine/cit/**/*.properties" },
-  { pattern: "**/assets/*/mcpatcher/cit.properties" },
-  { pattern: "**/assets/*/mcpatcher/cit/**/*.properties" }
+  { pattern: "**/assets/*/citresewn/**/*.properties" }
 ];
 
 const citModelResourceReferenceSelectors: vscode.DocumentFilter[] = [
   { language: "json", pattern: "**/assets/*/citresewn/*.json" },
-  { language: "json", pattern: "**/assets/*/citresewn/**/*.json" },
-  { language: "json", pattern: "**/assets/*/optifine/cit/**/*.json" },
-  { language: "json", pattern: "**/assets/*/mcpatcher/cit/**/*.json" }
+  { language: "json", pattern: "**/assets/*/citresewn/**/*.json" }
 ];
 
 const resourceReferenceSelectors: vscode.DocumentFilter[] = [
@@ -235,17 +229,11 @@ export function activate(context: vscode.ExtensionContext) {
     "**/assets/*/textures/**/*.png",
     "**/assets/*/citresewn/*.png",
     "**/assets/*/citresewn/**/*.png",
-    "**/assets/*/optifine/cit/**/*.png",
-    "**/assets/*/mcpatcher/cit/**/*.png",
     "**/assets/*/textures/**/*.png.mcmeta",
     "**/pack.mcmeta",
     "**/pack.png",
     "**/assets/*/citresewn/*.properties",
-    "**/assets/*/citresewn/**/*.properties",
-    "**/assets/*/optifine/cit.properties",
-    "**/assets/*/optifine/cit/**/*.properties",
-    "**/assets/*/mcpatcher/cit.properties",
-    "**/assets/*/mcpatcher/cit/**/*.properties"
+    "**/assets/*/citresewn/**/*.properties"
   ]) {
     registerResourceWatcher(context, pattern, uri => {
       invalidateResourcePath(uri);

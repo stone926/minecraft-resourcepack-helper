@@ -139,7 +139,6 @@
   "Texture variable '{0}' contains a cyclic # reference chain.": "Texture variable '{0}' contains a cyclic # reference chain.",
   "Texture variable cycle detected: {0}": "Texture variable cycle detected: {0}",
   "Texture variable not found: {0}": "Texture variable not found: {0}",
-  "This global cit.properties is ignored because a higher-priority file exists: {0}.": "This global cit.properties is ignored because a higher-priority file exists: {0}.",
   "This splashes.txt line has Java hashCode 125780783 and will never be displayed.": "This splashes.txt line has Java hashCode 125780783 and will never be displayed.",
   "Top": "Top",
   "Transparent": "Transparent",

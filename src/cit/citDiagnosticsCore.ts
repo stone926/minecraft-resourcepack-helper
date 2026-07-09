@@ -1,5 +1,4 @@
 import * as path from "node:path";
-import { parseAssetsPath } from "../../packages/mc-assets/src";
 import { lm, type LocalizedMessage } from "../i18n/messages";
 import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
 import { parseCitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
@@ -20,7 +19,6 @@ export interface CitDiagnostic {
 
 export interface CitDiagnosticsOptions {
   locale?: string;
-  fileExists?: (fileName: string) => boolean;
   resourceIds?: CitResourceIds;
 }
 
@@ -106,10 +104,6 @@ export function getCitDiagnostics(
 
   if (!globalFile) {
     diagnostics.push(...validateCitTypeRules(document.fileName, entries, citType, options.resourceIds));
-  }
-
-  if (globalFile) {
-    diagnostics.push(...getGlobalPriorityDiagnostics(document.fileName, spec.globalPriority, options.fileExists));
   }
 
   return diagnostics;
@@ -416,41 +410,6 @@ function inferItemIdFromFileName(fileName: string): string | null {
 
 function requiresValue(spec: ResolvedCitSpecKey): boolean {
   return spec.valueType !== "string";
-}
-
-function getGlobalPriorityDiagnostics(
-  fileName: string,
-  globalPriority: string[],
-  fileExists: ((fileName: string) => boolean) | undefined
-): CitDiagnostic[] {
-  if (!fileExists) {
-    return [];
-  }
-
-  const parsed = parseAssetsPath(fileName);
-  if (!parsed) {
-    return [];
-  }
-
-  const packRoot = path.dirname(parsed.assetsRoot);
-  const currentRelative = parsed.relativeSegments.join("/").toLowerCase();
-  const currentIndex = globalPriority.indexOf(currentRelative);
-  if (currentIndex <= 0) {
-    return [];
-  }
-
-  const higherPriority = globalPriority.slice(0, currentIndex)
-    .map(relative => path.join(packRoot, "assets", "minecraft", ...relative.split("/")))
-    .find(candidate => fileExists(candidate));
-  if (!higherPriority) {
-    return [];
-  }
-
-  return [createDiagnostic(
-    { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-    lm("This global cit.properties is ignored because a higher-priority file exists: {0}.", higherPriority),
-    "information"
-  )];
 }
 
 function createDiagnostic(range: AstLocation, message: LocalizedMessage, severity: CitDiagnosticSeverity): CitDiagnostic {

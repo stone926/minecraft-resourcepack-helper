@@ -115,7 +115,7 @@ describe("shader and CIT resource references", () => {
 
   it("keeps empty CIT asset references findable for completion", () => {
     const { document, position } = createMarkedTextDocument(
-      path.join("pack", "assets", "minecraft", "optifine", "cit", "swords", "empty.properties"),
+      path.join("pack", "assets", "minecraft", "citresewn", "cit", "swords", "empty.properties"),
       "texture=|",
       "properties",
       1
@@ -127,7 +127,7 @@ describe("shader and CIT resource references", () => {
     assert.deepStrictEqual(
       references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension, reference.resolveMode ?? null]),
       [
-        ["texture", "", "textures", "optifine/cit/swords", "png", "cit"]
+        ["texture", "", "textures", "citresewn/cit/swords", "png", "cit"]
       ]
     );
     assert.strictEqual(referenceAtBlankValue?.kind, "texture");
@@ -136,7 +136,7 @@ describe("shader and CIT resource references", () => {
 
   it("finds CIT asset references when the cursor is at the end of the value", () => {
     const { document, position } = createMarkedTextDocument(
-      path.join("pack", "assets", "minecraft", "optifine", "cit", "axolotl_bucket", "purple_small.properties"),
+      path.join("pack", "assets", "minecraft", "citresewn", "cit", "axolotl_bucket", "purple_small.properties"),
       "model=minecraft:item/axolotl_bucket/purple_s|",
       "properties",
       1
@@ -186,7 +186,7 @@ describe("shader and CIT resource references", () => {
 
   it("extracts CIT local model JSON references with CIT resolve mode", () => {
     const { document, position } = createMarkedTextDocument(
-      path.join("pack", "assets", "minecraft", "optifine", "cit", "swords", "emerald.json"),
+      path.join("pack", "assets", "minecraft", "citresewn", "cit", "swords", "emerald.json"),
       [
         "{",
         "  \"parent\": \"./base\",",
@@ -208,9 +208,9 @@ describe("shader and CIT resource references", () => {
     assert.deepStrictEqual(
       references.map(reference => [reference.kind, reference.value, reference.target, reference.source, reference.extension, reference.relationship ?? null, reference.resolveMode ?? null]),
       [
-        ["model", "./base", "models", "optifine/cit/swords", "json", "modelParent", "cit"],
-        ["texture", "./textures/emerald", "textures", "optifine/cit/swords", "png", null, "cit"],
-        ["model", "./pulling", "models", "optifine/cit/swords", "json", null, "cit"]
+        ["model", "./base", "models", "citresewn/cit/swords", "json", "modelParent", "cit"],
+        ["texture", "./textures/emerald", "textures", "citresewn/cit/swords", "png", null, "cit"],
+        ["model", "./pulling", "models", "citresewn/cit/swords", "json", null, "cit"]
       ]
     );
     assert.strictEqual(referenceAtTexture?.value, "./textures/emerald");

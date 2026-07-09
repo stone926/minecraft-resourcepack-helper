@@ -37,11 +37,7 @@ export function isCitGlobalPropertiesFileName(fileName: string): boolean {
   const namespace = parsed.namespace.toLowerCase();
   const relativePath = parsed.relativeSegments.map(segment => segment.toLowerCase()).join("/");
 
-  return namespace === "minecraft" && (
-    relativePath === "citresewn/cit.properties" ||
-    relativePath === "optifine/cit.properties" ||
-    relativePath === "mcpatcher/cit.properties"
-  );
+  return namespace === "minecraft" && relativePath === "citresewn/cit.properties";
 }
 
 export function getCitDocumentSource(fileName: string): string {
@@ -59,7 +55,7 @@ export function getCitDocumentInfo(fileName: string): CitDocumentInfo | null {
   }
 
   const relativeSegments = parsed.relativeSegments.slice(0, -1);
-  if (!isCitRelativePath(relativeSegments, parsed.relativeSegments[parsed.relativeSegments.length - 1])) {
+  if (!isCitRelativePath(relativeSegments)) {
     return null;
   }
 
@@ -172,21 +168,17 @@ function containsPathSeparator(value: string): boolean {
   return value.includes(path.sep);
 }
 
-function isCitRelativePath(segments: string[], fileName: string): boolean {
+function isCitRelativePath(segments: string[]): boolean {
   if (segments.length === 0) {
     return false;
   }
 
-  const [root, second] = segments.map(segment => segment.toLowerCase());
+  const [root] = segments.map(segment => segment.toLowerCase());
   if (root === "citresewn") {
     return true;
   }
 
-  if (root !== "optifine" && root !== "mcpatcher") {
-    return false;
-  }
-
-  return second === "cit" || (segments.length === 1 && fileName.toLowerCase() === "cit.properties");
+  return false;
 }
 
 function unique(values: string[]): string[] {

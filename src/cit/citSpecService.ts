@@ -193,7 +193,6 @@ function mergeFragments(
   const keys = new Map<string, ResolvedCitSpecKey>();
   const patterns = new Map<string, ResolvedCitSpecKey>();
   const rules = new Map<string, CitSpecFragment["rules"][number]>();
-  const globalPriority: string[] = [];
 
   for (const fragment of fragments) {
     if (fragment.scope !== scope) {
@@ -208,7 +207,6 @@ function mergeFragments(
       }
       rules.set(rule.id, rule);
     }
-    globalPriority.push(...(fragment.globalPriority ?? []));
   }
 
   return {
@@ -217,7 +215,6 @@ function mergeFragments(
     keys,
     patterns: [...patterns.values()],
     rules: [...rules.values()],
-    globalPriority,
     fragments: fragments.map(fragment => fragment.id)
   };
 }

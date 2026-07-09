@@ -89,7 +89,7 @@ export const rsglResourceCompletionDescriptors: RsglResourceCompletionDescriptor
   },
   {
     label: "json",
-    insertText: "json \"${1:assets/minecraft/optifine/example.json}\" {\n  ${2:key}: ${3:value}\n}",
+    insertText: "json \"${1:assets/minecraft/custom/example.json}\" {\n  ${2:key}: ${3:value}\n}",
     detail: "Arbitrary pack-relative JSON resource"
   },
   {

@@ -6,7 +6,7 @@ import { compileSource, expectNoDiagnostics } from "./helpers/compile";
 describe("RSGL JSON resources and generic fragments", () => {
   it("emits arbitrary pack-relative JSON resources", () => {
     const result = compileSource([
-      "json \"assets/minecraft/optifine/cit/diamond_gem\" {",
+      "json \"assets/minecraft/custom/diamond_gem\" {",
       "  parent minecraft:item/generated",
       "  textures {",
       "    layer0 minecraft:item/diamond",
@@ -19,18 +19,18 @@ describe("RSGL JSON resources and generic fragments", () => {
     ]);
 
     expectNoDiagnostics(result);
-    const optifine = result.units.find(unit => unit.outputPath === "assets/minecraft/optifine/cit/diamond_gem.json");
-    assert.strictEqual(optifine?.kind, "json");
-    assert.deepStrictEqual(optifine?.id, { namespace: "minecraft", path: "optifine/cit/diamond_gem.json" });
-    assert.deepStrictEqual(optifine?.content, {
+    const custom = result.units.find(unit => unit.outputPath === "assets/minecraft/custom/diamond_gem.json");
+    assert.strictEqual(custom?.kind, "json");
+    assert.deepStrictEqual(custom?.id, { namespace: "minecraft", path: "custom/diamond_gem.json" });
+    assert.deepStrictEqual(custom?.content, {
       parent: "minecraft:item/generated",
       textures: {
         layer0: "minecraft:item/diamond"
       }
     });
-    assert.ok(optifine?.sourceMap.mappings.some(mapping => mapping.generatedPath === "/textures/layer0"));
+    assert.ok(custom?.sourceMap.mappings.some(mapping => mapping.generatedPath === "/textures/layer0"));
     assert.strictEqual(
-      stableJsonStringify(optifine?.content as JsonValue, "json"),
+      stableJsonStringify(custom?.content as JsonValue, "json"),
       "{\n  \"parent\": \"minecraft:item/generated\",\n  \"textures\": {\n    \"layer0\": \"minecraft:item/diamond\"\n  }\n}\n"
     );
 

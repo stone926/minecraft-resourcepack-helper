@@ -5,12 +5,13 @@ import {
   getCitDocumentSource,
   getCitPathCandidates,
   getCitResourceType,
+  isCitModelFileName,
   isCitPropertiesFileName
 } from "../../cit/citPaths";
 
-describe("OptiFine CIT path utilities", () => {
+describe("CIT Resewn path utilities", () => {
   const packRoot = path.join("workspace", "pack");
-  const documentFileName = path.join(packRoot, "assets", "minecraft", "optifine", "cit", "swords", "diamond.properties");
+  const documentFileName = path.join(packRoot, "assets", "minecraft", "citresewn", "cit", "swords", "diamond.properties");
 
   it("detects texture and model keys without matching unrelated keys", () => {
     assert.strictEqual(getCitResourceType("texture"), "textures");
@@ -25,7 +26,7 @@ describe("OptiFine CIT path utilities", () => {
     assert.deepStrictEqual(
       getCitPathCandidates(documentFileName, packRoot, "diamond_sword", "textures"),
       [
-        path.join(packRoot, "assets", "minecraft", "optifine", "cit", "swords", "diamond_sword.png"),
+        path.join(packRoot, "assets", "minecraft", "citresewn", "cit", "swords", "diamond_sword.png"),
         path.join(packRoot, "assets", "minecraft", "textures", "diamond_sword.png")
       ]
     );
@@ -67,6 +68,21 @@ describe("OptiFine CIT path utilities", () => {
     assert.strictEqual(isCitPropertiesFileName(documentFileName), true);
     assert.strictEqual(isCitPropertiesFileName(path.join(packRoot, "assets", "minecraft", "models", "item", "stick.properties")), false);
     assert.strictEqual(getCitDocumentNamespace(documentFileName), "minecraft");
-    assert.strictEqual(getCitDocumentSource(documentFileName), ["optifine", "cit", "swords"].join("/"));
+    assert.strictEqual(getCitDocumentSource(documentFileName), ["citresewn", "cit", "swords"].join("/"));
+  });
+
+  it("does not treat legacy OptiFine or MCPatcher paths as CIT documents", () => {
+    assert.strictEqual(
+      isCitPropertiesFileName(path.join(packRoot, "assets", "minecraft", "optifine", "cit", "swords", "diamond.properties")),
+      false
+    );
+    assert.strictEqual(
+      isCitPropertiesFileName(path.join(packRoot, "assets", "minecraft", "mcpatcher", "cit", "swords", "diamond.properties")),
+      false
+    );
+    assert.strictEqual(
+      isCitModelFileName(path.join(packRoot, "assets", "minecraft", "optifine", "cit", "swords", "diamond.json")),
+      false
+    );
   });
 });

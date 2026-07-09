@@ -71,21 +71,21 @@ describe("model preview generated item and CIT previews", () => {
 
     try {
       const pack = createPack(root, "pack");
-      const properties = path.join(pack, "assets/minecraft/optifine/cit/custom.properties");
-      writeFile(pack, "assets/minecraft/optifine/cit/custom.properties", [
+      const properties = path.join(pack, "assets/minecraft/citresewn/cit/custom.properties");
+      writeFile(pack, "assets/minecraft/citresewn/cit/custom.properties", [
         "type=item",
         "items=stick",
         "model=./custom_model",
         "texture=./replacement"
       ].join("\n"));
-      writeJson(pack, "assets/minecraft/optifine/cit/custom_model.json", {
+      writeJson(pack, "assets/minecraft/citresewn/cit/custom_model.json", {
         parent: "minecraft:item/generated",
         textures: {
           layer0: "./original"
         }
       });
-      writeFile(pack, "assets/minecraft/optifine/cit/original.png", createRgbaPng(2, 2, () => 255));
-      writeFile(pack, "assets/minecraft/optifine/cit/replacement.png", createRgbaPng(2, 2, () => 255));
+      writeFile(pack, "assets/minecraft/citresewn/cit/original.png", createRgbaPng(2, 2, () => 255));
+      writeFile(pack, "assets/minecraft/citresewn/cit/replacement.png", createRgbaPng(2, 2, () => 255));
 
       const preview = await createService().getPreviewDocument(properties);
 

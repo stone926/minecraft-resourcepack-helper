@@ -55,7 +55,6 @@ export interface CitSpecFragment {
   version: 1;
   id: string;
   scope: CitSpecScope;
-  globalPriority?: string[];
   keys: Record<string, CitSpecKey>;
   patterns: Record<string, CitSpecKey>;
   rules: CitSpecRule[];
@@ -73,7 +72,6 @@ export interface ResolvedCitSpec {
   keys: Map<string, ResolvedCitSpecKey>;
   patterns: ResolvedCitSpecKey[];
   rules: CitSpecRule[];
-  globalPriority: string[];
   fragments: string[];
 }
 

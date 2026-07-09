@@ -191,7 +191,7 @@
         },
         {
           "command": "McResHelper.openModelPreview",
-          "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:citresewn|optifine[\\\\/]cit|mcpatcher[\\\\/]cit)(?:[\\\\/]|$)/",
+          "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]citresewn(?:[\\\\/]|$)/",
           "group": "navigation"
         }
       ],
@@ -203,7 +203,7 @@
         },
         {
           "command": "McResHelper.openModelPreview",
-          "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:citresewn|optifine[\\\\/]cit|mcpatcher[\\\\/]cit)(?:[\\\\/]|$)/",
+          "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]citresewn(?:[\\\\/]|$)/",
           "group": "navigation"
         },
         {

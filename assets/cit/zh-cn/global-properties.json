@@ -2,11 +2,6 @@
   "version": 1,
   "id": "global-properties",
   "scope": "global",
-  "globalPriority": [
-    "citresewn/cit.properties",
-    "optifine/cit.properties",
-    "mcpatcher/cit.properties"
-  ],
   "keys": {
     "useGlint": {
       "valueType": "boolean",
@@ -39,14 +34,6 @@
       "singleton": true,
       "title": "淡入淡出",
       "description": "当 method 为 cycle 时，控制 CIT 附魔之间的过渡时长。"
-    },
-    "root_fallback": {
-      "valueType": "boolean",
-      "scope": ["global"],
-      "default": "false",
-      "singleton": true,
-      "title": "根目录后备",
-      "description": "为 true 时，citresewn 根目录中的 CIT 会自动后备到匹配的 optifine 或 mcpatcher 根目录 CIT，除非已显式设置 fallback。"
     }
   },
   "patterns": {},

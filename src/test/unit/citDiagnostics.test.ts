@@ -70,10 +70,10 @@ describe("CIT diagnostics", () => {
 
   it("recognizes default-namespaced keys without changing their raw display", () => {
     const globalFile = path.join("pack", "assets", "minecraft", "citresewn", "cit.properties");
-    const diagnostics = getMessages("citresewn:root_fallback=true", globalFile);
+    const diagnostics = getMessages("citresewn:useGlint=true", globalFile);
 
     assert.strictEqual(diagnostics.some(message => message.includes("Unknown CIT key")), false);
-    assert.strictEqual(diagnostics.some(message => message.includes("root_fallback")), false);
+    assert.strictEqual(diagnostics.some(message => message.includes("useGlint")), false);
   });
 
   it("warns for legacy NBT and currently unported enchantment keys", () => {
@@ -162,25 +162,6 @@ describe("CIT diagnostics", () => {
     assert.strictEqual(diagnostics.some(message => message.includes("minecraft:diamond_helmet") && message.includes("not an armor item")), false);
   });
 
-  it("reports shadowed global cit.properties for absolute pack paths", () => {
-    const packRoot = path.resolve("pack");
-    const fileName = path.join(packRoot, "assets", "minecraft", "optifine", "cit.properties");
-    const higherPriority = path.join(packRoot, "assets", "minecraft", "citresewn", "cit.properties");
-    const document: CitLanguageDocument = {
-      fileName,
-      getText: () => "useGlint=true"
-    };
-
-    const diagnostics = getCitDiagnostics(document, {
-      locale: "en",
-      fileExists: candidate => candidate === higherPriority
-    }).map(diagnostic => formatDefaultMessage(diagnostic.message));
-
-    assert.ok(
-      diagnostics.some(message => message.includes("higher-priority file exists")),
-      `expected shadowed-global diagnostic, got: ${JSON.stringify(diagnostics)}`
-    );
-  });
 });
 
 function getMessages(

@@ -35,10 +35,10 @@ describe("CIT properties parser", () => {
   });
 
   it("keeps namespaced keys when equals is used as the separator", () => {
-    const entries = parseCitProperties("citresewn:root_fallback=true");
+    const entries = parseCitProperties("citresewn:useGlint=true");
 
     assert.strictEqual(entries.length, 1);
-    assert.strictEqual(entries[0].key, "citresewn:root_fallback");
+    assert.strictEqual(entries[0].key, "citresewn:useGlint");
     assert.strictEqual(entries[0].value, "true");
   });
 
