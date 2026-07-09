@@ -127,6 +127,16 @@ describe("model preview manifest", () => {
     assert.ok(script.includes("(y < size / 2) !== (x < size / 2)"), "missing texture should use 2x2 quadrants, not a small checkerboard");
     assert.strictEqual(script.includes("x >> 2"), false, "missing texture should not use the old 4px checkerboard");
   });
+
+  it("caches webview textures by dependency version instead of timestamps", () => {
+    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewRenderer.js"), "utf8");
+
+    assert.ok(script.includes("this.textureCache = new Map()"), "renderer should keep a texture cache across scene rebuilds");
+    assert.ok(script.includes("textureCacheKey(material)"), "renderer should key textures from material metadata");
+    assert.ok(script.includes("material.textureVersion"), "texture cache keys should include the dependency version");
+    assert.strictEqual(script.includes("Date.now()"), false, "renderer should not bypass webview caching with timestamps");
+    assert.strictEqual(script.includes("appendCacheBust"), false, "renderer should load stable texture URIs");
+  });
 });
 
 function readPackageJson(): PackageJson {

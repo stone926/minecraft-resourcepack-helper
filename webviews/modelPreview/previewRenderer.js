@@ -37,6 +37,7 @@ export class PreviewRenderer {
     this.disposed = false;
     this.backgroundColor = getCssColor("--vscode-editor-background", "#1e1e1e");
     this.texturePromises = [];
+    this.textureCache = new Map();
     this.disposables = [];
     this.grid = new THREE.GridHelper(32, 16, 0x5f6f7a, 0x303842);
     this.grid.position.set(8, 0, 8);
@@ -89,6 +90,7 @@ export class PreviewRenderer {
       return;
     }
     this.document = document;
+    this.pruneTextureCache();
     this.rebuildScene();
   }
 
@@ -178,7 +180,7 @@ export class PreviewRenderer {
     }
 
     const texture = material.fallback === "texture" && material.textureUri
-      ? this.loadTexture(material.textureUri)
+      ? this.loadTexture(material)
       : createMissingTexture();
     if (!(material.fallback === "texture" && material.textureUri)) {
       this.disposables.push(texture);
@@ -194,10 +196,17 @@ export class PreviewRenderer {
     });
   }
 
-  loadTexture(uri) {
+  loadTexture(material) {
+    const cacheKey = textureCacheKey(material);
+    const cached = this.textureCache.get(cacheKey);
+    if (cached) {
+      this.texturePromises.push(cached.ready);
+      return cached.texture;
+    }
+
     const loader = new THREE.TextureLoader();
     const texture = loader.load(
-      appendCacheBust(uri),
+      material.textureUri,
       () => this.requestRender(),
       undefined,
       error => vscode.postMessage({ type: "renderIssue", code: "Texture load failed: {0}", args: [String(error)] })
@@ -206,11 +215,12 @@ export class PreviewRenderer {
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
     texture.flipY = false;
-    this.texturePromises.push(new Promise(resolve => {
+    const ready = new Promise(resolve => {
       texture.onUpdate = () => resolve();
       setTimeout(resolve, 3000);
-    }));
-    this.disposables.push(texture);
+    });
+    this.texturePromises.push(ready);
+    this.textureCache.set(cacheKey, { texture, ready });
     return texture;
   }
 
@@ -360,8 +370,33 @@ export class PreviewRenderer {
     this.disposeSceneObjects();
     disposeObject3d(this.grid);
     disposeObject3d(this.axes);
+    this.disposeTextureCache();
     this.webgl.dispose();
     this.webgl.forceContextLoss?.();
+  }
+
+  pruneTextureCache() {
+    if (!this.document) {
+      this.disposeTextureCache();
+      return;
+    }
+
+    const activeKeys = new Set(this.document.materials
+      .filter(material => material.fallback === "texture" && material.textureUri)
+      .map(material => textureCacheKey(material)));
+    for (const [key, entry] of this.textureCache) {
+      if (!activeKeys.has(key)) {
+        entry.texture.dispose();
+        this.textureCache.delete(key);
+      }
+    }
+  }
+
+  disposeTextureCache() {
+    for (const entry of this.textureCache.values()) {
+      entry.texture.dispose();
+    }
+    this.textureCache.clear();
   }
 }
 
@@ -370,8 +405,8 @@ function getCssColor(name, fallback) {
   return value || fallback;
 }
 
-function appendCacheBust(uri) {
-  return `${uri}${uri.includes("?") ? "&" : "?"}v=${Date.now()}`;
+function textureCacheKey(material) {
+  return `${material.textureUri}\0${material.textureVersion ?? "unknown"}`;
 }
 
 function normalizeCaptureDimension(value, fallback) {

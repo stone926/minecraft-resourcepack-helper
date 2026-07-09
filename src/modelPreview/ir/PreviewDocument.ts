@@ -50,6 +50,7 @@ export interface PreviewFace {
 export interface PreviewMaterial {
   id: string;
   textureUri?: string;
+  textureVersion?: string | null;
   fallback: "texture" | "missing" | "solid";
   transparent: boolean;
 }

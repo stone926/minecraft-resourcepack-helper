@@ -38,6 +38,7 @@ describe("model preview parent and texture resolution", () => {
       assert.strictEqual(preview.meshes.length, 1);
       assert.strictEqual(preview.meshes[0].faces.length, 1);
       assert.strictEqual(preview.materials[0].fallback, "texture");
+      assert.ok(preview.materials[0].textureVersion, "texture materials should carry file dependency versions for webview caching");
       assert.match(preview.materials[0].textureUri ?? "", /custom\.png$/);
       assert.ok(preview.dependencies.some(dependency => dependency.uri.endsWith("/cube_all.json") || dependency.uri.endsWith("cube_all.json")));
       assert.ok(preview.dependencies.some(dependency => dependency.uri.endsWith("/custom.png") || dependency.uri.endsWith("custom.png")));

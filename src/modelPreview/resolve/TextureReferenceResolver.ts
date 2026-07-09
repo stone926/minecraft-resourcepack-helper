@@ -131,6 +131,7 @@ export class TextureReferenceResolver {
       material: {
         id: `texture:${normalizedKey}`,
         textureUri: fileUriString(textureFile.fileName),
+        textureVersion: this.fileSystem.fileVersion?.(textureFile.fileName) ?? null,
         fallback: "texture",
         transparent: forceTranslucent
       },
