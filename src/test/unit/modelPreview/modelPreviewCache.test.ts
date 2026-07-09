@@ -75,6 +75,26 @@ describe("model preview cache", () => {
 
     assert.strictEqual(cache.getRawModel(modelFileName, "v1"), null);
   });
+
+  it("bounds preview cache sizes", () => {
+    const cache = new ModelPreviewCache();
+
+    for (let index = 0; index < 600; index++) {
+      const fileName = path.join("pack", "assets", "minecraft", "models", "block", `model_${index}.json`);
+      const texture = path.join("pack", "assets", "minecraft", "textures", "block", `texture_${index}.png`);
+      cache.set(fileName, Promise.resolve(createPreviewDocument([])));
+      cache.setRawModel(fileName, "v1", Promise.resolve({ fileName, text: "{}", data: null }));
+      cache.setResolvedModel(fileName, "cfg", Promise.resolve(createResolvedModel([])), () => "v1");
+      cache.setTextureAlphaMask(texture, "v1", Promise.resolve(null));
+    }
+
+    assert.deepStrictEqual(cache.getStats(), {
+      previews: 128,
+      rawModels: 512,
+      resolvedModels: 512,
+      textureAlphaMasks: 512
+    });
+  });
 });
 
 function createPreviewDocument(dependencyUris: string[]): ModelPreviewDocument {

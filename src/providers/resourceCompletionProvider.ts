@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { isValidMinecraftNamespace } from "../../packages/mc-assets/src";
+import { isValidMinecraftNamespace, normalizePathKey, parseResourceLocation } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getCitDocumentNamespace } from "../cit/citPaths";
 import {
@@ -10,7 +10,6 @@ import {
 } from "../utils/resourceCompletionContext";
 import {
   buildResourceCompletionText,
-  filterExistingResourceRoots,
   getAssetsRootCandidates,
   parsePartialResourcePath,
   PartialResourcePath,
@@ -24,6 +23,7 @@ import { rangeInsideString } from "../utils/resourceRange";
 
 interface ResourceCompletionContext {
   reference: ResourceReference;
+  documentFileName: string;
   replacementRange: vscode.Range;
   includeQuotes: boolean;
 }
@@ -50,6 +50,7 @@ const resourceCompletionProvider: vscode.CompletionItemProvider = {
         pathExists: fileName => workspaceResourceCache.getPathExists(fileName),
         getPackRoot: fileName => workspaceResourceCache.getPackRoot(fileName),
         getPackMetadata: packRoot => workspaceResourceCache.getPackMetadata(packRoot),
+        resourcePath: getResourcePathForCompletionValue(context.reference, context.reference.value, false)?.resourcePath,
         resourcePackRoots
       }
     );
@@ -68,7 +69,7 @@ function getResourceCompletionContext(document: vscode.TextDocument, position: v
   const reference = findResourceReferenceAtPosition(document, position);
   if (reference) {
     const replacementRange = rangeInsideString(reference.valueNode);
-    return replacementRange ? { reference, replacementRange, includeQuotes: false } : null;
+    return replacementRange ? { reference, documentFileName: document.fileName, replacementRange, includeQuotes: false } : null;
   }
 
   const inferredContext = inferIncompleteResourceCompletionContext(document, position);
@@ -78,6 +79,7 @@ function getResourceCompletionContext(document: vscode.TextDocument, position: v
 
   return {
     reference: inferredContext.reference,
+    documentFileName: document.fileName,
     replacementRange: rangeFromTextRange(inferredContext.replacementRange),
     includeQuotes: inferredContext.includeQuotes
   };
@@ -149,6 +151,9 @@ async function collectCompletionItems(
       if (itemsByInsertText.has(completionText.value)) {
         continue;
       }
+      if (!isRootAllowedForCompletionEntry(root, completionText.value, entry.isDirectory(), context)) {
+        continue;
+      }
 
       const item = new vscode.CompletionItem(
         label,
@@ -177,11 +182,7 @@ async function collectNamespaceCompletionItems(
     return;
   }
 
-  const existingRoots = await filterExistingResourceRoots(
-    roots,
-    async root => Boolean(await workspaceResourceCache.getDirectoryEntries(root))
-  );
-  for (const assetsRoot of getAssetsRootCandidates(existingRoots, partialPath.namespace, context.reference.target)) {
+  for (const assetsRoot of getAssetsRootCandidates(roots, partialPath.namespace, context.reference.target)) {
     const entries = await workspaceResourceCache.getDirectoryEntries(assetsRoot);
     if (!entries) {
       continue;
@@ -209,6 +210,68 @@ async function collectNamespaceCompletionItems(
 
 function createTriggerSuggestCommand(): vscode.Command {
   return { command: triggerResourceCompletionCommand, title: vscode.l10n.t("Suggest") };
+}
+
+function isRootAllowedForCompletionEntry(
+  root: string,
+  value: string,
+  isDirectory: boolean,
+  context: ResourceCompletionContext
+): boolean {
+  if (context.reference.resolveMode === "cit" && isSamePath(root, path.dirname(context.documentFileName))) {
+    return true;
+  }
+
+  const completionResource = getResourcePathForCompletionValue(context.reference, value, isDirectory);
+  if (!completionResource) {
+    return true;
+  }
+
+  const { defaultAssetsPath, resourcePackRoots } = getResourceConfiguration();
+  const allowedRoots = getDocumentResourceRootCandidates(
+    context.documentFileName,
+    context.reference.source,
+    defaultAssetsPath,
+    completionResource.namespace,
+    context.reference.target,
+    {
+      pathExists: fileName => workspaceResourceCache.getPathExists(fileName),
+      getPackRoot: fileName => workspaceResourceCache.getPackRoot(fileName),
+      getPackMetadata: packRoot => workspaceResourceCache.getPackMetadata(packRoot),
+      resourcePath: completionResource.resourcePath,
+      resourcePackRoots
+    }
+  );
+
+  return allowedRoots.some(candidate => isSamePath(candidate, root));
+}
+
+function getResourcePathForCompletionValue(
+  reference: ResourceReference,
+  value: string,
+  isDirectory: boolean
+): { namespace: string; resourcePath: string } | null {
+  const cleanValue = isDirectory ? value.replace(/[\\/]+$/g, "") : value;
+  if (cleanValue.trim().length === 0) {
+    return null;
+  }
+
+  const location = parseResourceLocation(cleanValue, isDirectory ? null : reference.extension);
+  if (!location.isValid || location.resourcePath.length === 0) {
+    return null;
+  }
+
+  return {
+    namespace: location.namespace,
+    resourcePath: path.posix.join(
+      reference.target.replaceAll("\\", "/"),
+      location.resourcePath.replaceAll(path.sep, "/")
+    )
+  };
+}
+
+function isSamePath(left: string, right: string): boolean {
+  return normalizePathKey(left) === normalizePathKey(right);
 }
 
 function buildCompletionInsertText(value: string, includeQuotes: boolean, keepCursorInsideQuotes: boolean): string | vscode.SnippetString {

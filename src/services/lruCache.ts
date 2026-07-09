@@ -51,6 +51,10 @@ export class LruCache<K, V> {
     this.values.clear();
   }
 
+  entries(): IterableIterator<[K, V]> {
+    return this.values.entries();
+  }
+
   get size(): number {
     return this.values.size;
   }

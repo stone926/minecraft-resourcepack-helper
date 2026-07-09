@@ -7,9 +7,7 @@ export const rsglCommands = {
   buildDirectory: "rsgl.buildDirectory",
   previewDirectoryBuild: "rsgl.previewDirectoryBuild",
   buildWorkspace: "rsgl.buildWorkspace",
-  previewWorkspaceBuild: "rsgl.previewWorkspaceBuild",
-  check: "rsgl.check",
-  format: "rsgl.format"
+  previewWorkspaceBuild: "rsgl.previewWorkspaceBuild"
 } as const;
 
 export const rsglConfigKeys = {

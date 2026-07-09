@@ -1,7 +1,9 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { getAssetsRootPathCandidates } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { getResourceConfiguration } from "./resourceConfiguration";
 import { isModelDocumentPath, resourceUriKey } from "./resourceGraphSearch";
 import { isResourceReferenceFileName } from "./resourceReferences";
 
@@ -21,12 +23,9 @@ export async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
     }
   }
 
-  const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
-  if (defaultAssetsPath) {
-    for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
-      for (const uri of await collectResourceReferenceUrisInRoot(root)) {
-        urisByKey.set(resourceUriKey(uri), uri);
-      }
+  for (const root of await getConfiguredAssetsRoots()) {
+    for (const uri of await collectResourceReferenceUrisInRoot(root)) {
+      urisByKey.set(resourceUriKey(uri), uri);
     }
   }
 
@@ -47,13 +46,10 @@ export async function collectModelDocumentUris(): Promise<vscode.Uri[]> {
     urisByKey.set(resourceUriKey(uri), uri);
   }
 
-  const defaultAssetsPath = vscode.workspace.getConfiguration().get<string>("McResHelper.defaultMcAssetsPath");
-  if (defaultAssetsPath) {
-    for (const root of await getDefaultAssetsRoots(defaultAssetsPath)) {
-      for (const uri of await collectResourceReferenceUrisInRoot(root)) {
-        if (isModelDocumentPath(uri.fsPath)) {
-          urisByKey.set(resourceUriKey(uri), uri);
-        }
+  for (const root of await getConfiguredAssetsRoots()) {
+    for (const uri of await collectResourceReferenceUrisInRoot(root)) {
+      if (isModelDocumentPath(uri.fsPath)) {
+        urisByKey.set(resourceUriKey(uri), uri);
       }
     }
   }
@@ -61,13 +57,13 @@ export async function collectModelDocumentUris(): Promise<vscode.Uri[]> {
   return [...urisByKey.values()];
 }
 
-async function getDefaultAssetsRoots(configuredPath: string): Promise<string[]> {
-  const normalizedPath = path.normalize(configuredPath);
+async function getConfiguredAssetsRoots(): Promise<string[]> {
+  const { defaultAssetsPath, resourcePackRoots } = getResourceConfiguration();
+  const configuredPackRoots = resourcePackRoots ?? [];
   const candidates = [
-    path.basename(normalizedPath).toLowerCase() === "assets" ? normalizedPath : null,
-    path.basename(path.dirname(normalizedPath)).toLowerCase() === "assets" ? path.dirname(normalizedPath) : null,
-    path.join(normalizedPath, "assets")
-  ].filter((candidate): candidate is string => candidate !== null);
+    ...configuredPackRoots.flatMap(root => getAssetsRootPathCandidates(root)),
+    ...(defaultAssetsPath ? getAssetsRootPathCandidates(defaultAssetsPath) : [])
+  ];
 
   const roots: string[] = [];
   for (const candidate of [...new Set(candidates)]) {

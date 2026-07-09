@@ -83,7 +83,10 @@ export function getAssetsRootCandidates(roots: string[], namespace: string, targ
     }
 
     if (path.basename(namespaceRoot).toLowerCase() === namespace.toLowerCase()) {
-      assetsRoots.push(path.dirname(namespaceRoot));
+      const assetsRoot = path.dirname(namespaceRoot);
+      if (path.basename(assetsRoot) === "assets") {
+        assetsRoots.push(assetsRoot);
+      }
     }
   }
 

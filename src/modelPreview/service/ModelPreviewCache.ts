@@ -3,6 +3,7 @@ import type { RawModelDocument, ResolvedModel } from "../model/ModelDocument";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { dependencyKey } from "../paths";
 import type { PngAlphaMask } from "../bake/PngAlpha";
+import { LruCache } from "../../services/lruCache";
 
 interface PreviewCacheEntry {
   document: Promise<ModelPreviewDocument>;
@@ -22,10 +23,10 @@ interface ResolvedModelCacheEntry {
 }
 
 export class ModelPreviewCache {
-  private readonly previews = new Map<string, PreviewCacheEntry>();
-  private readonly rawModels = new Map<string, VersionedCacheEntry<RawModelDocument>>();
-  private readonly resolvedModels = new Map<string, ResolvedModelCacheEntry>();
-  private readonly textureAlphaMasks = new Map<string, VersionedCacheEntry<PngAlphaMask | null>>();
+  private readonly previews = new LruCache<string, PreviewCacheEntry>(128);
+  private readonly rawModels = new LruCache<string, VersionedCacheEntry<RawModelDocument>>(512);
+  private readonly resolvedModels = new LruCache<string, ResolvedModelCacheEntry>(512);
+  private readonly textureAlphaMasks = new LruCache<string, VersionedCacheEntry<PngAlphaMask | null>>(512);
 
   get(fileName: string): Promise<ModelPreviewDocument> | null {
     return this.previews.get(normalizePathKey(fileName))?.document ?? null;
@@ -127,16 +128,25 @@ export class ModelPreviewCache {
     this.textureAlphaMasks.clear();
   }
 
+  getStats(): Record<string, number> {
+    return {
+      previews: this.previews.size,
+      rawModels: this.rawModels.size,
+      resolvedModels: this.resolvedModels.size,
+      textureAlphaMasks: this.textureAlphaMasks.size
+    };
+  }
+
   invalidateDependents(changedFileNameOrUri: string): void {
     const changedKey = dependencyKey(changedFileNameOrUri);
-    for (const [entryKey, entry] of this.previews) {
+    for (const [entryKey, entry] of this.previews.entries()) {
       if (entryKey === changedKey || entry.dependencyKeys.has(changedKey)) {
         this.previews.delete(entryKey);
       }
     }
     this.rawModels.delete(changedKey);
     this.textureAlphaMasks.delete(changedKey);
-    for (const [entryKey, entry] of this.resolvedModels) {
+    for (const [entryKey, entry] of this.resolvedModels.entries()) {
       if (entryKey === changedKey || entry.dependencyKeys.has(changedKey)) {
         this.resolvedModels.delete(entryKey);
       }

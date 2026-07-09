@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
-import { ModelPreviewCancellationSource } from "../../../modelPreview/service/ModelPreviewCancellation";
+import { ModelPreviewCancellationSource } from "../../../modelPreview/cancellation";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
 import { createPack, createRgbaPng, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
@@ -77,6 +77,43 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
       assert.strictEqual(first.meshes[0].faces.length, 1);
       assert.strictEqual(cached.meshes[0].faces.length, 1);
       assert.strictEqual(refreshed.meshes[0].faces.length, 2);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("invalidates cached previews when missing texture dependencies are created", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const modelFileName = path.join(pack, "assets/minecraft/models/block/simple.json");
+      const missingTexture = path.join(pack, "assets/minecraft/textures/block/later.png");
+      writeJson(pack, "assets/minecraft/models/block/simple.json", {
+        textures: { all: "minecraft:block/later" },
+        elements: [
+          {
+            from: [0, 0, 0],
+            to: [16, 16, 16],
+            faces: { north: { texture: "#all" } }
+          }
+        ]
+      });
+
+      const service = createService();
+      const missing = await service.getPreviewDocument(modelFileName);
+      assert.strictEqual(missing.materials[0].fallback, "missing");
+      assert.ok(missing.dependencies.some(dependency =>
+        dependency.kind === "texture" &&
+        (dependency.uri.endsWith("/later.png") || dependency.uri.endsWith("later.png"))
+      ));
+
+      writeFile(pack, "assets/minecraft/textures/block/later.png", "png");
+      service.invalidateDependents(missingTexture);
+      const refreshed = await service.getPreviewDocument(modelFileName);
+
+      assert.strictEqual(refreshed.materials[0].fallback, "texture");
+      assert.match(refreshed.materials[0].textureUri ?? "", /later\.png$/);
     } finally {
       removeTempDirectory(root);
     }

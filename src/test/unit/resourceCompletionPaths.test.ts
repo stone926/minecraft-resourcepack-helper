@@ -125,4 +125,23 @@ describe("resource completion paths", () => {
       ]
     );
   });
+
+  it("does not derive namespace roots from non-assets fallback roots", () => {
+    const packRoot = path.join("packs", "vanilla");
+
+    assert.deepStrictEqual(
+      getAssetsRootCandidates(
+        [
+          path.join(packRoot, "minecraft", "textures"),
+          path.join(packRoot, "textures"),
+          path.join(packRoot, "assets", "minecraft", "textures")
+        ],
+        "minecraft",
+        "textures"
+      ),
+      [
+        path.join(packRoot, "assets")
+      ]
+    );
+  });
 });

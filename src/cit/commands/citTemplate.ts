@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { parseAssetsPath } from "../../../packages/mc-assets/src";
 
 export type CitTemplateType = "item" | "armor" | "elytra" | "enchantment";
 
@@ -75,18 +76,15 @@ export function generateCitForResource(fileName: string): GeneratedCit | null {
 }
 
 export function getAssetResourceInfo(fileName: string): AssetResourceInfo | null {
-  const normalized = path.normalize(fileName);
-  const parsed = path.parse(normalized);
-  const segments = path.relative(parsed.root, normalized).split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
-  if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
+  const parsed = parseAssetsPath(fileName);
+  if (!parsed || parsed.relativeSegments.length === 0) {
     return null;
   }
 
   return {
-    packRoot: path.join(parsed.root, ...segments.slice(0, assetsIndex)),
-    namespace: segments[assetsIndex + 1],
-    resourcePath: segments.slice(assetsIndex + 2).join("/")
+    packRoot: path.dirname(parsed.assetsRoot),
+    namespace: parsed.namespace,
+    resourcePath: parsed.relativeSegments.join("/")
   };
 }
 

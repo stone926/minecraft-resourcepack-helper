@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../cit/citPaths";
-import { getDocumentResourceRootCandidates, packRootFromAssetsPath, parseResourceLocation } from "../../../packages/mc-assets/src";
+import { getDocumentResourceRootCandidates, packRootFromAssetsPath, parseAssetsPath, parseResourceLocation } from "../../../packages/mc-assets/src";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 
 export interface ResolvedResourceFile {
@@ -26,6 +26,24 @@ export function resolveTextureFileName(
   return resolveResourceFileName(resourcePath, sourceFileName, "textures", modelSourceForFile(sourceFileName), "png", fileSystem, configuration);
 }
 
+export function getModelFileCandidates(
+  resourcePath: string,
+  sourceFileName: string,
+  fileSystem: ModelPreviewFileSystem,
+  configuration: ModelPreviewConfiguration
+): string[] {
+  return getResourceFileCandidates(resourcePath, sourceFileName, "models", modelSourceForFile(sourceFileName), "json", fileSystem, configuration);
+}
+
+export function getTextureFileCandidates(
+  resourcePath: string,
+  sourceFileName: string,
+  fileSystem: ModelPreviewFileSystem,
+  configuration: ModelPreviewConfiguration
+): string[] {
+  return getResourceFileCandidates(resourcePath, sourceFileName, "textures", modelSourceForFile(sourceFileName), "png", fileSystem, configuration);
+}
+
 export function resolveResourceFileName(
   resourcePath: string,
   sourceFileName: string,
@@ -35,14 +53,36 @@ export function resolveResourceFileName(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): ResolvedResourceFile | null {
+  const candidates = getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension, fileSystem, configuration);
+  for (const candidate of candidates) {
+    if (fileSystem.fileExists(candidate)) {
+      return {
+        fileName: candidate,
+        resourceId: resourceIdForResolvedCandidate(resourcePath, candidate, target, extension)
+      };
+    }
+  }
+
+  return null;
+}
+
+export function getResourceFileCandidates(
+  resourcePath: string,
+  sourceFileName: string,
+  target: string,
+  source: string,
+  extension: string | null,
+  fileSystem: ModelPreviewFileSystem,
+  configuration: ModelPreviewConfiguration
+): string[] {
   const citResourceType = getCitResourceType(target, extension);
   if (citResourceType && (isCitModelFileName(sourceFileName) || isCitPropertiesFileName(sourceFileName))) {
-    return resolveCitResourceFileName(resourcePath, sourceFileName, citResourceType, fileSystem);
+    return getCitResourceFileCandidates(resourcePath, sourceFileName, citResourceType, fileSystem);
   }
 
   const location = parseResourceLocation(resourcePath, extension);
   if (!location.isValid) {
-    return null;
+    return [];
   }
 
   const candidateRoots = getDocumentResourceRootCandidates(
@@ -60,40 +100,35 @@ export function resolveResourceFileName(
     }
   );
 
-  for (const root of candidateRoots) {
-    const candidate = path.join(root, location.resourcePath);
-    if (fileSystem.fileExists(candidate)) {
-      return {
-        fileName: candidate,
-        resourceId: `${location.namespace}:${stripExtension(location.resourcePath.replaceAll(path.sep, "/"))}`
-      };
-    }
-  }
-
-  return null;
+  return unique(candidateRoots.map(root => path.join(root, location.resourcePath)));
 }
 
-function resolveCitResourceFileName(
+function getCitResourceFileCandidates(
   resourcePath: string,
   sourceFileName: string,
   resourceType: CitResourceType,
   fileSystem: ModelPreviewFileSystem
-): ResolvedResourceFile | null {
+): string[] {
   const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? packRootFromAssetsPath(sourceFileName);
-  if (!packRoot) {
-    return null;
+  return packRoot ? getCitPathCandidates(sourceFileName, packRoot, resourcePath, resourceType) : [];
+}
+
+function resourceIdForResolvedCandidate(
+  resourcePath: string,
+  candidate: string,
+  target: string,
+  extension: string | null
+): string {
+  const location = parseResourceLocation(resourcePath, extension);
+  if (location.isValid && target !== "models" && target !== "textures") {
+    return `${location.namespace}:${stripExtension(location.resourcePath.replaceAll(path.sep, "/"))}`;
   }
 
-  for (const candidate of getCitPathCandidates(sourceFileName, packRoot, resourcePath, resourceType)) {
-    if (fileSystem.fileExists(candidate)) {
-      return {
-        fileName: candidate,
-        resourceId: resourceIdFromFileName(candidate)
-      };
-    }
+  if (target === "models" || target === "textures") {
+    return resourceIdFromFileName(candidate);
   }
 
-  return null;
+  return path.basename(candidate, path.extname(candidate));
 }
 
 export function modelResourceIdFromFileName(fileName: string): string {
@@ -118,17 +153,14 @@ export function modelSourceForFile(fileName: string): string {
 }
 
 function getAssetResource(fileName: string): { namespace: string; resourcePath: string } | null {
-  const normalized = path.normalize(fileName);
-  const segments = normalized.split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
-
-  if (assetsIndex < 0 || segments.length <= assetsIndex + 2) {
+  const parsed = parseAssetsPath(fileName);
+  if (!parsed || parsed.relativeSegments.length === 0) {
     return null;
   }
 
   return {
-    namespace: segments[assetsIndex + 1],
-    resourcePath: segments.slice(assetsIndex + 2).join("/")
+    namespace: parsed.namespace,
+    resourcePath: parsed.relativeSegments.join("/")
   };
 }
 
@@ -161,4 +193,8 @@ function getCitResourceType(target: string, extension: string | null): CitResour
 function stripExtension(value: string): string {
   const extension = path.posix.extname(value);
   return extension ? value.slice(0, -extension.length) : value;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }

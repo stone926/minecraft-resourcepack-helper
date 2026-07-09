@@ -32,7 +32,7 @@ export function refreshRsglDiagnostics(
       });
       const currentFileName = normalizeFileName(path.resolve(fileName));
       const diagnostics = result.diagnostics
-        .filter(diagnostic => diagnostic.fileName && normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
+        .filter(diagnostic => diagnosticBelongsToFile(diagnostic, currentFileName))
         .map(toRsglDiagnostic);
       collection.set(document.uri, diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
       return;
@@ -48,7 +48,7 @@ export function refreshRsglDiagnostics(
       });
       const currentFileName = normalizeFileName(path.resolve(fileName));
       const diagnostics = result.diagnostics
-        .filter(diagnostic => diagnostic.fileName && normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
+        .filter(diagnostic => diagnosticBelongsToFile(diagnostic, currentFileName))
         .map(toRsglDiagnostic);
       collection.set(document.uri, diagnostics.map(diagnostic => toVscodeDiagnostic(document, diagnostic)));
       return;
@@ -89,6 +89,10 @@ function toRsglDiagnostic(diagnostic: { code: string; message: string; range: Te
     range: diagnostic.range,
     severity: diagnostic.severity
   };
+}
+
+function diagnosticBelongsToFile(diagnostic: { fileName?: string }, currentFileName: string): boolean {
+  return !diagnostic.fileName || normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName;
 }
 
 function toVscodeSeverity(severity: RsglDiagnostic["severity"]): vscode.DiagnosticSeverity {

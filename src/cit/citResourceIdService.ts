@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { normalizePathKey, packRootFromAssetsPath } from "../../packages/mc-assets/src";
+import { getAssetsRootPathCandidates, normalizePathKey, packRootFromAssetsPath } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 
 export interface CitResourceIdConfiguration {
@@ -195,7 +195,7 @@ class CitResourceIdService {
 
   getResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds {
     const cacheKey = getCacheKey(documentFileName, configuration);
-    const generation = workspaceResourceCache.getResourceFsGeneration();
+    const generation = workspaceResourceCache.getResourceIndexGeneration();
     const configurationVersion = workspaceResourceCache.getConfigurationVersion();
     if (
       this.cached &&
@@ -310,14 +310,7 @@ function getAssetsRoots(documentFileName: string, configuration: CitResourceIdCo
 }
 
 function addAssetsRootCandidates(roots: string[], candidate: string): void {
-  const normalized = path.normalize(candidate);
-  if (path.basename(normalized).toLowerCase() === "assets") {
-    roots.push(normalized);
-  }
-  if (path.basename(path.dirname(normalized)).toLowerCase() === "assets") {
-    roots.push(path.dirname(normalized));
-  }
-  roots.push(path.join(normalized, "assets"));
+  roots.push(...getAssetsRootPathCandidates(candidate));
 }
 
 function normalizeResourceId(value: string): string {

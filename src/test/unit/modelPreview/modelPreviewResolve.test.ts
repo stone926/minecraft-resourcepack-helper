@@ -110,6 +110,10 @@ describe("model preview parent and texture resolution", () => {
       assert.ok(preview.issues.some(issue => issue.severity === "warning" && issueMessageKey(issue).includes("Texture variable not found")));
       assert.ok(preview.issues.find(issue => issueMessageKey(issue).includes("Parent model not found"))?.range);
       assert.ok(preview.issues.find(issue => issueMessageKey(issue).includes("Texture variable not found"))?.range);
+      assert.ok(preview.dependencies.some(dependency =>
+        dependency.kind === "model" &&
+        (dependency.uri.endsWith("/missing_parent.json") || dependency.uri.endsWith("missing_parent.json"))
+      ));
     } finally {
       removeTempDirectory(root);
     }

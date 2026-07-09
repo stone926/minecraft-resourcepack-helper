@@ -92,6 +92,7 @@ const emptyPackMetadata: PackMetadata = { overlays: [], filters: [] };
 export class WorkspaceResourceCache {
   private configurationVersion = 0;
   private resourceFsGeneration = 0;
+  private resourceIndexGeneration = 0;
   private openTextDocumentProvider: OpenTextDocumentProvider | null = null;
   private readonly pathExistsCache = new LruCache<string, CacheEntry<boolean>>(8192);
   private readonly directoryEntriesCache = new LruCache<string, Promise<CacheEntry<Dirent[] | null>>>(1024);
@@ -132,6 +133,10 @@ export class WorkspaceResourceCache {
 
   getResourceFsGeneration(): number {
     return this.resourceFsGeneration;
+  }
+
+  getResourceIndexGeneration(): number {
+    return this.resourceIndexGeneration;
   }
 
   getPathExists(fileName: string): boolean {
@@ -384,6 +389,7 @@ export class WorkspaceResourceCache {
 
   invalidateAll(): void {
     this.resourceFsGeneration++;
+    this.resourceIndexGeneration++;
     this.pathExistsCache.clear();
     this.directoryEntriesCache.clear();
     this.directoryEntriesSyncCache.clear();
@@ -405,14 +411,14 @@ export class WorkspaceResourceCache {
 
   invalidatePath(fileName: string): void {
     const key = normalizePathKey(fileName);
+    this.resourceIndexGeneration++;
     this.pathExistsCache.delete(key);
     this.fileAstCache.delete(key);
     this.documentAstCache.delete(key);
     this.soundEventsCache.delete(key);
     this.oggMetadataCache.delete(key);
     this.pngMetadataCache.delete(key);
-    this.directoryEntriesCache.delete(normalizePathKey(path.dirname(fileName)));
-    this.directoryEntriesSyncCache.delete(normalizePathKey(path.dirname(fileName)));
+    this.deleteDirectoryEntriesForAncestors(fileName);
 
     if (/[\\/]pack\.mcmeta$/i.test(fileName)) {
       this.packMetadataCache.delete(normalizePathKey(path.dirname(fileName)));
@@ -550,6 +556,22 @@ export class WorkspaceResourceCache {
         this.modelTextureDefinitionsCache.delete(cacheKey.slice("definitions\0".length));
       }
       this.modelCacheDependencies.release(cacheKey);
+    }
+  }
+
+  private deleteDirectoryEntriesForAncestors(fileName: string): void {
+    let directory = path.dirname(path.normalize(fileName));
+    const root = path.parse(directory).root;
+
+    while (true) {
+      const key = normalizePathKey(directory);
+      this.directoryEntriesCache.delete(key);
+      this.directoryEntriesSyncCache.delete(key);
+
+      if (directory === root) {
+        return;
+      }
+      directory = path.dirname(directory);
     }
   }
 }

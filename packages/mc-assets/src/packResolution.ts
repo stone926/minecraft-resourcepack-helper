@@ -138,7 +138,7 @@ export function packRootFromAssetsPath(fileName: string): string | null {
   const normalizedPath = path.normalize(fileName);
   const parsedPath = path.parse(normalizedPath);
   const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment === "assets");
   if (assetsIndex < 0) {
     return null;
   }
@@ -152,11 +152,26 @@ export interface ParsedAssetsPath {
   relativeSegments: string[];
 }
 
+export function getAssetsRootPathCandidates(configuredPath: string): string[] {
+  const normalized = path.normalize(configuredPath);
+  const candidates: string[] = [];
+
+  if (path.basename(normalized) === "assets") {
+    candidates.push(normalized);
+  }
+  if (path.basename(path.dirname(normalized)) === "assets") {
+    candidates.push(path.dirname(normalized));
+  }
+  candidates.push(path.join(normalized, "assets"));
+
+  return unique(candidates);
+}
+
 export function parseAssetsPath(fileName: string): ParsedAssetsPath | null {
   const normalizedPath = path.normalize(fileName);
   const parsedPath = path.parse(normalizedPath);
   const segments = path.relative(parsedPath.root, normalizedPath).split(path.sep).filter(Boolean);
-  const assetsIndex = segments.findLastIndex(segment => segment.toLowerCase() === "assets");
+  const assetsIndex = segments.findLastIndex(segment => segment === "assets");
   if (assetsIndex < 0 || segments.length <= assetsIndex + 1) {
     return null;
   }

@@ -5,6 +5,7 @@ import * as path from "node:path";
 import {
   findAssetsRoot,
   findPackRoot,
+  getAssetsRootPathCandidates,
   getDocumentResourceRootCandidates,
   packRootFromAssetsPath,
   parseAssetsPath,
@@ -238,17 +239,19 @@ describe("resource location utilities", () => {
     });
   });
 
-  it("uses the innermost assets directory and matches it case-insensitively", () => {
+  it("uses the innermost lowercase assets directory", () => {
     const nested = parseAssetsPath(path.join("outer", "assets", "a", "assets", "ns", "file.png"));
-    const uppercase = parseAssetsPath(path.join("pack", "Assets", "custom", "sounds.json"));
 
     assert.deepStrictEqual(nested, {
       assetsRoot: path.join("outer", "assets", "a", "assets"),
       namespace: "ns",
       relativeSegments: ["file.png"]
     });
-    assert.strictEqual(uppercase?.namespace, "custom");
-    assert.strictEqual(uppercase?.assetsRoot, path.join("pack", "Assets"));
+  });
+
+  it("rejects uppercase Assets directories", () => {
+    assert.strictEqual(parseAssetsPath(path.join("pack", "Assets", "custom", "sounds.json")), null);
+    assert.strictEqual(packRootFromAssetsPath(path.join("pack", "Assets", "custom", "sounds.json")), null);
   });
 
   it("returns null for paths without an assets namespace", () => {
@@ -263,6 +266,21 @@ describe("resource location utilities", () => {
       path.join("packs", "example")
     );
     assert.strictEqual(packRootFromAssetsPath(path.join("packs", "example", "models", "cube.json")), null);
+  });
+
+  it("normalizes configured paths to lowercase assets root candidates", () => {
+    assert.deepStrictEqual(
+      getAssetsRootPathCandidates(path.join("packs", "example")),
+      [path.join("packs", "example", "assets")]
+    );
+    assert.deepStrictEqual(
+      getAssetsRootPathCandidates(path.join("packs", "example", "assets", "minecraft")),
+      [path.join("packs", "example", "assets"), path.join("packs", "example", "assets", "minecraft", "assets")]
+    );
+    assert.deepStrictEqual(
+      getAssetsRootPathCandidates(path.join("packs", "example", "Assets")),
+      [path.join("packs", "example", "Assets", "assets")]
+    );
   });
 
   it("finds pack roots upward from a file, checking the stopAt directory itself", () => {

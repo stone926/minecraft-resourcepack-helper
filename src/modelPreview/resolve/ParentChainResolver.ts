@@ -6,6 +6,7 @@ import type {
   RawFace,
   RawModelData,
   RawModelDocument,
+  ResolvedDependency,
   ResolvedElement,
   ResolvedModel,
   ResolvedTextureSlot
@@ -15,7 +16,7 @@ import { ModelIssueCollector } from "../model/ModelIssues";
 import { collectModelJsonLocations } from "../model/ModelJsonLocations";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
-import { modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
+import { getModelFileCandidates, modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
 
 const maxParentDepth = 10;
@@ -32,6 +33,8 @@ export interface RawModelDocumentCache {
 }
 
 export class ParentChainResolver {
+  private readonly missingDependencies = new Map<string, ResolvedDependency>();
+
   constructor(
     private readonly fileSystem: ModelPreviewFileSystem,
     private readonly configuration: ModelPreviewConfiguration,
@@ -87,6 +90,9 @@ export class ParentChainResolver {
 
     const parentFile = resolveModelFileName(parent, fileName, this.fileSystem, this.configuration);
     if (!parentFile) {
+      for (const candidate of getModelFileCandidates(parent, fileName, this.fileSystem, this.configuration)) {
+        this.missingDependencies.set(normalizePathKey(candidate), { fileName: candidate, kind: "model" });
+      }
       this.issues.warning(lm("Parent model not found: {0}", parent), fileName, document.data.parentRange);
       return [node];
     }
@@ -137,10 +143,11 @@ export class ParentChainResolver {
 
   private mergeChain(chain: LoadedModelNode[], entryFileName: string, resourceId: string): ResolvedModel {
     const textures = new Map<string, ResolvedTextureSlot>();
-    const dependencies = chain.map(node => ({
+    const dependencies: ResolvedDependency[] = chain.map(node => ({
       fileName: node.document.fileName,
       kind: "model" as const
     }));
+    dependencies.push(...this.missingDependencies.values());
     let elements: ResolvedElement[] = [];
     let display: ResolvedModel["display"] = {};
     let generatedItem = false;

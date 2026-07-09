@@ -73,10 +73,10 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 
   refreshSoon(delay = 250): void {
-    this.invalidateCaches();
     this.clearRefreshTimer();
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
+      this.invalidateCaches();
       this.onDidChangeTreeDataEmitter.fire();
     }, delay);
   }

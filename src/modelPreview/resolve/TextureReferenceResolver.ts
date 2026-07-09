@@ -11,7 +11,7 @@ import { isTextureObject } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { fileUriString } from "../paths";
-import { resolveTextureFileName } from "./ResourceDependencyResolver";
+import { getTextureFileCandidates, resolveTextureFileName } from "./ResourceDependencyResolver";
 
 export interface TextureMaterialResolution {
   material: PreviewMaterial;
@@ -113,8 +113,10 @@ export class TextureReferenceResolver {
   ): TextureMaterialResolution {
     const textureFile = resolveTextureFileName(textureResource, sourceModelFileName, this.fileSystem, this.configuration);
     if (!textureFile) {
+      const missingDependencies = getTextureFileCandidates(textureResource, sourceModelFileName, this.fileSystem, this.configuration)
+        .map(fileName => ({ fileName, kind: "texture" as const }));
       this.issues.warning(lm("Texture not found: {0}", textureResource), sourceModelFileName, referenceRange);
-      return missingMaterial(textureResource);
+      return missingMaterial(textureResource, missingDependencies);
     }
 
     const dependencies: ResolvedDependency[] = [{ fileName: textureFile.fileName, kind: "texture" }];
@@ -138,13 +140,13 @@ export class TextureReferenceResolver {
   }
 }
 
-function missingMaterial(textureReference: string): TextureMaterialResolution {
+function missingMaterial(textureReference: string, dependencies: ResolvedDependency[] = []): TextureMaterialResolution {
   return {
     material: {
       id: `missing:${textureReference}`,
       fallback: "missing",
       transparent: false
     },
-    dependencies: []
+    dependencies
   };
 }

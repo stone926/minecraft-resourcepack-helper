@@ -37,9 +37,6 @@
   ],
   "main": "./out/src/extension.js",
   "l10n": "./l10n",
-  "extensionDependencies": [
-    "stone926.rsgl"
-  ],
   "contributes": {
     "languages": [
       {
