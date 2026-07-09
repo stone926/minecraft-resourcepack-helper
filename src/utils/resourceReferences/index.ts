@@ -1,4 +1,6 @@
+import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
+import { LruCache } from "../../services/lruCache";
 import { getCitPropertyReferences } from "../../cit/citProperties";
 import { isInArea } from "../locationChecker";
 import { getReferencesForDocumentKind } from "./dispatch";
@@ -7,6 +9,7 @@ import {
   getResourceReferenceDocumentKind,
   type ResourceReference,
   type ResourceReferenceDocument,
+  type ResourceReferenceDocumentKind,
   type ResourceReferencePosition
 } from "./types";
 
@@ -23,7 +26,7 @@ export type {
   ResourceReferenceValueNode
 } from "./types";
 
-const resourceReferenceCache = new WeakMap<ResourceReferenceDocument, CachedResourceReferences>();
+const resourceReferenceCache = new LruCache<string, CachedResourceReferences>(2048);
 
 export function getResourceReferences(document: ResourceReferenceDocument): ResourceReference[] {
   const documentKind = getResourceReferenceDocumentKind(document.fileName);
@@ -40,20 +43,20 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return [];
   }
 
-  const cachedReferences = getCachedResourceReferences(document);
+  const cachedReferences = getCachedResourceReferences(document, documentKind);
   if (cachedReferences) {
     return cachedReferences;
   }
 
   if (isShaderDocumentKind(documentKind)) {
     const references = getShaderReferences(document.getText(), getShaderDocumentSource(documentKind));
-    setCachedResourceReferences(document, references);
+    setCachedResourceReferences(document, documentKind, references);
     return references;
   }
 
   if (documentKind === "citProperties") {
     const references = getCitPropertyReferences(document);
-    setCachedResourceReferences(document, references);
+    setCachedResourceReferences(document, documentKind, references);
     return references;
   }
 
@@ -63,7 +66,7 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
   }
 
   const references = getReferencesForDocumentKind(ast, documentKind, document.fileName);
-  setCachedResourceReferences(document, references);
+  setCachedResourceReferences(document, documentKind, references);
   return references;
 }
 
@@ -88,29 +91,71 @@ export function isResourceReferenceFileName(fileName: string): boolean {
 
 interface CachedResourceReferences {
   fileName: string;
-  version: number;
+  documentKind: ResourceReferenceDocumentKind;
+  version: string;
   references: ResourceReference[];
 }
 
-function getCachedResourceReferences(document: ResourceReferenceDocument): ResourceReference[] | null {
-  if (typeof document.version !== "number") {
+function getCachedResourceReferences(
+  document: ResourceReferenceDocument,
+  documentKind: ResourceReferenceDocumentKind
+): ResourceReference[] | null {
+  const cacheDescriptor = getResourceReferenceCacheDescriptor(document);
+  if (!cacheDescriptor) {
     return null;
   }
 
-  const cached = resourceReferenceCache.get(document);
-  if (!cached || cached.fileName !== document.fileName || cached.version !== document.version) {
+  const cached = resourceReferenceCache.get(cacheDescriptor.key);
+  if (!cached || cached.fileName !== document.fileName || cached.documentKind !== documentKind || cached.version !== cacheDescriptor.version) {
     return null;
   }
 
   return cached.references;
 }
 
-function setCachedResourceReferences(document: ResourceReferenceDocument, references: ResourceReference[]): void {
-  if (typeof document.version === "number") {
-    resourceReferenceCache.set(document, {
+function setCachedResourceReferences(
+  document: ResourceReferenceDocument,
+  documentKind: ResourceReferenceDocumentKind,
+  references: ResourceReference[]
+): void {
+  const cacheDescriptor = getResourceReferenceCacheDescriptor(document);
+  if (cacheDescriptor) {
+    resourceReferenceCache.set(cacheDescriptor.key, {
       fileName: document.fileName,
-      version: document.version,
+      documentKind,
+      version: cacheDescriptor.version,
       references
     });
   }
+}
+
+interface ResourceReferenceCacheDescriptor {
+  key: string;
+  version: string;
+}
+
+function getResourceReferenceCacheDescriptor(document: ResourceReferenceDocument): ResourceReferenceCacheDescriptor | null {
+  const version = getResourceReferenceDocumentVersion(document);
+  if (!version) {
+    return null;
+  }
+
+  return {
+    key: `${getResourceReferenceDocumentKey(document)}\0${version}`,
+    version
+  };
+}
+
+function getResourceReferenceDocumentVersion(document: ResourceReferenceDocument): string | null {
+  if (typeof document.version === "number") {
+    return `open:${document.version}`;
+  }
+
+  const fileVersion = workspaceResourceCache.getFileVersion(document.fileName);
+  return fileVersion ? `file:${fileVersion}` : null;
+}
+
+function getResourceReferenceDocumentKey(document: ResourceReferenceDocument): string {
+  const uri = (document as { uri?: { toString(): string } }).uri;
+  return uri ? uri.toString() : normalizePathKey(document.fileName);
 }
