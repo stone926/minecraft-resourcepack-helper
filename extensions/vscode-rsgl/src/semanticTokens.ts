@@ -1,11 +1,10 @@
 import * as vscode from "vscode";
 import {
-  getRsglSemanticTokens,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes
 } from "../../../packages/rsgl-core/src/semanticTokens";
+import { getRsglDocumentSemanticTokens } from "../../../packages/rsgl-core/src/languageService";
 import type { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
-import { semanticModelForRsglDocument } from "./semanticWorkspace";
 
 /** Legend mirroring the transport-neutral RSGL semantic token legend. */
 export const rsglSemanticTokensLegend = new vscode.SemanticTokensLegend(
@@ -28,8 +27,7 @@ export function createRsglSemanticTokensProvider(
     provideDocumentSemanticTokens(document: vscode.TextDocument): vscode.SemanticTokens {
       const builder = new vscode.SemanticTokensBuilder(rsglSemanticTokensLegend);
       try {
-        const model = semanticModelForRsglDocument(document, semanticCache);
-        for (const token of getRsglSemanticTokens(model)) {
+        for (const token of getRsglDocumentSemanticTokens(toRsglLanguageDocument(document), semanticCache)) {
           const start = document.positionAt(token.start);
           builder.push(start.line, start.character, token.length, token.tokenType, token.tokenModifiers);
         }
@@ -38,5 +36,12 @@ export function createRsglSemanticTokensProvider(
       }
       return builder.build();
     }
+  };
+}
+
+function toRsglLanguageDocument(document: vscode.TextDocument): { fileName: string; getText(): string } {
+  return {
+    fileName: document.uri.fsPath || document.fileName,
+    getText: () => document.getText()
   };
 }

@@ -1,11 +1,9 @@
 import * as vscode from "vscode";
+import { getRsglDocumentCompletionItems } from "../../../packages/rsgl-core/src/languageService";
 import {
-  getRsglCompletionItems,
   type RsglCompletionItem
 } from "../../../packages/rsgl-core/src/completionService";
-import type { RsglSymbol } from "../../../packages/rsgl-core/src/semantic";
 import type { RsglWorkspaceSemanticCache } from "../../../packages/rsgl-core/src/workspaceSemantic";
-import { semanticModelForRsglDocument } from "./semanticWorkspace";
 
 export function createRsglCompletionProvider(
   semanticCache: RsglWorkspaceSemanticCache
@@ -13,24 +11,20 @@ export function createRsglCompletionProvider(
   return {
     provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
       const offset = document.offsetAt(position);
-      return getRsglCompletionItems(
-        document.getText(),
+      return getRsglDocumentCompletionItems(
+        toRsglLanguageDocument(document),
         offset,
-        semanticSymbolsForDocument(document, semanticCache)
+        semanticCache
       ).map(toCompletionItem);
     }
   };
 }
 
-function semanticSymbolsForDocument(
-  document: vscode.TextDocument,
-  semanticCache: RsglWorkspaceSemanticCache
-): RsglSymbol[] {
-  try {
-    return semanticModelForRsglDocument(document, semanticCache).symbols;
-  } catch {
-    return [];
-  }
+function toRsglLanguageDocument(document: vscode.TextDocument): { fileName: string; getText(): string } {
+  return {
+    fileName: document.uri.fsPath || document.fileName,
+    getText: () => document.getText()
+  };
 }
 
 function toCompletionItem(candidate: RsglCompletionItem): vscode.CompletionItem {

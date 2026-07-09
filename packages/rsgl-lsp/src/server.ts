@@ -12,16 +12,14 @@ import {
   formatRsglText,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
-  RsglWorkspaceSemanticCache,
-  type RsglSymbol
+  RsglWorkspaceSemanticCache
 } from "../../rsgl-core/src";
 import {
-  completionItemsForContent,
+  completionItemsForDocument as completionItemsForDocumentCore,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
   fileNameFromUri,
   normalizeFileName,
-  semanticModelForFile,
   toValidationSettings,
   type RsglValidationSettings
 } from "./serverCore";
@@ -162,13 +160,9 @@ function invalidateDocument(document: TextDocument): void {
 }
 
 function completionItemsForDocument(document: TextDocument, offset: number): CompletionItem[] {
-  return completionItemsForContent(document.getText(), offset, semanticSymbolsForDocument(document));
-}
-
-function semanticSymbolsForDocument(document: TextDocument): RsglSymbol[] {
-  const fileName = fileNameFromUri(document.uri);
-  const semanticProgram = semanticCache.loadProgramFromEntry(fileName);
-  return semanticModelForFile(semanticProgram, fileName)?.symbols ?? [];
+  return completionItemsForDocumentCore(document, fileNameFromUri(document.uri), offset, {
+    loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName)
+  });
 }
 
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {

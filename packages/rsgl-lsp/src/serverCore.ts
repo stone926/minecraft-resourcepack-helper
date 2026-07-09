@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePathKey } from "../../mc-assets/src";
 import {
   CompletionItemKind,
   DiagnosticSeverity,
@@ -9,12 +8,13 @@ import {
   type Position
 } from "vscode-languageserver/node";
 import {
-  bindRsglModule,
   compileRsglModule,
   compileRsglProgram,
+  getRsglDocumentCompletionItems,
+  getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
-  getRsglSemanticTokens,
   parseRsgl,
+  semanticModelForFile as coreSemanticModelForFile,
   type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglSemanticModel,
@@ -40,6 +40,11 @@ export interface RsglLspDocument {
 export interface RsglDocumentValidationDeps {
   loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
   settings: RsglValidationSettings;
+}
+
+/** Injected collaborators for completion computation. */
+export interface RsglDocumentCompletionDeps {
+  loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
 }
 
 /** Normalizes an untyped settings payload into safe validation settings. */
@@ -103,13 +108,25 @@ export function completionItemsForContent(
   return getRsglCompletionItems(text, offset, semanticSymbols).map(toCompletionItem);
 }
 
+/** Computes completion items for a document through the shared core language service. */
+export function completionItemsForDocument(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  deps: RsglDocumentCompletionDeps
+): CompletionItem[] {
+  return getRsglDocumentCompletionItems({
+    fileName,
+    getText: () => document.getText()
+  }, offset, deps).map(toCompletionItem);
+}
+
 /** Finds the semantic model belonging to the given file within a bound workspace program. */
 export function semanticModelForFile(
   semanticProgram: RsglWorkspaceSemanticProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = normalizePathKey(path.resolve(fileName));
-  return semanticProgram.program.models.find(model => normalizePathKey(path.resolve(model.fileName)) === key);
+  return coreSemanticModelForFile(semanticProgram, fileName);
 }
 
 /** Injected collaborators for semantic token computation. */
@@ -128,10 +145,11 @@ export function computeDocumentSemanticTokens(
   deps: RsglDocumentSemanticTokenDeps
 ): number[] {
   try {
-    const semanticProgram = deps.loadProgramFromEntry(fileName);
-    const model = semanticModelForFile(semanticProgram, fileName)
-      ?? bindRsglModule(parseRsgl(document.getText()), { fileName });
-    return encodeSemanticTokens(getRsglSemanticTokens(model), document);
+    const tokens = getRsglDocumentSemanticTokens({
+      fileName,
+      getText: () => document.getText()
+    }, deps);
+    return encodeSemanticTokens(tokens, document);
   } catch {
     return [];
   }
