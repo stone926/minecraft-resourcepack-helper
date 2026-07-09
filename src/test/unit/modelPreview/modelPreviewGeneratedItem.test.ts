@@ -1,11 +1,11 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import type { ModelPreviewFileSystem, ResolvedModel } from "../../../modelPreview/model/ModelDocument";
+import type { ResolvedModel } from "../../../modelPreview/model/ModelDocument";
 import { ModelIssueCollector } from "../../../modelPreview/model/ModelIssues";
 import type { TextureReferenceResolver } from "../../../modelPreview/resolve/TextureReferenceResolver";
 import { ModelPreviewCancellationSource } from "../../../modelPreview/cancellation";
 import { createGeneratedItemElements } from "../../../modelPreview/bake/GeneratedItemModel";
-import type { PngAlphaMask } from "../../../modelPreview/bake/PngAlpha";
+import type { PngAlphaMask } from "../../../modelPreview/bake/AlphaMask";
 import { createPack, createRgbaPng, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
 
@@ -208,10 +208,9 @@ describe("model preview generated item and CIT previews", () => {
       createGeneratedItemElements(
         createGeneratedModel(),
         createTextureResolverStub("large.png"),
-        createEmptyFileSystem(),
         new ModelIssueCollector(),
-        cancellation.token,
-        async () => alphaMask
+        async () => alphaMask,
+        cancellation.token
       ),
       /cancelled/i
     );
@@ -249,12 +248,4 @@ function createTextureResolverStub(textureFileName: string): TextureReferenceRes
       textureFileName
     })
   } as unknown as TextureReferenceResolver;
-}
-
-function createEmptyFileSystem(): ModelPreviewFileSystem {
-  return {
-    readTextFile: async () => "",
-    readBinaryFile: async () => new Uint8Array(),
-    fileExists: () => false
-  };
 }

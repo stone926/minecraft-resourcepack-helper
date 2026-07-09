@@ -1,10 +1,10 @@
 import type { PreviewDirection, PreviewVec3 } from "../ir/PreviewDocument";
 import { lm } from "../../i18n/messages";
-import type { ModelPreviewFileSystem, RawElement, RawFace, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
+import type { RawElement, RawFace, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
-import { readPngAlphaMask, type PngAlphaMask } from "./PngAlpha";
+import type { PngAlphaMask } from "./AlphaMask";
 
 const itemLayers = ["layer0", "layer1", "layer2", "layer3", "layer4"];
 const minZ = 7.5;
@@ -39,12 +39,11 @@ type TextureAlphaReader = (
 export async function createGeneratedItemElements(
   model: ResolvedModel,
   textureResolver: TextureReferenceResolver,
-  fileSystem: ModelPreviewFileSystem,
   issues: ModelIssueCollector,
-  cancellationToken?: ModelPreviewCancellationToken,
-  readTextureAlpha?: TextureAlphaReader
+  readTextureAlpha: TextureAlphaReader,
+  cancellationToken?: ModelPreviewCancellationToken
 ): Promise<ResolvedElement[]> {
-  const layers = await resolveGeneratedLayers(model, textureResolver, fileSystem, issues, cancellationToken, readTextureAlpha);
+  const layers = await resolveGeneratedLayers(model, textureResolver, issues, readTextureAlpha, cancellationToken);
   const elements: ResolvedElement[] = [];
 
   for (const layer of layers) {
@@ -64,10 +63,9 @@ export async function createGeneratedItemElements(
 async function resolveGeneratedLayers(
   model: ResolvedModel,
   textureResolver: TextureReferenceResolver,
-  fileSystem: ModelPreviewFileSystem,
   issues: ModelIssueCollector,
-  cancellationToken?: ModelPreviewCancellationToken,
-  readTextureAlpha: TextureAlphaReader = (fileName, targetIssues, token) => readTextureAlphaMask(fileSystem, fileName, targetIssues, token)
+  readTextureAlpha: TextureAlphaReader,
+  cancellationToken?: ModelPreviewCancellationToken
 ): Promise<GeneratedLayer[]> {
   const layers: GeneratedLayer[] = [];
 
@@ -93,27 +91,6 @@ async function resolveGeneratedLayers(
   }
 
   return layers;
-}
-
-async function readTextureAlphaMask(
-  fileSystem: ModelPreviewFileSystem,
-  textureFileName: string,
-  issues: ModelIssueCollector,
-  cancellationToken?: ModelPreviewCancellationToken
-): Promise<PngAlphaMask | null> {
-  try {
-    throwIfCancellationRequested(cancellationToken);
-    const alphaMask = readPngAlphaMask(await fileSystem.readBinaryFile(textureFileName));
-    throwIfCancellationRequested(cancellationToken);
-    if (alphaMask) {
-      return alphaMask;
-    }
-  } catch {
-    // Fall through to the same approximation as an unsupported PNG layout.
-  }
-
-  issues.info(lm("Generated item side extrusion is approximated because texture pixels could not be decoded"), textureFileName);
-  return null;
 }
 
 function createLayerElements(

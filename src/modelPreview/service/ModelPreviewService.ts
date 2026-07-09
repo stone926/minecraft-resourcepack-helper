@@ -6,14 +6,15 @@ import { normalizePathKey } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
+import type { PngAlphaMask } from "../bake/AlphaMask";
 import { CuboidBaker } from "../bake/CuboidBaker";
 import { createGeneratedItemElements } from "../bake/GeneratedItemModel";
-import { readPngAlphaMask, type PngAlphaMask } from "../bake/PngAlpha";
 import { CitPreviewResolver } from "../resolve/CitPreviewResolver";
 import { ParentChainResolver } from "../resolve/ParentChainResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { fileUriString } from "../paths";
 import { ModelPreviewCache } from "./ModelPreviewCache";
+import { readNodePngAlphaMask } from "./NodePngAlphaMaskProvider";
 import {
   isCancellationError,
   throwIfCancellationRequested,
@@ -103,10 +104,9 @@ export class ModelPreviewService {
         elements: await createGeneratedItemElements(
           model,
           textureResolver,
-          this.fileSystem,
           issues,
-          cancellationToken,
-          (textureFileName, targetIssues, token) => this.readTextureAlphaMask(textureFileName, targetIssues, token)
+          (textureFileName, targetIssues, token) => this.readTextureAlphaMask(textureFileName, targetIssues, token),
+          cancellationToken
         )
       };
     }
@@ -198,7 +198,7 @@ export class ModelPreviewService {
     try {
       const bytes = await this.fileSystem.readBinaryFile(textureFileName);
       throwIfCancellationRequested(cancellationToken);
-      const alphaMask = readPngAlphaMask(bytes);
+      const alphaMask = await readNodePngAlphaMask(bytes, cancellationToken);
       this.cache.setTextureAlphaMask(textureFileName, version, Promise.resolve(alphaMask));
       if (!alphaMask) {
         issues.info(lm("Generated item side extrusion is approximated because texture pixels could not be decoded"), textureFileName);

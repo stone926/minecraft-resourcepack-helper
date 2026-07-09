@@ -1,10 +1,4 @@
-import * as zlib from "node:zlib";
-
-export interface PngAlphaMask {
-  width: number;
-  height: number;
-  isOpaque(x: number, y: number): boolean;
-}
+import type { PngAlphaMask } from "../bake/AlphaMask";
 
 interface PngData {
   width: number;
@@ -17,9 +11,24 @@ interface PngData {
   idat: Buffer[];
 }
 
+export type PngIdatInflater = (bytes: Uint8Array) => Promise<Uint8Array>;
+
+export interface PngAlphaDecodeOptions {
+  maxInputBytes?: number;
+  maxInflatedBytes?: number;
+}
+
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-export function readPngAlphaMask(bytes: Uint8Array): PngAlphaMask | null {
+export async function readPngAlphaMask(
+  bytes: Uint8Array,
+  inflateIdat: PngIdatInflater,
+  options: PngAlphaDecodeOptions = {}
+): Promise<PngAlphaMask | null> {
+  if (options.maxInputBytes !== undefined && bytes.byteLength > options.maxInputBytes) {
+    return null;
+  }
+
   const data = parsePng(bytes);
   if (!data || !isSupportedBitDepth(data)) {
     return null;
@@ -30,9 +39,20 @@ export function readPngAlphaMask(bytes: Uint8Array): PngAlphaMask | null {
     return null;
   }
 
-  const inflated = zlib.inflateSync(Buffer.concat(data.idat));
   const rowBytes = getRowBytes(data);
-  const pixels = unfilterRows(inflated, data.height, rowBytes, bytesPerPixel);
+  const expectedBytes = data.height * (rowBytes + 1);
+  if (options.maxInflatedBytes !== undefined && expectedBytes > options.maxInflatedBytes) {
+    return null;
+  }
+
+  let inflated: Uint8Array;
+  try {
+    inflated = await inflateIdat(Buffer.concat(data.idat));
+  } catch {
+    return null;
+  }
+
+  const pixels = unfilterRows(Buffer.from(inflated.buffer, inflated.byteOffset, inflated.byteLength), data.height, rowBytes, bytesPerPixel);
   if (!pixels) {
     return null;
   }

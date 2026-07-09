@@ -2,7 +2,7 @@ import type { ModelPreviewDocument } from "../ir/PreviewDocument";
 import type { RawModelDocument, ResolvedModel } from "../model/ModelDocument";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { dependencyKey } from "../paths";
-import type { PngAlphaMask } from "../bake/PngAlpha";
+import type { PngAlphaMask } from "../bake/AlphaMask";
 import { LruCache } from "../../services/lruCache";
 
 interface PreviewCacheEntry {
