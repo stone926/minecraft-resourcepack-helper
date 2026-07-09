@@ -19,6 +19,16 @@ interface CachedResourceIds {
   ids: CitResourceIds;
 }
 
+interface ResourceIdCacheContext {
+  cacheKey: string;
+  generation: number;
+  configurationVersion: number;
+}
+
+interface PendingWarmResourceIds {
+  callbacks: Set<() => void>;
+}
+
 const builtinEnchantments = [
   "aqua_affinity",
   "bane_of_arthropods",
@@ -162,6 +172,11 @@ const builtinItemIds = [
   "written_book"
 ].map(id => `minecraft:${id}`);
 
+const builtinResourceIds: CitResourceIds = {
+  items: builtinItemIds,
+  enchantments: builtinEnchantments
+};
+
 const builtinArmorItems = new Set([
   "minecraft:leather_helmet",
   "minecraft:leather_chestplate",
@@ -192,23 +207,61 @@ const builtinArmorItems = new Set([
 
 class CitResourceIdService {
   private cached: CachedResourceIds | null = null;
+  private readonly pendingWarmups = new Map<string, PendingWarmResourceIds>();
 
   getResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds {
-    const cacheKey = getCacheKey(documentFileName, configuration);
-    const generation = workspaceResourceCache.getResourceIndexGeneration();
-    const configurationVersion = workspaceResourceCache.getConfigurationVersion();
-    if (
-      this.cached &&
-      this.cached.cacheKey === cacheKey &&
-      this.cached.generation === generation &&
-      this.cached.configurationVersion === configurationVersion
-    ) {
-      return this.cached.ids;
+    const context = this.getCacheContext(documentFileName, configuration);
+    const cached = this.getCachedResourceIdsForContext(context);
+    if (cached) {
+      return cached;
     }
 
     const ids = collectResourceIds(documentFileName, configuration);
-    this.cached = { cacheKey, generation, configurationVersion, ids };
+    this.cached = { ...context, ids };
     return ids;
+  }
+
+  getCachedResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds | null {
+    return this.getCachedResourceIdsForContext(this.getCacheContext(documentFileName, configuration));
+  }
+
+  getBuiltinResourceIds(): CitResourceIds {
+    return builtinResourceIds;
+  }
+
+  warmResourceIds(
+    documentFileName: string,
+    configuration: CitResourceIdConfiguration = {},
+    onReady?: () => void
+  ): void {
+    const context = this.getCacheContext(documentFileName, configuration);
+    if (this.getCachedResourceIdsForContext(context)) {
+      return;
+    }
+
+    const warmupKey = this.getWarmupKey(context);
+    const pending = this.pendingWarmups.get(warmupKey);
+    if (pending) {
+      if (onReady) {
+        pending.callbacks.add(onReady);
+      }
+      return;
+    }
+
+    const callbacks = new Set<() => void>();
+    if (onReady) {
+      callbacks.add(onReady);
+    }
+    this.pendingWarmups.set(warmupKey, { callbacks });
+
+    setTimeout(() => {
+      const current = this.pendingWarmups.get(warmupKey);
+      this.pendingWarmups.delete(warmupKey);
+      this.getResourceIds(documentFileName, configuration);
+      for (const callback of current?.callbacks ?? []) {
+        callback();
+      }
+    }, 0);
   }
 
   normalizeItemId(value: string): string {
@@ -228,6 +281,34 @@ class CitResourceIdService {
       return false;
     }
     return /_(?:helmet|chestplate|leggings|boots)$/.test(id);
+  }
+
+  private getCacheContext(documentFileName: string, configuration: CitResourceIdConfiguration): ResourceIdCacheContext {
+    return {
+      cacheKey: getCacheKey(documentFileName, configuration),
+      generation: workspaceResourceCache.getResourceIndexGeneration(),
+      configurationVersion: workspaceResourceCache.getConfigurationVersion()
+    };
+  }
+
+  private getCachedResourceIdsForContext(context: ResourceIdCacheContext): CitResourceIds | null {
+    if (
+      this.cached &&
+      this.cached.cacheKey === context.cacheKey &&
+      this.cached.generation === context.generation &&
+      this.cached.configurationVersion === context.configurationVersion
+    ) {
+      return this.cached.ids;
+    }
+    return null;
+  }
+
+  private getWarmupKey(context: ResourceIdCacheContext): string {
+    return [
+      context.cacheKey,
+      context.generation,
+      context.configurationVersion
+    ].join("\0");
   }
 }
 

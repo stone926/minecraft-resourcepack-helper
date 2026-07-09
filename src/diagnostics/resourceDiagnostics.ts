@@ -17,7 +17,9 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
 
   const diagnostics: vscode.Diagnostic[] = [
     ...getSemanticResourceDiagnostics(document),
-    ...getCitDiagnostics(document)
+    ...getCitDiagnostics(document, {
+      onResourceIdsReady: () => refreshResourceDiagnostics(document, collection)
+    })
   ];
 
   for (const reference of getResourceReferences(document)) {

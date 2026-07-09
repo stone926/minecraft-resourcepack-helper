@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { citResourceIdService } from "./citResourceIdService";
+import { isCitPropertiesFileName } from "./citPaths";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { localize } from "../i18n/runtime";
 import {
@@ -8,10 +9,27 @@ import {
   type CitDiagnosticSeverity
 } from "./citDiagnosticsCore";
 
-export function getCitDiagnostics(document: vscode.TextDocument): vscode.Diagnostic[] {
+export interface CitDiagnosticsVsCodeOptions {
+  onResourceIdsReady?: () => void;
+}
+
+export function getCitDiagnostics(
+  document: vscode.TextDocument,
+  options: CitDiagnosticsVsCodeOptions = {}
+): vscode.Diagnostic[] {
+  if (!isCitPropertiesFileName(document.fileName)) {
+    return [];
+  }
+
+  const configuration = getResourceConfiguration();
+  const cachedResourceIds = citResourceIdService.getCachedResourceIds(document.fileName, configuration);
+  if (!cachedResourceIds) {
+    citResourceIdService.warmResourceIds(document.fileName, configuration, options.onResourceIdsReady);
+  }
+
   return getCoreCitDiagnostics(document, {
     locale: vscode.env.language,
-    resourceIds: citResourceIdService.getResourceIds(document.fileName, getResourceConfiguration())
+    resourceIds: cachedResourceIds ?? citResourceIdService.getBuiltinResourceIds()
   }).map(toVsCodeDiagnostic);
 }
 
