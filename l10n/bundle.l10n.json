@@ -47,6 +47,7 @@
   "Front": "Front",
   "Generate CIT for current item": "Generate CIT for current item",
   "Generated item side extrusion is approximated because texture pixels could not be decoded": "Generated item side extrusion is approximated because texture pixels could not be decoded",
+  "Generated item side extrusion is simplified because texture alpha detail is too large": "Generated item side extrusion is simplified because texture alpha detail is too large",
   "Global key '{0}' is only valid in cit.properties.": "Global key '{0}' is only valid in cit.properties.",
   "Grid": "Grid",
   "Height": "Height",

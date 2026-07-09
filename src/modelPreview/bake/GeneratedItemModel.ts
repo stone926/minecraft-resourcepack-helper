@@ -11,17 +11,21 @@ const minZ = 7.5;
 const maxZ = 8.5;
 const uvShrink = 0.1;
 const fallbackSpriteSize = 16;
+const maxDetailedAlphaMaskPixels = 256 * 256;
+const maxGeneratedSideSpans = 4096;
 
 interface GeneratedLayer {
   textureReference: string;
   tintindex: number;
+  issueFileName: string;
   alphaMask: PngAlphaMask | null;
 }
 
-interface SideFace {
+interface SideSpan {
   side: SideDirection;
   x: number;
   y: number;
+  length: number;
 }
 
 type SideDirection = "up" | "down" | "left" | "right";
@@ -45,7 +49,7 @@ export async function createGeneratedItemElements(
 
   for (const layer of layers) {
     throwIfCancellationRequested(cancellationToken);
-    for (const element of createLayerElements(layer)) {
+    for (const element of createLayerElements(layer, issues, cancellationToken)) {
       elements.push({
         element,
         index: elements.length,
@@ -83,6 +87,7 @@ async function resolveGeneratedLayers(
     layers.push({
       textureReference,
       tintindex: layerIndex,
+      issueFileName: resolution.textureFileName ?? model.fileName,
       alphaMask
     });
   }
@@ -111,10 +116,14 @@ async function readTextureAlphaMask(
   return null;
 }
 
-function createLayerElements(layer: GeneratedLayer): RawElement[] {
+function createLayerElements(
+  layer: GeneratedLayer,
+  issues: ModelIssueCollector,
+  cancellationToken?: ModelPreviewCancellationToken
+): RawElement[] {
   return [
     createFrontBackElement(layer),
-    ...createSideElements(layer)
+    ...createSideElements(layer, issues, cancellationToken)
   ];
 }
 
@@ -129,11 +138,23 @@ function createFrontBackElement(layer: GeneratedLayer): RawElement {
   };
 }
 
-function createSideElements(layer: GeneratedLayer): RawElement[] {
+function createSideElements(
+  layer: GeneratedLayer,
+  issues: ModelIssueCollector,
+  cancellationToken?: ModelPreviewCancellationToken
+): RawElement[] {
   const alphaMask = layer.alphaMask ?? createFallbackAlphaMask();
   const xScale = 16 / alphaMask.width;
   const yScale = 16 / alphaMask.height;
-  return getSideFaces(alphaMask).map(sideFace => createSideElement(layer, sideFace, xScale, yScale));
+  let sideSpans = getSideSpans(alphaMask, cancellationToken);
+  if (!sideSpans) {
+    issues.info(lm("Generated item side extrusion is simplified because texture alpha detail is too large"), layer.issueFileName);
+    const fallbackAlphaMask = createFallbackAlphaMask();
+    sideSpans = getSideSpans(fallbackAlphaMask, cancellationToken) ?? [];
+    return sideSpans.map(sideSpan => createSideElement(layer, sideSpan, 16 / fallbackAlphaMask.width, 16 / fallbackAlphaMask.height));
+  }
+
+  return sideSpans.map(sideSpan => createSideElement(layer, sideSpan, xScale, yScale));
 }
 
 function createFallbackAlphaMask(): PngAlphaMask {
@@ -144,80 +165,140 @@ function createFallbackAlphaMask(): PngAlphaMask {
   };
 }
 
-function getSideFaces(alphaMask: PngAlphaMask): SideFace[] {
-  const sideFaces: SideFace[] = [];
+function getSideSpans(alphaMask: PngAlphaMask, cancellationToken?: ModelPreviewCancellationToken): SideSpan[] | null {
+  if (alphaMask.width * alphaMask.height > maxDetailedAlphaMaskPixels) {
+    return null;
+  }
+
+  const sideSpans: SideSpan[] = [];
 
   for (let y = 0; y < alphaMask.height; y++) {
-    for (let x = 0; x < alphaMask.width; x++) {
-      if (!alphaMask.isOpaque(x, y)) {
-        continue;
-      }
-
-      addSideFaceIfTransparent(sideFaces, alphaMask, "up", x, y, x, y - 1);
-      addSideFaceIfTransparent(sideFaces, alphaMask, "down", x, y, x, y + 1);
-      addSideFaceIfTransparent(sideFaces, alphaMask, "left", x, y, x - 1, y);
-      addSideFaceIfTransparent(sideFaces, alphaMask, "right", x, y, x + 1, y);
+    throwIfCancellationRequested(cancellationToken);
+    collectHorizontalSideSpans(sideSpans, alphaMask, "up", y, -1);
+    collectHorizontalSideSpans(sideSpans, alphaMask, "down", y, 1);
+    if (sideSpans.length > maxGeneratedSideSpans) {
+      return null;
     }
   }
 
-  return sideFaces;
+  for (let x = 0; x < alphaMask.width; x++) {
+    throwIfCancellationRequested(cancellationToken);
+    collectVerticalSideSpans(sideSpans, alphaMask, "left", x, -1);
+    collectVerticalSideSpans(sideSpans, alphaMask, "right", x, 1);
+    if (sideSpans.length > maxGeneratedSideSpans) {
+      return null;
+    }
+  }
+
+  return sideSpans;
 }
 
-function addSideFaceIfTransparent(
-  sideFaces: SideFace[],
+function collectHorizontalSideSpans(
+  sideSpans: SideSpan[],
   alphaMask: PngAlphaMask,
-  side: SideDirection,
-  x: number,
+  side: Extract<SideDirection, "up" | "down">,
   y: number,
-  neighborX: number,
-  neighborY: number
+  neighborOffsetY: number
 ): void {
-  if (isTransparent(alphaMask, neighborX, neighborY)) {
-    sideFaces.push({ side, x, y });
+  let startX: number | null = null;
+  for (let x = 0; x < alphaMask.width; x++) {
+    const visible = alphaMask.isOpaque(x, y) && isTransparent(alphaMask, x, y + neighborOffsetY);
+    startX = collectSideSpan(sideSpans, visible, side, startX, x, y);
   }
+  closeSideSpan(sideSpans, side, startX, alphaMask.width, y);
+}
+
+function collectVerticalSideSpans(
+  sideSpans: SideSpan[],
+  alphaMask: PngAlphaMask,
+  side: Extract<SideDirection, "left" | "right">,
+  x: number,
+  neighborOffsetX: number
+): void {
+  let startY: number | null = null;
+  for (let y = 0; y < alphaMask.height; y++) {
+    const visible = alphaMask.isOpaque(x, y) && isTransparent(alphaMask, x + neighborOffsetX, y);
+    startY = collectSideSpan(sideSpans, visible, side, startY, x, y);
+  }
+  closeSideSpan(sideSpans, side, startY, x, alphaMask.height);
+}
+
+function collectSideSpan(
+  sideSpans: SideSpan[],
+  visible: boolean,
+  side: SideDirection,
+  spanStart: number | null,
+  x: number,
+  y: number
+): number | null {
+  if (visible) {
+    return spanStart ?? (side === "up" || side === "down" ? x : y);
+  }
+
+  closeSideSpan(sideSpans, side, spanStart, x, y);
+  return null;
+}
+
+function closeSideSpan(
+  sideSpans: SideSpan[],
+  side: SideDirection,
+  spanStart: number | null,
+  x: number,
+  y: number
+): void {
+  if (spanStart === null) {
+    return;
+  }
+
+  if (side === "up" || side === "down") {
+    sideSpans.push({ side, x: spanStart, y, length: x - spanStart });
+    return;
+  }
+
+  sideSpans.push({ side, x, y: spanStart, length: y - spanStart });
 }
 
 function isTransparent(alphaMask: PngAlphaMask, x: number, y: number): boolean {
   return x < 0 || y < 0 || x >= alphaMask.width || y >= alphaMask.height || !alphaMask.isOpaque(x, y);
 }
 
-function createSideElement(layer: GeneratedLayer, sideFace: SideFace, xScale: number, yScale: number): RawElement {
-  const { from, to, direction } = getSideGeometry(sideFace, xScale, yScale);
+function createSideElement(layer: GeneratedLayer, sideSpan: SideSpan, xScale: number, yScale: number): RawElement {
+  const { from, to, direction } = getSideGeometry(sideSpan, xScale, yScale);
   return {
     from,
     to,
     faces: {
-      [direction]: createFace(layer, getSideUv(sideFace, xScale, yScale))
+      [direction]: createFace(layer, getSideUv(sideSpan, xScale, yScale))
     }
   };
 }
 
 function getSideGeometry(
-  sideFace: SideFace,
+  sideSpan: SideSpan,
   xScale: number,
   yScale: number
 ): { from: PreviewVec3; to: PreviewVec3; direction: PreviewDirection } {
-  let startX = sideFace.x;
-  let startY = sideFace.y;
-  let endX = sideFace.x;
-  let endY = sideFace.y;
+  let startX = sideSpan.x;
+  let startY = sideSpan.y;
+  let endX = sideSpan.x;
+  let endY = sideSpan.y;
 
-  switch (sideFace.side) {
+  switch (sideSpan.side) {
     case "up":
-      endX++;
+      endX += sideSpan.length;
       break;
     case "down":
-      endX++;
+      endX += sideSpan.length;
       startY++;
       endY++;
       break;
     case "left":
-      endY++;
+      endY += sideSpan.length;
       break;
     case "right":
       startX++;
       endX++;
-      endY++;
+      endY += sideSpan.length;
       break;
   }
 
@@ -226,7 +307,7 @@ function getSideGeometry(
   startY = 16 - startY * yScale;
   endY = 16 - endY * yScale;
 
-  switch (sideFace.side) {
+  switch (sideSpan.side) {
     case "up":
       return { from: [startX, startY, minZ], to: [endX, startY, maxZ], direction: "up" };
     case "down":
@@ -238,15 +319,16 @@ function getSideGeometry(
   }
 }
 
-function getSideUv(sideFace: SideFace, xScale: number, yScale: number): [number, number, number, number] {
-  const u0 = sideFace.x + uvShrink;
-  const u1 = sideFace.x + 1 - uvShrink;
-  const v0 = sideFace.side === "up" || sideFace.side === "down"
-    ? sideFace.y + uvShrink
-    : sideFace.y + 1 - uvShrink;
-  const v1 = sideFace.side === "up" || sideFace.side === "down"
-    ? sideFace.y + 1 - uvShrink
-    : sideFace.y + uvShrink;
+function getSideUv(sideSpan: SideSpan, xScale: number, yScale: number): [number, number, number, number] {
+  const isHorizontal = sideSpan.side === "up" || sideSpan.side === "down";
+  const u0 = sideSpan.x + uvShrink;
+  const u1 = sideSpan.x + (isHorizontal ? sideSpan.length : 1) - uvShrink;
+  const v0 = isHorizontal
+    ? sideSpan.y + uvShrink
+    : sideSpan.y + sideSpan.length - uvShrink;
+  const v1 = isHorizontal
+    ? sideSpan.y + 1 - uvShrink
+    : sideSpan.y + uvShrink;
 
   return [u0 * xScale, v0 * yScale, u1 * xScale, v1 * yScale];
 }

@@ -47,6 +47,7 @@
   "Front": "前",
   "Generate CIT for current item": "为当前物品生成 CIT",
   "Generated item side extrusion is approximated because texture pixels could not be decoded": "由于无法解码纹理像素，生成物品侧面挤出使用近似效果",
+  "Generated item side extrusion is simplified because texture alpha detail is too large": "由于纹理 alpha 细节过多，生成物品侧面挤出已简化",
   "Global key '{0}' is only valid in cit.properties.": "全局键“{0}”仅在 cit.properties 中有效。",
   "Grid": "网格",
   "Height": "高度",

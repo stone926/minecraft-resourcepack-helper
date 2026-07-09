@@ -1,5 +1,11 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
+import type { ModelPreviewFileSystem, ResolvedModel } from "../../../modelPreview/model/ModelDocument";
+import { ModelIssueCollector } from "../../../modelPreview/model/ModelIssues";
+import type { TextureReferenceResolver } from "../../../modelPreview/resolve/TextureReferenceResolver";
+import { ModelPreviewCancellationSource } from "../../../modelPreview/cancellation";
+import { createGeneratedItemElements } from "../../../modelPreview/bake/GeneratedItemModel";
+import type { PngAlphaMask } from "../../../modelPreview/bake/PngAlpha";
 import { createPack, createRgbaPng, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
 
@@ -29,7 +35,7 @@ describe("model preview generated item and CIT previews", () => {
       assert.ok(layer0Material);
       assert.ok(layer1Material);
       assert.deepStrictEqual(layer0Faces.map(face => face.direction).sort(), ["north", "south"]);
-      assert.strictEqual(layer1Faces.length, 10);
+      assert.strictEqual(layer1Faces.length, 6);
       assert.ok(layer1Faces.some(face => face.direction === "south" && face.tintindex === 1));
       assert.ok(layer1Faces.some(face => face.direction === "up"));
       assert.ok(layer1Faces.some(face => face.direction === "down"));
@@ -159,4 +165,96 @@ describe("model preview generated item and CIT previews", () => {
       removeTempDirectory(root);
     }
   });
+
+  it("simplifies oversized item/generated side extrusion", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      writeJson(pack, "assets/minecraft/models/item/checker.json", {
+        parent: "minecraft:item/generated",
+        textures: {
+          layer0: "minecraft:item/checker"
+        }
+      });
+      writeFile(pack, "assets/minecraft/textures/item/checker.png", createRgbaPng(257, 257, (x, y) => (x + y) % 2 === 0 ? 255 : 0));
+
+      const preview = await createService().getPreviewDocument(path.join(pack, "assets/minecraft/models/item/checker.json"));
+      const faces = preview.meshes.flatMap(mesh => mesh.faces);
+
+      assert.strictEqual(faces.length, 6);
+      assert.ok(preview.issues.some(issue => issue.message.message.includes("side extrusion is simplified")));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("cancels item/generated side extrusion while scanning alpha", async () => {
+    const cancellation = new ModelPreviewCancellationSource();
+    let reads = 0;
+    const alphaMask: PngAlphaMask = {
+      width: 16,
+      height: 16,
+      isOpaque() {
+        reads++;
+        if (reads === 8) {
+          cancellation.cancel();
+        }
+        return true;
+      }
+    };
+
+    await assert.rejects(
+      createGeneratedItemElements(
+        createGeneratedModel(),
+        createTextureResolverStub("large.png"),
+        createEmptyFileSystem(),
+        new ModelIssueCollector(),
+        cancellation.token,
+        async () => alphaMask
+      ),
+      /cancelled/i
+    );
+  });
 });
+
+function createGeneratedModel(): ResolvedModel {
+  return {
+    fileName: path.resolve("virtual-pack/assets/minecraft/models/item/generated.json"),
+    resourceId: "minecraft:item/generated",
+    generatedItem: true,
+    textures: {
+      layer0: {
+        name: "layer0",
+        value: "minecraft:item/generated",
+        sourceModelFileName: path.resolve("virtual-pack/assets/minecraft/models/item/generated.json")
+      }
+    },
+    elements: [],
+    display: {},
+    dependencies: []
+  };
+}
+
+function createTextureResolverStub(textureFileName: string): TextureReferenceResolver {
+  return {
+    resolve: () => ({
+      material: {
+        id: "texture:stub",
+        textureUri: `file:///${textureFileName}`,
+        fallback: "texture",
+        transparent: false
+      },
+      dependencies: [],
+      textureFileName
+    })
+  } as unknown as TextureReferenceResolver;
+}
+
+function createEmptyFileSystem(): ModelPreviewFileSystem {
+  return {
+    readTextFile: async () => "",
+    readBinaryFile: async () => new Uint8Array(),
+    fileExists: () => false
+  };
+}
