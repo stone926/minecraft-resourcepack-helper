@@ -36,6 +36,5 @@
       "description": "当 method 为 cycle 时，控制 CIT 附魔之间的过渡时长。"
     }
   },
-  "patterns": {},
-  "rules": []
+  "patterns": {}
 }

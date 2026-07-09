@@ -56,6 +56,5 @@
       "title": "子模型键",
       "description": "按子键替换模型 override。"
     }
-  },
-  "rules": []
+  }
 }

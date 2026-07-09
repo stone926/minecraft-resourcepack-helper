@@ -192,7 +192,6 @@ function mergeFragments(
 ): ResolvedCitSpec {
   const keys = new Map<string, ResolvedCitSpecKey>();
   const patterns = new Map<string, ResolvedCitSpecKey>();
-  const rules = new Map<string, CitSpecFragment["rules"][number]>();
 
   for (const fragment of fragments) {
     if (fragment.scope !== scope) {
@@ -201,12 +200,6 @@ function mergeFragments(
 
     mergeEntries(keys, fragment.keys, fragment.id, allowCompatibleDuplicates);
     mergeEntries(patterns, fragment.patterns, fragment.id, allowCompatibleDuplicates, true);
-    for (const rule of fragment.rules ?? []) {
-      if (rules.has(rule.id)) {
-        throw new Error(`Duplicate CIT spec rule id: ${rule.id}`);
-      }
-      rules.set(rule.id, rule);
-    }
   }
 
   return {
@@ -214,7 +207,6 @@ function mergeFragments(
     citType,
     keys,
     patterns: [...patterns.values()],
-    rules: [...rules.values()],
     fragments: fragments.map(fragment => fragment.id)
   };
 }

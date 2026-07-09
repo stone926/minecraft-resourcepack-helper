@@ -13,6 +13,5 @@
       "description": "Replaces the elytra texture with the resolved texture."
     }
   },
-  "patterns": {},
-  "rules": []
+  "patterns": {}
 }

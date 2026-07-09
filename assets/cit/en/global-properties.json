@@ -36,6 +36,5 @@
       "description": "Controls how long CIT enchantments fade when method is cycle."
     }
   },
-  "patterns": {},
-  "rules": []
+  "patterns": {}
 }

@@ -132,6 +132,5 @@
       "description": "Multiplies the texture's alpha channel."
     }
   },
-  "patterns": {},
-  "rules": []
+  "patterns": {}
 }

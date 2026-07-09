@@ -132,6 +132,5 @@
       "description": "乘算纹理 alpha 通道。"
     }
   },
-  "patterns": {},
-  "rules": []
+  "patterns": {}
 }

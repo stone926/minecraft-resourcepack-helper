@@ -56,6 +56,5 @@
       "title": "Model sub key",
       "description": "Replaces a model override by sub key."
     }
-  },
-  "rules": []
+  }
 }

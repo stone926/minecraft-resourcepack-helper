@@ -73,17 +73,12 @@ describe("CIT spec assets", () => {
     }
   });
 
-  it("keeps pattern names separate from exact keys and rule ids unique", () => {
+  it("keeps pattern names separate from exact keys", () => {
     for (const localeRoot of [EN_CIT, ZH_CIT]) {
-      const ruleIds = new Set<string>();
       for (const file of collectJsonFiles(localeRoot)) {
         const fragment = readJsonFile<CitSpecFragment>(file);
         for (const pattern of Object.keys(fragment.patterns)) {
           assert.strictEqual(Object.hasOwn(fragment.keys, pattern), false, `${file}:${pattern}`);
-        }
-        for (const rule of fragment.rules) {
-          assert.strictEqual(ruleIds.has(rule.id), false, `duplicate rule ${rule.id}`);
-          ruleIds.add(rule.id);
         }
       }
     }

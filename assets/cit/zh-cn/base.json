@@ -134,14 +134,5 @@
       "title": "组件匹配",
       "description": "component.* 的别名，用于匹配 1.21+ 物品数据组件路径。"
     }
-  },
-  "rules": [
-    {
-      "id": "itemRequiresItemsOrFilename",
-      "type": "requiresAny",
-      "when": { "citType": "item" },
-      "keys": ["items"],
-      "or": ["filenameItemId"]
-    }
-  ]
+  }
 }

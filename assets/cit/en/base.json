@@ -134,14 +134,5 @@
       "title": "Components match",
       "description": "Alias for component.* matching of 1.21+ item data component paths."
     }
-  },
-  "rules": [
-    {
-      "id": "itemRequiresItemsOrFilename",
-      "type": "requiresAny",
-      "when": { "citType": "item" },
-      "keys": ["items"],
-      "or": ["filenameItemId"]
-    }
-  ]
+  }
 }

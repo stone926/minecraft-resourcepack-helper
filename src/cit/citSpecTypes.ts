@@ -43,21 +43,12 @@ export interface CitSpecKey {
   runtimeNote?: string;
 }
 
-export interface CitSpecRule {
-  id: string;
-  type: string;
-  when?: Record<string, unknown>;
-  keys?: string[];
-  or?: string[];
-}
-
 export interface CitSpecFragment {
   version: 1;
   id: string;
   scope: CitSpecScope;
   keys: Record<string, CitSpecKey>;
   patterns: Record<string, CitSpecKey>;
-  rules: CitSpecRule[];
 }
 
 export interface ResolvedCitSpecKey extends CitSpecKey {
@@ -71,7 +62,6 @@ export interface ResolvedCitSpec {
   citType?: CitType;
   keys: Map<string, ResolvedCitSpecKey>;
   patterns: ResolvedCitSpecKey[];
-  rules: CitSpecRule[];
   fragments: string[];
 }
 

@@ -13,6 +13,5 @@
       "description": "使用解析到的纹理替换鞘翅纹理。"
     }
   },
-  "patterns": {},
-  "rules": []
+  "patterns": {}
 }
