@@ -1,5 +1,8 @@
 import * as assert from "node:assert";
-import { readPngMetadata } from "../../src";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { pngMetadataHeaderBytes, readPngFileMetadata, readPngMetadata } from "../../src";
 
 const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -42,5 +45,33 @@ describe("PNG metadata", () => {
     assert.strictEqual(readPngMetadata(new Uint8Array(0)), null);
     assert.strictEqual(readPngMetadata(Buffer.from(pngSignature)), null);
     assert.strictEqual(readPngMetadata(createPngBytes(16, 16).subarray(0, 23)), null);
+  });
+
+  it("reads file metadata from the PNG header", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-assets-png-"));
+    const fileName = path.join(root, "large.png");
+
+    try {
+      fs.writeFileSync(fileName, Buffer.concat([
+        createPngBytes(32, 16),
+        Buffer.alloc(1024 * 1024, 0xab)
+      ]));
+
+      assert.deepStrictEqual(readPngFileMetadata(fileName), { width: 32, height: 16 });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps PNG file metadata reads bounded to the header", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "packages", "mc-assets", "src", "fileMetadata.ts"),
+      "utf8"
+    );
+
+    assert.ok(source.includes("readFilePrefix(fileName, pngMetadataHeaderBytes)"));
+    assert.ok(source.includes("fs.readSync(handle, bytes, 0, byteLength, 0)"));
+    assert.strictEqual(pngMetadataHeaderBytes, 24);
+    assert.strictEqual(source.includes("readPngMetadata(fs.readFileSync"), false);
   });
 });

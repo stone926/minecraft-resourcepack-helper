@@ -14,9 +14,9 @@ import {
   normalizePathKey,
   parsePackMetadata,
   parseResourceLocation,
-  readOggMetadata,
+  readOggFileMetadata,
   readPackMetadata,
-  readPngMetadata,
+  readPngFileMetadata,
   type OggMetadata,
   type PackMetadata,
   type PngMetadata,
@@ -339,11 +339,11 @@ export class WorkspaceResourceCache {
   }
 
   getPngMetadata(fileName: string): PngMetadata | null {
-    return this.getVersionedFileValue("pngMetadata", this.pngMetadataCache, fileName, () => readFileMetadata(fileName, readPngMetadata));
+    return this.getVersionedFileValue("pngMetadata", this.pngMetadataCache, fileName, () => readPngFileMetadata(fileName));
   }
 
   getOggMetadata(fileName: string): OggMetadata | null {
-    return this.getVersionedFileValue("oggMetadata", this.oggMetadataCache, fileName, () => readFileMetadata(fileName, readOggMetadata));
+    return this.getVersionedFileValue("oggMetadata", this.oggMetadataCache, fileName, () => readOggFileMetadata(fileName));
   }
 
   getModelParentChain(
@@ -596,14 +596,6 @@ function documentKey(document: CacheTextDocument): string {
 
 function normalizeOptionalPath(value: string | null | undefined): string {
   return value ? normalizePathKey(value) : "";
-}
-
-function readFileMetadata<T>(fileName: string, read: (bytes: Buffer) => T): T | null {
-  try {
-    return read(fs.readFileSync(fileName));
-  } catch {
-    return null;
-  }
 }
 
 function unique(values: string[]): string[] {

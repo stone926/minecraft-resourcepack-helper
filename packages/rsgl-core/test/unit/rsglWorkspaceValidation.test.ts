@@ -245,10 +245,14 @@ describe("RSGL workspace validation", () => {
     const packRoot = path.join(root, "pack");
     const sourceFile = path.join(packRoot, "main.rsgl");
     const textureFile = path.join(packRoot, "assets", "minecraft", "textures", "block", "adapter_bad_strip.png");
+
     try {
       fs.mkdirSync(path.dirname(textureFile), { recursive: true });
       fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
-      fs.writeFileSync(textureFile, createPngBytes(16, 20));
+      fs.writeFileSync(textureFile, Buffer.concat([
+        createPngBytes(16, 20),
+        Buffer.alloc(1024 * 1024, 0xab)
+      ]));
       fs.writeFileSync(sourceFile, [
         "mcmeta \"assets/minecraft/textures/block/adapter_bad_strip.png\" {",
         "  animation { frames [0] }",

@@ -13,9 +13,9 @@ import {
   findPackRoot,
   getDocumentResourceRootCandidates,
   minecraftResourceTarget,
-  readOggMetadata,
+  readOggFileMetadata,
   readPackMetadata,
-  readPngMetadata,
+  readPngFileMetadata,
   type MinecraftResourceTarget,
   type PackMetadata
 } from "../../mc-assets/src";
@@ -39,8 +39,8 @@ const defaultFileSystem: RsglValidationFileSystem = {
   exists: fileName => fileExists(fileName),
   isDirectory: fileName => directoryExists(fileName),
   readJson: fileName => readJsonFile(fileName),
-  readPngMetadata: fileName => readFileMetadata(fileName, readPngMetadata),
-  readOggMetadata: fileName => readFileMetadata(fileName, readOggMetadata)
+  readPngMetadata: fileName => readPngFileMetadata(fileName),
+  readOggMetadata: fileName => readOggFileMetadata(fileName)
 };
 
 export function createRsglWorkspaceValidationOptions(
@@ -156,14 +156,6 @@ class WorkspaceResourceResolver {
 function readJsonFile(fileName: string): JsonValue | null {
   try {
     return JSON.parse(fs.readFileSync(fileName, "utf8")) as JsonValue;
-  } catch {
-    return null;
-  }
-}
-
-function readFileMetadata<T>(fileName: string, read: (bytes: Uint8Array) => T | null): T | null {
-  try {
-    return read(fs.readFileSync(fileName));
   } catch {
     return null;
   }

@@ -5,3 +5,4 @@ export * from "./packMetadata";
 export * from "./packResolution";
 export * from "./pngMetadata";
 export * from "./oggMetadata";
+export * from "./fileMetadata";

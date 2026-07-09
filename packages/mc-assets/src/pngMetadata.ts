@@ -4,9 +4,10 @@ export interface PngMetadata {
 }
 
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+export const pngMetadataHeaderBytes = 24;
 
 export function readPngMetadata(bytes: Uint8Array): PngMetadata | null {
-  if (bytes.length < 24 || !Buffer.from(bytes.subarray(0, pngSignature.length)).equals(pngSignature)) {
+  if (bytes.length < pngMetadataHeaderBytes || !Buffer.from(bytes.subarray(0, pngSignature.length)).equals(pngSignature)) {
     return null;
   }
 
