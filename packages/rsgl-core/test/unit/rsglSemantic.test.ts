@@ -175,12 +175,14 @@ describe("RSGL semantic model", () => {
     assert.ok(codes.includes("rsgl.missingArgument"));
     assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 1);
     assert.ok(codes.includes("rsgl.notCallable"));
+    assert.strictEqual(model.scope.symbols.has("raw_json"), false);
+    assert.strictEqual(model.scope.symbols.has("raw_json_file"), false);
   });
 
   it("checks lambda arity and purity diagnostics", () => {
     const model = bindRsglModule(parseRsgl([
       "let wrongArity = (value => value)(\"one\", \"two\")",
-      "let impure = value => raw_json_file(\"./fragment.json\")"
+      "let impure = value => glob(\"./fragment.json\")"
     ].join("\n")));
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
 

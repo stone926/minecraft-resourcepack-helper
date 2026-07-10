@@ -8,23 +8,17 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
+import { applyBaseDocument } from "./base/application";
 import {
-  appendBlockstateContent,
-  mergeBlockstateContent,
-  mergeBlockstateFragment,
-  overrideBlockstateContent,
-  RsglBlockstateFragment,
-  RsglBlockstateFragmentOptions
-} from "./blockstateFragments";
+  BlockstateContentMerger,
+  type BlockstateBodyContent
+} from "./blockstateContentMerge";
+import { RsglBlockstateFragment } from "./blockstateFragments";
 import { blockstateVariantKey } from "./blockstateKeys";
 import {
   blockstateMultipartPath,
   blockstateVariantPath,
-  currentMultipartLength,
-  isMultipartEntryPath,
-  isVariantEntryPath,
   normalizeJsonValue,
-  offsetMultipartMappings,
   staticText
 } from "./compilerHelpers";
 import { evaluateExpression } from "./evaluate";
@@ -32,7 +26,6 @@ import { JsonValue, ResourceUnit, RsglMapping } from "./ir";
 import { isJsonObject } from "./jsonValues";
 import { forEachLoopContext } from "./looping";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
-import { appendGeneratedPath } from "./sourcePaths";
 import { RsglCompileContext, TemplateExpansion, templateResourceBody } from "./templateExpansion";
 
 type SourceRange = { start: number; end: number };
@@ -48,11 +41,6 @@ export interface BlockstateCompileOptions {
   ) => ResourceUnit["sourceMap"];
   sourceMapping: (generatedPath: string, sourceRange: SourceRange, context: RsglCompileContext) => RsglMapping;
 }
-
-type BlockstateBodyCompileResult = {
-  content: Record<string, JsonValue>;
-  mappings: RsglMapping[];
-};
 
 type VariantEntriesCompileResult = {
   entries: Record<string, JsonValue>;
@@ -73,7 +61,15 @@ export function compileBlockstateResource(
 }
 
 class BlockstateCompiler {
-  public constructor(private readonly options: BlockstateCompileOptions) { }
+  private readonly contentMerger: BlockstateContentMerger;
+
+  public constructor(private readonly options: BlockstateCompileOptions) {
+    this.contentMerger = new BlockstateContentMerger({
+      onError: (code, message, range) => this.error(code, message, range),
+      sourceMapping: (generatedPath, sourceRange, context) =>
+        this.sourceMapping(generatedPath, sourceRange, context)
+    });
+  }
 
   public compile(statement: ResourceDeclNode, context: RsglCompileContext): ResourceUnit | null {
     const idValue = statement.id ? staticText(statement.id, context) : null;
@@ -94,33 +90,55 @@ class BlockstateCompiler {
     };
   }
 
-  private compileBody(body: ResourceBodyNode, context: RsglCompileContext): BlockstateBodyCompileResult {
-    const result: BlockstateBodyCompileResult = { content: {}, mappings: [] };
-    for (const statement of body.statements) {
-      this.compileBodyStatement(statement, context, result);
-    }
+  private compileBody(
+    body: ResourceBodyNode,
+    context: RsglCompileContext,
+    allowBase = true
+  ): BlockstateBodyContent {
+    const result: BlockstateBodyContent = { content: {}, mappings: [] };
+    body.statements.forEach((statement, index) => {
+      this.compileBodyStatement(statement, context, result, allowBase, index === 0);
+    });
     return result;
   }
 
   private compileBodyStatement(
     statement: ResourceStatementNode,
     context: RsglCompileContext,
-    result: BlockstateBodyCompileResult
+    result: BlockstateBodyContent,
+    allowBase: boolean,
+    isFirstStatement: boolean
   ): void {
-    const fragmentOptions = this.fragmentOptions();
     if (statement.kind === "VariantsSection") {
       const variants = this.compileVariantEntries(statement.entries, context);
-      mergeBlockstateFragment(result.content, { variants: variants.entries }, statement.range, fragmentOptions);
-      result.mappings.push(this.sourceMapping("/variants", statement.range, context), ...variants.mappings);
+      this.contentMerger.apply(
+        result,
+        { variants: variants.entries },
+        "deep",
+        statement.range,
+        context,
+        [this.sourceMapping("/variants", statement.range, context), ...variants.mappings]
+      );
     } else if (statement.kind === "MultipartSection") {
-      const multipart = this.compileMultipartEntries(statement.entries, context, currentMultipartLength(result.content));
-      mergeBlockstateFragment(result.content, { multipart: multipart.entries }, statement.range, fragmentOptions);
-      result.mappings.push(this.sourceMapping("/multipart", statement.range, context), ...multipart.mappings);
+      const multipart = this.compileMultipartEntries(statement.entries, context);
+      this.contentMerger.apply(
+        result,
+        { multipart: multipart.entries },
+        "deep",
+        statement.range,
+        context,
+        [this.sourceMapping("/multipart", statement.range, context), ...multipart.mappings]
+      );
     } else if (statement.kind === "UseDecl") {
       const fragment = this.compileUse(statement, context);
-      const multipartOffset = currentMultipartLength(result.content);
-      mergeBlockstateFragment(result.content, fragment, statement.range, fragmentOptions);
-      result.mappings.push(...this.fragmentMappings(fragment, statement.range, context, multipartOffset));
+      this.contentMerger.apply(
+        result,
+        fragment.content,
+        "deep",
+        statement.range,
+        context,
+        fragment.mappings
+      );
     } else if (statement.kind === "LetDecl") {
       this.compileLet(statement, context);
     } else if (statement.kind === "ForStmt") {
@@ -129,43 +147,43 @@ class BlockstateCompiler {
         return;
       }
       forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
-        const loopContent = this.compileBody(body, loopContext);
-        const multipartOffset = currentMultipartLength(result.content);
-        mergeBlockstateContent(result.content, loopContent.content, statement.range, fragmentOptions);
-        result.mappings.push(...offsetMultipartMappings(loopContent.mappings, multipartOffset));
+        const loopContent = this.compileBody(body, loopContext, false);
+        this.contentMerger.apply(
+          result,
+          loopContent.content,
+          "deep",
+          statement.range,
+          loopContext,
+          loopContent.mappings
+        );
       });
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
       if (body?.kind === "ResourceBody") {
-        const branchContent = this.compileBody(body, context);
-        const multipartOffset = currentMultipartLength(result.content);
-        mergeBlockstateContent(result.content, branchContent.content, statement.range, fragmentOptions);
-        result.mappings.push(...offsetMultipartMappings(branchContent.mappings, multipartOffset));
+        const branchContent = this.compileBody(body, context, false);
+        this.contentMerger.apply(
+          result,
+          branchContent.content,
+          "deep",
+          statement.range,
+          context,
+          branchContent.mappings
+        );
       }
-    } else if (statement.kind === "RawJsonStmt") {
+    } else if (statement.kind === "BaseStmt") {
+      this.applyBaseStatement(result, statement, context, allowBase, isFirstStatement);
+    } else if (statement.kind === "MergeStmt") {
       const value = normalizeJsonValue(evaluateExpression(statement.value, context));
       if (isJsonObject(value)) {
-        const multipartOffset = currentMultipartLength(result.content);
-        mergeBlockstateContent(result.content, value, statement.range, fragmentOptions);
-        result.mappings.push(...this.objectMappings(value, statement.range, context, multipartOffset));
+        this.contentMerger.apply(
+          result,
+          value,
+          statement.mode,
+          statement.range,
+          context
+        );
       } else {
-        this.error("rsgl.invalidRawJsonFragment", "raw_json must evaluate to an object fragment.", statement.value.range);
-      }
-    } else if (statement.kind === "OverrideStmt") {
-      const value = normalizeJsonValue(evaluateExpression(statement.value, context));
-      if (isJsonObject(value)) {
-        const applied = overrideBlockstateContent(result.content, value, statement.create, statement.range, fragmentOptions);
-        result.mappings.push(...this.objectMappings(applied, statement.range, context, 0));
-      } else {
-        this.error("rsgl.invalidOverrideFragment", "override must evaluate to an object fragment.", statement.value.range);
-      }
-    } else if (statement.kind === "AppendStmt") {
-      const value = normalizeJsonValue(evaluateExpression(statement.value, context));
-      if (isJsonObject(value)) {
-        const appended = appendBlockstateContent(result.content, value, statement.range, fragmentOptions);
-        result.mappings.push(...this.objectMappings(appended.applied, statement.range, context, appended.multipartOffset));
-      } else {
-        this.error("rsgl.invalidAppendFragment", "append must evaluate to an object fragment.", statement.value.range);
+        this.error("rsgl.invalidMergeFragment", "merge must evaluate to an object fragment.", statement.value.range);
       }
     }
   }
@@ -204,12 +222,13 @@ class BlockstateCompiler {
       this.compileLet(statement, context);
     } else if (statement.kind === "UseDecl") {
       const fragment = this.compileUse(statement, context);
-      if (fragment.multipart) {
-        this.error("rsgl.incompatibleBlockstateFragment", "Multipart template fragments cannot be used inside a variants section.", statement.range);
-      }
-      if (fragment.variants) {
-        Object.assign(result.entries, fragment.variants);
-        result.mappings.push(...this.fragmentVariantMappings(fragment, statement.range, context));
+      const variants = fragment.content.variants;
+      this.reportIncompatibleSectionFragment(fragment, "variants", statement.range);
+      if (isJsonObject(variants)) {
+        Object.assign(result.entries, variants);
+        result.mappings.push(...this.contentMerger.fragmentVariantMappings(fragment, statement.range, context));
+      } else if (variants !== undefined) {
+        this.error("rsgl.incompatibleBlockstateFragment", "A variants-section template must produce an object 'variants' field.", statement.range);
       }
     } else if (statement.kind === "ForStmt") {
       const body = statement.body;
@@ -270,13 +289,14 @@ class BlockstateCompiler {
       this.compileLet(statement, context);
     } else if (statement.kind === "UseDecl") {
       const fragment = this.compileUse(statement, context);
-      if (fragment.variants) {
-        this.error("rsgl.incompatibleBlockstateFragment", "Variant template fragments cannot be used inside a multipart section.", statement.range);
-      }
-      if (fragment.multipart) {
+      const multipart = fragment.content.multipart;
+      this.reportIncompatibleSectionFragment(fragment, "multipart", statement.range);
+      if (Array.isArray(multipart)) {
         const offset = startIndex + result.entries.length;
-        result.entries.push(...fragment.multipart);
-        result.mappings.push(...this.fragmentMultipartMappings(fragment, statement.range, context, offset));
+        result.entries.push(...multipart);
+        result.mappings.push(...this.contentMerger.fragmentMultipartMappings(fragment, statement.range, context, offset));
+      } else if (multipart !== undefined) {
+        this.error("rsgl.incompatibleBlockstateFragment", "A multipart-section template must produce an array 'multipart' field.", statement.range);
       }
     } else if (statement.kind === "ForStmt") {
       const body = statement.body;
@@ -295,7 +315,7 @@ class BlockstateCompiler {
   }
 
   private compileUse(useStatement: UseDeclNode, context: RsglCompileContext): RsglBlockstateFragment {
-    return this.compileUserFragment(useStatement, context) ?? {};
+    return this.compileUserFragment(useStatement, context) ?? { content: {} };
   }
 
   private compileUserFragment(
@@ -315,96 +335,53 @@ class BlockstateCompiler {
       );
       return undefined;
     }
-    const body = this.compileBody(resourceBody, expansion.context);
-    const content = body.content;
-    const fragment: RsglBlockstateFragment = {};
-    if (isJsonObject(content.variants)) {
-      fragment.variants = content.variants;
-    }
-    if (Array.isArray(content.multipart)) {
-      fragment.multipart = content.multipart;
-    }
-    fragment.mappings = body.mappings;
-    return fragment;
+    const body = this.compileBody(resourceBody, expansion.context, false);
+    return { content: body.content, mappings: body.mappings };
   }
 
-  private fragmentMappings(
+  private reportIncompatibleSectionFragment(
     fragment: RsglBlockstateFragment,
-    sourceRange: SourceRange,
-    context: RsglCompileContext,
-    multipartOffset: number
-  ): RsglMapping[] {
-    if (fragment.mappings?.length) {
-      return offsetMultipartMappings(fragment.mappings, multipartOffset);
+    expectedField: "variants" | "multipart",
+    range: SourceRange
+  ): void {
+    const incompatibleFields = Object.keys(fragment.content).filter(key => key !== expectedField);
+    if (incompatibleFields.length === 0) {
+      return;
     }
-    return [
-      ...this.fragmentVariantMappings(fragment, sourceRange, context, true),
-      ...this.fragmentMultipartMappings(fragment, sourceRange, context, multipartOffset, true)
-    ];
+    this.error(
+      "rsgl.incompatibleBlockstateFragment",
+      `A template used inside a ${expectedField} section cannot produce fields: ${incompatibleFields.join(", ")}.`,
+      range
+    );
   }
 
-  private fragmentVariantMappings(
-    fragment: RsglBlockstateFragment,
-    sourceRange: SourceRange,
+  private applyBaseStatement(
+    result: BlockstateBodyContent,
+    statement: Extract<ResourceStatementNode, { kind: "BaseStmt" }>,
     context: RsglCompileContext,
-    includeSection = false
-  ): RsglMapping[] {
-    if (fragment.mappings?.length) {
-      return fragment.mappings.filter(mapping => isVariantEntryPath(mapping.generatedPath));
-    }
-    if (!fragment.variants) {
-      return [];
-    }
-    const mappings = includeSection ? [this.sourceMapping("/variants", sourceRange, context)] : [];
-    for (const key of Object.keys(fragment.variants)) {
-      mappings.push(this.sourceMapping(blockstateVariantPath(key), sourceRange, context));
-    }
-    return mappings;
-  }
-
-  private fragmentMultipartMappings(
-    fragment: RsglBlockstateFragment,
-    sourceRange: SourceRange,
-    context: RsglCompileContext,
-    offset: number,
-    includeSection = false
-  ): RsglMapping[] {
-    if (fragment.mappings?.length) {
-      return offsetMultipartMappings(fragment.mappings.filter(mapping => isMultipartEntryPath(mapping.generatedPath)), offset);
-    }
-    if (!fragment.multipart) {
-      return [];
-    }
-    const mappings = includeSection ? [this.sourceMapping("/multipart", sourceRange, context)] : [];
-    fragment.multipart.forEach((_, index) => {
-      mappings.push(this.sourceMapping(blockstateMultipartPath(offset + index), sourceRange, context));
+    allowBase: boolean,
+    isFirstStatement: boolean
+  ): void {
+    const base = applyBaseDocument(statement, context, {
+      allowBase,
+      isRoot: true,
+      isFirstStatement,
+      onError: (code, message, range) => this.error(code, message, range),
+      createMapping: (generatedPath, sourceRange, mappingContext) =>
+        this.sourceMapping(generatedPath, sourceRange, mappingContext)
     });
-    return mappings;
-  }
-
-  private objectMappings(
-    value: Record<string, JsonValue>,
-    sourceRange: SourceRange,
-    context: RsglCompileContext,
-    multipartOffset: number
-  ): RsglMapping[] {
-    const mappings: RsglMapping[] = [];
-    for (const [key, entryValue] of Object.entries(value)) {
-      if (key === "variants" && isJsonObject(entryValue)) {
-        mappings.push(this.sourceMapping("/variants", sourceRange, context));
-        for (const variantKey of Object.keys(entryValue)) {
-          mappings.push(this.sourceMapping(blockstateVariantPath(variantKey), sourceRange, context));
-        }
-      } else if (key === "multipart" && Array.isArray(entryValue)) {
-        mappings.push(this.sourceMapping("/multipart", sourceRange, context));
-        entryValue.forEach((_, index) => {
-          mappings.push(this.sourceMapping(blockstateMultipartPath(multipartOffset + index), sourceRange, context));
-        });
-      } else {
-        mappings.push(this.sourceMapping(appendGeneratedPath("", key), sourceRange, context));
-      }
+    if (!base) {
+      return;
     }
-    return mappings;
+    result.content = base.content;
+    result.mappings.push(...base.mappings);
+    if (result.content.variants !== undefined && result.content.multipart !== undefined) {
+      this.error(
+        "rsgl.blockstateSectionConflict",
+        "A blockstate base document must use either variants or multipart, not both.",
+        statement.range
+      );
+    }
   }
 
   private compileLet(
@@ -414,12 +391,6 @@ class BlockstateCompiler {
     if (statement.name) {
       context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
     }
-  }
-
-  private fragmentOptions(): RsglBlockstateFragmentOptions {
-    return {
-      onError: (code, message, range) => this.error(code, message, range)
-    };
   }
 
   private sourceMapping(generatedPath: string, sourceRange: SourceRange, context: RsglCompileContext): RsglMapping {

@@ -172,7 +172,9 @@ class ResolvedImportCallValidator {
       if (statement.elseBody) {
         this.validateBody(statement.elseBody);
       }
-    } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt" || statement.kind === "AppendStmt") {
+    } else if (statement.kind === "BaseStmt") {
+      this.validateExpression(statement.path);
+    } else if (statement.kind === "MergeStmt") {
       this.validateExpression(statement.value);
     } else if (statement.kind === "PackFormatsStmt") {
       if (statement.min) {

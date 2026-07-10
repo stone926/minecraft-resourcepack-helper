@@ -1,6 +1,11 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import { asObject, unitRange, type RsglResourceValidationOptions } from "./validationShared";
+import {
+  asObject,
+  sourceRangeForGeneratedPath,
+  unitRange,
+  type RsglResourceValidationOptions
+} from "./validationShared";
 
 interface McmetaFrameLayout {
   frameCount: number;
@@ -355,28 +360,6 @@ function pushMcmetaDiagnostic(
     severity: "error",
     range: generatedPath ? sourceRangeForGeneratedPath(unit, generatedPath) : unitRange(unit)
   });
-}
-
-function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): RsglCompileDiagnostic["range"] {
-  for (const path of generatedPathFallbacks(generatedPath)) {
-    const range = unit.sourceMap.mappings.find(mapping => mapping.generatedPath === path)?.sourceRange;
-    if (range) {
-      return range;
-    }
-  }
-  return unitRange(unit);
-}
-
-function generatedPathFallbacks(generatedPath: string): string[] {
-  const paths: string[] = [];
-  let current = generatedPath;
-  while (current) {
-    paths.push(current);
-    const slash = current.lastIndexOf("/");
-    current = slash > 0 ? current.slice(0, slash) : "";
-  }
-  paths.push("");
-  return paths;
 }
 
 function isPositiveDimension(value: number): boolean {

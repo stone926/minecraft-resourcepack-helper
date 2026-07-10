@@ -2,7 +2,13 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parseRsglCliArgs, runRsglCli, type RsglCliIo } from "../../src/cli";
+import {
+  isRsglWatchPathRelevant,
+  nearestExistingWatchDirectory,
+  parseRsglCliArgs,
+  runRsglCli,
+  type RsglCliIo
+} from "../../src/cli";
 
 interface CapturedIo {
   io: RsglCliIo;
@@ -160,5 +166,43 @@ describe("RSGL CLI", () => {
     });
     assert.strictEqual(parseRsglCliArgs(["build", "--watch"]).watch, true);
     assert.strictEqual(parseRsglCliArgs([]).command, "help");
+  });
+
+  it("filters watch events to RSGL sources and known JSON dependencies", () => {
+    const root = path.join(os.tmpdir(), "rsgl-watch-filter");
+    const baseFile = path.join(root, "fragments", "base.json");
+    const dependencies = [{
+      path: baseFile,
+      reason: "base-import" as const,
+      sourceFile: path.join(root, "main.rsgl"),
+      sourceRange: { start: 0, end: 18 }
+    }];
+
+    assert.strictEqual(
+      isRsglWatchPathRelevant(path.join(root, "nested", "model.RSGL"), dependencies),
+      true
+    );
+    assert.strictEqual(
+      isRsglWatchPathRelevant(path.join(root, "fragments", ".", "base.json"), dependencies),
+      true
+    );
+    assert.strictEqual(
+      isRsglWatchPathRelevant(path.join(root, "fragments", "unrelated.json"), dependencies),
+      false
+    );
+  });
+
+  it("falls back to the closest existing ancestor for missing external dependency directories", () => {
+    const root = createTempRoot();
+    try {
+      const existing = path.join(root, "external");
+      fs.mkdirSync(existing);
+      assert.strictEqual(
+        nearestExistingWatchDirectory(path.join(existing, "missing", "nested")),
+        path.resolve(existing)
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

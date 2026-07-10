@@ -15,6 +15,7 @@ import {
   getRsglCompletionItems,
   parseRsgl,
   semanticModelForFile as coreSemanticModelForFile,
+  type CompileDependency,
   type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglSemanticModel,
@@ -39,6 +40,7 @@ export interface RsglLspDocument {
 /** Injected collaborators for the document validation pipeline. */
 export interface RsglDocumentValidationDeps {
   loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
+  onDependencies?: (dependencies: readonly CompileDependency[]) => void;
   settings: RsglValidationSettings;
 }
 
@@ -74,6 +76,7 @@ export function computeDocumentDiagnostics(
       semanticProgram: semanticProgram.program,
       ...workspaceValidationOptionsFor(fileName, deps.settings)
     });
+    deps.onDependencies?.(result.dependencies);
     return result.diagnostics
       .filter(diagnostic => !diagnostic.fileName || normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
       .map(diagnostic => toLspDiagnostic(document, diagnostic));
@@ -84,7 +87,42 @@ export function computeDocumentDiagnostics(
     fileName,
     ...workspaceValidationOptionsFor(fileName, deps.settings)
   });
+  deps.onDependencies?.(result.dependencies);
   return result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic));
+}
+
+/** Returns open-document ids whose last compile depends on a changed filesystem path. */
+export function documentsDependingOnPath(
+  dependenciesByDocument: ReadonlyMap<string, ReadonlySet<string>>,
+  changedPath: string
+): string[] {
+  const normalizedChangedPath = normalizeDependencyPath(changedPath);
+  const result: string[] = [];
+  for (const [documentId, dependencies] of dependenciesByDocument) {
+    if (dependencies.has(normalizedChangedPath)) {
+      result.push(documentId);
+    }
+  }
+  return result;
+}
+
+/** Returns the stable, deduplicated dependency union for all open documents. */
+export function dependencyPathsForDocuments(
+  dependenciesByDocument: ReadonlyMap<string, ReadonlySet<string>>
+): string[] {
+  const paths = new Set<string>();
+  for (const dependencies of dependenciesByDocument.values()) {
+    for (const dependency of dependencies) {
+      paths.add(normalizeDependencyPath(dependency));
+    }
+  }
+  return [...paths].sort();
+}
+
+/** Normalizes dependency paths for stable identity comparisons across watcher events. */
+export function normalizeDependencyPath(fileName: string): string {
+  const normalized = path.normalize(path.resolve(fileName));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 /** Builds filesystem-backed resource validation options for the given source file. */

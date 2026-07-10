@@ -90,7 +90,7 @@ describe("RSGL build worker client", () => {
     transport.emitMessage({
       type: "success",
       kind: "compileDirectory",
-      result: { success: true, diagnostics: [], emittedFiles: [] }
+      result: { success: true, diagnostics: [], dependencies: [], emittedFiles: [] }
     });
     const outcome = await promise;
     assert.strictEqual(outcome.type, "success");

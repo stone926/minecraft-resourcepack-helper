@@ -420,7 +420,9 @@ class RsglBinder implements RsglExpressionCheckContext {
       if (statement.elseBody) {
         this.checkBody(statement.elseBody, createChildScope(scope, "block"));
       }
-    } else if (statement.kind === "RawJsonStmt" || statement.kind === "OverrideStmt" || statement.kind === "AppendStmt") {
+    } else if (statement.kind === "BaseStmt") {
+      this.checkExpression(statement.path, scope);
+    } else if (statement.kind === "MergeStmt") {
       this.checkExpression(statement.value, scope);
     }
   }

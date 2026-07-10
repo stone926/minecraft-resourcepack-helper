@@ -1,14 +1,23 @@
+import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   compileRsglDirectory,
   compileRsglFile,
   emitRsglFiles,
+  type CompileDependency,
   type RsglCompileDiagnostic,
   type RsglEmittedFile
 } from "../../../packages/rsgl-core/src";
 import { createRsglWorkspaceValidationOptions } from "../../../packages/rsgl-core/src/workspaceValidation";
 import { rsglFileGlob } from "../../../packages/rsgl-shared/src";
 import { runRsglWorkerTask } from "./commands/buildWorkerClient";
+import {
+  DependencyWatchRegistry,
+  dependencyBuildNeedsVerification,
+  dependencyPathSet,
+  isPathWithinRoot,
+  normalizeDependencyPath
+} from "./dependencyWatch";
 
 export interface RsglApi {
   version: string;
@@ -31,12 +40,15 @@ export interface RsglApiCheckOptions {
 }
 
 export interface RsglApiWatchOptions extends RsglApiCompileOptions {
+  /** Seeds JSON dependency filtering before the first watched RSGL compilation. */
+  dependencies?: readonly CompileDependency[];
   onDidCompile?: (result: RsglApiCompileResult) => void;
 }
 
 export interface RsglApiCompileResult {
   success: boolean;
   diagnostics: RsglCompileDiagnostic[];
+  dependencies: CompileDependency[];
   emittedFiles: RsglEmittedFile[];
 }
 
@@ -100,6 +112,7 @@ function toCompileResult(
   return {
     success,
     diagnostics: result.diagnostics,
+    dependencies: result.dependencies,
     emittedFiles: success
       ? emitRsglFiles(result.units, {
         sourceMaps: options.sourceMaps ?? true,
@@ -110,8 +123,14 @@ function toCompileResult(
 }
 
 function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {}): vscode.Disposable {
-  const pattern = new vscode.RelativePattern(workspace.fsPath, rsglFileGlob);
-  const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+  const rsglWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspace.fsPath, rsglFileGlob)
+  );
+  const jsonWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspace.fsPath, "**/*.json")
+  );
+  let dependencyPaths = dependencyPathSet(options.dependencies ?? []);
+  const invalidatedDuringBuild = new Set<string>();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let activeCancellation: vscode.CancellationTokenSource | null = null;
   let generation = 0;
@@ -132,6 +151,7 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
       debounceTimer = null;
       const cancellation = new vscode.CancellationTokenSource();
       activeCancellation = cancellation;
+      invalidatedDuringBuild.clear();
       const currentGeneration = generation;
       void runRsglWorkerTask({
         kind: "compileDirectory",
@@ -150,7 +170,22 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
           currentGeneration === generation &&
           !cancellation.token.isCancellationRequested
         ) {
-          options.onDidCompile?.(outcome.result);
+          const nextDependencyPaths = dependencyPathSet(outcome.result.dependencies);
+          const needsVerification = dependencyBuildNeedsVerification(
+            dependencyPaths,
+            nextDependencyPaths,
+            invalidatedDuringBuild
+          );
+          dependencyPaths = nextDependencyPaths;
+          externalDependencyWatchers.update(externalDependencyPaths(
+            workspace.fsPath,
+            outcome.result.dependencies
+          ));
+          if (needsVerification) {
+            scheduleCompile();
+          } else {
+            options.onDidCompile?.(outcome.result);
+          }
         }
       }).catch(error => {
         if (!disposed && currentGeneration === generation) {
@@ -165,9 +200,37 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
     }, 75);
   };
 
-  watcher.onDidCreate(scheduleCompile);
-  watcher.onDidChange(scheduleCompile);
-  watcher.onDidDelete(scheduleCompile);
+  const scheduleDependencyCompile = (uri: vscode.Uri) => {
+    const dependencyPath = normalizeDependencyPath(uri.fsPath);
+    if (activeCancellation) {
+      invalidatedDuringBuild.add(dependencyPath);
+    }
+    if (dependencyPaths.has(dependencyPath)) {
+      scheduleCompile();
+    }
+  };
+
+  const externalDependencyWatchers = new DependencyWatchRegistry(fileName => {
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(
+      vscode.Uri.file(path.dirname(fileName)),
+      path.basename(fileName)
+    ));
+    watcher.onDidCreate(scheduleDependencyCompile);
+    watcher.onDidChange(scheduleDependencyCompile);
+    watcher.onDidDelete(scheduleDependencyCompile);
+    return watcher;
+  });
+  externalDependencyWatchers.update(externalDependencyPaths(
+    workspace.fsPath,
+    options.dependencies ?? []
+  ));
+
+  rsglWatcher.onDidCreate(scheduleCompile);
+  rsglWatcher.onDidChange(scheduleCompile);
+  rsglWatcher.onDidDelete(scheduleCompile);
+  jsonWatcher.onDidCreate(scheduleDependencyCompile);
+  jsonWatcher.onDidChange(scheduleDependencyCompile);
+  jsonWatcher.onDidDelete(scheduleDependencyCompile);
   return new vscode.Disposable(() => {
     disposed = true;
     generation++;
@@ -178,8 +241,19 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
     activeCancellation?.cancel();
     activeCancellation?.dispose();
     activeCancellation = null;
-    watcher.dispose();
+    rsglWatcher.dispose();
+    jsonWatcher.dispose();
+    externalDependencyWatchers.dispose();
   });
+}
+
+function externalDependencyPaths(
+  workspaceRoot: string,
+  dependencies: readonly CompileDependency[]
+): string[] {
+  return dependencies
+    .map(dependency => dependency.path)
+    .filter(fileName => !isPathWithinRoot(workspaceRoot, fileName));
 }
 
 function extensionVersion(context: vscode.ExtensionContext): string {

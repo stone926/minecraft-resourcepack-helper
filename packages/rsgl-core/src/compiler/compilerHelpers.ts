@@ -13,9 +13,8 @@ import type {
   RsglModule
 } from "../parser";
 import { evaluateExpression } from "./evaluate";
-import type { EvaluationContext, RawGlobLoader, RawJsonLoader } from "./evaluate";
+import type { EvaluationContext, RawGlobLoader } from "./evaluate";
 import { createFileGlobLoader } from "./fileGlob";
-import { createFileRawJsonLoader } from "./rawJson";
 import { appendGeneratedPath, prefixGeneratedPath } from "./sourcePaths";
 import type { RsglProgram, RsglSemanticModel, RsglSourceFile } from "../semantic";
 import type { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglMapping } from "./ir";
@@ -347,13 +346,6 @@ export function packFormatMetadata(target: RsglTargetPackFormat): Record<string,
     };
   }
   return { ["pack_format"]: target.major };
-}
-
-export function createCompileRawJsonLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawJsonLoader {
-  return createFileRawJsonLoader({
-    fallbackFileName,
-    onError: (code, message, range) => diagnostics.push({ code, message, range, severity: "error" })
-  });
 }
 
 export function createCompileGlobLoader(fallbackFileName: string, diagnostics: RsglCompileDiagnostic[]): RawGlobLoader {

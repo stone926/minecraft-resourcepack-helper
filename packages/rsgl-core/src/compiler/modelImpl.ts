@@ -88,7 +88,7 @@ function modelImplMappings(
     // Slot ownership is decided by the merged content, not by mapping
     // granularity: a body `textures <expr>` only maps "/textures" yet its
     // slots still win the merge, while stale granular mappings from replaced
-    // raw_json fragments must not veto the impl's rightful attribution.
+    // Inline merge fragments must not veto the impl's rightful attribution.
     if (Object.hasOwn(bodyTextureSlots, slot)) {
       continue;
     }

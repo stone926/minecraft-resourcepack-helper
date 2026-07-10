@@ -1,6 +1,13 @@
 export const rsglExtensionId = "stone926.rsgl";
 export const rsglFileGlob = "**/*.rsgl";
 
+/** Server-to-client notification carrying the current compiled JSON inputs. */
+export const rsglDependencyPathsNotification = "rsgl/dependencyPaths";
+
+export interface RsglDependencyPathsNotification {
+  paths: string[];
+}
+
 export const rsglCommands = {
   build: "rsgl.build",
   previewBuild: "rsgl.previewBuild",

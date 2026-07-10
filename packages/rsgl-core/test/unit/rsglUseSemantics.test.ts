@@ -465,56 +465,53 @@ describe("RSGL lambda arguments to imported templates", () => {
     const result = compileSource([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
-      "  use stateSequence(key: \"age\", values: [0], model: value => [inner => raw_json_file(\"./x.json\")][0](value))",
+      "  use stateSequence(key: \"age\", values: [0], model: value => [inner => glob(\"./x.json\")][0](value))",
       "}"
     ]);
 
     const impureCalls = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.lambdaImpureCall");
     assert.strictEqual(impureCalls.length, 1);
-    assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.rawJsonLoadFailed"), false);
   });
 
-  it("reports impure lambda calls once without executing the raw JSON loader", () => {
+  it("reports impure lambda calls once without executing the glob loader", () => {
     const result = compileSource([
       "import { rangeFrames } from \"rsgl:conventions/item_definitions.rsgl\"",
       "use rangeFrames(",
       "  id: compass,",
       "  property: minecraft:custom_model_data,",
       "  values: [0],",
-      "  model: frame => raw_json_file(\"./missing.json\"),",
+      "  model: frame => glob(\"./missing.json\"),",
       "  fallback: minecraft:item/compass",
       ")"
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.strictEqual(codes.filter(code => code === "rsgl.lambdaImpureCall").length, 1);
-    assert.strictEqual(codes.includes("rsgl.rawJsonLoadFailed"), false, "the raw JSON loader must not run for impure lambdas");
   });
 
   it("reports impure lambdas once even when loops recreate them", () => {
     const result = compileSource([
       "for i in 0..9 {",
-      "  let load = value => raw_json_file(\"./missing.json\")",
+      "  let load = value => glob(\"./missing.json\")",
       "  let x = load(i)",
       "}"
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.strictEqual(codes.filter(code => code === "rsgl.lambdaImpureCall").length, 1);
-    assert.strictEqual(codes.includes("rsgl.rawJsonLoadFailed"), false);
   });
 
   it("never executes impure lambda bodies at compile time", () => {
     const loaderCalls: string[] = [];
     const compiler = new RsglCompiler(parseRsgl([
-      "let load = value => raw_json_file(\"./missing.json\")",
+      "let load = value => glob(\"./missing.json\")",
       "let result = load(1)"
     ].join("\n")), {
       fileName: "main.rsgl",
       namespace: "minecraft",
-      rawJsonLoader: request => {
-        loaderCalls.push(request);
-        return {};
+      globLoader: pattern => {
+        loaderCalls.push(pattern);
+        return [];
       }
     });
     compiler.compile();

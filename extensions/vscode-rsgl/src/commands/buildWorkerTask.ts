@@ -65,7 +65,12 @@ export function executeRsglWorkerTask(
         : {
           type: "success",
           kind: request.kind,
-          result: { success, diagnostics: result.diagnostics, emittedFiles }
+          result: {
+            success,
+            diagnostics: result.diagnostics,
+            dependencies: result.dependencies,
+            emittedFiles
+          }
         };
     }
   }
@@ -74,6 +79,7 @@ export function executeRsglWorkerTask(
 function compactBuildPreviewResult(result: RsglBuildPreviewResult): RsglBuildPreviewResult {
   return {
     diagnostics: result.diagnostics,
+    dependencies: result.dependencies,
     preview: result.preview,
     plan: result.plan ? {
       outputRoot: result.plan.outputRoot,

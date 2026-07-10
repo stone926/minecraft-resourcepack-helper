@@ -94,6 +94,33 @@ describe("RSGL build", () => {
     }
   });
 
+  it("preserves base dependencies through prepared, written, and preview build results", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-deps-");
+    const entry = path.join(root, "src", "main.rsgl");
+    const baseFile = path.join(root, "src", "base.json");
+    const outputRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(path.dirname(entry), { recursive: true });
+      fs.writeFileSync(baseFile, JSON.stringify({ parent: "minecraft:block/cube_all" }));
+      fs.writeFileSync(entry, [
+        "model block imported {",
+        "  base \"./base.json\"",
+        "}"
+      ].join("\n"));
+
+      const prepared = prepareRsglResourcePackBuild(entry, { outputRoot });
+      const built = buildRsglResourcePack(entry, { outputRoot });
+      const preview = previewRsglResourcePackBuild(entry, { outputRoot });
+
+      assert.deepStrictEqual(prepared.dependencies.map(dependency => dependency.path), [baseFile]);
+      assert.deepStrictEqual(built.dependencies.map(dependency => dependency.path), [baseFile]);
+      assert.deepStrictEqual(preview.dependencies.map(dependency => dependency.path), [baseFile]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("previews planned changes without writing output files", () => {
     const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const entry = path.join(root, "src", "main.rsgl");

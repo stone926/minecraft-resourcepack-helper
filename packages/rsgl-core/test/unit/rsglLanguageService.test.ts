@@ -64,6 +64,26 @@ describe("RSGL language service", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps merge completions everywhere in resource bodies and scopes base to the root start", () => {
+    const unavailableWorkspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open document fallback.");
+      }
+    };
+    const completions = (text: string) => getRsglDocumentCompletionItems({
+      fileName: "memory.rsgl",
+      getText: () => text
+    }, text.length, unavailableWorkspace);
+
+    const root = completions("model block stone {\n  ");
+    assert.ok(root.some(item => item.label === "base"));
+    assert.ok(root.some(item => item.label === "merge append"));
+
+    const nested = completions("model block stone {\n  textures {\n    ");
+    assert.strictEqual(nested.some(item => item.label === "base"), false);
+    assert.ok(nested.some(item => item.label === "merge deep"));
+  });
 });
 
 function tokenAt<T extends { start: number }>(tokens: readonly T[], start: number): T {

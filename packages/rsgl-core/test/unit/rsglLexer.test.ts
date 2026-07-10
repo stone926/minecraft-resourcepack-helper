@@ -15,4 +15,16 @@ describe("RSGL lexer", () => {
     assert.ok(result.tokens.some(token => token.kind === "templateString"));
     assert.ok(result.tokens.some(token => token.kind === "number" && token.text === "88"));
   });
+
+  it("classifies the base and merge vocabulary without retaining removed keywords", () => {
+    const result = lexRsgl("base merge deep strict upsert append raw_json raw_json_file override");
+    const kinds = new Map(result.tokens.map(token => [token.text, token.kind]));
+
+    for (const keyword of ["base", "merge", "deep", "strict", "upsert", "append"]) {
+      assert.strictEqual(kinds.get(keyword), "keyword");
+    }
+    for (const removed of ["raw_json", "raw_json_file", "override"]) {
+      assert.strictEqual(kinds.get(removed), "identifier");
+    }
+  });
 });

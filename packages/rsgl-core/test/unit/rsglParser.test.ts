@@ -350,14 +350,19 @@ describe("RSGL parser", () => {
     ]);
   });
 
-  it("parses override create and append resource fragments", () => {
-    const module = parseRsgl([
+  it("parses base and every merge mode with object and expression fragments", () => {
+    const source = [
       "model block patched {",
-      "  parent minecraft:block/cube_all",
-      "  override create { display: { gui: { scale: [1, 1, 1] } } }",
-      "  append { textures: { particle: minecraft:block/stone } }",
+      "  base \"./base.json\"",
+      "  merge { parent: minecraft:block/cube_all }",
+      "  merge deep deepFragment",
+      "  merge strict { parent: minecraft:block/stone }",
+      "  merge upsert { display: {} }",
+      "  merge append { layers: [] }",
+      "  merge (deep)",
       "}"
-    ].join("\n"));
+    ].join("\n");
+    const module = parseRsgl(source);
 
     assert.deepStrictEqual(module.diagnostics, []);
     const model = module.statements[0];
@@ -366,13 +371,165 @@ describe("RSGL parser", () => {
       throw new Error("Expected model resource declaration.");
     }
     assert.deepStrictEqual(model.body.statements.map(statement => statement.kind), [
-      "PropertyStmt",
-      "OverrideStmt",
-      "AppendStmt"
+      "BaseStmt",
+      "MergeStmt",
+      "MergeStmt",
+      "MergeStmt",
+      "MergeStmt",
+      "MergeStmt",
+      "MergeStmt"
     ]);
-    const override = model.body.statements[1];
-    assert.strictEqual(override.kind, "OverrideStmt");
-    assert.strictEqual(override.kind === "OverrideStmt" ? override.create : false, true);
+    const base = model.body.statements[0];
+    assert.strictEqual(base.kind === "BaseStmt" ? base.path.kind : "", "StringLiteral");
+    const merges = model.body.statements.slice(1);
+    assert.deepStrictEqual(
+      merges.map(statement => statement.kind === "MergeStmt" ? statement.mode : undefined),
+      ["shallow", "deep", "strict", "upsert", "append", "shallow"]
+    );
+    const deep = merges[1];
+    assert.strictEqual(deep.kind, "MergeStmt");
+    if (deep.kind === "MergeStmt") {
+      assert.strictEqual(deep.modifier?.text, "deep");
+      assert.strictEqual(source.slice(deep.modifier?.range.start, deep.modifier?.range.end), "deep");
+      assert.strictEqual(deep.value.kind, "IdentifierExpr");
+    }
+    const parenthesized = merges[5];
+    assert.strictEqual(parenthesized.kind === "MergeStmt" ? parenthesized.modifier : undefined, undefined);
+  });
+
+  it("reports base phase violations while preserving parsed statements", () => {
+    const module = parseRsgl([
+      "model block patched {",
+      "  parent minecraft:block/cube_all",
+      "  base \"./first.json\"",
+      "  base \"./second.json\"",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.baseMustPrecedeBody",
+      "rsgl.duplicateBase"
+    ]);
+    const model = module.statements[0];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    if (model.kind === "ResourceDecl") {
+      assert.deepStrictEqual(model.body.statements.map(statement => statement.kind), [
+        "PropertyStmt",
+        "BaseStmt",
+        "BaseStmt"
+      ]);
+    }
+  });
+
+  it("rejects base outside concrete resource roots", () => {
+    const module = parseRsgl([
+      "template seeded() {",
+      "  base \"./template.json\"",
+      "}",
+      "model block nested {",
+      "  textures {",
+      "    base \"./textures.json\"",
+      "  }",
+      "  if true {",
+      "    base \"./branch.json\"",
+      "  }",
+      "}",
+      "pack {",
+      "  overlay \"future\" {",
+      "    base \"./overlay.json\"",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.baseInvalidContext",
+      "rsgl.baseInvalidContext",
+      "rsgl.baseInvalidContext",
+      "rsgl.baseInvalidContext"
+    ]);
+  });
+
+  it("allows base in concrete resource roots nested in top-level control flow", () => {
+    const module = parseRsgl([
+      "if true {",
+      "  model block conditional {",
+      "    base \"./conditional.json\"",
+      "  }",
+      "}",
+      "for id in [stone] {",
+      "  item id {",
+      "    base \"./item.json\"",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.strictEqual(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.baseInvalidContext"), false);
+  });
+
+  it("rejects removed merge statements without parsing them as JSON properties", () => {
+    const module = parseRsgl([
+      "model block legacy {",
+      "  raw_json { parent: minecraft:block/cube_all }",
+      "  raw_json(\"{\\\"ambientocclusion\\\":false}\")",
+      "  raw_json_file(\"./base.json\")",
+      "  override { parent: minecraft:block/stone }",
+      "  override create { display: {} }",
+      "  append { layers: [] }",
+      "  deep { textures: {} }",
+      "  strict { parent: minecraft:block/stone }",
+      "  upsert { display: {} }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax",
+      "rsgl.removedMergeSyntax"
+    ]);
+    const model = module.statements[0];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    if (model.kind === "ResourceDecl") {
+      assert.deepStrictEqual(model.body.statements.map(statement => statement.kind), [
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt",
+        "UnknownStmt"
+      ]);
+    }
+  });
+
+  it("keeps merge-related words available as explicit JSON property names", () => {
+    const module = parseRsgl([
+      "json \"assets/example.json\" {",
+      "  base: 1",
+      "  merge: 2",
+      "  deep: 3",
+      "  strict: 4",
+      "  upsert: 5",
+      "  append: 6",
+      "  raw_json: 7",
+      "  raw_json_file: 8",
+      "  override: 9",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const resource = module.statements[0];
+    assert.strictEqual(resource.kind, "ResourceDecl");
+    if (resource.kind === "ResourceDecl") {
+      assert.ok(resource.body.statements.every(statement => statement.kind === "PropertyStmt"));
+    }
   });
 
   it("builds expression ASTs for ranges, calls, members, conditionals, and template interpolation", () => {

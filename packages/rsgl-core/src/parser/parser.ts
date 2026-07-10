@@ -386,10 +386,8 @@ class RsglParser extends StatementParser {
   }
 
   private isResourceStatementStart(text: string): boolean {
-    return text === "raw_json"
-      || text === "raw_json_file"
-      || text === "override"
-      || text === "append"
+    return text === "base"
+      || text === "merge"
       || text === "range"
       || text === "select"
       || text === "condition"
@@ -443,7 +441,7 @@ class RsglParser extends StatementParser {
     }
 
     const body = this.current().text === "{"
-      ? this.parseResourceBody(resourceKind)
+      ? this.parseResourceBody(resourceKind, true)
       : this.emptyResourceBodyAt(this.current(), "Expected resource body.");
     return {
       kind: "ResourceDecl",

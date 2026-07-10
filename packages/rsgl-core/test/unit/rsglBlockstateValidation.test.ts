@@ -31,7 +31,7 @@ describe("RSGL blockstate validation", () => {
         "  }",
         "}",
         "blockstate malformed {",
-        "  raw_json {",
+        "  merge {",
         "    variants: {",
         "      \"facing=north,facing=south\": { model: minecraft:block/missing_duplicate, x: 45, uvlock: \"yes\" }",
         "      \"broken\": { model: minecraft:block/missing_broken, y: 45 }",
@@ -42,7 +42,7 @@ describe("RSGL blockstate validation", () => {
         "  }",
         "}",
         "blockstate bad_when {",
-        "  raw_json {",
+        "  merge {",
         "    multipart: [",
         "      { when: {}, apply: { model: minecraft:block/missing_empty_condition } },",
         "      { when: { OR: [], north: true }, apply: { model: minecraft:block/missing_mixed } },",
@@ -52,7 +52,7 @@ describe("RSGL blockstate validation", () => {
         "  }",
         "}",
         "blockstate bad_when_file {",
-        "  raw_json(\"./bad_when.json\")",
+        "  base \"./bad_when.json\"",
         "}"
       ], {
         fileName: mainFile,
@@ -82,7 +82,7 @@ describe("RSGL blockstate validation", () => {
   it("validates blockstate state names, values, and inferred domains", () => {
     const result = compileSource([
       "blockstate invalid_variant_states {",
-      "  raw_json {",
+      "  merge {",
       "    variants: {",
       "      \"bad-state=north\": { model: minecraft:block/stone }",
       "      \"facing=North\": { model: minecraft:block/stone }",
@@ -92,7 +92,7 @@ describe("RSGL blockstate validation", () => {
       "  }",
       "}",
       "blockstate invalid_when_states {",
-      "  raw_json {",
+      "  merge {",
       "    multipart: [",
       "      { when: { facing: \"north|north\" }, apply: { model: minecraft:block/stone } },",
       "      { when: { facing: \"north|!north\" }, apply: { model: minecraft:block/stone } },",

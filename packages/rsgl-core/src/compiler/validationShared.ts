@@ -150,13 +150,39 @@ export function visitJsonWithPath(value: JsonValue, visitor: (value: JsonValue, 
 }
 
 export function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): ValidationRange {
+  const exactMapping = findLatestMapping(unit, generatedPath);
+  if (exactMapping?.reason === "base") {
+    // A base-owned field lives in an external JSON file. Diagnostics are sent
+    // to the RSGL document, so anchor them to the `base` statement instead of
+    // an unrelated later mapping for a parent object.
+    return findLatestMappingRange(unit, "") ?? unitRange(unit);
+  }
   for (const path of generatedPathFallbacks(generatedPath)) {
-    const range = unit.sourceMap.mappings.find(mapping => mapping.generatedPath === path)?.sourceRange;
+    const range = findLatestMappingRange(unit, path);
     if (range) {
       return range;
     }
   }
   return unitRange(unit);
+}
+
+function findLatestMappingRange(unit: ResourceUnit, generatedPath: string): ValidationRange | undefined {
+  const mapping = findLatestMapping(unit, generatedPath, false);
+  return mapping?.sourceRange;
+}
+
+function findLatestMapping(
+  unit: ResourceUnit,
+  generatedPath: string,
+  includeBase = true
+): ResourceUnit["sourceMap"]["mappings"][number] | undefined {
+  for (let index = unit.sourceMap.mappings.length - 1; index >= 0; index--) {
+    const mapping = unit.sourceMap.mappings[index];
+    if (mapping.generatedPath === generatedPath && (includeBase || mapping.reason !== "base")) {
+      return mapping;
+    }
+  }
+  return undefined;
 }
 
 export function unitRange(unit: ResourceUnit): ValidationRange {

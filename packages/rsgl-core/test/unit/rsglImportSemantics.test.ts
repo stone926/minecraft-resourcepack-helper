@@ -110,7 +110,7 @@ describe("RSGL import semantics", () => {
           "  parent parentModel",
           "}",
           "template textureLayer(key: String, texture: TextureId) {",
-          "  raw_json { [key]: texture }",
+          "  merge { [key]: texture }",
           "}",
           "export { modelFields, textureLayer }"
         ].join("\n"))

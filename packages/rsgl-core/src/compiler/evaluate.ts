@@ -7,6 +7,7 @@ import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { findLambdaImpureCalls, LambdaImpureCall } from "../semantic/lambdaPurity";
 import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
+import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
 
 export interface LambdaValue {
@@ -20,8 +21,6 @@ export interface LambdaValue {
 }
 
 export type EvaluationValue = JsonValue | LambdaValue | undefined;
-export type RawJsonLoadMode = "auto" | "file";
-export type RawJsonLoader = (request: string, context: EvaluationContext, range: TextRange, mode?: RawJsonLoadMode) => EvaluationValue;
 export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
 
 export interface EvaluationContext {
@@ -31,8 +30,9 @@ export interface EvaluationContext {
   sourceFile?: string;
   mappingReason?: RsglMapping["reason"];
   expansionStack?: ExpansionFrame[];
-  rawJsonLoader?: RawJsonLoader;
+  baseDocumentLoader?: BaseDocumentLoader;
   globLoader?: RawGlobLoader;
+  onDependency?: (dependency: CompileDependency) => void;
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
 }
 
@@ -427,11 +427,6 @@ function evaluateCallExpression(
     return undefined;
   }
 
-  if (callee.name.text === "raw_json" || callee.name.text === "raw_json_file") {
-    const request = argumentValue(args, "path", 0);
-    const mode: RawJsonLoadMode = callee.name.text === "raw_json_file" ? "file" : "auto";
-    return typeof request === "string" ? context.rawJsonLoader?.(request, context, range, mode) : undefined;
-  }
   if (callee.name.text === "glob") {
     const pattern = argumentValue(args, "pattern", 0);
     return typeof pattern === "string" ? context.globLoader?.(pattern, context, range) ?? [] : [];
@@ -530,7 +525,8 @@ function evaluateLambdaCall(
   const bodyContext = childEvaluationContext(lambda.context, values, { onError });
   // Defense in depth: even if the purity scan misses a pattern, the body
   // cannot reach filesystem loaders.
-  bodyContext.rawJsonLoader = undefined;
+  bodyContext.baseDocumentLoader = undefined;
+  bodyContext.onDependency = undefined;
   bodyContext.globLoader = undefined;
   return evaluateExpression(lambda.body, bodyContext);
 }

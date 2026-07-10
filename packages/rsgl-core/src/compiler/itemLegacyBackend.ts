@@ -1,5 +1,5 @@
 import { isExternalResourceUnit, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { isJsonObject } from "./jsonObjectMerge";
+import { isJsonObject } from "./jsonValues";
 import { resourceOutputPath } from "./resourceIds";
 import { RsglTargetPackFormat } from "./target";
 import { itemModelType } from "./validationShared";

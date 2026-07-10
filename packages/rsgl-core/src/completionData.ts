@@ -2,6 +2,7 @@ import {
   rsglExternResourceCompletionDescriptors,
   rsglResourceCompletionDescriptors
 } from "./resourceKinds";
+import { getRsglCompletionContext } from "./completionContext";
 
 export interface RsglCompletionCandidate {
   label: string;
@@ -145,8 +146,12 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "when", insertText: "when { ${1:facing}: ${2:north} } apply { model: ${3:minecraft:block/stone} }", detail: "Multipart condition", kind: "snippet" },
   { label: "apply", insertText: "apply { model: ${1:minecraft:block/stone} }", detail: "Multipart model apply", kind: "snippet" },
   { label: "random", insertText: "random [\n  { model: ${1:minecraft:block/stone}, weight: ${2:1} }\n]", detail: "Random variant model list", kind: "snippet" },
-  { label: "raw_json", insertText: "raw_json {\n  ${1:key}: ${2:value}\n}", detail: "Inline JSON escape hatch", kind: "snippet" },
-  { label: "raw_json_file", insertText: "raw_json_file(\"${1:./resource.json}\")", detail: "Load a JSON fragment from disk", kind: "function" },
+  { label: "base", insertText: "base \"${1:./resource.json}\"", detail: "Initialize this resource from a JSON document", kind: "snippet" },
+  { label: "merge", insertText: "merge {\n  ${1:key}: ${2:value}\n}", detail: "Shallow-merge a JSON fragment", kind: "snippet" },
+  { label: "merge deep", insertText: "merge deep {\n  ${1:key}: ${2:value}\n}", detail: "Recursively merge objects and append arrays", kind: "snippet" },
+  { label: "merge strict", insertText: "merge strict {\n  ${1:key}: ${2:value}\n}", detail: "Merge only fields that already exist", kind: "snippet" },
+  { label: "merge upsert", insertText: "merge upsert {\n  ${1:key}: ${2:value}\n}", detail: "Recursively update or create fields", kind: "snippet" },
+  { label: "merge append", insertText: "merge append {\n  ${1:key}: [${2:value}]\n}", detail: "Recursively merge objects and append compatible arrays", kind: "snippet" },
   { label: "@block", insertText: "@block/${1:model} ${2:y=90} ${3:uvlock}", detail: "Model apply sugar", kind: "snippet" }
 ];
 
@@ -157,8 +162,6 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "mcmetaAnimation", detail: "PNG animation metadata helper", kind: "function" },
   { label: "nineSliceGui", detail: "PNG GUI nine-slice metadata helper", kind: "function" },
   { label: "equipmentLayers", detail: "Equipment layer helper", kind: "function" },
-  { label: "raw_json", insertText: "raw_json { ${1:key}: ${2:value} }", detail: "Inline JSON escape hatch", kind: "function" },
-  { label: "raw_json_file", insertText: "raw_json_file(\"${1:./resource.json}\")", detail: "Load a JSON fragment from disk", kind: "function" },
   { label: "startsWith", insertText: "startsWith(${1:str}, ${2:prefix})", detail: "Compile-time string prefix predicate", kind: "function" },
   { label: "endsWith", insertText: "endsWith(${1:str}, ${2:suffix})", detail: "Compile-time string suffix predicate", kind: "function" },
   { label: "replace", insertText: "replace(${1:str}, ${2:old}, ${3:new})", detail: "Compile-time string replacement", kind: "function" },
@@ -177,59 +180,12 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
 ];
 
 export function getRsglCompletionCandidates(text: string, offset: number): RsglCompletionCandidate[] {
-  return isInsideBlock(text, offset)
-    ? [...blockRsglCompletions, ...builtinRsglCompletions]
-    : [...topLevelRsglCompletions, ...builtinRsglCompletions];
-}
-
-function isInsideBlock(text: string, offset: number): boolean {
-  let depth = 0;
-  let inLineComment = false;
-  let inBlockComment = false;
-  let inString: "\"" | "`" | null = null;
-
-  for (let index = 0; index < offset; index++) {
-    const char = text[index];
-    const next = text[index + 1] ?? "";
-
-    if (inLineComment) {
-      if (char === "\n" || char === "\r") {
-        inLineComment = false;
-      }
-      continue;
-    }
-
-    if (inBlockComment) {
-      if (char === "*" && next === "/") {
-        inBlockComment = false;
-        index++;
-      }
-      continue;
-    }
-
-    if (inString) {
-      if (char === "\\") {
-        index++;
-      } else if (char === inString) {
-        inString = null;
-      }
-      continue;
-    }
-
-    if (char === "/" && next === "/") {
-      inLineComment = true;
-      index++;
-    } else if (char === "/" && next === "*") {
-      inBlockComment = true;
-      index++;
-    } else if (char === "\"" || char === "`") {
-      inString = char;
-    } else if (char === "{") {
-      depth++;
-    } else if (char === "}") {
-      depth = Math.max(0, depth - 1);
-    }
+  const context = getRsglCompletionContext(text, offset);
+  if (!context.insideBlock) {
+    return [...topLevelRsglCompletions, ...builtinRsglCompletions];
   }
-
-  return depth > 0;
+  const blockCandidates = context.allowBase
+    ? blockRsglCompletions
+    : blockRsglCompletions.filter(candidate => candidate.label !== "base");
+  return [...blockCandidates, ...builtinRsglCompletions];
 }

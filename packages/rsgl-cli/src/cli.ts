@@ -4,6 +4,7 @@ import {
   buildRsglResourcePackDirectory,
   formatRsglBuildPreview,
   previewRsglResourcePackDirectoryBuild,
+  type CompileDependency,
   type RsglBuildOptions
 } from "../../rsgl-core/src";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
@@ -84,21 +85,170 @@ function check(args: RsglCliArgs, io: RsglCliIo): number {
 
 function watch(args: RsglCliArgs, io: RsglCliIo): number {
   const context = createCliContext(args);
+  let dependencies: CompileDependency[] = [];
+  const externalWatchers = new Map<string, fs.FSWatcher>();
+  let rebuildTimer: ReturnType<typeof setTimeout> | undefined;
   const run = () => {
     const result = buildRsglResourcePackDirectory(context.root, context.options);
+    dependencies = result.dependencies;
+    syncExternalDependencyWatchers(
+      context.root,
+      dependencies,
+      externalWatchers,
+      () => dependencies,
+      scheduleRun
+    );
     printDiagnostics(result.diagnostics, io);
     if (result.plan) {
       io.writeOut(`RSGL build complete: ${result.plan.summary.create} created, ${result.plan.summary.update} updated, ${result.plan.summary.unchanged} unchanged.\n`);
     }
   };
+  const scheduleRun = () => {
+    if (rebuildTimer) {
+      return;
+    }
+    rebuildTimer = setTimeout(() => {
+      rebuildTimer = undefined;
+      run();
+    }, 25);
+  };
   run();
   fs.watch(context.root, { recursive: true }, (_event, fileName) => {
-    if (fileName && path.extname(fileName.toString()).toLowerCase() === ".rsgl") {
-      run();
+    if (
+      fileName
+      && isRsglWatchPathRelevant(path.resolve(context.root, fileName.toString()), dependencies)
+    ) {
+      scheduleRun();
     }
   });
   io.writeOut(`Watching ${context.root}\n`);
   return 0;
+}
+
+/** Returns whether a watcher event can invalidate the current RSGL build. */
+export function isRsglWatchPathRelevant(
+  changedPath: string,
+  dependencies: readonly CompileDependency[]
+): boolean {
+  if (path.extname(changedPath).toLowerCase() === ".rsgl") {
+    return true;
+  }
+  return isKnownDependencyPath(changedPath, dependencies);
+}
+
+function isKnownDependencyPath(
+  changedPath: string,
+  dependencies: readonly CompileDependency[]
+): boolean {
+  const normalizedChangedPath = normalizeWatchPath(changedPath);
+  return dependencies.some(dependency => normalizeWatchPath(dependency.path) === normalizedChangedPath);
+}
+
+function syncExternalDependencyWatchers(
+  root: string,
+  dependencies: readonly CompileDependency[],
+  watchers: Map<string, fs.FSWatcher>,
+  currentDependencies: () => readonly CompileDependency[],
+  rebuild: () => void
+): void {
+  const requiredDirectories = new Set<string>();
+  for (const dependency of dependencies) {
+    const dependencyPath = path.resolve(dependency.path);
+    if (!isPathWithinRoot(root, dependencyPath)) {
+      requiredDirectories.add(normalizeWatchPath(nearestExistingWatchDirectory(path.dirname(dependencyPath))));
+    }
+  }
+
+  for (const [directory, watcher] of watchers) {
+    if (!requiredDirectories.has(directory)) {
+      watchers.delete(directory);
+      watcher.close();
+    }
+  }
+
+  for (const directory of requiredDirectories) {
+    if (watchers.has(directory)) {
+      continue;
+    }
+    try {
+      const watcher = fs.watch(directory, (_event, fileName) => {
+        if (
+          !fileName
+          || watchEventCanAffectDependency(directory, fileName.toString(), currentDependencies())
+        ) {
+          rebuild();
+        }
+      });
+      watchers.set(directory, watcher);
+      watcher.on("error", () => recoverExternalWatcher(directory, watcher, watchers, rebuild));
+      watcher.on("close", () => recoverExternalWatcher(directory, watcher, watchers, rebuild, false));
+    } catch {
+      // A missing/unwatchable external directory remains a recorded dependency and
+      // will be picked up once another source change refreshes the watcher set.
+    }
+  }
+}
+
+/** Finds the closest existing directory that can observe creation of a missing dependency parent. */
+export function nearestExistingWatchDirectory(directory: string): string {
+  let candidate = path.resolve(directory);
+  while (!isDirectory(candidate)) {
+    const parent = path.dirname(candidate);
+    if (parent === candidate) {
+      return candidate;
+    }
+    candidate = parent;
+  }
+  return candidate;
+}
+
+function watchEventCanAffectDependency(
+  watchedDirectory: string,
+  fileName: string,
+  dependencies: readonly CompileDependency[]
+): boolean {
+  const changedPath = path.resolve(watchedDirectory, fileName);
+  return dependencies.some(dependency => {
+    const dependencyPath = path.resolve(dependency.path);
+    return normalizeWatchPath(changedPath) === normalizeWatchPath(dependencyPath)
+      || isPathWithinRoot(changedPath, dependencyPath);
+  });
+}
+
+function recoverExternalWatcher(
+  directory: string,
+  watcher: fs.FSWatcher,
+  watchers: Map<string, fs.FSWatcher>,
+  rebuild: () => void,
+  close = true
+): void {
+  if (watchers.get(directory) !== watcher) {
+    return;
+  }
+  watchers.delete(directory);
+  if (close) {
+    watcher.close();
+  }
+  rebuild();
+}
+
+function isDirectory(directory: string): boolean {
+  try {
+    return fs.statSync(directory).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isPathWithinRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function normalizeWatchPath(fileName: string): string {
+  const normalized = path.normalize(path.resolve(fileName));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function initConfig(io: RsglCliIo): number {
@@ -182,6 +332,6 @@ function printHelp(io: RsglCliIo): void {
     "  init       Create rsgl.config.json",
     "  build      Compile RSGL files and write generated resource pack files",
     "  check      Compile RSGL files without writing generated files",
-    "  watch      Rebuild when .rsgl files change"
+    "  watch      Rebuild when .rsgl files or imported JSON dependencies change"
   ].join("\n")}\n`);
 }

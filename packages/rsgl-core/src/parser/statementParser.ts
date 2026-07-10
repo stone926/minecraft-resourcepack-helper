@@ -25,6 +25,8 @@ import {
   IdentifierNode,
   IfStmtNode,
   LetDeclNode,
+  MergeMode,
+  MergeModifierNode,
   ModelElementStmtNode,
   ModelFaceClauseNode,
   ModelGeometryPropertyNode,
@@ -186,7 +188,7 @@ export abstract class StatementParser extends ExpressionParser {
     return this.parseBlock();
   }
 
-  protected parseResourceBody(owner: string): ResourceBodyNode {
+  protected parseResourceBody(owner: string, allowBase = false): ResourceBodyNode {
     const start = this.current();
     if (!this.matchText("{")) {
       return this.emptyResourceBodyAt(start, "Expected resource body.");
@@ -194,22 +196,47 @@ export abstract class StatementParser extends ExpressionParser {
 
     const statements: ResourceStatementNode[] = [];
     const seenBlockstateSections = new Set<string>();
+    let seenBase = false;
     const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
     while (!this.isAtEnd() && this.current().text !== "}") {
       const mark = this.mark();
+      let statement: ResourceStatementNode;
       if (this.current().text === "variants") {
         if (bodyDialect === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "variants");
         }
-        statements.push(this.parseVariantsSection());
+        statement = this.parseVariantsSection();
       } else if (this.current().text === "multipart") {
         if (bodyDialect === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "multipart");
         }
-        statements.push(this.parseMultipartSection());
+        statement = this.parseMultipartSection();
       } else {
-        statements.push(this.parseResourceStatement(owner));
+        statement = this.parseResourceStatement(owner);
       }
+      if (statement.kind === "BaseStmt") {
+        if (!allowBase) {
+          this.addDiagnostic(
+            "rsgl.baseInvalidContext",
+            "base is only valid in a concrete resource declaration body.",
+            statement.range
+          );
+        } else if (seenBase) {
+          this.addDiagnostic(
+            "rsgl.duplicateBase",
+            "A resource body can contain at most one base statement.",
+            statement.range
+          );
+        } else if (statements.length > 0) {
+          this.addDiagnostic(
+            "rsgl.baseMustPrecedeBody",
+            "The base statement must be the first statement in a resource body.",
+            statement.range
+          );
+        }
+        seenBase = true;
+      }
+      statements.push(statement);
       this.consumeOptionalSeparator();
       this.ensureProgress(mark, "Unable to parse resource statement; skipping token.");
     }
@@ -321,14 +348,22 @@ export abstract class StatementParser extends ExpressionParser {
     if (token.text === "if") {
       return this.parseIfStmt("resource");
     }
-    if (token.text === "raw_json" || token.text === "raw_json_file") {
-      return this.parseRawLikeStmt("RawJsonStmt");
+    if (
+      !this.isExplicitPropertyStart()
+      && (
+        token.text === "raw_json"
+        || token.text === "raw_json_file"
+        || token.text === "override"
+        || isExplicitMergeMode(token.text)
+      )
+    ) {
+      return this.parseRemovedMergeStmt();
     }
-    if (token.text === "override") {
-      return this.parseRawLikeStmt("OverrideStmt");
+    if (token.text === "base" && !this.isExplicitPropertyStart()) {
+      return this.parseBaseStmt();
     }
-    if (token.text === "append") {
-      return this.parseRawLikeStmt("AppendStmt");
+    if (token.text === "merge" && !this.isExplicitPropertyStart()) {
+      return this.parseMergeStmt();
     }
     if ((bodyDialect === "pack" || owner === "packOverlay") && token.text === "formats") {
       return this.parsePackFormatsStmt();
@@ -749,20 +784,65 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parseRawLikeStmt(kind: "RawJsonStmt" | "OverrideStmt" | "AppendStmt"): ResourceStatementNode {
+  private parseBaseStmt(): ResourceStatementNode {
     const start = this.advance();
-    const create = kind === "OverrideStmt" && this.matchText("create");
-    const value = kind === "RawJsonStmt" && this.current().text === "("
-      ? this.finishCallExpression({
-        kind: "IdentifierExpr",
-        name: this.syntheticIdentifier(start, start.text),
-        ...this.nodeRanges(start, start)
-      })
-      : this.parseExpression({ stopTexts: [] });
-    if (kind === "OverrideStmt") {
-      return { kind, keyword: start.text, create, value, ...this.nodeRanges(start, this.previousOr(start)) };
+    const path = this.parseExpression({ stopTexts: [] });
+    return {
+      kind: "BaseStmt",
+      keyword: start.text,
+      path,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private isExplicitPropertyStart(): boolean {
+    return this.peekText(1) === ":" || this.peekText(1) === "=";
+  }
+
+  private parseMergeStmt(): ResourceStatementNode {
+    const start = this.advance();
+    let mode: MergeMode = "shallow";
+    let modifier: MergeModifierNode | undefined;
+    const modifierMode = this.current().text;
+    if (!this.isStatementBoundary(this.current()) && isExplicitMergeMode(modifierMode)) {
+      const modifierToken = this.advance();
+      mode = modifierMode;
+      modifier = {
+        kind: "MergeModifier",
+        mode: modifierMode,
+        text: modifierToken.text,
+        ...this.nodeRanges(modifierToken, modifierToken)
+      };
     }
-    return { kind, keyword: start.text, value, ...this.nodeRanges(start, this.previousOr(start)) };
+    const value = this.parseExpression({ stopTexts: [] });
+    return {
+      kind: "MergeStmt",
+      keyword: start.text,
+      mode,
+      modifier,
+      value,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseRemovedMergeStmt(): ResourceStatementNode {
+    const start = this.advance();
+    if (start.text === "override") {
+      this.matchText("create");
+    }
+    if (!this.isAtEnd() && this.current().text !== "}" && !this.isStatementBoundary(this.current())) {
+      this.parseExpression({ stopTexts: [] });
+    }
+    this.addDiagnostic(
+      "rsgl.removedMergeSyntax",
+      removedMergeSyntaxMessage(start.text),
+      tokenRange(start)
+    );
+    return {
+      kind: "UnknownStmt",
+      keyword: start.text,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
   }
 
   private parseVariantsSection(): ResourceStatementNode {
@@ -1087,4 +1167,21 @@ export abstract class StatementParser extends ExpressionParser {
   private isLineBoundaryOr(...texts: string[]): boolean {
     return this.isAtEnd() || texts.includes(this.current().text) || this.isStatementBoundary(this.current());
   }
+}
+
+function isExplicitMergeMode(text: string): text is Exclude<MergeMode, "shallow"> {
+  return text === "deep" || text === "strict" || text === "upsert" || text === "append";
+}
+
+function removedMergeSyntaxMessage(keyword: string): string {
+  if (keyword === "override") {
+    return "The override statement has been removed. Use 'merge strict' or 'merge upsert'.";
+  }
+  if (isExplicitMergeMode(keyword)) {
+    return `The '${keyword}' merge modifier requires a preceding 'merge' keyword.`;
+  }
+  if (keyword === "raw_json_file") {
+    return "The raw_json_file statement has been removed. Use a base statement for a base JSON document.";
+  }
+  return "The raw_json statement has been removed. Use a merge statement.";
 }

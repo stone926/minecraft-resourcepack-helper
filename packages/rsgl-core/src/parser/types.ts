@@ -473,9 +473,8 @@ export type ResourceStatementNode =
   | EquipmentLayerStmtNode
   | ModelTextureStmtNode
   | ModelElementStmtNode
-  | RawJsonStmtNode
-  | OverrideStmtNode
-  | AppendStmtNode
+  | BaseStmtNode
+  | MergeStmtNode
   | UnknownStmtNode;
 
 export interface PropertyStmtNode extends StatementNodeBase {
@@ -650,19 +649,24 @@ export interface ItemSpecialStmtNode extends StatementNodeBase {
   model: ExprNode;
 }
 
-export interface RawJsonStmtNode extends StatementNodeBase {
-  kind: "RawJsonStmt";
-  value: ExprNode;
+export interface BaseStmtNode extends StatementNodeBase {
+  kind: "BaseStmt";
+  path: ExprNode;
 }
 
-export interface OverrideStmtNode extends StatementNodeBase {
-  kind: "OverrideStmt";
-  create: boolean;
-  value: ExprNode;
+export type MergeMode = "shallow" | "deep" | "strict" | "upsert" | "append";
+export type ExplicitMergeMode = Exclude<MergeMode, "shallow">;
+
+export interface MergeModifierNode extends RsglNode {
+  kind: "MergeModifier";
+  mode: ExplicitMergeMode;
+  text: string;
 }
 
-export interface AppendStmtNode extends StatementNodeBase {
-  kind: "AppendStmt";
+export interface MergeStmtNode extends StatementNodeBase {
+  kind: "MergeStmt";
+  mode: MergeMode;
+  modifier?: MergeModifierNode;
   value: ExprNode;
 }
 

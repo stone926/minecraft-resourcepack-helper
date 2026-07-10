@@ -16,7 +16,10 @@ import {
   completionItemsForContent,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
+  dependencyPathsForDocuments,
+  documentsDependingOnPath,
   encodeSemanticTokens,
+  normalizeDependencyPath,
   toLspDiagnostic,
   toLspSeverity,
   toValidationSettings,
@@ -161,6 +164,67 @@ describe("RSGL LSP server core", () => {
 
     assert.ok(diagnostics.some(diagnostic => diagnostic.code === "rsgl.undefinedSymbol"));
     assert.ok(diagnostics.every(diagnostic => diagnostic.source === "RSGL"));
+  });
+
+  it("reports base-document dependencies from the diagnostics pipeline", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-deps-"));
+    try {
+      const entryFile = path.join(root, "entry.rsgl");
+      const baseFile = path.join(root, "base.json");
+      const entryText = [
+        "model block imported {",
+        "  base \"./base.json\"",
+        "}"
+      ].join("\n");
+      fs.writeFileSync(entryFile, entryText);
+      fs.writeFileSync(baseFile, JSON.stringify({ parent: "minecraft:block/cube_all" }));
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      let dependencies: readonly { path: string }[] = [];
+      const diagnostics = computeDocumentDiagnostics(documentOf(entryText), entryFile, {
+        loadProgramFromEntry: fileName => cache.loadProgramFromEntry(fileName),
+        onDependencies: nextDependencies => {
+          dependencies = nextDependencies;
+        },
+        settings: emptySettings
+      });
+
+      assert.ok(!diagnostics.some(diagnostic => String(diagnostic.code).startsWith("rsgl.base")));
+      assert.deepStrictEqual(dependencies.map(dependency => normalizeDependencyPath(dependency.path)), [
+        normalizeDependencyPath(baseFile)
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("selects only documents that depend on a changed JSON path", () => {
+    const root = path.join(os.tmpdir(), "rsgl-dependency-index");
+    const shared = path.join(root, "shared.json");
+    const other = path.join(root, "other.json");
+    const index = new Map<string, ReadonlySet<string>>([
+      ["file:///one.rsgl", new Set([normalizeDependencyPath(shared)])],
+      ["file:///two.rsgl", new Set([normalizeDependencyPath(other)])],
+      ["file:///three.rsgl", new Set([normalizeDependencyPath(shared), normalizeDependencyPath(other)])]
+    ]);
+
+    assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, ".", "shared.json")), [
+      "file:///one.rsgl",
+      "file:///three.rsgl"
+    ]);
+    assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, "unrelated.json")), []);
+  });
+
+  it("publishes a stable dependency union across all open documents", () => {
+    const root = path.join(os.tmpdir(), "rsgl-dependency-union");
+    const first = normalizeDependencyPath(path.join(root, "first.json"));
+    const shared = normalizeDependencyPath(path.join(root, "shared.json"));
+    const index = new Map<string, ReadonlySet<string>>([
+      ["file:///one.rsgl", new Set([shared, first])],
+      ["file:///two.rsgl", new Set([shared])]
+    ]);
+
+    assert.deepStrictEqual(dependencyPathsForDocuments(index), [first, shared].sort());
   });
 
   it("maps completion candidates and workspace symbols to completion items", () => {

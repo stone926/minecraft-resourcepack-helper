@@ -5,7 +5,7 @@ import { ExprNode, TextRange } from "../parser";
  * Shared by the semantic checker (editor diagnostics) and the evaluator
  * (compile-time gate), so the rule cannot drift between the two layers.
  */
-export const lambdaImpureBuiltinNames: ReadonlySet<string> = new Set(["raw_json", "raw_json_file", "glob"]);
+export const lambdaImpureBuiltinNames: ReadonlySet<string> = new Set(["glob"]);
 
 export interface LambdaImpureCall {
   name: string;

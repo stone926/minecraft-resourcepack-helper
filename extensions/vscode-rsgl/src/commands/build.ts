@@ -145,12 +145,19 @@ async function prepareAndWriteBuild(
       return null;
     }
     if (!outcome.result.files) {
-      return { diagnostics: outcome.result.diagnostics };
+      return {
+        diagnostics: outcome.result.diagnostics,
+        dependencies: outcome.result.dependencies
+      };
     }
 
     const plan = await applyRsglEmittedFiles(outcome.result.files, context.outputRoot, token);
     return plan && !token.isCancellationRequested
-      ? { diagnostics: outcome.result.diagnostics, plan }
+      ? {
+        diagnostics: outcome.result.diagnostics,
+        dependencies: outcome.result.dependencies,
+        plan
+      }
       : null;
   } catch (error) {
     void vscode.window.showErrorMessage(

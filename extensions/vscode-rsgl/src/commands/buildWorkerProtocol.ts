@@ -3,6 +3,7 @@ import type {
   RsglPreparedBuildResult
 } from "../../../../packages/rsgl-core/src/build";
 import type {
+  CompileDependency,
   RsglCompileDiagnostic,
   RsglEmittedFile
 } from "../../../../packages/rsgl-core/src/compiler";
@@ -33,6 +34,7 @@ export interface RsglWorkerCompileDirectoryContext {
 export interface RsglWorkerCompileResult {
   success: boolean;
   diagnostics: RsglCompileDiagnostic[];
+  dependencies: CompileDependency[];
   emittedFiles: RsglEmittedFile[];
 }
 

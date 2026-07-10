@@ -1,5 +1,6 @@
 import { TextRange } from "../parser";
 import type { ExternResourceKind, RsglResourceKind } from "../resourceKinds";
+import type { CompileDependency } from "./base/types";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -55,7 +56,7 @@ export interface RsglMapping {
   generatedPath: string;
   sourceFile: string;
   sourceRange: TextRange;
-  reason: "direct" | "template" | "loop" | "builtin";
+  reason: "direct" | "template" | "loop" | "builtin" | "base";
   expansionStack: ExpansionFrame[];
 }
 
@@ -67,6 +68,7 @@ export interface ExpansionFrame {
 export interface RsglCompileResult {
   units: ResourceUnit[];
   diagnostics: RsglCompileDiagnostic[];
+  dependencies: CompileDependency[];
 }
 
 export interface RsglCompileDiagnostic {

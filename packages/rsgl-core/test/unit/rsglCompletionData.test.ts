@@ -25,7 +25,44 @@ describe("RSGL completion data", () => {
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);
     assert.ok(inBlock.some(candidate => candidate.label === "textures"));
     assert.ok(inBlock.some(candidate => candidate.label === "box"));
-    assert.ok(inBlock.some(candidate => candidate.label === "raw_json"));
+    assert.ok(inBlock.some(candidate => candidate.label === "base"));
+    assert.ok(inBlock.some(candidate => candidate.label === "merge"));
+    assert.ok(inBlock.some(candidate => candidate.label === "merge deep"));
+    assert.ok(inBlock.some(candidate => candidate.label === "merge strict"));
+    assert.ok(inBlock.some(candidate => candidate.label === "merge upsert"));
+    assert.ok(inBlock.some(candidate => candidate.label === "merge append"));
+    assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json"), false);
+    assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json_file"), false);
     assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
+  });
+
+  it("offers base only at the first position of a concrete resource root", () => {
+    const labelsAtEnd = (text: string) => new Set(
+      getRsglCompletionCandidates(text, text.length).map(candidate => candidate.label)
+    );
+
+    assert.ok(labelsAtEnd("model block stone {\n  ").has("base"));
+    assert.ok(labelsAtEnd("model block stone {\n  // imported model\n  ba").has("base"));
+    assert.ok(labelsAtEnd("for id in [stone] {\n  model block id {\n    ").has("base"));
+
+    const afterStatement = labelsAtEnd([
+      "model block stone {",
+      "  parent minecraft:block/cube_all",
+      "  "
+    ].join("\n"));
+    assert.strictEqual(afterStatement.has("base"), false);
+    assert.ok(afterStatement.has("merge"));
+    assert.ok(afterStatement.has("merge deep"));
+
+    const nestedSection = labelsAtEnd([
+      "model block stone {",
+      "  textures {",
+      "    "
+    ].join("\n"));
+    assert.strictEqual(nestedSection.has("base"), false);
+    assert.ok(nestedSection.has("merge upsert"));
+
+    assert.strictEqual(labelsAtEnd("template fragment() {\n  ").has("base"), false);
+    assert.strictEqual(labelsAtEnd("model block stone {\n  b\n  ").has("base"), false);
   });
 });

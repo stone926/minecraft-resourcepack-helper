@@ -15,10 +15,17 @@ import {
   RsglWorkspaceSemanticCache
 } from "../../rsgl-core/src";
 import {
+  rsglDependencyPathsNotification,
+  type RsglDependencyPathsNotification
+} from "../../rsgl-shared/src";
+import {
   completionItemsForDocument as completionItemsForDocumentCore,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
+  dependencyPathsForDocuments,
+  documentsDependingOnPath,
   fileNameFromUri,
+  normalizeDependencyPath,
   normalizeFileName,
   toValidationSettings,
   type RsglValidationSettings
@@ -27,6 +34,8 @@ import {
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const semanticCache = RsglWorkspaceSemanticCache.create();
+const dependenciesByDocument = new Map<string, Set<string>>();
+let publishedDependencyPaths = "";
 
 let validationSettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
 
@@ -68,15 +77,40 @@ documents.onDidChangeContent(event => {
 });
 documents.onDidClose(event => {
   semanticCache.invalidatePath(fileNameFromUri(event.document.uri));
+  dependenciesByDocument.delete(event.document.uri);
+  publishDependencyPaths();
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
   refreshOpenDocuments(event.document.uri);
 });
 
 connection.onDidChangeWatchedFiles(params => {
-  for (const change of params.changes) {
-    semanticCache.invalidatePath(fileNameFromUri(change.uri));
+  const rsglChanges = params.changes.filter(change =>
+    path.extname(fileNameFromUri(change.uri)).toLowerCase() === ".rsgl"
+  );
+  if (rsglChanges.length > 0) {
+    for (const change of rsglChanges) {
+      semanticCache.invalidatePath(fileNameFromUri(change.uri));
+    }
+    refreshOpenDocuments();
+    return;
   }
-  refreshOpenDocuments();
+
+  const affectedUris = new Set<string>();
+  for (const change of params.changes) {
+    const changedFileName = fileNameFromUri(change.uri);
+    if (path.extname(changedFileName).toLowerCase() !== ".json") {
+      continue;
+    }
+    for (const uri of documentsDependingOnPath(dependenciesByDocument, changedFileName)) {
+      affectedUris.add(uri);
+    }
+  }
+  for (const uri of affectedUris) {
+    const document = documents.get(uri);
+    if (document) {
+      validateDocument(document);
+    }
+  }
 });
 
 connection.onCompletion(params => {
@@ -139,6 +173,13 @@ function validateDocument(document: TextDocument): void {
   const fileName = fileNameFromUri(document.uri);
   const diagnostics = computeDocumentDiagnostics(document, fileName, {
     loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName),
+    onDependencies: dependencies => {
+      dependenciesByDocument.set(
+        document.uri,
+        new Set(dependencies.map(dependency => normalizeDependencyPath(dependency.path)))
+      );
+      publishDependencyPaths();
+    },
     settings: validationSettings
   });
   connection.sendDiagnostics({ uri: document.uri, diagnostics });
@@ -163,6 +204,17 @@ function completionItemsForDocument(document: TextDocument, offset: number): Com
   return completionItemsForDocumentCore(document, fileNameFromUri(document.uri), offset, {
     loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName)
   });
+}
+
+function publishDependencyPaths(): void {
+  const paths = dependencyPathsForDocuments(dependenciesByDocument);
+  const identity = JSON.stringify(paths);
+  if (identity === publishedDependencyPaths) {
+    return;
+  }
+  publishedDependencyPaths = identity;
+  const notification: RsglDependencyPathsNotification = { paths };
+  void connection.sendNotification(rsglDependencyPathsNotification, notification);
 }
 
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {

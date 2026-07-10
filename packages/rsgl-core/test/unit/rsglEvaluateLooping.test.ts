@@ -6,7 +6,7 @@ describe("RSGL expression evaluation and loops", () => {
   it("evaluates compile-time string helper functions", () => {
     const result = compileSource([
       "model block string_helpers {",
-      "  raw_json {",
+      "  merge {",
       "    starts: startsWith(\"oak_planks\", \"oak\")",
       "    ends: endsWith(\"oak_planks\", \"planks\")",
       "    replaced: replace(\"oak_planks\", \"oak\", \"birch\")",
@@ -100,7 +100,7 @@ describe("RSGL expression evaluation and loops", () => {
     const result = compileSource([
       "model block paths {",
       "  parent minecraft:block/cube_all",
-      "  raw_json {",
+      "  merge {",
       "    metadata: {",
       "      model_path: model_path(minecraft:block/stone),",
       "      texture_path: texture_path(block/stone),",
@@ -170,7 +170,7 @@ describe("RSGL expression evaluation and loops", () => {
       "  }",
       "  textures {",
       "    for layer in [{ key: \"layer0\", tex: minecraft:block/stone }, { key: \"layer1\", tex: minecraft:block/dirt }] {",
-      "      raw_json { [layer.key]: layer.tex }",
+      "      merge { [layer.key]: layer.tex }",
       "    }",
       "  }",
       "}"
@@ -187,13 +187,13 @@ describe("RSGL expression evaluation and loops", () => {
     });
   });
 
-  it("records source map entries for resource body raw_json and loops", () => {
+  it("records source map entries for resource body merges and loops", () => {
     const result = compileSource([
       "model block mapped {",
-      "  raw_json { \"base/key\": true }",
+      "  merge { \"base/key\": true }",
       "  textures {",
       "    for layer in [{ key: \"layer/zero\", tex: minecraft:block/stone }, { key: \"layer1\", tex: minecraft:block/dirt }] {",
-      "      raw_json { [layer.key]: layer.tex }",
+      "      merge { [layer.key]: layer.tex }",
       "    }",
       "  }",
       "}"
@@ -221,7 +221,7 @@ describe("RSGL expression evaluation and loops", () => {
       "model block age_layers {",
       "  textures {",
       "    for age in 0..2 {",
-      "      raw_json { [`layer${age}`]: `minecraft:block/age_${age}` }",
+      "      merge { [`layer${age}`]: `minecraft:block/age_${age}` }",
       "    }",
       "  }",
       "}"

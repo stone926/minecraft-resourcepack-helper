@@ -11,8 +11,8 @@ export function formatRsglText(text: string, tabSize = 2): string {
     }
 
     const closingCount = countLeadingClosers(trimmed);
-    depth = Math.max(0, depth - closingCount);
-    const result = `${indentText.repeat(depth)}${trimmed}`;
+    const lineDepth = Math.max(0, depth - closingCount);
+    const result = `${indentText.repeat(lineDepth)}${trimmed}`;
     depth = Math.max(0, depth + countIndentDelta(trimmed));
     return result;
   });

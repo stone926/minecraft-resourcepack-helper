@@ -102,6 +102,37 @@ describe("RSGL semantic tokens", () => {
     expectToken(tokens, start, "type", declaration, "acacia_planks".length);
   });
 
+  it("tokenizes base and merge operands without overriding keyword highlighting", () => {
+    const mergeSource = [
+      "let basePath = \"./base.json\"",
+      "let fragment = { display: {} }",
+      "model block patched {",
+      "  base basePath",
+      "  merge fragment",
+      "  merge deep fragment",
+      "  merge strict fragment",
+      "  merge upsert fragment",
+      "  merge append fragment",
+      "}"
+    ].join("\n");
+    const mergeTokens = getRsglSemanticTokens(bindRsglModule(parseRsgl(mergeSource)));
+
+    expectToken(mergeTokens, offsetOf(mergeSource, "basePath", 1), "variable", readonlyFlag, "basePath".length);
+    for (let occurrence = 1; occurrence <= 5; occurrence++) {
+      expectToken(mergeTokens, offsetOf(mergeSource, "fragment", occurrence), "variable", readonlyFlag, "fragment".length);
+    }
+
+    const keywordOffsets = [
+      offsetOf(mergeSource, "  base ") + 2,
+      ...[0, 1, 2, 3, 4].map(occurrence => offsetOf(mergeSource, "merge", occurrence)),
+      offsetOf(mergeSource, "deep"),
+      offsetOf(mergeSource, "strict"),
+      offsetOf(mergeSource, "upsert"),
+      offsetOf(mergeSource, "append")
+    ];
+    assert.ok(keywordOffsets.every(start => !mergeTokens.some(token => token.start === start)));
+  });
+
   it("keeps parameter-bound resource ids as references, not declarations", () => {
     const start = offsetOf(source, "model block id") + "model block ".length;
     expectToken(tokens, start, "parameter", 0, "id".length);

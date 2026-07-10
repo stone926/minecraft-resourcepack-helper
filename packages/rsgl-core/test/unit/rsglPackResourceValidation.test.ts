@@ -122,10 +122,10 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
     const result = compileSource([
       "lang en_us {",
       "  \"valid.key\" \"Valid\"",
-      "  raw_json { \"bad.key\": 1 }",
+      "  merge { \"bad.key\": 1 }",
       "}",
       "lang deprecated {",
-      "  raw_json { removed: [\"old.key\", 1], renamed: { \"old.key\": 2 } }",
+      "  merge { removed: [\"old.key\", 1], renamed: { \"old.key\": 2 } }",
       "}",
       "sounds custom {",
       "  \"valid.event\" { sounds: [\"entity/example/valid\"] }",
@@ -276,7 +276,7 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
       "  ]",
       "}",
       "post_effect invalid_shapes {",
-      "  raw_json { targets: [], passes: {} }",
+      "  merge { targets: [], passes: {} }",
       "}"
     ], {
       resourceExists: (kind, id) => {

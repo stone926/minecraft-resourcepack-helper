@@ -21,4 +21,30 @@ describe("RSGL formatter core", () => {
       "}"
     ].join("\n"));
   });
+
+  it("formats base and merge statements without changing their modifiers", () => {
+    const formatted = formatRsglText([
+      "model block patched {",
+      "base \"./base.json\"",
+      "merge deep {",
+      "display: {",
+      "gui: { scale: [1, 1, 1] }",
+      "}",
+      "}",
+      "merge strict { parent: minecraft:block/base }",
+      "}"
+    ].join("\n"));
+
+    assert.strictEqual(formatted, [
+      "model block patched {",
+      "  base \"./base.json\"",
+      "  merge deep {",
+      "    display: {",
+      "      gui: { scale: [1, 1, 1] }",
+      "    }",
+      "  }",
+      "  merge strict { parent: minecraft:block/base }",
+      "}"
+    ].join("\n"));
+  });
 });

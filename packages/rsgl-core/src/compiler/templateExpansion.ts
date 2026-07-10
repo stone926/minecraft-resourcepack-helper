@@ -14,9 +14,9 @@ import {
   EvaluationContext,
   EvaluationValue,
   RawGlobLoader,
-  RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
+import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { RsglCompileDiagnostic } from "./ir";
 import { RsglType, typeFromAnnotation } from "../semantic/types";
 import { isRsglStdlibVirtualFileName } from "../stdlib";
@@ -37,8 +37,9 @@ type TemplateCallParameter = RsglCallableParameter & {
 
 export interface TemplateExpansionOptions {
   templates: Map<string, RsglTemplateDefinition>;
-  rawJsonLoader?: RawJsonLoader;
+  baseDocumentLoader?: BaseDocumentLoader;
   globLoader?: RawGlobLoader;
+  onDependency?: (dependency: CompileDependency) => void;
   createChildContext: (
     context: RsglCompileContext,
     values: Record<string, EvaluationValue>,
@@ -182,8 +183,9 @@ function createTemplateBaseContext(
     sourceFile: template.fileName,
     mappingReason: "template",
     expansionStack: [],
-    rawJsonLoader: options.rawJsonLoader,
+    baseDocumentLoader: options.baseDocumentLoader,
     globLoader: options.globLoader,
+    onDependency: options.onDependency,
     // Invariant: compile-phase contexts always carry onError so diagnostics
     // raised inside template bodies and parameter defaults are not swallowed.
     onError: options.onError,

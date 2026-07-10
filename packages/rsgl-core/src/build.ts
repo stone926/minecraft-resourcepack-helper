@@ -7,6 +7,7 @@ import {
   type RsglEmittedFile,
   type RsglCompileDiagnostic,
   type RsglCompileResult,
+  type CompileDependency,
   type RsglEmitOptions,
   writeRsglFiles,
   type RsglWritePlan,
@@ -22,11 +23,13 @@ export interface RsglBuildOptions extends RsglResourceValidationOptions, RsglEmi
 export interface RsglBuildResult {
   plan?: RsglWritePlan;
   diagnostics: RsglCompileDiagnostic[];
+  dependencies: CompileDependency[];
   cancelled?: boolean;
 }
 
 export interface RsglPreparedBuildResult {
   diagnostics: RsglCompileDiagnostic[];
+  dependencies: CompileDependency[];
   files?: RsglEmittedFile[];
   cancelled?: boolean;
 }
@@ -201,13 +204,14 @@ function prepareCompiledRsglBuild(
   options: RsglBuildOptions
 ): RsglPreparedBuildResult {
   if (isCancellationRequested(options)) {
-    return { diagnostics: result.diagnostics, cancelled: true };
+    return { diagnostics: result.diagnostics, dependencies: result.dependencies, cancelled: true };
   }
 
   const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
   if (blockingDiagnostics.length > 0) {
     return {
-      diagnostics: result.diagnostics
+      diagnostics: result.diagnostics,
+      dependencies: result.dependencies
     };
   }
 
@@ -217,8 +221,8 @@ function prepareCompiledRsglBuild(
     manifest: options.manifest ?? true
   });
   return isCancellationRequested(options)
-    ? { diagnostics: result.diagnostics, cancelled: true }
-    : { diagnostics: result.diagnostics, files };
+    ? { diagnostics: result.diagnostics, dependencies: result.dependencies, cancelled: true }
+    : { diagnostics: result.diagnostics, dependencies: result.dependencies, files };
 }
 
 function writeCompiledRsglBuild(
@@ -226,18 +230,19 @@ function writeCompiledRsglBuild(
   options: RsglBuildOptions
 ): RsglBuildResult {
   if (compiled.cancelled || isCancellationRequested(options)) {
-    return { diagnostics: compiled.diagnostics, cancelled: true };
+    return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
   }
   if (!compiled.files) {
     return {
-      diagnostics: compiled.diagnostics
+      diagnostics: compiled.diagnostics,
+      dependencies: compiled.dependencies
     };
   }
 
   const plan = writeRsglFiles(compiled.files, options.outputRoot, options);
   return isCancellationRequested(options)
-    ? { diagnostics: compiled.diagnostics, cancelled: true }
-    : { diagnostics: compiled.diagnostics, plan };
+    ? { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true }
+    : { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, plan };
 }
 
 function previewCompiledRsglBuild(
@@ -246,11 +251,12 @@ function previewCompiledRsglBuild(
   previewOptions: RsglBuildPreviewFormatOptions
 ): RsglBuildPreviewResult {
   if (compiled.cancelled || isCancellationRequested(options)) {
-    return { diagnostics: compiled.diagnostics, cancelled: true };
+    return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
   }
   if (!compiled.files) {
     return {
-      diagnostics: compiled.diagnostics
+      diagnostics: compiled.diagnostics,
+      dependencies: compiled.dependencies
     };
   }
 
@@ -259,10 +265,11 @@ function previewCompiledRsglBuild(
     includePreviousContent: true
   });
   if (isCancellationRequested(options)) {
-    return { diagnostics: compiled.diagnostics, cancelled: true };
+    return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
   }
   return {
     diagnostics: compiled.diagnostics,
+    dependencies: compiled.dependencies,
     plan,
     preview: formatRsglBuildPreview(plan, previewOptions)
   };

@@ -148,8 +148,13 @@ describe("RSGL extension manifest contract", () => {
     );
 
     assert.match(sharedSource, /rsglFileGlob\s*=\s*"\*\*\/\*\.rsgl"/);
-    assert.match(clientSource, /fileEvents:\s*vscode\.workspace\.createFileSystemWatcher\(rsglFileGlob\)/);
+    assert.match(clientSource, /fileEvents:\s*\[/);
+    assert.match(clientSource, /vscode\.workspace\.createFileSystemWatcher\(rsglFileGlob\)/);
+    assert.match(clientSource, /vscode\.workspace\.createFileSystemWatcher\("\*\*\/\*\.json"\)/);
     assert.match(apiSource, /new vscode\.RelativePattern\(workspace\.fsPath, rsglFileGlob\)/);
+    assert.match(apiSource, /new vscode\.RelativePattern\(workspace\.fsPath, "\*\*\/\*\.json"\)/);
+    assert.match(apiSource, /const dependencyPath = normalizeDependencyPath\(uri\.fsPath\)/);
+    assert.match(apiSource, /dependencyPaths\.has\(dependencyPath\)/);
     assert.match(clientSource, /synchronize:\s*\{/);
     assert.match(apiSource, /const scheduleCompile/);
     assert.strictEqual(fallbackSource.includes("createFileSystemWatcher"), false);

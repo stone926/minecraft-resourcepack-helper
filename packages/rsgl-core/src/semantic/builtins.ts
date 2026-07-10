@@ -79,8 +79,6 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     ], stringType),
     builtinFunction("yaw", [{ name: "direction", type: stringType, optional: false }], numberType),
     builtinFunction("glob", [{ name: "pattern", type: stringType, optional: false }], { kind: "List", elementType: stringType }),
-    builtinFunction("raw_json", [{ name: "path", type: stringType, optional: false }], jsonType),
-    builtinFunction("raw_json_file", [{ name: "path", type: stringType, optional: false }], jsonType),
     builtinFunction("startsWith", [
       { name: "str", type: stringType, optional: false },
       { name: "prefix", type: stringType, optional: false }

@@ -26,9 +26,9 @@ import {
   EvaluationContext,
   EvaluationValue,
   RawGlobLoader,
-  RawJsonLoader,
   evaluateExpression
 } from "./evaluate";
+import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { compileItemSpecialStatement } from "./itemFragments";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
@@ -86,8 +86,9 @@ interface RsglCompilerOptions {
   externalTemplates?: RsglTemplateDefinition[];
   externalValues?: RsglExternalValueDefinition[];
   environment?: RsglModuleCompileEnvironment;
-  rawJsonLoader?: RawJsonLoader;
+  baseDocumentLoader?: BaseDocumentLoader;
   globLoader?: RawGlobLoader;
+  onDependency?: (dependency: CompileDependency) => void;
   targetPackFormat?: RsglTargetPackFormat;
   stdlibRoot?: string;
 }
@@ -95,6 +96,8 @@ interface RsglCompilerOptions {
 export class RsglCompiler {
   private readonly units: ResourceUnit[] = [];
   private readonly diagnostics: RsglCompileDiagnostic[] = [];
+  private readonly dependencies: CompileDependency[] = [];
+  private readonly dependencyKeys = new Set<string>();
   private readonly templates = new Map<string, RsglTemplateDefinition>();
   private readonly overlayEntries: RsglOverlayEntry[] = [];
 
@@ -129,7 +132,7 @@ export class RsglCompiler {
       this.compileStatement(statement, context);
     }
     pushOverlayPackUnit(this.packOverlayOptions());
-    return { units: this.units, diagnostics: this.diagnostics };
+    return { units: this.units, diagnostics: this.diagnostics, dependencies: this.dependencies };
   }
 
   private compileStatement(statement: TopLevelStatementNode, context: RsglCompileContext): void {
@@ -174,11 +177,23 @@ export class RsglCompiler {
       compilePack: (statement, context) =>
         compilePackResource(statement, context, this.packOverlayOptions()),
       compileBody: (body, context, fragmentKind) =>
-        this.resourceBodyToObjectWithMappings(body, context, this.resourceBodyFragmentOptions(fragmentKind)),
+        this.resourceBodyToObjectWithMappings(
+          body,
+          context,
+          { ...this.resourceBodyFragmentOptions(fragmentKind), allowBase: true }
+        ),
       compileJsonBody: (body, context, fragmentKind) =>
-        this.resourceBodyToObjectWithMappings(body, context, this.jsonResourceFragmentOptions(fragmentKind)),
+        this.resourceBodyToObjectWithMappings(
+          body,
+          context,
+          { ...this.jsonResourceFragmentOptions(fragmentKind), allowBase: true }
+        ),
       compileRawBody: (body, context) =>
-        this.resourceBodyToObjectWithRawMappings(body, context, this.resourceBodyFragmentOptions()),
+        this.resourceBodyToObjectWithRawMappings(
+          body,
+          context,
+          { ...this.resourceBodyFragmentOptions(), allowBase: true }
+        ),
       onError: (code, message, range) => this.error(code, message, range),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
       sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context)
@@ -267,7 +282,7 @@ export class RsglCompiler {
     const body = this.resourceBodyToObjectWithRawMappings(
       resourceBody,
       expansion.context,
-      this.resourceBodyFragmentOptions(kind)
+      { ...this.resourceBodyFragmentOptions(kind), allowBase: false }
     );
     return {
       content: body.content,
@@ -307,8 +322,9 @@ export class RsglCompiler {
       sourceFile: this.options.fileName,
       mappingReason: "direct",
       expansionStack: [],
-      rawJsonLoader: this.options.rawJsonLoader,
+      baseDocumentLoader: this.options.baseDocumentLoader,
       globLoader: this.options.globLoader,
+      onDependency: dependency => this.recordDependency(dependency),
       onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       templates: this.templates
     };
@@ -446,7 +462,11 @@ export class RsglCompiler {
       return compileAtlasSpecialStatement(
         statement,
         context,
-        (body, bodyContext) => this.resourceBodyToObjectWithRawMappings(body, bodyContext, this.resourceBodyFragmentOptions("atlas")),
+        (body, bodyContext) => this.resourceBodyToObjectWithRawMappings(
+          body,
+          bodyContext,
+          { ...this.resourceBodyFragmentOptions("atlas"), allowBase: false }
+        ),
         { onError: (code, message, range) => this.error(code, message, range) }
       );
     }
@@ -470,14 +490,25 @@ export class RsglCompiler {
   private templateExpansionOptions(): TemplateExpansionOptions {
     return {
       templates: this.templates,
-      rawJsonLoader: this.options.rawJsonLoader,
+      baseDocumentLoader: this.options.baseDocumentLoader,
       globLoader: this.options.globLoader,
+      onDependency: dependency => this.recordDependency(dependency),
       createChildContext: (context, values, metadata) => this.createChildContext(context, values, metadata),
       onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       onDiagnostic: diagnostic => {
         this.diagnostics.push(diagnostic);
       }
     };
+  }
+
+  private recordDependency(dependency: CompileDependency): void {
+    const key = compileDependencyKey(dependency);
+    if (this.dependencyKeys.has(key)) {
+      return;
+    }
+    this.dependencyKeys.add(key);
+    this.dependencies.push(dependency);
+    this.options.onDependency?.(dependency);
   }
 
   private packOverlayOptions(): PackOverlayCompileOptions {
@@ -489,8 +520,16 @@ export class RsglCompiler {
       onError: (code, message, range) => this.error(code, message, range),
       compileBlock: (body, context) => this.compileBlock(body, context),
       createChildContext: (context, values, metadata) => this.createChildContext(context, values, metadata),
-      compilePackBody: (body, context) => this.resourceBodyToObject(body, context, this.packResourceBodyOptions()),
-      compilePackBodyWithMappings: (body, context) => this.resourceBodyToObjectWithMappings(body, context, this.packResourceBodyOptions()),
+      compilePackBody: (body, context) => this.resourceBodyToObject(
+        body,
+        context,
+        { ...this.packResourceBodyOptions(), allowBase: false }
+      ),
+      compilePackBodyWithMappings: (body, context) => this.resourceBodyToObjectWithMappings(
+        body,
+        context,
+        { ...this.packResourceBodyOptions(), allowBase: true }
+      ),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings)
     };
   }
@@ -527,6 +566,23 @@ export class RsglCompiler {
   private error(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
     this.diagnostics.push({ code, message, range, severity: "error", ...(fileName ? { fileName } : {}) });
   }
+}
+
+function compileDependencyKey(dependency: CompileDependency): string {
+  const normalizedPath = normalizeDependencyIdentity(dependency.path);
+  const normalizedSource = normalizeDependencyIdentity(dependency.sourceFile);
+  return [
+    normalizedPath,
+    dependency.reason,
+    normalizedSource,
+    dependency.sourceRange.start,
+    dependency.sourceRange.end
+  ].join("\0");
+}
+
+function normalizeDependencyIdentity(fileName: string): string {
+  const normalized = normalizeFileName(fileName);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 export function createRsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTemplateDefinition[] {

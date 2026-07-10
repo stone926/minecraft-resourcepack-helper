@@ -6,7 +6,6 @@ import { includeRsglStdlibSourceFiles } from "../stdlib";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
 import {
   createCompileGlobLoader,
-  createCompileRawJsonLoader,
   detectOutputConflicts,
   hasErrors,
   moduleSyntaxDiagnostics,
@@ -15,6 +14,11 @@ import {
   semanticProgramMatchesFiles,
   withTargetPackFormat
 } from "./compilerHelpers";
+import {
+  createCachedBaseDocumentLoader,
+  createFileBaseDocumentLoader
+} from "./base/loader";
+import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { createRsglStdlibPreludeTemplates, RsglCompiler } from "./compiler";
 import {
   createProgramCompileEnvironments,
@@ -28,12 +32,14 @@ import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
 import { RsglResourceValidationOptions, validateResourceUnits } from "./validation";
 
 export interface RsglCompileOptions extends RsglResourceValidationOptions {
+  baseDocumentLoader?: BaseDocumentLoader;
   fileName?: string;
   namespace?: string;
   stdlibRoot?: string;
 }
 
 export interface RsglProgramCompileOptions extends RsglResourceValidationOptions {
+  baseDocumentLoader?: BaseDocumentLoader;
   entryFileName?: string;
   namespace?: string;
   semanticProgram?: RsglProgram;
@@ -51,7 +57,7 @@ export interface RsglDirectoryCompileOptions extends Omit<RsglProgramCompileOpti
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
   const syntaxDiagnostics = moduleSyntaxDiagnostics(module, options.fileName);
   if (hasErrors(syntaxDiagnostics)) {
-    return { units: [], diagnostics: syntaxDiagnostics };
+    return { units: [], diagnostics: syntaxDiagnostics, dependencies: [] };
   }
   const fileName = options.fileName ?? "<anonymous>";
   const sourceFiles = includeRsglStdlibSourceFiles([{ fileName, module }], { stdlibRoot: options.stdlibRoot });
@@ -61,35 +67,38 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
 
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
   const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";
-  const rawJsonDiagnostics: RsglCompileDiagnostic[] = [];
-  const rawJsonLoader = createCompileRawJsonLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
-  const globLoader = createCompileGlobLoader(options.fileName ?? "<anonymous>", rawJsonDiagnostics);
+  const loaderDiagnostics: RsglCompileDiagnostic[] = [];
+  const baseDocumentLoader = createCachedBaseDocumentLoader(
+    options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: fileName })
+  );
+  const globLoader = createCompileGlobLoader(options.fileName ?? "<anonymous>", loaderDiagnostics);
   const target = resolveTargetPackFormat([{ module, namespace }]);
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
     namespace,
-    { rawJsonLoader, globLoader }
+    { baseDocumentLoader, globLoader }
   );
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
     namespace,
     environment,
-    rawJsonLoader,
+    baseDocumentLoader,
     globLoader,
     targetPackFormat: target.targetPackFormat,
     stdlibRoot: options.stdlibRoot
   });
   const result = compiler.compile();
-  const finished = finishCompilation(result.units, target.targetPackFormat, options);
+  const finished = finishCompilation(result.units, target.targetPackFormat, options, result.dependencies);
   return {
     units: finished.units,
     diagnostics: dedupeCompileDiagnostics([
       ...semanticModel.diagnostics.map(diagnostic => ({ ...diagnostic })),
       ...target.diagnostics,
-      ...rawJsonDiagnostics,
+      ...loaderDiagnostics,
       ...result.diagnostics,
       ...finished.diagnostics
-    ])
+    ]),
+    dependencies: finished.dependencies
   };
 }
 
@@ -107,6 +116,7 @@ export function compileRsglDirectory(rootDirectory: string, options: RsglDirecto
   if (files.length === 0) {
     return {
       units: [],
+      dependencies: [],
       diagnostics: [{
         code: "rsgl.compileMissingSource",
         message: `No RSGL source files found in ${resolvedRootDirectory}.`,
@@ -131,19 +141,22 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   const sourceFiles = includeRsglStdlibSourceFiles(files, { stdlibRoot: options.stdlibRoot });
   const syntaxDiagnostics = sourceFiles.flatMap(file => moduleSyntaxDiagnostics(file.module, file.fileName));
   if (hasErrors(syntaxDiagnostics)) {
-    return { units: [], diagnostics: syntaxDiagnostics };
+    return { units: [], diagnostics: syntaxDiagnostics, dependencies: [] };
   }
 
   const program = semanticProgramMatchesFiles(options.semanticProgram, sourceFiles)
     ? options.semanticProgram
     : bindRsglProgram(sourceFiles, { stdlibRoot: options.stdlibRoot });
   const units: ResourceUnit[] = [];
+  const dependencies: CompileDependency[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
     ...program.fileDiagnostics.map(diagnostic => ({ ...diagnostic }))
   ];
-  const rawJsonLoader = createCompileRawJsonLoader(options.entryFileName ?? "<anonymous>", diagnostics);
+  const baseDocumentLoader = createCachedBaseDocumentLoader(
+    options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: options.entryFileName })
+  );
   const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
-  const environments = createProgramCompileEnvironments(program, options.namespace, { rawJsonLoader, globLoader });
+  const environments = createProgramCompileEnvironments(program, options.namespace, { baseDocumentLoader, globLoader });
   const stdlibTemplates = createRsglStdlibPreludeTemplates(options.stdlibRoot);
   const selectedModels = selectProgramModels(program, options.entryFileName);
   const target = resolveTargetPackFormat(selectedModels.map(model => ({
@@ -172,7 +185,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       externalTemplates: Array.from(environment.importedTemplates.values()),
       externalValues: mapToExternalValues(environment.importedValues),
       environment,
-      rawJsonLoader,
+      baseDocumentLoader,
       globLoader,
       targetPackFormat: target.targetPackFormat,
       stdlibRoot: options.stdlibRoot
@@ -180,11 +193,16 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     const result = compiler.compile();
     units.push(...result.units);
     diagnostics.push(...result.diagnostics);
+    dependencies.push(...result.dependencies);
   }
 
-  const finished = finishCompilation(units, target.targetPackFormat, options);
+  const finished = finishCompilation(units, target.targetPackFormat, options, dependencies);
   diagnostics.push(...target.diagnostics, ...finished.diagnostics);
-  return { units: finished.units, diagnostics: dedupeCompileDiagnostics(diagnostics) };
+  return {
+    units: finished.units,
+    diagnostics: dedupeCompileDiagnostics(diagnostics),
+    dependencies: finished.dependencies
+  };
 }
 
 /**
@@ -199,7 +217,7 @@ function dedupeCompileDiagnostics(diagnostics: RsglCompileDiagnostic[]): RsglCom
   const seen = new Map<string, RsglCompileDiagnostic[]>();
   const result: RsglCompileDiagnostic[] = [];
   for (const diagnostic of diagnostics) {
-    const key = [diagnostic.code, diagnostic.severity, diagnostic.range.start, diagnostic.range.end, diagnostic.message].join(" ");
+    const key = [diagnostic.code, diagnostic.severity, diagnostic.range.start, diagnostic.range.end, diagnostic.message].join("\0");
     const matches = seen.get(key);
     if (matches?.some(existing => !existing.fileName || !diagnostic.fileName || existing.fileName === diagnostic.fileName)) {
       continue;
@@ -213,13 +231,15 @@ function dedupeCompileDiagnostics(diagnostics: RsglCompileDiagnostic[]): RsglCom
 function finishCompilation(
   units: ResourceUnit[],
   targetPackFormat: RsglTargetPackFormat | undefined,
-  options: RsglResourceValidationOptions
+  options: RsglResourceValidationOptions,
+  dependencies: CompileDependency[] = []
 ): RsglCompileResult {
   const lowered = lowerItemUnitsForTarget(units, targetPackFormat);
   const merged = mergeResourceUnits(lowered.units);
   const validationOptions = withTargetPackFormat(options, targetPackFormat);
   return {
     units: merged.units,
+    dependencies: dedupeCompileDependencies(dependencies),
     diagnostics: [
       ...lowered.diagnostics,
       ...merged.diagnostics,
@@ -227,4 +247,31 @@ function finishCompilation(
       ...validateResourceUnits(merged.units, validationOptions)
     ]
   };
+}
+
+function dedupeCompileDependencies(dependencies: CompileDependency[]): CompileDependency[] {
+  const seen = new Set<string>();
+  const result: CompileDependency[] = [];
+  for (const dependency of dependencies) {
+    const key = [
+      normalizedDependencyPath(dependency.path),
+      dependency.reason,
+      normalizedDependencyPath(dependency.sourceFile),
+      dependency.sourceRange.start,
+      dependency.sourceRange.end
+    ].join("\0");
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(dependency);
+    }
+  }
+  return result;
+}
+
+function normalizedDependencyPath(fileName: string): string {
+  if (/^<[^>]+>$/.test(fileName)) {
+    return fileName;
+  }
+  const normalized = path.normalize(path.resolve(fileName));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
