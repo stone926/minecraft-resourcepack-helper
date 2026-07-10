@@ -18,6 +18,7 @@ import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { getModelFileCandidates, modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
+import { TextOffsetMap } from "../../utils/textOffsets";
 
 const maxParentDepth = 10;
 const generatedParents = new Set(["item/generated", "minecraft:item/generated", "builtin/generated", "minecraft:builtin/generated"]);
@@ -356,16 +357,7 @@ function rangeFromJsonParseError(text: string, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const match = /\bposition\s+(\d+)\b/i.exec(message);
   const offset = match ? Math.max(0, Math.min(text.length, Number(match[1]))) : text.length;
-  let line = 0;
-  let character = 0;
-  for (let index = 0; index < offset; index++) {
-    if (text.charCodeAt(index) === 10) {
-      line++;
-      character = 0;
-    } else {
-      character++;
-    }
-  }
+  const { line, character } = new TextOffsetMap(text).positionAt(offset);
 
   return {
     start: { line, character },

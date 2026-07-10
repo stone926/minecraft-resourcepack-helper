@@ -72,6 +72,34 @@ describe("resource completion context", () => {
     assert.strictEqual(context.includeQuotes, true);
   });
 
+  it("uses the CIT model file location as the completion source", () => {
+    const fileName = path.join(
+      "pack",
+      "assets",
+      "example",
+      "citresewn",
+      "cit",
+      "tools",
+      "hammer.json"
+    );
+    const { document, position } = createMarkedJsonDocument(
+      fileName,
+      [
+        "{",
+        "  \"textures\": {",
+        "    \"layer0\": \"./|",
+        "  }",
+        "}"
+      ].join("\n")
+    );
+
+    const context = inferIncompleteResourceCompletionContext(document, position);
+
+    assert.strictEqual(context?.reference.kind, "texture");
+    assert.strictEqual(context.reference.source, "citresewn/cit/tools");
+    assert.strictEqual(context.reference.resolveMode, "cit");
+  });
+
   it("does not infer non-resource missing values", () => {
     const { document, position } = createMarkedJsonDocument(
       path.join("pack", "assets", "minecraft", "models", "block", "display.json"),

@@ -4,17 +4,17 @@ import { LruCache } from "../../services/lruCache";
 import { getCitPropertyReferences } from "../../cit/citProperties";
 import { isInArea } from "../locationChecker";
 import { getReferencesForDocumentKind } from "./dispatch";
+import { getResourceReferenceDocumentKind } from "./documentKind";
 import { getShaderDocumentSource, getShaderReferences, isShaderDocumentKind } from "./shaderRefs";
 import {
-  getResourceReferenceDocumentKind,
   type ResourceReference,
   type ResourceReferenceDocument,
   type ResourceReferenceDocumentKind,
   type ResourceReferencePosition
 } from "./types";
 
-export { getResourceReferencesForAst } from "./dispatch";
-export { getResourceReferenceDocumentKind } from "./types";
+export { getReferencesForDocumentKind } from "./dispatch";
+export { getResourceReferenceDocumentKind } from "./documentKind";
 export type {
   ResourceReference,
   ResourceReferenceDocument,

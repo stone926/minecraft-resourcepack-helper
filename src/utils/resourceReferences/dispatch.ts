@@ -20,10 +20,6 @@ export function getReferencesForDocumentKind(
   return extractorsByKind[documentKind]?.(ast, fileName) ?? [];
 }
 
-export function getResourceReferencesForAst(ast: JsonDocumentNode, documentKind: ResourceReferenceDocumentKind): ResourceReference[] {
-  return getReferencesForDocumentKind(ast, documentKind);
-}
-
 type JsonReferenceExtractor = (ast: JsonDocumentNode, fileName: string) => ResourceReference[];
 
 // shaderCore, shaderPost and citProperties are text documents extracted before

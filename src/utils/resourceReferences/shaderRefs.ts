@@ -1,9 +1,10 @@
 import { AstLocation } from "../locationChecker";
+import { TextOffsetMap } from "../textOffsets";
 import { ResourceReference, ResourceReferenceDocumentKind } from "./types";
 
 export function getShaderReferences(text: string, source: string): ResourceReference[] {
   const references: ResourceReference[] = [];
-  const lineStarts = getLineStarts(text);
+  const textOffsets = new TextOffsetMap(text);
   const importPattern = /#\s*moj_import\s*(?:<([^>\r\n]+)>|"([^"\r\n]+)")/g;
 
   for (const match of text.matchAll(importPattern)) {
@@ -14,7 +15,7 @@ export function getShaderReferences(text: string, source: string): ResourceRefer
 
     const valueStart = match.index + match[0].indexOf(value);
     const valueEnd = valueStart + value.length;
-    const valueLoc = getLocationForOffsets(lineStarts, valueStart, valueEnd);
+    const valueLoc = getLocationForOffsets(textOffsets, valueStart, valueEnd);
     const target = match[1] !== undefined || value.includes(":") ? "shaders/include" : "shaders/core";
     references.push({
       value,
@@ -44,39 +45,18 @@ export function getShaderDocumentSource(kind: ResourceReferenceDocumentKind): st
   return "shaders/post";
 }
 
-function getLineStarts(text: string): number[] {
-  const lineStarts = [0];
-  for (let index = 0; index < text.length; index++) {
-    if (text.charCodeAt(index) === 10) {
-      lineStarts.push(index + 1);
-    }
-  }
-
-  return lineStarts;
-}
-
-function getLocationForOffsets(lineStarts: number[], startOffset: number, endOffset: number): AstLocation {
-  const startLine = findLineIndex(lineStarts, startOffset);
-  const endLine = findLineIndex(lineStarts, endOffset);
+function getLocationForOffsets(textOffsets: TextOffsetMap, startOffset: number, endOffset: number): AstLocation {
+  const start = textOffsets.positionAt(startOffset);
+  const end = textOffsets.positionAt(endOffset);
 
   return {
     start: {
-      line: startLine + 1,
-      column: startOffset - lineStarts[startLine]
+      line: start.line + 1,
+      column: start.character
     },
     end: {
-      line: endLine + 1,
-      column: endOffset - lineStarts[endLine]
+      line: end.line + 1,
+      column: end.character
     }
   };
-}
-
-function findLineIndex(lineStarts: number[], offset: number): number {
-  for (let index = lineStarts.length - 1; index >= 0; index--) {
-    if (lineStarts[index] <= offset) {
-      return index;
-    }
-  }
-
-  return 0;
 }

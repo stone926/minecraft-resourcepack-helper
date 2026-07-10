@@ -9,25 +9,13 @@ export function getBlockstateReferences(ast: JsonDocumentNode): ResourceReferenc
   for (const item of objectMembers(ast.body)) {
     if (memberName(item) === "variants") {
       for (const variantEntry of objectMembers(item.value)) {
-        if (variantEntry.value?.type === "Object") {
-          pushModelPropertyReferences(references, variantEntry.value, "blockstates");
-        } else {
-          for (const modelVariant of arrayElements(variantEntry.value)) {
-            pushModelPropertyReferences(references, modelVariant, "blockstates");
-          }
-        }
+        pushBlockstateModelVariantReferences(references, variantEntry.value);
       }
     } else if (memberName(item) === "multipart") {
       for (const multipartEntry of arrayElements(item.value)) {
         for (const applyEntry of objectMembers(multipartEntry)) {
           if (memberName(applyEntry) === "apply") {
-            if (applyEntry.value?.type === "Object") {
-              pushModelPropertyReferences(references, applyEntry.value, "blockstates");
-            } else {
-              for (const modelVariant of arrayElements(applyEntry.value)) {
-                pushModelPropertyReferences(references, modelVariant, "blockstates");
-              }
-            }
+            pushBlockstateModelVariantReferences(references, applyEntry.value);
           }
         }
       }
@@ -83,6 +71,17 @@ export function getCitModelReferences(ast: JsonDocumentNode, fileName: string): 
     ...reference,
     resolveMode: "cit" as const
   }));
+}
+
+function pushBlockstateModelVariantReferences(references: ResourceReference[], node: JsonAstNode): void {
+  if (node.type === "Object") {
+    pushModelPropertyReferences(references, node, "blockstates");
+    return;
+  }
+
+  for (const modelVariant of arrayElements(node)) {
+    pushModelPropertyReferences(references, modelVariant, "blockstates");
+  }
 }
 
 function pushModelPropertyReferences(references: ResourceReference[], node: JsonAstNode, source: string) {

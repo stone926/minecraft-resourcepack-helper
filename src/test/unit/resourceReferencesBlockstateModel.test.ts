@@ -4,6 +4,50 @@ import { findResourceReferenceAtPosition, getResourceReferences } from "../../ut
 import { createJsonDocument, createMarkedTextDocument, createTextDocument } from "./helpers/documents";
 
 describe("blockstate and model resource references", () => {
+  it("extracts object and array model choices from variants and multipart entries", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "blockstates", "model_choices.json"),
+      {
+        variants: {
+          ["facing=north"]: {
+            model: "minecraft:block/north"
+          },
+          ["facing=south"]: [
+            { model: "minecraft:block/south" },
+            { model: "minecraft:block/south_mirrored" }
+          ]
+        },
+        multipart: [
+          {
+            apply: {
+              model: "minecraft:block/overlay"
+            }
+          },
+          {
+            apply: [
+              { model: "minecraft:block/overlay_a" },
+              { model: "minecraft:block/overlay_b" }
+            ]
+          }
+        ]
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.value, reference.target, reference.source, reference.extension]),
+      [
+        ["minecraft:block/north", "models", "blockstates", "json"],
+        ["minecraft:block/south", "models", "blockstates", "json"],
+        ["minecraft:block/south_mirrored", "models", "blockstates", "json"],
+        ["minecraft:block/overlay", "models", "blockstates", "json"],
+        ["minecraft:block/overlay_a", "models", "blockstates", "json"],
+        ["minecraft:block/overlay_b", "models", "blockstates", "json"]
+      ]
+    );
+  });
+
   it("keeps empty string resource references so completion can start from blank values", () => {
     const variants: Record<string, { model: string }> = {};
     variants[""] = { model: "" };

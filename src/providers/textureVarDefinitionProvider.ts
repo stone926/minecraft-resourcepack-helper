@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { isSamePath } from '../../packages/mc-assets/src';
 import { workspaceResourceCache } from '../services/workspaceResourceCache';
 import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from '../utils/jsonAst';
 import { isInArea } from '../utils/locationChecker';
@@ -32,14 +33,6 @@ function toLocation(document: vscode.TextDocument, definition: CachedTextureVari
     ? document.uri
     : vscode.Uri.file(definition.fileName);
   return new vscode.Location(uri, new vscode.Position(definition.line, definition.character));
-}
-
-function isSamePath(left: string, right: string): boolean {
-  const normalizedLeft = vscode.Uri.file(left).fsPath;
-  const normalizedRight = vscode.Uri.file(right).fsPath;
-  return process.platform === 'win32'
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
 }
 
 function getTextureVariableReferences(modelBody: JsonAstNode): JsonAstNode[] {

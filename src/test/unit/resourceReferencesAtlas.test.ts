@@ -61,4 +61,32 @@ describe("atlas resource references", () => {
       ]
     );
   });
+
+  it("extracts unnamespaced single and unstitch sources through the same resource path", () => {
+    const document = createJsonDocument(
+      path.join("pack", "assets", "minecraft", "atlases", "unnamespaced.json"),
+      {
+        sources: [
+          {
+            type: "single",
+            resource: "minecraft:block/stone"
+          },
+          {
+            type: "unstitch",
+            resource: "minecraft:gui/sprites/widget/button"
+          }
+        ]
+      }
+    );
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target, reference.extension]),
+      [
+        ["texture", "minecraft:block/stone", "textures", "png"],
+        ["texture", "minecraft:gui/sprites/widget/button", "textures", "png"]
+      ]
+    );
+  });
 });

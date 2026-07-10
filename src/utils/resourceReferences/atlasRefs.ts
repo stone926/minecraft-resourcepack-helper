@@ -1,5 +1,5 @@
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers } from "../jsonAst";
-import { getObjectString, pushReference } from "./shared";
+import { getMinecraftType, getObjectMemberValue, pushReference } from "./shared";
 import { ResourceReference } from "./types";
 
 export function getAtlasReferences(ast: JsonDocumentNode): ResourceReference[] {
@@ -19,46 +19,43 @@ export function getAtlasReferences(ast: JsonDocumentNode): ResourceReference[] {
 }
 
 function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: ResourceReference[]) {
-  const type = getObjectString(sourceEntry, "type");
+  const type = getMinecraftType(sourceEntry);
 
-  if (type === "minecraft:directory" || type === "directory") {
-    const source = objectMembers(sourceEntry).find(member => memberName(member) === "source");
+  if (type === "directory") {
+    const source = getObjectMemberValue(sourceEntry, "source");
     if (source) {
-      pushReference(references, source.value, "textures", "atlases", null, "textureDirectory");
+      pushReference(references, source, "textures", "atlases", null, "textureDirectory");
     }
     return;
   }
 
-  if (type === "minecraft:single" || type === "single") {
-    const resource = objectMembers(sourceEntry).find(member => memberName(member) === "resource");
-    if (resource) {
-      pushReference(references, resource.value, "textures", "atlases", "png", "texture");
-    }
+  if (type === "single" || type === "unstitch") {
+    pushAtlasTextureMemberReference(sourceEntry, "resource", references);
     return;
   }
 
-  if (type === "minecraft:unstitch" || type === "unstitch") {
-    const resource = objectMembers(sourceEntry).find(member => memberName(member) === "resource");
-    if (resource) {
-      pushReference(references, resource.value, "textures", "atlases", "png", "texture");
-    }
-    return;
-  }
+  if (type === "paletted_permutations") {
+    pushAtlasTextureMemberReference(sourceEntry, "palette_key", references);
 
-  if (type === "minecraft:paletted_permutations" || type === "paletted_permutations") {
-    const paletteKey = objectMembers(sourceEntry).find(member => memberName(member) === "palette_key");
-    if (paletteKey) {
-      pushReference(references, paletteKey.value, "textures", "atlases", "png", "texture");
-    }
-
-    const permutations = objectMembers(sourceEntry).find(member => memberName(member) === "permutations");
-    for (const permutation of objectMembers(permutations?.value)) {
+    const permutations = getObjectMemberValue(sourceEntry, "permutations");
+    for (const permutation of objectMembers(permutations)) {
       pushReference(references, permutation.value, "textures", "atlases", "png", "texture");
     }
 
-    const textures = objectMembers(sourceEntry).find(member => memberName(member) === "textures");
-    for (const texture of arrayElements(textures?.value)) {
+    const textures = getObjectMemberValue(sourceEntry, "textures");
+    for (const texture of arrayElements(textures)) {
       pushReference(references, texture, "textures", "atlases", "png", "texture");
     }
+  }
+}
+
+function pushAtlasTextureMemberReference(
+  sourceEntry: JsonAstNode,
+  member: string,
+  references: ResourceReference[]
+): void {
+  const value = getObjectMemberValue(sourceEntry, member);
+  if (value) {
+    pushReference(references, value, "textures", "atlases", "png", "texture");
   }
 }

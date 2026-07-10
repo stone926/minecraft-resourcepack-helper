@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../cit/citPaths";
 import { getDocumentResourceRootCandidates, packRootFromAssetsPath, parseAssetsPath, parseResourceLocation } from "../../../packages/mc-assets/src";
+import { modelSourceForFile } from "../../services/modelParentChain";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 
 export interface ResolvedResourceFile {
@@ -237,18 +238,6 @@ export function modelResourceIdFromFileName(fileName: string): string {
   }
 
   return `${assetResource.namespace}:${stripExtension(assetResource.resourcePath.slice("models/".length))}`;
-}
-
-export function modelSourceForFile(fileName: string): string {
-  if (/[\\/]models[\\/]item[\\/]/i.test(fileName)) {
-    return "models/item";
-  }
-
-  if (/[\\/]models[\\/]block[\\/]/i.test(fileName)) {
-    return "models/block";
-  }
-
-  return "models";
 }
 
 function getAssetResource(fileName: string): { namespace: string; resourcePath: string } | null {

@@ -1,8 +1,9 @@
 import { parseJsonAst } from "./jsonAst";
 import { isInArea } from "./locationChecker";
+import { TextOffsetMap } from "./textOffsets";
 import {
+  getReferencesForDocumentKind,
   getResourceReferenceDocumentKind,
-  getResourceReferencesForAst,
   ResourceReference,
   ResourceReferenceDocument
 } from "./resourceReferences";
@@ -44,13 +45,14 @@ export function inferIncompleteResourceCompletionContext(
   }
 
   const text = document.getText();
-  const offset = offsetAt(text, position);
+  const textOffsets = new TextOffsetMap(text);
+  const offset = textOffsets.offsetAt(position);
   if (offset === null) {
     return null;
   }
 
   const patch =
-    createUnclosedStringPatch(text, position, offset) ??
+    createUnclosedStringPatch(text, textOffsets, position, offset) ??
     createMissingValuePatch(text, position, offset);
   if (!patch) {
     return null;
@@ -61,8 +63,8 @@ export function inferIncompleteResourceCompletionContext(
     return null;
   }
 
-  const probePosition = positionAt(patch.text, patch.probeOffset);
-  const reference = getResourceReferencesForAst(ast, documentKind).find(item =>
+  const probePosition = new TextOffsetMap(patch.text).positionAt(patch.probeOffset);
+  const reference = getReferencesForDocumentKind(ast, documentKind, document.fileName).find(item =>
     isInArea(probePosition.line + 1, probePosition.character + 1, item.valueNode.valueLoc ?? item.valueNode.loc)
   );
 
@@ -75,6 +77,7 @@ export function inferIncompleteResourceCompletionContext(
 
 function createUnclosedStringPatch(
   text: string,
+  textOffsets: TextOffsetMap,
   position: ResourceCompletionTextPosition,
   offset: number
 ): CompletionPatch | null {
@@ -87,7 +90,7 @@ function createUnclosedStringPatch(
     text: insertAt(text, offset, "\""),
     probeOffset: offset,
     replacementRange: {
-      start: positionAt(text, stringStart + 1),
+      start: textOffsets.positionAt(stringStart + 1),
       end: position
     },
     includeQuotes: false
@@ -181,45 +184,4 @@ function isWhitespace(value: string): boolean {
 
 function insertAt(text: string, offset: number, value: string): string {
   return `${text.slice(0, offset)}${value}${text.slice(offset)}`;
-}
-
-function offsetAt(text: string, position: ResourceCompletionTextPosition): number | null {
-  const lineStarts = getLineStarts(text);
-  if (position.line < 0 || position.line >= lineStarts.length || position.character < 0) {
-    return null;
-  }
-
-  const lineStart = lineStarts[position.line];
-  const lineEnd = position.line + 1 < lineStarts.length ? lineStarts[position.line + 1] : text.length;
-  const offset = lineStart + position.character;
-  return offset <= lineEnd ? offset : null;
-}
-
-function positionAt(text: string, offset: number): ResourceCompletionTextPosition {
-  const lineStarts = getLineStarts(text);
-  const normalizedOffset = Math.max(0, Math.min(offset, text.length));
-  let line = lineStarts.length - 1;
-
-  for (let index = lineStarts.length - 1; index >= 0; index--) {
-    if (lineStarts[index] <= normalizedOffset) {
-      line = index;
-      break;
-    }
-  }
-
-  return {
-    line,
-    character: normalizedOffset - lineStarts[line]
-  };
-}
-
-function getLineStarts(text: string): number[] {
-  const lineStarts = [0];
-  for (let index = 0; index < text.length; index++) {
-    if (text.charCodeAt(index) === 10) {
-      lineStarts.push(index + 1);
-    }
-  }
-
-  return lineStarts;
 }
