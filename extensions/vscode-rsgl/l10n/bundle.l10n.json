@@ -12,6 +12,8 @@
   "RSGL language server not found. Reinstall the RSGL extension.": "RSGL language server not found. Reinstall the RSGL extension.",
   "RSGL build complete: {0} created, {1} updated, {2} unchanged.": "RSGL build complete: {0} created, {1} updated, {2} unchanged.",
   "RSGL build failed with {0} error(s).": "RSGL build failed with {0} error(s).",
+  "RSGL build failed: {0}": "RSGL build failed: {0}",
+  "RSGL build preview failed: {0}": "RSGL build preview failed: {0}",
   "RSGL workspace build complete: {0} source directories, {1} created, {2} updated, {3} unchanged, {4} skipped.": "RSGL workspace build complete: {0} source directories, {1} created, {2} updated, {3} unchanged, {4} skipped.",
   "RSGL workspace build failed with {0} error(s); skipped {1} source directories.": "RSGL workspace build failed with {0} error(s); skipped {1} source directories.",
   "Save all RSGL files in the source directory before building.": "Save all RSGL files in the source directory before building.",

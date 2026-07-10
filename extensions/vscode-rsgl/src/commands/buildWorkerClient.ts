@@ -103,7 +103,10 @@ export function runRsglWorkerTask<K extends RsglWorkerTaskKind>(
         }
         void completedTransport?.terminate();
       });
-      transport.onceError(error => finish(null, error));
+      transport.onceError(error => {
+        void transport?.terminate();
+        finish(null, error);
+      });
       transport.onceExit(code => {
         if (settled) {
           return;

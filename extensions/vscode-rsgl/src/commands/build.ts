@@ -136,34 +136,48 @@ async function prepareAndWriteBuild(
   context: RsglFileBuildContext,
   token: vscode.CancellationToken
 ): Promise<RsglBuildResult | null> {
-  const outcome = await runRsglWorkerTask({
-    kind: "prepareBuild",
-    payload: createWorkerBuildPayload(context)
-  }, token);
-  if (outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled) {
+  try {
+    const outcome = await runRsglWorkerTask({
+      kind: "prepareBuild",
+      payload: createWorkerBuildPayload(context)
+    }, token);
+    if (outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled) {
+      return null;
+    }
+    if (!outcome.result.files) {
+      return { diagnostics: outcome.result.diagnostics };
+    }
+
+    const plan = await applyRsglEmittedFiles(outcome.result.files, context.outputRoot, token);
+    return plan && !token.isCancellationRequested
+      ? { diagnostics: outcome.result.diagnostics, plan }
+      : null;
+  } catch (error) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t("RSGL build failed: {0}", error instanceof Error ? error.message : String(error))
+    );
     return null;
   }
-  if (!outcome.result.files) {
-    return { diagnostics: outcome.result.diagnostics };
-  }
-
-  const plan = await applyRsglEmittedFiles(outcome.result.files, context.outputRoot, token);
-  return plan && !token.isCancellationRequested
-    ? { diagnostics: outcome.result.diagnostics, plan }
-    : null;
 }
 
 async function prepareBuildPreview(
   context: RsglFileBuildContext,
   token: vscode.CancellationToken
 ): Promise<RsglBuildPreviewResult | null> {
-  const outcome = await runRsglWorkerTask({
-    kind: "previewBuild",
-    payload: createWorkerBuildPayload(context)
-  }, token);
-  return outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled
-    ? null
-    : outcome.result;
+  try {
+    const outcome = await runRsglWorkerTask({
+      kind: "previewBuild",
+      payload: createWorkerBuildPayload(context)
+    }, token);
+    return outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled
+      ? null
+      : outcome.result;
+  } catch (error) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t("RSGL build preview failed: {0}", error instanceof Error ? error.message : String(error))
+    );
+    return null;
+  }
 }
 
 function createWorkerBuildPayload(
