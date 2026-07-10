@@ -19,6 +19,9 @@ import { createFileRawJsonLoader } from "./rawJson";
 import { appendGeneratedPath, prefixGeneratedPath } from "./sourcePaths";
 import type { RsglProgram, RsglSemanticModel, RsglSourceFile } from "../semantic";
 import type { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglMapping } from "./ir";
+import { isJsonObject } from "./jsonValues";
+
+export { isJsonObject } from "./jsonValues";
 import { parseResourceId } from "./resourceIds";
 import type { ResourceBodyFragment } from "./resourceBody";
 import type { RsglResourceValidationOptions } from "./validation";
@@ -297,10 +300,6 @@ export function isVariantEntryPath(pathValue: string): boolean {
 
 export function isMultipartEntryPath(pathValue: string): boolean {
   return /^\/multipart\/\d+(?:\/|$)/.test(pathValue);
-}
-
-export function isJsonObject(value: unknown): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind !== "lambda");
 }
 
 export function selectProgramModels(program: RsglProgram, entryFileName: string | undefined): RsglSemanticModel[] {

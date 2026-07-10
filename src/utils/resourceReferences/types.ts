@@ -1,4 +1,5 @@
 import { AstLocation } from "../locationChecker";
+export type { ResourceReferenceDocumentKind } from "../../resources/resourceSurfaceRegistry";
 
 export interface ResourceReference {
   value: string;
@@ -35,21 +36,3 @@ export interface ResourceReferencePosition {
   line: number;
   character: number;
 }
-
-export type ResourceReferenceDocumentKind =
-  | "blockstates"
-  | "modelsBlock"
-  | "modelsItem"
-  | "models"
-  | "particles"
-  | "items"
-  | "atlases"
-  | "equipment"
-  | "font"
-  | "waypointStyle"
-  | "postEffect"
-  | "sounds"
-  | "shaderCore"
-  | "shaderPost"
-  | "citModel"
-  | "citProperties";

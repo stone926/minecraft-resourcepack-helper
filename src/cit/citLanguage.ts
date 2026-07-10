@@ -1,5 +1,6 @@
 import { isCitGlobalPropertiesFileName } from "./citPaths";
-import { stripDefaultCitNamespace } from "./citKeys";
+import { uniqueValues } from "../../packages/mc-assets/src";
+import { resolveCitKey, resolveCitType } from "./citKeyResolution";
 import {
   findCitPropertyEntryAtPosition,
   findPropertySeparator,
@@ -58,8 +59,6 @@ export interface CitResourceCompletionData {
   enchantments?: string[];
 }
 
-const citTypes = new Set<CitType>(["item", "armor", "elytra", "enchantment"]);
-
 export function getCitCompletionResult(
   document: CitLanguageDocument,
   position: CitPropertiesPosition,
@@ -88,14 +87,14 @@ export function getCitCompletionResult(
     return null;
   }
 
-  const lookup = citSpecService.lookupKey(spec, entry.key);
-  if (!lookup) {
+  const resolution = resolveCitKey(spec, entry.key);
+  if (!resolution) {
     return null;
   }
 
   return {
     range: lineContext.range,
-    candidates: getValueCompletionCandidates(lookup.spec, lineContext.prefix, resources)
+    candidates: getValueCompletionCandidates(resolution.spec, lineContext.prefix, resources)
   };
 }
 
@@ -111,10 +110,10 @@ export function getCitHoverInfo(
   }
 
   const spec = getEffectiveSpec(document.fileName, entries, locale);
-  const lookup = citSpecService.lookupKey(spec, entry.key) ??
-    citSpecService.lookupKey(citSpecService.getAllCitSpec(locale), entry.key) ??
-    citSpecService.lookupKey(citSpecService.getGlobalSpec(locale), entry.key);
-  if (!lookup) {
+  const resolution = resolveCitKey(spec, entry.key) ??
+    resolveCitKey(citSpecService.getAllCitSpec(locale), entry.key) ??
+    resolveCitKey(citSpecService.getGlobalSpec(locale), entry.key);
+  if (!resolution) {
     return null;
   }
 
@@ -122,21 +121,20 @@ export function getCitHoverInfo(
   return {
     range: toTextRange(hoverRange),
     key: entry.key,
-    title: lookup.spec.title,
-    description: lookup.spec.description,
-    valueType: lookup.spec.valueType,
-    appliesTo: lookup.spec.appliesTo ?? [],
-    defaultValue: lookup.spec.default,
-    aliases: lookup.spec.aliases ?? [],
-    citResewnOnly: lookup.spec.citResewnOnly ?? false,
-    runtimeStatus: lookup.spec.runtimeStatus,
-    runtimeNote: lookup.spec.runtimeNote
+    title: resolution.spec.title,
+    description: resolution.spec.description,
+    valueType: resolution.valueType,
+    appliesTo: resolution.spec.appliesTo ?? [],
+    defaultValue: resolution.spec.default,
+    aliases: resolution.spec.aliases ?? [],
+    citResewnOnly: resolution.spec.citResewnOnly ?? false,
+    runtimeStatus: resolution.runtimeStatus,
+    runtimeNote: resolution.runtimeNote
   };
 }
 
 export function getCitType(entries: CitPropertyEntry[]): CitType {
-  const explicitType = entries.find(entry => stripDefaultCitNamespace(entry.key) === "type")?.value.trim();
-  return citTypes.has(explicitType as CitType) ? explicitType as CitType : "item";
+  return resolveCitType(entries);
 }
 
 export function getEffectiveSpec(fileName: string, entries: CitPropertyEntry[], locale?: string): ResolvedCitSpec {
@@ -204,10 +202,16 @@ function getKeyCompletionCandidates(
   prefix: string,
   currentLine: number
 ): CitCompletionCandidate[] {
-  const usedSingletonKeys = new Set(entries
-    .filter(entry => entry.line !== currentLine)
-    .filter(entry => citSpecService.lookupKey(spec, entry.key)?.spec.singleton)
-    .map(entry => citSpecService.lookupKey(spec, entry.key)?.spec.key ?? entry.key));
+  const usedSingletonKeys = new Set<string>();
+  for (const entry of entries) {
+    if (entry.line === currentLine) {
+      continue;
+    }
+    const resolution = resolveCitKey(spec, entry.key);
+    if (resolution?.spec.singleton) {
+      usedSingletonKeys.add(resolution.canonicalKey);
+    }
+  }
   const normalizedPrefix = prefix.trimStart();
 
   return citSpecService.getKeyCompletions(spec)
@@ -269,7 +273,7 @@ function resourceCandidates(
   prefix: string,
   spec: ResolvedCitSpecKey
 ): CitCompletionCandidate[] {
-  return [...new Set(values)]
+  return uniqueValues(values)
     .sort()
     .filter(value => value.startsWith(prefix))
     .map(value => ({

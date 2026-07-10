@@ -7,7 +7,7 @@ export { validateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";
 export type { RsglBlockstateSchema } from "./blockstateStateValidation";
 export type { RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
-export { createRsglWritePlan, writeRsglFiles } from "./write";
+export { createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export type {
   ExpansionFrame,

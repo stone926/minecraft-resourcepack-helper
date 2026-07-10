@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type { ModelPreviewDocument } from "../../../modelPreview/ir/PreviewDocument";
 import type { ResolvedModel } from "../../../modelPreview/model/ModelDocument";
 import { ModelPreviewCache } from "../../../modelPreview/service/ModelPreviewCache";
+import { WorkspaceResourceCache } from "../../../services/workspaceResourceCache";
 
 const modelFileName = path.join("pack", "assets", "minecraft", "models", "block", "cached.json");
 const parentFileName = path.join("pack", "assets", "minecraft", "models", "block", "parent.json");
@@ -94,6 +95,23 @@ describe("model preview cache", () => {
       resolvedModels: 512,
       textureAlphaMasks: 512
     });
+  });
+
+  it("shares model and media artifacts through the workspace cache component", () => {
+    const workspaceCache = new WorkspaceResourceCache();
+    const first = new ModelPreviewCache(workspaceCache.modelPreviewArtifacts);
+    const second = new ModelPreviewCache(workspaceCache.modelPreviewArtifacts);
+    first.setRawModel(modelFileName, "v1", Promise.resolve({
+      fileName: modelFileName,
+      text: "{}",
+      data: null
+    }));
+    first.setTextureAlphaMask(textureFileName, "v1", Promise.resolve(null));
+
+    assert.ok(second.getRawModel(modelFileName, "v1"));
+    assert.ok(second.getTextureAlphaMask(textureFileName, "v1"));
+    assert.strictEqual(workspaceCache.getStats().sizes.rawModels, 1);
+    assert.strictEqual(workspaceCache.getStats().sizes.textureAlphaMasks, 1);
   });
 });
 

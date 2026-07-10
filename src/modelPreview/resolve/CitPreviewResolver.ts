@@ -1,13 +1,12 @@
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
-import { getCitPathCandidates, type CitResourceType } from "../../cit/citPaths";
+import { resolveCitAsset } from "../../cit/citAssetResolver";
+import { resolveCitKeyForType, resolveCitType } from "../../cit/citKeyResolution";
 import { parseCitProperties, type CitPropertyEntry } from "../../cit/citPropertiesParser";
-import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
+import type { CitAssetKind, CitType } from "../../cit/citSpecTypes";
 import type { ModelPreviewFileSystem, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
-
-type CitPreviewType = "item" | "armor" | "elytra" | "enchantment";
 
 export class CitPreviewResolver {
   constructor(
@@ -32,7 +31,7 @@ export class CitPreviewResolver {
 
     throwIfCancellationRequested(this.cancellationToken);
     const entries = parseCitProperties(text);
-    const citType = getCitType(entries);
+    const citType = resolveCitType(entries);
     if (citType === "item") {
       return this.resolveItemModel(fileName, entries);
     }
@@ -54,10 +53,20 @@ export class CitPreviewResolver {
   }
 
   private async resolveItemModel(fileName: string, entries: CitPropertyEntry[]): Promise<ResolvedModel | null> {
-    const modelEntry = entries.find(entry => entry.key === "model");
-    const textureEntry = entries.find(entry => entry.key === "texture");
-    const explicitModel = modelEntry ? resolveCitAsset(fileName, modelEntry.value, "models", this.fileSystem) : null;
-    const autoModel = !modelEntry && !textureEntry ? resolveCitAsset(fileName, path.basename(fileName, path.extname(fileName)), "models", this.fileSystem) : null;
+    const modelEntry = findCanonicalAssetEntry(entries, "item", "model", "model");
+    const textureEntry = findCanonicalAssetEntry(entries, "item", "texture", "texture");
+    const resolutionHost = {
+      pathExists: (candidate: string) => this.fileSystem.fileExists(candidate),
+      getPackRoot: this.fileSystem.getPackRoot
+        ? (sourceFileName: string) => this.fileSystem.getPackRoot?.(sourceFileName) ?? null
+        : undefined
+    };
+    const explicitModel = modelEntry
+      ? resolveCitAsset(fileName, modelEntry.value, "models", resolutionHost)
+      : null;
+    const autoModel = !modelEntry && !textureEntry
+      ? resolveCitAsset(fileName, path.basename(fileName, path.extname(fileName)), "models", resolutionHost)
+      : null;
     const modelFileName = explicitModel ?? autoModel;
 
     if (modelFileName) {
@@ -130,40 +139,30 @@ function overrideModelTextures(model: ResolvedModel, sourceModelFileName: string
   };
 }
 
-function resolveCitAsset(
-  sourceFileName: string,
-  value: string,
-  resourceType: CitResourceType,
-  fileSystem: ModelPreviewFileSystem
-): string | null {
-  const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? packRootFromAssetsPath(sourceFileName);
-  if (!packRoot) {
-    return null;
-  }
-
-  for (const candidate of getCitPathCandidates(sourceFileName, packRoot, value, resourceType)) {
-    if (fileSystem.fileExists(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function getCitType(entries: CitPropertyEntry[]): CitPreviewType {
-  const value = entries.find(entry => entry.key === "type")?.value.trim();
-  return value === "armor" || value === "elytra" || value === "enchantment" ? value : "item";
-}
-
 function findPreviewTextureEntry(
   entries: CitPropertyEntry[],
-  citType: Exclude<CitPreviewType, "item">
+  citType: Exclude<CitType, "item">
 ): CitPropertyEntry | null {
   if (citType === "armor") {
-    return entries.find(entry => entry.key.startsWith("texture.")) ?? null;
+    return entries.find(entry => {
+      const resolution = resolveCitKeyForType(entry.key, citType);
+      return resolution?.assetKind === "texture" && resolution.canonicalKey.startsWith("texture.");
+    }) ?? null;
   }
 
-  return entries.find(entry => entry.key === "texture") ?? null;
+  return findCanonicalAssetEntry(entries, citType, "texture", "texture");
+}
+
+function findCanonicalAssetEntry(
+  entries: CitPropertyEntry[],
+  citType: CitType,
+  canonicalKey: string,
+  assetKind: CitAssetKind
+): CitPropertyEntry | null {
+  return entries.find(entry => {
+    const resolution = resolveCitKeyForType(entry.key, citType);
+    return resolution?.canonicalKey === canonicalKey && resolution.assetKind === assetKind;
+  }) ?? null;
 }
 
 function toPreviewRange(location: CitPropertyEntry["valueRange"]) {

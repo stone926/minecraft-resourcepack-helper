@@ -2,7 +2,6 @@ import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import { TextDecoder } from "node:util";
 import { lm, type LocalizedMessage } from "../i18n/messages";
-import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import type { PngMetadata } from "../../packages/mc-assets/src";
 
 export { readPngMetadata, type PngMetadata } from "../../packages/mc-assets/src";
@@ -23,14 +22,20 @@ export interface TextResourceIssue {
   severity: NonJsonIssueSeverity;
 }
 
+export interface PackImageResourceHost {
+  pathExists(fileName: string): boolean;
+  readDirectoryEntries(directory: string): readonly Dirent[] | null;
+  readPngMetadata(fileName: string): PngMetadata | null;
+}
+
 const hiddenSplashHash = 125780783;
 const validFormattingCodePattern = /§[0-9a-fk-or]/gi;
 const invalidFormattingCodePattern = /§(?![0-9a-fk-or])/gi;
 
-export function getPackImageResourceIssues(packRoot: string): FileResourceIssue[] {
+export function getPackImageResourceIssues(packRoot: string, host: PackImageResourceHost): FileResourceIssue[] {
   return [
-    ...getPackPngIssues(packRoot),
-    ...getColormapIssues(packRoot)
+    ...getPackPngIssues(packRoot, host),
+    ...getColormapIssues(packRoot, host)
   ];
 }
 
@@ -84,9 +89,9 @@ export function javaStringHashCode(value: string): number {
   return hash;
 }
 
-function getPackPngIssues(packRoot: string): FileResourceIssue[] {
+function getPackPngIssues(packRoot: string, host: PackImageResourceHost): FileResourceIssue[] {
   const packPngPath = path.join(packRoot, "pack.png");
-  if (!workspaceResourceCache.getPathExists(packPngPath)) {
+  if (!host.pathExists(packPngPath)) {
     return [{
       filePath: packPngPath,
       message: lm("pack.png is missing; Minecraft will use the default unknown pack icon."),
@@ -94,7 +99,7 @@ function getPackPngIssues(packRoot: string): FileResourceIssue[] {
     }];
   }
 
-  const metadata = readPngFileMetadata(packPngPath);
+  const metadata = host.readPngMetadata(packPngPath);
   return metadata ? [] : [{
     filePath: packPngPath,
     message: lm("pack.png must be a valid PNG file."),
@@ -102,22 +107,22 @@ function getPackPngIssues(packRoot: string): FileResourceIssue[] {
   }];
 }
 
-function getColormapIssues(packRoot: string): FileResourceIssue[] {
+function getColormapIssues(packRoot: string, host: PackImageResourceHost): FileResourceIssue[] {
   const assetsRoot = path.join(packRoot, "assets");
   const issues: FileResourceIssue[] = [];
-  for (const namespace of readDirectoryEntries(assetsRoot)) {
+  for (const namespace of host.readDirectoryEntries(assetsRoot) ?? []) {
     if (!namespace.isDirectory()) {
       continue;
     }
 
     const colormapRoot = path.join(assetsRoot, namespace.name, "textures", "colormap");
-    for (const entry of readDirectoryEntries(colormapRoot)) {
+    for (const entry of host.readDirectoryEntries(colormapRoot) ?? []) {
       if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".png") {
         continue;
       }
 
       const filePath = path.join(colormapRoot, entry.name);
-      const metadata = readPngFileMetadata(filePath);
+      const metadata = host.readPngMetadata(filePath);
       if (!metadata) {
         issues.push({
           filePath,
@@ -135,14 +140,6 @@ function getColormapIssues(packRoot: string): FileResourceIssue[] {
   }
 
   return issues;
-}
-
-function readPngFileMetadata(filePath: string): PngMetadata | null {
-  return workspaceResourceCache.getPngMetadata(filePath);
-}
-
-function readDirectoryEntries(directory: string): Dirent[] {
-  return workspaceResourceCache.getDirectoryEntriesSync(directory) ?? [];
 }
 
 function getTextResourceKind(fileName: string): "splashes" | "endText" | "postcredits" | null {

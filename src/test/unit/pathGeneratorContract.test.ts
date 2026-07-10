@@ -13,5 +13,8 @@ describe("resource path generator contract", () => {
     assert.strictEqual(source.includes("parseResourceLocation"), false, "resource location parsing should stay behind the host");
     assert.strictEqual(source.includes("fs.existsSync"), false, "path generator should not keep an uncached filesystem fallback");
     assert.strictEqual(source.includes("getPackMetadata"), false, "pack metadata should be owned by the host/cache layer");
+    assert.strictEqual(source.includes("getCitPathCandidates"), false, "CIT candidates should stay behind the CIT resolver");
+    assert.strictEqual(source.includes("getCitAutoDiscoveryPathCandidates"), false, "CIT auto-discovery should stay behind the CIT resolver");
+    assert.strictEqual(source.includes("packRootFromAssetsPath"), false, "CIT pack lookup should stay behind the CIT resolver");
   });
 });

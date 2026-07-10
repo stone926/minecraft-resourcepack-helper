@@ -4,8 +4,8 @@ import {
   objectMembers,
   stringValue
 } from "../utils/jsonAst";
-import { normalizePathKey } from "../../packages/mc-assets/src";
 import type { ResourceConfiguration, ResourceResolveRequest } from "./workspaceResourceCache";
+import { ModelParentTraversal } from "./modelParentTraversal";
 
 export interface CachedModelDocument {
   ast: JsonDocumentNode;
@@ -36,9 +36,9 @@ export function loadModelParentChain(
     fileName,
     source
   }];
-  const visited = new Set([normalizePathKey(fileName)]);
+  const traversal = new ModelParentTraversal(fileName);
 
-  while (models.length <= 11) {
+  while (true) {
     const current = models[models.length - 1];
     const parent = findParentModel(current.ast);
     if (!parent) {
@@ -58,11 +58,10 @@ export function loadModelParentChain(
       break;
     }
 
-    const parentKey = normalizePathKey(parentFileName);
-    if (visited.has(parentKey)) {
+    const advance = traversal.advance(parentFileName);
+    if (advance.kind !== "next") {
       break;
     }
-    visited.add(parentKey);
 
     const parentAst = host.getJsonFileAst(parentFileName);
     if (!parentAst) {

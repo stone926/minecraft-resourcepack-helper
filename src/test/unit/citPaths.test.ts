@@ -15,9 +15,12 @@ describe("CIT Resewn path utilities", () => {
 
   it("detects texture and model keys without matching unrelated keys", () => {
     assert.strictEqual(getCitResourceType("texture"), "textures");
+    assert.strictEqual(getCitResourceType("tile"), "textures");
     assert.strictEqual(getCitResourceType("texture.layer0"), "textures");
+    assert.strictEqual(getCitResourceType("citresewn:texture"), "textures");
     assert.strictEqual(getCitResourceType("model"), "models");
     assert.strictEqual(getCitResourceType("model.bow_standby"), "models");
+    assert.strictEqual(getCitResourceType("citresewn:type"), null);
     assert.strictEqual(getCitResourceType("metadata"), null);
     assert.strictEqual(getCitResourceType("temperature"), null);
   });

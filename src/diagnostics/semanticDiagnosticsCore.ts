@@ -1,8 +1,10 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
-import { workspaceResourceCache, type CachedModelDocument, type ResourceConfiguration } from "../services/workspaceResourceCache";
-import { getPackImageResourceIssues, getTextResourceIssues, type NonJsonIssueSeverity } from "./nonJsonResourceChecks";
+import {
+  getTextResourceIssues,
+  type FileResourceIssue,
+  type NonJsonIssueSeverity
+} from "./nonJsonResourceChecks";
 import { findAssetsRoot, parseAssetsPath } from "../../packages/mc-assets/src";
 import {
   arrayElements,
@@ -21,9 +23,31 @@ export interface SemanticDiagnosticsDocument {
   getText(): string;
 }
 
+export interface SemanticDiagnosticsConfiguration {
+  defaultAssetsPath?: string | null;
+  resourcePackRoots?: string[];
+}
+
+export interface SemanticDiagnosticsModelDocument {
+  ast: JsonDocumentNode;
+}
+
+export interface SemanticDiagnosticsHost {
+  getJsonAst(document: SemanticDiagnosticsDocument): JsonDocumentNode | null;
+  readFileBytes(fileName: string): Promise<Uint8Array | undefined>;
+  getPackImageResourceIssues(packRoot: string): readonly FileResourceIssue[];
+  getModelParentChain(
+    document: SemanticDiagnosticsDocument,
+    ast: JsonDocumentNode,
+    configuration: SemanticDiagnosticsConfiguration
+  ): readonly SemanticDiagnosticsModelDocument[];
+  getSoundEvents(soundsJsonPath: string): ReadonlySet<string> | null;
+}
+
 export interface SemanticDiagnosticsOptions {
-  configuration: ResourceConfiguration;
+  configuration: SemanticDiagnosticsConfiguration;
   localize: (message: LocalizedMessage) => string;
+  host: SemanticDiagnosticsHost;
 }
 
 export type SemanticDiagnosticSeverity = NonJsonIssueSeverity;
@@ -67,39 +91,43 @@ export function isSemanticDiagnosticsDocument(document: SemanticDiagnosticsDocum
     ));
 }
 
-export function getSemanticDiagnostics(document: SemanticDiagnosticsDocument, options: SemanticDiagnosticsOptions): SemanticDiagnostic[] {
+export async function getSemanticDiagnostics(
+  document: SemanticDiagnosticsDocument,
+  options: SemanticDiagnosticsOptions
+): Promise<SemanticDiagnostic[]> {
   if (!isSemanticDiagnosticsDocument(document)) {
     return [];
   }
 
   if (isTextResourceDocument(document.fileName)) {
-    return getTextResourceDiagnostics(document);
+    return getTextResourceDiagnostics(document, options.host);
   }
 
-  const ast = workspaceResourceCache.getJsonAst(document);
+  const ast = options.host.getJsonAst(document);
   if (!ast) {
     return [];
   }
 
   if (/[\\/]pack\.mcmeta$/i.test(document.fileName)) {
-    return getPackMcmetaDiagnostics(document, ast, options.localize);
+    return getPackMcmetaDiagnostics(document, ast, options.localize, options.host);
   }
 
   if (/[\\/]models[\\/].+\.json$/i.test(document.fileName)) {
-    return getModelDiagnostics(document, ast, options.configuration);
+    return getModelDiagnostics(document, ast, options.configuration, options.host);
   }
 
   if (/[\\/]post_effect[\\/].+\.json$/i.test(document.fileName)) {
     return getPostEffectDiagnostics(ast);
   }
 
-  return getSoundDiagnostics(document, ast);
+  return getSoundDiagnostics(document, ast, options.host);
 }
 
 function getPackMcmetaDiagnostics(
   document: SemanticDiagnosticsDocument,
   ast: JsonDocumentNode,
-  localize: (message: LocalizedMessage) => string
+  localize: (message: LocalizedMessage) => string,
+  host: SemanticDiagnosticsHost
 ): SemanticDiagnostic[] {
   const diagnostics: SemanticDiagnostic[] = [];
   const pack = getObjectMember(ast.body, "pack");
@@ -169,7 +197,7 @@ function getPackMcmetaDiagnostics(
   }
 
   const packRoot = path.dirname(document.fileName);
-  for (const issue of getPackImageResourceIssues(packRoot)) {
+  for (const issue of host.getPackImageResourceIssues(packRoot)) {
     const relativeFileName = path.relative(packRoot, issue.filePath).replaceAll("\\", "/");
     pushDiagnostic(
       diagnostics,
@@ -182,15 +210,19 @@ function getPackMcmetaDiagnostics(
   return diagnostics;
 }
 
-function getTextResourceDiagnostics(document: SemanticDiagnosticsDocument): SemanticDiagnostic[] {
+async function getTextResourceDiagnostics(
+  document: SemanticDiagnosticsDocument,
+  host: SemanticDiagnosticsHost
+): Promise<SemanticDiagnostic[]> {
+  const text = document.getText();
   let bytes: Uint8Array | undefined;
   try {
-    bytes = fs.readFileSync(document.fileName);
+    bytes = await host.readFileBytes(document.fileName);
   } catch {
     bytes = undefined;
   }
 
-  return getTextResourceIssues(document.fileName, document.getText(), bytes).map(issue => ({
+  return getTextResourceIssues(document.fileName, text, bytes).map(issue => ({
     range: {
       start: { line: issue.line, character: issue.startCharacter },
       end: { line: issue.line, character: issue.endCharacter }
@@ -203,11 +235,12 @@ function getTextResourceDiagnostics(document: SemanticDiagnosticsDocument): Sema
 function getModelDiagnostics(
   document: SemanticDiagnosticsDocument,
   ast: JsonDocumentNode,
-  configuration: ResourceConfiguration
+  configuration: SemanticDiagnosticsConfiguration,
+  host: SemanticDiagnosticsHost
 ): SemanticDiagnostic[] {
   const diagnostics: SemanticDiagnostic[] = [];
   const parent = getObjectMember(ast.body, "parent");
-  const chain = workspaceResourceCache.getModelParentChain(document, ast, configuration);
+  const chain = host.getModelParentChain(document, ast, configuration);
 
   if (chain.length > 11) {
     pushDiagnostic(diagnostics, parent?.value ?? ast.body, lm("Model parent chain exceeds Minecraft's maximum depth of 10."));
@@ -259,7 +292,11 @@ function getPostEffectDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
   return diagnostics;
 }
 
-function getSoundDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDocumentNode): SemanticDiagnostic[] {
+function getSoundDiagnostics(
+  document: SemanticDiagnosticsDocument,
+  ast: JsonDocumentNode,
+  host: SemanticDiagnosticsHost
+): SemanticDiagnostic[] {
   const diagnostics: SemanticDiagnostic[] = [];
   const currentNamespace = parseAssetsPath(document.fileName)?.namespace ?? null;
   const eventNames = new Set(objectMembers(ast.body).map(member => memberName(member)).filter((name): name is string => Boolean(name)));
@@ -277,7 +314,7 @@ function getSoundDiagnostics(document: SemanticDiagnosticsDocument, ast: JsonDoc
       const name = getObjectMember(sound, "name");
       const soundName = stringValue(name?.value);
       if (type === "event" && soundName) {
-        pushSoundEventReferenceDiagnostics(diagnostics, document, currentNamespace, eventNames, soundName, name?.value);
+        pushSoundEventReferenceDiagnostics(diagnostics, document, currentNamespace, eventNames, soundName, name?.value, host);
       } else if (soundName) {
         pushSoundFileDiagnostics(diagnostics, soundName, name?.value);
       }
@@ -315,7 +352,8 @@ function pushSoundEventReferenceDiagnostics(
   currentNamespace: string | null,
   localEvents: Set<string>,
   value: string,
-  node: JsonAstNode | null | undefined
+  node: JsonAstNode | null | undefined,
+  host: SemanticDiagnosticsHost
 ): void {
   const location = parseNamespacedValue(value, currentNamespace);
   if (!location) {
@@ -324,20 +362,24 @@ function pushSoundEventReferenceDiagnostics(
 
   const availableEvents = location.namespace === currentNamespace
     ? localEvents
-    : loadSoundEventsForNamespace(document.fileName, location.namespace);
+    : loadSoundEventsForNamespace(document.fileName, location.namespace, host);
 
   if (availableEvents && !availableEvents.has(location.path)) {
     pushDiagnostic(diagnostics, node, lm("Sound event '{0}' is not defined in sounds.json.", value));
   }
 }
 
-function loadSoundEventsForNamespace(fileName: string, namespace: string): Set<string> | null {
+function loadSoundEventsForNamespace(
+  fileName: string,
+  namespace: string,
+  host: SemanticDiagnosticsHost
+): ReadonlySet<string> | null {
   const assetsRoot = findAssetsRoot(fileName, "sounds.json");
   const soundsJsonPath = assetsRoot ? path.join(assetsRoot, namespace, "sounds.json") : null;
-  return soundsJsonPath ? workspaceResourceCache.getSoundEvents(soundsJsonPath) : null;
+  return soundsJsonPath ? host.getSoundEvents(soundsJsonPath) : null;
 }
 
-function getTextureVariableCycleDiagnostics(chain: CachedModelDocument[]): SemanticDiagnostic[] {
+function getTextureVariableCycleDiagnostics(chain: readonly SemanticDiagnosticsModelDocument[]): SemanticDiagnostic[] {
   const diagnostics: SemanticDiagnostic[] = [];
   const variables = new Map<string, TextureVariable>();
 

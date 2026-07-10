@@ -1,5 +1,6 @@
 import { ExternalResourceKind, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import type { RsglBlockstateSchema } from "./blockstateStateValidation";
+import { isJsonObject } from "./jsonValues";
 import { appendGeneratedPath } from "./sourcePaths";
 
 const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
@@ -143,7 +144,7 @@ export function visitJsonWithPath(value: JsonValue, visitor: (value: JsonValue, 
   visitor(value, generatedPath);
   if (Array.isArray(value)) {
     value.forEach((item, index) => visitJsonWithPath(item, visitor, appendGeneratedPath(generatedPath, String(index))));
-  } else if (isObject(value)) {
+  } else if (isJsonObject(value)) {
     Object.entries(value).forEach(([key, item]) => visitJsonWithPath(item as JsonValue, visitor, appendGeneratedPath(generatedPath, key)));
   }
 }
@@ -162,13 +163,63 @@ export function unitRange(unit: ResourceUnit): ValidationRange {
   return unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 };
 }
 
-export function asObject(value: unknown): Record<string, JsonValue> | null {
-  return isObject(value) ? value as Record<string, JsonValue> : null;
+export function pushUnitDiagnostic(
+  diagnostics: RsglCompileDiagnostic[],
+  unit: ResourceUnit,
+  code: string,
+  message: string,
+  severity: RsglCompileDiagnostic["severity"] = "error",
+  generatedPath?: string
+): void {
+  diagnostics.push({
+    code,
+    message,
+    severity,
+    range: generatedPath === undefined
+      ? unitRange(unit)
+      : sourceRangeForGeneratedPath(unit, generatedPath)
+  });
 }
 
-export function isObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+export function validateStringField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (field in object && typeof object[field] !== "string") {
+    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a string.`);
+  }
 }
+
+export interface BooleanFieldValidationOptions {
+  label?: string;
+  generatedPath?: string;
+}
+
+export function validateBooleanField(
+  object: Record<string, JsonValue>,
+  field: string,
+  code: string,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  options: BooleanFieldValidationOptions = {}
+): void {
+  if (field in object && typeof object[field] !== "boolean") {
+    const label = options.label ?? "Field";
+    const fieldPath = options.generatedPath === undefined
+      ? undefined
+      : appendGeneratedPath(options.generatedPath, field);
+    pushUnitDiagnostic(diagnostics, unit, code, `${label} '${field}' must be a boolean.`, "error", fieldPath);
+  }
+}
+
+export function asObject(value: unknown): Record<string, JsonValue> | null {
+  return isJsonObject(value) ? value : null;
+}
+
+export { isJsonObject as isObject } from "./jsonValues";
 
 function generatedPathFallbacks(generatedPath: string): string[] {
   const paths: string[] = [];

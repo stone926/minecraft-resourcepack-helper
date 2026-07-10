@@ -9,13 +9,13 @@ export interface RsglWorkspaceBuildEntry<T extends RsglBuildResult> {
 
 export function runRsglBuildProgress<T>(
   title: string,
-  task: () => T
+  task: (token: vscode.CancellationToken) => Promise<T>
 ): Thenable<T> {
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
     title,
-    cancellable: false
-  }, () => Promise.resolve(task()));
+    cancellable: true
+  }, (_progress, token) => task(token));
 }
 
 export async function showBuildResult(result: RsglBuildResult): Promise<void> {

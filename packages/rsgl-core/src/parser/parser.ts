@@ -24,6 +24,7 @@ import {
   StringLiteralNode,
   TopLevelStatementNode
 } from "./types";
+import { getRsglResourceKindDescriptor } from "../resourceKinds";
 
 export function parseRsgl(text: string): RsglModule {
   const lexResult = lexRsgl(text);
@@ -426,17 +427,18 @@ class RsglParser extends StatementParser {
   private parseResourceDecl(): ResourceDeclNode {
     const start = this.advance();
     const resourceKind = start.text as ResourceKind;
+    const descriptor = getRsglResourceKindDescriptor(resourceKind);
     let subtype: IdentifierNode | undefined;
     let id: ExprNode | undefined;
     let impl: ExprNode | undefined;
 
-    if (resourceKind === "model") {
+    if (descriptor?.ast.shape === "model") {
       subtype = this.parseIdentifier("Expected model subtype.") ?? undefined;
       id = this.parseExpression({ stopTexts: ["impl", "{"] });
-      if (this.matchText("impl")) {
+      if (descriptor.ast.supportsImpl && this.matchText("impl")) {
         impl = this.parseExpression({ stopTexts: ["{"] });
       }
-    } else if (resourceKind !== "pack") {
+    } else if (descriptor?.ast.shape === "identified") {
       id = this.parseExpression({ stopTexts: ["{"] });
     }
 

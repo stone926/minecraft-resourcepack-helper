@@ -113,6 +113,31 @@ describe("shader and CIT resource references", () => {
     assert.strictEqual(referenceAtTexture?.value, "./textures/emerald_sword");
   });
 
+  it("extracts CIT assets through aliases and default-namespaced keys", () => {
+    const document = createMarkedTextDocument(
+      path.join("pack", "assets", "custom", "citresewn", "cit", "swords", "namespaced.properties"),
+      [
+        "citresewn:type=item",
+        "tile=./textures/ali|as",
+        "citresewn:texture=./textures/namespaced",
+        "model.bow_standby=custom:item/bow"
+      ].join("\n"),
+      "properties",
+      1
+    ).document;
+
+    const references = getResourceReferences(document);
+
+    assert.deepStrictEqual(
+      references.map(reference => [reference.kind, reference.value, reference.target]),
+      [
+        ["texture", "./textures/alias", "textures"],
+        ["texture", "./textures/namespaced", "textures"],
+        ["model", "custom:item/bow", "models"]
+      ]
+    );
+  });
+
   it("keeps empty CIT asset references findable for completion", () => {
     const { document, position } = createMarkedTextDocument(
       path.join("pack", "assets", "minecraft", "citresewn", "cit", "swords", "empty.properties"),

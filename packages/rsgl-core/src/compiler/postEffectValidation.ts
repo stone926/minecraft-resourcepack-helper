@@ -1,5 +1,6 @@
 import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { asObject, pushUnitDiagnostic, validateBooleanField } from "./validationShared";
 
 export interface PostEffectValidationOptions {
   resourceExists?: (kind: "shaderVertex" | "shaderFragment" | "texture", id: string) => boolean;
@@ -75,7 +76,9 @@ function validateTarget(
 
   validatePositiveIntegerField(target, "width", "rsgl.invalidPostEffectTargetField", "Post effect target", unit, diagnostics);
   validatePositiveIntegerField(target, "height", "rsgl.invalidPostEffectTargetField", "Post effect target", unit, diagnostics);
-  validateBooleanField(target, "persistent", "rsgl.invalidPostEffectTargetField", "Post effect target", unit, diagnostics);
+  validateBooleanField(target, "persistent", "rsgl.invalidPostEffectTargetField", unit, diagnostics, {
+    label: "Post effect target"
+  });
   validateClearColor(target.clear_color, unit, diagnostics);
 }
 
@@ -192,8 +195,12 @@ function validateInput(
   }
   validatePositiveIntegerField(input, "width", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
   validatePositiveIntegerField(input, "height", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
-  validateBooleanField(input, "use_depth_buffer", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
-  validateBooleanField(input, "bilinear", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
+  validateBooleanField(input, "use_depth_buffer", "rsgl.invalidPostEffectInputField", unit, diagnostics, {
+    label: "Post effect input"
+  });
+  validateBooleanField(input, "bilinear", "rsgl.invalidPostEffectInputField", unit, diagnostics, {
+    label: "Post effect input"
+  });
 }
 
 function validateUniforms(
@@ -304,20 +311,6 @@ function validatePositiveIntegerField(
   }
 }
 
-function validateBooleanField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  label: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  const value = object[field];
-  if (value !== undefined && typeof value !== "boolean") {
-    pushUnitDiagnostic(diagnostics, unit, code, `${label} '${field}' must be a boolean.`);
-  }
-}
-
 function checkResourceExists(
   kind: "shaderVertex" | "shaderFragment" | "texture",
   id: string,
@@ -349,25 +342,4 @@ function resourceLabel(kind: "shaderVertex" | "shaderFragment" | "texture"): str
     return "Fragment shader";
   }
   return "Texture";
-}
-
-function pushUnitDiagnostic(
-  diagnostics: RsglCompileDiagnostic[],
-  unit: ResourceUnit,
-  code: string,
-  message: string,
-  severity: RsglCompileDiagnostic["severity"] = "error"
-): void {
-  diagnostics.push({
-    code,
-    message,
-    severity,
-    range: unit.sourceMap.mappings[0].sourceRange
-  });
-}
-
-function asObject(value: unknown): Record<string, JsonValue> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
 }

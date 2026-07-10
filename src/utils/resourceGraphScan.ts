@@ -1,60 +1,50 @@
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import * as vscode from "vscode";
-import { getAssetsRootPathCandidates } from "../../packages/mc-assets/src";
+import { getAssetsRootPathCandidates, uniqueValues } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import { getResourceGraphDiscoveryGlob } from "../resources/resourceSurfaceRegistry";
 import { getResourceConfiguration } from "./resourceConfiguration";
-import { isModelDocumentPath, resourceUriKey } from "./resourceGraphSearch";
-import { isResourceReferenceFileName } from "./resourceReferences";
+import { resourceUriKey } from "./resourceGraphSearch";
+import {
+  classifyResourceGraphPaths,
+  collectResourceGraphPathsInRoot,
+  resourceGraphConfiguredRootMaxDepth,
+  type ResourceGraphPathSnapshot
+} from "./resourceGraphScanCore";
 
-export async function collectResourceReferenceUris(): Promise<vscode.Uri[]> {
-  const urisByKey = new Map<string, vscode.Uri>();
-  const workspaceUris = [
-    ...(await vscode.workspace.findFiles("**/assets/**/*.json", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/**/*.properties", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.vsh", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.fsh", "**/node_modules/**")),
-    ...(await vscode.workspace.findFiles("**/assets/*/shaders/**/*.glsl", "**/node_modules/**"))
-  ];
-
-  for (const uri of workspaceUris) {
-    if (isResourceReferenceFileName(uri.fsPath)) {
-      urisByKey.set(resourceUriKey(uri), uri);
-    }
-  }
-
-  for (const root of await getConfiguredAssetsRoots()) {
-    for (const uri of await collectResourceReferenceUrisInRoot(root)) {
-      urisByKey.set(resourceUriKey(uri), uri);
-    }
-  }
-
-  return [...urisByKey.values()];
+export interface ResourceGraphWorkspaceSnapshot {
+  readonly resourceReferenceUris: vscode.Uri[];
+  readonly modelDocumentUris: vscode.Uri[];
+  readonly blockstateUris: vscode.Uri[];
 }
 
-export async function collectWorkspaceBlockstateUris(): Promise<vscode.Uri[]> {
-  return vscode.workspace.findFiles("**/assets/*/blockstates/*.json", "**/node_modules/**");
-}
+export async function collectResourceGraphWorkspaceSnapshot(): Promise<ResourceGraphWorkspaceSnapshot> {
+  const workspaceUris = await vscode.workspace.findFiles(
+    getResourceGraphDiscoveryGlob(),
+    "**/node_modules/**"
+  );
+  const workspaceSnapshot = classifyResourceGraphPaths(
+    workspaceUris.map(uri => uri.fsPath),
+    { includeBlockstates: true }
+  );
+  const configuredSnapshots = await Promise.all((await getConfiguredAssetsRoots()).map(root =>
+    collectResourceGraphPathsInRoot(
+      root,
+      directory => workspaceResourceCache.getDirectoryEntries(directory),
+      { maxDepth: resourceGraphConfiguredRootMaxDepth }
+    )
+  ));
 
-export async function collectModelDocumentUris(): Promise<vscode.Uri[]> {
-  const urisByKey = new Map<string, vscode.Uri>();
-  const workspaceUris = [
-    ...(await vscode.workspace.findFiles("**/assets/*/models/**/*.json", "**/node_modules/**"))
-  ];
-
-  for (const uri of workspaceUris) {
-    urisByKey.set(resourceUriKey(uri), uri);
-  }
-
-  for (const root of await getConfiguredAssetsRoots()) {
-    for (const uri of await collectResourceReferenceUrisInRoot(root)) {
-      if (isModelDocumentPath(uri.fsPath)) {
-        urisByKey.set(resourceUriKey(uri), uri);
-      }
-    }
-  }
-
-  return [...urisByKey.values()];
+  return {
+    resourceReferenceUris: mergeSnapshotUris(
+      workspaceSnapshot,
+      configuredSnapshots,
+      "resourceReferencePaths"
+    ),
+    modelDocumentUris: mergeSnapshotUris(workspaceSnapshot, configuredSnapshots, "modelDocumentPaths"),
+    // Preserve the existing Blocks view scope: only workspace blockstates are listed.
+    blockstateUris: uniqueUris(workspaceSnapshot.blockstatePaths.map(fileName => vscode.Uri.file(fileName)))
+  };
 }
 
 async function getConfiguredAssetsRoots(): Promise<string[]> {
@@ -66,7 +56,7 @@ async function getConfiguredAssetsRoots(): Promise<string[]> {
   ];
 
   const roots: string[] = [];
-  for (const candidate of [...new Set(candidates)]) {
+  for (const candidate of uniqueValues(candidates)) {
     try {
       const stat = await fs.stat(candidate);
       if (stat.isDirectory()) {
@@ -80,30 +70,21 @@ async function getConfiguredAssetsRoots(): Promise<string[]> {
   return roots;
 }
 
-async function collectResourceReferenceUrisInRoot(directory: string): Promise<vscode.Uri[]> {
-  const uris: vscode.Uri[] = [];
-  await collectResourceReferenceUrisInto(directory, uris);
-  return uris;
+function mergeSnapshotUris(
+  workspaceSnapshot: ResourceGraphPathSnapshot,
+  configuredSnapshots: readonly ResourceGraphPathSnapshot[],
+  key: "resourceReferencePaths" | "modelDocumentPaths"
+): vscode.Uri[] {
+  return uniqueUris([
+    ...workspaceSnapshot[key],
+    ...configuredSnapshots.flatMap(snapshot => snapshot[key])
+  ].map(fileName => vscode.Uri.file(fileName)));
 }
 
-async function collectResourceReferenceUrisInto(directory: string, uris: vscode.Uri[]): Promise<void> {
-  const entries = await workspaceResourceCache.getDirectoryEntries(directory);
-  if (!entries) {
-    return;
+function uniqueUris(uris: readonly vscode.Uri[]): vscode.Uri[] {
+  const byKey = new Map<string, vscode.Uri>();
+  for (const uri of uris) {
+    byKey.set(resourceUriKey(uri), uri);
   }
-
-  for (const entry of entries) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      if (!shouldSkipDirectory(entry.name)) {
-        await collectResourceReferenceUrisInto(entryPath, uris);
-      }
-    } else if (entry.isFile() && isResourceReferenceFileName(entryPath)) {
-      uris.push(vscode.Uri.file(entryPath));
-    }
-  }
-}
-
-function shouldSkipDirectory(name: string): boolean {
-  return name === ".git" || name === "node_modules" || name === "out";
+  return [...byKey.values()];
 }

@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
+import { citResourceTypeFor } from "../citAssetResolver";
 import { getCitPathCandidates, type CitResourceType } from "../citPaths";
 import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
 import { getResourceReferences, type ResourceReference } from "../../utils/resourceReferences";
@@ -89,13 +90,7 @@ function getResourceType(reference: ResourceReference): CitResourceType | null {
   if (reference.origin === "citAutoDiscovery") {
     return "models";
   }
-  if (reference.kind === "model" && reference.extension === "json") {
-    return "models";
-  }
-  if (reference.kind === "texture" && reference.extension === "png") {
-    return "textures";
-  }
-  return null;
+  return citResourceTypeFor(reference.target, reference.extension);
 }
 
 function getDefaultContent(reference: ResourceReference): Uint8Array {

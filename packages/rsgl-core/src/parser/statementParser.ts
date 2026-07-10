@@ -1,4 +1,5 @@
 import { ExpressionParser, unquoteString } from "./expressionParser";
+import { getRsglResourceKindDescriptor } from "../resourceKinds";
 import { tokenRange } from "./parserContext";
 import {
   BodyMode,
@@ -193,15 +194,16 @@ export abstract class StatementParser extends ExpressionParser {
 
     const statements: ResourceStatementNode[] = [];
     const seenBlockstateSections = new Set<string>();
+    const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
     while (!this.isAtEnd() && this.current().text !== "}") {
       const mark = this.mark();
       if (this.current().text === "variants") {
-        if (owner === "blockstate") {
+        if (bodyDialect === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "variants");
         }
         statements.push(this.parseVariantsSection());
       } else if (this.current().text === "multipart") {
-        if (owner === "blockstate") {
+        if (bodyDialect === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "multipart");
         }
         statements.push(this.parseMultipartSection());
@@ -306,6 +308,7 @@ export abstract class StatementParser extends ExpressionParser {
 
   private parseResourceStatement(owner: string): ResourceStatementNode {
     const token = this.current();
+    const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
     if (token.text === "let") {
       return this.parseLetDecl();
     }
@@ -327,34 +330,34 @@ export abstract class StatementParser extends ExpressionParser {
     if (token.text === "append") {
       return this.parseRawLikeStmt("AppendStmt");
     }
-    if ((owner === "pack" || owner === "packOverlay") && token.text === "formats") {
+    if ((bodyDialect === "pack" || owner === "packOverlay") && token.text === "formats") {
       return this.parsePackFormatsStmt();
     }
-    if (owner === "pack" && token.text === "overlay") {
+    if (bodyDialect === "pack" && token.text === "overlay") {
       return this.parsePackOverlayStmt();
     }
     if (owner === "filter" && token.text === "block" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parsePackFilterBlockStmt();
     }
-    if (owner === "atlas" && token.text === "directory" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+    if (bodyDialect === "atlas" && token.text === "directory" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseAtlasDirectoryStmt();
     }
-    if (owner === "atlas" && token.text === "filter" && this.peekText(1) !== "{" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+    if (bodyDialect === "atlas" && token.text === "filter" && this.peekText(1) !== "{" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseAtlasFilterStmt();
     }
-    if (owner === "atlas" && token.text === "paletted_permutations" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+    if (bodyDialect === "atlas" && token.text === "paletted_permutations" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseAtlasPalettedPermutationsStmt();
     }
-    if (owner === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+    if (bodyDialect === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseEquipmentLayerStmt();
     }
-    if (owner === "model" && token.text === "texture" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+    if (bodyDialect === "model" && token.text === "texture" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseModelTextureStmt();
     }
-    if (owner === "model" && modelGeometryStatementKeywords.has(token.text) && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
+    if (bodyDialect === "model" && modelGeometryStatementKeywords.has(token.text) && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
       return this.parseModelElementStmt();
     }
-    if (owner === "mcmeta" && token.text === "texture") {
+    if (bodyDialect === "mcmeta" && token.text === "texture") {
       return this.parseSectionStmt();
     }
     if (token.text === "range") {

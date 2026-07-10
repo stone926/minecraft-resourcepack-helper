@@ -1,4 +1,5 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { asObject, pushUnitDiagnostic } from "./validationShared";
 
 export interface PackMetadataValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
@@ -400,37 +401,6 @@ function isNonNegativeInteger(value: JsonValue | undefined): value is number {
   return Number.isInteger(value) && Number(value) >= 0;
 }
 
-function pushUnitDiagnostic(
-  diagnostics: RsglCompileDiagnostic[],
-  unit: ResourceUnit,
-  code: string,
-  message: string,
-  severity: RsglCompileDiagnostic["severity"] = "error",
-  generatedPath?: string
-): void {
-  diagnostics.push({
-    code,
-    message,
-    severity,
-    range: generatedPath ? sourceRangeForGeneratedPath(unit, generatedPath) : unitRange(unit)
-  });
-}
-
-function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): RsglCompileDiagnostic["range"] {
-  return unit.sourceMap.mappings.find(mapping => mapping.generatedPath === generatedPath)?.sourceRange
-    ?? unitRange(unit);
-}
-
-function unitRange(unit: ResourceUnit): RsglCompileDiagnostic["range"] {
-  return unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 };
-}
-
 function overlayEntryPath(index: number): string {
   return `/overlays/entries/${index}`;
-}
-
-function asObject(value: unknown): Record<string, JsonValue> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
 }

@@ -1,5 +1,6 @@
 import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { asObject, pushUnitDiagnostic, validateStringField } from "./validationShared";
 
 export interface FontValidationOptions {
   resourceExists?: (kind: "font" | "fontFile" | "texture", id: string) => boolean;
@@ -182,18 +183,6 @@ function validateSizeOverrides(value: JsonValue | undefined, unit: ResourceUnit,
   }
 }
 
-function validateStringField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && typeof object[field] !== "string") {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a string.`);
-  }
-}
-
 function validateStringArrayField(
   object: Record<string, JsonValue>,
   field: string,
@@ -277,25 +266,4 @@ function resourceLabel(kind: "font" | "fontFile" | "texture"): string {
     return "Font file";
   }
   return "Texture";
-}
-
-function pushUnitDiagnostic(
-  diagnostics: RsglCompileDiagnostic[],
-  unit: ResourceUnit,
-  code: string,
-  message: string,
-  severity: RsglCompileDiagnostic["severity"] = "error"
-): void {
-  diagnostics.push({
-    code,
-    message,
-    severity,
-    range: unit.sourceMap.mappings[0].sourceRange
-  });
-}
-
-function asObject(value: unknown): Record<string, JsonValue> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
 }

@@ -1,23 +1,21 @@
 import * as path from "node:path";
-import { parseAssetsPath } from "../../packages/mc-assets/src";
+import { parseAssetsPath, startsWithPathSegment, uniqueValues } from "../../packages/mc-assets/src";
+import {
+  resolveCitResourceType,
+  type CitResourceType
+} from "./citKeyResolution";
+import type { CitType } from "./citSpecTypes";
 
-export type CitResourceType = "textures" | "models";
+export { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
+export type { CitResourceType } from "./citKeyResolution";
 
 export interface CitDocumentInfo {
   namespace: string;
   source: string;
 }
 
-export function getCitResourceType(key: string): CitResourceType | null {
-  if (/^texture(\.|$)/.test(key)) {
-    return "textures";
-  }
-
-  if (/^model(\.|$)/.test(key)) {
-    return "models";
-  }
-
-  return null;
+export function getCitResourceType(key: string, citType: CitType = "item"): CitResourceType | null {
+  return resolveCitResourceType(key, citType);
 }
 
 export function isCitPropertiesFileName(fileName: string): boolean {
@@ -26,18 +24,6 @@ export function isCitPropertiesFileName(fileName: string): boolean {
 
 export function isCitModelFileName(fileName: string): boolean {
   return getCitDocumentInfo(fileName) !== null && path.extname(fileName).toLowerCase() === ".json";
-}
-
-export function isCitGlobalPropertiesFileName(fileName: string): boolean {
-  const parsed = parseAssetsPath(fileName);
-  if (!parsed || parsed.relativeSegments.length < 2) {
-    return false;
-  }
-
-  const namespace = parsed.namespace.toLowerCase();
-  const relativePath = parsed.relativeSegments.map(segment => segment.toLowerCase()).join("/");
-
-  return namespace === "minecraft" && relativePath === "citresewn/cit.properties";
 }
 
 export function getCitDocumentSource(fileName: string): string {
@@ -86,7 +72,7 @@ export function getCitPathCandidates(
 
   if (startsWithPathSegment(normalizedValue, "assets")) {
     candidates.push(path.join(packRoot, withExtension(normalizedValue, resourceType)));
-    return unique(candidates);
+    return uniqueValues(candidates);
   }
 
   const resourceLocation = parseCitResourceLocation(normalizedValue);
@@ -104,7 +90,7 @@ export function getCitPathCandidates(
       resourceType,
       withExtension(resourceLocation.resourcePath, resourceType)
     ));
-    return unique(candidates);
+    return uniqueValues(candidates);
   }
 
   candidates.push(path.join(documentDirectory, withExtension(normalizedValue, resourceType)));
@@ -115,7 +101,7 @@ export function getCitPathCandidates(
     }
     candidates.push(path.join(packRoot, "assets", namespace, resourceType, withExtension(normalizedValue, resourceType)));
   }
-  return unique(candidates);
+  return uniqueValues(candidates);
 }
 
 export function getCitAutoDiscoveryPathCandidates(
@@ -152,11 +138,6 @@ function withExtension(value: string, resourceType: CitResourceType): string {
   return `${value}${resourceType === "textures" ? ".png" : ".json"}`;
 }
 
-function startsWithPathSegment(value: string, segment: string): boolean {
-  const [firstSegment] = value.split(path.sep);
-  return firstSegment?.toLowerCase() === segment.toLowerCase();
-}
-
 function isForcedRelativePath(value: string): boolean {
   return value === "." ||
     value === ".." ||
@@ -179,8 +160,4 @@ function isCitRelativePath(segments: string[]): boolean {
   }
 
   return false;
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
 }

@@ -5,20 +5,46 @@ import { createResourceReferencePathResolver } from "../utils/pathGenerator";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
 import { getCitDiagnostics } from "../cit/citDiagnostics";
+import {
+  DiagnosticsRefreshGate,
+  type DiagnosticsRefresh
+} from "./diagnosticsRefreshGate";
 import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
 
 const resolveResourcePath = createResourceReferencePathResolver();
+const refreshGates = new WeakMap<vscode.DiagnosticCollection, DiagnosticsRefreshGate>();
+const disposedCollections = new WeakSet<vscode.DiagnosticCollection>();
 
-export function refreshResourceDiagnostics(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
+export async function refreshResourceDiagnostics(
+  document: vscode.TextDocument,
+  collection: vscode.DiagnosticCollection
+): Promise<void> {
+  if (disposedCollections.has(collection)) {
+    return;
+  }
+
+  if (document.isClosed) {
+    clearResourceDiagnostics(document, collection);
+    return;
+  }
+
+  const refresh = getRefreshGate(collection).begin(document.uri.toString(), document.version);
   if (!isResourceReferenceDocument(document) && !isSemanticDiagnosticsDocument(document)) {
-    collection.delete(document.uri);
+    clearResourceDiagnostics(document, collection);
+    return;
+  }
+
+  const semanticDiagnostics = await getSemanticResourceDiagnostics(document);
+  if (!isCurrentRefresh(document, collection, refresh)) {
     return;
   }
 
   const diagnostics: vscode.Diagnostic[] = [
-    ...getSemanticResourceDiagnostics(document),
+    ...semanticDiagnostics,
     ...getCitDiagnostics(document, {
-      onResourceIdsReady: () => refreshResourceDiagnostics(document, collection)
+      onResourceIdsReady: () => {
+        void refreshResourceDiagnostics(document, collection);
+      }
     })
   ];
 
@@ -38,5 +64,38 @@ export function refreshResourceDiagnostics(document: vscode.TextDocument, collec
     }
   }
 
-  collection.set(document.uri, diagnostics);
+  if (isCurrentRefresh(document, collection, refresh)) {
+    collection.set(document.uri, diagnostics);
+  }
+}
+
+export function clearResourceDiagnostics(
+  document: vscode.TextDocument,
+  collection: vscode.DiagnosticCollection
+): void {
+  refreshGates.get(collection)?.clear(document.uri.toString());
+  collection.delete(document.uri);
+}
+
+export function disposeResourceDiagnosticsRefreshes(collection: vscode.DiagnosticCollection): void {
+  refreshGates.get(collection)?.clearAll();
+  refreshGates.delete(collection);
+  disposedCollections.add(collection);
+}
+
+function getRefreshGate(collection: vscode.DiagnosticCollection): DiagnosticsRefreshGate {
+  let gate = refreshGates.get(collection);
+  if (!gate) {
+    gate = new DiagnosticsRefreshGate();
+    refreshGates.set(collection, gate);
+  }
+  return gate;
+}
+
+function isCurrentRefresh(
+  document: vscode.TextDocument,
+  collection: vscode.DiagnosticCollection,
+  refresh: DiagnosticsRefresh
+): boolean {
+  return refreshGates.get(collection)?.isCurrent(refresh, document.version, document.isClosed) ?? false;
 }

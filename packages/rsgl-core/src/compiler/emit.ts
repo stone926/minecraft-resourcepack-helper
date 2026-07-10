@@ -1,4 +1,6 @@
 import { BinaryCopyRef, isExternalResourceUnit, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
+import { isJsonObject as isObject } from "./jsonValues";
+import { getRsglResourceKindDescriptor } from "../resourceKinds";
 
 const objectFieldOrder: Record<string, string[]> = {
   model: ["parent", "ambientocclusion", "gui_light", "display", "textures", "elements"],
@@ -66,7 +68,8 @@ export function emitRsglFiles(units: ResourceUnit[], options: RsglEmitOptions = 
 }
 
 function resourceFile(unit: ResourceUnit, indent: number): RsglEmittedFile {
-  if (unit.kind === "copy" && isBinaryCopyRef(unit.content)) {
+  const contentKind = getRsglResourceKindDescriptor(unit.kind)?.emit.contentKind;
+  if (contentKind === "binaryCopy" && isBinaryCopyRef(unit.content)) {
     return {
       outputPath: unit.outputPath,
       copyFrom: unit.content.sourcePath,
@@ -81,7 +84,7 @@ function resourceFile(unit: ResourceUnit, indent: number): RsglEmittedFile {
 }
 
 function stringifyResourceContent(unit: ResourceUnit, indent: number): string {
-  if (unit.kind === "text") {
+  if (getRsglResourceKindDescriptor(unit.kind)?.emit.contentKind === "text") {
     return isTextContent(unit.content) ? unit.content.text : "";
   }
   return stableJsonStringify(unit.content as JsonValue, unit.kind, indent);
@@ -110,23 +113,22 @@ export function orderJsonValue(value: JsonValue, resourceKind: ResourceKind): Js
 }
 
 function getFieldOrder(value: Record<string, unknown>, resourceKind: ResourceKind | "itemModel"): string[] {
-  if (resourceKind === "model") {
+  const jsonOrder = resourceKind === "itemModel"
+    ? "itemModel"
+    : getRsglResourceKindDescriptor(resourceKind)?.emit.jsonOrder ?? "default";
+  if (jsonOrder === "model") {
     return objectFieldOrder.model;
   }
-  if (resourceKind === "item") {
+  if (jsonOrder === "item") {
     return objectFieldOrder.item;
   }
-  if (resourceKind === "itemModel") {
+  if (jsonOrder === "itemModel") {
     return objectFieldOrder.itemModel;
   }
   if ("model" in value) {
     return objectFieldOrder.blockstateModel;
   }
   return [];
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isTextContent(value: unknown): value is { kind: "text"; text: string } {

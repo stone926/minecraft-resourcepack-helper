@@ -1,6 +1,13 @@
 import * as path from "node:path";
-import { getCitPathCandidates, isCitModelFileName, isCitPropertiesFileName, type CitResourceType } from "../../cit/citPaths";
-import { getDocumentResourceRootCandidates, packRootFromAssetsPath, parseAssetsPath, parseResourceLocation } from "../../../packages/mc-assets/src";
+import { citResourceTypeFor, getCitAssetCandidates } from "../../cit/citAssetResolver";
+import { isCitModelFileName, isCitPropertiesFileName } from "../../cit/citPaths";
+import {
+  getResourceFileCandidates as getSharedResourceFileCandidates,
+  parseAssetsPath,
+  parseResourceLocation,
+  resolveResourceFile,
+  type ResourceFileRequest
+} from "../../../packages/mc-assets/src";
 import { modelSourceForFile } from "../../services/modelParentChain";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
 
@@ -47,15 +54,26 @@ export class ResourceDependencyResolver {
     }
 
     const candidates = this.getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension);
-    for (const candidate of candidates) {
-      if (this.fileSystem.fileExists(candidate)) {
-        const resolved = {
-          fileName: candidate,
-          resourceId: resourceIdForResolvedCandidate(resourcePath, candidate, target, extension)
-        };
-        this.resolvedFiles.set(key, resolved);
-        return resolved;
-      }
+    const request = createResourceFileRequest(
+      resourcePath,
+      sourceFileName,
+      target,
+      source,
+      extension,
+      this.configuration
+    );
+    const { fileName } = resolveResourceFile(
+      request,
+      { pathExists: candidate => this.fileSystem.fileExists(candidate) },
+      candidates
+    );
+    if (fileName) {
+      const resolved = {
+        fileName,
+        resourceId: resourceIdForResolvedCandidate(resourcePath, fileName, target, extension)
+      };
+      this.resolvedFiles.set(key, resolved);
+      return resolved;
     }
 
     this.resolvedFiles.set(key, null);
@@ -159,32 +177,43 @@ function getResourceFileCandidatesUncached(
   fileSystem: ModelPreviewFileSystem,
   configuration: ModelPreviewConfiguration
 ): string[] {
-  const citResourceType = getCitResourceType(target, extension);
+  const citResourceType = citResourceTypeFor(target, extension);
   if (citResourceType && (isCitModelFileName(sourceFileName) || isCitPropertiesFileName(sourceFileName))) {
-    return getCitResourceFileCandidates(resourcePath, sourceFileName, citResourceType, fileSystem);
+    return getCitAssetCandidates(sourceFileName, resourcePath, citResourceType, {
+      pathExists: fileName => fileSystem.fileExists(fileName),
+      getPackRoot: fileSystem.getPackRoot ? fileName => fileSystem.getPackRoot?.(fileName) ?? null : undefined
+    });
   }
 
-  const location = parseResourceLocation(resourcePath, extension);
-  if (!location.isValid) {
-    return [];
-  }
-
-  const candidateRoots = getDocumentResourceRootCandidates(
-    sourceFileName,
-    source,
-    configuration.defaultAssetsPath,
-    location.namespace,
-    target,
+  return getSharedResourceFileCandidates(
+    createResourceFileRequest(resourcePath, sourceFileName, target, source, extension, configuration),
     {
       pathExists: fileName => fileSystem.fileExists(fileName),
       getPackRoot: fileSystem.getPackRoot ? fileName => fileSystem.getPackRoot?.(fileName) ?? null : undefined,
-      getPackMetadata: fileSystem.getPackMetadata ? packRoot => fileSystem.getPackMetadata?.(packRoot) ?? { overlays: [], filters: [] } : undefined,
-      resourcePackRoots: configuration.resourcePackRoots,
-      resourcePath: path.posix.join(target.replaceAll("\\", "/"), location.resourcePath.replaceAll(path.sep, "/"))
+      getPackMetadata: fileSystem.getPackMetadata
+        ? packRoot => fileSystem.getPackMetadata?.(packRoot) ?? { overlays: [], filters: [] }
+        : undefined
     }
   );
+}
 
-  return unique(candidateRoots.map(root => path.join(root, location.resourcePath)));
+function createResourceFileRequest(
+  resourcePath: string,
+  sourceFileName: string,
+  target: string,
+  source: string,
+  extension: string | null,
+  configuration: ModelPreviewConfiguration
+): ResourceFileRequest {
+  return {
+    resourcePath,
+    sourceFileName,
+    target,
+    source,
+    targetFileExtension: extension,
+    defaultAssetsPath: configuration.defaultAssetsPath,
+    resourcePackRoots: configuration.resourcePackRoots
+  };
 }
 
 function resourceResolutionKey(
@@ -201,16 +230,6 @@ function resourceResolutionKey(
     extension ?? "",
     resourcePath
   ].join("\0");
-}
-
-function getCitResourceFileCandidates(
-  resourcePath: string,
-  sourceFileName: string,
-  resourceType: CitResourceType,
-  fileSystem: ModelPreviewFileSystem
-): string[] {
-  const packRoot = fileSystem.getPackRoot?.(sourceFileName) ?? packRootFromAssetsPath(sourceFileName);
-  return packRoot ? getCitPathCandidates(sourceFileName, packRoot, resourcePath, resourceType) : [];
 }
 
 function resourceIdForResolvedCandidate(
@@ -268,21 +287,7 @@ function resourceIdFromFileName(fileName: string): string {
   return `${assetResource.namespace}:${stripExtension(rawPath)}`;
 }
 
-function getCitResourceType(target: string, extension: string | null): CitResourceType | null {
-  if (target === "models" && extension === "json") {
-    return "models";
-  }
-  if (target === "textures" && extension === "png") {
-    return "textures";
-  }
-  return null;
-}
-
 function stripExtension(value: string): string {
   const extension = path.posix.extname(value);
   return extension ? value.slice(0, -extension.length) : value;
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
 }

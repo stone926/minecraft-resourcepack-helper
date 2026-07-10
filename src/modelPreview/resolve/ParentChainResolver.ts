@@ -19,8 +19,8 @@ import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { getModelFileCandidates, modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
 import { TextOffsetMap } from "../../utils/textOffsets";
+import { maxModelParentDepth, ModelParentTraversal } from "../../services/modelParentTraversal";
 
-const maxParentDepth = 10;
 const generatedParents = new Set(["item/generated", "minecraft:item/generated", "builtin/generated", "minecraft:builtin/generated"]);
 
 interface LoadedModelNode {
@@ -46,7 +46,7 @@ export class ParentChainResolver {
 
   async resolve(entryFileName: string): Promise<ResolvedModel | null> {
     throwIfCancellationRequested(this.cancellationToken);
-    const chain = await this.loadParentChain(entryFileName, new Set<string>(), 0);
+    const chain = await this.loadParentChain(entryFileName);
     throwIfCancellationRequested(this.cancellationToken);
     if (chain.length === 0) {
       return null;
@@ -56,50 +56,43 @@ export class ParentChainResolver {
     return this.mergeChain(chain, entry.document.fileName, entry.resourceId);
   }
 
-  private async loadParentChain(fileName: string, visited: Set<string>, depth: number): Promise<LoadedModelNode[]> {
-    throwIfCancellationRequested(this.cancellationToken);
-    const key = normalizePathKey(fileName);
-    if (visited.has(key)) {
-      this.issues.error(lm("Parent model cycle detected"), fileName);
-      return [];
-    }
+  private async loadParentChain(entryFileName: string): Promise<LoadedModelNode[]> {
+    const childToParent: LoadedModelNode[] = [];
+    const traversal = new ModelParentTraversal(entryFileName);
+    let fileName = entryFileName;
 
-    if (depth > maxParentDepth) {
-      this.issues.error(lm("Parent model depth exceeds {0}", maxParentDepth), fileName);
-      return [];
-    }
-
-    visited.add(key);
-    const document = await this.loadRawModel(fileName);
-    throwIfCancellationRequested(this.cancellationToken);
-    if (!document.data) {
-      return [{
-        document,
-        resourceId: modelResourceIdFromFileName(fileName)
-      }];
-    }
-
-    const parent = document.data.parent;
-    const node = {
-      document,
-      resourceId: modelResourceIdFromFileName(fileName)
-    };
-
-    if (!parent || generatedParents.has(parent)) {
-      return [node];
-    }
-
-    const parentFile = resolveModelFileName(parent, fileName, this.fileSystem, this.configuration);
-    if (!parentFile) {
-      for (const candidate of getModelFileCandidates(parent, fileName, this.fileSystem, this.configuration)) {
-        this.missingDependencies.set(normalizePathKey(candidate), { fileName: candidate, kind: "model" });
+    while (true) {
+      throwIfCancellationRequested(this.cancellationToken);
+      const document = await this.loadRawModel(fileName);
+      throwIfCancellationRequested(this.cancellationToken);
+      childToParent.push({ document, resourceId: modelResourceIdFromFileName(fileName) });
+      const parent = document.data?.parent;
+      if (!parent || generatedParents.has(parent)) {
+        break;
       }
-      this.issues.warning(lm("Parent model not found: {0}", parent), fileName, document.data.parentRange);
-      return [node];
+
+      const parentFile = resolveModelFileName(parent, fileName, this.fileSystem, this.configuration);
+      if (!parentFile) {
+        for (const candidate of getModelFileCandidates(parent, fileName, this.fileSystem, this.configuration)) {
+          this.missingDependencies.set(normalizePathKey(candidate), { fileName: candidate, kind: "model" });
+        }
+        this.issues.warning(lm("Parent model not found: {0}", parent), fileName, document.data?.parentRange);
+        break;
+      }
+
+      const advance = traversal.advance(parentFile.fileName);
+      if (advance.kind === "cycle") {
+        this.issues.error(lm("Parent model cycle detected"), advance.fileName);
+        break;
+      }
+      if (advance.kind === "depth") {
+        this.issues.error(lm("Parent model depth exceeds {0}", maxModelParentDepth), advance.fileName);
+        break;
+      }
+      fileName = advance.fileName;
     }
 
-    const parentChain = await this.loadParentChain(parentFile.fileName, visited, depth + 1);
-    return [...parentChain, node];
+    return childToParent.reverse();
   }
 
   private async loadRawModel(fileName: string): Promise<RawModelDocument> {

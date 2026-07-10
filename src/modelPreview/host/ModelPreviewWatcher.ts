@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { isCitPropertiesFileName } from "../../cit/citPaths";
+import { affectsResourceResolutionConfiguration } from "../../utils/resourceConfigurationKeys";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
 import { isModelPreviewFileName } from "./modelPreviewFiles";
 
@@ -48,10 +49,7 @@ export class ModelPreviewWatcher implements vscode.Disposable {
     }));
 
     this.disposables.push(vscode.workspace.onDidChangeConfiguration(event => {
-      if (
-        event.affectsConfiguration("McResHelper.defaultMcAssetsPath") ||
-        event.affectsConfiguration("McResHelper.resourcePackLoadOrder")
-      ) {
+      if (affectsResourceResolutionConfiguration(event)) {
         this.refreshSoon("configuration");
       }
     }));

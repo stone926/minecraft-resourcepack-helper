@@ -9,6 +9,7 @@ import {
 import type { RsglGenericJsonResourceKind } from "../resourceKinds";
 import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
+import { isJsonObject } from "./jsonValues";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { expandSequencePattern, sequencePadWidth } from "./sequences";
 import { appendGeneratedPath } from "./sourcePaths";
@@ -272,7 +273,7 @@ function equipmentLayersMappings(
       mapping(entryPath, args.texture.value.range, context),
       mapping(appendGeneratedPath(entryPath, "texture"), args.texture.value.range, context)
     );
-    if (isJsonObjectValue(layerEntry.dyeable)) {
+    if (isJsonObject(layerEntry.dyeable)) {
       const dyeableRange = args.dyeable?.value.range ?? args.color?.value.range ?? args.texture.value.range;
       mappings.push(mapping(appendGeneratedPath(entryPath, "dyeable"), dyeableRange, context));
       if (Object.hasOwn(layerEntry.dyeable, "color_when_undyed") && args.color) {
@@ -288,10 +289,6 @@ function equipmentLayersMappings(
     }
   }
   return mappings;
-}
-
-function isJsonObjectValue(value: JsonValue | undefined): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function jsonResourceFragmentCall(expression: ExprNode): (CallExprNode & { callee: IdentifierExprNode }) | null {

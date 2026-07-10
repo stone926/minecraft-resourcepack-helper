@@ -2,10 +2,14 @@ import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import { LruCache } from "../../services/lruCache";
 import { getCitPropertyReferences } from "../../cit/citProperties";
+import {
+  filterResourceReferencesForSurface,
+  getResourceReferenceExtraction
+} from "../../resources/resourceSurfaceRegistry";
 import { isInArea } from "../locationChecker";
 import { getReferencesForDocumentKind } from "./dispatch";
 import { getResourceReferenceDocumentKind } from "./documentKind";
-import { getShaderDocumentSource, getShaderReferences, isShaderDocumentKind } from "./shaderRefs";
+import { getShaderReferences } from "./shaderRefs";
 import {
   type ResourceReference,
   type ResourceReferenceDocument,
@@ -33,13 +37,12 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
   if (!documentKind) {
     return [];
   }
+  const extraction = getResourceReferenceExtraction(documentKind);
+  if (!extraction) {
+    return [];
+  }
 
-  if (
-    documentKind !== "citProperties" &&
-    documentKind !== "citModel" &&
-    document.languageId !== "json" &&
-    !isShaderDocumentKind(documentKind)
-  ) {
+  if (extraction.mode === "json" && document.languageId !== "json") {
     return [];
   }
 
@@ -48,14 +51,17 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return cachedReferences;
   }
 
-  if (isShaderDocumentKind(documentKind)) {
-    const references = getShaderReferences(document.getText(), getShaderDocumentSource(documentKind));
+  if (extraction.mode === "shader") {
+    const references = filterResourceReferencesForSurface(
+      documentKind,
+      getShaderReferences(document.getText(), extraction.source)
+    );
     setCachedResourceReferences(document, documentKind, references);
     return references;
   }
 
-  if (documentKind === "citProperties") {
-    const references = getCitPropertyReferences(document);
+  if (extraction.mode === "citProperties") {
+    const references = filterResourceReferencesForSurface(documentKind, getCitPropertyReferences(document));
     setCachedResourceReferences(document, documentKind, references);
     return references;
   }
@@ -82,7 +88,11 @@ export function findResourceReferenceAtPosition(document: ResourceReferenceDocum
 
 export function isResourceReferenceDocument(document: ResourceReferenceDocument): boolean {
   const kind = getResourceReferenceDocumentKind(document.fileName);
-  return kind !== null && (document.languageId === "json" || isShaderDocumentKind(kind) || kind === "citProperties" || kind === "citModel");
+  if (!kind) {
+    return false;
+  }
+  const extraction = getResourceReferenceExtraction(kind);
+  return extraction !== null && (extraction.mode !== "json" || document.languageId === "json");
 }
 
 export function isResourceReferenceFileName(fileName: string): boolean {

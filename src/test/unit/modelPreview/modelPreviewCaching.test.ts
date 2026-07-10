@@ -119,6 +119,42 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
     }
   });
 
+  it("invalidates cached previews when missing parent models are created", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const modelFileName = path.join(pack, "assets/minecraft/models/block/child.json");
+      const parentFileName = path.join(pack, "assets/minecraft/models/block/later_parent.json");
+      writeJson(pack, "assets/minecraft/models/block/child.json", {
+        parent: "minecraft:block/later_parent"
+      });
+
+      const service = createService();
+      const missing = await service.getPreviewDocument(modelFileName);
+      assert.strictEqual(missing.meshes.length, 0);
+      assert.ok(missing.dependencies.some(dependency =>
+        dependency.kind === "model" &&
+        (dependency.uri.endsWith("/later_parent.json") || dependency.uri.endsWith("later_parent.json"))
+      ));
+
+      writeJson(pack, "assets/minecraft/models/block/later_parent.json", {
+        elements: [{
+          from: [0, 0, 0],
+          to: [16, 16, 16],
+          faces: { north: { texture: "minecraft:block/stone" } }
+        }]
+      });
+      service.invalidateDependents(parentFileName);
+      const refreshed = await service.getPreviewDocument(modelFileName);
+
+      assert.strictEqual(refreshed.meshes.length, 1);
+      assert.strictEqual(refreshed.meshes[0].faces.length, 1);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
   it("reuses raw model, resolved model, and texture alpha caches across preview IR rebuilds", async () => {
     const root = createTempDirectory();
 

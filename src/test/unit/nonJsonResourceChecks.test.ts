@@ -5,7 +5,8 @@ import {
   getPackImageResourceIssues,
   getTextResourceIssues,
   javaStringHashCode,
-  readPngMetadata
+  readPngMetadata,
+  type PackImageResourceHost
 } from "../../diagnostics/nonJsonResourceChecks";
 import type { LocalizedMessage } from "../../i18n/messages";
 import { readOggMetadata } from "../../../packages/mc-assets/src";
@@ -40,7 +41,7 @@ describe("non-JSON resource checks", () => {
       fs.writeFileSync(path.join(colormapRoot, "grass.png"), createPngBytes(128, 256));
       fs.writeFileSync(path.join(colormapRoot, "foliage.png"), createPngBytes(256, 256));
 
-      const issues = getPackImageResourceIssues(root);
+      const issues = getPackImageResourceIssues(root, createPackImageResourceHost());
 
       assert.deepStrictEqual(issues.map(issue => path.basename(issue.filePath)), ["grass.png"]);
       assert.match(messageKey(issues[0].message), /256x256/);
@@ -54,7 +55,7 @@ describe("non-JSON resource checks", () => {
     const root = createTempDirectory();
 
     try {
-      const issues = getPackImageResourceIssues(root);
+      const issues = getPackImageResourceIssues(root, createPackImageResourceHost());
 
       assert.strictEqual(issues.length, 1);
       assert.strictEqual(path.basename(issues[0].filePath), "pack.png");
@@ -93,5 +94,25 @@ describe("non-JSON resource checks", () => {
 
 function messageKey(message: LocalizedMessage): string {
   return message.message;
+}
+
+function createPackImageResourceHost(): PackImageResourceHost {
+  return {
+    pathExists: fileName => fs.existsSync(fileName),
+    readDirectoryEntries: directory => {
+      try {
+        return fs.readdirSync(directory, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+    },
+    readPngMetadata: fileName => {
+      try {
+        return readPngMetadata(fs.readFileSync(fileName));
+      } catch {
+        return null;
+      }
+    }
+  };
 }
 

@@ -1,6 +1,9 @@
 import { TextRange } from "../parser";
 import { JsonValue } from "./ir";
+import { isJsonObject } from "./jsonValues";
 import { appendGeneratedPath } from "./sourcePaths";
+
+export { isJsonObject } from "./jsonValues";
 
 export interface JsonObjectMergeOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -90,8 +93,4 @@ export function appendJsonObject(
     }
   }
   return applied;
-}
-
-export function isJsonObject(value: unknown): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

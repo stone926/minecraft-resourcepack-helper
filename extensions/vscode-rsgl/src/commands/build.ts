@@ -1,14 +1,10 @@
 import * as vscode from "vscode";
-import {
-  buildRsglResourcePackProgram,
-  previewRsglResourcePackProgramBuild,
-  type RsglBuildOptions,
-  type RsglBuildPreviewResult,
-  type RsglBuildResult
+import type {
+  RsglBuildPreviewResult,
+  RsglBuildResult
 } from "../../../../packages/rsgl-core/src/build";
-import { rsglWorkspaceBuildSemanticCache } from "../../../../packages/rsgl-core/src/workspaceBuildSemantic";
-import { createRsglWorkspaceValidationOptions } from "../../../../packages/rsgl-core/src/workspaceValidation";
 import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "../configuration";
+import { applyRsglEmittedFiles } from "./asyncBuildWriter";
 import {
   isDirectoryBuildContext,
   resolveDirectoryBuildContext,
@@ -21,8 +17,14 @@ import {
   showBuildPreview,
   showBuildResult,
   showWorkspaceBuildPreview,
-  showWorkspaceBuildResult
+  showWorkspaceBuildResult,
+  type RsglWorkspaceBuildEntry
 } from "./buildPresenter";
+import { runRsglWorkerTask } from "./buildWorkerClient";
+import type {
+  RsglWorkerBuildContext,
+  RsglWorkerValidationConfiguration
+} from "./buildWorkerProtocol";
 
 export async function buildActiveRsglResourcePack(uri?: vscode.Uri): Promise<void> {
   const context = await resolveFileBuildContext(uri);
@@ -30,10 +32,12 @@ export async function buildActiveRsglResourcePack(uri?: vscode.Uri): Promise<voi
     return;
   }
 
-  const result = await runRsglBuildProgress(vscode.l10n.t("Building RSGL resource pack"), () =>
-    buildRsglResourcePackProgramForContext(context)
+  const result = await runRsglBuildProgress(vscode.l10n.t("Building RSGL resource pack"), token =>
+    prepareAndWriteBuild(context, token)
   );
-  await showBuildResult(result);
+  if (result) {
+    await showBuildResult(result);
+  }
 }
 
 export async function buildActiveRsglResourcePackDirectory(uri?: vscode.Uri): Promise<void> {
@@ -42,10 +46,12 @@ export async function buildActiveRsglResourcePackDirectory(uri?: vscode.Uri): Pr
     return;
   }
 
-  const result = await runRsglBuildProgress(vscode.l10n.t("Building RSGL source directory"), () =>
-    buildRsglResourcePackProgramForContext(context)
+  const result = await runRsglBuildProgress(vscode.l10n.t("Building RSGL source directory"), token =>
+    prepareAndWriteBuild(context, token)
   );
-  await showBuildResult(result);
+  if (result) {
+    await showBuildResult(result);
+  }
 }
 
 export async function previewActiveRsglResourcePackBuild(uri?: vscode.Uri): Promise<void> {
@@ -54,10 +60,12 @@ export async function previewActiveRsglResourcePackBuild(uri?: vscode.Uri): Prom
     return;
   }
 
-  const result = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL resource pack build"), () =>
-    previewRsglResourcePackProgramForContext(context)
+  const result = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL resource pack build"), token =>
+    prepareBuildPreview(context, token)
   );
-  await showBuildPreview(result);
+  if (result) {
+    await showBuildPreview(result);
+  }
 }
 
 export async function previewActiveRsglResourcePackDirectoryBuild(uri?: vscode.Uri): Promise<void> {
@@ -66,10 +74,12 @@ export async function previewActiveRsglResourcePackDirectoryBuild(uri?: vscode.U
     return;
   }
 
-  const result = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL source directory build"), () =>
-    previewRsglResourcePackProgramForContext(context)
+  const result = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL source directory build"), token =>
+    prepareBuildPreview(context, token)
   );
-  await showBuildPreview(result);
+  if (result) {
+    await showBuildPreview(result);
+  }
 }
 
 export async function buildRsglWorkspaceResourcePacks(): Promise<void> {
@@ -78,13 +88,23 @@ export async function buildRsglWorkspaceResourcePacks(): Promise<void> {
     return;
   }
 
-  const entries = await runRsglBuildProgress(vscode.l10n.t("Building RSGL workspace source directories"), () =>
-    contexts.buildable.map(context => ({
-      context,
-      result: buildRsglResourcePackProgramForContext(context)
-    }))
+  const entries = await runRsglBuildProgress(
+    vscode.l10n.t("Building RSGL workspace source directories"),
+    async token => {
+      const completed: Array<RsglWorkspaceBuildEntry<RsglBuildResult>> = [];
+      for (const context of contexts.buildable) {
+        const result = await prepareAndWriteBuild(context, token);
+        if (!result) {
+          return null;
+        }
+        completed.push({ context, result });
+      }
+      return completed;
+    }
   );
-  await showWorkspaceBuildResult(entries, contexts.skipped);
+  if (entries) {
+    await showWorkspaceBuildResult(entries, contexts.skipped);
+  }
 }
 
 export async function previewRsglWorkspaceResourcePackBuilds(): Promise<void> {
@@ -93,48 +113,70 @@ export async function previewRsglWorkspaceResourcePackBuilds(): Promise<void> {
     return;
   }
 
-  const entries = await runRsglBuildProgress(vscode.l10n.t("Previewing RSGL workspace source directory builds"), () =>
-    contexts.buildable.map(context => ({
-      context,
-      result: previewRsglResourcePackProgramForContext(context)
-    }))
+  const entries = await runRsglBuildProgress(
+    vscode.l10n.t("Previewing RSGL workspace source directory builds"),
+    async token => {
+      const completed: Array<RsglWorkspaceBuildEntry<RsglBuildPreviewResult>> = [];
+      for (const context of contexts.buildable) {
+        const result = await prepareBuildPreview(context, token);
+        if (!result) {
+          return null;
+        }
+        completed.push({ context, result });
+      }
+      return completed;
+    }
   );
-  await showWorkspaceBuildPreview(entries, contexts.skipped);
+  if (entries) {
+    await showWorkspaceBuildPreview(entries, contexts.skipped);
+  }
 }
 
-function createBuildOptions(context: RsglFileBuildContext): RsglBuildOptions {
+async function prepareAndWriteBuild(
+  context: RsglFileBuildContext,
+  token: vscode.CancellationToken
+): Promise<RsglBuildResult | null> {
+  const outcome = await runRsglWorkerTask({
+    kind: "prepareBuild",
+    payload: createWorkerBuildPayload(context)
+  }, token);
+  if (outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled) {
+    return null;
+  }
+  if (!outcome.result.files) {
+    return { diagnostics: outcome.result.diagnostics };
+  }
+
+  const plan = await applyRsglEmittedFiles(outcome.result.files, context.outputRoot, token);
+  return plan && !token.isCancellationRequested
+    ? { diagnostics: outcome.result.diagnostics, plan }
+    : null;
+}
+
+async function prepareBuildPreview(
+  context: RsglFileBuildContext,
+  token: vscode.CancellationToken
+): Promise<RsglBuildPreviewResult | null> {
+  const outcome = await runRsglWorkerTask({
+    kind: "previewBuild",
+    payload: createWorkerBuildPayload(context)
+  }, token);
+  return outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled
+    ? null
+    : outcome.result;
+}
+
+function createWorkerBuildPayload(
+  context: RsglFileBuildContext
+): RsglWorkerBuildContext & RsglWorkerValidationConfiguration {
   return {
+    source: {
+      kind: isDirectoryBuildContext(context) ? "directory" : "file",
+      path: isDirectoryBuildContext(context) ? context.sourceRoot : context.sourceFileName
+    },
+    validationAnchor: context.sourceFileName,
     outputRoot: context.outputRoot,
-    ...createRsglWorkspaceValidationOptions({
-      sourceFileName: context.sourceFileName,
-      defaultAssetsPath: configuredDefaultAssetsPath(),
-      resourcePackRoots: configuredResourcePackLoadOrder()
-    })
+    defaultAssetsPath: configuredDefaultAssetsPath(),
+    resourcePackRoots: configuredResourcePackLoadOrder()
   };
-}
-
-function buildRsglResourcePackProgramForContext(context: RsglFileBuildContext): RsglBuildResult {
-  const program = loadSemanticProgramForBuildContext(context);
-  return buildRsglResourcePackProgram(program.files, {
-    ...createBuildOptions(context),
-    entryFileName: program.entryFileName,
-    sourceRoot: program.rootDirectory,
-    semanticProgram: program.program
-  });
-}
-
-function previewRsglResourcePackProgramForContext(context: RsglFileBuildContext): RsglBuildPreviewResult {
-  const program = loadSemanticProgramForBuildContext(context);
-  return previewRsglResourcePackProgramBuild(program.files, {
-    ...createBuildOptions(context),
-    entryFileName: program.entryFileName,
-    sourceRoot: program.rootDirectory,
-    semanticProgram: program.program
-  });
-}
-
-function loadSemanticProgramForBuildContext(context: RsglFileBuildContext) {
-  return isDirectoryBuildContext(context)
-    ? rsglWorkspaceBuildSemanticCache.loadProgramFromDirectory(context.sourceRoot)
-    : rsglWorkspaceBuildSemanticCache.loadProgramFromEntry(context.sourceFileName);
 }

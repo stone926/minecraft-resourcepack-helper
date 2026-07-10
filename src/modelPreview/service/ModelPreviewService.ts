@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
 import { isCitPropertiesFileName } from "../../cit/citPaths";
+import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency, ResolvedModel } from "../model/ModelDocument";
@@ -13,7 +14,7 @@ import { CitPreviewResolver } from "../resolve/CitPreviewResolver";
 import { ParentChainResolver } from "../resolve/ParentChainResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { fileUriString } from "../paths";
-import { ModelPreviewCache } from "./ModelPreviewCache";
+import { ModelPreviewCache, type ModelPreviewArtifactCacheStore } from "./ModelPreviewCache";
 import { readNodePngAlphaMask } from "./NodePngAlphaMaskProvider";
 import {
   isCancellationError,
@@ -24,16 +25,18 @@ import {
 export interface ModelPreviewServiceOptions {
   fileSystem?: ModelPreviewFileSystem;
   configuration?: () => ModelPreviewConfiguration;
+  artifactCache?: ModelPreviewArtifactCacheStore;
 }
 
 export class ModelPreviewService {
   private readonly fileSystem: ModelPreviewFileSystem;
   private readonly getConfiguration: () => ModelPreviewConfiguration;
-  private readonly cache = new ModelPreviewCache();
+  private readonly cache: ModelPreviewCache;
 
   constructor(options: ModelPreviewServiceOptions = {}) {
     this.fileSystem = options.fileSystem ?? nodeFileSystem;
     this.getConfiguration = options.configuration ?? (() => ({}));
+    this.cache = new ModelPreviewCache(options.artifactCache);
   }
 
   getPreviewDocument(fileName: string, cancellationToken?: ModelPreviewCancellationToken): Promise<ModelPreviewDocument> {
@@ -234,11 +237,11 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
 
   if (includeConfiguration) {
     previewDependencies.set("configuration\0defaultMcAssetsPath", {
-      uri: "configuration:McResHelper.defaultMcAssetsPath",
+      uri: `configuration:${resourceConfigurationKeys.defaultAssetsPath}`,
       kind: "configuration"
     });
     previewDependencies.set("configuration\0resourcePackLoadOrder", {
-      uri: "configuration:McResHelper.resourcePackLoadOrder",
+      uri: `configuration:${resourceConfigurationKeys.resourcePackLoadOrder}`,
       kind: "configuration"
     });
   }

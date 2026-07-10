@@ -7,9 +7,11 @@ import {
   findPackRoot,
   getAssetsRootPathCandidates,
   getDocumentResourceRootCandidates,
+  getResourceFileCandidates,
   packRootFromAssetsPath,
   parseAssetsPath,
-  parseResourceLocation
+  parseResourceLocation,
+  resolveResourceFile
 } from "../../src";
 
 
@@ -247,6 +249,63 @@ describe("resource location utilities", () => {
       namespace: "ns",
       relativeSegments: ["file.png"]
     });
+  });
+
+  it("resolves identical candidates through basic and cached hosts", () => {
+    const root = createTempDirectory();
+    const currentPack = path.join(root, "current pack 资源");
+    const lowerPack = path.join(root, "lower pack 后备");
+    const defaultAssets = path.join(root, "default assets 默认");
+    const sourceFileName = path.join(currentPack, "assets", "minecraft", "models", "block", "cube.json");
+    const lowerTexture = path.join(lowerPack, "assets", "minecraft", "textures", "block", "stone.png");
+    const defaultTexture = path.join(defaultAssets, "minecraft", "textures", "block", "stone.png");
+
+    try {
+      for (const fileName of [sourceFileName, lowerTexture, defaultTexture]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, "");
+      }
+      for (const packRoot of [currentPack, lowerPack]) {
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      }
+
+      const request = {
+        resourcePath: "minecraft:block/stone",
+        sourceFileName,
+        target: "textures",
+        source: "models/block",
+        targetFileExtension: "png",
+        defaultAssetsPath: defaultAssets,
+        resourcePackRoots: [lowerPack]
+      };
+      const basicHost = { pathExists: (fileName: string) => fs.existsSync(fileName) };
+      const basicCandidates = getResourceFileCandidates(request, basicHost);
+      const basicResolution = resolveResourceFile(request, basicHost);
+      const cachedResolution = resolveResourceFile(request, {
+        ...basicHost,
+        getResourceLocation: parseResourceLocation,
+        getRootCandidates: (resourceRequest, normalizedResourcePath, namespace) =>
+          getDocumentResourceRootCandidates(
+            resourceRequest.sourceFileName,
+            resourceRequest.source,
+            resourceRequest.defaultAssetsPath,
+            namespace,
+            resourceRequest.target,
+            {
+              pathExists: basicHost.pathExists,
+              resourcePackRoots: resourceRequest.resourcePackRoots,
+              resourcePath: normalizedResourcePath
+            }
+          )
+      });
+
+      assert.deepStrictEqual(cachedResolution.candidates, basicCandidates);
+      assert.strictEqual(basicResolution.fileName, lowerTexture);
+      assert.strictEqual(cachedResolution.fileName, lowerTexture);
+      assert.ok(basicCandidates.indexOf(lowerTexture) < basicCandidates.indexOf(defaultTexture));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("rejects uppercase Assets directories", () => {

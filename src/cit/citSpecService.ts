@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { stripDefaultCitNamespace } from "./citKeys";
-import { isCitGlobalPropertiesFileName } from "./citPaths";
+import { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
 import type {
   CitSpecFragment,
   CitSpecKey,
@@ -81,28 +80,21 @@ export class CitSpecService {
     return spec;
   }
 
-  lookupKey(spec: ResolvedCitSpec, key: string): CitSpecLookupResult | null {
-    const lookupKeys = getLookupKeys(key);
-    for (const lookupKey of lookupKeys) {
-      const exact = spec.keys.get(lookupKey);
-      if (exact) {
-        return { spec: exact, matchedBy: "key" };
-      }
+  lookupNormalizedKey(spec: ResolvedCitSpec, normalizedKey: string): CitSpecLookupResult | null {
+    const exact = spec.keys.get(normalizedKey);
+    if (exact) {
+      return { spec: exact, matchedBy: "key" };
     }
 
     for (const candidate of spec.keys.values()) {
-      for (const lookupKey of lookupKeys) {
-        if (candidate.aliases?.includes(lookupKey)) {
-          return { spec: candidate, matchedBy: "alias" };
-        }
+      if (candidate.aliases?.includes(normalizedKey)) {
+        return { spec: candidate, matchedBy: "alias" };
       }
     }
 
     for (const pattern of spec.patterns) {
-      for (const lookupKey of lookupKeys) {
-        if (matchesPattern(lookupKey, pattern.key)) {
-          return { spec: pattern, matchedBy: "pattern" };
-        }
+      if (matchesPattern(normalizedKey, pattern.key)) {
+        return { spec: pattern, matchedBy: "pattern" };
       }
     }
 
@@ -162,11 +154,6 @@ export class CitSpecService {
     }
     return "en";
   }
-}
-
-function getLookupKeys(key: string): string[] {
-  const normalized = stripDefaultCitNamespace(key);
-  return normalized === key ? [key] : [key, normalized];
 }
 
 export const citSpecService = new CitSpecService();

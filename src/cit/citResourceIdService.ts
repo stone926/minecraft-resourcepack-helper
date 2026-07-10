@@ -1,5 +1,10 @@
 import * as path from "node:path";
-import { getAssetsRootPathCandidates, normalizePathKey, packRootFromAssetsPath } from "../../packages/mc-assets/src";
+import {
+  getAssetsRootPathCandidates,
+  normalizePathKey,
+  packRootFromAssetsPath,
+  uniqueValues
+} from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 
 export interface CitResourceIdConfiguration {
@@ -387,7 +392,11 @@ function getAssetsRoots(documentFileName: string, configuration: CitResourceIdCo
     addAssetsRootCandidates(roots, configuration.defaultAssetsPath);
   }
 
-  return unique(roots.filter(root => workspaceResourceCache.getDirectoryEntriesSync(root) !== null));
+  return uniqueValues(
+    roots
+      .filter(root => workspaceResourceCache.getDirectoryEntriesSync(root) !== null)
+      .map(root => path.normalize(root))
+  );
 }
 
 function addAssetsRootCandidates(roots: string[], candidate: string): void {
@@ -409,8 +418,4 @@ function getCacheKey(documentFileName: string, configuration: CitResourceIdConfi
     configuration.defaultAssetsPath ? normalizePathKey(configuration.defaultAssetsPath) : "",
     (configuration.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|")
   ].join("\0");
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values.map(value => path.normalize(value)))];
 }

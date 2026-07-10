@@ -120,4 +120,38 @@ describe("RSGL extension manifest contract", () => {
     assert.strictEqual(apiSource.includes("apiVersion"), false);
     assert.strictEqual(sharedSource.includes("rsglApiVersion"), false);
   });
+
+  it("offloads command and watcher builds from the extension host", () => {
+    const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
+    const presenterSource = fs.readFileSync(path.join(extensionRoot, "commands", "buildPresenter.ts"), "utf8");
+    const commandSource = fs.readFileSync(path.join(extensionRoot, "commands", "build.ts"), "utf8");
+    const workerClientSource = fs.readFileSync(path.join(extensionRoot, "commands", "buildWorkerClient.ts"), "utf8");
+    const apiSource = fs.readFileSync(path.join(extensionRoot, "api.ts"), "utf8");
+
+    assert.strictEqual(presenterSource.includes("Promise.resolve(task())"), false);
+    assert.match(presenterSource, /cancellable:\s*true/);
+    assert.match(commandSource, /runRsglWorkerTask/);
+    assert.strictEqual(commandSource.includes("buildRsglResourcePackProgram"), false);
+    assert.match(workerClientSource, /new Worker\(/);
+    assert.match(apiSource, /kind:\s*"compileDirectory"/);
+    assert.strictEqual(apiSource.includes("onDidCompile?.(compileWorkspace("), false);
+  });
+
+  it("shares the RSGL file glob while keeping watcher responsibilities separate", () => {
+    const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
+    const clientSource = fs.readFileSync(path.join(extensionRoot, "client.ts"), "utf8");
+    const apiSource = fs.readFileSync(path.join(extensionRoot, "api.ts"), "utf8");
+    const fallbackSource = fs.readFileSync(path.join(extensionRoot, "languageFeatures.ts"), "utf8");
+    const sharedSource = fs.readFileSync(
+      path.join(process.cwd(), "packages", "rsgl-shared", "src", "index.ts"),
+      "utf8"
+    );
+
+    assert.match(sharedSource, /rsglFileGlob\s*=\s*"\*\*\/\*\.rsgl"/);
+    assert.match(clientSource, /fileEvents:\s*vscode\.workspace\.createFileSystemWatcher\(rsglFileGlob\)/);
+    assert.match(apiSource, /new vscode\.RelativePattern\(workspace\.fsPath, rsglFileGlob\)/);
+    assert.match(clientSource, /synchronize:\s*\{/);
+    assert.match(apiSource, /const scheduleCompile/);
+    assert.strictEqual(fallbackSource.includes("createFileSystemWatcher"), false);
+  });
 });

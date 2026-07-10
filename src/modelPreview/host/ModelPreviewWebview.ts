@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { modelPreviewWebviewMessages } from "../../i18n/messages";
 import { localize } from "../../i18n/runtime";
+import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
 import { findPackRoot } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewMaterial, WebviewModelPreviewDocument } from "../ir/PreviewDocument";
 
@@ -151,12 +152,12 @@ export function getModelPreviewLocalResourceRoots(extensionUri: vscode.Uri, mode
   }
 
   const configuration = vscode.workspace.getConfiguration();
-  const defaultAssetsPath = configuration.get<string | null>("McResHelper.defaultMcAssetsPath");
+  const defaultAssetsPath = configuration.get<string | null>(resourceConfigurationKeys.defaultAssetsPath);
   if (defaultAssetsPath) {
     roots.push(vscode.Uri.file(defaultAssetsPath));
   }
 
-  for (const root of configuration.get<string[]>("McResHelper.resourcePackLoadOrder") ?? []) {
+  for (const root of configuration.get<string[]>(resourceConfigurationKeys.resourcePackLoadOrder) ?? []) {
     if (root.trim()) {
       roots.push(vscode.Uri.file(root));
     }

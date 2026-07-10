@@ -1,6 +1,7 @@
 import { EquipmentLayerStmtNode, TextRange } from "../parser";
 import { EvaluationContext, evaluateExpression } from "./evaluate";
 import { JsonValue } from "./ir";
+import { isJsonObject } from "./jsonValues";
 import { ResourceBodyFragment } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
@@ -162,10 +163,6 @@ function compactLayerNames(value: JsonValue | undefined): string[] | null {
     result.push(item);
   }
   return result;
-}
-
-function isJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function normalizeResourceId(value: string, namespace: string): string {

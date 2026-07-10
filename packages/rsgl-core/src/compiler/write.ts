@@ -31,6 +31,7 @@ export interface RsglWritePlan {
 export interface RsglWritePlanOptions {
   encoding?: BufferEncoding;
   includePreviousContent?: boolean;
+  isCancellationRequested?: () => boolean;
 }
 
 export function createRsglWritePlan(
@@ -59,6 +60,9 @@ export function writeRsglFiles(
   const plan = createRsglWritePlan(files, outputRoot, options);
   const encoding = options.encoding ?? "utf8";
   for (const entry of plan.entries) {
+    if (options.isCancellationRequested?.()) {
+      break;
+    }
     if (entry.status === "unchanged") {
       continue;
     }
@@ -78,7 +82,7 @@ function createPlanEntry(
   encoding: BufferEncoding,
   includePreviousContent: boolean
 ): RsglWritePlanEntry {
-  const absolutePath = resolveOutputPath(outputRoot, file.outputPath);
+  const absolutePath = resolveRsglOutputPath(outputRoot, file.outputPath);
   if (isCopyFile(file)) {
     const previousContent = fs.existsSync(absolutePath)
       ? fs.readFileSync(absolutePath)
@@ -116,7 +120,7 @@ function isCopyFile(file: RsglEmittedFile): file is RsglCopyEmittedFile {
   return "copyFrom" in file;
 }
 
-function resolveOutputPath(outputRoot: string, outputPath: string): string {
+export function resolveRsglOutputPath(outputRoot: string, outputPath: string): string {
   if (path.isAbsolute(outputPath)) {
     throw new Error(`Unsafe RSGL output path '${outputPath}'.`);
   }

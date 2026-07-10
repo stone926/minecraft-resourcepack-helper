@@ -50,9 +50,9 @@ describe("model preview generated item and CIT previews", () => {
       const pack = createPack(root, "pack");
       const properties = path.join(pack, "assets/minecraft/citresewn/cit/stick.properties");
       writeFile(pack, "assets/minecraft/citresewn/cit/stick.properties", [
-        "type=item",
+        "citresewn:type=item",
         "items=stick",
-        "texture=./stick"
+        "tile=./stick"
       ].join("\n"));
       writeFile(pack, "assets/minecraft/citresewn/cit/stick.png", createRgbaPng(2, 2, () => 255));
 

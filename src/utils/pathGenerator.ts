@@ -1,7 +1,5 @@
-import * as path from "node:path";
 import { Uri } from "vscode";
-import { getCitAutoDiscoveryPathCandidates, getCitPathCandidates, type CitResourceType } from "../cit/citPaths";
-import { packRootFromAssetsPath } from "../../packages/mc-assets/src";
+import { resolveCitReferenceAsset } from "../cit/citAssetResolver";
 import { workspaceResourceCache, type WorkspaceResourceCache } from "../services/workspaceResourceCache";
 import { getResourceConfiguration } from "./resourceConfiguration";
 import type { ResourceReference } from "./resourceReferences";
@@ -53,7 +51,20 @@ export function generateReferenceRedirectPath(
   options: ResourcePathResolverOptions = {}
 ): Uri | null {
   if (reference.resolveMode === "cit") {
-    return generateCitRedirectPath(reference, document, options);
+    const host = getResolutionHost(options);
+    const resolvedPath = resolveCitReferenceAsset(document.fileName, reference, {
+      pathExists: fileName => host.getPathExists(fileName),
+      getPackRoot: fileName => host.getPackRoot(fileName),
+      resolveTypedResource: () => resolveRedirectFilePath(
+        reference.value,
+        document,
+        reference.target,
+        reference.source,
+        reference.extension,
+        options
+      )
+    });
+    return resolvedPath ? Uri.file(resolvedPath) : null;
   }
 
   return generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension, options);
@@ -67,6 +78,25 @@ export function generateRedirectPath(
   targetFileExtension: string | null,
   options: ResourcePathResolverOptions = {}
 ): Uri | null {
+  const resolvedPath = resolveRedirectFilePath(
+    resourcePath,
+    document,
+    target,
+    source,
+    targetFileExtension,
+    options
+  );
+  return resolvedPath ? Uri.file(resolvedPath) : null;
+}
+
+function resolveRedirectFilePath(
+  resourcePath: string,
+  document: ResourcePathDocument,
+  target: string,
+  source: string,
+  targetFileExtension: string | null,
+  options: ResourcePathResolverOptions
+): string | null {
   const configuration = getResourceConfiguration();
   const configuredDefaultPath = configuration.defaultAssetsPath;
   const configuredResourcePackRoots = configuration.resourcePackRoots ?? [];
@@ -79,95 +109,7 @@ export function generateRedirectPath(
     defaultAssetsPath: configuredDefaultPath,
     resourcePackRoots: configuredResourcePackRoots
   });
-  return resolvedPath ? Uri.file(resolvedPath) : null;
-}
-
-function generateCitRedirectPath(
-  reference: ResourceReference,
-  document: ResourcePathDocument,
-  options: ResourcePathResolverOptions
-): Uri | null {
-  if (reference.origin === "citAutoDiscovery") {
-    return generateCitAutoDiscoveryRedirectPath(reference, document, options);
-  }
-
-  const resourceType = getCitResourceTypeFromReference(reference);
-  if (!resourceType) {
-    return null;
-  }
-
-  const host = getResolutionHost(options);
-  const packRoot = getCitPackRoot(document.fileName, host);
-
-  if (packRoot) {
-    for (const candidate of getCitPathCandidates(document.fileName, packRoot, reference.value, resourceType)) {
-      if (host.getPathExists(candidate)) {
-        return Uri.file(candidate);
-      }
-    }
-  }
-
-  if (shouldTryCitTypedResourceFallback(reference.value)) {
-    return generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension, options);
-  }
-
-  return null;
-}
-
-function generateCitAutoDiscoveryRedirectPath(
-  reference: ResourceReference,
-  document: ResourcePathDocument,
-  options: ResourcePathResolverOptions
-): Uri | null {
-  const host = getResolutionHost(options);
-  const packRoot = getCitPackRoot(document.fileName, host);
-  if (!packRoot) {
-    return null;
-  }
-
-  for (const candidate of getCitAutoDiscoveryPathCandidates(document.fileName, packRoot, reference.value)) {
-    if (host.getPathExists(candidate)) {
-      return Uri.file(candidate);
-    }
-  }
-
-  return null;
-}
-
-function getCitResourceTypeFromReference(reference: ResourceReference): CitResourceType | null {
-  if (reference.target === "textures" && reference.extension === "png") {
-    return "textures";
-  }
-
-  if (reference.target === "models" && reference.extension === "json") {
-    return "models";
-  }
-
-  return null;
-}
-
-function getCitPackRoot(
-  fileName: string,
-  host: ResourcePathResolutionHost
-): string | null {
-  return host.getPackRoot(fileName) ?? packRootFromAssetsPath(fileName);
-}
-
-function shouldTryCitTypedResourceFallback(value: string): boolean {
-  const cleanValue = value.trim();
-  if (cleanValue.length === 0 || path.isAbsolute(cleanValue)) {
-    return false;
-  }
-
-  const normalizedValue = cleanValue.replace(/[\\/]+/g, path.sep);
-  return !startsWithPathSegment(normalizedValue, "assets") &&
-    !normalizedValue.startsWith(`.${path.sep}`) &&
-    !normalizedValue.startsWith(`..${path.sep}`);
-}
-
-function startsWithPathSegment(value: string, segment: string): boolean {
-  const [firstSegment] = value.split(path.sep);
-  return firstSegment?.toLowerCase() === segment.toLowerCase();
+  return resolvedPath;
 }
 
 function getResolutionHost(options: ResourcePathResolverOptions): ResourcePathResolutionHost {

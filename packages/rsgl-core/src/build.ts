@@ -6,6 +6,7 @@ import {
   emitRsglFiles,
   type RsglEmittedFile,
   type RsglCompileDiagnostic,
+  type RsglCompileResult,
   type RsglEmitOptions,
   writeRsglFiles,
   type RsglWritePlan,
@@ -21,16 +22,31 @@ export interface RsglBuildOptions extends RsglResourceValidationOptions, RsglEmi
 export interface RsglBuildResult {
   plan?: RsglWritePlan;
   diagnostics: RsglCompileDiagnostic[];
+  cancelled?: boolean;
+}
+
+export interface RsglPreparedBuildResult {
+  diagnostics: RsglCompileDiagnostic[];
+  files?: RsglEmittedFile[];
+  cancelled?: boolean;
 }
 
 export function buildRsglResourcePack(entryFileName: string, options: RsglBuildOptions): RsglBuildResult {
-  const compiled = compileRsglBuildFiles(entryFileName, options);
+  const compiled = prepareRsglResourcePackBuild(entryFileName, options);
   return writeCompiledRsglBuild(compiled, options);
 }
 
+export function prepareRsglResourcePackBuild(entryFileName: string, options: RsglBuildOptions): RsglPreparedBuildResult {
+  return prepareCompiledRsglBuild(compileRsglFile(entryFileName, options), options);
+}
+
 export function buildRsglResourcePackDirectory(rootDirectory: string, options: RsglBuildOptions): RsglBuildResult {
-  const compiled = compileRsglBuildDirectory(rootDirectory, options);
+  const compiled = prepareRsglResourcePackDirectoryBuild(rootDirectory, options);
   return writeCompiledRsglBuild(compiled, options);
+}
+
+export function prepareRsglResourcePackDirectoryBuild(rootDirectory: string, options: RsglBuildOptions): RsglPreparedBuildResult {
+  return prepareCompiledRsglBuild(compileRsglDirectory(rootDirectory, options), options);
 }
 
 export interface RsglProgramBuildOptions extends RsglBuildOptions, Pick<RsglProgramCompileOptions, "entryFileName" | "namespace"> {
@@ -39,8 +55,20 @@ export interface RsglProgramBuildOptions extends RsglBuildOptions, Pick<RsglProg
 }
 
 export function buildRsglResourcePackProgram(files: RsglSourceFile[], options: RsglProgramBuildOptions): RsglBuildResult {
-  const compiled = compileRsglBuildProgram(files, options);
+  const compiled = prepareRsglResourcePackProgramBuild(files, options);
   return writeCompiledRsglBuild(compiled, options);
+}
+
+export function prepareRsglResourcePackProgramBuild(
+  files: RsglSourceFile[],
+  options: RsglProgramBuildOptions
+): RsglPreparedBuildResult {
+  const result = compileRsglProgram(files, {
+    ...options,
+    entryFileName: options.entryFileName,
+    semanticProgram: options.semanticProgram
+  });
+  return prepareCompiledRsglBuild(result, options);
 }
 
 export interface RsglBuildPreviewResult extends RsglBuildResult {
@@ -54,17 +82,17 @@ export interface RsglBuildPreviewFormatOptions {
 }
 
 export function previewRsglResourcePackBuild(entryFileName: string, options: RsglBuildOptions): RsglBuildPreviewResult {
-  const compiled = compileRsglBuildFiles(entryFileName, options);
+  const compiled = prepareRsglResourcePackBuild(entryFileName, options);
   return previewCompiledRsglBuild(compiled, options, { entryFileName });
 }
 
 export function previewRsglResourcePackDirectoryBuild(rootDirectory: string, options: RsglBuildOptions): RsglBuildPreviewResult {
-  const compiled = compileRsglBuildDirectory(rootDirectory, options);
+  const compiled = prepareRsglResourcePackDirectoryBuild(rootDirectory, options);
   return previewCompiledRsglBuild(compiled, options, { sourceRoot: rootDirectory });
 }
 
 export function previewRsglResourcePackProgramBuild(files: RsglSourceFile[], options: RsglProgramBuildOptions): RsglBuildPreviewResult {
-  const compiled = compileRsglBuildProgram(files, options);
+  const compiled = prepareRsglResourcePackProgramBuild(files, options);
   return previewCompiledRsglBuild(compiled, options, {
     entryFileName: options.entryFileName,
     sourceRoot: options.sourceRoot
@@ -168,11 +196,14 @@ function countPreviewCommonSuffix(left: string[], right: string[], prefixLength:
   return count;
 }
 
-function compileRsglBuildFiles(
-  entryFileName: string,
+function prepareCompiledRsglBuild(
+  result: RsglCompileResult,
   options: RsglBuildOptions
-): { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] } {
-  const result = compileRsglFile(entryFileName, options);
+): RsglPreparedBuildResult {
+  if (isCancellationRequested(options)) {
+    return { diagnostics: result.diagnostics, cancelled: true };
+  }
+
   const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
   if (blockingDiagnostics.length > 0) {
     return {
@@ -180,85 +211,43 @@ function compileRsglBuildFiles(
     };
   }
 
-  return {
-    diagnostics: result.diagnostics,
-    files: emitRsglFiles(result.units, {
-      ...options,
-      sourceMaps: options.sourceMaps ?? true,
-      manifest: options.manifest ?? true
-    })
-  };
-}
-
-function compileRsglBuildDirectory(
-  rootDirectory: string,
-  options: RsglBuildOptions
-): { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] } {
-  const result = compileRsglDirectory(rootDirectory, options);
-  const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
-  if (blockingDiagnostics.length > 0) {
-    return {
-      diagnostics: result.diagnostics
-    };
-  }
-
-  return {
-    diagnostics: result.diagnostics,
-    files: emitRsglFiles(result.units, {
-      ...options,
-      sourceMaps: options.sourceMaps ?? true,
-      manifest: options.manifest ?? true
-    })
-  };
-}
-
-function compileRsglBuildProgram(
-  files: RsglSourceFile[],
-  options: RsglProgramBuildOptions
-): { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] } {
-  const result = compileRsglProgram(files, {
+  const files = emitRsglFiles(result.units, {
     ...options,
-    entryFileName: options.entryFileName,
-    semanticProgram: options.semanticProgram
+    sourceMaps: options.sourceMaps ?? true,
+    manifest: options.manifest ?? true
   });
-  const blockingDiagnostics = result.diagnostics.filter(diagnostic => diagnostic.severity === "error");
-  if (blockingDiagnostics.length > 0) {
-    return {
-      diagnostics: result.diagnostics
-    };
-  }
-
-  return {
-    diagnostics: result.diagnostics,
-    files: emitRsglFiles(result.units, {
-      ...options,
-      sourceMaps: options.sourceMaps ?? true,
-      manifest: options.manifest ?? true
-    })
-  };
+  return isCancellationRequested(options)
+    ? { diagnostics: result.diagnostics, cancelled: true }
+    : { diagnostics: result.diagnostics, files };
 }
 
 function writeCompiledRsglBuild(
-  compiled: { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] },
+  compiled: RsglPreparedBuildResult,
   options: RsglBuildOptions
 ): RsglBuildResult {
+  if (compiled.cancelled || isCancellationRequested(options)) {
+    return { diagnostics: compiled.diagnostics, cancelled: true };
+  }
   if (!compiled.files) {
     return {
       diagnostics: compiled.diagnostics
     };
   }
 
-  return {
-    diagnostics: compiled.diagnostics,
-    plan: writeRsglFiles(compiled.files, options.outputRoot, options)
-  };
+  const plan = writeRsglFiles(compiled.files, options.outputRoot, options);
+  return isCancellationRequested(options)
+    ? { diagnostics: compiled.diagnostics, cancelled: true }
+    : { diagnostics: compiled.diagnostics, plan };
 }
 
 function previewCompiledRsglBuild(
-  compiled: { diagnostics: RsglCompileDiagnostic[]; files?: RsglEmittedFile[] },
+  compiled: RsglPreparedBuildResult,
   options: RsglBuildOptions,
   previewOptions: RsglBuildPreviewFormatOptions
 ): RsglBuildPreviewResult {
+  if (compiled.cancelled || isCancellationRequested(options)) {
+    return { diagnostics: compiled.diagnostics, cancelled: true };
+  }
   if (!compiled.files) {
     return {
       diagnostics: compiled.diagnostics
@@ -269,9 +258,16 @@ function previewCompiledRsglBuild(
     ...options,
     includePreviousContent: true
   });
+  if (isCancellationRequested(options)) {
+    return { diagnostics: compiled.diagnostics, cancelled: true };
+  }
   return {
     diagnostics: compiled.diagnostics,
     plan,
     preview: formatRsglBuildPreview(plan, previewOptions)
   };
+}
+
+function isCancellationRequested(options: RsglBuildOptions): boolean {
+  return options.isCancellationRequested?.() ?? false;
 }

@@ -1,5 +1,7 @@
 import { getCitDocumentSource, getCitResourceType } from "./citPaths";
+import { resolveCitType } from "./citKeyResolution";
 import { getCitPropertiesEntries, type CitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
+import type { CitType } from "./citSpecTypes";
 import type { ResourceReference } from "../utils/resourceReferences";
 
 export function getCitPropertyReferences(document: CitPropertiesDocument): ResourceReference[] {
@@ -7,15 +9,16 @@ export function getCitPropertyReferences(document: CitPropertiesDocument): Resou
   const fileName = document.fileName;
   const source = getCitDocumentSource(fileName);
   const entries = getCitPropertiesEntries(document);
+  const citType = resolveCitType(entries);
 
   for (const entry of entries) {
-    const reference = getCitPropertyReference(entry, source);
+    const reference = getCitPropertyReference(entry, source, citType);
     if (reference) {
       references.push(reference);
     }
   }
 
-  const autoDiscovery = getCitAutoDiscoveryReference(entries, fileName, source);
+  const autoDiscovery = getCitAutoDiscoveryReference(entries, fileName, source, citType);
   if (autoDiscovery) {
     references.push(autoDiscovery);
   }
@@ -23,8 +26,12 @@ export function getCitPropertyReferences(document: CitPropertiesDocument): Resou
   return references;
 }
 
-function getCitPropertyReference(entry: CitPropertyEntry, source: string): ResourceReference | null {
-  const resourceType = getCitResourceType(entry.key);
+function getCitPropertyReference(
+  entry: CitPropertyEntry,
+  source: string,
+  citType: CitType
+): ResourceReference | null {
+  const resourceType = getCitResourceType(entry.key, citType);
   if (!resourceType) {
     return null;
   }
@@ -56,9 +63,10 @@ function getCitPropertyReference(entry: CitPropertyEntry, source: string): Resou
 function getCitAutoDiscoveryReference(
   entries: CitPropertyEntry[],
   fileName: string,
-  source: string
+  source: string,
+  citType: CitType
 ): ResourceReference | null {
-  if (getCitType(entries) !== "item" || entries.some(entry => getCitResourceType(entry.key))) {
+  if (citType !== "item" || entries.some(entry => getCitResourceType(entry.key, citType))) {
     return null;
   }
 
@@ -80,11 +88,6 @@ function getCitAutoDiscoveryReference(
     origin: "citAutoDiscovery",
     synthetic: true
   };
-}
-
-function getCitType(entries: CitPropertyEntry[]): "item" | "armor" | "elytra" | "enchantment" {
-  const value = entries.find(entry => entry.key === "type")?.value.trim();
-  return value === "armor" || value === "elytra" || value === "enchantment" ? value : "item";
 }
 
 function stripExtension(fileName: string): string {

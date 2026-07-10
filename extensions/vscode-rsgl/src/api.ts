@@ -7,6 +7,8 @@ import {
   type RsglEmittedFile
 } from "../../../packages/rsgl-core/src";
 import { createRsglWorkspaceValidationOptions } from "../../../packages/rsgl-core/src/workspaceValidation";
+import { rsglFileGlob } from "../../../packages/rsgl-shared/src";
+import { runRsglWorkerTask } from "./commands/buildWorkerClient";
 
 export interface RsglApi {
   version: string;
@@ -108,13 +110,76 @@ function toCompileResult(
 }
 
 function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {}): vscode.Disposable {
-  const pattern = new vscode.RelativePattern(workspace.fsPath, "**/*.rsgl");
+  const pattern = new vscode.RelativePattern(workspace.fsPath, rsglFileGlob);
   const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-  const compile = () => options.onDidCompile?.(compileWorkspace(workspace, options));
-  watcher.onDidCreate(compile);
-  watcher.onDidChange(compile);
-  watcher.onDidDelete(compile);
-  return watcher;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeCancellation: vscode.CancellationTokenSource | null = null;
+  let generation = 0;
+  let disposed = false;
+
+  const scheduleCompile = () => {
+    if (!options.onDidCompile || disposed) {
+      return;
+    }
+    generation++;
+    activeCancellation?.cancel();
+    activeCancellation?.dispose();
+    activeCancellation = null;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      const cancellation = new vscode.CancellationTokenSource();
+      activeCancellation = cancellation;
+      const currentGeneration = generation;
+      void runRsglWorkerTask({
+        kind: "compileDirectory",
+        payload: {
+          sourceRoot: workspace.fsPath,
+          validationAnchor: workspace.fsPath,
+          sourceMaps: options.sourceMaps,
+          manifest: options.manifest,
+          defaultAssetsPath: options.defaultAssetsPath,
+          resourcePackRoots: options.resourcePackRoots
+        }
+      }, cancellation.token).then(outcome => {
+        if (
+          outcome.type === "success" &&
+          !disposed &&
+          currentGeneration === generation &&
+          !cancellation.token.isCancellationRequested
+        ) {
+          options.onDidCompile?.(outcome.result);
+        }
+      }).catch(error => {
+        if (!disposed && currentGeneration === generation) {
+          console.error("RSGL watcher compile failed", error);
+        }
+      }).finally(() => {
+        if (activeCancellation === cancellation) {
+          activeCancellation = null;
+        }
+        cancellation.dispose();
+      });
+    }, 75);
+  };
+
+  watcher.onDidCreate(scheduleCompile);
+  watcher.onDidChange(scheduleCompile);
+  watcher.onDidDelete(scheduleCompile);
+  return new vscode.Disposable(() => {
+    disposed = true;
+    generation++;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    activeCancellation?.cancel();
+    activeCancellation?.dispose();
+    activeCancellation = null;
+    watcher.dispose();
+  });
 }
 
 function extensionVersion(context: vscode.ExtensionContext): string {

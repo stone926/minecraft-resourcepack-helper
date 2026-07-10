@@ -23,7 +23,7 @@ describe("CIT completion and hover", () => {
 
   it("filters keys by CIT type", () => {
     const { document, position } = createMarkedDocument([
-      "type=armor",
+      "citresewn:type=armor",
       "|"
     ].join("\n"));
 

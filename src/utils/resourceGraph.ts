@@ -5,12 +5,10 @@ import {
   type ResourceReferencePathResolver
 } from "./pathGenerator";
 import {
-  collectModelDocumentUris,
-  collectResourceReferenceUris,
-  collectWorkspaceBlockstateUris
+  collectResourceGraphWorkspaceSnapshot,
+  type ResourceGraphWorkspaceSnapshot
 } from "./resourceGraphScan";
 import {
-  isModelDocumentPath,
   isResourceGraphDocumentPath,
   resourceUriKey
 } from "./resourceGraphSearch";
@@ -20,6 +18,7 @@ import {
   ResourceReference,
   ResourceReferenceDocument
 } from "./resourceReferences";
+import { ResourceGraphReferenceIndex } from "./resourceGraphReferenceIndex";
 
 export {
   type AssetResource,
@@ -51,64 +50,67 @@ interface ResolvedReferencesCacheEntry {
 }
 
 export class ResourceGraphWorkspaceCache {
-  private resourceReferenceUris: Promise<vscode.Uri[]> | null = null;
-  private modelDocumentUris: Promise<vscode.Uri[]> | null = null;
-  private blockstateUris: Promise<vscode.Uri[]> | null = null;
+  private snapshot: Promise<ResourceGraphWorkspaceSnapshot> | null = null;
 
   invalidate(): void {
-    this.resourceReferenceUris = null;
-    this.modelDocumentUris = null;
-    this.blockstateUris = null;
+    this.snapshot = null;
   }
 
-  getResourceReferenceUris(): Promise<vscode.Uri[]> {
-    if (!this.resourceReferenceUris) {
-      this.resourceReferenceUris = collectResourceReferenceUris().catch(error => {
-        this.resourceReferenceUris = null;
+  async getResourceReferenceUris(): Promise<vscode.Uri[]> {
+    return (await this.getSnapshot()).resourceReferenceUris;
+  }
+
+  async getModelDocumentUris(): Promise<vscode.Uri[]> {
+    return (await this.getSnapshot()).modelDocumentUris;
+  }
+
+  async getBlockstateUris(): Promise<vscode.Uri[]> {
+    return (await this.getSnapshot()).blockstateUris;
+  }
+
+  private getSnapshot(): Promise<ResourceGraphWorkspaceSnapshot> {
+    if (!this.snapshot) {
+      this.snapshot = collectResourceGraphWorkspaceSnapshot().catch(error => {
+        this.snapshot = null;
         throw error;
       });
     }
 
-    return this.resourceReferenceUris;
-  }
-
-  getModelDocumentUris(): Promise<vscode.Uri[]> {
-    if (!this.modelDocumentUris) {
-      this.modelDocumentUris = collectModelDocumentUris().catch(error => {
-        this.modelDocumentUris = null;
-        throw error;
-      });
-    }
-
-    return this.modelDocumentUris;
-  }
-
-  getBlockstateUris(): Promise<vscode.Uri[]> {
-    if (!this.blockstateUris) {
-      this.blockstateUris = collectWorkspaceBlockstateUris().catch(error => {
-        this.blockstateUris = null;
-        throw error;
-      });
-    }
-
-    return this.blockstateUris;
+    return this.snapshot;
   }
 }
 
 export class ResourceGraphIndex {
-  private incomingReferencesByTarget: Promise<ReadonlyMap<string, ResolvedResourceReference[]>> | null = null;
   private readonly referencesByDocument = new Map<string, ResolvedReferencesCacheEntry>();
+  private readonly pendingDocuments = new Map<string, ResourceGraphDocument | vscode.Uri>();
+  private referenceIndex: ResourceGraphReferenceIndex<ResolvedResourceReference> | null = null;
+  private indexBuild: Promise<void> | null = null;
+  private indexGeneration = 0;
   private resourcePathResolver: ResourceReferencePathResolver | null = null;
-  private childModelReferencesByParent: Promise<ReadonlyMap<string, ResolvedResourceReference[]>> | null = null;
 
   constructor(private readonly workspaceCache: ResourceGraphWorkspaceCache = new ResourceGraphWorkspaceCache()) { }
 
   invalidate(): void {
     this.workspaceCache.invalidate();
-    this.incomingReferencesByTarget = null;
     this.referencesByDocument.clear();
+    this.pendingDocuments.clear();
+    this.referenceIndex = null;
+    this.indexBuild = null;
+    this.indexGeneration++;
     this.resourcePathResolver = null;
-    this.childModelReferencesByParent = null;
+  }
+
+  invalidateDocument(document: ResourceGraphDocument): void {
+    const key = resourceUriKey(document.uri);
+    this.referencesByDocument.delete(key);
+    this.pendingDocuments.set(key, document);
+  }
+
+  invalidatePath(uri: vscode.Uri): void {
+    const key = resourceUriKey(uri);
+    this.workspaceCache.invalidate();
+    this.referencesByDocument.delete(key);
+    this.pendingDocuments.set(key, uri);
   }
 
   getReferences(document: ResourceGraphDocument): ResolvedResourceReference[] {
@@ -125,87 +127,79 @@ export class ResourceGraphIndex {
   }
 
   async getIncomingReferences(targetUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
-    const referencesByTarget = await this.getIncomingReferencesByTarget();
-    return referencesByTarget.get(resourceUriKey(targetUri)) ?? [];
-  }
-
-  private getIncomingReferencesByTarget(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
-    if (this.incomingReferencesByTarget) {
-      return this.incomingReferencesByTarget;
-    }
-
-    this.incomingReferencesByTarget = this.collectIncomingReferencesByTarget().catch(error => {
-      this.incomingReferencesByTarget = null;
-      throw error;
-    });
-    return this.incomingReferencesByTarget;
+    await this.ensureReferenceIndexes();
+    return [...(this.referenceIndex?.getIncoming(resourceUriKey(targetUri)) ?? [])];
   }
 
   async getChildModelReferences(modelUri: vscode.Uri): Promise<ResolvedResourceReference[]> {
-    const referencesByParent = await this.getChildModelReferencesByParent();
-
-    return referencesByParent.get(resourceUriKey(modelUri)) ?? [];
+    await this.ensureReferenceIndexes();
+    return [...(this.referenceIndex?.getChildren(resourceUriKey(modelUri)) ?? [])];
   }
 
-  private getChildModelReferencesByParent(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
-    if (this.childModelReferencesByParent) {
-      return this.childModelReferencesByParent;
-    }
-
-    this.childModelReferencesByParent = this.collectChildModelReferencesByParent().catch(error => {
-      this.childModelReferencesByParent = null;
-      throw error;
-    });
-    return this.childModelReferencesByParent;
-  }
-
-  private async collectChildModelReferencesByParent(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
-    const documents = await collectModelDocuments(this.workspaceCache);
-    const references = uniqueResolvedReferences(documents.flatMap(document =>
-      this.getReferences(document)
-        .filter(reference => reference.reference.relationship === "modelParent" && reference.targetUri !== null)
-    ));
-    const referencesByParent = new Map<string, ResolvedResourceReference[]>();
-
-    for (const reference of references) {
-      if (!reference.targetUri) {
-        continue;
+  private async ensureReferenceIndexes(): Promise<void> {
+    if (!this.referenceIndex) {
+      if (!this.indexBuild) {
+        const generation = this.indexGeneration;
+        const build = this.buildReferenceIndexes(generation).catch(error => {
+          if (generation === this.indexGeneration) {
+            this.referenceIndex = null;
+          }
+          throw error;
+        }).finally(() => {
+          if (this.indexBuild === build) {
+            this.indexBuild = null;
+          }
+        });
+        this.indexBuild = build;
       }
-
-      const targetKey = resourceUriKey(reference.targetUri);
-      const targetReferences = referencesByParent.get(targetKey);
-      if (targetReferences) {
-        targetReferences.push(reference);
-      } else {
-        referencesByParent.set(targetKey, [reference]);
+      await this.indexBuild;
+      if (!this.referenceIndex) {
+        return this.ensureReferenceIndexes();
       }
     }
 
-    return referencesByParent;
+    await this.applyPendingDocuments();
   }
 
-  private async collectIncomingReferencesByTarget(): Promise<ReadonlyMap<string, ResolvedResourceReference[]>> {
+  private async buildReferenceIndexes(generation: number): Promise<void> {
     const documents = await collectResourceDocuments(this.workspaceCache);
-    const references = uniqueResolvedReferences(documents.flatMap(document =>
-      this.getReferences(document).filter(reference => reference.targetUri !== null)
-    ));
-    const referencesByTarget = new Map<string, ResolvedResourceReference[]>();
+    const referenceIndex = new ResourceGraphReferenceIndex<ResolvedResourceReference>(reference => ({
+      sourceKey: resourceUriKey(reference.sourceUri),
+      targetKey: resourceUriKey(reference.targetUri!),
+      modelParent: reference.reference.relationship === "modelParent"
+    }));
+    for (const document of documents) {
+      const references = this.getReferences(document).filter(reference => reference.targetUri !== null);
+      referenceIndex.replaceSource(resourceUriKey(document.uri), references);
+    }
+    if (generation === this.indexGeneration) {
+      this.referenceIndex = referenceIndex;
+    }
+  }
 
-    for (const reference of references) {
-      if (!reference.targetUri) {
-        continue;
-      }
-
-      const targetKey = resourceUriKey(reference.targetUri);
-      const targetReferences = referencesByTarget.get(targetKey);
-      if (targetReferences) {
-        targetReferences.push(reference);
-      } else {
-        referencesByTarget.set(targetKey, [reference]);
+  private async applyPendingDocuments(): Promise<void> {
+    while (this.pendingDocuments.size > 0) {
+      const pending = [...this.pendingDocuments.entries()];
+      this.pendingDocuments.clear();
+      for (const [key, value] of pending) {
+        this.removeIndexedSource(key);
+        const document = "getText" in value ? value : await tryLoadResourceGraphDocument(value);
+        if (document) {
+          this.indexDocument(document);
+        }
       }
     }
+  }
 
-    return referencesByTarget;
+  private indexDocument(document: ResourceGraphDocument): void {
+    const sourceKey = resourceUriKey(document.uri);
+    this.removeIndexedSource(sourceKey);
+    const references = this.getReferences(document).filter(reference => reference.targetUri !== null);
+    this.referenceIndex?.replaceSource(sourceKey, references);
+  }
+
+  private removeIndexedSource(sourceKey: string): void {
+    this.referenceIndex?.removeSource(sourceKey);
   }
 
   private getResourcePathResolver(): ResourceReferencePathResolver {
@@ -233,6 +227,17 @@ export async function loadResourceGraphDocument(uri: vscode.Uri): Promise<Resour
     fileName: uri.fsPath,
     getText: () => Buffer.from(bytes).toString("utf8")
   };
+}
+
+async function tryLoadResourceGraphDocument(uri: vscode.Uri): Promise<ResourceGraphDocument | null> {
+  if (!isResourceGraphDocumentPath(uri.fsPath)) {
+    return null;
+  }
+  try {
+    return await loadResourceGraphDocument(uri);
+  } catch {
+    return null;
+  }
 }
 
 export function groupReferencesBySource(references: ResolvedResourceReference[]): ResourceReferenceSourceGroup[] {
@@ -276,33 +281,6 @@ async function collectResourceDocuments(
   }
 
   const fileUris = (await workspaceCache.getResourceReferenceUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
-  const fileDocuments = await mapLimit(fileUris, 24, async uri => {
-    try {
-      return await loadResourceGraphDocument(uri);
-    } catch {
-      return null;
-    }
-  });
-
-  for (const document of fileDocuments) {
-    if (document) {
-      documentsByKey.set(resourceUriKey(document.uri), document);
-    }
-  }
-
-  return [...documentsByKey.values()];
-}
-
-async function collectModelDocuments(workspaceCache: ResourceGraphWorkspaceCache): Promise<ResourceGraphDocument[]> {
-  const documentsByKey = new Map<string, ResourceGraphDocument>();
-
-  for (const document of vscode.workspace.textDocuments) {
-    if (isModelDocumentPath(document.fileName)) {
-      documentsByKey.set(resourceUriKey(document.uri), document);
-    }
-  }
-
-  const fileUris = (await workspaceCache.getModelDocumentUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
   const fileDocuments = await mapLimit(fileUris, 24, async uri => {
     try {
       return await loadResourceGraphDocument(uri);

@@ -1,6 +1,6 @@
 import { AstLocation } from "../locationChecker";
 import { TextOffsetMap } from "../textOffsets";
-import { ResourceReference, ResourceReferenceDocumentKind } from "./types";
+import { ResourceReference } from "./types";
 
 export function getShaderReferences(text: string, source: string): ResourceReference[] {
   const references: ResourceReference[] = [];
@@ -31,18 +31,6 @@ export function getShaderReferences(text: string, source: string): ResourceRefer
   }
 
   return references;
-}
-
-export function isShaderDocumentKind(kind: ResourceReferenceDocumentKind): boolean {
-  return kind === "shaderCore" || kind === "shaderPost";
-}
-
-export function getShaderDocumentSource(kind: ResourceReferenceDocumentKind): string {
-  if (kind === "shaderCore") {
-    return "shaders/core";
-  }
-
-  return "shaders/post";
 }
 
 function getLocationForOffsets(textOffsets: TextOffsetMap, startOffset: number, endOffset: number): AstLocation {

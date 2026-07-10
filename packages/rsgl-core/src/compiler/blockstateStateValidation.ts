@@ -1,5 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
+import { asObject, unitRange } from "./validationShared";
 
 export interface RsglBlockstateSchema {
   properties: Record<string, readonly string[]>;
@@ -38,7 +39,7 @@ export function validateBlockstateStateDomains(
   }
 
   const domains = new Map<string, StateDomain>();
-  collectVariantStateDomains(asObject(content.variants), domains, unit, diagnostics, options);
+  collectVariantStateDomains(asObject(content.variants) ?? undefined, domains, unit, diagnostics, options);
   collectMultipartStateDomains(Array.isArray(content.multipart) ? content.multipart : [], domains, unit, diagnostics, options);
   validateInferredStateDomains(domains, unit, diagnostics);
 }
@@ -50,7 +51,7 @@ export function inferBlockstateSchemaFromContent(content: JsonValue | undefined)
   }
 
   const domains = new Map<string, StateDomain>();
-  collectSchemaVariantDomains(asObject(object.variants), domains);
+  collectSchemaVariantDomains(asObject(object.variants) ?? undefined, domains);
   collectSchemaMultipartDomains(Array.isArray(object.multipart) ? object.multipart : [], domains);
   if (domains.size === 0) {
     return null;
@@ -449,20 +450,10 @@ function validateInferredStateDomains(
   }
 }
 
-function asObject(value: JsonValue | undefined): Record<string, JsonValue> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value
-    : undefined;
-}
-
 function rangeForGeneratedPath(
   unit: ResourceUnit,
   options: BlockstateStateValidationOptions,
   generatedPath: string
 ): RsglCompileDiagnostic["range"] {
   return options.rangeForGeneratedPath?.(generatedPath) ?? unitRange(unit);
-}
-
-function unitRange(unit: ResourceUnit): { start: number; end: number } {
-  return unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 };
 }

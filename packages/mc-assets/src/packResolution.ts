@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { uniqueValues } from "./collections";
 import { parseMinecraftResourceId } from "./resourceId";
 import { isSamePath } from "./pathKeys";
 import {
@@ -21,6 +22,29 @@ export interface ResourceRootCandidateOptions {
   getPackMetadata?: (packRoot: string) => PackMetadata;
   resourcePath?: string;
   resourcePackRoots?: string[];
+}
+
+export interface ResourceFileRequest {
+  resourcePath: string;
+  sourceFileName: string;
+  target: string;
+  source: string;
+  targetFileExtension: string | null;
+  defaultAssetsPath?: string | null;
+  resourcePackRoots?: string[];
+}
+
+export interface ResourceFileResolutionHost {
+  pathExists(fileName: string): boolean;
+  getPackRoot?: (fileName: string) => string | null;
+  getPackMetadata?: (packRoot: string) => PackMetadata;
+  getResourceLocation?: (resourcePath: string, targetFileExtension: string | null) => ResourceLocation;
+  getRootCandidates?: (request: ResourceFileRequest, normalizedResourcePath: string, namespace: string) => string[];
+}
+
+export interface ResourceFileResolution {
+  fileName: string | null;
+  candidates: string[];
 }
 
 export interface FindPackRootOptions {
@@ -88,7 +112,7 @@ export function getDocumentResourceRootCandidates(
     candidates.push(...getResourceRootCandidates(null, defaultAssetsPath, namespace, target));
   }
 
-  return unique(candidates);
+  return uniqueValues(candidates);
 }
 
 export function normalizePathPart(value: string): string {
@@ -112,7 +136,7 @@ export function getResourceRootCandidates(assetsRoot: string | null, defaultAsse
     );
   }
 
-  return [...new Set(candidates)];
+  return uniqueValues(candidates);
 }
 
 export function findPackRoot(fileName: string, options: FindPackRootOptions = {}): string | null {
@@ -152,6 +176,52 @@ export interface ParsedAssetsPath {
   relativeSegments: string[];
 }
 
+export function getResourceFileCandidates(
+  request: ResourceFileRequest,
+  host: ResourceFileResolutionHost
+): string[] {
+  const location = host.getResourceLocation
+    ? host.getResourceLocation(request.resourcePath, request.targetFileExtension)
+    : parseResourceLocation(request.resourcePath, request.targetFileExtension);
+  if (!location.isValid) {
+    return [];
+  }
+
+  const normalizedResourcePath = path.posix.join(
+    request.target.replaceAll("\\", "/"),
+    location.resourcePath.replaceAll(path.sep, "/")
+  );
+  const candidateRoots = host.getRootCandidates
+    ? host.getRootCandidates(request, normalizedResourcePath, location.namespace)
+    : getDocumentResourceRootCandidates(
+      request.sourceFileName,
+      request.source,
+      request.defaultAssetsPath,
+      location.namespace,
+      request.target,
+      {
+        pathExists: host.pathExists,
+        getPackRoot: host.getPackRoot,
+        getPackMetadata: host.getPackMetadata,
+        resourcePackRoots: request.resourcePackRoots,
+        resourcePath: normalizedResourcePath
+      }
+    );
+
+  return uniqueValues(candidateRoots.map(root => path.join(root, location.resourcePath)));
+}
+
+export function resolveResourceFile(
+  request: ResourceFileRequest,
+  host: ResourceFileResolutionHost,
+  candidates = getResourceFileCandidates(request, host)
+): ResourceFileResolution {
+  return {
+    fileName: candidates.find(candidate => host.pathExists(candidate)) ?? null,
+    candidates
+  };
+}
+
 export function getAssetsRootPathCandidates(configuredPath: string): string[] {
   const normalized = path.normalize(configuredPath);
   const candidates: string[] = [];
@@ -164,7 +234,7 @@ export function getAssetsRootPathCandidates(configuredPath: string): string[] {
   }
   candidates.push(path.join(normalized, "assets"));
 
-  return unique(candidates);
+  return uniqueValues(candidates);
 }
 
 export function parseAssetsPath(fileName: string): ParsedAssetsPath | null {
@@ -233,8 +303,4 @@ function getConfiguredLowerPriorityPackRoots(currentPackRoot: string | null, con
 
 function getPackMetadata(packRoot: string, options: ResourceRootCandidateOptions): PackMetadata {
   return options.getPackMetadata ? options.getPackMetadata(packRoot) : readPackMetadata(packRoot, options);
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
 }

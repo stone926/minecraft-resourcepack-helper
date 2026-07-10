@@ -4,29 +4,40 @@ import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { dependencyKey } from "../paths";
 import type { PngAlphaMask } from "../bake/AlphaMask";
 import { LruCache } from "../../services/lruCache";
+import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
 
 interface PreviewCacheEntry {
   document: Promise<ModelPreviewDocument>;
   dependencyKeys: Set<string>;
 }
 
-interface VersionedCacheEntry<T> {
-  value: Promise<T>;
-  version: string | null;
-}
-
-interface ResolvedModelCacheEntry {
-  model: Promise<ResolvedModel | null>;
-  configurationKey: string;
-  dependencyKeys: Set<string>;
-  dependencyVersions: Map<string, string | null> | null;
+export interface ModelPreviewArtifactCacheStore {
+  getRawModel(fileName: string, version: string | null): Promise<RawModelDocument> | null;
+  setRawModel(fileName: string, version: string | null, document: Promise<RawModelDocument>): void;
+  getResolvedModel(
+    fileName: string,
+    configurationKey: string,
+    getVersion: (fileName: string) => string | null
+  ): Promise<ResolvedModel | null> | null;
+  setResolvedModel(
+    fileName: string,
+    configurationKey: string,
+    model: Promise<ResolvedModel | null>,
+    getVersion: (fileName: string) => string | null
+  ): void;
+  getTextureAlphaMask(fileName: string, version: string | null): Promise<PngAlphaMask | null> | null;
+  setTextureAlphaMask(fileName: string, version: string | null, alphaMask: Promise<PngAlphaMask | null>): void;
+  invalidateDependents(fileName: string): void;
+  invalidateAll(): void;
+  getStats(): Record<string, number>;
 }
 
 export class ModelPreviewCache {
   private readonly previews = new LruCache<string, PreviewCacheEntry>(128);
-  private readonly rawModels = new LruCache<string, VersionedCacheEntry<RawModelDocument>>(512);
-  private readonly resolvedModels = new LruCache<string, ResolvedModelCacheEntry>(512);
-  private readonly textureAlphaMasks = new LruCache<string, VersionedCacheEntry<PngAlphaMask | null>>(512);
+
+  constructor(
+    private readonly artifacts: ModelPreviewArtifactCacheStore = new WorkspaceResourceCache().modelPreviewArtifacts
+  ) {}
 
   get(fileName: string): Promise<ModelPreviewDocument> | null {
     return this.previews.get(normalizePathKey(fileName))?.document ?? null;
@@ -47,15 +58,11 @@ export class ModelPreviewCache {
   }
 
   getRawModel(fileName: string, version: string | null): Promise<RawModelDocument> | null {
-    const entry = this.rawModels.get(normalizePathKey(fileName));
-    return entry && entry.version === version ? entry.value : null;
+    return this.artifacts.getRawModel(fileName, version);
   }
 
   setRawModel(fileName: string, version: string | null, document: Promise<RawModelDocument>): void {
-    this.rawModels.set(normalizePathKey(fileName), {
-      version,
-      value: document
-    });
+    this.artifacts.setRawModel(fileName, version, document);
   }
 
   getResolvedModel(
@@ -63,20 +70,7 @@ export class ModelPreviewCache {
     configurationKey: string,
     getVersion: (fileName: string) => string | null
   ): Promise<ResolvedModel | null> | null {
-    const entry = this.resolvedModels.get(normalizePathKey(fileName));
-    if (!entry || entry.configurationKey !== configurationKey) {
-      return null;
-    }
-
-    if (entry.dependencyVersions) {
-      for (const [dependency, version] of entry.dependencyVersions) {
-        if (getVersion(dependency) !== version) {
-          return null;
-        }
-      }
-    }
-
-    return entry.model;
+    return this.artifacts.getResolvedModel(fileName, configurationKey, getVersion);
   }
 
   setResolvedModel(
@@ -85,36 +79,15 @@ export class ModelPreviewCache {
     model: Promise<ResolvedModel | null>,
     getVersion: (fileName: string) => string | null
   ): void {
-    const key = normalizePathKey(fileName);
-    this.resolvedModels.set(key, {
-      model: model.then(resolvedModel => {
-        const entry = this.resolvedModels.get(key);
-        if (entry) {
-          const dependencies = new Set([
-            fileName,
-            ...(resolvedModel?.dependencies.map(dependency => dependency.fileName) ?? [])
-          ]);
-          entry.dependencyKeys = new Set([...dependencies].map(dependency => normalizePathKey(dependency)));
-          entry.dependencyVersions = new Map([...dependencies].map(dependency => [normalizePathKey(dependency), getVersion(dependency)]));
-        }
-        return resolvedModel;
-      }),
-      configurationKey,
-      dependencyKeys: new Set([normalizePathKey(fileName)]),
-      dependencyVersions: null
-    });
+    this.artifacts.setResolvedModel(fileName, configurationKey, model, getVersion);
   }
 
   getTextureAlphaMask(fileName: string, version: string | null): Promise<PngAlphaMask | null> | null {
-    const entry = this.textureAlphaMasks.get(normalizePathKey(fileName));
-    return entry && entry.version === version ? entry.value : null;
+    return this.artifacts.getTextureAlphaMask(fileName, version);
   }
 
   setTextureAlphaMask(fileName: string, version: string | null, alphaMask: Promise<PngAlphaMask | null>): void {
-    this.textureAlphaMasks.set(normalizePathKey(fileName), {
-      version,
-      value: alphaMask
-    });
+    this.artifacts.setTextureAlphaMask(fileName, version, alphaMask);
   }
 
   invalidate(fileName: string): void {
@@ -123,17 +96,13 @@ export class ModelPreviewCache {
 
   invalidateAll(): void {
     this.previews.clear();
-    this.rawModels.clear();
-    this.resolvedModels.clear();
-    this.textureAlphaMasks.clear();
+    this.artifacts.invalidateAll();
   }
 
   getStats(): Record<string, number> {
     return {
       previews: this.previews.size,
-      rawModels: this.rawModels.size,
-      resolvedModels: this.resolvedModels.size,
-      textureAlphaMasks: this.textureAlphaMasks.size
+      ...this.artifacts.getStats()
     };
   }
 
@@ -144,12 +113,6 @@ export class ModelPreviewCache {
         this.previews.delete(entryKey);
       }
     }
-    this.rawModels.delete(changedKey);
-    this.textureAlphaMasks.delete(changedKey);
-    for (const [entryKey, entry] of this.resolvedModels.entries()) {
-      if (entryKey === changedKey || entry.dependencyKeys.has(changedKey)) {
-        this.resolvedModels.delete(entryKey);
-      }
-    }
+    this.artifacts.invalidateDependents(changedFileNameOrUri);
   }
 }

@@ -3,7 +3,7 @@ import { lm, type LocalizedMessage } from "../i18n/messages";
 import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
 import { getCitPropertiesParseResult, type CitPropertyEntry } from "./citPropertiesParser";
 import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
-import { stripDefaultCitNamespace } from "./citKeys";
+import { normalizeCitKey, resolveCitKey } from "./citKeyResolution";
 import { citSpecService } from "./citSpecService";
 import { citResourceIdService, type CitResourceIds } from "./citResourceIdService";
 import type { AstLocation } from "../utils/locationChecker";
@@ -50,10 +50,10 @@ export function getCitDiagnostics(
       continue;
     }
 
-    const lookup = citSpecService.lookupKey(spec, entry.key);
+    const lookup = resolveCitKey(spec, entry.key);
     if (!lookup) {
-      const knownCit = citSpecService.lookupKey(allCitSpec, entry.key);
-      const knownGlobal = citSpecService.lookupKey(globalSpec, entry.key);
+      const knownCit = resolveCitKey(allCitSpec, entry.key);
+      const knownGlobal = resolveCitKey(globalSpec, entry.key);
       if (globalFile && knownCit) {
         diagnostics.push(createDiagnostic(
           entry.keyRange,
@@ -78,7 +78,7 @@ export function getCitDiagnostics(
       continue;
     }
 
-    const canonicalKey = lookup.spec.key;
+    const canonicalKey = lookup.canonicalKey;
     if (lookup.spec.singleton) {
       const first = seenSingletonKeys.get(canonicalKey);
       if (first) {
@@ -179,7 +179,7 @@ function validateElytraCitRules(entries: CitPropertyEntry[]): CitDiagnostic[] {
   if (items) {
     diagnostics.push(createDiagnostic(items.keyRange, lm("items is ignored for type=elytra; the target is minecraft:elytra."), "information"));
   }
-  if (!entries.some(entry => stripDefaultCitNamespace(entry.key) === "texture")) {
+  if (!entries.some(entry => normalizeCitKey(entry.key) === "texture")) {
     diagnostics.push(createDiagnostic(
       entries[0]?.keyRange ?? { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
       lm("type=elytra should declare texture."),
@@ -332,7 +332,7 @@ function validateBlendFunc(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): C
 }
 
 function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
-  const normalizedKey = stripDefaultCitNamespace(entry.key);
+  const normalizedKey = normalizeCitKey(entry.key);
   if (!/^(?:nbt|component|components)\.[A-Za-z0-9_.*:~-]+(?:\.[A-Za-z0-9_.*:~-]+)*$/.test(normalizedKey)) {
     return [createDiagnostic(entry.keyRange, lm("CIT component/NBT key must include a valid path after its prefix."), "warning")];
   }
@@ -362,7 +362,7 @@ function validateNbtMatch(entry: CitPropertyEntry): CitDiagnostic[] {
 }
 
 function isItemsKey(key: string): boolean {
-  const normalizedKey = stripDefaultCitNamespace(key);
+  const normalizedKey = normalizeCitKey(key);
   return normalizedKey === "items" || normalizedKey === "matchItems";
 }
 

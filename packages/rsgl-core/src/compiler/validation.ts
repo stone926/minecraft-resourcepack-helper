@@ -1,4 +1,5 @@
 import { isExternalResourceUnit, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { getRsglResourceKindDescriptor, RsglResourceValidationHandler } from "../resourceKinds";
 import { validateAtlasUnit } from "./atlasValidation";
 import { validateBlockstateUnit } from "./blockstateJsonValidation";
 import { validateFontMetadata } from "./fontValidation";
@@ -28,6 +29,38 @@ export type {
   RsglTextureMetadata
 } from "./validationShared";
 
+interface ResourceValidationContext {
+  generatedModels: Map<string, ResourceUnit>;
+  generatedFonts: Set<string>;
+  modelResolver: ReturnType<typeof createModelResolver>;
+}
+
+type ResourceValidator = (
+  unit: ResourceUnit,
+  context: ResourceValidationContext,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+) => void;
+
+const resourceValidators = {
+  model: (unit, context, options, diagnostics) =>
+    validateModelUnit(unit, context.generatedModels, context.modelResolver, options, diagnostics),
+  item: (unit, context, options, diagnostics) =>
+    validateItemUnit(unit, context.generatedModels, options, diagnostics),
+  blockstate: (unit, context, options, diagnostics) =>
+    validateBlockstateUnit(unit, context.generatedModels, options, diagnostics),
+  sounds: (unit, _context, options, diagnostics) => validateSoundsUnit(unit, options, diagnostics),
+  lang: (unit, _context, _options, diagnostics) => validateLangUnit(unit, diagnostics),
+  atlas: (unit, _context, options, diagnostics) => validateAtlasUnit(unit, options, diagnostics),
+  mcmeta: (unit, _context, options, diagnostics) => validateMcmetaUnit(unit, options, diagnostics),
+  particles: (unit, _context, options, diagnostics) => validateParticlesUnit(unit, options, diagnostics),
+  equipment: (unit, _context, options, diagnostics) => validateEquipmentUnit(unit, options, diagnostics),
+  font: (unit, context, options, diagnostics) => validateFontUnit(unit, context.generatedFonts, options, diagnostics),
+  waypointStyle: (unit, _context, options, diagnostics) => validateWaypointStyleUnit(unit, options, diagnostics),
+  postEffect: (unit, _context, options, diagnostics) => validatePostEffectUnit(unit, options, diagnostics),
+  pack: (unit, _context, options, diagnostics) => validatePackUnit(unit, options, diagnostics)
+} satisfies Record<Exclude<RsglResourceValidationHandler, "none">, ResourceValidator>;
+
 export function validateResourceUnits(
   units: ResourceUnit[],
   options: RsglResourceValidationOptions = {}
@@ -44,37 +77,17 @@ export function validateResourceUnits(
       .map(unit => `${unit.id!.namespace}:${unit.id!.path}`)
   );
   const modelResolver = createModelResolver(generatedModels, options);
+  const validationContext: ResourceValidationContext = { generatedModels, generatedFonts, modelResolver };
 
   for (const unit of units) {
     const diagnosticStart = diagnostics.length;
     if (isExternalResourceUnit(unit)) {
       validateExternalResourceUnit(unit, options, diagnostics);
-    } else if (unit.kind === "model") {
-      validateModelUnit(unit, generatedModels, modelResolver, options, diagnostics);
-    } else if (unit.kind === "item") {
-      validateItemUnit(unit, generatedModels, options, diagnostics);
-    } else if (unit.kind === "blockstate") {
-      validateBlockstateUnit(unit, generatedModels, options, diagnostics);
-    } else if (unit.kind === "sounds") {
-      validateSoundsUnit(unit, options, diagnostics);
-    } else if (unit.kind === "lang") {
-      validateLangUnit(unit, diagnostics);
-    } else if (unit.kind === "atlas") {
-      validateAtlasUnit(unit, options, diagnostics);
-    } else if (unit.kind === "mcmeta") {
-      validateMcmetaUnit(unit, options, diagnostics);
-    } else if (unit.kind === "particles") {
-      validateParticlesUnit(unit, options, diagnostics);
-    } else if (unit.kind === "equipment") {
-      validateEquipmentUnit(unit, options, diagnostics);
-    } else if (unit.kind === "font") {
-      validateFontUnit(unit, generatedFonts, options, diagnostics);
-    } else if (unit.kind === "waypoint_style") {
-      validateWaypointStyleUnit(unit, options, diagnostics);
-    } else if (unit.kind === "post_effect") {
-      validatePostEffectUnit(unit, options, diagnostics);
-    } else if (unit.kind === "pack") {
-      validatePackUnit(unit, options, diagnostics);
+    } else {
+      const validationHandler = getRsglResourceKindDescriptor(unit.kind)?.validation.handler ?? "none";
+      if (validationHandler !== "none") {
+        resourceValidators[validationHandler](unit, validationContext, options, diagnostics);
+      }
     }
     attachSourceFile(diagnostics, diagnosticStart, unit.sourceMap.mappings[0]?.sourceFile);
   }

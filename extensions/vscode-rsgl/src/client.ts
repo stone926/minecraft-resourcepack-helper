@@ -8,6 +8,7 @@ import {
   type LanguageClientOptions,
   type ServerOptions
 } from "vscode-languageclient/node";
+import { rsglFileGlob } from "../../../packages/rsgl-shared/src";
 import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "./configuration";
 
 interface RsglValidationSettings {
@@ -30,7 +31,7 @@ export function startRsglLanguageServer(context: vscode.ExtensionContext): void 
     documentSelector: [{ scheme: "file", language: "rsgl" }],
     initializationOptions: () => currentRsglValidationSettings(),
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.rsgl")
+      fileEvents: vscode.workspace.createFileSystemWatcher(rsglFileGlob)
     }
   };
   const client = new LanguageClient("rsgl", "RSGL", serverOptions, clientOptions);

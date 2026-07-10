@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { parseAssetsPath } from "../../packages/mc-assets/src";
-import { isResourceReferenceFileName } from "./resourceReferences";
+import { isResourceSurfaceFile } from "../resources/resourceSurfaceRegistry";
 
 export interface AssetResource {
   namespace: string;
@@ -72,8 +72,7 @@ export function isResourceJsonDocumentPath(fileName: string): boolean {
 }
 
 export function isResourceGraphDocumentPath(fileName: string): boolean {
-  return isResourceReferenceFileName(fileName) ||
-    /[\\/]assets[\\/][^\\/]+[\\/]shaders[\\/]include[\\/].+\.(?:glsl|vsh|fsh)$/i.test(fileName);
+  return isResourceSurfaceFile(fileName, "graph");
 }
 
 function getPossibleReferencePaths(resourcePath: string): Set<string> {

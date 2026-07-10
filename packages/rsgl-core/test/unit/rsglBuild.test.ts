@@ -5,6 +5,7 @@ import {
   buildRsglResourcePack,
   buildRsglResourcePackDirectory,
   buildRsglResourcePackProgram,
+  prepareRsglResourcePackBuild,
   previewRsglResourcePackBuild,
   previewRsglResourcePackDirectoryBuild
 } from "../../src/build";
@@ -12,6 +13,37 @@ import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL build", () => {
+  it("prepares emitted files without writing and honors cancellation after compilation", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
+    const entry = path.join(root, "main.rsgl");
+    const outputRoot = path.join(root, "pack");
+    let cancellationChecks = 0;
+
+    try {
+      fs.writeFileSync(entry, [
+        "model block stone {",
+        "  parent minecraft:block/cube_all",
+        "  textures { all: minecraft:block/stone }",
+        "}"
+      ].join("\n"));
+
+      const prepared = prepareRsglResourcePackBuild(entry, {
+        outputRoot,
+        isCancellationRequested: () => {
+          cancellationChecks++;
+          return true;
+        }
+      });
+
+      assert.ok(cancellationChecks > 0);
+      assert.strictEqual(prepared.cancelled, true);
+      assert.strictEqual(prepared.files, undefined);
+      assert.strictEqual(fs.existsSync(outputRoot), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes emitted resources with source maps and a manifest", () => {
     const root = createTempDir("mc-resourcepack-helper-rsgl-build-");
     const entry = path.join(root, "src", "main.rsgl");

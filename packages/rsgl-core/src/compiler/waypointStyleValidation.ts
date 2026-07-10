@@ -1,5 +1,6 @@
 import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { asObject, pushUnitDiagnostic } from "./validationShared";
 
 export interface WaypointStyleValidationOptions {
   resourceExists?: (kind: "texture", id: string) => boolean;
@@ -99,25 +100,4 @@ function checkTextureExists(
     return;
   }
   pushUnitDiagnostic(diagnostics, unit, "rsgl.textureNotFound", `Texture not found: ${id}`, "warning");
-}
-
-function pushUnitDiagnostic(
-  diagnostics: RsglCompileDiagnostic[],
-  unit: ResourceUnit,
-  code: string,
-  message: string,
-  severity: RsglCompileDiagnostic["severity"] = "error"
-): void {
-  diagnostics.push({
-    code,
-    message,
-    severity,
-    range: unit.sourceMap.mappings[0].sourceRange
-  });
-}
-
-function asObject(value: unknown): Record<string, JsonValue> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
 }

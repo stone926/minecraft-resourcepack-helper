@@ -1,6 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import type { RsglResourceValidationOptions } from "./validationShared";
+import { asObject, unitRange, type RsglResourceValidationOptions } from "./validationShared";
 
 interface McmetaFrameLayout {
   frameCount: number;
@@ -381,14 +381,4 @@ function generatedPathFallbacks(generatedPath: string): string[] {
 
 function isPositiveDimension(value: number): boolean {
   return Number.isInteger(value) && value > 0;
-}
-
-function unitRange(unit: ResourceUnit): ResourceUnit["sourceMap"]["mappings"][number]["sourceRange"] {
-  return unit.sourceMap.mappings[0].sourceRange;
-}
-
-function asObject(value: unknown): Record<string, JsonValue> | null {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
 }

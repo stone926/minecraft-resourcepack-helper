@@ -1,4 +1,5 @@
 import { isExternalResourceUnit, JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { isJsonObject } from "./jsonValues";
 
 export interface MergeResourceUnitsResult {
   units: ResourceUnit[];
@@ -148,8 +149,4 @@ function mergeArrayUnits(units: ResourceUnit[]): ResourceUnit | null {
       mappings: units.flatMap(unit => unit.sourceMap.mappings)
     }
   };
-}
-
-function isJsonObject(value: unknown): value is Record<string, JsonValue> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

@@ -19,7 +19,7 @@ describe("CIT diagnostics", () => {
 
   it("reports duplicate singleton keys and type-filtered keys", () => {
     const diagnostics = getMessages([
-      "type=armor",
+      "citresewn:type=armor",
       "type=item",
       "model=custom:item/sword"
     ].join("\n"));

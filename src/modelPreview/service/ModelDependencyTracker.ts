@@ -1,4 +1,5 @@
 import type { ModelPreviewDocument } from "../ir/PreviewDocument";
+import { isResourceResolutionConfigurationKey } from "../../utils/resourceConfigurationKeys";
 import { dependencyKey } from "../paths";
 
 export class ModelDependencyTracker {
@@ -18,6 +19,6 @@ export class ModelDependencyTracker {
   }
 
   hasConfiguration(section: string): boolean {
-    return section === "McResHelper.defaultMcAssetsPath" || section === "McResHelper.resourcePackLoadOrder";
+    return isResourceResolutionConfigurationKey(section);
   }
 }

@@ -1,5 +1,11 @@
 import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import {
+  asObject,
+  pushUnitDiagnostic,
+  validateBooleanField,
+  validateStringField
+} from "./validationShared";
 
 export interface LangSoundsValidationOptions {
   resourceExists?: (kind: "sound", id: string) => boolean;
@@ -221,18 +227,6 @@ function isDeprecatedLangShape(content: Record<string, JsonValue>): boolean {
   return keys.length > 0 && keys.every(key => key === "removed" || key === "renamed");
 }
 
-function validateStringField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && typeof object[field] !== "string") {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a string.`);
-  }
-}
-
 function validateEnumField(
   object: Record<string, JsonValue>,
   field: string,
@@ -243,18 +237,6 @@ function validateEnumField(
 ): void {
   if (field in object && (typeof object[field] !== "string" || !values.includes(object[field] as string))) {
     pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' has an invalid value.`);
-  }
-}
-
-function validateBooleanField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && typeof object[field] !== "boolean") {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a boolean.`);
   }
 }
 
@@ -284,25 +266,4 @@ function validatePositiveNumberField(
 
 function isPositiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) > 0;
-}
-
-function pushUnitDiagnostic(
-  diagnostics: RsglCompileDiagnostic[],
-  unit: ResourceUnit,
-  code: string,
-  message: string,
-  severity: RsglCompileDiagnostic["severity"] = "error"
-): void {
-  diagnostics.push({
-    code,
-    message,
-    severity,
-    range: unit.sourceMap.mappings[0].sourceRange
-  });
-}
-
-function asObject(value: unknown): Record<string, JsonValue> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
 }

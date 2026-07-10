@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
+import { findByNormalizedPath } from "../../mc-assets/src";
 import {
   createConnection,
   ProposedFeatures,
@@ -166,13 +166,11 @@ function completionItemsForDocument(document: TextDocument, offset: number): Com
 }
 
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {
-  const key = normalizePathKey(path.resolve(fileName));
-  const document = documents.all().find(item => {
-    if (!item.uri.startsWith("file:")) {
-      return false;
-    }
-    return normalizePathKey(path.resolve(fileNameFromUri(item.uri))) === key;
-  });
+  const document = findByNormalizedPath(
+    documents.all(),
+    path.resolve(fileName),
+    item => item.uri.startsWith("file:") ? path.resolve(fileNameFromUri(item.uri)) : null
+  );
   return document
     ? {
       fileName: normalizeFileName(path.resolve(fileName)),

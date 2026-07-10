@@ -5,6 +5,24 @@ import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
 import { createOggVorbisBytes, createPngBytes, createTempDirectory } from "./helpers/tempPack";
 
 describe("workspace resource cache", () => {
+  it("keeps the compatibility facade free of cache storage details", () => {
+    const servicesRoot = path.join(process.cwd(), "src", "services");
+    const facade = fs.readFileSync(path.join(servicesRoot, "workspaceResourceCache.ts"), "utf8");
+    const componentFiles = [
+      "fileSystemResourceCache.ts",
+      "resourceResolutionCache.ts",
+      "modelResourceCache.ts",
+      "mediaMetadataCache.ts"
+    ];
+
+    assert.strictEqual(facade.includes("new LruCache"), false);
+    assert.strictEqual(facade.includes("new DependencyIndex"), false);
+    assert.ok(facade.split(/\r?\n/).length < 250, "workspace cache facade should stay thin");
+    for (const fileName of componentFiles) {
+      assert.strictEqual(fs.existsSync(path.join(servicesRoot, fileName)), true, fileName);
+    }
+  });
+
   it("uses open document content for sounds.json event indexes", () => {
     const root = createTempDirectory();
     const soundsPath = path.join(root, "assets", "custom", "sounds.json");

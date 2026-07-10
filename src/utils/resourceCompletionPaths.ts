@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { uniqueValues } from "../../packages/mc-assets/src";
 
 export interface PartialResourcePath {
   namespace: string;
@@ -90,7 +91,7 @@ export function getAssetsRootCandidates(roots: string[], namespace: string, targ
     }
   }
 
-  return [...new Set(assetsRoots)];
+  return uniqueValues(assetsRoots);
 }
 
 export function splitResourcePath(value: string): string[] {
