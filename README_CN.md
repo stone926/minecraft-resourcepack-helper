@@ -15,7 +15,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 ## 功能亮点
 
 - 为方块状态、方块/物品模型、现代物品模型定义、粒子、纹理图集、装备、字体、路径点样式、后处理、声音和着色器导入提供跳转定义和资源路径补全。
-- 为 CIT `.properties` 中的纹理和模型路径提供跳转定义、补全、缺失资源诊断和资源关系图支持。
+- 为 CIT `.properties` 中的纹理和模型路径，以及 `citresewn/` 下的 CIT 模型 JSON 文件，提供跳转定义、补全、缺失资源诊断和资源关系图支持。
 - 缺失资源诊断会按当前资源包、资源包 overlays 和 filters、配置的低优先级资源包、原版资源逐级解析。
 - 模型纹理变量支持：跳转到 `#texture` 定义、追踪父模型继承的变量、高亮未定义变量，并提示循环变量引用或过深的父模型链。
 - Minecraft 资源活动栏视图展示当前文件引用、入站引用、模型继承、子模型，以及方块状态 -> 模型 -> 纹理关系。
@@ -78,6 +78,7 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 - `assets/<namespace>/sounds.json`：声音文件引用和声音事件检查。
 - `assets/<namespace>/shaders/{core,post}/**/*.{vsh,fsh}`：`#moj_import` 着色器 include 引用。
 - CIT `.properties`：纹理和模型路径跳转、补全、缺失资源诊断和资源关系图支持。
+- CIT 模型 JSON：`assets/<namespace>/citresewn/` 下 CitResewn JSON 模型文件的模型和纹理引用。
 
 ## 诊断与校验
 
@@ -140,8 +141,10 @@ RSGL 扩展负责：
 - `McResHelper: open model preview`（打开模型预览）
 - `McResHelper: export model preview image`（导出模型预览图片）
 - `McResHelper: open model preview from resource graph`（从资源图打开模型预览）
+- `McResHelper: create CIT template`（创建 CIT 模板）
+- `McResHelper: generate CIT for current item`（为当前物品生成 CIT）
 
-模型预览命令也会出现在模型 JSON 的编辑器菜单中。资源关系图里的模型节点提供内联预览操作。
+模型预览命令也会出现在模型 JSON 的编辑器菜单中。资源关系图里的模型节点提供内联预览操作。CIT 命令可从命令面板调用；"为当前物品生成 CIT"同时显示在物品纹理和模型的编辑器右键菜单中。
 
 RSGL 命令由配套 RSGL 扩展提供，使用 `RSGL:` 命令前缀，不再使用旧的 `McResHelper` 命令 ID。
 

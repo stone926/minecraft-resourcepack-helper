@@ -15,7 +15,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 ## Highlights
 
 - Go to Definition and resource path completion for blockstates, block/item models, modern item model definitions, particles, atlases, equipment, fonts, waypoint styles, post effects, sounds, and shader imports.
-- Go to Definition, completion, missing-resource diagnostics, and resource graph support for CIT `.properties` texture and model paths.
+- Go to Definition, completion, missing-resource diagnostics, and resource graph support for CIT `.properties` texture and model paths, and CIT model JSON files under `citresewn/`.
 - Missing resource diagnostics that resolve through the current pack, pack overlays and filters, configured lower-priority packs, and vanilla assets.
 - Model texture variable support: jump to `#texture` definitions, follow variables inherited from parent models, highlight undefined variables, and report cyclic texture variables or too-deep parent chains.
 - A Minecraft Resources activity bar view for current-file references, incoming references, model inheritance, child models, and blockstate -> model -> texture relationships.
@@ -78,6 +78,7 @@ CIT `.properties` preview is an asset preview, not a full CIT runtime simulation
 - `assets/<namespace>/sounds.json`: sound file references and sound event sanity checks.
 - `assets/<namespace>/shaders/{core,post}/**/*.{vsh,fsh}`: `#moj_import` shader include references.
 - CIT `.properties`: texture and model path definition, completion, missing-resource diagnostics, and resource graph support.
+- CIT model JSON: model and texture references from CitResewn JSON model files under `assets/<namespace>/citresewn/`.
 
 ## Diagnostics And Validation
 
@@ -140,8 +141,10 @@ Example:
 - `McResHelper: open model preview`
 - `McResHelper: export model preview image`
 - `McResHelper: open model preview from resource graph`
+- `McResHelper: create CIT template`
+- `McResHelper: generate CIT for current item`
 
-The model preview commands are also available from model JSON editor menus. Resource graph model nodes provide an inline preview action.
+The model preview commands are also available from model JSON editor menus. Resource graph model nodes provide an inline preview action. The CIT commands are accessible from the command palette; "generate CIT for current item" also appears in the editor context menu for item textures and models.
 
 RSGL commands are provided by the companion RSGL extension and use the `RSGL:` command prefix rather than legacy `McResHelper` command IDs.
 
