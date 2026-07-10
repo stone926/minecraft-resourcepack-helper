@@ -1,11 +1,19 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { minecraftResourceTarget } from "../../../mc-assets/src";
 import { topLevelRsglCompletions } from "../../src/completionData";
 import { compileRsglModule, emitRsglFiles, validateResourceUnits } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
 import { resourceKeywords } from "../../src/parser/keywords";
 import {
+  externOnlyKinds,
+  externResourceKindDescription,
+  getExternResourceKind,
+  getExternResourceTargetKind,
+  isExternResourceKind,
+  rsglExternResourceCompletionDescriptors,
+  rsglExternResourceKinds,
   rsglGenericJsonResourceKinds,
   rsglResourceCompletionDescriptors,
   rsglResourceKindDescriptors,
@@ -34,6 +42,45 @@ describe("RSGL resource kind descriptors", () => {
         && candidate.insertText === completion.insertText
         && candidate.detail === completion.detail
       ), `Expected top-level completion '${completion.label}' to come from the resource descriptor registry.`);
+    }
+  });
+
+  it("derives extern kinds, validation, diagnostics, and completions from registry metadata", () => {
+    const compilableExternKinds = rsglResourceKindDescriptors
+      .filter(descriptor => "supportsExtern" in descriptor && descriptor.supportsExtern === true)
+      .map(descriptor => descriptor.keyword);
+
+    assert.deepStrictEqual(rsglExternResourceKinds, [...compilableExternKinds, ...externOnlyKinds]);
+    assert.strictEqual(new Set(rsglExternResourceKinds).size, rsglExternResourceKinds.length);
+    assert.strictEqual((rsglResourceKinds as readonly string[]).includes("texture"), false);
+    assert.strictEqual(externResourceKindDescription, "'model', 'blockstate', 'item', or 'texture'");
+
+    for (const kind of rsglExternResourceKinds) {
+      assert.strictEqual(isExternResourceKind(kind), true);
+      assert.strictEqual(getExternResourceKind(kind), kind);
+    }
+    for (const kind of ["atlas", "sound", "unknown", ""]) {
+      assert.strictEqual(isExternResourceKind(kind), false);
+      assert.strictEqual(getExternResourceKind(kind), null);
+    }
+    assert.strictEqual(getExternResourceKind(undefined), null);
+
+    const externGrammar = readExternResourceKindPattern();
+    for (const kind of rsglExternResourceKinds) {
+      assert.match(`extern ${kind}`, externGrammar, `TextMate grammar is missing extern kind '${kind}'.`);
+    }
+    assert.doesNotMatch("texture", externGrammar, "The extern grammar rule must not reclassify texture properties globally.");
+
+    assert.deepStrictEqual(
+      rsglExternResourceCompletionDescriptors.map(completion => completion.label),
+      rsglExternResourceKinds.map(kind => `extern ${kind}`)
+    );
+    for (const completion of rsglExternResourceCompletionDescriptors) {
+      assert.ok(topLevelRsglCompletions.some(candidate =>
+        candidate.label === completion.label &&
+        candidate.insertText === completion.insertText &&
+        candidate.detail === completion.detail
+      ));
     }
   });
 
@@ -72,6 +119,24 @@ describe("RSGL resource kind descriptors", () => {
       const emitted = emitRsglFiles([unit!]).find(file => file.kind === "resource");
       assert.ok(emitted, `Emit metadata did not produce a resource file for '${descriptor.keyword}'.`);
       assert.strictEqual("copyFrom" in emitted!, descriptor.emit.contentKind === "binaryCopy");
+    }
+  });
+
+  it("routes every extern kind through the shared Minecraft file target registry", () => {
+    const fileName = path.join(process.cwd(), "extern-target-contract.rsgl");
+
+    for (const kind of rsglExternResourceKinds) {
+      const target = minecraftResourceTarget(getExternResourceTargetKind(kind));
+      assert.strictEqual(target.isDirectory, false, `Extern kind '${kind}' must resolve to a file target.`);
+      assert.ok(target.extension, `Extern kind '${kind}' must declare a file extension.`);
+
+      const result = compileRsglModule(parseRsgl(`extern ${kind}(id: minecraft:contract)`), { fileName });
+      assert.deepStrictEqual(result.diagnostics, [], `Compiler rejected extern kind '${kind}'.`);
+      assert.strictEqual(result.units.length, 1);
+      assert.strictEqual(
+        result.units[0].outputPath,
+        `assets/minecraft/${target.directory}/contract.${target.extension}`
+      );
     }
   });
 
@@ -126,6 +191,25 @@ function readGrammarStorageTypePattern(): RegExp {
   };
   const match = grammar.repository?.keywords?.patterns?.find(pattern => pattern.name === "storage.type.rsgl")?.match;
   assert.ok(match, "Expected TextMate storage.type.rsgl pattern.");
+  return new RegExp(match);
+}
+
+function readExternResourceKindPattern(): RegExp {
+  const grammarPath = path.join(process.cwd(), "extensions", "vscode-rsgl", "syntaxes", "rsgl.tmLanguage.json");
+  const grammar = JSON.parse(fs.readFileSync(grammarPath, "utf8")) as {
+    repository?: {
+      keywords?: {
+        patterns?: Array<{
+          match?: string;
+          captures?: Record<string, { name?: string }>;
+        }>;
+      };
+    };
+  };
+  const match = grammar.repository?.keywords?.patterns?.find(pattern =>
+    pattern.captures?.["3"]?.name === "storage.type.rsgl" && pattern.match?.includes("extern")
+  )?.match;
+  assert.ok(match, "Expected a context-aware TextMate extern resource kind pattern.");
   return new RegExp(match);
 }
 

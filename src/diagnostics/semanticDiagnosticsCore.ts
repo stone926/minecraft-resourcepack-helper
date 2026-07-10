@@ -7,6 +7,10 @@ import {
 } from "./nonJsonResourceChecks";
 import { findAssetsRoot, parseAssetsPath } from "../../packages/mc-assets/src";
 import {
+  getResourceSemanticDiagnosticsKind,
+  type ResourceSemanticDiagnosticsKind
+} from "../resources/resourceSurfaceRegistry";
+import {
   arrayElements,
   getObjectMember,
   JsonAstNode,
@@ -81,26 +85,41 @@ interface TextureVariable {
 
 const modernPackFormatBoundary = 65;
 
+type SemanticDiagnosticsHandler = (
+  document: SemanticDiagnosticsDocument,
+  ast: JsonDocumentNode,
+  options: SemanticDiagnosticsOptions
+) => SemanticDiagnostic[];
+
+const semanticDiagnosticsHandlers = {
+  packMetadata: (document, ast, options) =>
+    getPackMcmetaDiagnostics(document, ast, options.localize, options.host),
+  model: (document, ast, options) =>
+    getModelDiagnostics(document, ast, options.configuration, options.host),
+  postEffect: (_document, ast) => getPostEffectDiagnostics(ast),
+  sounds: (document, ast, options) => getSoundDiagnostics(document, ast, options.host)
+} satisfies Record<ResourceSemanticDiagnosticsKind, SemanticDiagnosticsHandler>;
+
+export const semanticDiagnosticsHandlerKinds: readonly ResourceSemanticDiagnosticsKind[] = Object.freeze(
+  Object.keys(semanticDiagnosticsHandlers) as ResourceSemanticDiagnosticsKind[]
+);
+
 export function isSemanticDiagnosticsDocument(document: SemanticDiagnosticsDocument): boolean {
   return isTextResourceDocument(document.fileName) ||
-    (document.languageId === "json" && (
-      /[\\/]pack\.mcmeta$/i.test(document.fileName) ||
-      /[\\/]models[\\/].+\.json$/i.test(document.fileName) ||
-      /[\\/]post_effect[\\/].+\.json$/i.test(document.fileName) ||
-      /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i.test(document.fileName)
-    ));
+    getResourceSemanticDiagnosticsKind(document.fileName, document.languageId) !== null;
 }
 
 export async function getSemanticDiagnostics(
   document: SemanticDiagnosticsDocument,
   options: SemanticDiagnosticsOptions
 ): Promise<SemanticDiagnostic[]> {
-  if (!isSemanticDiagnosticsDocument(document)) {
-    return [];
-  }
-
   if (isTextResourceDocument(document.fileName)) {
     return getTextResourceDiagnostics(document, options.host);
+  }
+
+  const diagnosticsKind = getResourceSemanticDiagnosticsKind(document.fileName, document.languageId);
+  if (!diagnosticsKind) {
+    return [];
   }
 
   const ast = options.host.getJsonAst(document);
@@ -108,19 +127,7 @@ export async function getSemanticDiagnostics(
     return [];
   }
 
-  if (/[\\/]pack\.mcmeta$/i.test(document.fileName)) {
-    return getPackMcmetaDiagnostics(document, ast, options.localize, options.host);
-  }
-
-  if (/[\\/]models[\\/].+\.json$/i.test(document.fileName)) {
-    return getModelDiagnostics(document, ast, options.configuration, options.host);
-  }
-
-  if (/[\\/]post_effect[\\/].+\.json$/i.test(document.fileName)) {
-    return getPostEffectDiagnostics(ast);
-  }
-
-  return getSoundDiagnostics(document, ast, options.host);
+  return semanticDiagnosticsHandlers[diagnosticsKind](document, ast, options);
 }
 
 function getPackMcmetaDiagnostics(

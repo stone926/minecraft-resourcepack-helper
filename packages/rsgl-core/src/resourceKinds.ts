@@ -51,6 +51,8 @@ interface RsglOrderedResourceCompletionDescriptor extends RsglResourceCompletion
 
 export interface ResourceKindDescriptorDefinition {
   keyword: string;
+  /** This compiled resource kind can also be declared as an external dependency. */
+  supportsExtern?: true;
   ast: {
     shape: RsglResourceAstShape;
     bodyDialect: RsglResourceBodyDialect;
@@ -74,6 +76,7 @@ export interface ResourceKindDescriptorDefinition {
 export const rsglResourceKindDescriptors = [
   {
     keyword: "model",
+    supportsExtern: true,
     ast: { shape: "model", bodyDialect: "model", supportsImpl: true },
     compile: { handler: "model", cardinality: "one" },
     validation: { handler: "model" },
@@ -95,6 +98,7 @@ export const rsglResourceKindDescriptors = [
   },
   {
     keyword: "blockstate",
+    supportsExtern: true,
     ast: { shape: "identified", bodyDialect: "blockstate", supportsImpl: false },
     compile: { handler: "blockstate", cardinality: "one" },
     validation: { handler: "blockstate" },
@@ -108,6 +112,7 @@ export const rsglResourceKindDescriptors = [
   },
   {
     keyword: "item",
+    supportsExtern: true,
     ast: { shape: "identified", bodyDialect: "item", supportsImpl: false },
     compile: { handler: "item", cardinality: "one" },
     validation: { handler: "item" },
@@ -294,11 +299,76 @@ export type RsglResourceKind = typeof rsglResourceKindDescriptors[number]["keywo
 export type ResourceKindDescriptor = typeof rsglResourceKindDescriptors[number];
 export type RsglGenericJsonResourceKind = Extract<ResourceKindDescriptor, { compile: { handler: "genericJson" } }>["keyword"];
 
+/** Resource file kinds that RSGL can reference but never compiles itself. */
+export const externOnlyKinds = ["texture"] as const;
+
+type CompilableExternResourceKind = Extract<ResourceKindDescriptor, { supportsExtern: true }>["keyword"];
+type ExternOnlyResourceKind = (typeof externOnlyKinds)[number];
+
+/** Every resource kind accepted by an `extern` declaration. */
+export type ExternResourceKind = CompilableExternResourceKind | ExternOnlyResourceKind;
+
 const descriptorByKeyword = new Map<string, ResourceKindDescriptor>(
   rsglResourceKindDescriptors.map(descriptor => [descriptor.keyword, descriptor])
 );
 
 export const rsglResourceKinds: readonly RsglResourceKind[] = rsglResourceKindDescriptors.map(descriptor => descriptor.keyword);
+
+export const rsglExternResourceKinds: readonly ExternResourceKind[] = [
+  ...rsglResourceKindDescriptors
+    .filter((descriptor): descriptor is Extract<ResourceKindDescriptor, { supportsExtern: true }> =>
+      "supportsExtern" in descriptor && descriptor.supportsExtern === true)
+    .map(descriptor => descriptor.keyword),
+  ...externOnlyKinds
+];
+
+const externResourceKindSet: ReadonlySet<string> = new Set(rsglExternResourceKinds);
+
+interface ExternResourceKindMetadata {
+  /** Kind understood by the shared Minecraft resource target registry. */
+  targetKind: string;
+  completion: RsglResourceCompletionDescriptor;
+}
+
+const externResourceMetadataByKind = {
+  model: {
+    targetKind: "model",
+    completion: {
+      label: "extern model",
+      insertText: "extern model(id: ${1:minecraft:block/stone})",
+      detail: "Declare an existing model without emitting it"
+    }
+  },
+  blockstate: {
+    targetKind: "blockstate",
+    completion: {
+      label: "extern blockstate",
+      insertText: "extern blockstate(id: ${1:minecraft:stone})",
+      detail: "Declare an existing blockstate without emitting it"
+    }
+  },
+  item: {
+    targetKind: "item",
+    completion: {
+      label: "extern item",
+      insertText: "extern item(id: ${1:minecraft:diamond})",
+      detail: "Declare an existing item definition without emitting it"
+    }
+  },
+  texture: {
+    targetKind: "texture",
+    completion: {
+      label: "extern texture",
+      insertText: "extern texture(id: ${1:minecraft:block/stone})",
+      detail: "Declare an existing texture without emitting it"
+    }
+  }
+} as const satisfies Record<ExternResourceKind, ExternResourceKindMetadata>;
+
+export const rsglExternResourceCompletionDescriptors: readonly RsglResourceCompletionDescriptor[] =
+  rsglExternResourceKinds.map(kind => externResourceMetadataByKind[kind].completion);
+
+export const externResourceKindDescription = formatQuotedAlternatives(rsglExternResourceKinds);
 
 export const rsglGenericJsonResourceKinds: readonly RsglGenericJsonResourceKind[] = rsglResourceKindDescriptors
   .filter((descriptor): descriptor is Extract<ResourceKindDescriptor, { compile: { handler: "genericJson" } }> =>
@@ -320,4 +390,24 @@ export function isRsglResourceKind(kind: string): kind is RsglResourceKind {
 
 export function isRsglGenericJsonResourceKind(kind: string): kind is RsglGenericJsonResourceKind {
   return getRsglResourceKindDescriptor(kind)?.compile.handler === "genericJson";
+}
+
+export function isExternResourceKind(kind: string): kind is ExternResourceKind {
+  return externResourceKindSet.has(kind);
+}
+
+export function getExternResourceKind(kind: string | undefined): ExternResourceKind | null {
+  return kind !== undefined && isExternResourceKind(kind) ? kind : null;
+}
+
+export function getExternResourceTargetKind(kind: ExternResourceKind): string {
+  return externResourceMetadataByKind[kind].targetKind;
+}
+
+function formatQuotedAlternatives(values: readonly string[]): string {
+  const quoted = values.map(value => `'${value}'`);
+  if (quoted.length <= 1) {
+    return quoted[0] ?? "";
+  }
+  return `${quoted.slice(0, -1).join(", ")}, or ${quoted[quoted.length - 1]}`;
 }

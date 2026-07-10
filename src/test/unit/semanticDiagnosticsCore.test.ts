@@ -1,22 +1,46 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
+import { uniqueValues } from "../../../packages/mc-assets/src";
 import {
   getSemanticDiagnostics,
   isSemanticDiagnosticsDocument,
+  semanticDiagnosticsHandlerKinds,
   type SemanticDiagnosticsDocument,
   type SemanticDiagnosticsHost,
   type SemanticDiagnosticsOptions
 } from "../../diagnostics/semanticDiagnosticsCore";
 import { lm } from "../../i18n/messages";
+import { resourceSurfaceRegistry } from "../../resources/resourceSurfaceRegistry";
 import { parseJsonAst } from "../../utils/jsonAst";
 
 describe("semantic diagnostics core", () => {
+  it("keeps registry routes and diagnostic handlers in sync", () => {
+    const declaredKinds = uniqueValues(resourceSurfaceRegistry.flatMap(surface =>
+      surface.semanticDiagnostics ? [surface.semanticDiagnostics] : []
+    )).sort();
+
+    assert.deepStrictEqual([...semanticDiagnosticsHandlerKinds].sort(), declaredKinds);
+  });
+
   it("ignores documents outside the semantic diagnostic domains without reading them", async () => {
     const document: SemanticDiagnosticsDocument = {
       languageId: "json",
       fileName: path.join("pack", "data", "recipe.json"),
       getText: () => {
         throw new Error("Unrelated JSON should not be parsed");
+      }
+    };
+
+    assert.strictEqual(isSemanticDiagnosticsDocument(document), false);
+    assert.deepStrictEqual(await getSemanticDiagnostics(document, createOptions(createThrowingHost())), []);
+  });
+
+  it("preserves the JSON language gate for matching resource paths", async () => {
+    const document: SemanticDiagnosticsDocument = {
+      languageId: "plaintext",
+      fileName: path.join("pack", "assets", "minecraft", "models", "block", "stone.json"),
+      getText: () => {
+        throw new Error("A matching path with the wrong language must not be parsed");
       }
     };
 

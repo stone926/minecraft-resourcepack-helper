@@ -1,5 +1,5 @@
 import { TextRange } from "../parser";
-import type { RsglResourceKind } from "../resourceKinds";
+import type { ExternResourceKind, RsglResourceKind } from "../resourceKinds";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -13,7 +13,7 @@ export interface BinaryCopyRef {
   sourcePath: string;
 }
 
-export type ExternalResourceKind = "model" | "blockstate" | "item" | "texture";
+export type ExternalResourceKind = ExternResourceKind;
 
 export interface ExternalResourceRef {
   kind: "external";

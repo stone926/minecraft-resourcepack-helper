@@ -10,6 +10,7 @@ import {
   getResourceReferenceExtraction,
   getResourceReferenceTargets,
   getResourceSchemaRegistrations,
+  getResourceSemanticDiagnosticsKind,
   getResourceSurfaceDocumentKind,
   getResourceWatcherPatterns,
   isResourceSurfaceFile,
@@ -43,6 +44,45 @@ describe("resource surface registry", () => {
       assert.ok(surface.referenceExtraction, `${surface.id} should declare reference extraction`);
       assert.ok(surface.referenceTargets?.length, `${surface.id} should declare reference target metadata`);
     }
+  });
+
+  it("routes structural semantic diagnostics through typed surface metadata", () => {
+    const semanticSurfaceDescriptors = resourceSurfaceRegistry
+      .filter(surface => surface.semanticDiagnostics !== undefined);
+    const semanticSurfaces = semanticSurfaceDescriptors
+      .map(surface => ({ id: surface.id, kind: surface.semanticDiagnostics }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+
+    assert.deepStrictEqual(semanticSurfaces, [
+      { id: "models", kind: "model" },
+      { id: "packMetadata", kind: "packMetadata" },
+      { id: "postEffect", kind: "postEffect" },
+      { id: "sounds", kind: "sounds" }
+    ]);
+    for (const surface of semanticSurfaceDescriptors) {
+      assert.strictEqual(surface.language, "json", `${surface.id} must preserve the JSON language gate`);
+      assert.ok(surface.fileNamePattern || surface.matchesFileName, `${surface.id} must declare a file-name matcher`);
+    }
+
+    assert.strictEqual(getResourceSemanticDiagnosticsKind(path.join("pack", "pack.mcmeta"), "json"), "packMetadata");
+    assert.strictEqual(
+      getResourceSemanticDiagnosticsKind(path.join("pack", "assets", "minecraft", "models", "block", "stone.json"), "json"),
+      "model"
+    );
+    assert.strictEqual(
+      getResourceSemanticDiagnosticsKind(path.join("pack", "assets", "minecraft", "post_effect", "blur.json"), "json"),
+      "postEffect"
+    );
+    assert.strictEqual(
+      getResourceSemanticDiagnosticsKind(path.join("pack", "assets", "minecraft", "sounds.json"), "json"),
+      "sounds"
+    );
+    assert.strictEqual(getResourceSemanticDiagnosticsKind("C:\\pack\\pack.mcmeta", "json"), "packMetadata");
+    assert.strictEqual(getResourceSemanticDiagnosticsKind(path.join("pack", "pack.mcmeta"), "plaintext"), null);
+    assert.strictEqual(
+      getResourceSemanticDiagnosticsKind(path.join("pack", "assets", "minecraft", "textures", "stone.png.mcmeta"), "json"),
+      null
+    );
   });
 
   it("derives selector, watcher, graph, completion, diagnostics, and schema data for a fixture surface", () => {

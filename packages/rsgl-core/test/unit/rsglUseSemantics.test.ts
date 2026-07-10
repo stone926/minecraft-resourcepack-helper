@@ -1,15 +1,16 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { compileRsglProgram, type ResourceUnit } from "../../src/compiler";
+import { compileRsglProgram, type ExternalResourceKind, type ResourceUnit } from "../../src/compiler";
 import { RsglCompiler } from "../../src/compiler/compiler";
 import { childEvaluationContext, type EvaluationContext } from "../../src/compiler/evaluate";
 import { parseRsgl } from "../../src/parser";
+import { externResourceKindDescription } from "../../src/resourceKinds";
 import { compileSource, expectNoDiagnostics, unitByPath } from "./helpers/compile";
 
 function assertExternalResource(
   units: readonly ResourceUnit[],
   outputPath: string,
-  resourceKind: "model" | "blockstate" | "item" | "texture",
+  resourceKind: ExternalResourceKind,
   id: string
 ): void {
   const unit = units.find(candidate => candidate.outputPath === outputPath);
@@ -41,6 +42,18 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     ]);
 
     assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.compileInvalidResourceId"));
+    assert.deepStrictEqual(result.units, []);
+  });
+
+  it("reports an unsupported extern kind once across semantic and compile validation", () => {
+    const result = compileSource(["extern atlas(id: minecraft:blocks)"]);
+    const diagnostics = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.invalidExternKind");
+
+    assert.strictEqual(diagnostics.length, 1);
+    assert.strictEqual(
+      diagnostics[0].message,
+      `Extern resource kind must be ${externResourceKindDescription}.`
+    );
     assert.deepStrictEqual(result.units, []);
   });
 

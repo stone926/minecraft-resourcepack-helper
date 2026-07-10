@@ -1,5 +1,6 @@
 import { ExpansionFrame, ExternalResourceKind, ResourceUnit, RsglMapping } from "./ir";
-import { parseResourceId, resourceOutputPath } from "./resourceIds";
+import { getExternResourceTargetKind } from "../resourceKinds";
+import { parseResourceId, resourceTargetOutputPath } from "./resourceIds";
 
 export function createExternalResource(
   resourceKind: ExternalResourceKind,
@@ -15,7 +16,7 @@ export function createExternalResource(
     return null;
   }
   const externalId = `${id.namespace}:${id.path}`;
-  const outputPath = resourceOutputPath(resourceKind, id, resourceKind === "texture" ? "png" : "json");
+  const outputPath = resourceTargetOutputPath(getExternResourceTargetKind(resourceKind), id);
   return {
     id,
     kind: resourceKind,

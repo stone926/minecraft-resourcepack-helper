@@ -10,6 +10,7 @@ import {
   TextRange,
   TypeNode
 } from "../parser";
+import type { ExternResourceKind } from "../resourceKinds";
 
 export type RsglSymbolKind =
   | "builtin"
@@ -107,7 +108,7 @@ export interface RsglReferenceRecord {
 }
 
 export interface RsglOutputResourcePreview {
-  kind: ResourceDeclNode["resourceKind"] | "texture";
+  kind: ResourceDeclNode["resourceKind"] | ExternResourceKind;
   id?: string;
   node: RsglNode;
 }

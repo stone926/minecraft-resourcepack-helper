@@ -352,7 +352,8 @@ describe("RSGL compiler emit and write pipeline", () => {
     const result = compileSource([
       "extern model(id: minecraft:block/missing_model)",
       "extern blockstate(id: minecraft:missing_block)",
-      "extern item(id: minecraft:missing_item)"
+      "extern item(id: minecraft:missing_item)",
+      "extern texture(id: minecraft:block/missing_texture)"
     ], {
       resourceExists: () => false
     });
@@ -360,9 +361,10 @@ describe("RSGL compiler emit and write pipeline", () => {
     expectDiagnosticCodes(result, [
       "rsgl.modelNotFound",
       "rsgl.blockstateNotFound",
-      "rsgl.itemNotFound"
+      "rsgl.itemNotFound",
+      "rsgl.textureNotFound"
     ]);
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.severity), ["warning", "warning", "warning"]);
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.severity), ["warning", "warning", "warning", "warning"]);
   });
 
   it("lets generated resources override external references", () => {

@@ -2,6 +2,7 @@ import { ResourceId } from "./ir";
 import {
   minecraftResourceIdToString,
   minecraftResourceOutputPath,
+  minecraftResourceTarget,
   tryParseMinecraftResourceId
 } from "../../../mc-assets/src";
 
@@ -13,6 +14,14 @@ export function resourceIdToString(id: ResourceId): string {
   return minecraftResourceIdToString(id);
 }
 
-export function resourceOutputPath(kind: string, id: ResourceId, extension = "json"): string {
+export function resourceOutputPath(
+  kind: string,
+  id: ResourceId,
+  extension = "json"
+): string {
   return minecraftResourceOutputPath(kind, id, extension);
+}
+
+export function resourceTargetOutputPath(kind: string, id: ResourceId): string {
+  return resourceOutputPath(kind, id, minecraftResourceTarget(kind).extension ?? "json");
 }

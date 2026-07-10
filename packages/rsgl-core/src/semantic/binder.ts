@@ -17,6 +17,7 @@ import {
   VariantBodyNode,
   VariantSectionStatementNode
 } from "../parser";
+import { externResourceKindDescription, getExternResourceKind } from "../resourceKinds";
 import { createBuiltinSymbols } from "./builtins";
 import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
@@ -244,7 +245,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   private checkExternDecl(statement: ExternDeclNode, scope: RsglScope): void {
     const kind = this.externDeclKind(statement);
     if (!kind) {
-      this.diagnostics.push(diagnostic("rsgl.invalidExternKind", "Extern resource kind must be 'model', 'blockstate', 'item', or 'texture'.", statement.resourceKind?.range ?? statement.range));
+      this.diagnostics.push(diagnostic("rsgl.invalidExternKind", `Extern resource kind must be ${externResourceKindDescription}.`, statement.resourceKind?.range ?? statement.range));
     }
     const idArg = this.externIdArgument(statement);
     if (!idArg) {
@@ -254,9 +255,8 @@ class RsglBinder implements RsglExpressionCheckContext {
     checkResourceIdExpression(this, idArg.value, scope);
   }
 
-  private externDeclKind(statement: ExternDeclNode): "model" | "blockstate" | "item" | "texture" | null {
-    const kind = statement.resourceKind?.text;
-    return kind === "model" || kind === "blockstate" || kind === "item" || kind === "texture" ? kind : null;
+  private externDeclKind(statement: ExternDeclNode) {
+    return getExternResourceKind(statement.resourceKind?.text);
   }
 
   private externIdArgument(statement: ExternDeclNode): ExternDeclNode["args"][number] | undefined {

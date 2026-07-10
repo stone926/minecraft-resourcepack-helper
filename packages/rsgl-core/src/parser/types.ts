@@ -1,4 +1,5 @@
 import type { RsglResourceKind } from "../resourceKinds";
+export type { ExternResourceKind } from "../resourceKinds";
 
 export type RsglTokenKind =
   | "identifier"
@@ -370,8 +371,6 @@ export interface ExportDeclNode extends StatementNodeBase {
   source: StringLiteralNode | null;
   exportAll: boolean;
 }
-
-export type ExternResourceKind = "model" | "blockstate" | "item" | "texture";
 
 export interface ExternDeclNode extends StatementNodeBase {
   kind: "ExternDecl";

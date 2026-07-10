@@ -55,6 +55,7 @@ import {
 } from "./templateExpansion";
 import { createExternalResource } from "./templates";
 import { createRsglStdlibPreludeSourceFiles } from "../stdlib";
+import { externResourceKindDescription, getExternResourceKind } from "../resourceKinds";
 import {
   isItemModelStatement,
   normalizeFileName,
@@ -185,9 +186,9 @@ export class RsglCompiler {
   }
 
   private compileExternDecl(statement: ExternDeclNode, context: RsglCompileContext): void {
-    const kind = externResourceKind(statement);
+    const kind = getExternResourceKind(statement.resourceKind?.text);
     if (!kind) {
-      this.error("rsgl.invalidExternKind", "Extern resource kind must be 'model', 'blockstate', 'item', or 'texture'.", statement.resourceKind?.range ?? statement.range);
+      this.error("rsgl.invalidExternKind", `Extern resource kind must be ${externResourceKindDescription}.`, statement.resourceKind?.range ?? statement.range);
       return;
     }
     const idArg = statement.args.find(arg => arg.name?.text === "id")
@@ -539,10 +540,5 @@ export function createRsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTempl
   return program.models.flatMap(model =>
     Array.from(environments.get(normalizeFileName(model.fileName))?.exportedTemplates.values() ?? [])
   );
-}
-
-function externResourceKind(statement: ExternDeclNode): "model" | "blockstate" | "item" | "texture" | null {
-  const kind = statement.resourceKind?.text;
-  return kind === "model" || kind === "blockstate" || kind === "item" || kind === "texture" ? kind : null;
 }
 

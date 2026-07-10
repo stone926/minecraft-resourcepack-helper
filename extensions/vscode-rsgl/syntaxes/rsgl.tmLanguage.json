@@ -101,6 +101,17 @@
     "keywords": {
       "patterns": [
         {
+          "match": "\\b(extern)(\\s+)(model|blockstate|item|texture)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            },
+            "3": {
+              "name": "storage.type.rsgl"
+            }
+          }
+        },
+        {
           "name": "keyword.control.rsgl",
           "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|impl|range|select|condition|composite|empty|selected_item|special)\\b"
         },

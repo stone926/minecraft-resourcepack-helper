@@ -1,4 +1,7 @@
-import { rsglResourceCompletionDescriptors } from "./resourceKinds";
+import {
+  rsglExternResourceCompletionDescriptors,
+  rsglResourceCompletionDescriptors
+} from "./resourceKinds";
 
 export interface RsglCompletionCandidate {
   label: string;
@@ -56,30 +59,10 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     detail: "Declarative template",
     kind: "snippet"
   },
-  {
-    label: "extern model",
-    insertText: "extern model(id: ${1:minecraft:block/stone})",
-    detail: "Declare an existing model without emitting it",
-    kind: "snippet"
-  },
-  {
-    label: "extern blockstate",
-    insertText: "extern blockstate(id: ${1:minecraft:stone})",
-    detail: "Declare an existing blockstate without emitting it",
-    kind: "snippet"
-  },
-  {
-    label: "extern item",
-    insertText: "extern item(id: ${1:minecraft:diamond})",
-    detail: "Declare an existing item definition without emitting it",
-    kind: "snippet"
-  },
-  {
-    label: "extern texture",
-    insertText: "extern texture(id: ${1:minecraft:block/stone})",
-    detail: "Declare an existing texture without emitting it",
-    kind: "snippet"
-  },
+  ...rsglExternResourceCompletionDescriptors.map(descriptor => ({
+    ...descriptor,
+    kind: "snippet" as const
+  })),
   ...rsglResourceCompletionDescriptors.map(descriptor => ({
     ...descriptor,
     kind: "snippet" as const

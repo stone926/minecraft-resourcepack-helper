@@ -56,6 +56,12 @@ export type ResourceGraphPreviewContext =
   | "citPreviewResource"
   | "unsupportedPreviewResource";
 
+export type ResourceSemanticDiagnosticsKind =
+  | "packMetadata"
+  | "model"
+  | "postEffect"
+  | "sounds";
+
 export interface ResourceSurfaceDescriptor<K extends string = string> {
   id: string;
   documentKind?: K;
@@ -68,6 +74,8 @@ export interface ResourceSurfaceDescriptor<K extends string = string> {
   referenceTargets?: readonly ResourceReferenceKind[];
   graphFileExtensions?: readonly string[];
   graphPreviewContext?: ResourceGraphPreviewContext;
+  /** Selects the structural semantic diagnostics handler for this surface. */
+  semanticDiagnostics?: ResourceSemanticDiagnosticsKind;
   manifestWhenClauses?: readonly string[];
   fileNamePattern?: RegExp;
   matchesFileName?: (fileName: string) => boolean;
@@ -95,8 +103,7 @@ const referenceSurfaceRegistry = [
     "%schema.blockstates.url%",
     getBlockstateReferences,
     ["model"],
-    undefined,
-    "unsupportedPreviewResource"
+    { graphPreviewContext: "unsupportedPreviewResource" }
   ),
   {
     id: "modelsBlock",
@@ -127,15 +134,35 @@ const referenceSurfaceRegistry = [
     graphFileExtensions: ["json"],
     manifestWhenClauses: [modelPreviewWhen],
     graphPreviewContext: "modelResource",
+    semanticDiagnostics: "model",
     fileNamePattern: /[\\/]models[\\/].+\.json$/i
   },
   jsonReferenceSurface("particles", "particles", "**/particles/**/*.json", "%schema.particles.url%", getParticleReferences, ["texture"]),
-  jsonReferenceSurface("items", "items", "**/items/**/*.json", "%schema.items.url%", getItemDefinitionReferences, ["model", "texture"], [citGenerationWhen], "unsupportedPreviewResource"),
+  jsonReferenceSurface(
+    "items",
+    "items",
+    "**/items/**/*.json",
+    "%schema.items.url%",
+    getItemDefinitionReferences,
+    ["model", "texture"],
+    {
+      manifestWhenClauses: [citGenerationWhen],
+      graphPreviewContext: "unsupportedPreviewResource"
+    }
+  ),
   jsonReferenceSurface("atlases", "atlases", "**/atlases/**/*.json", "%schema.atlases.url%", getAtlasReferences, ["texture", "textureDirectory"]),
   jsonReferenceSurface("equipment", "equipment", "**/equipment/**/*.json", "%schema.equipment.url%", getEquipmentReferences, ["texture"]),
   jsonReferenceSurface("font", "font", "**/font/**/*.json", "%schema.font.url%", getFontReferences, ["font", "fontFile", "texture"]),
   jsonReferenceSurface("waypointStyle", "waypoint_style", "**/waypoint_style/**/*.json", "%schema.waypointStyle.url%", getWaypointStyleReferences, ["texture"]),
-  jsonReferenceSurface("postEffect", "post_effect", "**/post_effect/**/*.json", "%schema.postEffect.url%", getPostEffectReferences, ["shader", "texture"]),
+  jsonReferenceSurface(
+    "postEffect",
+    "post_effect",
+    "**/post_effect/**/*.json",
+    "%schema.postEffect.url%",
+    getPostEffectReferences,
+    ["shader", "texture"],
+    { semanticDiagnostics: "postEffect" }
+  ),
   {
     id: "sounds",
     documentKind: "sounds",
@@ -146,6 +173,7 @@ const referenceSurfaceRegistry = [
     referenceExtraction: { mode: "json", extract: getSoundReferences },
     referenceTargets: ["sound"],
     graphFileExtensions: ["json"],
+    semanticDiagnostics: "sounds",
     fileNamePattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i
   },
   shaderSurface("shaderCore", "core", "shaders/core"),
@@ -199,11 +227,14 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   },
   {
     id: "packMetadata",
+    language: "json",
     watcherPatterns: ["**/pack.mcmeta", "**/pack.png", "**/assets/*/textures/**/*.png.mcmeta"],
     schema: [
       { fileMatch: "**/pack.mcmeta", url: "%schema.packMcmeta.url%" },
       { fileMatch: "**/textures/**/*.png.mcmeta", url: "%schema.pngMcmeta.url%" }
-    ]
+    ],
+    semanticDiagnostics: "packMetadata",
+    fileNamePattern: /[\\/]pack\.mcmeta$/i
   },
   schemaOnlySurface("lang", "**/assets/*/lang/*.json", "%schema.lang.url%"),
   schemaOnlySurface("credits", "**/assets/*/texts/credits.json", "%schema.credits.url%"),
@@ -311,6 +342,18 @@ export function isResourceSurfaceFile(
   return registry.some(surface => surface.capabilities?.includes(capability) && matchesSurface(surface, fileName));
 }
 
+export function getResourceSemanticDiagnosticsKind(
+  fileName: string,
+  languageId: string,
+  registry: readonly ResourceSurfaceDescriptor[] = resourceSurfaceRegistry
+): ResourceSemanticDiagnosticsKind | null {
+  return registry.find(surface =>
+    surface.semanticDiagnostics !== undefined &&
+    surface.language === languageId &&
+    matchesSurface(surface, fileName)
+  )?.semanticDiagnostics ?? null;
+}
+
 function matchesSurface(surface: ResourceSurfaceDescriptor, fileName: string): boolean {
   return surface.fileNamePattern?.test(fileName) || surface.matchesFileName?.(fileName) === true;
 }
@@ -322,8 +365,11 @@ function jsonReferenceSurface<const K extends string>(
   schemaUrl: string,
   extract: JsonReferenceExtractor,
   referenceTargets: readonly ResourceReferenceKind[],
-  manifestWhenClauses?: readonly string[],
-  graphPreviewContext?: ResourceGraphPreviewContext
+  options: {
+    manifestWhenClauses?: readonly string[];
+    graphPreviewContext?: ResourceGraphPreviewContext;
+    semanticDiagnostics?: ResourceSemanticDiagnosticsKind;
+  } = {}
 ): ResourceSurfaceDescriptor<K> & { documentKind: K } {
   return {
     id: documentKind,
@@ -335,8 +381,9 @@ function jsonReferenceSurface<const K extends string>(
     referenceExtraction: { mode: "json", extract },
     referenceTargets,
     graphFileExtensions: ["json"],
-    manifestWhenClauses,
-    graphPreviewContext,
+    manifestWhenClauses: options.manifestWhenClauses,
+    graphPreviewContext: options.graphPreviewContext,
+    semanticDiagnostics: options.semanticDiagnostics,
     fileNamePattern: new RegExp(`[\\\\/]${folder}[\\\\/].+\\.json$`, "i")
   };
 }

@@ -85,6 +85,33 @@ describe("RSGL semantic model", () => {
     assert.ok(model.references.some(reference => reference.name === "i" && reference.symbol?.kind === "parameter"));
   });
 
+  it("records every supported extern kind in semantic resource previews", () => {
+    const model = bindRsglModule(parseRsgl([
+      "extern model(id: minecraft:block/stone)",
+      "extern blockstate(id: minecraft:stone)",
+      "extern item(id: minecraft:stone)",
+      "extern texture(id: minecraft:block/stone)"
+    ].join("\n")));
+
+    assert.deepStrictEqual(model.diagnostics, []);
+    assert.deepStrictEqual(
+      model.outputResources.map(resource => [resource.kind, resource.id]),
+      [
+        ["model", "minecraft:block/stone"],
+        ["blockstate", "minecraft:stone"],
+        ["item", "minecraft:stone"],
+        ["texture", "minecraft:block/stone"]
+      ]
+    );
+  });
+
+  it("rejects unsupported extern kinds before recording semantic resource previews", () => {
+    const model = bindRsglModule(parseRsgl("extern atlas(id: minecraft:blocks)"));
+
+    assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), ["rsgl.invalidExternKind"]);
+    assert.deepStrictEqual(model.outputResources, []);
+  });
+
   it("rejects legacy seq generator template patterns", () => {
     const model = bindRsglModule(parseRsgl([
       "let brace = seq(\"minecraft:particle/spark_{i}\", i: 0..2)",
