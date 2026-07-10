@@ -24,6 +24,13 @@ export interface ResourceRootCandidateOptions {
   resourcePackRoots?: string[];
 }
 
+export interface ConfiguredPackResourceRootCandidateOptions {
+  pathExists?: (filePath: string) => boolean;
+  getPackMetadata?: (packRoot: string) => PackMetadata;
+  resourcePath?: string;
+  excludedPackRoot?: string | null;
+}
+
 export interface ResourceFileRequest {
   resourcePath: string;
   sourceFileName: string;
@@ -110,6 +117,34 @@ export function getDocumentResourceRootCandidates(
 
   if (!blocksDefaultAssets) {
     candidates.push(...getResourceRootCandidates(null, defaultAssetsPath, namespace, target));
+  }
+
+  return uniqueValues(candidates);
+}
+
+/**
+ * Returns resource roots contributed only by explicitly configured packs.
+ *
+ * Configured roots are ordered from highest to lowest priority. Each pack's
+ * active overlays are searched before its base assets, while filters block
+ * matching resources from all lower-priority configured packs.
+ */
+export function getConfiguredPackResourceRootCandidates(
+  configuredRoots: string[] | undefined,
+  namespace: string,
+  target: string,
+  options: ConfiguredPackResourceRootCandidateOptions = {}
+): string[] {
+  const candidates: string[] = [];
+  const higherPriorityFilters: PackMetadata["filters"] = [];
+
+  for (const packRoot of getConfiguredLowerPriorityPackRoots(options.excludedPackRoot ?? null, configuredRoots)) {
+    if (resourceMatchesFilters(higherPriorityFilters, namespace, options.resourcePath)) {
+      continue;
+    }
+
+    candidates.push(...getPackResourceRootCandidates(packRoot, null, namespace, target, options));
+    higherPriorityFilters.push(...getPackMetadata(packRoot, options).filters);
   }
 
   return uniqueValues(candidates);

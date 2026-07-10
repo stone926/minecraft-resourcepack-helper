@@ -85,28 +85,26 @@ describe("RSGL semantic model", () => {
     assert.ok(model.references.some(reference => reference.name === "i" && reference.symbol?.kind === "parameter"));
   });
 
-  it("records every supported extern kind in semantic resource previews", () => {
+  it("does not record extern declarations as semantic output resources", () => {
     const model = bindRsglModule(parseRsgl([
-      "extern model(id: minecraft:block/stone)",
-      "extern blockstate(id: minecraft:stone)",
-      "extern item(id: minecraft:stone)",
-      "extern texture(id: minecraft:block/stone)"
+      "extern custom model minecraft:block/stone",
+      "extern custom blockstate minecraft:stone",
+      "extern custom item minecraft:stone",
+      "extern custom texture minecraft:block/stone",
+      "extern custom texture_directory minecraft:block/**",
+      "extern custom sound minecraft:block/stone/break1",
+      "extern custom font minecraft:default",
+      "extern custom font_file minecraft:font/ascii.png",
+      "extern custom shader_vertex minecraft:core/screenquad",
+      "extern custom shader_fragment minecraft:post/box_blur"
     ].join("\n")));
 
     assert.deepStrictEqual(model.diagnostics, []);
-    assert.deepStrictEqual(
-      model.outputResources.map(resource => [resource.kind, resource.id]),
-      [
-        ["model", "minecraft:block/stone"],
-        ["blockstate", "minecraft:stone"],
-        ["item", "minecraft:stone"],
-        ["texture", "minecraft:block/stone"]
-      ]
-    );
+    assert.deepStrictEqual(model.outputResources, []);
   });
 
   it("rejects unsupported extern kinds before recording semantic resource previews", () => {
-    const model = bindRsglModule(parseRsgl("extern atlas(id: minecraft:blocks)"));
+    const model = bindRsglModule(parseRsgl("extern custom atlas minecraft:blocks"));
 
     assert.deepStrictEqual(model.diagnostics.map(diagnostic => diagnostic.code), ["rsgl.invalidExternKind"]);
     assert.deepStrictEqual(model.outputResources, []);

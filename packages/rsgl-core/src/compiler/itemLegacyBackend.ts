@@ -1,8 +1,16 @@
-import { isExternalResourceUnit, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import {
+  isExternalResourceUnit,
+  JsonValue,
+  ResourceId,
+  ResourceUnit,
+  RsglCompileDiagnostic,
+  RsglValidationReferenceOrigin
+} from "./ir";
 import { isJsonObject } from "./jsonValues";
 import { resourceOutputPath } from "./resourceIds";
+import { appendGeneratedPath } from "./sourcePaths";
 import { RsglTargetPackFormat } from "./target";
-import { itemModelType } from "./validationShared";
+import { itemModelType, sourceFileForValidationRange, sourceRangeForGeneratedPath } from "./validationShared";
 
 export interface LowerItemUnitsForTargetResult {
   units: ResourceUnit[];
@@ -10,13 +18,18 @@ export interface LowerItemUnitsForTargetResult {
 }
 
 interface LegacyItemLowering {
-  baseModel: string;
+  baseModel: LegacyModelReference;
   overrides: LegacyItemOverride[];
 }
 
 interface LegacyItemOverride {
   predicate: Record<string, number>;
-  model: string;
+  model: LegacyModelReference;
+}
+
+interface LegacyModelReference {
+  id: string;
+  sourcePath: string;
 }
 
 const modernItemModelPackFormat = 75;
@@ -57,34 +70,35 @@ function lowerItemUnitToLegacy(
   }
 
   const outputPath = legacyItemModelOutputPath(unit.id);
-  const lowered = lowerLegacyItemModel(model, unit, diagnostics);
+  const lowered = lowerLegacyItemModel(model, unit, diagnostics, "/model");
   if (!lowered) {
     return [];
   }
-  if (lowered.baseModel === itemModelId(unit.id) && lowered.overrides.length === 0 && modelOutputPaths.has(normalizedPath(outputPath))) {
+  if (lowered.baseModel.id === itemModelId(unit.id) && lowered.overrides.length === 0 && modelOutputPaths.has(normalizedPath(outputPath))) {
     return [];
   }
-  return [legacyUnit(unit, outputPath, legacyContent(unit.id, lowered))];
+  return [legacyUnit(unit, outputPath, lowered)];
 }
 
 function lowerLegacyItemModel(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): LegacyItemLowering | null {
   const type = itemModelType(model.type);
   if (type === "model") {
-    const modelValue = modelRef(model);
+    const modelValue = modelRef(model, appendGeneratedPath(generatedPath, "model"));
     return modelValue ? { baseModel: modelValue, overrides: [] } : null;
   }
   if (type === "range_dispatch") {
-    return lowerLegacyRangeDispatch(model, unit, diagnostics);
+    return lowerLegacyRangeDispatch(model, unit, diagnostics, generatedPath);
   }
   if (type === "select") {
-    return lowerLegacySelect(model, unit, diagnostics);
+    return lowerLegacySelect(model, unit, diagnostics, generatedPath);
   }
   if (type === "condition") {
-    return lowerLegacyCondition(model, unit, diagnostics);
+    return lowerLegacyCondition(model, unit, diagnostics, generatedPath);
   }
 
   pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", `Legacy item backend does not support '${String(model.type)}' item models.`);
@@ -94,11 +108,15 @@ function lowerLegacyItemModel(
 function lowerLegacyRangeDispatch(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): LegacyItemLowering | null {
   const predicate = rangePredicateName(model);
   const entries = Array.isArray(model.entries) ? model.entries : null;
-  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
+  const fallbackPath = appendGeneratedPath(generatedPath, "fallback");
+  const fallback = isJsonObject(model.fallback)
+    ? lowerLegacyItemModel(model.fallback, unit, diagnostics, fallbackPath)
+    : null;
   if (!predicate || !entries || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch lowering requires a supported property, entries, and a model fallback.");
     return null;
@@ -109,12 +127,18 @@ function lowerLegacyRangeDispatch(
   }
 
   const overrides: LegacyItemOverride[] = [];
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const entryObject = isJsonObject(entry) ? entry : null;
     const threshold = typeof entryObject?.threshold === "number" && Number.isFinite(entryObject.threshold)
       ? entryObject.threshold
       : null;
-    const branch = isJsonObject(entryObject?.model) ? lowerLegacyItemModel(entryObject.model, unit, diagnostics) : null;
+    const branchPath = appendGeneratedPath(
+      appendGeneratedPath(appendGeneratedPath(generatedPath, "entries"), String(index)),
+      "model"
+    );
+    const branch = isJsonObject(entryObject?.model)
+      ? lowerLegacyItemModel(entryObject.model, unit, diagnostics, branchPath)
+      : null;
     if (threshold === null || !branch) {
       pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch entries must use finite thresholds and lowerable model branches.");
       return null;
@@ -132,14 +156,15 @@ function lowerLegacyRangeDispatch(
 function lowerLegacySelect(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): LegacyItemLowering | null {
   const property = normalizedProperty(model.property);
   if (property === "main_hand") {
-    return lowerLegacyMainHandSelect(model, unit, diagnostics);
+    return lowerLegacyMainHandSelect(model, unit, diagnostics, generatedPath);
   }
   if (property === "charge_type") {
-    return lowerLegacyChargeTypeSelect(model, unit, diagnostics);
+    return lowerLegacyChargeTypeSelect(model, unit, diagnostics, generatedPath);
   }
   if (property !== "custom_model_data") {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering currently supports custom_model_data, main_hand, and charge_type cases.");
@@ -147,7 +172,10 @@ function lowerLegacySelect(
   }
 
   const cases = Array.isArray(model.cases) ? model.cases : null;
-  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
+  const fallbackPath = appendGeneratedPath(generatedPath, "fallback");
+  const fallback = isJsonObject(model.fallback)
+    ? lowerLegacyItemModel(model.fallback, unit, diagnostics, fallbackPath)
+    : null;
   if (!cases || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering requires cases and a model fallback.");
     return null;
@@ -158,10 +186,16 @@ function lowerLegacySelect(
   }
 
   const overrides: LegacyItemOverride[] = [];
-  for (const itemCase of cases) {
+  for (const [index, itemCase] of cases.entries()) {
     const caseObject = isJsonObject(itemCase) ? itemCase : null;
     const whenValues = legacyNumericPredicateValues(caseObject?.when);
-    const branch = isJsonObject(caseObject?.model) ? lowerLegacyItemModel(caseObject.model, unit, diagnostics) : null;
+    const branchPath = appendGeneratedPath(
+      appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index)),
+      "model"
+    );
+    const branch = isJsonObject(caseObject?.model)
+      ? lowerLegacyItemModel(caseObject.model, unit, diagnostics, branchPath)
+      : null;
     if (!whenValues || !branch) {
       pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select cases must use numeric custom_model_data values and lowerable model branches.");
       return null;
@@ -181,10 +215,14 @@ function lowerLegacySelect(
 function lowerLegacyMainHandSelect(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): LegacyItemLowering | null {
   const cases = Array.isArray(model.cases) ? model.cases : null;
-  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
+  const fallbackPath = appendGeneratedPath(generatedPath, "fallback");
+  const fallback = isJsonObject(model.fallback)
+    ? lowerLegacyItemModel(model.fallback, unit, diagnostics, fallbackPath)
+    : null;
   if (!cases || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy main_hand select lowering requires cases and a model fallback.");
     return null;
@@ -196,10 +234,16 @@ function lowerLegacyMainHandSelect(
 
   const rightHandOverrides: LegacyItemOverride[] = [];
   const leftHandOverrides: LegacyItemOverride[] = [];
-  for (const itemCase of cases) {
+  for (const [index, itemCase] of cases.entries()) {
     const caseObject = isJsonObject(itemCase) ? itemCase : null;
     const whenValues = legacyMainHandValues(caseObject?.when);
-    const branch = isJsonObject(caseObject?.model) ? lowerLegacyItemModel(caseObject.model, unit, diagnostics) : null;
+    const branchPath = appendGeneratedPath(
+      appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index)),
+      "model"
+    );
+    const branch = isJsonObject(caseObject?.model)
+      ? lowerLegacyItemModel(caseObject.model, unit, diagnostics, branchPath)
+      : null;
     if (!whenValues || !branch) {
       pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy main_hand select cases must use 'left'/'right' values and lowerable model branches.");
       return null;
@@ -235,10 +279,14 @@ function lowerLegacyMainHandSelect(
 function lowerLegacyChargeTypeSelect(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): LegacyItemLowering | null {
   const cases = Array.isArray(model.cases) ? model.cases : null;
-  const fallback = isJsonObject(model.fallback) ? lowerLegacyItemModel(model.fallback, unit, diagnostics) : null;
+  const fallbackPath = appendGeneratedPath(generatedPath, "fallback");
+  const fallback = isJsonObject(model.fallback)
+    ? lowerLegacyItemModel(model.fallback, unit, diagnostics, fallbackPath)
+    : null;
   if (!cases || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy charge_type select lowering requires cases and a fallback model.");
     return null;
@@ -248,10 +296,16 @@ function lowerLegacyChargeTypeSelect(
   const rocketOverrides: LegacyItemOverride[] = [];
   let hasArrowCase = false;
   let hasRocketCase = false;
-  for (const itemCase of cases) {
+  for (const [index, itemCase] of cases.entries()) {
     const caseObject = isJsonObject(itemCase) ? itemCase : null;
     const whenValues = legacyChargeTypeValues(caseObject?.when);
-    const branch = isJsonObject(caseObject?.model) ? lowerLegacyItemModel(caseObject.model, unit, diagnostics) : null;
+    const branchPath = appendGeneratedPath(
+      appendGeneratedPath(appendGeneratedPath(generatedPath, "cases"), String(index)),
+      "model"
+    );
+    const branch = isJsonObject(caseObject?.model)
+      ? lowerLegacyItemModel(caseObject.model, unit, diagnostics, branchPath)
+      : null;
     if (!whenValues || !branch) {
       pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy charge_type select cases must use 'arrow', 'rocket', or 'none' values and lowerable model branches.");
       return null;
@@ -296,11 +350,16 @@ function lowerLegacyChargeTypeSelect(
 function lowerLegacyCondition(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): LegacyItemLowering | null {
   const predicate = conditionPredicateName(model);
-  const onTrue = isJsonObject(model["on_true"]) ? lowerLegacyItemModel(model["on_true"], unit, diagnostics) : null;
-  const onFalse = isJsonObject(model["on_false"]) ? lowerLegacyItemModel(model["on_false"], unit, diagnostics) : null;
+  const onTrue = isJsonObject(model["on_true"])
+    ? lowerLegacyItemModel(model["on_true"], unit, diagnostics, appendGeneratedPath(generatedPath, "on_true"))
+    : null;
+  const onFalse = isJsonObject(model["on_false"])
+    ? lowerLegacyItemModel(model["on_false"], unit, diagnostics, appendGeneratedPath(generatedPath, "on_false"))
+    : null;
   if (!predicate || !onTrue || !onFalse) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a supported property and lowerable model branches.");
     return null;
@@ -354,21 +413,21 @@ function legacyContent(itemId: ResourceId, lowering: LegacyItemLowering): Record
     legacyBaseModel(itemId, lowering.baseModel),
     lowering.overrides.map(override => ({
       predicate: override.predicate,
-      model: override.model
+      model: override.model.id
     }))
   );
 }
 
-function legacyBaseModel(itemId: ResourceId, model: string): Record<string, JsonValue> {
-  if (model === itemModelId(itemId)) {
+function legacyBaseModel(itemId: ResourceId, model: LegacyModelReference): Record<string, JsonValue> {
+  if (model.id === itemModelId(itemId)) {
     return {
       parent: "minecraft:item/generated",
       textures: {
-        layer0: model
+        layer0: model.id
       }
     };
   }
-  return { parent: model };
+  return { parent: model.id };
 }
 
 function withOverrides(base: Record<string, JsonValue>, overrides: JsonValue[]): Record<string, JsonValue> {
@@ -377,12 +436,28 @@ function withOverrides(base: Record<string, JsonValue>, overrides: JsonValue[]):
     : base;
 }
 
-function legacyUnit(source: ResourceUnit, outputPath: string, content: Record<string, JsonValue>): ResourceUnit {
+function legacyUnit(
+  source: ResourceUnit,
+  outputPath: string,
+  lowering: LegacyItemLowering
+): ResourceUnit {
+  const id = source.id
+    ? { namespace: source.id.namespace, path: `item/${source.id.path}` }
+    : undefined;
+  const referenceOrigins = legacyReferenceOrigins(source, lowering);
   return {
     ...source,
+    id,
     kind: "model",
     outputPath,
-    content,
+    content: source.id ? legacyContent(source.id, lowering) : {},
+    validation: {
+      ...source.validation,
+      referenceOrigins: [
+        ...(source.validation?.referenceOrigins ?? []),
+        ...referenceOrigins
+      ]
+    },
     sourceMap: {
       ...source.sourceMap,
       generatedFile: outputPath
@@ -390,9 +465,36 @@ function legacyUnit(source: ResourceUnit, outputPath: string, content: Record<st
   };
 }
 
-function modelRef(model: Record<string, JsonValue>): string | null {
+function legacyReferenceOrigins(
+  source: ResourceUnit,
+  lowering: LegacyItemLowering
+): RsglValidationReferenceOrigin[] {
+  if (!source.id) {
+    return [];
+  }
+  const references: Array<[string, LegacyModelReference]> = [[
+    lowering.baseModel.id === itemModelId(source.id) ? "/textures/layer0" : "/parent",
+    lowering.baseModel
+  ]];
+  lowering.overrides.forEach((override, index) => {
+    references.push([
+      appendGeneratedPath(appendGeneratedPath("/overrides", String(index)), "model"),
+      override.model
+    ]);
+  });
+  return references.map(([generatedPath, reference]) => {
+    const sourceRange = sourceRangeForGeneratedPath(source, reference.sourcePath);
+    return {
+      generatedPath,
+      sourceFile: sourceFileForValidationRange(source, sourceRange),
+      sourceRange
+    };
+  });
+}
+
+function modelRef(model: Record<string, JsonValue>, sourcePath: string): LegacyModelReference | null {
   return itemModelType(model.type) === "model" && typeof model.model === "string"
-    ? model.model
+    ? { id: model.model, sourcePath }
     : null;
 }
 
@@ -504,7 +606,13 @@ function chargeTypePredicate(value: "arrow" | "rocket"): Record<string, number> 
 }
 
 function sameLowering(left: LegacyItemLowering, right: LegacyItemLowering): boolean {
-  return left.baseModel === right.baseModel && JSON.stringify(left.overrides) === JSON.stringify(right.overrides);
+  return left.baseModel.id === right.baseModel.id
+    && JSON.stringify(left.overrides.map(serializableLegacyOverride))
+      === JSON.stringify(right.overrides.map(serializableLegacyOverride));
+}
+
+function serializableLegacyOverride(override: LegacyItemOverride): Record<string, JsonValue> {
+  return { predicate: override.predicate, model: override.model.id };
 }
 
 function itemModelId(id: ResourceId): string {

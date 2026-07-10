@@ -2,25 +2,30 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { compileRsglFile } from "../../src/compiler";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  generatedResourceUnits,
+  withUncheckedExterns
+} from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL merge fragments and base documents", () => {
   it("preserves empty list expressions in resource merges", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "atlas blocks {",
       "  merge { sources: [] }",
       "}"
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.find(unit => unit.kind === "atlas")?.content, {
+    assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.kind === "atlas")?.content, {
       sources: []
     });
   });
 
   it("records nested source map entries for merge fragments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "item tinted {",
       "  merge {",
       "    model: {",
@@ -33,14 +38,14 @@ describe("RSGL merge fragments and base documents", () => {
     ], { fileName: path.resolve("pack", "main.rsgl") });
 
     expectNoDiagnostics(result);
-    const paths = result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
+    const paths = generatedResourceUnits(result)[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
     assert.ok(paths.includes("/model/type"));
     assert.ok(paths.includes("/model/tints/0/type"));
     assert.ok(paths.includes("/model/tints/0/value/1"));
   });
 
   it("enforces strict, upsert, and append semantics in resource bodies", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block patched {",
       "  parent minecraft:block/cube_all",
       "  textures { all minecraft:block/stone }",
@@ -53,7 +58,7 @@ describe("RSGL merge fragments and base documents", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/overridden",
       textures: {
         all: "minecraft:block/stone",
@@ -69,13 +74,13 @@ describe("RSGL merge fragments and base documents", () => {
         }
       }
     });
-    const mappingPaths = result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
+    const mappingPaths = generatedResourceUnits(result)[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
     assert.ok(mappingPaths.includes("/layers/1"));
     assert.ok(mappingPaths.includes("/layers/1/texture"));
   });
 
   it("reports invalid strict, append, and non-object merge fragments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block invalid {",
       "  parent minecraft:block/cube_all",
       "  merge strict { textures: { all: minecraft:block/stone } }",
@@ -90,13 +95,13 @@ describe("RSGL merge fragments and base documents", () => {
     assert.ok(codes.includes("rsgl.mergeFieldNotFound"));
     assert.ok(codes.includes("rsgl.mergeAppendIncompatibleField"));
     assert.strictEqual(codes.filter(code => code === "rsgl.invalidMergeFragment").length, 3);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/cube_all"
     });
   });
 
   it("applies strict, upsert, and append semantics in blockstate bodies", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate lamp {",
       "  variants {",
       "    { facing: north } -> { model: minecraft:block/lamp, x: 0 }",
@@ -113,7 +118,7 @@ describe("RSGL merge fragments and base documents", () => {
     ]);
 
     expectNoDiagnostics(result);
-    const lamp = result.units.find(unit => unit.outputPath.endsWith("lamp.json"));
+    const lamp = generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("lamp.json"));
     assert.deepStrictEqual(lamp?.content, {
       variants: {
         ["facing=north"]: {
@@ -126,7 +131,7 @@ describe("RSGL merge fragments and base documents", () => {
       }
     });
 
-    const fence = result.units.find(unit => unit.outputPath.endsWith("fence.json"));
+    const fence = generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("fence.json"));
     assert.deepStrictEqual(fence?.content, {
       multipart: [
         {
@@ -148,7 +153,7 @@ describe("RSGL merge fragments and base documents", () => {
   });
 
   it("reports invalid blockstate merge fragments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate invalid_variants {",
       "  variants {",
       "    {} -> { model: minecraft:block/base }",
@@ -172,7 +177,7 @@ describe("RSGL merge fragments and base documents", () => {
     assert.ok(codes.includes("rsgl.mergeOperationNotAllowed"));
     assert.strictEqual(codes.filter(code => code === "rsgl.invalidMergeFragment").length, 3);
 
-    const invalidVariants = result.units.find(unit => unit.outputPath.endsWith("invalid_variants.json"));
+    const invalidVariants = generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("invalid_variants.json"));
     assert.deepStrictEqual(invalidVariants?.content, {
       variants: {
         [""]: {
@@ -180,7 +185,7 @@ describe("RSGL merge fragments and base documents", () => {
         }
       }
     });
-    const invalidMultipart = result.units.find(unit => unit.outputPath.endsWith("invalid_multipart.json"));
+    const invalidMultipart = generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("invalid_multipart.json"));
     assert.deepStrictEqual(invalidMultipart?.content, {
       multipart: [
         {
@@ -220,21 +225,21 @@ describe("RSGL merge fragments and base documents", () => {
         "}"
       ].join("\n"));
 
-      const result = compileRsglFile(mainFile);
+      const result = compileRsglFile(mainFile, withUncheckedExterns({}));
 
       expectNoDiagnostics(result);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
         "assets/minecraft/items/diamond.json",
         "assets/minecraft/models/block/custom_panel.json"
       ]);
-      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("custom_panel.json"))?.content, {
+      assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("custom_panel.json"))?.content, {
         parent: "minecraft:block/cube_all",
         textures: {
           all: "minecraft:block/stone"
         },
         ambientocclusion: false
       });
-      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("diamond.json"))?.content, {
+      assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("diamond.json"))?.content, {
         ["hand_animation_on_swap"]: false,
         model: {
           type: "minecraft:model",
@@ -260,7 +265,7 @@ describe("RSGL merge fragments and base documents", () => {
         "}"
       ].join("\n"));
 
-      const result = compileRsglFile(mainFile);
+      const result = compileRsglFile(mainFile, withUncheckedExterns({}));
       const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
       assert.ok(codes.includes("rsgl.baseLoadFailed"));

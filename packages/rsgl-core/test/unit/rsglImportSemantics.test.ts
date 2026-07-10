@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import { compileRsglProgram } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { expectNoDiagnostics } from "./helpers/compile";
+import { expectNoDiagnostics, generatedResourceUnits, withUncheckedExterns } from "./helpers/compile";
 
 describe("RSGL import semantics", () => {
   it("expands templates imported from another RSGL file", () => {
@@ -27,19 +27,20 @@ describe("RSGL import semantics", () => {
           "}"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath), [
       "assets/minecraft/models/block/stone.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "minecraft:block/stone"
       }
     });
-    const mapping = result.units[0].sourceMap.mappings[0];
+    const mapping = units[0].sourceMap.mappings[0];
     assert.strictEqual(mapping.sourceFile, templatesFile);
     assert.strictEqual(mapping.reason, "template");
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use cubeModel"]);
@@ -71,13 +72,14 @@ describe("RSGL import semantics", () => {
           "export { cubeFields }"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath), [
       "assets/app/models/block/stone.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "library:block/stone"
@@ -115,32 +117,33 @@ describe("RSGL import semantics", () => {
           "export { modelFields, textureLayer }"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
         ["layer/zero"]: "minecraft:block/stone"
       }
     });
-    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
+    assert.deepStrictEqual(units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
       "",
       "/parent",
       "/textures",
       "/textures/layer~1zero"
     ]);
 
-    const parentMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/parent");
+    const parentMapping = units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/parent");
     assert.strictEqual(parentMapping?.sourceFile, fragmentsFile);
     assert.strictEqual(parentMapping?.reason, "template");
     assert.deepStrictEqual(parentMapping?.expansionStack.map(frame => frame.label), ["use modelFields"]);
 
-    const texturesMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures");
+    const texturesMapping = units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures");
     assert.strictEqual(texturesMapping?.sourceFile, mainFile);
     assert.strictEqual(texturesMapping?.reason, "direct");
 
-    const layerMapping = result.units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/layer~1zero");
+    const layerMapping = units[0].sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/layer~1zero");
     assert.strictEqual(layerMapping?.sourceFile, fragmentsFile);
     assert.strictEqual(layerMapping?.reason, "template");
     assert.deepStrictEqual(layerMapping?.expansionStack.map(frame => frame.label), ["use textureLayer"]);
@@ -176,13 +179,14 @@ describe("RSGL import semantics", () => {
           "export { generatedLayers }"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath), [
       "assets/app/models/item/layered.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       parent: "minecraft:item/generated",
       textures: {
         layer0: "library:block/dirt"
@@ -232,15 +236,16 @@ describe("RSGL import semantics", () => {
           "export { connectedPane, lampFacing }"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath).sort(), [
       "assets/app/blockstates/lamp.json",
       "assets/app/blockstates/pane.json"
     ]);
 
-    const lamp = result.units.find(unit => unit.outputPath.endsWith("lamp.json"));
+    const lamp = units.find(unit => unit.outputPath.endsWith("lamp.json"));
     assert.deepStrictEqual(lamp?.content, {
       variants: {
         ["facing=north"]: { model: "library:block/lamp" }
@@ -256,7 +261,7 @@ describe("RSGL import semantics", () => {
     assert.strictEqual(lampVariant?.reason, "template");
     assert.deepStrictEqual(lampVariant?.expansionStack.map(frame => frame.label), ["use lampFacing"]);
 
-    const pane = result.units.find(unit => unit.outputPath.endsWith("pane.json"));
+    const pane = units.find(unit => unit.outputPath.endsWith("pane.json"));
     assert.deepStrictEqual(pane?.content, {
       multipart: [
         { apply: { model: "minecraft:block/pane_post" } },
@@ -305,10 +310,11 @@ describe("RSGL import semantics", () => {
           "export { keyed }"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       variants: {
         ["tilt=full"]: { model: "minecraft:block/lamp" }
       }
@@ -354,19 +360,20 @@ describe("RSGL import semantics", () => {
           "}"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath), [
       "assets/custom/models/block/oak_planks.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       parent: "custom:block/cube_all",
       textures: {
         all: "textures:block/acacia_planks"
       }
     });
-    const mapping = result.units[0].sourceMap.mappings[0];
+    const mapping = units[0].sourceMap.mappings[0];
     assert.strictEqual(mapping.sourceFile, templatesFile);
     assert.deepStrictEqual(mapping.expansionStack.map(frame => frame.label), ["use woodCube", "use cube"]);
   });
@@ -411,13 +418,14 @@ describe("RSGL import semantics", () => {
           "export { woods }"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath), [
       "assets/minecraft/models/block/acacia_planks.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(units[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "custom:block/acacia_planks"
@@ -454,20 +462,21 @@ describe("RSGL import semantics", () => {
           "}"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
+    const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(units.map(unit => unit.outputPath).sort(), [
       "assets/minecraft/models/block/acacia_planks.json",
       "assets/minecraft/models/block/spruce_planks.json"
     ]);
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("acacia_planks.json"))?.content, {
+    assert.deepStrictEqual(units.find(unit => unit.outputPath.endsWith("acacia_planks.json"))?.content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "custom:block/acacia_planks"
       }
     });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("spruce_planks.json"))?.content, {
+    assert.deepStrictEqual(units.find(unit => unit.outputPath.endsWith("spruce_planks.json"))?.content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "minecraft:block/spruce_planks"

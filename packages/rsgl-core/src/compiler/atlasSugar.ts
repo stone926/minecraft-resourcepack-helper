@@ -7,7 +7,7 @@ import {
   ResourceStatementNode,
   TextRange
 } from "../parser";
-import { EvaluationContext, evaluateExpression } from "./evaluate";
+import { EvaluationContext, evaluateExpression, expressionEvaluationPathOrigins } from "./evaluate";
 import { JsonValue } from "./ir";
 import { ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult } from "./resourceBody";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
@@ -45,7 +45,7 @@ function compileAtlasDirectoryStatement(
   statement: AtlasDirectoryStmtNode,
   context: EvaluationContext,
   options: RsglAtlasSugarOptions
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
   const source = statement.source ? staticText(statement.source, context) : null;
   const prefix = statement.prefix ? staticText(statement.prefix, context) : null;
   if (!source) {
@@ -63,7 +63,18 @@ function compileAtlasDirectoryStatement(
   if (prefix !== null) {
     entry.prefix = prefix;
   }
-  return { sources: [entry] };
+  return {
+    content: { sources: [entry] },
+    mappings: statement.source
+      ? expressionEvaluationPathOrigins(statement.source, context, "/sources/0/source").map(origin => ({
+        generatedPath: origin.generatedPath,
+        sourceRange: statement.source!.range,
+        context,
+        validationOrigin: origin,
+        validationOnly: true
+      }))
+      : []
+  };
 }
 
 function compileAtlasFilterStatement(

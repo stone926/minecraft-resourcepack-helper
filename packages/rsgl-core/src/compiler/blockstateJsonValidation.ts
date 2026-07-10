@@ -1,6 +1,7 @@
 import { validateBlockstateStateDomains } from "./blockstateStateValidation";
 import { blockstateMultipartPath, blockstateVariantPath } from "./compilerHelpers";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { appendGeneratedPath } from "./sourcePaths";
 import {
   asObject,
   checkResourceExists,
@@ -23,18 +24,28 @@ export function validateBlockstateUnit(
   const variants = asObject(content?.variants);
   if (variants) {
     for (const [key, value] of Object.entries(variants)) {
-      const range = sourceRangeForGeneratedPath(unit, blockstateVariantPath(key));
+      const generatedPath = blockstateVariantPath(key);
+      const range = sourceRangeForGeneratedPath(unit, generatedPath);
       validateBlockstateVariantKey(key, diagnostics, range);
-      validateBlockstateModelProps(value, unit, generatedModels, options, diagnostics, range);
+      validateBlockstateModelProps(value, unit, generatedModels, options, diagnostics, range, generatedPath);
     }
   }
 
   const multipart = Array.isArray(content?.multipart) ? content.multipart : [];
   for (const [index, entry] of multipart.entries()) {
     const multipartEntry = asObject(entry);
-    const range = sourceRangeForGeneratedPath(unit, blockstateMultipartPath(index));
+    const generatedPath = blockstateMultipartPath(index);
+    const range = sourceRangeForGeneratedPath(unit, generatedPath);
     validateBlockstateWhen(multipartEntry?.when, diagnostics, range);
-    validateBlockstateModelProps(multipartEntry?.apply, unit, generatedModels, options, diagnostics, range);
+    validateBlockstateModelProps(
+      multipartEntry?.apply,
+      unit,
+      generatedModels,
+      options,
+      diagnostics,
+      range,
+      appendGeneratedPath(generatedPath, "apply")
+    );
   }
 }
 
@@ -78,11 +89,20 @@ function validateBlockstateModelProps(
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
-  range: ValidationRange
+  range: ValidationRange,
+  generatedPath: string
 ): void {
   if (Array.isArray(value)) {
-    for (const item of value) {
-      validateBlockstateModelProps(item, unit, generatedModels, options, diagnostics, range);
+    for (const [index, item] of value.entries()) {
+      validateBlockstateModelProps(
+        item,
+        unit,
+        generatedModels,
+        options,
+        diagnostics,
+        range,
+        appendGeneratedPath(generatedPath, String(index))
+      );
     }
     return;
   }
@@ -92,7 +112,15 @@ function validateBlockstateModelProps(
     return;
   }
   if (typeof model.model === "string") {
-    checkResourceExists("model", model.model, unit, generatedModels, options, diagnostics, range);
+    checkResourceExists(
+      "model",
+      model.model,
+      unit,
+      generatedModels,
+      options,
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
+    );
   }
   for (const axis of ["x", "y", "z"]) {
     validateBlockstateRotation(axis, model[axis], diagnostics, range);

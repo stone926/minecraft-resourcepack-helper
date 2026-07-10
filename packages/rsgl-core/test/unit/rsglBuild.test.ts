@@ -10,6 +10,7 @@ import {
   previewRsglResourcePackDirectoryBuild
 } from "../../src/build";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
+import { withUncheckedExterns } from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL build", () => {
@@ -27,13 +28,13 @@ describe("RSGL build", () => {
         "}"
       ].join("\n"));
 
-      const prepared = prepareRsglResourcePackBuild(entry, {
+      const prepared = prepareRsglResourcePackBuild(entry, withUncheckedExterns({
         outputRoot,
         isCancellationRequested: () => {
           cancellationChecks++;
           return true;
         }
-      });
+      }));
 
       assert.ok(cancellationChecks > 0);
       assert.strictEqual(prepared.cancelled, true);
@@ -58,7 +59,7 @@ describe("RSGL build", () => {
         "}"
       ].join("\n"));
 
-      const result = buildRsglResourcePack(entry, { outputRoot });
+      const result = buildRsglResourcePack(entry, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
       assert.deepStrictEqual(result.plan?.summary, { create: 3, update: 0, unchanged: 0 });
@@ -84,7 +85,7 @@ describe("RSGL build", () => {
     try {
       fs.writeFileSync(entry, "use missingTemplate()");
 
-      const result = buildRsglResourcePack(entry, { outputRoot });
+      const result = buildRsglResourcePack(entry, withUncheckedExterns({ outputRoot }));
 
       assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.undefinedSymbol"));
       assert.strictEqual(result.plan, undefined);
@@ -109,9 +110,9 @@ describe("RSGL build", () => {
         "}"
       ].join("\n"));
 
-      const prepared = prepareRsglResourcePackBuild(entry, { outputRoot });
-      const built = buildRsglResourcePack(entry, { outputRoot });
-      const preview = previewRsglResourcePackBuild(entry, { outputRoot });
+      const prepared = prepareRsglResourcePackBuild(entry, withUncheckedExterns({ outputRoot }));
+      const built = buildRsglResourcePack(entry, withUncheckedExterns({ outputRoot }));
+      const preview = previewRsglResourcePackBuild(entry, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(prepared.dependencies.map(dependency => dependency.path), [baseFile]);
       assert.deepStrictEqual(built.dependencies.map(dependency => dependency.path), [baseFile]);
@@ -135,7 +136,7 @@ describe("RSGL build", () => {
         "  textures { all: minecraft:block/stone }",
         "}"
       ].join("\n"));
-      buildRsglResourcePack(entry, { outputRoot });
+      buildRsglResourcePack(entry, withUncheckedExterns({ outputRoot }));
       const previousModel = fs.readFileSync(modelPath, "utf8");
 
       fs.writeFileSync(entry, [
@@ -144,10 +145,10 @@ describe("RSGL build", () => {
         "  textures { all: minecraft:block/granite }",
         "}"
       ].join("\n"));
-      const preview = previewRsglResourcePackBuild(entry, { outputRoot });
+      const preview = previewRsglResourcePackBuild(entry, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(preview.diagnostics.map(diagnostic => diagnostic.code), []);
-      assert.deepStrictEqual(preview.plan?.summary, { create: 0, update: 2, unchanged: 1 });
+      assert.deepStrictEqual(preview.plan?.summary, { create: 0, update: 3, unchanged: 0 });
       assert.ok(preview.preview?.includes("# RSGL Build Preview"));
       assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json (+1 -1)"));
       assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json.rsgl.map"));
@@ -175,7 +176,7 @@ describe("RSGL build", () => {
         "}"
       ].join("\n"));
 
-      const preview = previewRsglResourcePackBuild(entry, { outputRoot });
+      const preview = previewRsglResourcePackBuild(entry, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(preview.diagnostics.map(diagnostic => diagnostic.code), []);
       assert.deepStrictEqual(preview.plan?.summary, { create: 3, update: 0, unchanged: 0 });
@@ -207,7 +208,7 @@ describe("RSGL build", () => {
         "}"
       ].join("\n"));
 
-      const result = buildRsglResourcePackDirectory(sourceRoot, { outputRoot });
+      const result = buildRsglResourcePackDirectory(sourceRoot, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
       assert.deepStrictEqual(result.plan?.summary, { create: 5, update: 0, unchanged: 0 });
@@ -240,11 +241,11 @@ describe("RSGL build", () => {
       ].join("\n"));
 
       const semanticProgram = RsglWorkspaceSemanticCache.create().loadProgramFromDirectory(sourceRoot);
-      const result = buildRsglResourcePackProgram(semanticProgram.files, {
+      const result = buildRsglResourcePackProgram(semanticProgram.files, withUncheckedExterns({
         outputRoot,
         sourceRoot,
         semanticProgram: semanticProgram.program
-      });
+      }));
 
       assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
       assert.deepStrictEqual(result.plan?.summary, { create: 3, update: 0, unchanged: 0 });
@@ -272,7 +273,7 @@ describe("RSGL build", () => {
         "  textures { all: minecraft:block/stone }",
         "}"
       ].join("\n"));
-      buildRsglResourcePackDirectory(sourceRoot, { outputRoot });
+      buildRsglResourcePackDirectory(sourceRoot, withUncheckedExterns({ outputRoot }));
       const previousModel = fs.readFileSync(modelPath, "utf8");
 
       fs.writeFileSync(path.join(sourceRoot, "blocks.rsgl"), [
@@ -281,10 +282,10 @@ describe("RSGL build", () => {
         "  textures { all: minecraft:block/deepslate }",
         "}"
       ].join("\n"));
-      const preview = previewRsglResourcePackDirectoryBuild(sourceRoot, { outputRoot });
+      const preview = previewRsglResourcePackDirectoryBuild(sourceRoot, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(preview.diagnostics.map(diagnostic => diagnostic.code), []);
-      assert.deepStrictEqual(preview.plan?.summary, { create: 0, update: 2, unchanged: 1 });
+      assert.deepStrictEqual(preview.plan?.summary, { create: 0, update: 3, unchanged: 0 });
       assert.ok(preview.preview?.includes(`Source root: ${sourceRoot}`));
       assert.ok(preview.preview?.includes("update: assets/minecraft/models/block/stone.json (+1 -1)"));
       assert.ok(preview.preview?.includes('-    "all": "minecraft:block/stone"'));
@@ -303,7 +304,7 @@ describe("RSGL build", () => {
     try {
       fs.mkdirSync(sourceRoot, { recursive: true });
 
-      const result = buildRsglResourcePackDirectory(sourceRoot, { outputRoot });
+      const result = buildRsglResourcePackDirectory(sourceRoot, withUncheckedExterns({ outputRoot }));
 
       assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), ["rsgl.compileMissingSource"]);
       assert.strictEqual(result.plan, undefined);

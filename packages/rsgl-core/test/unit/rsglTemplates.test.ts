@@ -1,9 +1,13 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  generatedResourceUnits
+} from "./helpers/compile";
 
 describe("RSGL template expansion", () => {
   it("expands local templates with positional, named, and default arguments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template cube(id: ResourceId, texture: TextureId = id) {",
       "  model block id {",
       "    parent minecraft:block/cube_all",
@@ -14,10 +18,10 @@ describe("RSGL template expansion", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath), [
       "assets/minecraft/models/block/stone.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "minecraft:block/stone"
@@ -26,7 +30,7 @@ describe("RSGL template expansion", () => {
   });
 
   it("reports recursive template expansion during compilation", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template a() {",
       "  use b()",
       "}",
@@ -37,11 +41,11 @@ describe("RSGL template expansion", () => {
     ]);
 
     assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateRecursion"));
-    assert.deepStrictEqual(result.units, []);
+    assert.deepStrictEqual(generatedResourceUnits(result), []);
   });
 
   it("does not generate resources from modules with syntax errors", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block valid {",
       "  parent minecraft:block/cube_all",
       "}",
@@ -55,13 +59,13 @@ describe("RSGL template expansion", () => {
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
-    assert.deepStrictEqual(result.units, []);
+    assert.deepStrictEqual(generatedResourceUnits(result), []);
     assert.ok(codes.includes("rsgl.expectedToken"));
     assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
   });
 
   it("expands local resource body templates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) {",
       "  parent parentModel",
       "  textures { all: texture }",
@@ -72,10 +76,10 @@ describe("RSGL template expansion", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath), [
       "assets/minecraft/models/block/stone.json"
     ]);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/cube_all",
       textures: {
         all: "minecraft:block/stone"
@@ -84,7 +88,7 @@ describe("RSGL template expansion", () => {
   });
 
   it("reports invalid template call arguments during compilation", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template cube(id: ResourceId, texture: TextureId = id) {",
       "  model block id { parent minecraft:block/cube_all }",
       "}",
@@ -108,7 +112,7 @@ describe("RSGL template expansion", () => {
   });
 
   it("reports invalid template call arguments during compilation", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template cubeFields(parentModel: ModelId, texture: TextureId) {",
       "  parent parentModel",
       "  textures { all: texture }",

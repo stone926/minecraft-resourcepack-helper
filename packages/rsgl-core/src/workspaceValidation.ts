@@ -4,14 +4,19 @@ import type {
   JsonValue,
   ResourceId,
   RsglBlockstateSchema,
+  RsglResourceContentKind,
+  RsglResourceExistenceKind,
   RsglResourceValidationOptions,
   RsglSoundMetadata,
   RsglTextureMetadata
 } from "./compiler";
 import { inferBlockstateSchemaFromContent, parseResourceId } from "./compiler";
+import type { ExternResourceSource } from "./externDeclarations";
 import {
   findPackRoot,
+  getConfiguredPackResourceRootCandidates,
   getDocumentResourceRootCandidates,
+  getResourceRootCandidates,
   minecraftResourceTarget,
   readOggFileMetadata,
   readPackMetadata,
@@ -35,6 +40,18 @@ export interface RsglValidationFileSystem {
   readOggMetadata(fileName: string): RsglSoundMetadata | null;
 }
 
+export interface RsglWorkspaceValidationCallbacks extends Pick<
+  RsglResourceValidationOptions,
+  "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata" | "blockstateSchema"
+> {
+  externResourceExists(source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string): boolean;
+  externResourcePath(source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string): string | null;
+  externResourceContent(source: ExternResourceSource, kind: RsglResourceContentKind, id: string): JsonValue | null;
+  externTextureMetadata(source: ExternResourceSource, id: string): RsglTextureMetadata | null | undefined;
+  externSoundMetadata(source: ExternResourceSource, id: string): RsglSoundMetadata | null | undefined;
+  externBlockstateSchema(source: ExternResourceSource, id: ResourceId): RsglBlockstateSchema | null;
+}
+
 const defaultFileSystem: RsglValidationFileSystem = {
   exists: fileName => fileExists(fileName),
   isDirectory: fileName => directoryExists(fileName),
@@ -45,14 +62,20 @@ const defaultFileSystem: RsglValidationFileSystem = {
 
 export function createRsglWorkspaceValidationOptions(
   options: RsglWorkspaceValidationOptions
-): Pick<RsglResourceValidationOptions, "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata" | "blockstateSchema"> {
+): RsglWorkspaceValidationCallbacks {
   const resolver = new WorkspaceResourceResolver(options);
   return {
     resourceExists: (kind, id) => resolver.resolve(id, minecraftResourceTarget(kind)) !== null,
     resourceContent: (kind, id) => resolver.readJson(id, minecraftResourceTarget(kind)),
     textureMetadata: id => resolver.textureMetadata(id),
     soundMetadata: id => resolver.soundMetadata(id),
-    blockstateSchema: id => resolver.blockstateSchema(id)
+    blockstateSchema: id => resolver.blockstateSchema(id),
+    externResourceExists: (source, kind, id) => resolver.resolve(id, minecraftResourceTarget(kind), source) !== null,
+    externResourcePath: (source, kind, id) => resolver.resolve(id, minecraftResourceTarget(kind), source),
+    externResourceContent: (source, kind, id) => resolver.readJson(id, minecraftResourceTarget(kind), source),
+    externTextureMetadata: (source, id) => resolver.textureMetadata(id, source),
+    externSoundMetadata: (source, id) => resolver.soundMetadata(id, source),
+    externBlockstateSchema: (source, id) => resolver.blockstateSchema(id, source)
   };
 }
 
@@ -72,68 +95,93 @@ class WorkspaceResourceResolver {
     this.resourcePackRoots = options.resourcePackRoots ?? [];
   }
 
-  resolve(id: string, target: MinecraftResourceTarget): string | null {
-    const cacheKey = `${target.directory}\0${target.extension ?? ""}\0${target.isDirectory ? "d" : "f"}\0${id}`;
+  resolve(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): string | null {
+    const cacheKey = `${source ?? "workspace"}\0${target.directory}\0${target.extension ?? ""}\0${target.isDirectory ? "d" : "f"}\0${id}`;
     const cached = this.resolvedPaths.get(cacheKey);
     if (cached !== undefined) {
       return cached;
     }
 
-    const resolved = this.resolveUncached(id, target);
+    const resolved = this.resolveUncached(id, target, source);
     this.resolvedPaths.set(cacheKey, resolved);
     return resolved;
   }
 
-  readJson(id: string, target: MinecraftResourceTarget): JsonValue | null {
-    const fileName = this.resolve(id, target);
+  readJson(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): JsonValue | null {
+    const fileName = this.resolve(id, target, source);
     return fileName ? this.fileSystem.readJson(fileName) : null;
   }
 
-  textureMetadata(id: string): RsglTextureMetadata | null | undefined {
-    const fileName = this.resolve(id, minecraftResourceTarget("texture"));
+  textureMetadata(id: string, source?: ExternResourceSource): RsglTextureMetadata | null | undefined {
+    const fileName = this.resolve(id, minecraftResourceTarget("texture"), source);
     return fileName ? this.fileSystem.readPngMetadata(fileName) : undefined;
   }
 
-  soundMetadata(id: string): RsglSoundMetadata | null | undefined {
-    const fileName = this.resolve(id, minecraftResourceTarget("sound"));
+  soundMetadata(id: string, source?: ExternResourceSource): RsglSoundMetadata | null | undefined {
+    const fileName = this.resolve(id, minecraftResourceTarget("sound"), source);
     return fileName ? this.fileSystem.readOggMetadata(fileName) : undefined;
   }
 
-  blockstateSchema(id: ResourceId): RsglBlockstateSchema | null {
-    const content = this.readJson(`${id.namespace}:${id.path}`, minecraftResourceTarget("blockstate"));
+  blockstateSchema(id: ResourceId, source?: ExternResourceSource): RsglBlockstateSchema | null {
+    const content = this.readJson(`${id.namespace}:${id.path}`, minecraftResourceTarget("blockstate"), source);
     return inferBlockstateSchemaFromContent(content ?? undefined);
   }
 
-  private resolveUncached(id: string, target: MinecraftResourceTarget): string | null {
+  private resolveUncached(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): string | null {
     const resourceId = parseResourceId(id, "minecraft");
     if (!resourceId) {
       return null;
     }
 
-    const relativePath = resourceId.path.split("/");
-    const extension = target.extension ? `.${target.extension}` : "";
-    const roots = getDocumentResourceRootCandidates(
-      this.sourceFileName,
-      target.directory,
-      this.defaultAssetsPath,
-      resourceId.namespace,
-      target.directory,
-      {
-        pathExists: fileName => this.fileSystem.exists(fileName),
-        getPackRoot: fileName => this.getPackRoot(fileName),
-        getPackMetadata: packRoot => this.getPackMetadata(packRoot),
-        resourcePath: `${resourceId.path}${extension}`,
-        resourcePackRoots: this.resourcePackRoots
-      }
-    );
+    const resourcePath = resourcePathWithTargetExtension(resourceId.path, target);
+    const relativePath = resourcePath.split("/");
+    const roots = source
+      ? this.getExternResourceRootCandidates(source, resourceId, target, resourcePath)
+      : getDocumentResourceRootCandidates(
+        this.sourceFileName,
+        target.directory,
+        this.defaultAssetsPath,
+        resourceId.namespace,
+        target.directory,
+        {
+          pathExists: fileName => this.fileSystem.exists(fileName),
+          getPackRoot: fileName => this.getPackRoot(fileName),
+          getPackMetadata: packRoot => this.getPackMetadata(packRoot),
+          resourcePath,
+          resourcePackRoots: this.resourcePackRoots
+        }
+      );
 
     for (const root of roots) {
-      const candidate = `${path.join(root, ...relativePath)}${extension}`;
+      const candidate = path.join(root, ...relativePath);
       if (target.isDirectory ? this.fileSystem.isDirectory(candidate) : this.fileSystem.exists(candidate)) {
         return candidate;
       }
     }
     return null;
+  }
+
+  private getExternResourceRootCandidates(
+    source: ExternResourceSource,
+    resourceId: ResourceId,
+    target: MinecraftResourceTarget,
+    resourcePath: string
+  ): string[] {
+    if (source === "vanilla") {
+      return getResourceRootCandidates(null, this.defaultAssetsPath, resourceId.namespace, target.directory);
+    }
+
+    return getConfiguredPackResourceRootCandidates(
+      this.resourcePackRoots,
+      resourceId.namespace,
+      target.directory,
+      {
+        pathExists: fileName => this.fileSystem.exists(fileName),
+        getPackMetadata: packRoot => this.getPackMetadata(packRoot),
+        resourcePath: path.posix.join(target.directory.replaceAll("\\", "/"), resourcePath),
+        excludedPackRoot: this.getPackRoot(this.sourceFileName)
+      }
+    );
   }
 
   private getPackRoot(fileName: string): string | null {
@@ -151,6 +199,13 @@ class WorkspaceResourceResolver {
     }
     return metadata;
   }
+}
+
+function resourcePathWithTargetExtension(resourcePath: string, target: MinecraftResourceTarget): string {
+  const extension = target.extension ? `.${target.extension}` : "";
+  return extension && !resourcePath.endsWith(extension)
+    ? `${resourcePath}${extension}`
+    : resourcePath;
 }
 
 function readJsonFile(fileName: string): JsonValue | null {

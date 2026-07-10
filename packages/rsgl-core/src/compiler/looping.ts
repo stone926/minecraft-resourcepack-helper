@@ -1,6 +1,12 @@
 import type { ForStmtNode, TextRange } from "../parser";
-import { EvaluationContext, EvaluationValue, childEvaluationContext } from "./evaluate";
-import { evaluateExpression } from "./evaluate";
+import {
+  EvaluationContext,
+  type EvaluationOrigin,
+  EvaluationValue,
+  childEvaluationContext,
+  evaluateExpression,
+  expressionEvaluationPathOrigins
+} from "./evaluate";
 import { JsonValue } from "./ir";
 
 export function createLoopBindings(names: string[], value: EvaluationValue): Record<string, EvaluationValue> {
@@ -24,18 +30,24 @@ export function createLoopBindings(names: string[], value: EvaluationValue): Rec
 export function createLoopContext(
   context: EvaluationContext,
   bindings: Record<string, EvaluationValue>,
-  sourceRange: { start: number; end: number }
+  sourceRange: { start: number; end: number },
+  bindingOrigins: ReadonlyMap<string, EvaluationOrigin> = new Map()
 ): EvaluationContext {
   const loopReason = context.mappingReason === "direct" || !context.mappingReason
     ? "loop"
     : context.mappingReason;
-  return childEvaluationContext(context, bindings, {
+  const loopContext = childEvaluationContext(context, bindings, {
     mappingReason: loopReason,
     expansionStack: [
       ...(context.expansionStack ?? []),
       { label: "for", sourceRange }
     ]
   });
+  loopContext.valueOrigins = new Map([
+    ...(context.valueOrigins ?? []),
+    ...bindingOrigins
+  ]);
+  return loopContext;
 }
 
 export function forEachLoopContext(
@@ -52,26 +64,47 @@ export function forEachLoopContext(
     fullRange: statement.fullRange
   }];
 
-  const walk = (index: number, bindings: Record<string, EvaluationValue>): void => {
+  const walk = (
+    index: number,
+    bindings: Record<string, EvaluationValue>,
+    bindingOrigins: Map<string, EvaluationOrigin>
+  ): void => {
     if (index >= dimensions.length) {
-      visit(createLoopContext(context, bindings, statement.range));
+      visit(createLoopContext(context, bindings, statement.range, bindingOrigins));
       return;
     }
 
     const dimension = dimensions[index];
     const iterableContext = childEvaluationContext(context, bindings);
+    iterableContext.valueOrigins = new Map([
+      ...(context.valueOrigins ?? []),
+      ...bindingOrigins
+    ]);
     const iterable = evaluateExpression(dimension.iterable, iterableContext);
     if (!Array.isArray(iterable)) {
       onError("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", dimension.iterable.range);
       return;
     }
-    for (const value of iterable) {
+    const iterableOrigins = expressionEvaluationPathOrigins(dimension.iterable, iterableContext, "");
+    for (const [valueIndex, value] of iterable.entries()) {
+      const indexedPath = `/${valueIndex}`;
+      const iterableOrigin = [...iterableOrigins].reverse().find(origin =>
+        origin.generatedPath === indexedPath || origin.generatedPath.startsWith(`${indexedPath}/`)
+      ) ?? [...iterableOrigins].reverse().find(origin => origin.generatedPath === "");
+      const nextOrigins = new Map(bindingOrigins);
+      for (const binding of dimension.bindings) {
+        if (iterableOrigin) {
+          nextOrigins.set(binding.text, iterableOrigin);
+        } else {
+          nextOrigins.delete(binding.text);
+        }
+      }
       walk(index + 1, {
         ...bindings,
         ...createLoopBindings(dimension.bindings.map(binding => binding.text), value)
-      });
+      }, nextOrigins);
     }
   };
 
-  walk(0, {});
+  walk(0, {}, new Map());
 }

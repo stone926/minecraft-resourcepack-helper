@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL blockstate bodies and fragments", () => {
   it("expands for statements inside blockstate variants", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate lamp {",
       "  variants {",
       "    for state in product({ facing: [north, east], powered: [false, true] }) {",
@@ -45,7 +45,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("expands for and if statements inside blockstate multipart sections", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate oak_fence {",
       "  multipart {",
       "    apply { model: minecraft:block/oak_fence_post }",
@@ -109,7 +109,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("expands stdlib blockstate fragments from imported templates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stairs, slab } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
       "blockstate acacia_stairs {",
       "  use stairs(base: minecraft:block/acacia_stairs, inner: minecraft:block/acacia_stairs_inner, outer: minecraft:block/acacia_stairs_outer)",
@@ -144,7 +144,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("lowers random apply sugar inside explicit blockstate variants", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate stone {",
       "  variants {",
       "    {} -> random [",
@@ -168,7 +168,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("expands user blockstate section templates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template lampFacing(modelId: ModelId, states: Json = HORIZONTAL) {",
       "  variants {",
       "    for facing in states {",
@@ -215,7 +215,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("supports parameterized blockstate templates used by real-world packs", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "let suffix = \"lamp\"",
       "template keyed(property: String, prop1: String, modelId: ModelId) {",
       "  variants {",
@@ -240,7 +240,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("parses newline blockstate values and comma-separated random apply entries", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "let block = \"powder_snow\"",
       "blockstate snow {",
       "  variants {",
@@ -268,7 +268,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("evaluates local let declarations inside multipart sections", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate sensor {",
       "  multipart {",
       "    let poweredStates = \"1|2|3\"",
@@ -289,7 +289,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("reports incompatible blockstate template use in section contexts", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stairs } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
       "blockstate broken {",
       "  multipart {",
@@ -302,7 +302,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("reports removed randomVariants function calls", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate broken {",
       "  variants {",
       "    {} -> randomVariants({ bad: true })",
@@ -315,7 +315,7 @@ describe("RSGL blockstate bodies and fragments", () => {
   });
 
   it("reports undefined symbols for removed hardcoded blockstate fragments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate broken {",
       "  use horizontalFacing(model: minecraft:block/furnace, state: [north])",
       "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal)",

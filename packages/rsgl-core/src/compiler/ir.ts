@@ -1,5 +1,6 @@
 import { TextRange } from "../parser";
 import type { ExternResourceKind, RsglResourceKind } from "../resourceKinds";
+import type { ExternResourceSource } from "../externDeclarations";
 import type { CompileDependency } from "./base/types";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -20,6 +21,8 @@ export interface ExternalResourceRef {
   kind: "external";
   resourceKind: ExternalResourceKind;
   id: string;
+  source: ExternResourceSource;
+  skipExistenceCheck: boolean;
 }
 
 export type ResourceContent = JsonValue | TextValue | BinaryCopyRef;
@@ -37,6 +40,11 @@ export interface ResourceUnit {
   outputPath: string;
   content: ResourceContent;
   external?: ExternalResourceRef;
+  /** Compile-only metadata consumed by validators and never emitted. */
+  validation?: {
+    externalTextureVariables?: string[];
+    referenceOrigins?: RsglValidationReferenceOrigin[];
+  };
   mergePolicy: MergePolicy;
   sourceMap: RsglSourceMap;
 }
@@ -58,6 +66,16 @@ export interface RsglMapping {
   sourceRange: TextRange;
   reason: "direct" | "template" | "loop" | "builtin" | "base";
   expansionStack: ExpansionFrame[];
+  /** Internal lexical origin for extern validation; removed before results are exposed. */
+  validationOrigin?: Omit<RsglValidationReferenceOrigin, "generatedPath">;
+  /** Internal mapping that exists only to carry validationOrigin metadata. */
+  validationOnly?: boolean;
+}
+
+export interface RsglValidationReferenceOrigin {
+  generatedPath: string;
+  sourceFile: string;
+  sourceRange: TextRange;
 }
 
 export interface ExpansionFrame {

@@ -1,3 +1,11 @@
+import {
+  compareExternPatternSpecificity,
+  externResourcePatternMatches,
+  type ExternResourceSource,
+  type RsglExternDeclaration,
+  type RsglGlobalExternConfigEntry
+} from "../externDeclarations";
+import { getExternResourceKindForTargetKind } from "../resourceKinds";
 import { ExternalResourceKind, JsonValue, ResourceId, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import type { RsglBlockstateSchema } from "./blockstateStateValidation";
 import { isJsonObject } from "./jsonValues";
@@ -5,7 +13,17 @@ import { appendGeneratedPath } from "./sourcePaths";
 
 const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
 
-export type RsglResourceExistenceKind = ExternalResourceKind | "texture" | "textureDirectory" | "sound" | "font" | "fontFile" | "shaderVertex" | "shaderFragment";
+export type RsglResourceExistenceKind =
+  | "model"
+  | "blockstate"
+  | "item"
+  | "texture"
+  | "textureDirectory"
+  | "sound"
+  | "font"
+  | "fontFile"
+  | "shaderVertex"
+  | "shaderFragment";
 export type RsglResourceContentKind = "model";
 
 export interface RsglTextureMetadata {
@@ -22,13 +40,46 @@ export interface RsglSoundMetadata {
 
 export type ValidationRange = RsglCompileDiagnostic["range"];
 
+export interface RsglExternalResourceUsage {
+  source: ExternResourceSource;
+  resourceKind: ExternalResourceKind;
+  targetKind: RsglResourceExistenceKind;
+  id: string;
+  skipExistenceCheck: boolean;
+  sourceFile: string;
+  range: ValidationRange;
+  resolvedPath?: string;
+}
+
+export interface RsglCheckedResourceReference {
+  available: boolean;
+  external: boolean;
+  source?: ExternResourceSource;
+}
+
 export interface RsglResourceValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
+  /** Global declarations normally supplied by rsgl.config.json. */
+  globalExterns?: readonly RsglGlobalExternConfigEntry[];
+  /** Defaults to true. False has the same existence-check effect as extern!. */
+  checkExternExistence?: boolean;
+  /** Normalized local and global declarations assembled by the compile pipeline. */
+  externDeclarations?: readonly RsglExternDeclaration[];
   resourceExists?: (kind: RsglResourceExistenceKind, id: string) => boolean;
   resourceContent?: (kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
   textureMetadata?: (id: string) => RsglTextureMetadata | null | undefined;
   soundMetadata?: (id: string) => RsglSoundMetadata | null | undefined;
   blockstateSchema?: (id: ResourceId) => RsglBlockstateSchema | null | undefined;
+  externResourceExists?: (source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => boolean;
+  externResourcePath?: (source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => string | null;
+  externResourceContent?: (source: ExternResourceSource, kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
+  externTextureMetadata?: (source: ExternResourceSource, id: string) => RsglTextureMetadata | null | undefined;
+  externSoundMetadata?: (source: ExternResourceSource, id: string) => RsglSoundMetadata | null | undefined;
+  externBlockstateSchema?: (source: ExternResourceSource, id: ResourceId) => RsglBlockstateSchema | null | undefined;
+  /** Internal compile-pipeline collector used to build concrete manifest dependencies. */
+  onExternResourceUsed?: (usage: RsglExternalResourceUsage) => void;
+  /** Internal generated-resource index used to exempt outputs from extern declarations. */
+  generatedResourceIds?: ReadonlyMap<RsglResourceExistenceKind, ReadonlySet<string>>;
 }
 
 export function attachSourceFile(diagnostics: RsglCompileDiagnostic[], start: number, fileName: string | undefined): void {
@@ -47,24 +98,214 @@ export function checkResourceExists(
   generatedModels: Map<string, ResourceUnit> | undefined,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
-  range: ValidationRange = unitRange(unit)
-): void {
-  if (kind === "model" && generatedModels?.has(id)) {
-    return;
+  range: ValidationRange = unitRange(unit),
+  externScopeFile?: string
+): RsglCheckedResourceReference {
+  if ((kind === "model" && generatedModels?.has(id)) || options.generatedResourceIds?.get(kind)?.has(id)) {
+    return { available: true, external: false };
   }
   if (kind === "model" && isVirtualBuiltinModelId(id)) {
-    return;
+    return { available: true, external: false };
   }
-  if (!options.resourceExists || options.resourceExists(kind, id)) {
-    return;
+
+  const sourceFile = sourceFileForValidationRange(unit, range);
+  const declaration = resolveExternDeclaration(
+    kind,
+    id,
+    externScopeFile ?? sourceFile,
+    sourceFile,
+    options,
+    diagnostics,
+    range
+  );
+  if (!declaration) {
+    return { available: false, external: true };
+  }
+
+  const skipExistenceCheck = declaration.skipExistenceCheck
+    || declaration.checkExistence === false
+    || (declaration.checkExistence === undefined && options.checkExternExistence === false);
+  const resolvedPath = skipExistenceCheck
+    ? null
+    : options.externResourcePath?.(declaration.source, kind, id);
+  const exists = skipExistenceCheck
+    ? true
+    : resolvedPath !== undefined
+      ? resolvedPath !== null
+      : options.externResourceExists
+        ? options.externResourceExists(declaration.source, kind, id)
+        : (options.resourceExists?.(kind, id) ?? false);
+  options.onExternResourceUsed?.({
+    source: declaration.source,
+    resourceKind: declaration.resourceKind,
+    targetKind: kind,
+    id,
+    skipExistenceCheck,
+    sourceFile,
+    range,
+    ...(resolvedPath ? { resolvedPath } : {})
+  });
+  if (exists) {
+    return { available: true, external: true, source: declaration.source };
   }
 
   diagnostics.push({
     code: resourceNotFoundCode(kind),
     message: `${resourceLabel(kind)} not found: ${id}`,
     severity: "warning",
-    range
+    range,
+    fileName: sourceFile
   });
+  return { available: false, external: true, source: declaration.source };
+}
+
+/**
+ * Checks a resource referenced by already-loaded external content. Its source
+ * is inherited from that content, while the concrete usage is still recorded
+ * for manifests and dependency watching.
+ */
+export function checkInheritedExternalResourceExists(
+  kind: RsglResourceExistenceKind,
+  id: string,
+  source: ExternResourceSource,
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange,
+  fallbackExists: boolean
+): boolean {
+  if (options.generatedResourceIds?.get(kind)?.has(id)) {
+    return true;
+  }
+  const sourceFile = sourceFileForValidationRange(unit, range);
+  const skipExistenceCheck = options.checkExternExistence === false;
+  const resolvedPath = skipExistenceCheck
+    ? null
+    : options.externResourcePath?.(source, kind, id);
+  const exists = skipExistenceCheck
+    ? true
+    : resolvedPath !== undefined
+      ? resolvedPath !== null
+      : options.externResourceExists
+        ? options.externResourceExists(source, kind, id)
+        : (options.resourceExists?.(kind, id) ?? fallbackExists);
+  const resourceKind = getExternResourceKindForTargetKind(kind);
+  if (resourceKind) {
+    options.onExternResourceUsed?.({
+      source,
+      resourceKind,
+      targetKind: kind,
+      id,
+      skipExistenceCheck,
+      sourceFile,
+      range,
+      ...(resolvedPath ? { resolvedPath } : {})
+    });
+  }
+  if (!exists) {
+    diagnostics.push({
+      code: resourceNotFoundCode(kind),
+      message: `${resourceLabel(kind)} not found: ${id}`,
+      severity: "warning",
+      range,
+      fileName: sourceFile
+    });
+  }
+  return exists;
+}
+
+function resolveExternDeclaration(
+  kind: RsglResourceExistenceKind,
+  id: string,
+  externScopeFile: string,
+  diagnosticFile: string,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange
+): RsglExternDeclaration | null {
+  const resourceKind = getExternResourceKindForTargetKind(kind);
+  if (!resourceKind) {
+    diagnostics.push({
+      code: "rsgl.undeclaredExternalResource",
+      message: `${resourceLabel(kind)} '${id}' cannot be declared by any supported extern kind.`,
+      severity: "error",
+      range,
+      fileName: diagnosticFile
+    });
+    return null;
+  }
+
+  const matches = (options.externDeclarations ?? []).filter(declaration =>
+    declaration.resourceKind === resourceKind
+    && externResourcePatternMatches(declaration.pattern, id)
+  );
+  const normalizedSourceFile = normalizeValidationFileName(externScopeFile);
+  const localMatches = matches.filter(declaration =>
+    declaration.fileName !== undefined
+    && normalizeValidationFileName(declaration.fileName) === normalizedSourceFile
+  );
+  const candidates = localMatches.length > 0
+    ? localMatches
+    : matches.filter(declaration => declaration.fileName === undefined);
+  if (candidates.length === 0) {
+    diagnostics.push({
+      code: "rsgl.undeclaredExternalResource",
+      message: `${resourceLabel(kind)} '${id}' is external and must be declared with extern in ${externScopeFile} or rsgl.config.json.`,
+      severity: "error",
+      range,
+      fileName: diagnosticFile
+    });
+    return null;
+  }
+
+  const sorted = [...candidates].sort((left, right) =>
+    compareExternPatternSpecificity(right.pattern, left.pattern)
+  );
+  const selected = sorted[0];
+  const equallySpecific = sorted.filter(candidate =>
+    compareExternPatternSpecificity(candidate.pattern, selected.pattern) === 0
+  );
+  const sources = new Set(equallySpecific.map(candidate => candidate.source));
+  if (sources.size > 1) {
+    diagnostics.push({
+      code: "rsgl.ambiguousExternalResource",
+      message: `${resourceLabel(kind)} '${id}' matches equally specific custom and vanilla extern declarations.`,
+      severity: "error",
+      range,
+      fileName: diagnosticFile
+    });
+    return null;
+  }
+
+  return equallySpecific.find(candidate => candidate.skipExistenceCheck) ?? selected;
+}
+
+export function sourceFileForValidationRange(unit: ResourceUnit, range: ValidationRange): string {
+  const referenceOrigins = unit.validation?.referenceOrigins ?? [];
+  for (let index = referenceOrigins.length - 1; index >= 0; index--) {
+    const origin = referenceOrigins[index];
+    if (origin.sourceRange === range) {
+      return origin.sourceFile;
+    }
+  }
+  for (let index = referenceOrigins.length - 1; index >= 0; index--) {
+    const origin = referenceOrigins[index];
+    if (origin.sourceRange.start === range.start && origin.sourceRange.end === range.end) {
+      return origin.sourceFile;
+    }
+  }
+  for (let index = unit.sourceMap.mappings.length - 1; index >= 0; index--) {
+    const mapping = unit.sourceMap.mappings[index];
+    if (mapping.sourceRange.start === range.start && mapping.sourceRange.end === range.end) {
+      return mapping.sourceFile;
+    }
+  }
+  return unit.sourceMap.mappings[0]?.sourceFile ?? "<anonymous>";
+}
+
+function normalizeValidationFileName(fileName: string): string {
+  const normalized = fileName.replaceAll("\\", "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 export function isVirtualBuiltinModelId(id: string): boolean {
@@ -150,6 +391,12 @@ export function visitJsonWithPath(value: JsonValue, visitor: (value: JsonValue, 
 }
 
 export function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: string): ValidationRange {
+  for (const path of generatedPathFallbacks(generatedPath)) {
+    const origin = findLatestValidationOrigin(unit, path);
+    if (origin) {
+      return origin.sourceRange;
+    }
+  }
   const exactMapping = findLatestMapping(unit, generatedPath);
   if (exactMapping?.reason === "base") {
     // A base-owned field lives in an external JSON file. Diagnostics are sent
@@ -164,6 +411,19 @@ export function sourceRangeForGeneratedPath(unit: ResourceUnit, generatedPath: s
     }
   }
   return unitRange(unit);
+}
+
+function findLatestValidationOrigin(
+  unit: ResourceUnit,
+  generatedPath: string
+): { sourceFile: string; sourceRange: ValidationRange } | undefined {
+  const origins = unit.validation?.referenceOrigins ?? [];
+  for (let index = origins.length - 1; index >= 0; index--) {
+    if (origins[index].generatedPath === generatedPath) {
+      return origins[index];
+    }
+  }
+  return undefined;
 }
 
 function findLatestMappingRange(unit: ResourceUnit, generatedPath: string): ValidationRange | undefined {

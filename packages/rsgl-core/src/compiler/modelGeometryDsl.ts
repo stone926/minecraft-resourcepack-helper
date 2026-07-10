@@ -7,7 +7,7 @@ import {
   ResourceStatementNode,
   TextRange
 } from "../parser";
-import { EvaluationContext, evaluateExpression } from "./evaluate";
+import { EvaluationContext, evaluateExpression, expressionEvaluationOrigin } from "./evaluate";
 import { JsonValue } from "./ir";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
@@ -80,6 +80,7 @@ function compileModelTextureStatement(
   context: EvaluationContext
 ): ResourceBodyFragment {
   const key = statement.key.text;
+  const origin = expressionEvaluationOrigin(statement.value, context);
   return {
     content: {
       textures: {
@@ -88,7 +89,12 @@ function compileModelTextureStatement(
     },
     mappings: [
       mapping("/textures", statement.range, context),
-      mapping(appendGeneratedPath("/textures", key), statement.value.range, context)
+      mapping(
+        appendGeneratedPath("/textures", key),
+        statement.value.range,
+        context,
+        origin
+      )
     ]
   };
 }
@@ -414,8 +420,13 @@ function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> | n
     : null;
 }
 
-function mapping(generatedPath: string, sourceRange: TextRange, context: EvaluationContext): ResourceBodyMapping {
-  return { generatedPath, sourceRange, context };
+function mapping(
+  generatedPath: string,
+  sourceRange: TextRange,
+  context: EvaluationContext,
+  validationOrigin?: ResourceBodyMapping["validationOrigin"]
+): ResourceBodyMapping {
+  return { generatedPath, sourceRange, context, validationOrigin };
 }
 
 function normalizeJsonValue(value: unknown): JsonValue {

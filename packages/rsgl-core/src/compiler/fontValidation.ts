@@ -1,10 +1,16 @@
 import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { asObject, pushUnitDiagnostic, validateStringField } from "./validationShared";
+import {
+  asObject,
+  checkResourceExists,
+  pushUnitDiagnostic,
+  sourceRangeForGeneratedPath,
+  type RsglResourceValidationOptions,
+  validateStringField
+} from "./validationShared";
+import { appendGeneratedPath } from "./sourcePaths";
 
-export interface FontValidationOptions {
-  resourceExists?: (kind: "font" | "fontFile" | "texture", id: string) => boolean;
-}
+export type FontValidationOptions = RsglResourceValidationOptions;
 
 const providerRequiredFields = new Map<string, string[]>([
   ["bitmap", ["file", "chars", "ascent"]],
@@ -31,8 +37,16 @@ export function validateFontMetadata(
   }
 
   const namespace = unit.id?.namespace ?? "minecraft";
-  for (const provider of content.providers) {
-    validateFontProvider(provider, namespace, generatedFonts, unit, options, diagnostics);
+  for (const [providerIndex, provider] of content.providers.entries()) {
+    validateFontProvider(
+      provider,
+      namespace,
+      generatedFonts,
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath("/providers", String(providerIndex))
+    );
   }
 }
 
@@ -42,7 +56,8 @@ function validateFontProvider(
   generatedFonts: Set<string>,
   unit: ResourceUnit,
   options: FontValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const provider = asObject(value);
   if (!provider) {
@@ -63,7 +78,7 @@ function validateFontProvider(
     }
   }
 
-  validateFontProviderFields(provider, type, namespace, generatedFonts, unit, options, diagnostics);
+  validateFontProviderFields(provider, type, namespace, generatedFonts, unit, options, diagnostics, generatedPath);
 }
 
 function validateFontProviderFields(
@@ -73,7 +88,8 @@ function validateFontProviderFields(
   generatedFonts: Set<string>,
   unit: ResourceUnit,
   options: FontValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   validateNumberField(provider, "ascent", "rsgl.invalidFontProviderField", unit, diagnostics);
   validateNumberField(provider, "height", "rsgl.invalidFontProviderField", unit, diagnostics);
@@ -86,24 +102,56 @@ function validateFontProviderFields(
     validateStringField(provider, "file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateStringArrayField(provider, "chars", "rsgl.invalidFontProviderField", unit, diagnostics);
     if (typeof provider.file === "string") {
-      checkFontResourceExists("texture", qualifyMinecraftResourceId(provider.file, namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists(
+        "texture",
+        qualifyMinecraftResourceId(provider.file, namespace),
+        unit,
+        generatedFonts,
+        options,
+        diagnostics,
+        appendGeneratedPath(generatedPath, "file")
+      );
     }
   } else if (type === "reference") {
     validateStringField(provider, "id", "rsgl.invalidFontProviderField", unit, diagnostics);
     if (typeof provider.id === "string") {
-      checkFontResourceExists("font", qualifyMinecraftResourceId(provider.id, namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists(
+        "font",
+        qualifyMinecraftResourceId(provider.id, namespace),
+        unit,
+        generatedFonts,
+        options,
+        diagnostics,
+        appendGeneratedPath(generatedPath, "id")
+      );
     }
   } else if (type === "ttf") {
     validateStringField(provider, "file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateSkip(provider.skip, unit, diagnostics);
     if (typeof provider.file === "string") {
-      checkFontResourceExists("fontFile", qualifyMinecraftResourceId(provider.file, namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists(
+        "fontFile",
+        qualifyMinecraftResourceId(provider.file, namespace),
+        unit,
+        generatedFonts,
+        options,
+        diagnostics,
+        appendGeneratedPath(generatedPath, "file")
+      );
     }
   } else if (type === "unihex") {
     validateStringField(provider, "hex_file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateSizeOverrides(provider["size_overrides"], unit, diagnostics);
     if (typeof provider["hex_file"] === "string") {
-      checkFontResourceExists("fontFile", qualifyMinecraftResourceId(provider["hex_file"], namespace), unit, generatedFonts, options, diagnostics);
+      checkFontResourceExists(
+        "fontFile",
+        qualifyMinecraftResourceId(provider["hex_file"], namespace),
+        unit,
+        generatedFonts,
+        options,
+        diagnostics,
+        appendGeneratedPath(generatedPath, "hex_file")
+      );
     }
   } else if (type === "space") {
     validateAdvances(provider.advances, unit, diagnostics);
@@ -230,15 +278,21 @@ function checkFontResourceExists(
   unit: ResourceUnit,
   generatedFonts: Set<string>,
   options: FontValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (kind === "font" && generatedFonts.has(id)) {
     return;
   }
-  if (!options.resourceExists || options.resourceExists(kind, id)) {
-    return;
-  }
-  pushUnitDiagnostic(diagnostics, unit, resourceNotFoundCode(kind), `${resourceLabel(kind)} not found: ${id}`, "warning");
+  checkResourceExists(
+    kind,
+    id,
+    unit,
+    undefined,
+    options,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, generatedPath)
+  );
 }
 
 function providerType(value: JsonValue | undefined): string | null {
@@ -246,24 +300,4 @@ function providerType(value: JsonValue | undefined): string | null {
     return null;
   }
   return value.startsWith("minecraft:") ? value.slice("minecraft:".length) : value;
-}
-
-function resourceNotFoundCode(kind: "font" | "fontFile" | "texture"): string {
-  if (kind === "font") {
-    return "rsgl.fontNotFound";
-  }
-  if (kind === "fontFile") {
-    return "rsgl.fontFileNotFound";
-  }
-  return "rsgl.textureNotFound";
-}
-
-function resourceLabel(kind: "font" | "fontFile" | "texture"): string {
-  if (kind === "font") {
-    return "Font";
-  }
-  if (kind === "fontFile") {
-    return "Font file";
-  }
-  return "Texture";
 }

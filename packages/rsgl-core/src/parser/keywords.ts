@@ -1,4 +1,4 @@
-import { rsglResourceKinds } from "../resourceKinds";
+import { rsglExternResourceKinds, rsglResourceKinds } from "../resourceKinds";
 
 const declarationKeywords = [
   "target",
@@ -24,6 +24,10 @@ export const resourceKeywords = rsglResourceKinds;
 
 export const rsglKeywords = new Set<string>([
   ...topLevelKeywords,
+  ...rsglExternResourceKinds,
+  "custom",
+  "vanilla",
+  "var",
   "from",
   "as",
   "impl",

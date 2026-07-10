@@ -2,20 +2,17 @@ import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../.
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import {
   asObject,
+  checkResourceExists,
   pushUnitDiagnostic,
+  sourceRangeForGeneratedPath,
+  type RsglResourceValidationOptions,
   validateBooleanField,
   validateStringField
 } from "./validationShared";
+import type { ExternResourceSource } from "../externDeclarations";
+import { appendGeneratedPath } from "./sourcePaths";
 
-export interface LangSoundsValidationOptions {
-  resourceExists?: (kind: "sound", id: string) => boolean;
-  soundMetadata?: (id: string) => {
-    codec?: string;
-    channels?: number;
-    sampleRate?: number;
-    durationSeconds?: number;
-  } | null | undefined;
-}
+export type LangSoundsValidationOptions = RsglResourceValidationOptions;
 
 export function validateLangMetadata(unit: ResourceUnit, diagnostics: RsglCompileDiagnostic[]): void {
   const content = asObject(unit.content);
@@ -53,7 +50,16 @@ export function validateSoundsMetadata(
 
   const localEvents = new Set(Object.keys(content));
   for (const [eventName, event] of Object.entries(content)) {
-    validateSoundEvent(eventName, event, namespace, localEvents, unit, options, diagnostics);
+    validateSoundEvent(
+      eventName,
+      event,
+      namespace,
+      localEvents,
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath("", eventName)
+    );
   }
 }
 
@@ -90,7 +96,8 @@ function validateSoundEvent(
   localEvents: Set<string>,
   unit: ResourceUnit,
   options: LangSoundsValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const event = asObject(value);
   if (!event) {
@@ -109,8 +116,17 @@ function validateSoundEvent(
     return;
   }
 
-  for (const sound of event.sounds) {
-    validateSoundEntry(sound, namespace, localEvents, unit, options, diagnostics);
+  const soundsPath = appendGeneratedPath(generatedPath, "sounds");
+  for (const [soundIndex, sound] of event.sounds.entries()) {
+    validateSoundEntry(
+      sound,
+      namespace,
+      localEvents,
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath(soundsPath, String(soundIndex))
+    );
   }
 }
 
@@ -120,10 +136,11 @@ function validateSoundEntry(
   localEvents: Set<string>,
   unit: ResourceUnit,
   options: LangSoundsValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (typeof value === "string") {
-    validateSoundFileReference(value, unit, options, diagnostics);
+    validateSoundFileReference(value, unit, options, diagnostics, generatedPath);
     return;
   }
 
@@ -150,7 +167,13 @@ function validateSoundEntry(
   if (sound.type === "event") {
     validateSoundEventReference(sound.name, namespace, localEvents, unit, diagnostics);
   } else {
-    validateSoundFileReference(sound.name, unit, options, diagnostics);
+    validateSoundFileReference(
+      sound.name,
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath(generatedPath, "name")
+    );
   }
 }
 
@@ -158,7 +181,8 @@ function validateSoundFileReference(
   value: string,
   unit: ResourceUnit,
   options: LangSoundsValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (/\s/.test(value)) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundReference", "Sound file names must not contain whitespace.", "warning");
@@ -168,23 +192,35 @@ function validateSoundFileReference(
   }
 
   const soundId = qualifyMinecraftResourceId(value, unit.id?.namespace ?? "minecraft");
-  if (options.resourceExists && !options.resourceExists("sound", soundId)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.soundNotFound", `Sound not found: ${soundId}`, "warning");
+  const checked = checkResourceExists(
+    "sound",
+    soundId,
+    unit,
+    undefined,
+    options,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, generatedPath)
+  );
+  if (!checked.available) {
     return;
   }
-  validateSoundMetadata(soundId, unit, options, diagnostics);
+  validateSoundMetadata(soundId, unit, options, diagnostics, checked.source);
 }
 
 function validateSoundMetadata(
   soundId: string,
   unit: ResourceUnit,
   options: LangSoundsValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  source: ExternResourceSource | undefined
 ): void {
-  if (!options.soundMetadata) {
+  const metadataReader = source && options.externSoundMetadata
+    ? (id: string) => options.externSoundMetadata!(source, id)
+    : options.soundMetadata;
+  if (!metadataReader) {
     return;
   }
-  const metadata = options.soundMetadata(soundId);
+  const metadata = metadataReader(soundId);
   if (metadata === undefined) {
     return;
   }

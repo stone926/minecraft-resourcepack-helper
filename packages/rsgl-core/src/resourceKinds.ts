@@ -178,6 +178,7 @@ export const rsglResourceKindDescriptors = [
   },
   {
     keyword: "font",
+    supportsExtern: true,
     ast: { shape: "identified", bodyDialect: "generic", supportsImpl: false },
     compile: { handler: "genericJson", cardinality: "one" },
     validation: { handler: "font" },
@@ -300,7 +301,14 @@ export type ResourceKindDescriptor = typeof rsglResourceKindDescriptors[number];
 export type RsglGenericJsonResourceKind = Extract<ResourceKindDescriptor, { compile: { handler: "genericJson" } }>["keyword"];
 
 /** Resource file kinds that RSGL can reference but never compiles itself. */
-export const externOnlyKinds = ["texture"] as const;
+export const externOnlyKinds = [
+  "texture",
+  "texture_directory",
+  "sound",
+  "font_file",
+  "shader_vertex",
+  "shader_fragment"
+] as const;
 
 type CompilableExternResourceKind = Extract<ResourceKindDescriptor, { supportsExtern: true }>["keyword"];
 type ExternOnlyResourceKind = (typeof externOnlyKinds)[number];
@@ -327,46 +335,68 @@ const externResourceKindSet: ReadonlySet<string> = new Set(rsglExternResourceKin
 interface ExternResourceKindMetadata {
   /** Kind understood by the shared Minecraft resource target registry. */
   targetKind: string;
-  completion: RsglResourceCompletionDescriptor;
+  example: string;
 }
 
 const externResourceMetadataByKind = {
   model: {
     targetKind: "model",
-    completion: {
-      label: "extern model",
-      insertText: "extern model(id: ${1:minecraft:block/stone})",
-      detail: "Declare an existing model without emitting it"
-    }
+    example: "minecraft:block/stone"
   },
   blockstate: {
     targetKind: "blockstate",
-    completion: {
-      label: "extern blockstate",
-      insertText: "extern blockstate(id: ${1:minecraft:stone})",
-      detail: "Declare an existing blockstate without emitting it"
-    }
+    example: "minecraft:stone"
   },
   item: {
     targetKind: "item",
-    completion: {
-      label: "extern item",
-      insertText: "extern item(id: ${1:minecraft:diamond})",
-      detail: "Declare an existing item definition without emitting it"
-    }
+    example: "minecraft:diamond"
+  },
+  font: {
+    targetKind: "font",
+    example: "minecraft:default"
   },
   texture: {
     targetKind: "texture",
-    completion: {
-      label: "extern texture",
-      insertText: "extern texture(id: ${1:minecraft:block/stone})",
-      detail: "Declare an existing texture without emitting it"
-    }
+    example: "minecraft:block/stone"
+  },
+  texture_directory: {
+    targetKind: "textureDirectory",
+    example: "minecraft:block/**"
+  },
+  sound: {
+    targetKind: "sound",
+    example: "minecraft:block/stone/break1"
+  },
+  font_file: {
+    targetKind: "fontFile",
+    example: "minecraft:font/ascii.png"
+  },
+  shader_vertex: {
+    targetKind: "shaderVertex",
+    example: "minecraft:core/screenquad"
+  },
+  shader_fragment: {
+    targetKind: "shaderFragment",
+    example: "minecraft:post/box_blur"
   }
 } as const satisfies Record<ExternResourceKind, ExternResourceKindMetadata>;
 
 export const rsglExternResourceCompletionDescriptors: readonly RsglResourceCompletionDescriptor[] =
-  rsglExternResourceKinds.map(kind => externResourceMetadataByKind[kind].completion);
+  rsglExternResourceKinds.flatMap(kind => {
+    const example = externResourceMetadataByKind[kind].example;
+    return [
+      {
+        label: `extern ${kind}`,
+        insertText: `extern \${1|custom,vanilla|} ${kind} \${2:${example}}`,
+        detail: `Declare existing ${kind.replaceAll("_", " ")} resources`
+      },
+      {
+        label: `extern! ${kind}`,
+        insertText: `extern! \${1|custom,vanilla|} ${kind} \${2:${example}}`,
+        detail: `Declare ${kind.replaceAll("_", " ")} resources without checking existence`
+      }
+    ];
+  });
 
 export const externResourceKindDescription = formatQuotedAlternatives(rsglExternResourceKinds);
 
@@ -402,6 +432,10 @@ export function getExternResourceKind(kind: string | undefined): ExternResourceK
 
 export function getExternResourceTargetKind(kind: ExternResourceKind): string {
   return externResourceMetadataByKind[kind].targetKind;
+}
+
+export function getExternResourceKindForTargetKind(kind: string): ExternResourceKind | null {
+  return rsglExternResourceKinds.find(candidate => externResourceMetadataByKind[candidate].targetKind === kind) ?? null;
 }
 
 function formatQuotedAlternatives(values: readonly string[]): string {

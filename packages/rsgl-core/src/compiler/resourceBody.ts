@@ -1,4 +1,5 @@
 import {
+  ExprNode,
   ResourceBodyNode,
   ResourceStatementNode,
   TextRange,
@@ -6,7 +7,11 @@ import {
 } from "../parser";
 import {
   EvaluationContext,
-  evaluateExpression
+  type EvaluationOrigin,
+  bindEvaluationValue,
+  evaluateExpression,
+  expressionEvaluationOrigin,
+  expressionEvaluationPathOrigins
 } from "./evaluate";
 import { applyBaseDocument } from "./base/application";
 import { normalizeJsonValue } from "./compilerHelpers";
@@ -41,6 +46,8 @@ export interface ResourceBodyMapping {
   generatedPath: string;
   sourceRange: TextRange;
   context: EvaluationContext;
+  validationOrigin?: EvaluationOrigin;
+  validationOnly?: boolean;
 }
 
 export function resourceBodyToObject(
@@ -80,10 +87,15 @@ function applyResourceStatement(
 ): void {
   if (statement.kind === "PropertyStmt") {
     result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-    emitMapping(options, appendGeneratedPath(path, statement.name.text), statement.range, context);
+    emitExpressionMapping(options, appendGeneratedPath(path, statement.name.text), statement.value, statement.range, context);
   } else if (statement.kind === "LetDecl") {
     if (statement.name) {
-      context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
+      bindEvaluationValue(
+        context,
+        statement.name.text,
+        evaluateExpression(statement.value, context),
+        expressionEvaluationOrigin(statement.value, context)
+      );
     }
   } else if (statement.kind === "SectionStmt") {
     if (statement.body) {
@@ -92,7 +104,7 @@ function applyResourceStatement(
       result[statement.name.text] = resourceBodyToObjectAtPath(statement.body, context, options, sectionPath, false);
     } else if (statement.value) {
       result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-      emitMapping(options, appendGeneratedPath(path, statement.name.text), statement.range, context);
+      emitExpressionMapping(options, appendGeneratedPath(path, statement.name.text), statement.value, statement.range, context);
     }
   } else if (statement.kind === "IfStmt") {
     const selectedBody = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
@@ -112,9 +124,20 @@ function applyResourceStatement(
   } else if (statement.kind === "MergeStmt") {
     const value = normalizeJsonValue(evaluateExpression(statement.value, context));
     if (isJsonObject(value)) {
+      const validationMappings: ResourceBodyMapping[] = expressionEvaluationPathOrigins(
+        statement.value,
+        context,
+        ""
+      ).map(origin => ({
+        generatedPath: origin.generatedPath,
+        sourceRange: statement.value.range,
+        context,
+        validationOrigin: origin,
+        validationOnly: true
+      }));
       applyResourceBodyFragment(
         result,
-        { content: value },
+        { content: value, mappings: validationMappings },
         statement.mode,
         statement.range,
         context,
@@ -151,6 +174,19 @@ function applyResourceStatement(
     if (fragment) {
       applyResourceBodyFragment(result, fragment, "deep", statement.range, context, options, path);
     }
+  }
+}
+
+function emitExpressionMapping(
+  options: ResourceBodyCompileOptions,
+  generatedPath: string,
+  expression: ExprNode,
+  fallbackRange: TextRange,
+  context: EvaluationContext
+): void {
+  emitMapping(options, generatedPath, fallbackRange, context);
+  for (const origin of expressionEvaluationPathOrigins(expression, context, generatedPath)) {
+    emitMapping(options, origin.generatedPath, fallbackRange, context, origin, true);
   }
 }
 function resourceBodyFragmentFromResult(result: ResourceBodySpecialResult | undefined): ResourceBodyFragment | undefined {

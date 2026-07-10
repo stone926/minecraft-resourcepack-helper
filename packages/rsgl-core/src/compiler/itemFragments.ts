@@ -13,10 +13,12 @@ import {
   EvaluationContext,
   EvaluationValue,
   childEvaluationContext,
-  evaluateExpression
+  evaluateExpression,
+  expressionEvaluationPathOrigins
 } from "./evaluate";
 import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { JsonValue } from "./ir";
+import type { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 
 export interface RsglItemFragmentOptions {
   onError?: (code: string, message: string, range: TextRange) => void;
@@ -33,31 +35,70 @@ export function compileItemSpecialStatement(
     | ItemSpecialStmtNode,
   context: EvaluationContext,
   options: RsglItemFragmentOptions = {}
-): Record<string, JsonValue> | undefined {
+): ResourceBodyFragment | undefined {
+  let model: JsonValue | undefined;
   if (statement.kind === "ItemRangeStmt") {
-    const model = compileItemRangeStatement(statement, context, options);
-    return model ? { model } : undefined;
+    model = compileItemRangeStatement(statement, context, options);
+  } else if (statement.kind === "ItemSelectStmt") {
+    model = compileItemSelectStatement(statement, context, options);
+  } else if (statement.kind === "ItemConditionStmt") {
+    model = compileItemConditionStatement(statement, context, options);
+  } else if (statement.kind === "ItemCompositeStmt") {
+    model = compileItemCompositeStatement(statement, context, options);
+  } else if (statement.kind === "ItemEmptyStmt") {
+    model = { type: "minecraft:empty" };
+  } else if (statement.kind === "ItemSelectedItemStmt") {
+    model = { type: "minecraft:bundle/selected_item" };
+  } else {
+    model = compileItemSpecialStatementNode(statement, context, options);
   }
-  if (statement.kind === "ItemSelectStmt") {
-    const model = compileItemSelectStatement(statement, context, options);
-    return model ? { model } : undefined;
+  return model === undefined
+    ? undefined
+    : {
+      content: { model },
+      mappings: itemFragmentValidationMappings(statement, context, model)
+    };
+}
+
+function itemFragmentValidationMappings(
+  statement: Parameters<typeof compileItemSpecialStatement>[0],
+  context: EvaluationContext,
+  model: JsonValue
+): ResourceBodyMapping[] {
+  const mappings: ResourceBodyMapping[] = [];
+  const add = (expression: ExprNode | undefined, generatedPath: string) => {
+    if (!expression) {
+      return;
+    }
+    mappings.push(...expressionEvaluationPathOrigins(expression, context, generatedPath).map(origin => ({
+      generatedPath: origin.generatedPath,
+      sourceRange: expression.range,
+      context,
+      validationOrigin: origin,
+      validationOnly: true
+    })));
+  };
+
+  if (statement.kind === "ItemRangeStmt") {
+    const entries = isJsonObject(model) && Array.isArray(model.entries) ? model.entries : [];
+    entries.forEach((_, index) => add(
+      statement.frames?.model,
+      `/model/entries/${index}/model`
+    ));
+    add(statement.fallback, "/model/fallback");
+  } else if (statement.kind === "ItemSelectStmt") {
+    statement.cases.forEach((item, index) => add(item.model, `/model/cases/${index}/model`));
+    add(statement.fallback, "/model/fallback");
+  } else if (statement.kind === "ItemConditionStmt") {
+    add(statement.onTrue, "/model/on_true");
+    add(statement.onFalse, "/model/on_false");
+  } else if (statement.kind === "ItemCompositeStmt") {
+    statement.models.forEach((item, index) => add(item, `/model/models/${index}`));
+  } else if (statement.kind === "ItemSpecialStmt") {
+    add(statement.base, "/model/base");
+    add(statement.model, "/model/model");
   }
-  if (statement.kind === "ItemConditionStmt") {
-    const model = compileItemConditionStatement(statement, context, options);
-    return model ? { model } : undefined;
-  }
-  if (statement.kind === "ItemCompositeStmt") {
-    const model = compileItemCompositeStatement(statement, context, options);
-    return model ? { model } : undefined;
-  }
-  if (statement.kind === "ItemEmptyStmt") {
-    return { model: { type: "minecraft:empty" } };
-  }
-  if (statement.kind === "ItemSelectedItemStmt") {
-    return { model: { type: "minecraft:bundle/selected_item" } };
-  }
-  const model = compileItemSpecialStatementNode(statement, context, options);
-  return model ? { model } : undefined;
+  return mappings;
 }
 
 function compileItemRangeStatement(

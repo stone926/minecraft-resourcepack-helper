@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { compileRsglFile, compileRsglProgram, loadRsglSourceFilesFromFile } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
 import { createAllRsglStdlibSourceFiles } from "../../src/stdlib";
-import { expectNoDiagnostics } from "./helpers/compile";
+import { expectNoDiagnostics, withUncheckedExterns } from "./helpers/compile";
 import { createTempDir, withTempDir } from "./helpers/fs";
 
 describe("RSGL stdlib discovery", () => {
@@ -52,10 +52,10 @@ describe("RSGL stdlib discovery", () => {
             "use dynamicStdlibCube(stone)"
           ].join("\n"))
         }
-      ], { entryFileName: mainFile, stdlibRoot });
+      ], withUncheckedExterns({ entryFileName: mainFile, stdlibRoot }));
 
       expectNoDiagnostics(result);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath), [
         "assets/minecraft/models/block/stone.json"
       ]);
     });

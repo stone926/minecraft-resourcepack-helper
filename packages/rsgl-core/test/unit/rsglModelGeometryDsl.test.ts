@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL model geometry DSL", () => {
   it("lowers model geometry DSL boxes to vanilla model elements", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block fence_gate_post {",
       "  texture wood minecraft:block/oak_planks",
       "  box \"left post\" from [0, 2, 7] to [2, 13, 9] mirror x {",

@@ -21,6 +21,8 @@ describe("RSGL blockstate validation", () => {
       }));
 
       const result = compileSource([
+        "extern custom model minecraft:**",
+        "extern custom texture minecraft:**",
         "model block stone {",
         "  parent minecraft:block/missing_parent",
         "  textures { all: minecraft:block/missing_texture }",

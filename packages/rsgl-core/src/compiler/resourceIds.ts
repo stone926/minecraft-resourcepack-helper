@@ -23,5 +23,8 @@ export function resourceOutputPath(
 }
 
 export function resourceTargetOutputPath(kind: string, id: ResourceId): string {
-  return resourceOutputPath(kind, id, minecraftResourceTarget(kind).extension ?? "json");
+  const target = minecraftResourceTarget(kind);
+  const basePath = `assets/${id.namespace}/${target.directory}/${id.path}`;
+  const suffix = target.extension ? `.${target.extension}` : "";
+  return suffix && !basePath.endsWith(suffix) ? `${basePath}${suffix}` : basePath;
 }

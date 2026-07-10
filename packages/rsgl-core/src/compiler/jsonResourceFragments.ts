@@ -7,7 +7,12 @@ import {
   UseDeclNode
 } from "../parser";
 import type { RsglGenericJsonResourceKind } from "../resourceKinds";
-import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
+import {
+  EvaluationContext,
+  EvaluationValue,
+  evaluateExpression,
+  expressionEvaluationOrigin
+} from "./evaluate";
 import { JsonValue } from "./ir";
 import { isJsonObject } from "./jsonValues";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
@@ -78,7 +83,12 @@ function compileAtlasDirectory(
     mapping("/sources", call.range, context),
     mapping(sourcePath, call.range, context),
     mapping(appendGeneratedPath(sourcePath, "type"), call.callee.name.range, context),
-    mapping(appendGeneratedPath(sourcePath, "source"), source.arg.value.range, context)
+    mapping(
+      appendGeneratedPath(sourcePath, "source"),
+      source.arg.value.range,
+      context,
+      source.arg.value
+    )
   ];
   if (prefix) {
     mappings.push(mapping(appendGeneratedPath(sourcePath, "prefix"), prefix.arg.value.range, context));
@@ -114,12 +124,14 @@ function compileParticlesSeq(
     {
       generatedPath: texturesPath,
       sourceRange: arg.value.range,
-      context
+      context,
+      validationOrigin: expressionEvaluationOrigin(arg.value, context)
     },
     ...textures.map((_, index) => ({
       generatedPath: appendGeneratedPath(texturesPath, String(index)),
       sourceRange: arg.value.range,
-      context
+      context,
+      validationOrigin: expressionEvaluationOrigin(arg.value, context)
     }))
   ];
   return jsonFragment({ textures }, mappings);
@@ -235,8 +247,16 @@ function jsonFragment(
   return { content, mappings };
 }
 
-function mapping(generatedPath: string, sourceRange: TextRange, context: EvaluationContext): ResourceBodyMapping {
-  return { generatedPath, sourceRange, context };
+function mapping(
+  generatedPath: string,
+  sourceRange: TextRange,
+  context: EvaluationContext,
+  validationExpression?: ExprNode
+): ResourceBodyMapping {
+  const validationOrigin = validationExpression
+    ? expressionEvaluationOrigin(validationExpression, context)
+    : undefined;
+  return { generatedPath, sourceRange, context, validationOrigin };
 }
 
 function addOptionalArgMapping(
@@ -271,7 +291,12 @@ function equipmentLayersMappings(
     mappings.push(
       mapping(layerPath, args.layers.value.range, context),
       mapping(entryPath, args.texture.value.range, context),
-      mapping(appendGeneratedPath(entryPath, "texture"), args.texture.value.range, context)
+      mapping(
+        appendGeneratedPath(entryPath, "texture"),
+        args.texture.value.range,
+        context,
+        args.texture.value
+      )
     );
     if (isJsonObject(layerEntry.dyeable)) {
       const dyeableRange = args.dyeable?.value.range ?? args.color?.value.range ?? args.texture.value.range;

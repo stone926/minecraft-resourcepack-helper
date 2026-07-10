@@ -4,7 +4,7 @@ import type { JsonValue } from "../ir";
 /** A filesystem input that can invalidate a compiled RSGL program. */
 export interface CompileDependency {
   path: string;
-  reason: "base-import" | "glob";
+  reason: "base-import" | "glob" | "extern";
   sourceFile: string;
   sourceRange: TextRange;
 }

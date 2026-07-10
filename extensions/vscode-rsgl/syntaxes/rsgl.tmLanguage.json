@@ -101,13 +101,33 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(extern)(\\s+)(model|blockstate|item|texture)\\b",
+          "match": "\\b(extern)(!?)(\\s+)(custom|vanilla)(\\s+)(model|blockstate|item|texture|texture_directory|sound|font|font_file|shader_vertex|shader_fragment)\\b",
           "captures": {
             "1": {
               "name": "storage.type.rsgl"
             },
-            "3": {
+            "2": {
+              "name": "keyword.operator.rsgl"
+            },
+            "4": {
+              "name": "storage.modifier.rsgl"
+            },
+            "6": {
               "name": "storage.type.rsgl"
+            }
+          }
+        },
+        {
+          "match": "\\b(extern)(!?)(\\s+)(var)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            },
+            "2": {
+              "name": "keyword.operator.rsgl"
+            },
+            "4": {
+              "name": "storage.modifier.rsgl"
             }
           }
         },
@@ -140,6 +160,10 @@
     "properties": {
       "patterns": [
         {
+          "name": "variable.other.texture.rsgl",
+          "match": "#[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
           "name": "variable.other.property.rsgl",
           "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|model|x|y|z|uvlock|weight|texture|generate|double|box|element|from|to|face|all|down|up|north|south|west|east|uv|rotation|origin|axis|angle|rescale|cullface|shade|tintindex|light_emission|mirror|translate)\\b"
         }
@@ -149,7 +173,7 @@
       "patterns": [
         {
           "name": "keyword.operator.rsgl",
-          "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!]"
+          "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!#]"
         },
         {
           "name": "keyword.operator.model-apply.rsgl",

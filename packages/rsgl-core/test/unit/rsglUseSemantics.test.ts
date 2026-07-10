@@ -1,52 +1,41 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { compileRsglProgram, type ExternalResourceKind, type ResourceUnit } from "../../src/compiler";
+import { compileRsglProgram } from "../../src/compiler";
 import { RsglCompiler } from "../../src/compiler/compiler";
 import { childEvaluationContext, type EvaluationContext } from "../../src/compiler/evaluate";
 import { parseRsgl } from "../../src/parser";
 import { externResourceKindDescription } from "../../src/resourceKinds";
-import { compileSource, expectNoDiagnostics, unitByPath } from "./helpers/compile";
-
-function assertExternalResource(
-  units: readonly ResourceUnit[],
-  outputPath: string,
-  resourceKind: ExternalResourceKind,
-  id: string
-): void {
-  const unit = units.find(candidate => candidate.outputPath === outputPath);
-  assert.ok(unit, `Expected external resource unit for ${outputPath}`);
-  assert.deepStrictEqual(unit.external, { kind: "external", resourceKind, id });
-  assert.strictEqual(unit.content, null);
-}
+import {
+  compileSource,
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  generatedResourceUnits,
+  unitByPath,
+  withUncheckedExterns
+} from "./helpers/compile";
 
 describe("RSGL use semantics, extern declarations, and convention templates", () => {
-  it("declares external resources without emitting files", () => {
+  it("keeps unused extern declarations out of compiler units", () => {
     const result = compileSource([
-      "extern model(id: minecraft:block/stone)",
-      "extern blockstate(id: minecraft:stone)",
-      "extern item(id: minecraft:stone)",
-      "extern texture(id: minecraft:block/stone)"
+      "extern custom model minecraft:block/stone",
+      "extern vanilla blockstate minecraft:stone",
+      "extern custom item minecraft:stone",
+      "extern vanilla texture minecraft:block/stone"
     ]);
 
     expectNoDiagnostics(result);
-    assertExternalResource(result.units, "assets/minecraft/models/block/stone.json", "model", "minecraft:block/stone");
-    assertExternalResource(result.units, "assets/minecraft/blockstates/stone.json", "blockstate", "minecraft:stone");
-    assertExternalResource(result.units, "assets/minecraft/items/stone.json", "item", "minecraft:stone");
-    assertExternalResource(result.units, "assets/minecraft/textures/block/stone.png", "texture", "minecraft:block/stone");
+    assert.deepStrictEqual(result.units, []);
   });
 
-  it("diagnoses extern ids that evaluate to invalid resource ids", () => {
-    const result = compileSource([
-      "let suffix = \"bad path\"",
-      "extern model(id: `minecraft:block/${suffix}`)"
-    ]);
+  it("diagnoses invalid extern patterns before compilation", () => {
+    const result = compileSource(["extern custom model minecraft:block/bad*path"]);
 
-    assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.compileInvalidResourceId"));
+    assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.invalidExternPattern"));
     assert.deepStrictEqual(result.units, []);
   });
 
   it("reports an unsupported extern kind once across semantic and compile validation", () => {
-    const result = compileSource(["extern atlas(id: minecraft:blocks)"]);
+    const result = compileSource(["extern custom atlas minecraft:blocks"]);
     const diagnostics = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.invalidExternKind");
 
     assert.strictEqual(diagnostics.length, 1);
@@ -57,20 +46,21 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     assert.deepStrictEqual(result.units, []);
   });
 
-  it("lets generated resources override extern declarations", () => {
+  it("does not require extern declarations for generated resources", () => {
     const result = compileSource([
-      "extern model(id: minecraft:block/stone)",
-      "model block stone impl minecraft:block/cube_all(all: minecraft:block/stone) {",
+      "model block stone {}",
+      "blockstate stone {",
+      "  variants { {} -> { model: minecraft:block/stone } }",
       "}"
     ]);
 
     expectNoDiagnostics(result);
-    assert.strictEqual(result.units.length, 1);
-    assert.strictEqual(result.units[0].external, undefined);
+    assert.strictEqual(result.units.length, 2);
+    assert.ok(result.units.every(unit => unit.external === undefined));
   });
 
   it("lowers model impl clauses to parent and texture slots", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block ruby impl minecraft:block/cube_all(all: minecraft:block/ruby) {",
       "}",
       "model item diamond impl generated(layer0: minecraft:item/diamond) {",
@@ -102,7 +92,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
       "model block ruby impl minecraft:block/cube_all(all: minecraft:block/ruby) {",
       "}"
     ];
-    const result = compileSource(source);
+    const result = compileSourceWithUncheckedExterns(source);
 
     expectNoDiagnostics(result);
     const text = source.join("\n");
@@ -124,7 +114,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
       "  }",
       "}"
     ];
-    const result = compileSource(source);
+    const result = compileSourceWithUncheckedExterns(source);
 
     assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.duplicateModelParent"));
     const unit = unitByPath(result, "models/block/ruby.json");
@@ -148,7 +138,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
       "  textures bodyTextures",
       "}"
     ];
-    const result = compileSource(source);
+    const result = compileSourceWithUncheckedExterns(source);
 
     expectNoDiagnostics(result);
     const unit = unitByPath(result, "models/block/ruby.json");
@@ -163,7 +153,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
   });
 
   it("expands item and model convention templates from stdlib imports", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { cubeAllModel, generatedItem, simpleItem } from \"rsgl:conventions/items.rsgl\"",
       "use cubeAllModel(id: ruby, all: minecraft:block/ruby)",
       "use generatedItem(id: diamond, layer0: minecraft:item/diamond)",
@@ -171,7 +161,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/items/diamond.json",
       "assets/minecraft/items/ruby_block.json",
       "assets/minecraft/models/block/ruby.json",
@@ -183,7 +173,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
   // when hardcoded use builtins migrated to stdlib convention templates. The
   // test pins the diagnostics users get when stale sources still reference them.
   it("diagnoses removed top-level hardcoded use helpers", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "use externalModel(id: minecraft:block/stone)",
       "use cubeAll(id: ruby)",
       "use itemGenerated(id: diamond, texture: minecraft:item/diamond)",
@@ -195,11 +185,11 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     assert.ok(codes.includes("rsgl.undefinedSymbol"));
     assert.ok(codes.includes("rsgl.notCallable"));
     assert.ok(codes.includes("rsgl.unknownTemplate"));
-    assert.deepStrictEqual(result.units, []);
+    assert.deepStrictEqual(generatedResourceUnits(result), []);
   });
 
   it("separates full blockstate templates from blockstate fragments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stairs } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
       "import { stairsBlockstate } from \"rsgl:conventions/blockstates.rsgl\"",
       "use stairsBlockstate(id: ruby_stairs)",
@@ -232,7 +222,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
 
 describe("RSGL lambda arguments to imported templates", () => {
   it("checks lambda bodies passed to imported templates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: age, values: [0], model: value => `minecraft:block/${vlaue}`)",
@@ -243,7 +233,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("reports lambda typos once for import-all modules", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: value => `minecraft:block/${vlaue}`)",
@@ -255,7 +245,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("resolves lambda captures of loop variables, template parameters, and local lets", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "template lampFamily(base: String) {",
       "  blockstate `${base}_lamp` {",
@@ -281,7 +271,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("expands stateSequence with range values without type diagnostics", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: age, values: 0..2, model: value => `minecraft:block/cactus_${value}`)",
@@ -299,7 +289,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("rejects stateSequence values that are neither a list nor a range", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: age, values: true, model: value => `minecraft:block/cactus_${value}`)",
@@ -310,7 +300,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("accepts object-returning rangeFrames model lambdas", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { rangeFrames } from \"rsgl:conventions/item_definitions.rsgl\"",
       "use rangeFrames(",
       "  id: compass,",
@@ -338,7 +328,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("reports lambda arity mismatches once, attributed to the expanded template call", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { rangeFrames } from \"rsgl:conventions/item_definitions.rsgl\"",
       "use rangeFrames(",
       "  id: compass,",
@@ -364,7 +354,7 @@ describe("RSGL lambda arguments to imported templates", () => {
       "let m = (a) => a",
       "let x = m(1, 2)"
     ];
-    const result = compileSource(source);
+    const result = compileSourceWithUncheckedExterns(source);
 
     const arityMismatches = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.lambdaArityMismatch");
     assert.strictEqual(arityMismatches.length, 1, "semantic and evaluator reports for one call must collapse into one diagnostic");
@@ -384,7 +374,7 @@ describe("RSGL lambda arguments to imported templates", () => {
           "let x = double(1, 2)"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
     const arityMismatches = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.lambdaArityMismatch");
     assert.strictEqual(arityMismatches.length, 1);
@@ -403,7 +393,7 @@ describe("RSGL lambda arguments to imported templates", () => {
           "let broken = mapName(v => `minecraft:block/${vlaue}`)"
         ].join("\n"))
       }
-    ], { entryFileName: mainFile });
+    ], withUncheckedExterns({ entryFileName: mainFile }));
 
     assert.ok(result.diagnostics.some(diagnostic =>
       diagnostic.code === "rsgl.undefinedSymbol" && diagnostic.fileName === mainFile
@@ -411,7 +401,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("checks imported template arguments inside overlay blocks", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "overlay \"candy\" {",
       "  blockstate cactus {",
@@ -424,7 +414,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("rejects lambda captures of local lets declared after the call", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: v => `${prefix}_${v}`)",
@@ -436,7 +426,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("skips import signature validation for shadowed template parameters", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "template wrap(stateSequence: (Json) -> ModelId) {",
       "  model block wrapped { parent stateSequence(0) }",
@@ -451,7 +441,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("rejects object-returning stateSequence model lambdas", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: value => { model: `minecraft:block/c_${value}`, y: 90 })",
@@ -462,7 +452,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("reports nested impure lambdas once", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: value => [inner => glob(\"./x.json\")][0](value))",
@@ -474,7 +464,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("reports impure lambda calls once without executing the glob loader", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { rangeFrames } from \"rsgl:conventions/item_definitions.rsgl\"",
       "use rangeFrames(",
       "  id: compass,",
@@ -490,7 +480,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   });
 
   it("reports impure lambdas once even when loops recreate them", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "for i in 0..9 {",
       "  let load = value => glob(\"./missing.json\")",
       "  let x = load(i)",

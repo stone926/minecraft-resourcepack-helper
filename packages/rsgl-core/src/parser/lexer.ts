@@ -4,7 +4,7 @@ import { LexResult, RsglDiagnostic, RsglToken, RsglTokenKind, Trivia } from "./t
 
 const twoCharacterOperators = new Set(["->", "=>", "==", "!=", "<=", ">=", "&&", "||", ".."]);
 const singleCharacterOperators = new Set(["=", "?", ":", "+", "-", "*", "/", "%", "!", "<", ">", "|"]);
-const punctuationCharacters = new Set(["{", "}", "[", "]", "(", ")", ",", ".", ";", "@"]);
+const punctuationCharacters = new Set(["{", "}", "[", "]", "(", ")", ",", ".", ";", "@", "#"]);
 
 export function lexRsgl(text: string): LexResult {
   const lexer = new RsglLexer(text);

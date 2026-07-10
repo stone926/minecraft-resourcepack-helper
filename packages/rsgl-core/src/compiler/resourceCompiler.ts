@@ -115,7 +115,10 @@ function compileModel(
   const body = host.compileBody(statement.body, context, "model");
   const { content, mappings } = applyModelImpl(statement, subtype, body, context, {
     onError: host.onError,
-    createMapping: (generatedPath, sourceRange) => host.sourceMapping(generatedPath, sourceRange, context)
+    createMapping: (generatedPath, sourceRange, validationOrigin) => ({
+      ...host.sourceMapping(generatedPath, sourceRange, context),
+      ...(validationOrigin ? { validationOrigin } : {})
+    })
   });
   return {
     id: modelId,
@@ -176,7 +179,9 @@ function compileGenericJsonResource(
   if (resourceKind === "equipment") {
     const equipmentBody = lowerEquipmentBodySugar(content, context, statement.range, { onError: host.onError });
     content = equipmentBody.content;
-    mappings = equipmentBody.compactLayers ? compactEquipmentSourceMappings(mappings) : mappings;
+    mappings = equipmentBody.compactLayers
+      ? compactEquipmentSourceMappings(mappings, content)
+      : mappings;
   }
   return {
     id,

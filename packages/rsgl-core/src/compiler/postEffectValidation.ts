@@ -1,10 +1,16 @@
 import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { asObject, pushUnitDiagnostic, validateBooleanField } from "./validationShared";
+import {
+  asObject,
+  checkResourceExists as checkDeclaredResourceExists,
+  pushUnitDiagnostic,
+  sourceRangeForGeneratedPath,
+  type RsglResourceValidationOptions,
+  validateBooleanField
+} from "./validationShared";
+import { appendGeneratedPath } from "./sourcePaths";
 
-export interface PostEffectValidationOptions {
-  resourceExists?: (kind: "shaderVertex" | "shaderFragment" | "texture", id: string) => boolean;
-}
+export type PostEffectValidationOptions = RsglResourceValidationOptions;
 
 const builtinTargets = new Set([
   "main",
@@ -98,8 +104,16 @@ function validatePasses(
     return;
   }
 
-  for (const passValue of value) {
-    validatePass(passValue, declaredTargets, namespace, unit, options, diagnostics);
+  for (const [passIndex, passValue] of value.entries()) {
+    validatePass(
+      passValue,
+      declaredTargets,
+      namespace,
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath("/passes", String(passIndex))
+    );
   }
 }
 
@@ -109,7 +123,8 @@ function validatePass(
   namespace: string,
   unit: ResourceUnit,
   options: PostEffectValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const pass = asObject(value);
   if (!pass) {
@@ -117,14 +132,14 @@ function validatePass(
     return;
   }
 
-  validateShaderField(pass, "vertex_shader", "shaderVertex", namespace, unit, options, diagnostics);
-  validateShaderField(pass, "fragment_shader", "shaderFragment", namespace, unit, options, diagnostics);
+  validateShaderField(pass, "vertex_shader", "shaderVertex", namespace, unit, options, diagnostics, generatedPath);
+  validateShaderField(pass, "fragment_shader", "shaderFragment", namespace, unit, options, diagnostics, generatedPath);
   const outputName = stringField(pass, "output", "rsgl.invalidPostEffectPassField", "Post effect pass", unit, diagnostics);
   if (outputName && !declaredTargets.has(outputName)) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.postEffectTargetNotFound", `Post effect output target '${outputName}' is not declared in targets.`);
   }
 
-  validateInputs(pass.inputs, outputName, declaredTargets, namespace, unit, options, diagnostics);
+  validateInputs(pass.inputs, outputName, declaredTargets, namespace, unit, options, diagnostics, generatedPath);
   validateUniforms(pass.uniforms, unit, diagnostics);
 }
 
@@ -135,11 +150,19 @@ function validateShaderField(
   namespace: string,
   unit: ResourceUnit,
   options: PostEffectValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const shader = stringField(pass, field, "rsgl.invalidPostEffectPassField", "Post effect pass", unit, diagnostics);
   if (shader) {
-    checkResourceExists(kind, qualifyMinecraftResourceId(shader, namespace), unit, options, diagnostics);
+    checkResourceExists(
+      kind,
+      qualifyMinecraftResourceId(shader, namespace),
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath(generatedPath, field)
+    );
   }
 }
 
@@ -150,7 +173,8 @@ function validateInputs(
   namespace: string,
   unit: ResourceUnit,
   options: PostEffectValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   if (value === undefined) {
     return;
@@ -160,8 +184,18 @@ function validateInputs(
     return;
   }
 
-  for (const inputValue of value) {
-    validateInput(inputValue, outputName, declaredTargets, namespace, unit, options, diagnostics);
+  const inputsPath = appendGeneratedPath(generatedPath, "inputs");
+  for (const [inputIndex, inputValue] of value.entries()) {
+    validateInput(
+      inputValue,
+      outputName,
+      declaredTargets,
+      namespace,
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath(inputsPath, String(inputIndex))
+    );
   }
 }
 
@@ -172,7 +206,8 @@ function validateInput(
   namespace: string,
   unit: ResourceUnit,
   options: PostEffectValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
   const input = asObject(value);
   if (!input) {
@@ -191,7 +226,14 @@ function validateInput(
 
   const location = stringField(input, "location", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
   if (location) {
-    checkResourceExists("texture", minecraftResourceIdInFolder(location, namespace, "effect"), unit, options, diagnostics);
+    checkResourceExists(
+      "texture",
+      minecraftResourceIdInFolder(location, namespace, "effect"),
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath(generatedPath, "location")
+    );
   }
   validatePositiveIntegerField(input, "width", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
   validatePositiveIntegerField(input, "height", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
@@ -316,30 +358,16 @@ function checkResourceExists(
   id: string,
   unit: ResourceUnit,
   options: PostEffectValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
-  if (!options.resourceExists || options.resourceExists(kind, id)) {
-    return;
-  }
-  pushUnitDiagnostic(diagnostics, unit, resourceNotFoundCode(kind), `${resourceLabel(kind)} not found: ${id}`, "warning");
-}
-
-function resourceNotFoundCode(kind: "shaderVertex" | "shaderFragment" | "texture"): string {
-  if (kind === "shaderVertex") {
-    return "rsgl.vertexShaderNotFound";
-  }
-  if (kind === "shaderFragment") {
-    return "rsgl.fragmentShaderNotFound";
-  }
-  return "rsgl.textureNotFound";
-}
-
-function resourceLabel(kind: "shaderVertex" | "shaderFragment" | "texture"): string {
-  if (kind === "shaderVertex") {
-    return "Vertex shader";
-  }
-  if (kind === "shaderFragment") {
-    return "Fragment shader";
-  }
-  return "Texture";
+  checkDeclaredResourceExists(
+    kind,
+    id,
+    unit,
+    undefined,
+    options,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, generatedPath)
+  );
 }

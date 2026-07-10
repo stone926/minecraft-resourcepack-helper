@@ -1,11 +1,14 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import type { ExternResourceSource } from "../externDeclarations";
 import { validateModelStructure } from "./modelStructureValidation";
 import { appendGeneratedPath } from "./sourcePaths";
 import {
   asObject,
+  checkInheritedExternalResourceExists,
   checkResourceExists,
   isObject,
   isVirtualBuiltinModelId,
+  sourceFileForValidationRange,
   sourceRangeForGeneratedPath,
   visitJsonWithPath,
   type RsglResourceValidationOptions
@@ -13,15 +16,25 @@ import {
 import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../mc-assets/src";
 
 type TextureVariableResolution =
-  | { kind: "resolved"; texture: string }
-  | { kind: "missing" }
+  | {
+    kind: "resolved";
+    texture: string;
+    source?: ExternResourceSource;
+    generatedUnit?: ResourceUnit;
+    generatedPath?: string;
+  }
+  | { kind: "missing"; name: string }
   | { kind: "cycle" };
 
 export interface ModelDocument {
   id: string;
   namespace: string;
   content: Record<string, JsonValue>;
+  externalSource?: ExternResourceSource;
+  generatedUnit?: ResourceUnit;
 }
+
+type ModelResolver = (id: string, source?: ExternResourceSource) => ModelDocument | undefined;
 
 export function validateModelUnit(
   unit: ResourceUnit,
@@ -30,7 +43,8 @@ export function validateModelUnit(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  validateModelParentChain(unit, modelResolver, generatedModels, options, diagnostics);
+  const externalModelSources = new Map<string, ExternResourceSource>();
+  validateModelParentChain(unit, modelResolver, generatedModels, externalModelSources, options, diagnostics);
 
   const content = asObject(unit.content);
   const textures = asObject(content?.textures);
@@ -53,18 +67,47 @@ export function validateModelUnit(
     }
   }
 
-  validateModelTextureVariables(unit, modelResolver, generatedModels, options, diagnostics);
+  validateLegacyItemOverrides(unit, content, generatedModels, options, diagnostics);
+
+  validateModelTextureVariables(unit, modelResolver, generatedModels, externalModelSources, options, diagnostics);
   validateModelStructure(unit, diagnostics);
+}
+
+function validateLegacyItemOverrides(
+  unit: ResourceUnit,
+  content: Record<string, JsonValue> | null,
+  generatedModels: Map<string, ResourceUnit>,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const overrides = Array.isArray(content?.overrides) ? content.overrides : [];
+  const namespace = unit.id?.namespace ?? "minecraft";
+  for (const [index, value] of overrides.entries()) {
+    const override = asObject(value);
+    if (typeof override?.model !== "string") {
+      continue;
+    }
+    const modelPath = appendGeneratedPath(appendGeneratedPath("/overrides", String(index)), "model");
+    checkResourceExists(
+      "model",
+      qualifyMinecraftResourceId(override.model, namespace),
+      unit,
+      generatedModels,
+      options,
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, modelPath)
+    );
+  }
 }
 
 export function createModelResolver(
   generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions
-): (id: string) => ModelDocument | undefined {
+): ModelResolver {
   const generatedDocuments = new Map<string, ModelDocument>();
   const externalDocuments = new Map<string, ModelDocument | null>();
 
-  return id => {
+  return (id, source) => {
     if (isVirtualBuiltinModelId(id)) {
       return undefined;
     }
@@ -82,22 +125,29 @@ export function createModelResolver(
       return document;
     }
 
-    if (!options.resourceContent) {
+    const contentReader = source && options.externResourceContent
+      ? (resourceId: string) => options.externResourceContent!(source, "model", resourceId)
+      : source && options.resourceContent
+        ? (resourceId: string) => options.resourceContent!("model", resourceId)
+        : undefined;
+    if (!contentReader) {
       return undefined;
     }
-    if (!externalDocuments.has(id)) {
-      const content = options.resourceContent("model", id);
+    const cacheKey = `${source ?? "generic"}\0${id}`;
+    if (!externalDocuments.has(cacheKey)) {
+      const content = contentReader(id);
       const contentObject = asObject(content);
-      externalDocuments.set(id, contentObject ? modelDocumentFromContent(id, contentObject) : null);
+      externalDocuments.set(cacheKey, contentObject ? modelDocumentFromContent(id, contentObject, source) : null);
     }
-    return externalDocuments.get(id) ?? undefined;
+    return externalDocuments.get(cacheKey) ?? undefined;
   };
 }
 
 function validateModelParentChain(
   unit: ResourceUnit,
-  modelResolver: (id: string) => ModelDocument | undefined,
+  modelResolver: ModelResolver,
   generatedModels: Map<string, ResourceUnit>,
+  externalModelSources: Map<string, ExternResourceSource>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
@@ -128,17 +178,76 @@ function validateModelParentChain(
     if (isVirtualBuiltinModelId(parentId)) {
       return;
     }
-    current = modelResolver(parentId);
-    if (!current) {
-      checkResourceExists("model", parentId, unit, generatedModels, options, diagnostics);
+
+    if (generatedModels.has(parentId)) {
+      current = modelResolver(parentId);
+      continue;
     }
+
+    if (current.externalSource) {
+      current = resolveTransitiveExternalModel(
+        parentId,
+        current.externalSource,
+        unit,
+        modelResolver,
+        options,
+        diagnostics
+      );
+      if (current) {
+        externalModelSources.set(parentId, current.externalSource!);
+      }
+      continue;
+    }
+
+    const referencingUnit = current.generatedUnit ?? unit;
+    const range = sourceRangeForGeneratedPath(referencingUnit, "/parent");
+    const checked = checkResourceExists(
+      "model",
+      parentId,
+      referencingUnit,
+      generatedModels,
+      options,
+      diagnostics,
+      range
+    );
+    if (!checked.available || !checked.source) {
+      return;
+    }
+    externalModelSources.set(parentId, checked.source);
+    current = modelResolver(parentId, checked.source);
   }
+}
+
+function resolveTransitiveExternalModel(
+  id: string,
+  source: ExternResourceSource,
+  unit: ResourceUnit,
+  modelResolver: ModelResolver,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[]
+): ModelDocument | undefined {
+  const document = modelResolver(id, source);
+  const exists = checkInheritedExternalResourceExists(
+    "model",
+    id,
+    source,
+    unit,
+    options,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, "/parent"),
+    document !== undefined
+  );
+  if (exists) {
+    return document;
+  }
+  return undefined;
 }
 
 function validateModelTextureVariables(
   unit: ResourceUnit,
-  modelResolver: (id: string) => ModelDocument | undefined,
+  modelResolver: ModelResolver,
   generatedModels: Map<string, ResourceUnit>,
+  externalModelSources: ReadonlyMap<string, ExternResourceSource>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
@@ -148,6 +257,7 @@ function validateModelTextureVariables(
   }
 
   const checked = new Set<string>();
+  const externalVariables = new Set(unit.validation?.externalTextureVariables ?? []);
   visitJsonWithPath(unit.content as JsonValue, (value, generatedPath) => {
     const reference = textureVariableReference(value);
     if (!reference || checked.has(reference)) {
@@ -156,8 +266,11 @@ function validateModelTextureVariables(
     checked.add(reference);
 
     const range = sourceRangeForGeneratedPath(unit, generatedPath);
-    const resolution = resolveTextureVariable(root, reference, modelResolver, new Set());
+    const resolution = resolveTextureVariable(root, reference, modelResolver, externalModelSources, new Set());
     if (resolution.kind === "missing") {
+      if (externalVariables.has(resolution.name)) {
+        return;
+      }
       diagnostics.push({
         code: "rsgl.unresolvedTextureVariable",
         message: `Texture variable '#${reference}' is not defined in the model parent chain.`,
@@ -172,29 +285,76 @@ function validateModelTextureVariables(
         range
       });
     } else {
-      checkResourceExists("texture", resolution.texture, unit, generatedModels, options, diagnostics, range);
+      if (resolution.source) {
+        checkTransitiveTextureExists(resolution.texture, resolution.source, unit, options, diagnostics, range);
+      } else {
+        const externScopeFile = resolution.generatedUnit && resolution.generatedPath
+          ? sourceFileForValidationRange(
+            resolution.generatedUnit,
+            sourceRangeForGeneratedPath(resolution.generatedUnit, resolution.generatedPath)
+          )
+          : undefined;
+        checkResourceExists(
+          "texture",
+          resolution.texture,
+          unit,
+          generatedModels,
+          options,
+          diagnostics,
+          range,
+          externScopeFile
+        );
+      }
     }
   });
+}
+
+function checkTransitiveTextureExists(
+  id: string,
+  source: ExternResourceSource,
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[],
+  range: { start: number; end: number }
+): void {
+  checkInheritedExternalResourceExists(
+    "texture",
+    id,
+    source,
+    unit,
+    options,
+    diagnostics,
+    range,
+    true
+  );
 }
 
 function modelDocumentFromUnit(unit: ResourceUnit): ModelDocument | undefined {
   const id = modelKey(unit);
   const content = asObject(unit.content);
-  return id && content ? modelDocumentFromContent(id, content) : undefined;
+  return id && content ? modelDocumentFromContent(id, content, undefined, unit) : undefined;
 }
 
-function modelDocumentFromContent(id: string, content: Record<string, JsonValue>): ModelDocument {
+function modelDocumentFromContent(
+  id: string,
+  content: Record<string, JsonValue>,
+  externalSource?: ExternResourceSource,
+  generatedUnit?: ResourceUnit
+): ModelDocument {
   return {
     id,
     namespace: tryParseMinecraftResourceId(id, "minecraft")?.namespace ?? "minecraft",
-    content
+    content,
+    externalSource,
+    generatedUnit
   };
 }
 
 function resolveTextureVariable(
   model: ModelDocument,
   name: string,
-  modelResolver: (id: string) => ModelDocument | undefined,
+  modelResolver: ModelResolver,
+  externalModelSources: ReadonlyMap<string, ExternResourceSource>,
   seen: Set<string>
 ): TextureVariableResolution {
   const resolutionKey = `${model.id}#${name}`;
@@ -206,36 +366,54 @@ function resolveTextureVariable(
   const content = model.content;
   const textures = asObject(content.textures);
   if (textures && Object.hasOwn(textures, name)) {
-    return resolveTextureValue(textures[name], model, modelResolver, seen);
+    return resolveTextureValue(textures[name], name, model, modelResolver, externalModelSources, seen);
   }
 
   const parent = content.parent;
-  const parentModel = typeof parent === "string"
-    ? modelResolver(qualifyMinecraftResourceId(parent, model.namespace))
+  const parentId = typeof parent === "string"
+    ? qualifyMinecraftResourceId(parent, model.namespace)
     : undefined;
-  return parentModel ? resolveTextureVariable(parentModel, name, modelResolver, seen) : { kind: "missing" };
+  const parentSource = parentId ? model.externalSource ?? externalModelSources.get(parentId) : undefined;
+  const parentModel = parentId ? modelResolver(parentId, parentSource) : undefined;
+  return parentModel
+    ? resolveTextureVariable(parentModel, name, modelResolver, externalModelSources, seen)
+    : { kind: "missing", name };
 }
 
 function resolveTextureValue(
   value: JsonValue | undefined,
+  name: string,
   model: ModelDocument,
-  modelResolver: (id: string) => ModelDocument | undefined,
+  modelResolver: ModelResolver,
+  externalModelSources: ReadonlyMap<string, ExternResourceSource>,
   seen: Set<string>
 ): TextureVariableResolution {
   if (typeof value === "string") {
     return value.startsWith("#")
-      ? resolveTextureVariable(model, value.slice(1), modelResolver, seen)
-      : { kind: "resolved", texture: value };
+      ? resolveTextureVariable(model, value.slice(1), modelResolver, externalModelSources, seen)
+      : {
+        kind: "resolved",
+        texture: value,
+        source: model.externalSource,
+        generatedUnit: model.generatedUnit,
+        generatedPath: appendGeneratedPath("/textures", name)
+      };
   }
 
   const object = asObject(value);
   if (typeof object?.sprite === "string") {
     return object.sprite.startsWith("#")
-      ? resolveTextureVariable(model, object.sprite.slice(1), modelResolver, seen)
-      : { kind: "resolved", texture: object.sprite };
+      ? resolveTextureVariable(model, object.sprite.slice(1), modelResolver, externalModelSources, seen)
+      : {
+        kind: "resolved",
+        texture: object.sprite,
+        source: model.externalSource,
+        generatedUnit: model.generatedUnit,
+        generatedPath: appendGeneratedPath(appendGeneratedPath("/textures", name), "sprite")
+      };
   }
 
-  return { kind: "missing" };
+  return { kind: "missing", name: "" };
 }
 
 function textureVariableReference(value: JsonValue): string | null {

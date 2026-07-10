@@ -10,14 +10,17 @@ import {
 import {
   compileRsglModule,
   compileRsglProgram,
+  getRsglProjectConfigWatchPaths,
   getRsglDocumentCompletionItems,
   getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
+  loadRsglProjectConfigForSource,
   parseRsgl,
   semanticModelForFile as coreSemanticModelForFile,
   type CompileDependency,
   type RsglCompletionItem,
   type RsglDiagnostic,
+  type RsglResourceValidationOptions,
   type RsglSemanticModel,
   type RsglSemanticToken,
   type RsglSymbol,
@@ -41,6 +44,7 @@ export interface RsglLspDocument {
 export interface RsglDocumentValidationDeps {
   loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
   onDependencies?: (dependencies: readonly CompileDependency[]) => void;
+  onProjectConfigWatchPaths?: (paths: readonly string[]) => void;
   settings: RsglValidationSettings;
 }
 
@@ -69,12 +73,24 @@ export function computeDocumentDiagnostics(
   deps: RsglDocumentValidationDeps
 ): Diagnostic[] {
   const currentFileName = normalizeFileName(path.resolve(fileName));
+  deps.onProjectConfigWatchPaths?.(getRsglProjectConfigWatchPaths(fileName, "file"));
+  let validationOptions: RsglResourceValidationOptions;
+  try {
+    validationOptions = workspaceValidationOptionsFor(fileName, deps.settings);
+  } catch (error) {
+    return [toLspDiagnostic(document, {
+      code: "rsgl.invalidExternConfiguration",
+      message: error instanceof Error ? error.message : String(error),
+      severity: "error",
+      range: { start: 0, end: 1 }
+    })];
+  }
   const semanticProgram = deps.loadProgramFromEntry(fileName);
   if (semanticProgram.files.length > 0) {
     const result = compileRsglProgram(semanticProgram.files, {
       entryFileName: fileName,
       semanticProgram: semanticProgram.program,
-      ...workspaceValidationOptionsFor(fileName, deps.settings)
+      ...validationOptions
     });
     deps.onDependencies?.(result.dependencies);
     return result.diagnostics
@@ -85,7 +101,7 @@ export function computeDocumentDiagnostics(
   const parsed = parseRsgl(document.getText());
   const result = compileRsglModule(parsed, {
     fileName,
-    ...workspaceValidationOptionsFor(fileName, deps.settings)
+    ...validationOptions
   });
   deps.onDependencies?.(result.dependencies);
   return result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic));
@@ -104,6 +120,17 @@ export function documentsDependingOnPath(
     }
   }
   return result;
+}
+
+/** Merges compile dependencies and exact non-dependency watch candidates for one document. */
+export function dependencyPathsForDocument(
+  dependencies: readonly CompileDependency[],
+  additionalWatchPaths: readonly string[]
+): Set<string> {
+  return new Set([
+    ...dependencies.map(dependency => normalizeDependencyPath(dependency.path)),
+    ...additionalWatchPaths.map(normalizeDependencyPath)
+  ]);
 }
 
 /** Returns the stable, deduplicated dependency union for all open documents. */
@@ -125,16 +152,57 @@ export function normalizeDependencyPath(fileName: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+export interface RsglSemanticWatchBatchCallbacks {
+  invalidatePath(fileName: string): void;
+  refresh(): void;
+}
+
+/**
+ * Applies configuration and RSGL source watcher changes as one semantic batch.
+ * Every changed source is invalidated before the single shared refresh.
+ */
+export function handleSemanticWatchedFileBatch(
+  changedFileNames: readonly string[],
+  callbacks: RsglSemanticWatchBatchCallbacks
+): boolean {
+  const rsglChanges = new Set<string>();
+  let configurationChanged = false;
+  for (const fileName of changedFileNames) {
+    if (path.basename(fileName).toLowerCase() === "rsgl.config.json") {
+      configurationChanged = true;
+    } else if (path.extname(fileName).toLowerCase() === ".rsgl") {
+      rsglChanges.add(fileName);
+    }
+  }
+
+  for (const fileName of rsglChanges) {
+    callbacks.invalidatePath(fileName);
+  }
+  if (!configurationChanged && rsglChanges.size === 0) {
+    return false;
+  }
+  callbacks.refresh();
+  return true;
+}
+
 /** Builds filesystem-backed resource validation options for the given source file. */
 export function workspaceValidationOptionsFor(
   sourceFileName: string,
   settings: RsglValidationSettings
-): ReturnType<typeof createRsglWorkspaceValidationOptions> {
-  return createRsglWorkspaceValidationOptions({
-    sourceFileName,
-    defaultAssetsPath: settings.defaultAssetsPath,
-    resourcePackRoots: settings.resourcePackRoots
-  });
+): ReturnType<typeof createRsglWorkspaceValidationOptions> & RsglResourceValidationOptions {
+  const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
+  const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
+  return {
+    ...createRsglWorkspaceValidationOptions({
+      sourceFileName,
+      defaultAssetsPath: projectDefaultAssetsPath === undefined
+        ? settings.defaultAssetsPath
+        : projectDefaultAssetsPath,
+      resourcePackRoots: projectConfig?.resourcePackRoots ?? settings.resourcePackRoots
+    }),
+    globalExterns: projectConfig?.extern,
+    checkExternExistence: projectConfig?.checkExternExistence
+  };
 }
 
 /** Merges syntactic completion candidates with workspace symbols, deduplicated by label. */

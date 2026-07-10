@@ -16,13 +16,16 @@ import {
   completionItemsForContent,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
+  dependencyPathsForDocument,
   dependencyPathsForDocuments,
   documentsDependingOnPath,
   encodeSemanticTokens,
+  handleSemanticWatchedFileBatch,
   normalizeDependencyPath,
   toLspDiagnostic,
   toLspSeverity,
   toValidationSettings,
+  workspaceValidationOptionsFor,
   type RsglValidationSettings
 } from "../../src/serverCore";
 
@@ -122,10 +125,12 @@ describe("RSGL LSP server core", () => {
       const entryFile = path.join(root, "entry.rsgl");
       const brokenFile = path.join(root, "broken.rsgl");
       const entryText = [
+        "extern! custom texture minecraft:block/stone",
         "import { cube } from \"./broken.rsgl\"",
         "use cube(stone, texture: minecraft:block/stone)"
       ].join("\n");
       const brokenText = [
+        "extern! vanilla model minecraft:block/cube_all",
         "template cube(id: ResourceId, texture: TextureId = id) {",
         "  model block id {",
         "    parent minecraft:block/cube_all",
@@ -172,6 +177,7 @@ describe("RSGL LSP server core", () => {
       const entryFile = path.join(root, "entry.rsgl");
       const baseFile = path.join(root, "base.json");
       const entryText = [
+        "extern! vanilla model minecraft:block/cube_all",
         "model block imported {",
         "  base \"./base.json\"",
         "}"
@@ -192,6 +198,203 @@ describe("RSGL LSP server core", () => {
       assert.ok(!diagnostics.some(diagnostic => String(diagnostic.code).startsWith("rsgl.base")));
       assert.deepStrictEqual(dependencies.map(dependency => normalizeDependencyPath(dependency.path)), [
         normalizeDependencyPath(baseFile)
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the nearest ancestor rsgl.config.json global extern for diagnostics", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-nearest-"));
+    const projectRoot = path.join(root, "nested project");
+    const sourceFile = path.join(projectRoot, "src", "main.rsgl");
+    const text = blockstateUsingExternalModel("minecraft:block/configured");
+
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({ unexpected: true }));
+      fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
+        extern: [{
+          source: "vanilla",
+          kind: "model",
+          patterns: ["minecraft:block/configured"],
+          checkExistence: false
+        }]
+      }));
+      fs.writeFileSync(sourceFile, text);
+
+      const diagnostics = diagnosticsForFile(sourceFile, text);
+
+      assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("honors checkExternExistence=false from rsgl.config.json", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-unchecked-"));
+    const sourceFile = path.join(root, "src", "main.rsgl");
+    const text = blockstateUsingExternalModel("minecraft:block/intentionally_missing");
+
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        checkExternExistence: false,
+        extern: [{
+          source: "custom",
+          kind: "model",
+          patterns: ["minecraft:block/intentionally_missing"]
+        }]
+      }));
+      fs.writeFileSync(sourceFile, text);
+
+      const diagnostics = diagnosticsForFile(sourceFile, text);
+
+      assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves relative defaultAssetsPath and resourcePackRoots from the config directory", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-paths-"));
+    const projectRoot = path.join(root, "project 配置");
+    const sourceFile = path.join(projectRoot, "src", "main.rsgl");
+    const defaultAssets = path.join(root, "vanilla assets 原版");
+    const customPack = path.join(root, "custom packs", "资源 包");
+    const vanillaTexture = path.join(defaultAssets, "assets", "example", "textures", "item", "vanilla.png");
+    const customTexture = path.join(customPack, "assets", "example", "textures", "item", "custom.png");
+    const text = [
+      "model item configured_paths {",
+      "  textures {",
+      "    vanilla: example:item/vanilla",
+      "    custom: example:item/custom",
+      "  }",
+      "}"
+    ].join("\n");
+
+    try {
+      for (const fileName of [sourceFile, vanillaTexture, customTexture]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, fileName.endsWith(".png") ? Buffer.alloc(0) : text);
+      }
+      fs.writeFileSync(path.join(customPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
+        defaultAssetsPath: path.relative(projectRoot, defaultAssets),
+        resourcePackRoots: [path.relative(projectRoot, customPack)],
+        extern: [
+          { source: "vanilla", kind: "texture", patterns: ["example:item/vanilla"] },
+          { source: "custom", kind: "texture", patterns: ["example:item/custom"] }
+        ]
+      }));
+
+      const diagnostics = diagnosticsForFile(sourceFile, text);
+
+      assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats project defaultAssetsPath null as explicit disable and falls back only for undefined", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-precedence-"));
+    const settingsAssets = path.join(root, "settings-assets");
+    const texture = path.join(settingsAssets, "assets", "example", "textures", "item", "fallback.png");
+    const disabledSource = path.join(root, "disabled", "src", "main.rsgl");
+    const fallbackSource = path.join(root, "fallback", "src", "main.rsgl");
+    const settings: RsglValidationSettings = {
+      defaultAssetsPath: settingsAssets,
+      resourcePackRoots: []
+    };
+
+    try {
+      for (const fileName of [texture, disabledSource, fallbackSource]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, "");
+      }
+      fs.writeFileSync(path.join(root, "disabled", "rsgl.config.json"), JSON.stringify({
+        defaultAssetsPath: null
+      }));
+      fs.writeFileSync(path.join(root, "fallback", "rsgl.config.json"), "{}");
+
+      const disabled = workspaceValidationOptionsFor(disabledSource, settings);
+      const fallback = workspaceValidationOptionsFor(fallbackSource, settings);
+
+      assert.strictEqual(disabled.externResourceExists("vanilla", "texture", "example:item/fallback"), false);
+      assert.strictEqual(fallback.externResourceExists("vanilla", "texture", "example:item/fallback"), true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps VS Code build payload precedence aligned with project config semantics", () => {
+    const buildSource = fs.readFileSync(path.join(
+      process.cwd(),
+      "extensions",
+      "vscode-rsgl",
+      "src",
+      "commands",
+      "build.ts"
+    ), "utf8");
+
+    assert.ok(buildSource.includes("defaultAssetsPath: projectDefaultAssetsPath === undefined"));
+    assert.ok(buildSource.includes("? configuredDefaultAssetsPath()"));
+    assert.strictEqual(
+      buildSource.includes("projectConfig?.defaultAssetsPath ?? configuredDefaultAssetsPath()"),
+      false
+    );
+    assert.ok(buildSource.includes("const validationAnchor = isDirectoryBuildContext(context)"));
+    assert.ok(buildSource.includes("loadRsglProjectConfigForSource(validationAnchor)"));
+    assert.ok(buildSource.includes("validationAnchor,"));
+  });
+
+  it("returns rsgl.invalidExternConfiguration for an invalid project config", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-invalid-"));
+    const sourceFile = path.join(root, "src", "main.rsgl");
+    const text = "model block valid {}";
+
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        extern: [{ source: "other", kind: "model", patterns: ["minecraft:block/stone"] }]
+      }));
+      fs.writeFileSync(sourceFile, text);
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      let projectConfigWatchPaths: readonly string[] = [];
+      const diagnostics = computeDocumentDiagnostics(documentOf(text), sourceFile, {
+        loadProgramFromEntry: entryFileName => cache.loadProgramFromEntry(entryFileName),
+        onProjectConfigWatchPaths: paths => {
+          projectConfigWatchPaths = paths;
+        },
+        settings: emptySettings
+      });
+
+      assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), [
+        "rsgl.invalidExternConfiguration"
+      ]);
+      assert.ok(diagnostics[0].message.includes(".extern[0].source"));
+      assert.deepStrictEqual(projectConfigWatchPaths.map(normalizeDependencyPath), [
+        normalizeDependencyPath(path.join(root, "src", "rsgl.config.json")),
+        normalizeDependencyPath(path.join(root, "rsgl.config.json"))
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires an extern declaration for typed external references when no config exists", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-absent-"));
+    const sourceFile = path.join(root, "main.rsgl");
+    const text = blockstateUsingExternalModel("minecraft:block/undeclared");
+
+    try {
+      fs.writeFileSync(sourceFile, text);
+
+      const diagnostics = diagnosticsForFile(sourceFile, text);
+
+      assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), [
+        "rsgl.undeclaredExternalResource"
       ]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -225,6 +428,59 @@ describe("RSGL LSP server core", () => {
     ]);
 
     assert.deepStrictEqual(dependencyPathsForDocuments(index), [first, shared].sort());
+  });
+
+  it("merges compile dependencies with exact project-config watch candidates", () => {
+    const root = path.join(os.tmpdir(), "rsgl-document-dependency-paths");
+    const baseFile = path.join(root, "base.json");
+    const configCandidate = path.join(root, "nested", "rsgl.config.json");
+    const paths = dependencyPathsForDocument([{
+      path: baseFile,
+      reason: "base-import",
+      sourceFile: path.join(root, "main.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], [configCandidate, baseFile]);
+
+    assert.deepStrictEqual([...paths].sort(), [
+      normalizeDependencyPath(baseFile),
+      normalizeDependencyPath(configCandidate)
+    ].sort());
+  });
+
+  it("invalidates every RSGL source before refreshing a mixed config watcher batch", () => {
+    const root = path.join(os.tmpdir(), "rsgl-semantic-watch-batch");
+    const first = path.join(root, "first.rsgl");
+    const second = path.join(root, "nested", "SECOND.RSGL");
+    const events: string[] = [];
+
+    const handled = handleSemanticWatchedFileBatch([
+      path.join(root, "rsgl.config.json"),
+      first,
+      path.join(root, "base.json"),
+      second,
+      first
+    ], {
+      invalidatePath: fileName => events.push(`invalidate:${fileName}`),
+      refresh: () => events.push("refresh")
+    });
+
+    assert.strictEqual(handled, true);
+    assert.deepStrictEqual(events, [
+      `invalidate:${first}`,
+      `invalidate:${second}`,
+      "refresh"
+    ]);
+  });
+
+  it("leaves JSON-only watcher batches for dependency-specific validation", () => {
+    const events: string[] = [];
+    const handled = handleSemanticWatchedFileBatch([path.join("pack", "base.json")], {
+      invalidatePath: fileName => events.push(`invalidate:${fileName}`),
+      refresh: () => events.push("refresh")
+    });
+
+    assert.strictEqual(handled, false);
+    assert.deepStrictEqual(events, []);
   });
 
   it("maps completion candidates and workspace symbols to completion items", () => {
@@ -299,3 +555,19 @@ describe("RSGL LSP server core", () => {
     ]);
   });
 });
+
+function diagnosticsForFile(fileName: string, text: string) {
+  const cache = RsglWorkspaceSemanticCache.create();
+  return computeDocumentDiagnostics(documentOf(text), fileName, {
+    loadProgramFromEntry: entryFileName => cache.loadProgramFromEntry(entryFileName),
+    settings: emptySettings
+  });
+}
+
+function blockstateUsingExternalModel(modelId: string): string {
+  return [
+    "blockstate configured {",
+    `  variants { {} -> { model: ${modelId} } }`,
+    "}"
+  ].join("\n");
+}

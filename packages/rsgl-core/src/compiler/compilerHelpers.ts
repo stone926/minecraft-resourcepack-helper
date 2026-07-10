@@ -97,8 +97,38 @@ const compactEquipmentSugarFields = new Set([
   "/usePlayerTexture"
 ]);
 
-export function compactEquipmentSourceMappings(mappings: RsglMapping[]): RsglMapping[] {
-  return mappings.filter(mapping => !compactEquipmentSugarFields.has(mapping.generatedPath));
+export function compactEquipmentSourceMappings(
+  mappings: RsglMapping[],
+  content?: Record<string, JsonValue>
+): RsglMapping[] {
+  const retained = mappings.filter(mapping => !compactEquipmentSugarFields.has(mapping.generatedPath));
+  const textureOrigin = [...mappings].reverse().find(mapping =>
+    mapping.generatedPath === "/texture" && mapping.validationOrigin
+  );
+  const layers = isJsonObject(content?.layers) ? content.layers : null;
+  if (!textureOrigin?.validationOrigin || !layers) {
+    return retained;
+  }
+  const validationMappings: RsglMapping[] = [];
+  for (const [layer, entries] of Object.entries(layers)) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+    entries.forEach((entry, index) => {
+      if (!isJsonObject(entry) || typeof entry.texture !== "string") {
+        return;
+      }
+      validationMappings.push({
+        ...textureOrigin,
+        generatedPath: appendGeneratedPath(
+          appendGeneratedPath(appendGeneratedPath("/layers", layer), String(index)),
+          "texture"
+        ),
+        validationOnly: true
+      });
+    });
+  }
+  return [...retained, ...validationMappings];
 }
 
 function isPackFieldMapping(pathValue: string): boolean {

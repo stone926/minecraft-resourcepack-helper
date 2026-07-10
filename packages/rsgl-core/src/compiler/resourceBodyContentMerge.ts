@@ -1,5 +1,5 @@
 import type { TextRange } from "../parser";
-import type { EvaluationContext } from "./evaluate";
+import type { EvaluationContext, EvaluationOrigin } from "./evaluate";
 import {
   fragmentMergeEngine,
   genericFragmentMergePolicy,
@@ -48,9 +48,11 @@ export function emitResourceBodyMapping(
   options: ResourceBodyCompileOptions,
   generatedPath: string,
   sourceRange: TextRange,
-  context: EvaluationContext
+  context: EvaluationContext,
+  validationOrigin?: EvaluationOrigin,
+  validationOnly?: boolean
 ): void {
-  options.onMapping?.({ generatedPath, sourceRange, context });
+  options.onMapping?.({ generatedPath, sourceRange, context, validationOrigin, validationOnly });
 }
 
 function emitFragmentMappings(
@@ -63,18 +65,24 @@ function emitFragmentMappings(
   fallbackMappingsDeep: boolean
 ): void {
   if (fragment.mappings?.length) {
+    let emittedPublicMapping = false;
     for (const mapping of fragment.mappings) {
       if (!mappingTargetsAppliedContent(mapping.generatedPath, mergeResult.applied)) {
         continue;
       }
+      emittedPublicMapping ||= !mapping.validationOnly;
       emitResourceBodyMapping(
         options,
         offsetFragmentMappingPath(joinGeneratedPath(path, mapping.generatedPath), mergeResult.arrayOffsets),
         mapping.sourceRange,
-        mapping.context
+        mapping.context,
+        mapping.validationOrigin,
+        mapping.validationOnly
       );
     }
-    return;
+    if (emittedPublicMapping) {
+      return;
+    }
   }
   if (fallbackMappingsDeep) {
     emitObjectMappingsDeep(

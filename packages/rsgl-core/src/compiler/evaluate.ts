@@ -9,6 +9,7 @@ import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
+import { appendGeneratedPath } from "./sourcePaths";
 
 export interface LambdaValue {
   kind: "lambda";
@@ -23,9 +24,20 @@ export interface LambdaValue {
 export type EvaluationValue = JsonValue | LambdaValue | undefined;
 export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
 
+export interface EvaluationOrigin {
+  sourceFile: string;
+  sourceRange: TextRange;
+}
+
+export interface EvaluationPathOrigin extends EvaluationOrigin {
+  generatedPath: string;
+}
+
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
+  /** Lexical origins of values bound from template call arguments. */
+  valueOrigins?: ReadonlyMap<string, EvaluationOrigin>;
   stateKeyAliases?: ReadonlySet<string>;
   sourceFile?: string;
   mappingReason?: RsglMapping["reason"];
@@ -34,6 +46,23 @@ export interface EvaluationContext {
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
+}
+
+/** Binds a value and its lexical origin without mutating a parent context's origin map. */
+export function bindEvaluationValue(
+  context: EvaluationContext,
+  name: string,
+  value: EvaluationValue,
+  origin?: EvaluationOrigin
+): void {
+  context.variables.set(name, value);
+  const origins = new Map(context.valueOrigins ?? []);
+  if (origin) {
+    origins.set(name, origin);
+  } else {
+    origins.delete(name);
+  }
+  context.valueOrigins = origins;
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -70,6 +99,184 @@ const horizontalYaw: Record<string, number> = {
 interface SeqGenerator {
   name: string;
   iterable: ExprNode;
+}
+
+export function expressionEvaluationOrigin(
+  expression: ExprNode,
+  context: EvaluationContext
+): EvaluationOrigin | undefined {
+  if (expression.kind === "IdentifierExpr") {
+    return context.valueOrigins?.get(expression.name.text);
+  }
+  if (expression.kind === "TemplateStringExpr") {
+    return mergeEvaluationOrigins(expression.parts.flatMap(part =>
+      part.kind === "expression" ? [expressionEvaluationOrigin(part.expression, context)] : []
+    ));
+  }
+  if (expression.kind === "ListExpr") {
+    return mergeEvaluationOrigins(expression.elements.map(element => expressionEvaluationOrigin(element, context)));
+  }
+  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
+    const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
+    return mergeEvaluationOrigins(properties.flatMap(property => [
+      property.key.kind === "DynamicKey" ? expressionEvaluationOrigin(property.key.expression, context) : undefined,
+      expressionEvaluationOrigin(property.value, context)
+    ]));
+  }
+  if (expression.kind === "ModelApplySugar") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.model, context),
+      ...expression.properties.map(property => expressionEvaluationOrigin(property.value, context))
+    ]);
+  }
+  if (expression.kind === "RandomApply") {
+    return mergeEvaluationOrigins(expression.entries.map(entry => expressionEvaluationOrigin(entry, context)));
+  }
+  if (expression.kind === "RangeExpr") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.startExpr, context),
+      expressionEvaluationOrigin(expression.endExpr, context)
+    ]);
+  }
+  if (expression.kind === "MemberExpr") {
+    return expressionEvaluationOrigin(expression.object, context);
+  }
+  if (expression.kind === "IndexExpr") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.object, context),
+      expressionEvaluationOrigin(expression.index, context)
+    ]);
+  }
+  if (expression.kind === "UnaryExpr") {
+    return expressionEvaluationOrigin(expression.operand, context);
+  }
+  if (expression.kind === "BinaryExpr") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.left, context),
+      expressionEvaluationOrigin(expression.right, context)
+    ]);
+  }
+  if (expression.kind === "ConditionalExpr") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.condition, context),
+      expressionEvaluationOrigin(expression.whenTrue, context),
+      expressionEvaluationOrigin(expression.whenFalse, context)
+    ]);
+  }
+  if (expression.kind === "CallExpr") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.callee, context),
+      ...expression.args.map(arg => expressionEvaluationOrigin(arg.value, context))
+    ]);
+  }
+  if (expression.kind === "MatchExpr") {
+    return mergeEvaluationOrigins([
+      expressionEvaluationOrigin(expression.expression, context),
+      ...expression.arms.flatMap(arm => [
+        ...arm.patterns.map(pattern => expressionEvaluationOrigin(pattern, context)),
+        expressionEvaluationOrigin(arm.value, context)
+      ])
+    ]);
+  }
+  return undefined;
+}
+
+/**
+ * Tracks template-argument origins at the JSON paths produced by an expression.
+ * Literal siblings deliberately receive no origin so they retain definition-file
+ * extern scope even when another field is supplied by the caller.
+ */
+export function expressionEvaluationPathOrigins(
+  expression: ExprNode,
+  context: EvaluationContext,
+  generatedPath: string
+): EvaluationPathOrigin[] {
+  if (expression.kind === "ListExpr") {
+    return expression.elements.flatMap((element, index) =>
+      expressionEvaluationPathOrigins(element, context, appendGeneratedPath(generatedPath, String(index)))
+    );
+  }
+  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
+    const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
+    return properties.flatMap(property => {
+      const key = expression.kind === "ObjectExpr"
+        ? propertyKeyToString(property, context)
+        : stateKeyToString(property, context);
+      return key === null
+        ? []
+        : expressionEvaluationPathOrigins(
+          property.value,
+          context,
+          appendGeneratedPath(generatedPath, key)
+        );
+    });
+  }
+  if (expression.kind === "ModelApplySugar") {
+    return [
+      ...expressionEvaluationPathOrigins(
+        expression.model,
+        context,
+        appendGeneratedPath(generatedPath, "model")
+      ),
+      ...expression.properties.flatMap(property =>
+        expressionEvaluationPathOrigins(
+          property.value,
+          context,
+          appendGeneratedPath(generatedPath, property.name.text)
+        )
+      )
+    ];
+  }
+  if (expression.kind === "RandomApply") {
+    return expression.entries.flatMap((entry, index) =>
+      expressionEvaluationPathOrigins(entry, context, appendGeneratedPath(generatedPath, String(index)))
+    );
+  }
+  if (expression.kind === "ConditionalExpr") {
+    const selected = truthy(evaluateExpression(expression.condition, context))
+      ? expression.whenTrue
+      : expression.whenFalse;
+    return expressionEvaluationPathOrigins(selected, context, generatedPath);
+  }
+  if (expression.kind === "MatchExpr") {
+    const matchedValue = normalizeJsonValue(evaluateExpression(expression.expression, context));
+    const selected = expression.arms.find(arm =>
+      arm.patterns.some(pattern => matchesPattern(pattern, matchedValue, context))
+    );
+    return selected
+      ? expressionEvaluationPathOrigins(selected.value, context, generatedPath)
+      : [];
+  }
+
+  const origin = expressionEvaluationOrigin(expression, context);
+  return origin ? [{ generatedPath, ...origin }] : [];
+}
+
+function mergeEvaluationOrigins(
+  values: readonly (EvaluationOrigin | undefined)[]
+): EvaluationOrigin | undefined {
+  const origins = values.filter((value): value is EvaluationOrigin => value !== undefined);
+  if (origins.length === 0) {
+    return undefined;
+  }
+  const first = origins[0];
+  if (origins.every(origin =>
+    origin.sourceFile === first.sourceFile
+    && origin.sourceRange.start === first.sourceRange.start
+    && origin.sourceRange.end === first.sourceRange.end
+  )) {
+    return first;
+  }
+  if (origins.every(origin => origin.sourceFile === first.sourceFile)) {
+    return {
+      sourceFile: first.sourceFile,
+      sourceRange: {
+        start: Math.min(...origins.map(origin => origin.sourceRange.start)),
+        end: Math.max(...origins.map(origin => origin.sourceRange.end))
+      }
+    };
+  }
+  return undefined;
 }
 
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {

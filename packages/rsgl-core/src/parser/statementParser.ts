@@ -20,6 +20,7 @@ import {
   BlockNode,
   EquipmentLayerStmtNode,
   ExprNode,
+  ExternVarStmtNode,
   ForDimensionNode,
   ForStmtNode,
   IdentifierNode,
@@ -336,6 +337,9 @@ export abstract class StatementParser extends ExpressionParser {
   private parseResourceStatement(owner: string): ResourceStatementNode {
     const token = this.current();
     const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
+    if (token.text === "extern") {
+      return this.parseExternVarStmt(bodyDialect === "model");
+    }
     if (token.text === "let") {
       return this.parseLetDecl();
     }
@@ -420,6 +424,94 @@ export abstract class StatementParser extends ExpressionParser {
       return this.parseSectionStmt();
     }
     return this.parsePropertyStmt();
+  }
+
+  private parseExternVarStmt(inModelRoot: boolean): ExternVarStmtNode {
+    const start = this.advance();
+    let hasBang = false;
+    if (this.current().text === "!") {
+      const bang = this.advance();
+      hasBang = true;
+      if (bang.offset !== start.offset + start.length) {
+        this.addDiagnostic(
+          "rsgl.externBangMustBeAdjacent",
+          "The '!' modifier must immediately follow 'extern' without whitespace or comments.",
+          tokenRange(bang)
+        );
+      }
+    }
+
+    if (!this.matchText("var")) {
+      this.addDiagnosticAtCurrent("rsgl.expectedExternVar", "Expected 'var' after 'extern' in a resource body.");
+      this.recoverToLineEnd();
+    }
+
+    const variables: IdentifierNode[] = [];
+    while (!this.isAtEnd() && this.current().text !== "}" && !this.isStatementBoundary(this.current())) {
+      if (!this.matchText("#")) {
+        this.addDiagnosticAtCurrent(
+          "rsgl.expectedExternTextureVariable",
+          "Expected a texture variable beginning with '#'."
+        );
+        this.recoverToLineEnd();
+        break;
+      }
+
+      const variable = this.parseIdentifier("Expected texture variable name after '#'.");
+      if (variable) {
+        variables.push(variable);
+      }
+      if (!this.matchText(",")) {
+        break;
+      }
+      if (this.isAtEnd() || this.current().text === "}" || this.isStatementBoundary(this.current())) {
+        this.addDiagnosticAtCurrent(
+          "rsgl.expectedExternTextureVariable",
+          "Expected a texture variable after ','."
+        );
+        break;
+      }
+    }
+
+    if (variables.length === 0 && this.previousOr(start).text === "var") {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedExternTextureVariable",
+        "Expected at least one texture variable after 'extern var'."
+      );
+    }
+    if (
+      !this.isAtEnd()
+      && this.current().text !== "}"
+      && this.current().text !== ";"
+      && !this.isStatementBoundary(this.current())
+    ) {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedExternVarSeparator",
+        "Expected ',' between external texture variables."
+      );
+      this.recoverToLineEnd();
+    }
+    if (!inModelRoot) {
+      this.addDiagnostic(
+        "rsgl.externVarInvalidContext",
+        "'extern var' is only valid directly inside a model resource body.",
+        tokenRange(start)
+      );
+    }
+    if (hasBang) {
+      this.addDiagnostic(
+        "rsgl.externVarCannotSkipExistenceCheck",
+        "The '!' modifier is not valid on an 'extern var' declaration.",
+        tokenRange(start)
+      );
+    }
+
+    return {
+      kind: "ExternVarStmt",
+      keyword: start.text,
+      variables,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
   }
 
   private parseSectionStmt(): ResourceStatementNode {

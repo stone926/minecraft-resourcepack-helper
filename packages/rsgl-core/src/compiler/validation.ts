@@ -14,14 +14,14 @@ import {
   asObject,
   attachSourceFile,
   checkResourceExists,
-  resourceLabel,
-  resourceNotFoundCode,
-  unitRange,
+  sourceRangeForGeneratedPath,
   type RsglResourceValidationOptions
 } from "./validationShared";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
+import { createGeneratedResourceIndex } from "./generatedResources";
 
 export type {
+  RsglExternalResourceUsage,
   RsglResourceContentKind,
   RsglResourceExistenceKind,
   RsglResourceValidationOptions,
@@ -68,50 +68,35 @@ export function validateResourceUnits(
   const diagnostics: RsglCompileDiagnostic[] = [];
   const generatedModels = new Map(
     units
-      .filter(unit => unit.kind === "model" && unit.id)
+      .filter(unit => unit.kind === "model" && unit.id && !isExternalResourceUnit(unit))
       .map(unit => [`${unit.id!.namespace}:${unit.id!.path}`, unit])
   );
   const generatedFonts = new Set(
     units
-      .filter(unit => unit.kind === "font" && unit.id)
+      .filter(unit => unit.kind === "font" && unit.id && !isExternalResourceUnit(unit))
       .map(unit => `${unit.id!.namespace}:${unit.id!.path}`)
   );
-  const modelResolver = createModelResolver(generatedModels, options);
+  const validationOptions = {
+    ...options,
+    generatedResourceIds: createGeneratedResourceIndex(units)
+  };
+  const modelResolver = createModelResolver(generatedModels, validationOptions);
   const validationContext: ResourceValidationContext = { generatedModels, generatedFonts, modelResolver };
 
   for (const unit of units) {
     const diagnosticStart = diagnostics.length;
     if (isExternalResourceUnit(unit)) {
-      validateExternalResourceUnit(unit, options, diagnostics);
+      continue;
     } else {
       const validationHandler = getRsglResourceKindDescriptor(unit.kind)?.validation.handler ?? "none";
       if (validationHandler !== "none") {
-        resourceValidators[validationHandler](unit, validationContext, options, diagnostics);
+        resourceValidators[validationHandler](unit, validationContext, validationOptions, diagnostics);
       }
     }
     attachSourceFile(diagnostics, diagnosticStart, unit.sourceMap.mappings[0]?.sourceFile);
   }
 
   return diagnostics;
-}
-
-function validateExternalResourceUnit(
-  unit: ResourceUnit,
-  options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (!unit.external || !options.resourceExists) {
-    return;
-  }
-  if (options.resourceExists(unit.external.resourceKind, unit.external.id)) {
-    return;
-  }
-  diagnostics.push({
-    code: resourceNotFoundCode(unit.external.resourceKind),
-    message: `${resourceLabel(unit.external.resourceKind)} not found: ${unit.external.id}`,
-    severity: "warning",
-    range: unitRange(unit)
-  });
 }
 
 function validateItemUnit(
@@ -146,10 +131,21 @@ function validateMcmetaUnit(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const textureId = textureIdFromMcmetaOutputPath(unit.outputPath);
-  if (textureId) {
-    checkResourceExists("texture", textureId, unit, undefined, options, diagnostics);
-  }
-  validateMcmetaMetadata(unit, textureId, options, diagnostics);
+  const checked = textureId
+    ? checkResourceExists(
+      "texture",
+      textureId,
+      unit,
+      undefined,
+      options,
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, "/@resource-id")
+    )
+    : undefined;
+  const metadataOptions = checked?.source && options.externTextureMetadata
+    ? { ...options, textureMetadata: (id: string) => options.externTextureMetadata!(checked.source!, id) }
+    : options;
+  validateMcmetaMetadata(unit, textureId, metadataOptions, diagnostics);
 }
 
 function validateFontUnit(

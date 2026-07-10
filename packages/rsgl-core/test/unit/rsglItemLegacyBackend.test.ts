@@ -1,9 +1,12 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import * as path from "node:path";
+import { compileRsglProgram } from "../../src/compiler";
+import { parseRsgl } from "../../src/parser";
+import { compileSource, compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL legacy item model backend", () => {
   it("lowers item mappings to legacy item model files for older targets", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java mc \"1.21.8\"",
       "model item diamond impl generated(layer0: minecraft:item/diamond) {}",
       "item acacia_stairs {",
@@ -15,7 +18,7 @@ describe("RSGL legacy item model backend", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/models/item/acacia_stairs.json",
       "assets/minecraft/models/item/custom_tool.json",
       "assets/minecraft/models/item/diamond.json"
@@ -35,7 +38,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("lowers custom model data item dispatch to legacy overrides", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item wand {",
       "  range property minecraft:custom_model_data {",
@@ -46,7 +49,7 @@ describe("RSGL legacy item model backend", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath), [
       "assets/minecraft/models/item/wand.json"
     ]);
     assert.deepStrictEqual(result.units[0].content, {
@@ -68,8 +71,101 @@ describe("RSGL legacy item model backend", () => {
     assert.strictEqual(result.units[0].kind, "model");
   });
 
-  it("lowers legacy custom model data select cases", () => {
+  it("validates and records external models referenced by lowered legacy overrides", () => {
+    const dependencyRoot = path.resolve("legacy-item-externs");
     const result = compileSource([
+      "target java format 64",
+      "extern custom model minecraft:item/wand_base, minecraft:item/wand_0",
+      "item wand {",
+      "  range property minecraft:custom_model_data {",
+      "    frames [1] model `minecraft:item/wand_${index}`",
+      "    fallback minecraft:item/wand_base",
+      "  }",
+      "}"
+    ], {
+      externResourcePath: (_source, kind, id) => path.join(dependencyRoot, kind, id.replace(":", "_"))
+    });
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(
+      result.units
+        .filter(unit => unit.external?.resourceKind === "model")
+        .map(unit => unit.external!.id)
+        .sort(),
+      ["minecraft:item/wand_0", "minecraft:item/wand_base"]
+    );
+    assert.deepStrictEqual(
+      result.dependencies.map(dependency => dependency.path).sort(),
+      [
+        path.join(dependencyRoot, "model", "minecraft_item", "wand_0"),
+        path.join(dependencyRoot, "model", "minecraft_item", "wand_base")
+      ]
+    );
+  });
+
+  it("does not index the original item id as a generated legacy model", () => {
+    const result = compileSource([
+      "target java format 64",
+      "extern! vanilla texture minecraft:item/wand",
+      "extern! vanilla model minecraft:item/generated",
+      "item wand {",
+      "  model minecraft:item/wand",
+      "}",
+      "blockstate wand_reference {",
+      "  variants { {} -> { model: minecraft:wand } }",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.undeclaredExternalResource"
+    ]);
+    const legacyModel = result.units.find(unit => unit.outputPath.endsWith("models/item/wand.json"));
+    assert.deepStrictEqual(legacyModel?.id, { namespace: "minecraft", path: "item/wand" });
+  });
+
+  it("preserves fixed and caller extern scopes after legacy item lowering", () => {
+    const mainFile = path.resolve("legacy-item-scope", "main.rsgl");
+    const templatesFile = path.resolve("legacy-item-scope", "templates.rsgl");
+    const result = compileRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { dispatch } from \"./templates.rsgl\"",
+          "target java format 64",
+          "extern! custom model minecraft:item/caller_model",
+          "item wand { use dispatch(minecraft:item/caller_model) }"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "extern! vanilla model minecraft:item/library_model",
+          "template dispatch(callerModel: ModelId) {",
+          "  range property minecraft:custom_model_data {",
+          "    frames [1] model callerModel",
+          "    fallback minecraft:item/library_model",
+          "  }",
+          "}",
+          "export { dispatch }"
+        ].join("\n"))
+      }
+    ], { entryFileName: mainFile });
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(
+      result.units
+        .filter(unit => unit.external?.resourceKind === "model")
+        .map(unit => [unit.external!.id, unit.external!.source])
+        .sort((left, right) => left[0].localeCompare(right[0])),
+      [
+        ["minecraft:item/caller_model", "custom"],
+        ["minecraft:item/library_model", "vanilla"]
+      ]
+    );
+  });
+
+  it("lowers legacy custom model data select cases", () => {
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item numbered {",
       "  model: {",
@@ -103,7 +199,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("flattens nested legacy item model predicates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item bow {",
       "  model: {",
@@ -145,7 +241,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("keeps nested legacy on_false predicates below true branch overrides", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item bow {",
       "  model: {",
@@ -184,7 +280,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("maps additional modern item properties to legacy predicates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item crossbow {",
       "  range property minecraft:crossbow/pull {",
@@ -235,7 +331,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("maps main hand selects to legacy lefthanded predicates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item tool {",
       "  model: {",
@@ -270,7 +366,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("maps charge type selects to legacy crossbow predicates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item crossbow {",
       "  model: {",
@@ -328,7 +424,7 @@ describe("RSGL legacy item model backend", () => {
       ]
     });
 
-    const arrowOnly = compileSource([
+    const arrowOnly = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item crossbow {",
       "  model: {",
@@ -362,7 +458,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("reports unsupported item models in the legacy item backend", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 64",
       "item bundle {",
       "  selected_item",
@@ -374,7 +470,7 @@ describe("RSGL legacy item model backend", () => {
   });
 
   it("rejects component conditions in the legacy item backend", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 50",
       "item bundle {",
       "  condition property minecraft:has_component component minecraft:bundle_contents {",

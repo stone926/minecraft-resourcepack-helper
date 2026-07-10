@@ -10,14 +10,15 @@ import { createTempDir } from "./helpers/fs";
 describe("RSGL workspace validation", () => {
   it("uses filesystem workspace validation for RSGL resources", () => {
     const root = createTempDir();
-    const packRoot = path.join(root, "pack");
-    const mainFile = path.join(packRoot, "main.rsgl");
-    const externalChild = path.join(packRoot, "assets", "minecraft", "models", "block", "external_child.json");
-    const externalRoot = path.join(packRoot, "assets", "minecraft", "models", "block", "external_root.json");
-    const texture = path.join(packRoot, "assets", "minecraft", "textures", "block", "external_texture.png");
-    const vertexShader = path.join(packRoot, "assets", "minecraft", "shaders", "core", "screenquad.vsh");
-    const fragmentShader = path.join(packRoot, "assets", "minecraft", "shaders", "post", "box_blur.fsh");
-    const effectTexture = path.join(packRoot, "assets", "minecraft", "textures", "effect", "blur", "mask.png");
+    const sourcePack = path.join(root, "source-pack");
+    const customPack = path.join(root, "custom-pack");
+    const mainFile = path.join(sourcePack, "main.rsgl");
+    const externalChild = path.join(customPack, "assets", "minecraft", "models", "block", "external_child.json");
+    const externalRoot = path.join(customPack, "assets", "minecraft", "models", "block", "external_root.json");
+    const texture = path.join(customPack, "assets", "minecraft", "textures", "block", "external_texture.png");
+    const vertexShader = path.join(customPack, "assets", "minecraft", "shaders", "core", "screenquad.vsh");
+    const fragmentShader = path.join(customPack, "assets", "minecraft", "shaders", "post", "box_blur.fsh");
+    const effectTexture = path.join(customPack, "assets", "minecraft", "textures", "effect", "blur", "mask.png");
 
     try {
       fs.mkdirSync(path.dirname(externalChild), { recursive: true });
@@ -25,8 +26,14 @@ describe("RSGL workspace validation", () => {
       fs.mkdirSync(path.dirname(vertexShader), { recursive: true });
       fs.mkdirSync(path.dirname(fragmentShader), { recursive: true });
       fs.mkdirSync(path.dirname(effectTexture), { recursive: true });
-      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.mkdirSync(path.dirname(mainFile), { recursive: true });
+      fs.writeFileSync(path.join(sourcePack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(customPack, "pack.mcmeta"), "{}");
       fs.writeFileSync(mainFile, [
+        "extern custom model minecraft:block/external_child",
+        "extern custom shader_vertex minecraft:core/screenquad",
+        "extern custom shader_fragment minecraft:post/box_blur",
+        "extern custom texture minecraft:effect/blur/mask",
         "model block workspace_child {",
         "  parent minecraft:block/external_child",
         "  textures { all: \"#alias\" }",
@@ -53,7 +60,7 @@ describe("RSGL workspace validation", () => {
       const result = compileRsglFile(mainFile, createRsglWorkspaceValidationOptions({
         sourceFileName: mainFile,
         defaultAssetsPath: null,
-        resourcePackRoots: []
+        resourcePackRoots: [customPack]
       }));
       const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
@@ -70,6 +77,9 @@ describe("RSGL workspace validation", () => {
   it("validates sound, atlas, mcmeta, and overlay resources", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom sound custom:entity/example/*",
+      "extern custom texture_directory minecraft:block/missing_directory",
+      "extern custom texture minecraft:block/*, minecraft:particle/missing_particle, minecraft:entity/equipment/humanoid/missing_equipment",
       "sounds custom {",
       "  \"entity.example.ambient\" {",
       "    sounds: [",
@@ -112,7 +122,7 @@ describe("RSGL workspace validation", () => {
       "}"
     ], {
       targetPackFormat: { major: 88 },
-      resourceExists: (kind, id) => {
+      externResourceExists: (_source, kind, id) => {
         checkedResources.push(`${kind}:${id}`);
         return false;
       }
@@ -273,14 +283,17 @@ describe("RSGL workspace validation", () => {
 
   it("reads sound metadata through the workspace validation adapter", () => {
     const root = createTempDir();
-    const packRoot = path.join(root, "pack");
-    const sourceFile = path.join(packRoot, "main.rsgl");
-    const soundFile = path.join(packRoot, "assets", "minecraft", "sounds", "entity", "example", "bad.ogg");
+    const sourcePack = path.join(root, "source-pack");
+    const defaultAssets = path.join(root, "default-assets");
+    const sourceFile = path.join(sourcePack, "main.rsgl");
+    const soundFile = path.join(defaultAssets, "assets", "minecraft", "sounds", "entity", "example", "bad.ogg");
     try {
       fs.mkdirSync(path.dirname(soundFile), { recursive: true });
-      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(path.join(sourcePack, "pack.mcmeta"), "{}");
       fs.writeFileSync(soundFile, Buffer.from("not ogg"));
       fs.writeFileSync(sourceFile, [
+        "extern vanilla sound minecraft:entity/example/bad",
         "sounds minecraft {",
         "  \"entity.example.bad\" { sounds: [\"entity/example/bad\"] }",
         "}"
@@ -288,7 +301,7 @@ describe("RSGL workspace validation", () => {
 
       const result = compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
         sourceFileName: sourceFile,
-        defaultAssetsPath: null,
+        defaultAssetsPath: defaultAssets,
         resourcePackRoots: []
       }));
 
@@ -329,6 +342,173 @@ describe("RSGL workspace validation", () => {
 
       assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidBlockstateStateSchemaValue"));
       assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unknownBlockstateStateProperty"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("isolates extern custom and vanilla roots from the current source pack", () => {
+    const root = createTempDir();
+    const sourcePack = path.join(root, "当前 source pack");
+    const customPack = path.join(root, "configured packs", "自定义 pack");
+    const defaultAssets = path.join(root, "default assets 原版");
+    const sourceFile = path.join(sourcePack, "main.rsgl");
+    const currentTexture = path.join(sourcePack, "assets", "minecraft", "textures", "block", "current_only.png");
+    const customTexture = path.join(customPack, "assets", "example", "textures", "item", "custom_only.png");
+    const vanillaTexture = path.join(defaultAssets, "assets", "example", "textures", "item", "vanilla_only.png");
+
+    try {
+      for (const fileName of [sourceFile, currentTexture, customTexture, vanillaTexture]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, fileName.endsWith(".png") ? createPngBytes(16, 16) : "");
+      }
+      for (const packRoot of [sourcePack, customPack]) {
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      }
+
+      const validation = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: defaultAssets,
+        resourcePackRoots: [sourcePack, customPack]
+      });
+
+      assert.strictEqual(validation.resourceExists?.("texture", "minecraft:block/current_only"), true);
+      assert.strictEqual(validation.externResourceExists("custom", "texture", "minecraft:block/current_only"), false);
+      assert.strictEqual(validation.externResourceExists("vanilla", "texture", "minecraft:block/current_only"), false);
+      assert.strictEqual(validation.externResourceExists("custom", "texture", "example:item/custom_only"), true);
+      assert.strictEqual(validation.externResourceExists("vanilla", "texture", "example:item/custom_only"), false);
+      assert.strictEqual(validation.externResourceExists("vanilla", "texture", "example:item/vanilla_only"), true);
+      assert.strictEqual(validation.externResourceExists("custom", "texture", "example:item/vanilla_only"), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves configured pack load order, overlays, filters, namespaces, and extern metadata", () => {
+    const root = createTempDir();
+    const sourcePack = path.join(root, "source pack");
+    const highPack = path.join(root, "高优先级 pack");
+    const lowPack = path.join(root, "low priority pack");
+    const defaultAssets = path.join(root, "vanilla assets");
+    const sourceFile = path.join(sourcePack, "main.rsgl");
+    const modelRelative = path.join("assets", "example", "models", "block", "shared.json");
+    const customTexture = path.join(highPack, "assets", "example", "textures", "block", "metadata.png");
+    const vanillaTexture = path.join(defaultAssets, "assets", "example", "textures", "block", "metadata.png");
+    const customSound = path.join(lowPack, "assets", "second", "sounds", "ambient", "invalid.ogg");
+    const customBlockstate = path.join(lowPack, "assets", "second", "blockstates", "machine.json");
+    const vanillaBlockstate = path.join(defaultAssets, "assets", "second", "blockstates", "machine.json");
+
+    try {
+      fs.mkdirSync(sourcePack, { recursive: true });
+      fs.writeFileSync(sourceFile, "");
+      fs.writeFileSync(path.join(sourcePack, "pack.mcmeta"), "{}");
+      fs.mkdirSync(highPack, { recursive: true });
+      fs.writeFileSync(path.join(highPack, "pack.mcmeta"), JSON.stringify({
+        pack: {
+          ["min_format"]: [88, 0],
+          ["max_format"]: [88, 0],
+          description: "test"
+        },
+        overlays: {
+          entries: [{
+            directory: "newer",
+            ["min_format"]: [88, 0],
+            ["max_format"]: [88, 0]
+          }]
+        },
+        filter: {
+          block: [{ namespace: "example", path: "models/block/blocked\\.json" }]
+        }
+      }));
+      fs.mkdirSync(lowPack, { recursive: true });
+      fs.writeFileSync(path.join(lowPack, "pack.mcmeta"), "{}");
+
+      const jsonFiles: Array<[string, object]> = [
+        [path.join(lowPack, modelRelative), { marker: "low" }],
+        [path.join(highPack, modelRelative), { marker: "high-base" }],
+        [path.join(highPack, "newer", modelRelative), { marker: "high-overlay" }],
+        [path.join(defaultAssets, modelRelative), { marker: "vanilla" }],
+        [path.join(lowPack, "assets", "example", "models", "block", "blocked.json"), { marker: "blocked" }],
+        [path.join(lowPack, "assets", "second", "models", "block", "low_only.json"), { marker: "second-namespace" }],
+        [customBlockstate, { variants: { ["facing=north"]: { model: "second:block/machine" } } }],
+        [vanillaBlockstate, { variants: { ["powered=true"]: { model: "second:block/machine" } } }]
+      ];
+      for (const [fileName, content] of jsonFiles) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, JSON.stringify(content));
+      }
+      for (const [fileName, content] of [
+        [customTexture, createPngBytes(7, 9)],
+        [vanillaTexture, createPngBytes(11, 13)],
+        [customSound, Buffer.from("not ogg")]
+      ] as const) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, content);
+      }
+
+      const validation = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        defaultAssetsPath: defaultAssets,
+        resourcePackRoots: [highPack, lowPack]
+      });
+
+      assert.deepStrictEqual(
+        validation.externResourceContent("custom", "model", "example:block/shared"),
+        { marker: "high-overlay" }
+      );
+      assert.deepStrictEqual(
+        validation.externResourceContent("vanilla", "model", "example:block/shared"),
+        { marker: "vanilla" }
+      );
+      assert.strictEqual(validation.externResourceExists("custom", "model", "example:block/blocked"), false);
+      assert.strictEqual(validation.externResourceExists("custom", "model", "second:block/low_only"), true);
+      assert.deepStrictEqual(
+        validation.externTextureMetadata("custom", "example:block/metadata"),
+        { width: 7, height: 9 }
+      );
+      assert.deepStrictEqual(
+        validation.externTextureMetadata("vanilla", "example:block/metadata"),
+        { width: 11, height: 13 }
+      );
+      assert.strictEqual(validation.externSoundMetadata("custom", "second:ambient/invalid"), null);
+      assert.strictEqual(validation.externSoundMetadata("vanilla", "second:ambient/invalid"), undefined);
+      assert.deepStrictEqual(
+        validation.externBlockstateSchema("custom", { namespace: "second", path: "machine" }),
+        { properties: { facing: ["north"] } }
+      );
+      assert.deepStrictEqual(
+        validation.externBlockstateSchema("vanilla", { namespace: "second", path: "machine" }),
+        { properties: { powered: ["true"] } }
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves bitmap texture ids that already include the png extension", () => {
+    const root = createTempDir("rsgl-bitmap-texture-resolution-");
+    const sourcePack = path.join(root, "source-pack");
+    const customPack = path.join(root, "custom-pack");
+    const sourceFile = path.join(sourcePack, "main.rsgl");
+    const bitmap = path.join(customPack, "assets", "minecraft", "textures", "font", "ascii.png");
+
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.mkdirSync(path.dirname(bitmap), { recursive: true });
+      fs.writeFileSync(sourceFile, "");
+      fs.writeFileSync(path.join(sourcePack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(customPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(bitmap, createPngBytes(8, 8));
+
+      const validation = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        resourcePackRoots: [customPack]
+      });
+
+      assert.strictEqual(
+        validation.externResourcePath("custom", "texture", "minecraft:font/ascii.png"),
+        bitmap
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

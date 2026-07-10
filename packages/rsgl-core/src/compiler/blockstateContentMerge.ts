@@ -57,16 +57,20 @@ export class BlockstateContentMerger {
     }
 
     if (mappings?.length) {
+      let emittedPublicMapping = false;
       for (const mapping of mappings) {
         if (!mappingTargetsAppliedContent(mapping.generatedPath, mergeResult.applied)) {
           continue;
         }
+        emittedPublicMapping ||= !mapping.validationOnly;
         result.mappings.push({
           ...mapping,
           generatedPath: offsetFragmentMappingPath(mapping.generatedPath, mergeResult.arrayOffsets)
         });
       }
-      return;
+      if (emittedPublicMapping) {
+        return;
+      }
     }
 
     result.mappings.push(...this.objectMappingsDeep(mergeResult, sourceRange, context));

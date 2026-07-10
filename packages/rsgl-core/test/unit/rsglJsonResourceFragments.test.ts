@@ -1,11 +1,11 @@
 import * as assert from "node:assert";
 import { compileRsglModule, stableJsonStringify, type JsonValue } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL JSON resources and generic fragments", () => {
   it("emits arbitrary pack-relative JSON resources", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "json \"assets/minecraft/custom/diamond_gem\" {",
       "  parent minecraft:item/generated",
       "  textures {",
@@ -41,7 +41,7 @@ describe("RSGL JSON resources and generic fragments", () => {
   });
 
   it("rejects unsafe arbitrary JSON targets", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "json \"../outside\" {",
       "  value true",
       "}"
@@ -53,7 +53,12 @@ describe("RSGL JSON resources and generic fragments", () => {
 
   it("lowers generic JSON resource fragments", () => {
     const checkedResources: string[] = [];
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
+      "extern custom texture_directory minecraft:**",
+      "extern custom texture *:**",
+      "extern custom font_file minecraft:**",
+      "extern custom shader_vertex minecraft:**",
+      "extern custom shader_fragment minecraft:**",
       "template atlasSource(source: String, prefix: String) {",
       "  use atlasDirectory(source: source, prefix: prefix)",
       "}",
@@ -93,14 +98,14 @@ describe("RSGL JSON resources and generic fragments", () => {
       "  ]",
       "}"
     ], {
-      resourceExists: (kind, id) => {
+      externResourceExists: (_source, kind, id) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
     });
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/atlases/blocks.json",
       "assets/minecraft/equipment/iron.json",
       "assets/minecraft/font/default.json",
@@ -195,12 +200,13 @@ describe("RSGL JSON resources and generic fragments", () => {
 
   it("reports particlesSeq generated texture diagnostics at sequence positions", () => {
     const source = [
+      "extern custom texture minecraft:particle/*",
       "particles explosion {",
       "  use particlesSeq(\"minecraft:particle/explosion_{00..02}\")",
       "}"
     ].join("\n");
     const result = compileRsglModule(parseRsgl(source), {
-      resourceExists: (kind, id) => !(kind === "texture" && id === "minecraft:particle/explosion_01")
+      externResourceExists: (_source, kind, id) => !(kind === "texture" && id === "minecraft:particle/explosion_01")
     });
 
     const particles = result.units.find(unit => unit.kind === "particles");
@@ -214,7 +220,7 @@ describe("RSGL JSON resources and generic fragments", () => {
   });
 
   it("expands sequences with explicit padding control", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "particles big_smoke {",
       "  use particlesSeq(\"minecraft:particle/big_smoke_{0..11}\")",
       "}",
@@ -224,9 +230,7 @@ describe("RSGL JSON resources and generic fragments", () => {
       "particles named_seq {",
       "  use particlesSeq(seq(i => `minecraft:particle/spark_${i}`, i: 0..2, pad: 2))",
       "}"
-    ], {
-      resourceExists: () => true
-    });
+    ]);
 
     expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("big_smoke.json"))?.content, {
@@ -260,7 +264,7 @@ describe("RSGL JSON resources and generic fragments", () => {
       ]
     });
 
-    const invalid = compileSource([
+    const invalid = compileSourceWithUncheckedExterns([
       "particles bad {",
       "  use particlesSeq(\"minecraft:particle/bad_{0..2}\", pad: -1)",
       "}"
@@ -270,6 +274,8 @@ describe("RSGL JSON resources and generic fragments", () => {
 
   it("reports generic JSON helper diagnostics at helper argument ranges", () => {
     const source = [
+      "extern custom texture_directory minecraft:missing",
+      "extern custom texture minecraft:entity/equipment/humanoid/missing, minecraft:block/bad_anim, minecraft:gui/sprites/widget/bad_helper",
       "atlas minecraft:blocks {",
       "  use atlasDirectory(source: \"missing\", prefix: \"block/\")",
       "}",
@@ -284,7 +290,7 @@ describe("RSGL JSON resources and generic fragments", () => {
       "}"
     ].join("\n");
     const result = compileRsglModule(parseRsgl(source), {
-      resourceExists: (kind, id) => !(kind === "textureDirectory" && id === "minecraft:missing")
+      externResourceExists: (_source, kind, id) => !(kind === "textureDirectory" && id === "minecraft:missing")
         && !(kind === "texture" && id === "minecraft:entity/equipment/humanoid/missing"),
       textureMetadata: id => id === "minecraft:block/bad_anim" ? { width: 16, height: 16 } : null
     });
@@ -328,7 +334,7 @@ describe("RSGL JSON resources and generic fragments", () => {
   });
 
   it("reports invalid generic JSON resource fragment arguments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "particles explosion {",
       "  use particlesSeq({ bad: true })",
       "}",

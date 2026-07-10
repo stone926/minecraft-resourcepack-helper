@@ -1,22 +1,28 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compileRsglFile, compileRsglModule } from "../../src/compiler";
+import { compileRsglFile, compileRsglModule, type RsglResourceExistenceKind } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, expectDiagnosticCodes, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectDiagnosticCodes,
+  expectNoDiagnostics,
+  withUncheckedExterns
+} from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL atlas, equipment, and mcmeta sugar", () => {
   it("lowers atlas source sugar statements", () => {
     const checkedResources: string[] = [];
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
+      "extern custom texture_directory minecraft:block, minecraft:potions",
       "atlas minecraft:blocks {",
       "  directory source \"block\" prefix \"block/\"",
       "  directory source \"potions\" prefix \"potions/\"",
       "  filter namespace \"minecraft\" path \"block/.*_debug\"",
       "}"
     ], {
-      resourceExists: (kind, id) => {
+      externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
@@ -49,6 +55,8 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
 
   it("lowers atlas paletted permutations sugar statements", () => {
     const source = [
+      "extern custom texture_directory minecraft:trims/items",
+      "extern custom texture minecraft:trims/items/*, minecraft:trims/color_palettes/*",
       "let trimMaterials = [\"quartz\", \"iron\"]",
       "table trimPalettes {",
       "  quartz: minecraft:trims/color_palettes/quartz",
@@ -64,12 +72,12 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "}"
     ].join("\n");
     const checkedResources: string[] = [];
-    const result = compileRsglModule(parseRsgl(source), {
-      resourceExists: (kind, id) => {
+    const result = compileRsglModule(parseRsgl(source), withUncheckedExterns({
+      externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
-    });
+    }));
 
     expectNoDiagnostics(result);
     const atlas = result.units.find(unit => unit.kind === "atlas");
@@ -105,7 +113,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     assert.ok(checkedResources.includes("texture:minecraft:trims/color_palettes/iron"));
 
     const missing = compileRsglModule(parseRsgl(source), {
-      resourceExists: (kind, id) => !(kind === "texture" && id === "minecraft:trims/items/helmet_trim_quartz")
+      externResourceExists: (_source, kind, id) => !(kind === "texture" && id === "minecraft:trims/items/helmet_trim_quartz")
     });
     const textureRange = atlas?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/sources/1/textures")?.sourceRange;
     assert.ok(missing.diagnostics.some(diagnostic =>
@@ -117,7 +125,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
   });
 
   it("reports invalid atlas source sugar statements", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "atlas minecraft:blocks {",
       "  directory prefix \"block/\"",
       "  filter namespace \"minecraft\"",
@@ -138,6 +146,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
 
   it("lowers equipment layer sugar statements", () => {
     const source = [
+      "extern custom texture minecraft:entity/equipment/**",
       "equipment minecraft:iron {",
       "  layers [horse_body, humanoid]",
       "  texture minecraft:iron",
@@ -150,12 +159,12 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "}"
     ].join("\n");
     const checkedResources: string[] = [];
-    const result = compileRsglModule(parseRsgl(source), {
-      resourceExists: (kind, id) => {
+    const result = compileRsglModule(parseRsgl(source), withUncheckedExterns({
+      externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
-    });
+    }));
 
     expectNoDiagnostics(result);
     const iron = result.units.find(unit => unit.outputPath.endsWith("iron.json"));
@@ -192,7 +201,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/humanoid_leggings/leather_leggings_overlay"));
 
     const missing = compileRsglModule(parseRsgl(source), {
-      resourceExists: (kind, id) => !(kind === "texture" && id === "minecraft:entity/equipment/humanoid/leather_overlay")
+      externResourceExists: (_source, kind, id) => !(kind === "texture" && id === "minecraft:entity/equipment/humanoid/leather_overlay")
     });
     const textureRange = leather?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/layers/humanoid/1/texture")?.sourceRange;
     assert.ok(missing.diagnostics.some(diagnostic =>
@@ -204,7 +213,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
   });
 
   it("reports invalid equipment layer sugar statements", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "equipment minecraft:broken {",
       "  layer humanoid dyeable",
       "}",
@@ -220,7 +229,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
   });
 
   it("lowers and validates mcmeta GUI scaling sugar", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "mcmeta \"assets/minecraft/textures/gui/sprites/widget/button.png\" {",
       "  use nineSliceGui(width: 200, height: 20, border: 2, stretch_inner: true)",
       "}",
@@ -259,7 +268,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
   });
 
   it("reports invalid mcmeta GUI scaling metadata", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "mcmeta \"assets/minecraft/textures/gui/sprites/widget/bad.png\" {",
       "  gui {",
       "    scaling {",
@@ -281,7 +290,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
   });
 
   it("validates mcmeta texture metadata and target support", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "target java format 74",
       "mcmeta \"assets/minecraft/textures/block/cutout.png\" {",
       "  texture {",
@@ -293,9 +302,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "mcmeta \"assets/minecraft/textures/block/bad_alpha.png\" {",
       "  texture { alpha_cutoff_bias \"high\" }",
       "}"
-    ], {
-      resourceExists: () => true
-    });
+    ]);
 
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
     assert.ok(codes.includes("rsgl.invalidMcmetaTextureField"));
@@ -307,7 +314,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     const unsupported = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsupportedMcmetaAlphaCutoffBias");
     assert.deepStrictEqual(unsupported?.range, alphaRange);
 
-    const supported = compileSource([
+    const supported = compileSourceWithUncheckedExterns([
       "target java format [75, 0]",
       "mcmeta \"assets/minecraft/textures/block/cutout.png\" {",
       "  texture {",
@@ -316,9 +323,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "    alpha_cutoff_bias 0.1",
       "  }",
       "}"
-    ], {
-      resourceExists: () => true
-    });
+    ]);
 
     expectNoDiagnostics(supported);
     assert.deepStrictEqual(supported.units[0].content, {
@@ -344,24 +349,25 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
 
       const mainFile = path.join(rsglDir, "main.rsgl");
       fs.writeFileSync(mainFile, [
+        "extern custom texture minecraft:block/*",
         "mcmeta glob(\"assets/minecraft/textures/block/glow_*.png\") {",
         "  use mcmetaAnimation(frametime: 3)",
         "}"
       ].join("\n"));
       const checkedResources: string[] = [];
-      const result = compileRsglFile(mainFile, {
-        resourceExists: (kind, id) => {
+      const result = compileRsglFile(mainFile, withUncheckedExterns({
+        externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
           checkedResources.push(`${kind}:${id}`);
           return true;
         }
-      });
+      }));
 
       expectNoDiagnostics(result);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath).sort(), [
         "assets/minecraft/textures/block/glow_0.png.mcmeta",
         "assets/minecraft/textures/block/glow_1.png.mcmeta"
       ]);
-      for (const unit of result.units) {
+      for (const unit of result.units.filter(unit => !unit.external)) {
         assert.deepStrictEqual(unit.content, {
           animation: {
             frametime: 3
@@ -376,7 +382,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
         "  animation { frametime 1 }",
         "}"
       ].join("\n"));
-      const empty = compileRsglFile(mainFile);
+      const empty = compileRsglFile(mainFile, withUncheckedExterns({}));
 
       assert.ok(empty.diagnostics.some(diagnostic => diagnostic.code === "rsgl.mcmetaGlobNoMatches"));
     } finally {

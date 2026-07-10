@@ -3,20 +3,14 @@ import * as path from "node:path";
 import {
   buildRsglResourcePackDirectory,
   formatRsglBuildPreview,
+  getRsglProjectConfigWatchPaths,
+  loadRsglProjectConfigForSource,
   previewRsglResourcePackDirectoryBuild,
   type CompileDependency,
-  type RsglBuildOptions
+  type RsglBuildOptions,
+  type RsglBuildResult
 } from "../../rsgl-core/src";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
-
-interface RsglCliConfig {
-  root?: string;
-  outDir?: string;
-  emitSourceMap?: boolean;
-  manifest?: boolean;
-  defaultAssetsPath?: string | null;
-  resourcePackRoots?: string[];
-}
 
 export interface RsglCliArgs {
   command: string;
@@ -32,9 +26,58 @@ export interface RsglCliIo {
   writeErr(text: string): void;
 }
 
+export interface RsglCliContext {
+  root: string;
+  options: RsglBuildOptions;
+  configSearchRoot: string;
+  configFileName: string | null;
+}
+
+export interface RsglCliWatchHandle {
+  close(): void;
+}
+
+export interface RsglCliWatchRuntime {
+  build(root: string, options: RsglBuildOptions): RsglBuildResult;
+  watchDirectory(
+    directory: string,
+    recursive: boolean,
+    listener: (eventType: string, fileName: string | Buffer | null) => void
+  ): RsglCliWatchHandle;
+  watchConfigFile(fileName: string, listener: () => void): RsglCliWatchHandle;
+  setTimer(listener: () => void, delay: number): unknown;
+  clearTimer(handle: unknown): void;
+}
+
+export interface RsglCliWatchSession {
+  close(): void;
+  currentContext(): RsglCliContext;
+}
+
 const processIo: RsglCliIo = {
   writeOut: text => process.stdout.write(text),
   writeErr: text => process.stderr.write(text)
+};
+
+const defaultWatchRuntime: RsglCliWatchRuntime = {
+  build: (root, options) => buildRsglResourcePackDirectory(root, options),
+  watchDirectory: (directory, recursive, listener) => fs.watch(directory, { recursive }, listener),
+  watchConfigFile: (fileName, listener) => {
+    let initialized = false;
+    const watchListener = (current: fs.Stats, previous: fs.Stats) => {
+      if (!initialized) {
+        initialized = true;
+        if (current.nlink === 0 && previous.nlink === 0) {
+          return;
+        }
+      }
+      listener();
+    };
+    fs.watchFile(fileName, { interval: 100 }, watchListener);
+    return { close: () => fs.unwatchFile(fileName, watchListener) };
+  },
+  setTimer: (listener, delay) => setTimeout(listener, delay),
+  clearTimer: handle => clearTimeout(handle as ReturnType<typeof setTimeout>)
 };
 
 /** Runs the RSGL CLI for the given argument vector and returns the process exit code. */
@@ -84,12 +127,119 @@ function check(args: RsglCliArgs, io: RsglCliIo): number {
 }
 
 function watch(args: RsglCliArgs, io: RsglCliIo): number {
-  const context = createCliContext(args);
+  startRsglCliWatch(args, io);
+  return 0;
+}
+
+/** Starts a rebuild session whose source and config watchers follow config changes. */
+export function startRsglCliWatch(
+  args: RsglCliArgs,
+  io: RsglCliIo,
+  runtime: RsglCliWatchRuntime = defaultWatchRuntime
+): RsglCliWatchSession {
+  const configSearchRoot = resolveCliConfigSearchRoot(args);
+  let context: RsglCliContext;
+  try {
+    context = createCliContextForSearchRoot(args, configSearchRoot);
+  } catch {
+    context = createCliContextWithoutConfig(args, configSearchRoot);
+  }
   let dependencies: CompileDependency[] = [];
+  let sourceWatcher: RsglCliWatchHandle | undefined;
+  let sourceWatchRoot: string | undefined;
+  let pendingSourceRootWatcher: RsglCliWatchHandle | undefined;
+  let pendingSourceWatchRoot: string | undefined;
+  let rebuildTimer: unknown;
+  let rebuildScheduled = false;
+  let closed = false;
+  let hasRun = false;
+  const configWatchers = new Map<string, RsglCliWatchHandle>();
   const externalWatchers = new Map<string, fs.FSWatcher>();
-  let rebuildTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const scheduleRun = () => {
+    if (closed || rebuildScheduled) {
+      return;
+    }
+    rebuildScheduled = true;
+    rebuildTimer = runtime.setTimer(() => {
+      rebuildScheduled = false;
+      rebuildTimer = undefined;
+      run();
+    }, 25);
+  };
+
+  const syncConfigWatchers = () => {
+    const requiredPaths = new Set(
+      getRsglProjectConfigWatchPaths(configSearchRoot, "directory").map(normalizeWatchPath)
+    );
+    for (const [configPath, watcher] of configWatchers) {
+      if (!requiredPaths.has(configPath)) {
+        configWatchers.delete(configPath);
+        watcher.close();
+      }
+    }
+    for (const configPath of requiredPaths) {
+      if (!configWatchers.has(configPath)) {
+        configWatchers.set(configPath, runtime.watchConfigFile(configPath, scheduleRun));
+      }
+    }
+  };
+
+  const syncSourceWatcher = (root: string) => {
+    const normalizedRoot = normalizeWatchPath(root);
+    if (sourceWatcher && sourceWatchRoot === normalizedRoot) {
+      pendingSourceRootWatcher?.close();
+      pendingSourceRootWatcher = undefined;
+      pendingSourceWatchRoot = undefined;
+      return;
+    }
+    let nextWatcher: RsglCliWatchHandle;
+    try {
+      nextWatcher = runtime.watchDirectory(root, true, (_event, fileName) => {
+        if (
+          fileName
+          && isRsglWatchPathRelevant(path.resolve(root, fileName.toString()), dependencies)
+        ) {
+          scheduleRun();
+        }
+      });
+    } catch (error) {
+      if (pendingSourceWatchRoot !== normalizedRoot) {
+        pendingSourceRootWatcher?.close();
+        pendingSourceWatchRoot = normalizedRoot;
+        pendingSourceRootWatcher = runtime.watchConfigFile(root, scheduleRun);
+      }
+      throw error;
+    }
+    const previousWatcher = sourceWatcher;
+    sourceWatcher = nextWatcher;
+    sourceWatchRoot = normalizedRoot;
+    previousWatcher?.close();
+    pendingSourceRootWatcher?.close();
+    pendingSourceRootWatcher = undefined;
+    pendingSourceWatchRoot = undefined;
+  };
+
   const run = () => {
-    const result = buildRsglResourcePackDirectory(context.root, context.options);
+    syncConfigWatchers();
+    let nextContext: RsglCliContext;
+    try {
+      nextContext = createCliContextForSearchRoot(args, configSearchRoot);
+    } catch (error) {
+      io.writeErr(`${error instanceof Error ? error.message : String(error)}\n`);
+      return;
+    }
+
+    const rootChanged = normalizeWatchPath(context.root) !== normalizeWatchPath(nextContext.root);
+    let result: RsglBuildResult;
+    try {
+      syncSourceWatcher(nextContext.root);
+      context = nextContext;
+      result = runtime.build(context.root, context.options);
+    } catch (error) {
+      io.writeErr(`${error instanceof Error ? error.message : String(error)}\n`);
+      return;
+    }
     dependencies = result.dependencies;
     syncExternalDependencyWatchers(
       context.root,
@@ -102,27 +252,37 @@ function watch(args: RsglCliArgs, io: RsglCliIo): number {
     if (result.plan) {
       io.writeOut(`RSGL build complete: ${result.plan.summary.create} created, ${result.plan.summary.update} updated, ${result.plan.summary.unchanged} unchanged.\n`);
     }
-  };
-  const scheduleRun = () => {
-    if (rebuildTimer) {
-      return;
+    if (hasRun && rootChanged) {
+      io.writeOut(`Watching ${context.root}\n`);
     }
-    rebuildTimer = setTimeout(() => {
-      rebuildTimer = undefined;
-      run();
-    }, 25);
+    hasRun = true;
   };
+
+  syncConfigWatchers();
   run();
-  fs.watch(context.root, { recursive: true }, (_event, fileName) => {
-    if (
-      fileName
-      && isRsglWatchPathRelevant(path.resolve(context.root, fileName.toString()), dependencies)
-    ) {
-      scheduleRun();
-    }
-  });
   io.writeOut(`Watching ${context.root}\n`);
-  return 0;
+  return {
+    close: () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      if (rebuildScheduled) {
+        runtime.clearTimer(rebuildTimer);
+      }
+      sourceWatcher?.close();
+      pendingSourceRootWatcher?.close();
+      for (const watcher of configWatchers.values()) {
+        watcher.close();
+      }
+      configWatchers.clear();
+      for (const watcher of externalWatchers.values()) {
+        watcher.close();
+      }
+      externalWatchers.clear();
+    },
+    currentContext: () => context
+  };
 }
 
 /** Returns whether a watcher event can invalidate the current RSGL build. */
@@ -267,16 +427,26 @@ function initConfig(io: RsglCliIo): number {
   return 0;
 }
 
-function createCliContext(args: RsglCliArgs): { root: string; options: RsglBuildOptions } {
-  const config = readConfig();
-  const root = path.resolve(args.root ?? config.root ?? "src");
-  const outputRoot = path.resolve(args.outDir ?? config.outDir ?? "assets");
+/** Resolves CLI paths and validated config into core build options. */
+export function createCliContext(args: RsglCliArgs): RsglCliContext {
+  return createCliContextForSearchRoot(args, resolveCliConfigSearchRoot(args));
+}
+
+function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: string): RsglCliContext {
+  const loadedConfig = loadRsglProjectConfigForSource(configSearchRoot);
+  const config = loadedConfig?.config ?? {};
+  const root = args.root ? configSearchRoot : (config.root ?? configSearchRoot);
+  const outputRoot = args.outDir ? path.resolve(args.outDir) : (config.outDir ?? path.resolve("assets"));
   return {
     root,
+    configSearchRoot,
+    configFileName: loadedConfig?.fileName ?? null,
     options: {
       outputRoot,
       sourceMaps: config.emitSourceMap ?? true,
       manifest: config.manifest ?? true,
+      globalExterns: config.extern,
+      checkExternExistence: config.checkExternExistence,
       ...createRsglWorkspaceValidationOptions({
         sourceFileName: root,
         defaultAssetsPath: config.defaultAssetsPath,
@@ -286,16 +456,26 @@ function createCliContext(args: RsglCliArgs): { root: string; options: RsglBuild
   };
 }
 
-function readConfig(): RsglCliConfig {
-  const fileName = path.resolve("rsgl.config.json");
-  if (!fs.existsSync(fileName)) {
-    return {};
-  }
-  try {
-    return JSON.parse(fs.readFileSync(fileName, "utf8")) as RsglCliConfig;
-  } catch (error) {
-    throw new Error(`Failed to read ${fileName}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-  }
+function createCliContextWithoutConfig(
+  args: RsglCliArgs,
+  configSearchRoot: string
+): RsglCliContext {
+  const root = configSearchRoot;
+  return {
+    root,
+    configSearchRoot,
+    configFileName: null,
+    options: {
+      outputRoot: args.outDir ? path.resolve(args.outDir) : path.resolve("assets"),
+      sourceMaps: true,
+      manifest: true,
+      ...createRsglWorkspaceValidationOptions({ sourceFileName: root })
+    }
+  };
+}
+
+function resolveCliConfigSearchRoot(args: RsglCliArgs): string {
+  return path.resolve(args.root ?? "src");
 }
 
 /** Parses a raw argument vector into the CLI command and its options. */
@@ -332,6 +512,6 @@ function printHelp(io: RsglCliIo): void {
     "  init       Create rsgl.config.json",
     "  build      Compile RSGL files and write generated resource pack files",
     "  check      Compile RSGL files without writing generated files",
-    "  watch      Rebuild when .rsgl files or imported JSON dependencies change"
+    "  watch      Rebuild when .rsgl files, project config, or dependencies change"
   ].join("\n")}\n`);
 }

@@ -143,7 +143,13 @@ function sourceMapStringify(sourceMap: RsglSourceMap, indent: number): string {
   return `${JSON.stringify({
     version: 1,
     generatedFile: sourceMap.generatedFile,
-    mappings: sourceMap.mappings
+    mappings: sourceMap.mappings.map(mapping => ({
+      generatedPath: mapping.generatedPath,
+      sourceFile: mapping.sourceFile,
+      sourceRange: mapping.sourceRange,
+      reason: mapping.reason,
+      expansionStack: mapping.expansionStack
+    }))
   }, null, indent)}\n`;
 }
 
@@ -164,8 +170,10 @@ function manifestStringify(units: ResourceUnit[], sourceMapExtension: string | u
       kind: unit.kind,
       id: unit.id ? `${unit.id.namespace}:${unit.id.path}` : undefined,
       source: unit.external ? {
+        origin: unit.external.source,
         kind: unit.external.resourceKind,
-        id: unit.external.id
+        id: unit.external.id,
+        checkExistence: !unit.external.skipExistenceCheck
       } : undefined
     }))
   }, null, indent)}\n`;

@@ -1,17 +1,17 @@
-import { ExpansionFrame, ExternalResourceKind, ResourceUnit, RsglMapping } from "./ir";
+import type { ExternResourceSource } from "../externDeclarations";
+import { ExternalResourceKind, ResourceUnit } from "./ir";
 import { getExternResourceTargetKind } from "../resourceKinds";
 import { parseResourceId, resourceTargetOutputPath } from "./resourceIds";
 
 export function createExternalResource(
   resourceKind: ExternalResourceKind,
   idValue: string,
-  namespace: string,
+  source: ExternResourceSource,
+  skipExistenceCheck: boolean,
   sourceFile: string,
-  sourceRange: { start: number; end: number },
-  expansionStack: ExpansionFrame[] = [],
-  reason: RsglMapping["reason"] = "direct"
+  sourceRange: { start: number; end: number }
 ): ResourceUnit | null {
-  const id = parseResourceId(idValue, namespace);
+  const id = parseResourceId(idValue, "minecraft");
   if (!id) {
     return null;
   }
@@ -25,7 +25,9 @@ export function createExternalResource(
     external: {
       kind: "external",
       resourceKind,
-      id: externalId
+      id: externalId,
+      source,
+      skipExistenceCheck
     },
     mergePolicy: { kind: "errorOnConflict" },
     sourceMap: {
@@ -35,8 +37,8 @@ export function createExternalResource(
           generatedPath: "",
           sourceFile,
           sourceRange,
-          reason,
-          expansionStack
+          reason: "direct",
+          expansionStack: []
         }
       ]
     }

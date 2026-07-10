@@ -1,11 +1,16 @@
 import * as assert from "node:assert";
 import { compileRsglModule } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  generatedResourceUnits,
+  withUncheckedExterns
+} from "./helpers/compile";
 
 describe("RSGL pack overlays", () => {
   it("lowers overlay blocks to prefixed resources and pack metadata", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "pack {",
       "  description \"Generated\"",
       "}",
@@ -21,12 +26,12 @@ describe("RSGL pack overlays", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
       "future/assets/minecraft/items/stone.json",
       "future/assets/minecraft/models/block/stone.json",
       "pack.mcmeta"
     ]);
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "pack.mcmeta")?.content, {
+    assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath === "pack.mcmeta")?.content, {
       pack: {
         description: "Generated"
       },
@@ -40,7 +45,7 @@ describe("RSGL pack overlays", () => {
         ]
       }
     });
-    const model = result.units.find(unit => unit.outputPath.endsWith("models/block/stone.json"));
+    const model = generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("models/block/stone.json"));
     assert.strictEqual(model?.sourceMap.generatedFile, "future/assets/minecraft/models/block/stone.json");
     assert.deepStrictEqual(model?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
       "",
@@ -57,7 +62,7 @@ describe("RSGL pack overlays", () => {
   });
 
   it("keeps overlay resources separate from base resource conflicts", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block stone { parent minecraft:block/cube_all }",
       "overlay \"future\" {",
       "  model block stone { parent minecraft:block/cube_all }",
@@ -65,12 +70,12 @@ describe("RSGL pack overlays", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/models/block/stone.json",
       "future/assets/minecraft/models/block/stone.json",
       "pack.mcmeta"
     ]);
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath === "pack.mcmeta")?.content, {
+    assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath === "pack.mcmeta")?.content, {
       overlays: {
         entries: [
           {
@@ -91,9 +96,9 @@ describe("RSGL pack overlays", () => {
       "}"
     ].join("\n");
     const secondOverlayStart = source.indexOf("overlay \"future\"", source.indexOf("overlay \"future\"") + 1);
-    const result = compileRsglModule(parseRsgl(source));
+    const result = compileRsglModule(parseRsgl(source), withUncheckedExterns({}));
     const duplicate = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.duplicateOverlayDirectory");
-    const pack = result.units.find(unit => unit.outputPath === "pack.mcmeta");
+    const pack = generatedResourceUnits(result).find(unit => unit.outputPath === "pack.mcmeta");
 
     assert.ok(duplicate);
     assert.strictEqual(duplicate.range.start, secondOverlayStart);

@@ -5,6 +5,7 @@ import { compileSource } from "./helpers/compile";
 describe("RSGL model validation", () => {
   it("validates model display, element geometry, rotation, and face fields", () => {
     const valid = compileSource([
+      "extern! vanilla texture minecraft:block/stone",
       "model block valid_geometry {",
       "  display {",
       "    gui: { rotation: [30, 45, 0], translation: [0, 0, 0], scale: [1, 1, 1] }",
@@ -34,6 +35,7 @@ describe("RSGL model validation", () => {
     assert.strictEqual(validCodes.includes("rsgl.modelFaceUvOutOfRange"), false);
 
     const invalid = compileSource([
+      "extern! vanilla texture minecraft:block/stone",
       "model block broken_geometry {",
       "  display {",
       "    bad_context: { rotation: [0, 0, 0] }",
@@ -89,6 +91,8 @@ describe("RSGL model validation", () => {
   it("validates generated model parent chains and texture variables", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern! custom texture minecraft:block/inherited_texture",
+      "extern custom texture minecraft:block/missing_texture",
       "model block parent_model {",
       "  textures { base: minecraft:block/inherited_texture }",
       "}",
@@ -115,7 +119,7 @@ describe("RSGL model validation", () => {
     });
 
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-    assert.ok(checkedResources.includes("texture:minecraft:block/inherited_texture"));
+    assert.ok(checkedResources.includes("texture:minecraft:block/missing_texture"));
     assert.ok(codes.includes("rsgl.unresolvedTextureVariable"));
     assert.ok(codes.includes("rsgl.textureVariableCycle"));
     assert.ok(codes.includes("rsgl.textureNotFound"));
@@ -142,6 +146,112 @@ describe("RSGL model validation", () => {
     ));
   });
 
+  it("uses extern var for direct and aliased missing variables without emitting it into model JSON", () => {
+    const result = compileSource([
+      "model block declared_variables {",
+      "  extern var #front",
+      "  textures { all: \"#front\", particle: \"#all\" }",
+      "}",
+      "model block undeclared_variable {",
+      "  textures { all: \"#front\" }",
+      "}"
+    ]);
+
+    const unresolved = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.unresolvedTextureVariable"
+    );
+    assert.strictEqual(unresolved.length, 1);
+    assert.strictEqual(unresolved[0].severity, "warning");
+
+    const undeclaredUnit = result.units.find(unit => unit.outputPath.endsWith("undeclared_variable.json"));
+    const undeclaredRange = undeclaredUnit?.sourceMap.mappings.find(mapping =>
+      mapping.generatedPath === "/textures/all"
+    )?.sourceRange;
+    assert.deepStrictEqual(unresolved[0].range, undeclaredRange);
+
+    const declaredUnit = result.units.find(unit => unit.outputPath.endsWith("declared_variables.json"));
+    assert.deepStrictEqual(declaredUnit?.content, {
+      textures: {
+        all: "#front",
+        particle: "#all"
+      }
+    });
+    assert.strictEqual(JSON.stringify(declaredUnit?.content).includes("extern"), false);
+  });
+
+  it("does not let extern var suppress variable cycles or missing resolved textures", () => {
+    const checkedResources: string[] = [];
+    const result = compileSource([
+      "extern custom texture minecraft:block/missing_texture",
+      "model block guarded_validation {",
+      "  extern var #front, #a, #existing",
+      "  textures {",
+      "    a: \"#b\",",
+      "    b: \"#a\",",
+      "    existing: minecraft:block/missing_texture,",
+      "    resolved: \"#existing\",",
+      "    unresolved: \"#front\"",
+      "  }",
+      "}"
+    ], {
+      externResourceExists: (source, kind, id) => {
+        checkedResources.push(`${source}:${kind}:${id}`);
+        return false;
+      }
+    });
+
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.ok(codes.includes("rsgl.textureVariableCycle"));
+    assert.ok(codes.includes("rsgl.textureNotFound"));
+    assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
+    assert.ok(checkedResources.includes("custom:texture:minecraft:block/missing_texture"));
+  });
+
+  it("keeps extern var scoped to its declaring model across siblings and parent chains", () => {
+    const result = compileSource([
+      "model block declaring_parent {",
+      "  extern var #slot",
+      "  textures { all: \"#slot\" }",
+      "}",
+      "model block child_without_declaration {",
+      "  parent minecraft:block/declaring_parent",
+      "  textures { all: \"#slot\" }",
+      "}",
+      "model block sibling_without_declaration {",
+      "  textures { all: \"#slot\" }",
+      "}",
+      "model block parent_without_declaration {",
+      "  textures { all: \"#child_slot\" }",
+      "}",
+      "model block child_with_declaration {",
+      "  parent minecraft:block/parent_without_declaration",
+      "  extern var #child_slot",
+      "  textures { all: \"#child_slot\" }",
+      "}"
+    ]);
+
+    const unresolvedRanges = result.diagnostics
+      .filter(diagnostic => diagnostic.code === "rsgl.unresolvedTextureVariable")
+      .map(diagnostic => diagnostic.range)
+      .sort((left, right) => left.start - right.start);
+    const expectedRanges = [
+      "child_without_declaration.json",
+      "sibling_without_declaration.json",
+      "parent_without_declaration.json"
+    ].map(outputPath => result.units
+      .find(unit => unit.outputPath.endsWith(outputPath))
+      ?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/textures/all")
+      ?.sourceRange
+    );
+    assert.ok(expectedRanges.every(range => range !== undefined));
+    assert.deepStrictEqual(
+      unresolvedRanges,
+      expectedRanges
+        .filter((range): range is { start: number; end: number } => range !== undefined)
+        .sort((left, right) => left.start - right.start)
+    );
+  });
+
   it("stops model parent validation at virtual vanilla builtin models", () => {
     const checkedResources: string[] = [];
     const loadedModels: string[] = [];
@@ -151,6 +261,8 @@ describe("RSGL model validation", () => {
       }]
     ]);
     const result = compileSource([
+      "extern! custom model minecraft:item/generated",
+      "extern custom model minecraft:block/missing_parent",
       "model item generated_parent {",
       "  parent minecraft:item/generated",
       "}",
@@ -199,6 +311,8 @@ describe("RSGL model validation", () => {
       }]
     ]);
     const result = compileSource([
+      "extern! custom model minecraft:block/external_child, minecraft:block/external_cycle_a",
+      "extern custom model minecraft:block/external_missing_child",
       "model block child_external {",
       "  parent minecraft:block/external_child",
       "  textures { all: \"#alias\" }",

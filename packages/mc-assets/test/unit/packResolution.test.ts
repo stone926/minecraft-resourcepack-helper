@@ -6,6 +6,7 @@ import {
   findAssetsRoot,
   findPackRoot,
   getAssetsRootPathCandidates,
+  getConfiguredPackResourceRootCandidates,
   getDocumentResourceRootCandidates,
   getResourceFileCandidates,
   packRootFromAssetsPath,
@@ -249,6 +250,73 @@ describe("resource location utilities", () => {
       namespace: "ns",
       relativeSegments: ["file.png"]
     });
+  });
+
+  it("resolves configured packs independently with overlays, filters, and exclusions", () => {
+    const root = createTempDirectory();
+    const excludedPack = path.join(root, "source pack");
+    const highPack = path.join(root, "configured high");
+    const lowPack = path.join(root, "configured low");
+
+    try {
+      for (const packRoot of [excludedPack, lowPack]) {
+        fs.mkdirSync(packRoot, { recursive: true });
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      }
+      fs.mkdirSync(highPack, { recursive: true });
+      fs.writeFileSync(path.join(highPack, "pack.mcmeta"), JSON.stringify({
+        pack: {
+          ["min_format"]: [88, 0],
+          ["max_format"]: [88, 0],
+          description: "test"
+        },
+        overlays: {
+          entries: [{
+            directory: "newer",
+            ["min_format"]: [88, 0],
+            ["max_format"]: [88, 0]
+          }]
+        },
+        filter: {
+          block: [{
+            namespace: "example",
+            path: "models/block/blocked\\.json"
+          }]
+        }
+      }));
+
+      const options = {
+        excludedPackRoot: excludedPack,
+        resourcePath: "models/block/shared.json"
+      };
+      assert.deepStrictEqual(
+        getConfiguredPackResourceRootCandidates(
+          [excludedPack, highPack, lowPack],
+          "example",
+          "models",
+          options
+        ),
+        [
+          path.join(highPack, "newer", "assets", "example", "models"),
+          path.join(highPack, "assets", "example", "models"),
+          path.join(lowPack, "assets", "example", "models")
+        ]
+      );
+      assert.deepStrictEqual(
+        getConfiguredPackResourceRootCandidates(
+          [excludedPack, highPack, lowPack],
+          "example",
+          "models",
+          { ...options, resourcePath: "models/block/blocked.json" }
+        ),
+        [
+          path.join(highPack, "newer", "assets", "example", "models"),
+          path.join(highPack, "assets", "example", "models")
+        ]
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("resolves identical candidates through basic and cached hosts", () => {

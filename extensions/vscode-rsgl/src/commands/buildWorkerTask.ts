@@ -2,6 +2,7 @@ import {
   compileRsglDirectory,
   emitRsglFiles
 } from "../../../../packages/rsgl-core/src/compiler";
+import { loadRsglProjectConfigForSource } from "../../../../packages/rsgl-core/src/rsglConfig";
 import {
   prepareRsglResourcePackBuild,
   prepareRsglResourcePackDirectoryBuild,
@@ -105,9 +106,16 @@ function createBuildOptions(
 function createValidationOptions(
   context: (RsglWorkerBuildContext | RsglWorkerCompileDirectoryContext) & RsglWorkerValidationConfiguration
 ) {
-  return createRsglWorkspaceValidationOptions({
-    sourceFileName: context.validationAnchor,
-    defaultAssetsPath: context.defaultAssetsPath,
-    resourcePackRoots: context.resourcePackRoots
-  });
+  const projectConfig = loadRsglProjectConfigForSource(context.validationAnchor)?.config;
+  return {
+    ...createRsglWorkspaceValidationOptions({
+      sourceFileName: context.validationAnchor,
+      defaultAssetsPath: context.defaultAssetsPath === undefined
+        ? projectConfig?.defaultAssetsPath
+        : context.defaultAssetsPath,
+      resourcePackRoots: context.resourcePackRoots ?? projectConfig?.resourcePackRoots
+    }),
+    globalExterns: context.globalExterns ?? projectConfig?.extern,
+    checkExternExistence: context.checkExternExistence ?? projectConfig?.checkExternExistence
+  };
 }

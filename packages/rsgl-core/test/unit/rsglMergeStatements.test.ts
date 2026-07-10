@@ -1,9 +1,13 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  generatedResourceUnits
+} from "./helpers/compile";
 
 describe("RSGL merge statements", () => {
   it("compiles all merge modes through the generic resource body engine", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block patched {",
       "  parent minecraft:block/base",
       "  textures { all: minecraft:block/stone }",
@@ -19,7 +23,7 @@ describe("RSGL merge statements", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/changed",
       textures: {
         all: "minecraft:block/stone",
@@ -39,7 +43,7 @@ describe("RSGL merge statements", () => {
   });
 
   it("uses the new merge diagnostics", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block invalid {",
       "  parent minecraft:block/base",
       "  merge strict { textures: { all: minecraft:block/stone } }",
@@ -52,13 +56,13 @@ describe("RSGL merge statements", () => {
     assert.ok(codes.includes("rsgl.mergeFieldNotFound"));
     assert.ok(codes.includes("rsgl.mergeAppendIncompatibleField"));
     assert.ok(codes.includes("rsgl.invalidMergeFragment"));
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/base"
     });
   });
 
   it("deep-merges template, if, and for fragments with array mapping offsets", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template addTexture(key: String, texture: TextureId) {",
       "  merge { textures: { [key]: texture } }",
       "}",
@@ -76,7 +80,7 @@ describe("RSGL merge statements", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       textures: {
         all: "minecraft:block/stone",
         particle: "minecraft:block/particle"
@@ -91,7 +95,7 @@ describe("RSGL merge statements", () => {
         }
       }
     });
-    const mappingPaths = result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
+    const mappingPaths = generatedResourceUnits(result)[0].sourceMap.mappings.map(mapping => mapping.generatedPath);
     assert.ok(mappingPaths.includes("/layers/0/texture"));
     assert.ok(mappingPaths.includes("/layers/1/texture"));
   });

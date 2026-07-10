@@ -126,12 +126,6 @@ class RsglBinder implements RsglExpressionCheckContext {
         this.recordImport(statement, scope);
       } else if (statement.kind === "ExportDecl") {
         this.recordExport(statement);
-      } else if (statement.kind === "ExternDecl") {
-        const id = this.externDeclId(statement);
-        const kind = this.externDeclKind(statement);
-        if (id && kind) {
-          this.outputResources.push({ kind, id, node: statement });
-        }
       } else if (statement.kind === "LetDecl") {
         this.defineIdentifier(scope, statement.name, "variable", typeFromAnnotation(statement.typeAnnotation), statement);
       } else if (statement.kind === "TableDecl") {
@@ -167,7 +161,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       } else if (statement.kind === "TemplateDecl") {
         this.checkTemplate(statement, scope);
       } else if (statement.kind === "ExternDecl") {
-        this.checkExternDecl(statement, scope);
+        this.checkExternDecl(statement);
       } else if (statement.kind === "ResourceDecl") {
         this.checkResourceDecl(statement, scope);
       } else if (statement.kind === "UseDecl") {
@@ -242,31 +236,15 @@ class RsglBinder implements RsglExpressionCheckContext {
     checkResourceIdExpression(this, expression, scope);
   }
 
-  private checkExternDecl(statement: ExternDeclNode, scope: RsglScope): void {
+  private checkExternDecl(statement: ExternDeclNode): void {
     const kind = this.externDeclKind(statement);
     if (!kind) {
       this.diagnostics.push(diagnostic("rsgl.invalidExternKind", `Extern resource kind must be ${externResourceKindDescription}.`, statement.resourceKind?.range ?? statement.range));
     }
-    const idArg = this.externIdArgument(statement);
-    if (!idArg) {
-      this.diagnostics.push(diagnostic("rsgl.missingArgument", "Missing extern argument 'id'.", statement.range));
-      return;
-    }
-    checkResourceIdExpression(this, idArg.value, scope);
   }
 
   private externDeclKind(statement: ExternDeclNode) {
     return getExternResourceKind(statement.resourceKind?.text);
-  }
-
-  private externIdArgument(statement: ExternDeclNode): ExternDeclNode["args"][number] | undefined {
-    return statement.args.find(arg => arg.name?.text === "id")
-      ?? statement.args.filter(arg => !arg.name)[0];
-  }
-
-  private externDeclId(statement: ExternDeclNode): string | undefined {
-    const arg = this.externIdArgument(statement);
-    return arg ? expressionToStaticText(arg.value) : undefined;
   }
 
   private checkOverlayFormatExpression(expression: ExprNode, scope: RsglScope): void {

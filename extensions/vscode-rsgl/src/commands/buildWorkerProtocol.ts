@@ -7,10 +7,13 @@ import type {
   RsglCompileDiagnostic,
   RsglEmittedFile
 } from "../../../../packages/rsgl-core/src/compiler";
+import type { RsglGlobalExternConfigEntry } from "../../../../packages/rsgl-core/src/externDeclarations";
 
 export interface RsglWorkerValidationConfiguration {
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
+  globalExterns?: RsglGlobalExternConfigEntry[];
+  checkExternExistence?: boolean;
 }
 
 export interface RsglWorkerBuildContext {

@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { compileRsglFile, loadRsglSourceFilesFromFile } from "../../src/compiler";
-import { expectNoDiagnostics } from "./helpers/compile";
+import { expectNoDiagnostics, generatedResourceUnits, withUncheckedExterns } from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL import entry loading", () => {
@@ -46,20 +46,20 @@ describe("RSGL import entry loading", () => {
         templatesFile
       ].map(fileName => path.normalize(path.resolve(fileName))).sort());
 
-      const result = compileRsglFile(mainFile);
+      const result = compileRsglFile(mainFile, withUncheckedExterns({}));
 
       expectNoDiagnostics(result);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+      assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
         "assets/minecraft/models/block/acacia_planks.json",
         "assets/minecraft/models/block/spruce_planks.json"
       ]);
-      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("acacia_planks.json"))?.content, {
+      assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("acacia_planks.json"))?.content, {
         parent: "minecraft:block/cube_all",
         textures: {
           all: "custom:block/acacia_planks"
         }
       });
-      assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("spruce_planks.json"))?.content, {
+      assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("spruce_planks.json"))?.content, {
         parent: "minecraft:block/cube_all",
         textures: {
           all: "minecraft:block/spruce_planks"
@@ -92,10 +92,10 @@ describe("RSGL import entry loading", () => {
         "use cube(stone)"
       ].join("\n"));
 
-      const result = compileRsglFile(mainFile);
+      const result = compileRsglFile(mainFile, withUncheckedExterns({}));
 
       expectNoDiagnostics(result);
-      assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+      assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath), [
         "assets/minecraft/models/block/stone.json"
       ]);
     } finally {
@@ -115,7 +115,7 @@ describe("RSGL import entry loading", () => {
       ].join("\n"));
       fs.writeFileSync(cycleFile, "import \"./main.rsgl\"\n");
 
-      const result = compileRsglFile(mainFile);
+      const result = compileRsglFile(mainFile, withUncheckedExterns({}));
       const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
       assert.ok(codes.includes("rsgl.missingImport"));

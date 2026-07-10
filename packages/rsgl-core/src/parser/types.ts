@@ -1,5 +1,7 @@
 import type { RsglResourceKind } from "../resourceKinds";
+import type { ExternResourceSource } from "../externDeclarations";
 export type { ExternResourceKind } from "../resourceKinds";
+export type { ExternResourceSource } from "../externDeclarations";
 
 export type RsglTokenKind =
   | "identifier"
@@ -374,8 +376,16 @@ export interface ExportDeclNode extends StatementNodeBase {
 
 export interface ExternDeclNode extends StatementNodeBase {
   kind: "ExternDecl";
+  source: ExternResourceSource | null;
   resourceKind: IdentifierNode | null;
-  args: ArgumentNode[];
+  patterns: ExternPatternNode[];
+  skipExistenceCheck: boolean;
+}
+
+export interface ExternPatternNode extends RsglNode {
+  kind: "ExternPattern";
+  /** The original contiguous pattern text, without normalization or expansion. */
+  text: string;
 }
 
 export interface LetDeclNode extends StatementNodeBase {
@@ -448,6 +458,7 @@ export interface UnknownStmtNode extends StatementNodeBase {
 
 export type ResourceStatementNode =
   | LetDeclNode
+  | ExternVarStmtNode
   | PropertyStmtNode
   | SectionStmtNode
   | VariantsSectionNode
@@ -476,6 +487,12 @@ export type ResourceStatementNode =
   | BaseStmtNode
   | MergeStmtNode
   | UnknownStmtNode;
+
+export interface ExternVarStmtNode extends StatementNodeBase {
+  kind: "ExternVarStmt";
+  /** Texture variable names without their leading '#'. */
+  variables: IdentifierNode[];
+}
 
 export interface PropertyStmtNode extends StatementNodeBase {
   kind: "PropertyStmt";

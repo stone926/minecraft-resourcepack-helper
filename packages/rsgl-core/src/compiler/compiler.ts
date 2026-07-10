@@ -1,7 +1,6 @@
 import {
   BlockNode,
   ExprNode,
-  ExternDeclNode,
   ForStmtNode,
   LetDeclNode,
   ResourceDeclNode,
@@ -26,11 +25,20 @@ import {
   EvaluationContext,
   EvaluationValue,
   RawGlobLoader,
-  evaluateExpression
+  bindEvaluationValue,
+  evaluateExpression,
+  expressionEvaluationOrigin
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { compileItemSpecialStatement } from "./itemFragments";
-import { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglCompileResult, RsglMapping } from "./ir";
+import {
+  JsonValue,
+  ResourceUnit,
+  RsglCompileDiagnostic,
+  RsglCompileResult,
+  RsglMapping,
+  RsglValidationReferenceOrigin
+} from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopContext as createEvaluationLoopContext, forEachLoopContext } from "./looping";
 import { compileModelGeometryStatement } from "./modelGeometryDsl";
@@ -44,7 +52,6 @@ import {
 } from "./packOverlayCompiler";
 import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult, resourceBodyToObject } from "./resourceBody";
 import { compileResourceDeclaration, ResourceDeclarationCompilerHost } from "./resourceCompiler";
-import { parseResourceId } from "./resourceIds";
 import { RsglTargetPackFormat } from "./target";
 import {
   createTemplateExpansion,
@@ -53,15 +60,13 @@ import {
   TemplateExpansion,
   TemplateExpansionOptions
 } from "./templateExpansion";
-import { createExternalResource } from "./templates";
 import { createRsglStdlibPreludeSourceFiles } from "../stdlib";
-import { externResourceKindDescription, getExternResourceKind } from "../resourceKinds";
 import {
   isItemModelStatement,
   normalizeFileName,
-  normalizeJsonValue,
-  staticText
+  normalizeJsonValue
 } from "./compilerHelpers";
+import { uniqueValues } from "../../../mc-assets/src";
 
 export {
   compileRsglDirectory,
@@ -138,8 +143,6 @@ export class RsglCompiler {
   private compileStatement(statement: TopLevelStatementNode, context: RsglCompileContext): void {
     if (statement.kind === "ResourceDecl") {
       this.compileResourceDecl(statement, context);
-    } else if (statement.kind === "ExternDecl") {
-      this.compileExternDecl(statement, context);
     } else if (statement.kind === "LetDecl") {
       this.compileLetDecl(statement, context);
     } else if (statement.kind === "TableDecl") {
@@ -164,9 +167,49 @@ export class RsglCompiler {
   }
 
   private compileResourceDecl(statement: ResourceDeclNode, context: RsglCompileContext): void {
+    const externalTextureVariables = statement.resourceKind === "model"
+      ? uniqueValues(statement.body.statements
+        .filter(bodyStatement => bodyStatement.kind === "ExternVarStmt")
+        .flatMap(bodyStatement => bodyStatement.variables.map(variable => variable.text)))
+      : [];
     for (const unit of compileResourceDeclaration(statement, context, this.resourceDeclarationCompilerHost())) {
+      const referenceOrigins = this.detachValidationOrigins(unit);
+      const resourceIdOrigin = statement.id
+        ? expressionEvaluationOrigin(statement.id, context)
+        : undefined;
+      if (unit.kind === "mcmeta" && resourceIdOrigin) {
+        referenceOrigins.push({ generatedPath: "/@resource-id", ...resourceIdOrigin });
+      }
+      if (unit.kind === "model" && externalTextureVariables.length > 0) {
+        unit.validation = { ...unit.validation, externalTextureVariables };
+      }
+      if (referenceOrigins.length > 0) {
+        unit.validation = {
+          ...unit.validation,
+          referenceOrigins: [...(unit.validation?.referenceOrigins ?? []), ...referenceOrigins]
+        };
+      }
       this.pushUnit(unit);
     }
+  }
+
+  private detachValidationOrigins(unit: ResourceUnit): RsglValidationReferenceOrigin[] {
+    const origins: RsglValidationReferenceOrigin[] = [];
+    const mappings = unit.sourceMap.mappings.flatMap(mapping => {
+      if (!mapping.validationOrigin) {
+        if (mapping.validationOnly) {
+          return [];
+        }
+        return [mapping];
+      }
+      const { validationOrigin, validationOnly, ...publicMapping } = mapping;
+      origins.push({ generatedPath: mapping.generatedPath, ...validationOrigin });
+      return validationOnly ? [] : [publicMapping];
+    });
+    if (origins.length > 0) {
+      unit.sourceMap = { ...unit.sourceMap, mappings };
+    }
+    return origins;
   }
 
   private resourceDeclarationCompilerHost(): ResourceDeclarationCompilerHost {
@@ -200,47 +243,25 @@ export class RsglCompiler {
     };
   }
 
-  private compileExternDecl(statement: ExternDeclNode, context: RsglCompileContext): void {
-    const kind = getExternResourceKind(statement.resourceKind?.text);
-    if (!kind) {
-      this.error("rsgl.invalidExternKind", `Extern resource kind must be ${externResourceKindDescription}.`, statement.resourceKind?.range ?? statement.range);
-      return;
-    }
-    const idArg = statement.args.find(arg => arg.name?.text === "id")
-      ?? statement.args.filter(arg => !arg.name)[0];
-    if (!idArg) {
-      this.error("rsgl.compileMissingArgument", "Missing extern argument 'id'.", statement.range);
-      return;
-    }
-    const idValue = staticText(idArg.value, context);
-    if (!idValue) {
-      this.error("rsgl.compileInvalidResourceId", "Extern id must evaluate to a static resource id.", idArg.value.range);
-      return;
-    }
-    if (!parseResourceId(idValue, context.namespace)) {
-      this.error("rsgl.compileInvalidResourceId", `Invalid extern resource id '${idValue}'.`, idArg.value.range);
-      return;
-    }
-    this.pushUnit(createExternalResource(
-      kind,
-      idValue,
-      context.namespace,
-      context.sourceFile ?? this.options.fileName,
-      statement.range,
-      context.expansionStack ?? [],
-      context.mappingReason ?? "direct"
-    ));
-  }
-
   private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
-      context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
+      bindEvaluationValue(
+        context,
+        statement.name.text,
+        evaluateExpression(statement.value, context),
+        expressionEvaluationOrigin(statement.value, context)
+      );
     }
   }
 
   private compileTableDecl(statement: TableDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
-      context.variables.set(statement.name.text, normalizeJsonValue(evaluateExpression(statement.body, context)));
+      bindEvaluationValue(
+        context,
+        statement.name.text,
+        normalizeJsonValue(evaluateExpression(statement.body, context)),
+        expressionEvaluationOrigin(statement.body, context)
+      );
     }
   }
 
@@ -377,9 +398,11 @@ export class RsglCompiler {
     const bodyWithRawMappings = this.resourceBodyToObjectWithRawMappings(body, context, options);
     return {
       content: bodyWithRawMappings.content,
-      mappings: bodyWithRawMappings.mappings.map(mapping =>
-        this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context)
-      )
+      mappings: bodyWithRawMappings.mappings.map(mapping => ({
+        ...this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context),
+        ...(mapping.validationOrigin ? { validationOrigin: mapping.validationOrigin } : {}),
+        ...(mapping.validationOnly ? { validationOnly: true } : {})
+      }))
     };
   }
 

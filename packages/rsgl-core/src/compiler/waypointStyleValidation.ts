@@ -1,10 +1,15 @@
 import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { asObject, pushUnitDiagnostic } from "./validationShared";
+import {
+  asObject,
+  checkResourceExists,
+  pushUnitDiagnostic,
+  sourceRangeForGeneratedPath,
+  type RsglResourceValidationOptions
+} from "./validationShared";
+import { appendGeneratedPath } from "./sourcePaths";
 
-export interface WaypointStyleValidationOptions {
-  resourceExists?: (kind: "texture", id: string) => boolean;
-}
+export type WaypointStyleValidationOptions = RsglResourceValidationOptions;
 
 const minDistance = 0;
 const maxDistance = 60000000;
@@ -46,12 +51,18 @@ function validateSprites(
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprites", "Waypoint style 'sprites' must contain at least one sprite.");
   }
 
-  for (const sprite of value) {
+  for (const [spriteIndex, sprite] of value.entries()) {
     if (typeof sprite !== "string" || sprite.length === 0) {
       pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprite", "Waypoint style sprites must be non-empty strings.");
       continue;
     }
-    checkTextureExists(minecraftResourceIdInFolder(sprite, namespace, spriteTextureFolder), unit, options, diagnostics);
+    checkTextureExists(
+      minecraftResourceIdInFolder(sprite, namespace, spriteTextureFolder),
+      unit,
+      options,
+      diagnostics,
+      appendGeneratedPath("/sprites", String(spriteIndex))
+    );
   }
 }
 
@@ -94,10 +105,16 @@ function checkTextureExists(
   id: string,
   unit: ResourceUnit,
   options: WaypointStyleValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
-  if (!options.resourceExists || options.resourceExists("texture", id)) {
-    return;
-  }
-  pushUnitDiagnostic(diagnostics, unit, "rsgl.textureNotFound", `Texture not found: ${id}`, "warning");
+  checkResourceExists(
+    "texture",
+    id,
+    unit,
+    undefined,
+    options,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, generatedPath)
+  );
 }

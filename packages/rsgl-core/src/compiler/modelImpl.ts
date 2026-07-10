@@ -6,14 +6,24 @@ import {
   TextRange
 } from "../parser";
 import { isJsonObject } from "./compilerHelpers";
-import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
+import {
+  EvaluationContext,
+  type EvaluationOrigin,
+  EvaluationValue,
+  evaluateExpression,
+  expressionEvaluationOrigin
+} from "./evaluate";
 import { JsonValue, RsglMapping } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 import { normalizeResourceValue } from "./templates";
 
 export interface ModelImplOptions {
   onError: (code: string, message: string, range: TextRange) => void;
-  createMapping: (generatedPath: string, sourceRange: TextRange) => RsglMapping;
+  createMapping: (
+    generatedPath: string,
+    sourceRange: TextRange,
+    validationOrigin?: EvaluationOrigin
+  ) => RsglMapping;
 }
 
 export interface ModelImplBody {
@@ -24,8 +34,9 @@ export interface ModelImplBody {
 interface ModelImplData {
   parent: string;
   parentRange: TextRange;
+  parentOrigin?: EvaluationOrigin;
   implRange: TextRange;
-  textures: Map<string, { value: string; range: TextRange }>;
+  textures: Map<string, { value: string; range: TextRange; origin?: EvaluationOrigin }>;
 }
 
 /**
@@ -80,7 +91,7 @@ function modelImplMappings(
   // mapping must not survive; body texture overrides keep their own mappings.
   const retainedBodyMappings = bodyMappings.filter(mapping => mapping.generatedPath !== "/parent");
   const bodyPaths = new Set(retainedBodyMappings.map(mapping => mapping.generatedPath));
-  const mappings: RsglMapping[] = [options.createMapping("/parent", impl.parentRange)];
+  const mappings: RsglMapping[] = [options.createMapping("/parent", impl.parentRange, impl.parentOrigin)];
   if (impl.textures.size > 0 && !bodyPaths.has("/textures")) {
     mappings.push(options.createMapping("/textures", impl.implRange));
   }
@@ -92,7 +103,11 @@ function modelImplMappings(
     if (Object.hasOwn(bodyTextureSlots, slot)) {
       continue;
     }
-    mappings.push(options.createMapping(appendGeneratedPath("/textures", slot), texture.range));
+    mappings.push(options.createMapping(
+      appendGeneratedPath("/textures", slot),
+      texture.range,
+      texture.origin
+    ));
   }
   return [...mappings, ...retainedBodyMappings];
 }
@@ -113,6 +128,7 @@ function modelImplData(
   return {
     parent: normalizeModelParent(parentValue, subtype, context.namespace),
     parentRange: parentExpression.range,
+    parentOrigin: expressionEvaluationOrigin(parentExpression, context),
     implRange: expression.range,
     textures: modelImplTextures(call, subtype, context, onError)
   };
@@ -135,13 +151,21 @@ function modelImplTextures(
   if (positional.length === 1) {
     const value = modelImplTextureValue(positional[0], subtype, context, onError);
     if (value) {
-      textures.set(subtype === "item" ? "layer0" : "all", { value, range: positional[0].value.range });
+      textures.set(subtype === "item" ? "layer0" : "all", {
+        value,
+        range: positional[0].value.range,
+        origin: expressionEvaluationOrigin(positional[0].value, context)
+      });
     }
   }
   for (const arg of call.args.filter(arg => arg.name)) {
     const value = modelImplTextureValue(arg, subtype, context, onError);
     if (value && arg.name) {
-      textures.set(arg.name.text, { value, range: arg.value.range });
+      textures.set(arg.name.text, {
+        value,
+        range: arg.value.range,
+        origin: expressionEvaluationOrigin(arg.value, context)
+      });
     }
   }
   return textures;

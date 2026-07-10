@@ -8,6 +8,7 @@ import {
 export interface RsglCompletionContext {
   insideBlock: boolean;
   allowBase: boolean;
+  allowExternVar: boolean;
 }
 
 /** Computes the small amount of syntax context needed by static completions. */
@@ -16,13 +17,16 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
   const openBraces = unmatchedOpenBraces(prefix);
   const openBrace = openBraces.at(-1);
   if (openBrace === undefined) {
-    return { insideBlock: false, allowBase: false };
+    return { insideBlock: false, allowBase: false, allowExternVar: false };
   }
+
+  const resourceKind = concreteResourceKindAt(prefix, openBrace);
 
   return {
     insideBlock: true,
     allowBase: isBaseOperandPosition(prefix.slice(openBrace + 1))
-      && hasConcreteResourceBodyAt(prefix, openBrace)
+      && resourceKind !== null,
+    allowExternVar: resourceKind === "model"
   };
 }
 
@@ -44,26 +48,27 @@ function isBaseOperandPosition(bodyPrefix: string): boolean {
     && "base".startsWith(token.text);
 }
 
-function hasConcreteResourceBodyAt(prefix: string, openBrace: number): boolean {
+function concreteResourceKindAt(prefix: string, openBrace: number): string | null {
   const module = parseRsgl(prefix);
-  return statementsContainResourceBodyAt(module.statements, openBrace);
+  return resourceKindInStatementsAt(module.statements, openBrace);
 }
 
-function statementsContainResourceBodyAt(
+function resourceKindInStatementsAt(
   statements: readonly TopLevelStatementNode[],
   openBrace: number
-): boolean {
+): string | null {
   for (const statement of statements) {
     if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
-      return true;
+      return statement.resourceKind;
     }
     for (const block of childTopLevelBlocks(statement)) {
-      if (statementsContainResourceBodyAt(block.statements, openBrace)) {
-        return true;
+      const resourceKind = resourceKindInStatementsAt(block.statements, openBrace);
+      if (resourceKind !== null) {
+        return resourceKind;
       }
     }
   }
-  return false;
+  return null;
 }
 
 function childTopLevelBlocks(statement: TopLevelStatementNode): BlockNode[] {

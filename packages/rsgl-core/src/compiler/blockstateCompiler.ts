@@ -1,4 +1,5 @@
 import {
+  ExprNode,
   MultipartBodyNode,
   MultipartSectionStatementNode,
   ResourceBodyNode,
@@ -21,7 +22,12 @@ import {
   normalizeJsonValue,
   staticText
 } from "./compilerHelpers";
-import { evaluateExpression } from "./evaluate";
+import {
+  bindEvaluationValue,
+  evaluateExpression,
+  expressionEvaluationOrigin,
+  expressionEvaluationPathOrigins
+} from "./evaluate";
 import { JsonValue, ResourceUnit, RsglMapping } from "./ir";
 import { isJsonObject } from "./jsonValues";
 import { forEachLoopContext } from "./looping";
@@ -175,12 +181,18 @@ class BlockstateCompiler {
     } else if (statement.kind === "MergeStmt") {
       const value = normalizeJsonValue(evaluateExpression(statement.value, context));
       if (isJsonObject(value)) {
+        const validationMappings = expressionEvaluationPathOrigins(statement.value, context, "").map(origin => ({
+          ...this.sourceMapping(origin.generatedPath, statement.value.range, context),
+          validationOrigin: origin,
+          validationOnly: true
+        }));
         this.contentMerger.apply(
           result,
           value,
           statement.mode,
           statement.range,
-          context
+          context,
+          validationMappings
         );
       } else {
         this.error("rsgl.invalidMergeFragment", "merge must evaluate to an object fragment.", statement.value.range);
@@ -217,7 +229,12 @@ class BlockstateCompiler {
     if (statement.kind === "VariantEntry") {
       const state = blockstateVariantKey(normalizeJsonValue(evaluateExpression(statement.state, context)));
       result.entries[state] = normalizeJsonValue(evaluateExpression(statement.value, context));
-      result.mappings.push(this.sourceMapping(blockstateVariantPath(state), statement.range, context));
+      result.mappings.push(...this.sourceMappingsForExpression(
+        blockstateVariantPath(state),
+        statement.range,
+        statement.value,
+        context
+      ));
     } else if (statement.kind === "LetDecl") {
       this.compileLet(statement, context);
     } else if (statement.kind === "UseDecl") {
@@ -284,7 +301,12 @@ class BlockstateCompiler {
       }
       const index = startIndex + result.entries.length;
       result.entries.push(value);
-      result.mappings.push(this.sourceMapping(blockstateMultipartPath(index), statement.range, context));
+      result.mappings.push(...this.sourceMappingsForExpression(
+        blockstateMultipartPath(index),
+        statement.range,
+        statement.apply,
+        context
+      ));
     } else if (statement.kind === "LetDecl") {
       this.compileLet(statement, context);
     } else if (statement.kind === "UseDecl") {
@@ -389,12 +411,33 @@ class BlockstateCompiler {
     context: RsglCompileContext
   ): void {
     if (statement.name) {
-      context.variables.set(statement.name.text, evaluateExpression(statement.value, context));
+      bindEvaluationValue(
+        context,
+        statement.name.text,
+        evaluateExpression(statement.value, context),
+        expressionEvaluationOrigin(statement.value, context)
+      );
     }
   }
 
   private sourceMapping(generatedPath: string, sourceRange: SourceRange, context: RsglCompileContext): RsglMapping {
     return this.options.sourceMapping(generatedPath, sourceRange, context);
+  }
+
+  private sourceMappingsForExpression(
+    generatedPath: string,
+    fallbackRange: SourceRange,
+    expression: ExprNode,
+    context: RsglCompileContext
+  ): RsglMapping[] {
+    return [
+      this.sourceMapping(generatedPath, fallbackRange, context),
+      ...expressionEvaluationPathOrigins(expression, context, generatedPath).map(origin => ({
+        ...this.sourceMapping(origin.generatedPath, fallbackRange, context),
+        validationOrigin: origin,
+        validationOnly: true
+      }))
+    ];
   }
 
   private error(code: string, message: string, range: SourceRange): void {

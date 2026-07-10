@@ -2,6 +2,7 @@ import {
   isResourceKeyword,
   isTopLevelKeyword
 } from "./keywords";
+import { parseExternResourcePattern } from "../externDeclarations";
 import { lexRsgl } from "./lexer";
 import { tokenRange } from "./parserContext";
 import {
@@ -12,6 +13,8 @@ import { StatementParser } from "./statementParser";
 import {
   BlockNode,
   ExternDeclNode,
+  ExternPatternNode,
+  ExternResourceSource,
   ExportSpecifierNode,
   ExprNode,
   IdentifierNode,
@@ -21,6 +24,7 @@ import {
   ResourceDeclNode,
   ResourceKind,
   RsglModule,
+  RsglToken,
   StringLiteralNode,
   TopLevelStatementNode
 } from "./types";
@@ -273,33 +277,128 @@ class RsglParser extends StatementParser {
 
   private parseExternDecl(): ExternDeclNode {
     const start = this.advance();
-    const resourceKind = this.parseIdentifier("Expected extern resource kind.");
-    let args: ExternDeclNode["args"] = [];
-    if (resourceKind && this.current().text === "(") {
-      const call = this.finishCallExpression({
-        kind: "IdentifierExpr",
-        name: resourceKind,
-        range: resourceKind.range,
-        fullRange: resourceKind.fullRange
-      });
-      if (call.kind === "CallExpr") {
-        args = call.args;
-      }
+    const skipExistenceCheck = this.parseExternBang(start);
+    if (this.current().text === "var") {
+      this.addDiagnostic(
+        "rsgl.externVarInvalidContext",
+        "'extern var' is only valid directly inside a model resource body.",
+        tokenRange(this.current())
+      );
     }
-
-    if (!resourceKind || args.length === 0) {
-      if (this.current().text !== "(") {
-        this.addDiagnosticAtCurrent("rsgl.expectedExternArguments", "Expected extern argument list.");
-      }
-    }
+    const source = this.parseExternSource();
+    const resourceKind = this.parseExternResourceKind();
+    const patterns = this.parseExternPatterns();
 
     return {
       kind: "ExternDecl",
       keyword: start.text,
+      source,
       resourceKind,
-      args,
+      patterns,
+      skipExistenceCheck,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseExternBang(externToken: RsglToken): boolean {
+    if (this.current().text !== "!") {
+      return false;
+    }
+
+    const bang = this.advance();
+    if (bang.offset !== externToken.offset + externToken.length) {
+      this.addDiagnostic(
+        "rsgl.externBangMustBeAdjacent",
+        "The '!' modifier must immediately follow 'extern' without whitespace or comments.",
+        tokenRange(bang)
+      );
+    }
+    return true;
+  }
+
+  private parseExternSource(): ExternResourceSource | null {
+    const token = this.current();
+    if (this.isAtEnd() || token.text === "}" || this.isStatementBoundary(token)) {
+      this.addDiagnosticAtCurrent(
+        "rsgl.invalidExternSource",
+        "Expected extern source 'custom' or 'vanilla'."
+      );
+      return null;
+    }
+    if (token.text === "custom" || token.text === "vanilla") {
+      this.advance();
+      return token.text;
+    }
+
+    this.addDiagnosticAtCurrent(
+      "rsgl.invalidExternSource",
+      "Expected extern source 'custom' or 'vanilla'."
+    );
+    if (token.kind === "identifier" || token.kind === "keyword") {
+      this.advance();
+    }
+    return null;
+  }
+
+  private parseExternResourceKind(): IdentifierNode | null {
+    const token = this.current();
+    if (this.isAtEnd() || token.text === "}" || this.isStatementBoundary(token)) {
+      this.addDiagnosticAtCurrent("rsgl.expectedIdentifier", "Expected extern resource kind.");
+      return null;
+    }
+    return this.parseIdentifier("Expected extern resource kind.");
+  }
+
+  private parseExternPatterns(): ExternPatternNode[] {
+    const patterns: ExternPatternNode[] = [];
+    while (!this.isAtEnd() && this.current().text !== "}" && !this.isStatementBoundary(this.current())) {
+      const pattern = this.parseExternPattern();
+      if (pattern) {
+        patterns.push(pattern);
+      }
+      if (!this.matchText(",")) {
+        break;
+      }
+    }
+
+    if (patterns.length === 0) {
+      this.addDiagnosticAtCurrent("rsgl.expectedExternPattern", "Expected at least one extern resource pattern.");
+    } else if (this.previousOr(this.current()).text === ",") {
+      this.addDiagnosticAtCurrent("rsgl.expectedExternPattern", "Expected an extern resource pattern after ','.");
+    }
+    return patterns;
+  }
+
+  private parseExternPattern(): ExternPatternNode | null {
+    const start = this.current();
+    if (start.text === "," || start.text === "}" || this.isAtEnd() || this.isStatementBoundary(start)) {
+      return null;
+    }
+
+    const tokens: RsglToken[] = [];
+    while (
+      !this.isAtEnd()
+      && this.current().text !== ","
+      && this.current().text !== "}"
+      && !this.isStatementBoundary(this.current())
+    ) {
+      tokens.push(this.advance());
+    }
+
+    const end = tokens[tokens.length - 1] ?? start;
+    const pattern: ExternPatternNode = {
+      kind: "ExternPattern",
+      text: tokens.map(token => token.text).join(""),
+      ...this.nodeRanges(start, end)
+    };
+    const containsGap = tokens.slice(1).some(token => token.leadingTrivia.length > 0);
+    const parsed = containsGap
+      ? { error: "Extern resource patterns must be contiguous text without whitespace or comments." }
+      : parseExternResourcePattern(pattern.text);
+    if (parsed.error) {
+      this.addDiagnostic("rsgl.invalidExternPattern", parsed.error, pattern.range);
+    }
+    return pattern;
   }
 
   private parseExportSpecifiers(): ExportSpecifierNode[] {
@@ -377,6 +476,12 @@ class RsglParser extends StatementParser {
       return false;
     }
     if (first === "variants" || first === "multipart") {
+      return true;
+    }
+    if (
+      first === "extern"
+      && (this.peekText(2) === "var" || (this.peekText(2) === "!" && this.peekText(3) === "var"))
+    ) {
       return true;
     }
     if (this.isResourceStatementStart(first)) {

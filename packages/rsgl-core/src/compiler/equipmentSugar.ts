@@ -1,5 +1,5 @@
 import { EquipmentLayerStmtNode, TextRange } from "../parser";
-import { EvaluationContext, evaluateExpression } from "./evaluate";
+import { EvaluationContext, evaluateExpression, expressionEvaluationOrigin } from "./evaluate";
 import { JsonValue } from "./ir";
 import { isJsonObject } from "./jsonValues";
 import { ResourceBodyFragment } from "./resourceBody";
@@ -193,7 +193,8 @@ function equipmentLayerMappings(
     mappings.push({
       generatedPath: appendGeneratedPath(entryPath, "texture"),
       sourceRange: statement.texture.range,
-      context
+      context,
+      validationOrigin: expressionEvaluationOrigin(statement.texture, context)
     });
   }
   if (entry.dyeable !== undefined) {

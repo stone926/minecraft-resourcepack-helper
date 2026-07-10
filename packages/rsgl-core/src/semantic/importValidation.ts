@@ -74,8 +74,6 @@ class ResolvedImportCallValidator {
       this.validateExpression(statement.name);
     } else if (statement.kind === "TargetDecl") {
       this.validateExpression(statement.value);
-    } else if (statement.kind === "ExternDecl") {
-      statement.args.forEach(arg => this.validateExpression(arg.value));
     } else if (statement.kind === "TemplateDecl") {
       statement.parameters.forEach(parameter => {
         if (parameter.defaultValue) {

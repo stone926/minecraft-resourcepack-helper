@@ -2,7 +2,13 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRsglWritePlan, emitRsglFiles, parseResourceId, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../src/compiler";
-import { compileSource, emittedContent, expectDiagnosticCodes, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSource,
+  compileSourceWithUncheckedExterns,
+  emittedContent,
+  expectDiagnosticCodes,
+  expectNoDiagnostics
+} from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL compiler emit and write pipeline", () => {
@@ -21,7 +27,7 @@ describe("RSGL compiler emit and write pipeline", () => {
   });
 
   it("emits explicit model, item, and blockstate resources", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "namespace minecraft",
       "model block stone {",
       "  parent minecraft:block/cube_all",
@@ -38,7 +44,7 @@ describe("RSGL compiler emit and write pipeline", () => {
     ], { fileName: "pack/rsgl/main.rsgl" });
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/blockstates/stone.json",
       "assets/minecraft/items/diamond.json",
       "assets/minecraft/models/block/stone.json"
@@ -66,7 +72,7 @@ describe("RSGL compiler emit and write pipeline", () => {
   });
 
   it("emits numeric and quoted model texture keys", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block numbered_textures {",
       "  parent minecraft:block/cube_all",
       "  textures {",
@@ -89,7 +95,7 @@ describe("RSGL compiler emit and write pipeline", () => {
   });
 
   it("emits deterministic files with source maps and manifest", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "namespace minecraft",
       "model block stone {",
       "  parent minecraft:block/cube_all",
@@ -98,7 +104,7 @@ describe("RSGL compiler emit and write pipeline", () => {
     ], { fileName: path.resolve("pack", "main.rsgl") });
 
     expectNoDiagnostics(result);
-    const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
+    const files = emitRsglFiles(result.units.filter(unit => !unit.external), { sourceMaps: true, manifest: true });
     assert.deepStrictEqual(files.map(file => file.outputPath), [
       "assets/minecraft/models/block/stone.json",
       "assets/minecraft/models/block/stone.json.rsgl.map",
@@ -287,104 +293,104 @@ describe("RSGL compiler emit and write pipeline", () => {
     }
   });
 
-  it("references external resources without emitting files", () => {
+  it("materializes only used extern resources and records concrete manifest dependencies", () => {
     const result = compileSource([
-      "extern model(id: minecraft:block/stone)",
-      "extern blockstate(id: minecraft:stone)",
-      "extern item(id: minecraft:stone)"
+      "extern custom model minecraft:block/stone, minecraft:block/unused",
+      "blockstate stone {",
+      "  variants { {} -> { model: minecraft:block/stone } }",
+      "}"
     ], {
-      resourceExists: () => true
+      externResourceExists: (source, kind, id) =>
+        source === "custom" && kind === "model" && id === "minecraft:block/stone"
     });
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => ({
-      kind: unit.kind,
-      outputPath: unit.outputPath,
-      external: unit.external
-    })), [
-      {
-        kind: "model",
-        outputPath: "assets/minecraft/models/block/stone.json",
-        external: { kind: "external", resourceKind: "model", id: "minecraft:block/stone" }
-      },
-      {
-        kind: "blockstate",
-        outputPath: "assets/minecraft/blockstates/stone.json",
-        external: { kind: "external", resourceKind: "blockstate", id: "minecraft:stone" }
-      },
-      {
-        kind: "item",
-        outputPath: "assets/minecraft/items/stone.json",
-        external: { kind: "external", resourceKind: "item", id: "minecraft:stone" }
-      }
-    ]);
+    assert.strictEqual(result.units.length, 2);
+    const external = result.units.find(unit => unit.external);
+    assert.ok(external);
+    assert.strictEqual(external.outputPath, "assets/minecraft/models/block/stone.json");
+    assert.deepStrictEqual(external.external, {
+      kind: "external",
+      resourceKind: "model",
+      id: "minecraft:block/stone",
+      source: "custom",
+      skipExistenceCheck: false
+    });
+    assert.strictEqual(
+      result.units.some(unit => unit.outputPath.endsWith("models/block/unused.json")),
+      false
+    );
 
     const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
-    assert.deepStrictEqual(files.map(file => file.outputPath), ["rsgl.manifest.json"]);
-    const manifest = JSON.parse(emittedContent(files[0])) as {
+    assert.deepStrictEqual(files.map(file => file.outputPath), [
+      "assets/minecraft/blockstates/stone.json",
+      "assets/minecraft/blockstates/stone.json.rsgl.map",
+      "rsgl.manifest.json"
+    ]);
+    const manifest = JSON.parse(emittedContent(files[2])) as {
       files?: unknown[];
-      externalResources?: Array<{ outputPath?: string; kind?: string; id?: string; source?: { kind?: string; id?: string } }>;
+      externalResources?: Array<{
+        outputPath?: string;
+        kind?: string;
+        id?: string;
+        source?: { origin?: string; kind?: string; id?: string; checkExistence?: boolean };
+      }>;
     };
-    assert.deepStrictEqual(manifest.files, []);
+    assert.deepStrictEqual(manifest.files, [{
+      outputPath: "assets/minecraft/blockstates/stone.json",
+      kind: "blockstate",
+      id: "minecraft:stone",
+      sourceMap: "assets/minecraft/blockstates/stone.json.rsgl.map"
+    }]);
     assert.deepStrictEqual(manifest.externalResources, [
-      {
-        outputPath: "assets/minecraft/blockstates/stone.json",
-        kind: "blockstate",
-        id: "minecraft:stone",
-        source: { kind: "blockstate", id: "minecraft:stone" }
-      },
-      {
-        outputPath: "assets/minecraft/items/stone.json",
-        kind: "item",
-        id: "minecraft:stone",
-        source: { kind: "item", id: "minecraft:stone" }
-      },
       {
         outputPath: "assets/minecraft/models/block/stone.json",
         kind: "model",
         id: "minecraft:block/stone",
-        source: { kind: "model", id: "minecraft:block/stone" }
+        source: {
+          origin: "custom",
+          kind: "model",
+          id: "minecraft:block/stone",
+          checkExistence: true
+        }
       }
     ]);
   });
 
-  it("validates missing external resource references", () => {
+  it("reports kind-specific warnings for declared resources that do not exist", () => {
     const result = compileSource([
-      "extern model(id: minecraft:block/missing_model)",
-      "extern blockstate(id: minecraft:missing_block)",
-      "extern item(id: minecraft:missing_item)",
-      "extern texture(id: minecraft:block/missing_texture)"
+      "extern custom model minecraft:block/missing_model",
+      "extern vanilla texture minecraft:block/missing_texture",
+      "blockstate missing_block {",
+      "  variants { {} -> { model: minecraft:block/missing_model } }",
+      "}",
+      "model block missing_texture_user {",
+      "  textures { all: minecraft:block/missing_texture }",
+      "}"
     ], {
-      resourceExists: () => false
+      externResourceExists: () => false
     });
 
     expectDiagnosticCodes(result, [
       "rsgl.modelNotFound",
-      "rsgl.blockstateNotFound",
-      "rsgl.itemNotFound",
       "rsgl.textureNotFound"
     ]);
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.severity), ["warning", "warning", "warning", "warning"]);
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.severity), ["warning", "warning"]);
+    assert.deepStrictEqual(
+      result.units.filter(unit => unit.external).map(unit => unit.external?.resourceKind),
+      ["model", "texture"]
+    );
   });
 
-  it("lets generated resources override external references", () => {
+  it("resolves typed references to generated resources without extern declarations", () => {
     const result = compileSource([
-      "extern model(id: minecraft:block/stone)",
-      "model block stone {",
-      "  parent minecraft:block/cube_all",
-      "  textures { all: minecraft:block/custom_stone }",
-      "}"
+      "model item stone {}",
+      "item stone { model minecraft:item/stone }"
     ]);
 
     expectNoDiagnostics(result);
-    assert.strictEqual(result.units.length, 1);
-    assert.strictEqual(result.units[0].external, undefined);
-    assert.deepStrictEqual(result.units[0].content, {
-      parent: "minecraft:block/cube_all",
-      textures: {
-        all: "minecraft:block/custom_stone"
-      }
-    });
+    assert.strictEqual(result.units.length, 2);
+    assert.ok(result.units.every(unit => unit.external === undefined));
   });
 
   it("plans and writes emitted files to a pack directory", () => {

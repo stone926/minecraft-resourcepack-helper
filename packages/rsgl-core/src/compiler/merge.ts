@@ -1,5 +1,6 @@
 import { isExternalResourceUnit, JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { isJsonObject } from "./jsonValues";
+import { uniqueValues } from "../../../mc-assets/src";
 
 export interface MergeResourceUnitsResult {
   units: ResourceUnit[];
@@ -105,9 +106,11 @@ function mergeObjectUnits(
     }
   }
 
+  const validation = mergeUnitValidation(units);
   return {
     ...units[0],
     content,
+    ...(validation ? { validation } : {}),
     sourceMap: {
       generatedFile: units[0].outputPath,
       mappings: units.flatMap(unit => unit.sourceMap.mappings)
@@ -141,12 +144,28 @@ function mergeArrayUnits(units: ResourceUnit[]): ResourceUnit | null {
     return null;
   }
 
+  const validation = mergeUnitValidation(units);
   return {
     ...units[0],
     content: units.flatMap(unit => unit.content as JsonValue[]),
+    ...(validation ? { validation } : {}),
     sourceMap: {
       generatedFile: units[0].outputPath,
       mappings: units.flatMap(unit => unit.sourceMap.mappings)
     }
+  };
+}
+
+function mergeUnitValidation(units: readonly ResourceUnit[]): ResourceUnit["validation"] | undefined {
+  const externalTextureVariables = uniqueValues(units.flatMap(unit =>
+    unit.validation?.externalTextureVariables ?? []
+  ));
+  const referenceOrigins = units.flatMap(unit => unit.validation?.referenceOrigins ?? []);
+  if (externalTextureVariables.length === 0 && referenceOrigins.length === 0) {
+    return undefined;
+  }
+  return {
+    ...(externalTextureVariables.length > 0 ? { externalTextureVariables } : {}),
+    ...(referenceOrigins.length > 0 ? { referenceOrigins } : {})
   };
 }

@@ -126,6 +126,7 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
 
 export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "parent", insertText: "parent ${1:minecraft:block/cube_all}", detail: "Model parent", kind: "property" },
+  { label: "extern var", insertText: "extern var #${1:front}, #${2:back}", detail: "Declare texture variables supplied by child models", kind: "snippet" },
   { label: "texture", insertText: "texture ${1:all} ${2:minecraft:block/stone}", detail: "Model texture variable", kind: "snippet" },
   { label: "textures", insertText: "textures {\n  ${1:all}: ${2:minecraft:block/stone}\n}", detail: "Model texture map", kind: "snippet" },
   { label: "box", insertText: "box \"${1:element}\" from [${2:0, 0, 0}] to [${3:16, 16, 16}] {\n  all texture \"#${4:all}\"\n}", detail: "Model element box", kind: "snippet" },
@@ -184,8 +185,9 @@ export function getRsglCompletionCandidates(text: string, offset: number): RsglC
   if (!context.insideBlock) {
     return [...topLevelRsglCompletions, ...builtinRsglCompletions];
   }
-  const blockCandidates = context.allowBase
-    ? blockRsglCompletions
-    : blockRsglCompletions.filter(candidate => candidate.label !== "base");
+  const blockCandidates = blockRsglCompletions.filter(candidate =>
+    (candidate.label !== "base" || context.allowBase)
+    && (candidate.label !== "extern var" || context.allowExternVar)
+  );
   return [...blockCandidates, ...builtinRsglCompletions];
 }

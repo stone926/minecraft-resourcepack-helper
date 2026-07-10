@@ -1,10 +1,14 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  generatedResourceUnits
+} from "./helpers/compile";
 
 describe("RSGL expression evaluation and loops", () => {
   it("evaluates compile-time string helper functions", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block string_helpers {",
       "  merge {",
       "    starts: startsWith(\"oak_planks\", \"oak\")",
@@ -17,7 +21,7 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       starts: true,
       ends: true,
       replaced: "birch_planks",
@@ -27,7 +31,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("expands finite for loops over lists", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "for block in [minecraft:stone, minecraft:dirt] {",
       "  model block block impl minecraft:block/cube_all(all: `minecraft:block/${resource_path(block)}`) {",
       "  }",
@@ -35,14 +39,14 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/models/block/dirt.json",
       "assets/minecraft/models/block/stone.json"
     ]);
   });
 
   it("expands product loops and template string interpolation", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "for state in product({ facing: [north, east], powered: [false, true] }) {",
       "  blockstate `lamp_${state.facing}_${state.powered}` {",
       "    variants {",
@@ -53,14 +57,14 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/blockstates/lamp_east_false.json",
       "assets/minecraft/blockstates/lamp_east_true.json",
       "assets/minecraft/blockstates/lamp_north_false.json",
       "assets/minecraft/blockstates/lamp_north_true.json"
     ]);
     const emptyVariantKey = "";
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("lamp_east_true.json"))?.content, {
+    assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("lamp_east_true.json"))?.content, {
       variants: {
         [emptyVariantKey]: {
           model: "minecraft:block/lamp_east"
@@ -70,7 +74,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("expands multidimensional for loops in stable cartesian order", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "for base in [stone, dirt], variant in [smooth, cut] {",
       "  model block `${base}_${variant}` impl cube_all(all: `minecraft:block/${base}_${variant}`) {",
       "  }",
@@ -78,7 +82,7 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(generatedResourceUnits(result).map(unit => unit.outputPath), [
       "assets/minecraft/models/block/stone_smooth.json",
       "assets/minecraft/models/block/stone_cut.json",
       "assets/minecraft/models/block/dirt_smooth.json",
@@ -87,7 +91,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("reports duplicate bindings in multidimensional for loops", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "for item in [stone], item in [dirt] {",
       "  model block item impl cube_all(all: minecraft:block/stone) {}",
       "}"
@@ -97,7 +101,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("evaluates match expressions, builtin constants, comparisons, and path helpers", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block paths {",
       "  parent minecraft:block/cube_all",
       "  merge {",
@@ -125,7 +129,7 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("models/block/paths.json"))?.content, {
+    assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("models/block/paths.json"))?.content, {
       parent: "minecraft:block/cube_all",
       metadata: {
         ["model_path"]: "assets/minecraft/models/block/stone.json",
@@ -133,7 +137,7 @@ describe("RSGL expression evaluation and loops", () => {
         compare: true
       }
     });
-    assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("blockstates/orient.json"))?.content, {
+    assert.deepStrictEqual(generatedResourceUnits(result).find(unit => unit.outputPath.endsWith("blockstates/orient.json"))?.content, {
       variants: {
         ["facing=east"]: {
           model: "minecraft:block/turn",
@@ -160,7 +164,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("expands for and if statements inside resource bodies", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block layered {",
       "  parent minecraft:block/cube_all",
       "  if true {",
@@ -177,7 +181,7 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       parent: "minecraft:block/cube_all",
       ambientocclusion: false,
       textures: {
@@ -188,7 +192,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("records source map entries for resource body merges and loops", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block mapped {",
       "  merge { \"base/key\": true }",
       "  textures {",
@@ -200,7 +204,7 @@ describe("RSGL expression evaluation and loops", () => {
     ], { fileName: path.resolve("pack", "main.rsgl") });
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
       "",
       "/base~1key",
       "/textures",
@@ -208,7 +212,7 @@ describe("RSGL expression evaluation and loops", () => {
       "/textures/layer1"
     ]);
 
-    const loopMappings = result.units[0].sourceMap.mappings.filter(mapping => mapping.reason === "loop");
+    const loopMappings = generatedResourceUnits(result)[0].sourceMap.mappings.filter(mapping => mapping.reason === "loop");
     assert.deepStrictEqual(loopMappings.map(mapping => mapping.generatedPath), [
       "/textures/layer~1zero",
       "/textures/layer1"
@@ -217,7 +221,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("expands literal range loops without non-finite loop diagnostics", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block age_layers {",
       "  textures {",
       "    for age in 0..2 {",
@@ -228,7 +232,7 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
 
     assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.compileNonFiniteLoop"), false);
-    assert.deepStrictEqual(result.units[0].content, {
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
       textures: {
         layer0: "minecraft:block/age_0",
         layer1: "minecraft:block/age_1",
@@ -238,7 +242,7 @@ describe("RSGL expression evaluation and loops", () => {
   });
 
   it("reports non-finite loops inside resource bodies", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "model block bad {",
       "  for item in 1 {",
       "    parent minecraft:block/cube_all",

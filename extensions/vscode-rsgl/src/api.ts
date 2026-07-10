@@ -4,7 +4,9 @@ import {
   compileRsglDirectory,
   compileRsglFile,
   emitRsglFiles,
+  loadRsglProjectConfigForSource,
   type CompileDependency,
+  type RsglGlobalExternConfigEntry,
   type RsglCompileDiagnostic,
   type RsglEmittedFile
 } from "../../../packages/rsgl-core/src";
@@ -18,6 +20,8 @@ import {
   isPathWithinRoot,
   normalizeDependencyPath
 } from "./dependencyWatch";
+import { RsglProjectConfigWatchRegistry } from "./projectConfigWatch";
+import { mergeRsglValidationConfiguration } from "./validationConfiguration";
 
 export interface RsglApi {
   version: string;
@@ -32,11 +36,15 @@ export interface RsglApiCompileOptions {
   manifest?: boolean;
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
+  globalExterns?: RsglGlobalExternConfigEntry[];
+  checkExternExistence?: boolean;
 }
 
 export interface RsglApiCheckOptions {
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
+  globalExterns?: RsglGlobalExternConfigEntry[];
+  checkExternExistence?: boolean;
 }
 
 export interface RsglApiWatchOptions extends RsglApiCompileOptions {
@@ -70,37 +78,47 @@ export function createRsglApi(context: vscode.ExtensionContext): RsglApi {
 function compileFile(uri: vscode.Uri, options: RsglApiCompileOptions = {}): RsglApiCompileResult {
   const sourceFileName = uri.fsPath;
   const result = compileRsglFile(sourceFileName, {
-    ...createRsglWorkspaceValidationOptions({
-      sourceFileName,
-      defaultAssetsPath: options.defaultAssetsPath,
-      resourcePackRoots: options.resourcePackRoots
-    })
+    ...apiValidationOptions(sourceFileName, options)
   });
   return toCompileResult(result, options);
 }
 
 function compileWorkspace(workspace: vscode.Uri, options: RsglApiCompileOptions = {}): RsglApiCompileResult {
   const result = compileRsglDirectory(workspace.fsPath, {
-    ...createRsglWorkspaceValidationOptions({
-      sourceFileName: workspace.fsPath,
-      defaultAssetsPath: options.defaultAssetsPath,
-      resourcePackRoots: options.resourcePackRoots
-    })
+    ...apiValidationOptions(workspace.fsPath, options)
   });
   return toCompileResult(result, options);
 }
 
 function checkWorkspace(workspace: vscode.Uri, options: RsglApiCheckOptions = {}): RsglApiCheckResult {
   const result = compileRsglDirectory(workspace.fsPath, {
-    ...createRsglWorkspaceValidationOptions({
-      sourceFileName: workspace.fsPath,
-      defaultAssetsPath: options.defaultAssetsPath,
-      resourcePackRoots: options.resourcePackRoots
-    })
+    ...apiValidationOptions(workspace.fsPath, options)
   });
   return {
     success: !result.diagnostics.some(diagnostic => diagnostic.severity === "error"),
     diagnostics: result.diagnostics
+  };
+}
+
+function apiValidationOptions(
+  sourceFileName: string,
+  options: RsglApiCheckOptions
+) {
+  const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
+  const validationConfiguration = mergeRsglValidationConfiguration(options, {
+    defaultAssetsPath: projectConfig?.defaultAssetsPath,
+    resourcePackRoots: projectConfig?.resourcePackRoots,
+    globalExterns: projectConfig?.extern,
+    checkExternExistence: projectConfig?.checkExternExistence
+  });
+  return {
+    ...createRsglWorkspaceValidationOptions({
+      sourceFileName,
+      defaultAssetsPath: validationConfiguration.defaultAssetsPath,
+      resourcePackRoots: validationConfiguration.resourcePackRoots
+    }),
+    globalExterns: validationConfiguration.globalExterns,
+    checkExternExistence: validationConfiguration.checkExternExistence
   };
 }
 
@@ -161,7 +179,9 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
           sourceMaps: options.sourceMaps,
           manifest: options.manifest,
           defaultAssetsPath: options.defaultAssetsPath,
-          resourcePackRoots: options.resourcePackRoots
+          resourcePackRoots: options.resourcePackRoots,
+          globalExterns: options.globalExterns,
+          checkExternExistence: options.checkExternExistence
         }
       }, cancellation.token).then(outcome => {
         if (
@@ -199,6 +219,22 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
       });
     }, 75);
   };
+
+  const projectConfigWatchers = new RsglProjectConfigWatchRegistry(
+    workspace.fsPath,
+    "directory",
+    (fileName, onDidChange) => {
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(
+        vscode.Uri.file(path.dirname(fileName)),
+        path.basename(fileName)
+      ));
+      watcher.onDidCreate(onDidChange);
+      watcher.onDidChange(onDidChange);
+      watcher.onDidDelete(onDidChange);
+      return watcher;
+    },
+    scheduleCompile
+  );
 
   const scheduleDependencyCompile = (uri: vscode.Uri) => {
     const dependencyPath = normalizeDependencyPath(uri.fsPath);
@@ -243,6 +279,7 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
     activeCancellation = null;
     rsglWatcher.dispose();
     jsonWatcher.dispose();
+    projectConfigWatchers.dispose();
     externalDependencyWatchers.dispose();
   });
 }

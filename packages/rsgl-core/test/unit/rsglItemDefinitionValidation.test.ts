@@ -6,6 +6,7 @@ import { minimalItemUnit } from "./helpers/fixtures";
 describe("RSGL item definition validation", () => {
   it("validates item model condition trees", () => {
     const result = compileSource([
+      "extern custom model minecraft:**",
       "item broken_compass {",
       "  merge {",
       "    model: {",
@@ -89,6 +90,7 @@ describe("RSGL item definition validation", () => {
   it("validates item composite and terminal model types", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom model minecraft:**",
       "item composite_with_missing_child {",
       "  merge {",
       "    model: {",
@@ -159,6 +161,8 @@ describe("RSGL item definition validation", () => {
   it("validates item special model resources and shape", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom model minecraft:**",
+      "extern custom texture minecraft:**",
       "item broken_special {",
       "  merge {",
       "    model: {",

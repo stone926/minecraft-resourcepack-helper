@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL item model fragments", () => {
   it("lowers stdlib range frames with lambda model mapping", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "import { rangeFrames } from \"rsgl:conventions/item_definitions.rsgl\"",
       "use rangeFrames(",
       "  id: compass,",
@@ -15,7 +15,7 @@ describe("RSGL item model fragments", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath), [
+    assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath), [
       "assets/minecraft/items/compass.json"
     ]);
     assert.deepStrictEqual(result.units[0].content, {
@@ -36,7 +36,7 @@ describe("RSGL item model fragments", () => {
   });
 
   it("lowers item range and select statements", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "item compass {",
       "  range property minecraft:compass target spawn wobble true {",
       "    frames 0..2 model `minecraft:item/compass_${pad(index, 2)}`",
@@ -88,7 +88,7 @@ describe("RSGL item model fragments", () => {
   });
 
   it("lowers item statements inside user templates", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template compassModel(frames: Json = 0..1) {",
       "  range property minecraft:compass target spawn {",
       "    frames frames model `minecraft:item/compass_${pad(index, 2)}`",
@@ -119,7 +119,7 @@ describe("RSGL item model fragments", () => {
   });
 
   it("lowers item condition and composite statements", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "item bow {",
       "  condition property minecraft:using_item {",
       "    on_true minecraft:item/bow_pulling_0",
@@ -132,9 +132,7 @@ describe("RSGL item model fragments", () => {
       "    model { model: minecraft:item/overlay, weight: 2 }",
       "  }",
       "}"
-    ], {
-      resourceExists: () => true
-    });
+    ]);
 
     expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("bow.json"))?.content, {
@@ -158,7 +156,9 @@ describe("RSGL item model fragments", () => {
 
   it("lowers item special, empty, and selected item statements", () => {
     const checkedResources: string[] = [];
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
+      "extern custom model minecraft:item/shield, minecraft:item/chest",
+      "extern custom texture minecraft:entity/chest/christmas",
       "item shield {",
       "  special base minecraft:item/shield model { type: minecraft:shield }",
       "}",
@@ -172,7 +172,7 @@ describe("RSGL item model fragments", () => {
       "  selected_item",
       "}"
     ], {
-      resourceExists: (kind, id) => {
+      externResourceExists: (_source, kind, id) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }

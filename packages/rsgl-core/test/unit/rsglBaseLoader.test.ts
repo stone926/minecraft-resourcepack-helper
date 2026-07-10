@@ -257,6 +257,8 @@ describe("RSGL base document loader", () => {
         textures: { all: "minecraft:block/stone" }
       }, null, 2));
       fs.writeFileSync(sourceFile, [
+        "extern! vanilla model minecraft:block/cube_column",
+        "extern! vanilla texture minecraft:block/stone, minecraft:block/particle",
         "model block imported {",
         "  base \"./model.json\"",
         "  merge deep { textures: { particle: minecraft:block/particle } }",
@@ -333,6 +335,58 @@ describe("RSGL base document loader", () => {
         && mapping.reason === "base"
         && mapping.sourceFile === path.resolve(baseFile)
       ));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applies the current model extern var to base content without disturbing source mappings", () => {
+    const root = createTempDir();
+    try {
+      const sourceFile = path.join(root, "main.rsgl");
+      const baseFile = path.join(root, "model.json");
+      const baseText = JSON.stringify({
+        textures: { all: "#missing" }
+      }, null, 2);
+      const sourceText = [
+        "model block imported {",
+        "  base \"./model.json\"",
+        "  extern var #missing",
+        "}"
+      ].join("\n");
+      fs.writeFileSync(baseFile, baseText);
+      fs.writeFileSync(sourceFile, sourceText);
+
+      const result = compileRsglFile(sourceFile);
+      assert.strictEqual(result.diagnostics.some(diagnostic =>
+        diagnostic.code === "rsgl.unresolvedTextureVariable"
+      ), false);
+
+      const unit = result.units[0];
+      assert.deepStrictEqual(unit.content, {
+        textures: { all: "#missing" }
+      });
+      assert.strictEqual(JSON.stringify(unit.content).includes("extern"), false);
+
+      const baseFieldMapping = unit.sourceMap.mappings.find(mapping =>
+        mapping.generatedPath === "/textures/all"
+        && mapping.reason === "base"
+      );
+      assert.ok(baseFieldMapping);
+      assert.strictEqual(baseFieldMapping.sourceFile, path.resolve(baseFile));
+      assert.strictEqual(
+        baseText.slice(baseFieldMapping.sourceRange.start, baseFieldMapping.sourceRange.end),
+        "\"all\": \"#missing\""
+      );
+
+      const baseStatementMapping = unit.sourceMap.mappings.findLast(mapping =>
+        mapping.generatedPath === "" && mapping.reason === "direct"
+      );
+      assert.ok(baseStatementMapping);
+      assert.strictEqual(
+        sourceText.slice(baseStatementMapping.sourceRange.start, baseStatementMapping.sourceRange.end),
+        "base \"./model.json\""
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

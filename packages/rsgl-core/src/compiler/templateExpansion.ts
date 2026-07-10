@@ -12,7 +12,9 @@ import { bindRsglArguments, RsglCallableParameter } from "../arguments";
 import { RsglTemplateDefinition } from "./environment";
 import {
   EvaluationContext,
+  type EvaluationOrigin,
   EvaluationValue,
+  expressionEvaluationOrigin,
   RawGlobLoader,
   evaluateExpression
 } from "./evaluate";
@@ -78,7 +80,7 @@ export function createTemplateExpansion(
           node: parameter,
           parameterNode: parameter
     }));
-  const values = bindCallableValues(
+  const binding = bindCallableValues(
     parameters,
     expression,
     context,
@@ -87,11 +89,11 @@ export function createTemplateExpansion(
     "template",
     options
   );
-  if (!values) {
+  if (!binding) {
     return undefined;
   }
 
-  const templateContext = options.createChildContext(templateBaseContext, values, {
+  const templateContext = options.createChildContext(templateBaseContext, binding.values, {
     sourceFile: template.fileName,
     mappingReason: "template",
     expansionStack: [
@@ -99,6 +101,10 @@ export function createTemplateExpansion(
       { label: recursionKey, sourceRange: expression.range }
     ]
   });
+  templateContext.valueOrigins = new Map([
+    ...(templateBaseContext.valueOrigins ?? []),
+    ...binding.origins
+  ]);
   templateContext.stateKeyAliases = callableStateKeyAliases(templateBaseContext, parameters);
   return { definition: template, context: templateContext };
 }
@@ -110,6 +116,11 @@ export function templateResourceBody(body: TemplateBodyNode): ResourceBodyNode |
   return blockAsResourceBody(body);
 }
 
+interface BoundCallableValues {
+  values: Record<string, EvaluationValue>;
+  origins: Map<string, EvaluationOrigin>;
+}
+
 function bindCallableValues(
   parameters: TemplateCallParameter[],
   expression: Extract<ExprNode, { kind: "CallExpr" }>,
@@ -118,8 +129,9 @@ function bindCallableValues(
   definitionFileName: string,
   label: "template",
   options: TemplateExpansionOptions
-): Record<string, EvaluationValue> | null {
+): BoundCallableValues | null {
   const values: Record<string, EvaluationValue> = {};
+  const origins = new Map<string, EvaluationOrigin>();
   const binding = bindRsglArguments(parameters, expression.args, {
     callRange: expression.range,
     codes: {
@@ -151,15 +163,34 @@ function bindCallableValues(
     const arg = argsByParameter.get(name);
     if (arg) {
       values[name] = normalizeCallableValue(evaluateExpression(arg.value, callContext), parameter.type, argumentNamespace);
+      const inheritedOrigin = expressionEvaluationOrigin(arg.value, callContext);
+      const sourceFile = inheritedOrigin?.sourceFile ?? callContext.sourceFile;
+      if (sourceFile) {
+        origins.set(name, inheritedOrigin ?? { sourceFile, sourceRange: arg.value.range });
+      }
     } else if (parameter.parameterNode.defaultValue) {
+      const defaultContext = options.createChildContext(definitionContext, values);
+      defaultContext.valueOrigins = new Map([
+        ...(definitionContext.valueOrigins ?? []),
+        ...origins
+      ]);
       values[name] = normalizeCallableValue(
-        evaluateExpression(parameter.parameterNode.defaultValue, options.createChildContext(definitionContext, values)),
+        evaluateExpression(parameter.parameterNode.defaultValue, defaultContext),
         parameter.type,
         definitionContext.namespace
       );
+      const inheritedOrigin = expressionEvaluationOrigin(parameter.parameterNode.defaultValue, defaultContext);
+      if (inheritedOrigin) {
+        origins.set(name, inheritedOrigin);
+      } else if (definitionContext.sourceFile) {
+        origins.set(name, {
+          sourceFile: definitionContext.sourceFile,
+          sourceRange: parameter.parameterNode.defaultValue.range
+        });
+      }
     }
   }
-  return values;
+  return { values, origins };
 }
 
 function normalizeCallableValue(value: EvaluationValue, type: RsglType, namespace: string): EvaluationValue {

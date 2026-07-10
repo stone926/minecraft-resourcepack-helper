@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics, unitByPath } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics, unitByPath } from "./helpers/compile";
 
 describe("RSGL blockstate fragment merge policy", () => {
   it("applies strict and upsert through the shared merge engine", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate lamp {",
       "  variants {",
       "    { facing: north } -> { model: minecraft:block/lamp, x: 0 }",
@@ -32,7 +32,7 @@ describe("RSGL blockstate fragment merge policy", () => {
   });
 
   it("appends multipart entries and offsets their field mappings", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate fence {",
       "  multipart {",
       "    apply { model: minecraft:block/fence_post }",
@@ -60,7 +60,7 @@ describe("RSGL blockstate fragment merge policy", () => {
   });
 
   it("rejects append outside multipart and preserves variants/multipart exclusivity", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "blockstate invalid {",
       "  variants {",
       "    {} -> { model: minecraft:block/base }",
@@ -82,7 +82,7 @@ describe("RSGL blockstate fragment merge policy", () => {
   });
 
   it("preserves arbitrary top-level fields from blockstate template fragments", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "template extra() {",
       "  merge { custom: { enabled: true } }",
       "}",

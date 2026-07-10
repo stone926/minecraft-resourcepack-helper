@@ -3,6 +3,7 @@ import type {
   RsglBuildPreviewResult,
   RsglBuildResult
 } from "../../../../packages/rsgl-core/src/build";
+import { loadRsglProjectConfigForSource } from "../../../../packages/rsgl-core/src/rsglConfig";
 import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "../configuration";
 import { applyRsglEmittedFiles } from "./asyncBuildWriter";
 import {
@@ -190,14 +191,23 @@ async function prepareBuildPreview(
 function createWorkerBuildPayload(
   context: RsglFileBuildContext
 ): RsglWorkerBuildContext & RsglWorkerValidationConfiguration {
+  const validationAnchor = isDirectoryBuildContext(context)
+    ? context.sourceRoot
+    : context.sourceFileName;
+  const projectConfig = loadRsglProjectConfigForSource(validationAnchor)?.config;
+  const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
   return {
     source: {
       kind: isDirectoryBuildContext(context) ? "directory" : "file",
       path: isDirectoryBuildContext(context) ? context.sourceRoot : context.sourceFileName
     },
-    validationAnchor: context.sourceFileName,
+    validationAnchor,
     outputRoot: context.outputRoot,
-    defaultAssetsPath: configuredDefaultAssetsPath(),
-    resourcePackRoots: configuredResourcePackLoadOrder()
+    defaultAssetsPath: projectDefaultAssetsPath === undefined
+      ? configuredDefaultAssetsPath()
+      : projectDefaultAssetsPath,
+    resourcePackRoots: projectConfig?.resourcePackRoots ?? configuredResourcePackLoadOrder(),
+    globalExterns: projectConfig?.extern,
+    checkExternExistence: projectConfig?.checkExternExistence
   };
 }

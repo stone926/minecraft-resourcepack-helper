@@ -12,7 +12,8 @@ import {
   formatRsglText,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
-  RsglWorkspaceSemanticCache
+  RsglWorkspaceSemanticCache,
+  type CompileDependency
 } from "../../rsgl-core/src";
 import {
   rsglDependencyPathsNotification,
@@ -22,10 +23,11 @@ import {
   completionItemsForDocument as completionItemsForDocumentCore,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
+  dependencyPathsForDocument,
   dependencyPathsForDocuments,
   documentsDependingOnPath,
   fileNameFromUri,
-  normalizeDependencyPath,
+  handleSemanticWatchedFileBatch,
   normalizeFileName,
   toValidationSettings,
   type RsglValidationSettings
@@ -84,20 +86,16 @@ documents.onDidClose(event => {
 });
 
 connection.onDidChangeWatchedFiles(params => {
-  const rsglChanges = params.changes.filter(change =>
-    path.extname(fileNameFromUri(change.uri)).toLowerCase() === ".rsgl"
-  );
-  if (rsglChanges.length > 0) {
-    for (const change of rsglChanges) {
-      semanticCache.invalidatePath(fileNameFromUri(change.uri));
-    }
-    refreshOpenDocuments();
+  const changedFileNames = params.changes.map(change => fileNameFromUri(change.uri));
+  if (handleSemanticWatchedFileBatch(changedFileNames, {
+    invalidatePath: fileName => semanticCache.invalidatePath(fileName),
+    refresh: refreshOpenDocuments
+  })) {
     return;
   }
 
   const affectedUris = new Set<string>();
-  for (const change of params.changes) {
-    const changedFileName = fileNameFromUri(change.uri);
+  for (const changedFileName of changedFileNames) {
     if (path.extname(changedFileName).toLowerCase() !== ".json") {
       continue;
     }
@@ -171,17 +169,23 @@ connection.listen();
 
 function validateDocument(document: TextDocument): void {
   const fileName = fileNameFromUri(document.uri);
+  let compileDependencies: readonly CompileDependency[] = [];
+  let projectConfigWatchPaths: readonly string[] = [];
   const diagnostics = computeDocumentDiagnostics(document, fileName, {
     loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName),
     onDependencies: dependencies => {
-      dependenciesByDocument.set(
-        document.uri,
-        new Set(dependencies.map(dependency => normalizeDependencyPath(dependency.path)))
-      );
-      publishDependencyPaths();
+      compileDependencies = dependencies;
+    },
+    onProjectConfigWatchPaths: paths => {
+      projectConfigWatchPaths = paths;
     },
     settings: validationSettings
   });
+  dependenciesByDocument.set(
+    document.uri,
+    dependencyPathsForDocument(compileDependencies, projectConfigWatchPaths)
+  );
+  publishDependencyPaths();
   connection.sendDiagnostics({ uri: document.uri, diagnostics });
 }
 

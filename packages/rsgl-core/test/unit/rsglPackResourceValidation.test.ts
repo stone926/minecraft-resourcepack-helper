@@ -1,9 +1,9 @@
 import * as assert from "node:assert";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import { compileSource, compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL pack, lang, sounds, and metadata resources", () => {
   it("emits pack, lang, sounds, and mcmeta resources", () => {
-    const result = compileSource([
+    const result = compileSourceWithUncheckedExterns([
       "pack {",
       "  description \"Generated pack\"",
       "  min_format [88, 0]",
@@ -24,7 +24,10 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
     ]);
 
     expectNoDiagnostics(result);
-    assert.deepStrictEqual(result.units.map(unit => unit.outputPath).sort(), [
+    assert.deepStrictEqual(result.units
+      .filter(unit => unit.external === undefined)
+      .map(unit => unit.outputPath)
+      .sort(), [
       "assets/minecraft/lang/en_us.json",
       "assets/minecraft/sounds.json",
       "assets/minecraft/textures/block/glow.png.mcmeta",
@@ -120,6 +123,7 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
   it("validates lang and sounds resource structure", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom sound custom:entity/example/valid",
       "lang en_us {",
       "  \"valid.key\" \"Valid\"",
       "  merge { \"bad.key\": 1 }",
@@ -162,6 +166,7 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
 
   it("validates sound metadata through compiler hooks", () => {
     const result = compileSource([
+      "extern custom sound custom:entity/example/unreadable, custom:entity/example/bad_shape, custom:entity/example/valid",
       "sounds custom {",
       "  \"entity.example\" {",
       "    sounds: [",
@@ -196,6 +201,9 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
   it("validates font provider resources", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom texture minecraft:font/missing.png",
+      "extern custom font minecraft:missing_font",
+      "extern custom font_file example:missing.ttf, example:missing.hex",
       "font invalid {",
       "  providers [",
       "    1,",
@@ -232,6 +240,7 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
   it("validates waypoint style resources", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom texture minecraft:gui/sprites/hud/locator_bar_dot/missing",
       "waypoint_style invalid {",
       "  near_distance 400",
       "  far_distance 100",
@@ -260,6 +269,9 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
   it("validates post effect resources", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
+      "extern custom shader_vertex minecraft:core/missing",
+      "extern custom shader_fragment minecraft:post/missing",
+      "extern custom texture minecraft:effect/missing",
       "post_effect invalid {",
       "  targets {",
       "    swap: { width: 0, height: \"bad\", persistent: \"yes\", clear_color: [1, 2, 3] }",
