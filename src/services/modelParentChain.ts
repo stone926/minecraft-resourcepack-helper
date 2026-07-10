@@ -4,7 +4,7 @@ import {
   objectMembers,
   stringValue
 } from "../utils/jsonAst";
-import type { ResourceConfiguration, ResourceResolveRequest } from "./workspaceResourceCache";
+import type { ResourceConfiguration, ResourceResolveRequest } from "./resourceCacheTypes";
 import { ModelParentTraversal } from "./modelParentTraversal";
 
 export interface CachedModelDocument {

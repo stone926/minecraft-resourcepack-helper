@@ -149,9 +149,7 @@ export class ResourceResolutionCache {
   }
 
   invalidateDocument(fileName: string): void {
-    if (/[\\/]pack\.mcmeta$/i.test(fileName)) {
-      this.invalidatePath(fileName);
-    }
+    this.invalidatePath(fileName);
   }
 
   invalidateConfiguration(): void {

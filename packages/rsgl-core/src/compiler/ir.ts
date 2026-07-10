@@ -28,7 +28,7 @@ export interface ResourceId {
   path: string;
 }
 
-export type ResourceKind = RsglResourceKind | ExternalResourceKind | "raw";
+export type ResourceKind = RsglResourceKind | ExternalResourceKind;
 
 export interface ResourceUnit {
   id?: ResourceId;

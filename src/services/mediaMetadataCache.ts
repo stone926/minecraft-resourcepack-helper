@@ -62,7 +62,7 @@ export class MediaMetadataCache {
   }
 
   invalidateDocument(fileName: string): void {
-    this.oggMetadataCache.delete(normalizePathKey(fileName));
+    this.invalidatePath(fileName);
   }
 
   getSizes(): Record<string, number> {
