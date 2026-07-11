@@ -5,6 +5,8 @@ import { LexResult, RsglDiagnostic, RsglToken, RsglTokenKind, Trivia } from "./t
 const twoCharacterOperators = new Set(["->", "=>", "==", "!=", "<=", ">=", "&&", "||", ".."]);
 const singleCharacterOperators = new Set(["=", "?", ":", "+", "-", "*", "/", "%", "!", "<", ">", "|"]);
 const punctuationCharacters = new Set(["{", "}", "[", "]", "(", ")", ",", ".", ";", "@", "#"]);
+type ExternLexicalState = "none" | "afterExtern" | "afterBang" | "afterSource" | "patterns";
+type BlockCommentDelimiter = { offset: number; kind: "start" | "end" };
 
 export function lexRsgl(text: string): LexResult {
   const lexer = new RsglLexer(text);
@@ -15,6 +17,9 @@ class RsglLexer {
   private readonly tokens: RsglToken[] = [];
   private readonly diagnostics: RsglDiagnostic[] = [];
   private offset = 0;
+  private externState: ExternLexicalState = "none";
+  private externPatternFragmentEnd = -1;
+  private blockCommentDelimiters: BlockCommentDelimiter[] | undefined;
 
   public constructor(private readonly text: string) { }
 
@@ -27,6 +32,7 @@ class RsglLexer {
 
       const token = this.readToken(leadingTrivia);
       this.tokens.push(token);
+      this.updateExternLexicalState(token);
     }
 
     this.tokens.push({
@@ -64,7 +70,7 @@ class RsglLexer {
           this.offset++;
         }
         trivia.push(this.createTrivia("lineComment", start));
-      } else if (this.startsWith("/*")) {
+      } else if (this.startsWith("/*") && !this.isExternGlobWildcardStart()) {
         this.offset += 2;
         while (!this.isAtEnd() && !this.startsWith("*/")) {
           this.offset++;
@@ -249,6 +255,139 @@ class RsglLexer {
     } else {
       this.offset++;
     }
+    this.resetLineLexicalState();
+  }
+
+  /**
+   * `/*` is ambiguous inside an extern glob: `block/*` and `block/**` are
+   * wildcard path segments, while comments remain legal between header and
+   * pattern tokens. A wildcard can only continue an immediately adjacent
+   * pattern fragment. Clear path continuation and pattern boundaries favor a
+   * glob, except a delimiter-only body closed by a block-comment terminator.
+   * Other bodies use the next block delimiter: a close means comment, while
+   * another opener or no delimiter favors malformed-glob recovery so later
+   * source is not consumed as trivia.
+   */
+  private isExternGlobWildcardStart(): boolean {
+    if (
+      this.externState !== "patterns"
+      || this.externPatternFragmentEnd !== this.offset
+      || !this.startsWith("/*")
+    ) {
+      return false;
+    }
+
+    let afterStars = this.offset + 2;
+    if (this.text[afterStars] === "*") {
+      afterStars++;
+    }
+    if (
+      this.text[afterStars] === "/"
+      && /[A-Za-z0-9_.*-]/.test(this.text[afterStars + 1] ?? "")
+    ) {
+      return true;
+    }
+
+    let afterWhitespace = afterStars;
+    while (this.text[afterWhitespace] === " " || this.text[afterWhitespace] === "\t") {
+      afterWhitespace++;
+    }
+    const next = this.text[afterWhitespace] ?? "";
+    if (
+      next === ""
+      || next === "\r"
+      || next === "\n"
+      || next === ","
+      || next === ";"
+      || next === "}"
+    ) {
+      return !this.hasDelimiterOnlyBlockCommentBody(afterStars);
+    }
+    if (
+      afterWhitespace > afterStars
+      && (this.text.startsWith("//", afterWhitespace) || this.text.startsWith("/*", afterWhitespace))
+    ) {
+      return true;
+    }
+
+    return this.nextBlockCommentDelimiter(this.offset + 2)?.kind !== "end";
+  }
+
+  private hasDelimiterOnlyBlockCommentBody(offset: number): boolean {
+    for (let index = offset; index < this.text.length; index++) {
+      if (this.text.startsWith("*/", index)) {
+        return !/[A-Za-z0-9_.*-]/.test(this.text[index + 2] ?? "");
+      }
+      if (!/[ \t\r\n,;}]/.test(this.text[index])) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private nextBlockCommentDelimiter(offset: number): BlockCommentDelimiter | undefined {
+    if (!this.blockCommentDelimiters) {
+      this.blockCommentDelimiters = [];
+      for (let index = 0; index + 1 < this.text.length; index++) {
+        if (this.text[index] === "/" && this.text[index + 1] === "*") {
+          this.blockCommentDelimiters.push({ offset: index, kind: "start" });
+        } else if (this.text[index] === "*" && this.text[index + 1] === "/") {
+          this.blockCommentDelimiters.push({ offset: index, kind: "end" });
+        }
+      }
+    }
+
+    let low = 0;
+    let high = this.blockCommentDelimiters.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (this.blockCommentDelimiters[middle].offset < offset) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return this.blockCommentDelimiters[low];
+  }
+
+  private updateExternLexicalState(token: RsglToken): void {
+    if (this.externState === "none") {
+      if (token.text === "extern") {
+        this.externState = "afterExtern";
+        this.externPatternFragmentEnd = -1;
+      }
+      return;
+    }
+    if (this.externState === "afterExtern") {
+      if (token.text === "!") {
+        this.externState = "afterBang";
+      } else {
+        this.externState = token.kind === "identifier" || token.kind === "keyword" ? "afterSource" : "none";
+      }
+      return;
+    }
+    if (this.externState === "afterBang") {
+      this.externState = token.kind === "identifier" || token.kind === "keyword" ? "afterSource" : "none";
+      return;
+    }
+    if (this.externState === "afterSource") {
+      this.externState = token.kind === "identifier" || token.kind === "keyword" ? "patterns" : "none";
+      this.externPatternFragmentEnd = -1;
+      return;
+    }
+    if (token.text === "}" || token.text === ";") {
+      this.externState = "none";
+      this.externPatternFragmentEnd = -1;
+    } else if (token.text === ",") {
+      this.externPatternFragmentEnd = -1;
+    } else {
+      this.externPatternFragmentEnd = token.offset + token.length;
+    }
+  }
+
+  private resetLineLexicalState(): void {
+    this.externState = "none";
+    this.externPatternFragmentEnd = -1;
   }
 
   private createToken(kind: RsglTokenKind, start: number, leadingTrivia: Trivia[]): RsglToken {

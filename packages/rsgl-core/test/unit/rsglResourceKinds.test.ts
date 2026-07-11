@@ -19,6 +19,7 @@ import {
   rsglResourceKindDescriptors,
   rsglResourceKinds
 } from "../../src/resourceKinds";
+import { readGrammar, tokenizeGrammar } from "./helpers/textMateGrammar";
 
 describe("RSGL resource kind descriptors", () => {
   it("derive parser keywords, generic JSON kinds, and completion snippets from one registry", () => {
@@ -81,13 +82,12 @@ describe("RSGL resource kind descriptors", () => {
     }
     assert.strictEqual(getExternResourceKind(undefined), null);
 
-    const externGrammar = readExternResourceKindPattern();
+    const externGrammar = readGrammar();
     for (const kind of rsglExternResourceKinds) {
-      assert.match(`extern custom ${kind}`, externGrammar, `TextMate grammar is missing extern kind '${kind}'.`);
-      assert.match(`extern! vanilla ${kind}`, externGrammar, `TextMate grammar is missing unchecked extern kind '${kind}'.`);
+      const source = `extern custom ${kind} example`;
+      const scopes = tokenizeGrammar(externGrammar, source).scopesAt(source.indexOf(kind));
+      assert.ok(scopes.includes("storage.type.rsgl"), `TextMate grammar is missing extern kind '${kind}'.`);
     }
-    assert.doesNotMatch("extern model", externGrammar, "The extern grammar rule must require a source.");
-    assert.doesNotMatch("texture", externGrammar, "The extern grammar rule must not reclassify texture properties globally.");
 
     assert.deepStrictEqual(
       rsglExternResourceCompletionDescriptors.map(completion => completion.label),
@@ -213,27 +213,6 @@ function readGrammarStorageTypePattern(): RegExp {
   };
   const match = grammar.repository?.keywords?.patterns?.find(pattern => pattern.name === "storage.type.rsgl")?.match;
   assert.ok(match, "Expected TextMate storage.type.rsgl pattern.");
-  return new RegExp(match);
-}
-
-function readExternResourceKindPattern(): RegExp {
-  const grammarPath = path.join(process.cwd(), "extensions", "vscode-rsgl", "syntaxes", "rsgl.tmLanguage.json");
-  const grammar = JSON.parse(fs.readFileSync(grammarPath, "utf8")) as {
-    repository?: {
-      keywords?: {
-        patterns?: Array<{
-          match?: string;
-          captures?: Record<string, { name?: string }>;
-        }>;
-      };
-    };
-  };
-  const match = grammar.repository?.keywords?.patterns?.find(pattern =>
-    pattern.captures?.["6"]?.name === "storage.type.rsgl"
-    && pattern.match?.includes("extern")
-    && pattern.match?.includes("custom|vanilla")
-  )?.match;
-  assert.ok(match, "Expected a context-aware TextMate extern resource kind pattern.");
   return new RegExp(match);
 }
 

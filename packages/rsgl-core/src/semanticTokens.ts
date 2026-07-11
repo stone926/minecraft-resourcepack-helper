@@ -1,4 +1,15 @@
-import type { ImportDeclNode, ResourceDeclNode, TextRange } from "./parser";
+import type {
+  ArgumentNode,
+  IdentifierNode,
+  ImportDeclNode,
+  MemberExprNode,
+  ObjectPropertyNode,
+  PropertyStmtNode,
+  ResourceDeclNode,
+  RsglNode,
+  SugarPropertyNode,
+  TextRange
+} from "./parser";
 import type { RsglReferenceRecord, RsglSemanticModel, RsglSymbol } from "./semantic";
 
 /**
@@ -11,7 +22,8 @@ export const rsglSemanticTokenTypes: readonly string[] = [
   "type",
   "function",
   "variable",
-  "parameter"
+  "parameter",
+  "property"
 ];
 
 export const rsglSemanticTokenModifiers: readonly string[] = [
@@ -41,6 +53,7 @@ const typeTokenType = rsglSemanticTokenTypes.indexOf("type");
 const functionTokenType = rsglSemanticTokenTypes.indexOf("function");
 const variableTokenType = rsglSemanticTokenTypes.indexOf("variable");
 const parameterTokenType = rsglSemanticTokenTypes.indexOf("parameter");
+const propertyTokenType = rsglSemanticTokenTypes.indexOf("property");
 
 const declarationModifier = 1 << rsglSemanticTokenModifiers.indexOf("declaration");
 const readonlyModifier = 1 << rsglSemanticTokenModifiers.indexOf("readonly");
@@ -56,6 +69,7 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
   const candidates: RsglSemanticToken[] = [];
   const referenceStarts = collectReferenceStarts(model.references);
 
+  collectPropertyTokens(model.module, candidates);
   for (const record of model.imports) {
     collectImportDeclarationTokens(record.node, model, candidates);
   }
@@ -67,6 +81,72 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
   }
 
   return normalizeTokens(candidates);
+}
+
+/** Emits AST-backed property tokens without guessing context from keywords. */
+function collectPropertyTokens(root: RsglNode, candidates: RsglSemanticToken[]): void {
+  visitPropertyContainer(root, candidates, new WeakSet<object>());
+}
+
+function visitPropertyContainer(
+  value: unknown,
+  candidates: RsglSemanticToken[],
+  seen: WeakSet<object>
+): void {
+  if (!value || typeof value !== "object" || seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach(item => visitPropertyContainer(item, candidates, seen));
+    return;
+  }
+
+  if (isRsglNode(value)) {
+    for (const identifier of propertyIdentifiers(value)) {
+      if (isSemanticIdentifier(identifier)) {
+        pushToken(candidates, identifier.range, { tokenType: propertyTokenType, tokenModifiers: 0 }, 0);
+      }
+    }
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (!nonAstContainerKeys.has(key)) {
+      visitPropertyContainer(child, candidates, seen);
+    }
+  }
+}
+
+const nonAstContainerKeys = new Set(["range", "fullRange", "tokens", "eof", "diagnostics", "leadingTrivia"]);
+
+function isRsglNode(value: object): value is RsglNode {
+  return "kind" in value && "range" in value && "fullRange" in value;
+}
+
+function isSemanticIdentifier(identifier: IdentifierNode): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier.text)
+    && identifier.range.end - identifier.range.start === identifier.text.length;
+}
+
+function propertyIdentifiers(node: RsglNode): readonly IdentifierNode[] {
+  switch (node.kind) {
+    case "ObjectProperty": {
+      const key = (node as ObjectPropertyNode).key;
+      return key.kind === "Identifier" ? [key] : [];
+    }
+    case "Argument": {
+      const name = (node as ArgumentNode).name;
+      return name ? [name] : [];
+    }
+    case "MemberExpr":
+      return [(node as MemberExprNode).property];
+    case "SugarProperty":
+      return [(node as SugarPropertyNode).name];
+    case "PropertyStmt":
+      return [(node as PropertyStmtNode).name];
+    default:
+      return [];
+  }
 }
 
 /** Maps a resolved symbol onto the shared legend; null means "do not highlight". */

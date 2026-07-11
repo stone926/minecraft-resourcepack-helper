@@ -10,10 +10,19 @@
       "include": "#strings"
     },
     {
+      "include": "#externDeclarations"
+    },
+    {
       "include": "#resourceLocations"
     },
     {
       "include": "#numbers"
+    },
+    {
+      "include": "#contextualIdentifiers"
+    },
+    {
+      "include": "#structuralStatements"
     },
     {
       "include": "#keywords"
@@ -78,11 +87,174 @@
         }
       ]
     },
+    "externDeclarations": {
+      "patterns": [
+        {
+          "begin": "(?:^|(?<=[{};]))[ \\t]*(extern)(!?)(?=[ \\t]*(?:(?:![ \\t]*)?(?:[A-Za-z_]|/\\*)))(?!(?:[ \\t]+|/\\*[^\\r\\n]*?\\*/)*[:=])",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            },
+            "2": {
+              "name": "keyword.operator.rsgl"
+            }
+          },
+          "end": "$|(?=[.()\\[\\],:;=?+*%<>|&}\\-])|(?=/(?!\\*))",
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#externVarHeaders"
+            },
+            {
+              "include": "#externSourceHeaders"
+            },
+            {
+              "include": "#externResourcePatterns"
+            },
+            {
+              "include": "#operators"
+            }
+          ]
+        }
+      ]
+    },
+    "externVarHeaders": {
+      "patterns": [
+        {
+          "begin": "\\b(var)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.modifier.rsgl"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "name": "variable.other.texture.rsgl",
+              "match": "#[A-Za-z_][A-Za-z0-9_]*"
+            },
+            {
+              "include": "#operators"
+            }
+          ]
+        }
+      ]
+    },
+    "externSourceHeaders": {
+      "patterns": [
+        {
+          "begin": "\\b(custom|vanilla)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.modifier.rsgl"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#externSourceBody"
+            }
+          ]
+        },
+        {
+          "begin": "\\b([A-Za-z_][A-Za-z0-9_]*)\\b(?=(?:[ \\t]+|/\\*[^\\r\\n]*?\\*/)+(?=[A-Za-z_]))",
+          "beginCaptures": {
+            "1": {
+              "name": "invalid.illegal.extern-source.rsgl"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#externSourceBody"
+            }
+          ]
+        }
+      ]
+    },
+    "externSourceBody": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#externKindHeaders"
+        },
+        {
+          "include": "#externResourcePatterns"
+        },
+        {
+          "include": "#operators"
+        }
+      ]
+    },
+    "externKindHeaders": {
+      "patterns": [
+        {
+          "begin": "\\b(model|blockstate|item|texture|texture_directory|sound|font|font_file|shader_vertex|shader_fragment)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#externPatternBody"
+            }
+          ]
+        },
+        {
+          "begin": "\\b([A-Za-z_][A-Za-z0-9_]*)\\b(?=(?:[ \\t]+|/\\*[^\\r\\n]*?\\*/)+(?=[A-Za-z0-9_.*:/-]))",
+          "beginCaptures": {
+            "1": {
+              "name": "invalid.illegal.extern-kind.rsgl"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#externPatternBody"
+            }
+          ]
+        }
+      ]
+    },
+    "externPatternBody": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#externResourcePatterns"
+        },
+        {
+          "include": "#operators"
+        }
+      ]
+    },
+    "externResourcePatterns": {
+      "patterns": [
+        {
+          "name": "entity.name.resource-pattern.rsgl",
+          "match": "(?:(?<=\\*/)|(?<![A-Za-z0-9_.*:/-]))(?:(?:[a-z0-9_.-]+|\\*):)?(?:(?=[a-z0-9_.-]*[a-z0-9_-])[a-z0-9_.-]+|\\*\\*?)(?:/(?:(?=[a-z0-9_.-]*[a-z0-9_-])[a-z0-9_.-]+|\\*\\*?))*(?:(?=//|/\\*[^\\r\\n]*?\\*/)|(?![A-Za-z0-9_.*:/-]))"
+        },
+        {
+          "name": "invalid.illegal.resource-pattern.rsgl",
+          "match": "(?:(?<=\\*/)|(?<![A-Za-z0-9_.*:/-]))[A-Za-z0-9_.*:/-]+(?:(?=//|/\\*[^\\r\\n]*?\\*/)|(?![A-Za-z0-9_.*:/-]))"
+        }
+      ]
+    },
     "resourceLocations": {
       "patterns": [
         {
           "name": "entity.name.resource-location.rsgl",
-          "match": "\\b[a-z0-9_.-]+:[a-z0-9_./-]+\\b"
+          "match": "(?<![A-Za-z0-9_.*:/-])[a-z0-9_.-]+:[a-z0-9_./-]+(?![A-Za-z0-9_.*:/-])"
         }
       ]
     },
@@ -98,46 +270,72 @@
         }
       ]
     },
-    "keywords": {
+    "contextualIdentifiers": {
       "patterns": [
         {
-          "match": "\\b(extern)(!?)(\\s+)(custom|vanilla)(\\s+)(model|blockstate|item|texture|texture_directory|sound|font|font_file|shader_vertex|shader_fragment)\\b",
+          "match": "(^|[\\{\\[\\(,;])([ \\t]*)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*[:=](?!=))",
           "captures": {
-            "1": {
-              "name": "storage.type.rsgl"
-            },
-            "2": {
-              "name": "keyword.operator.rsgl"
-            },
-            "4": {
-              "name": "storage.modifier.rsgl"
-            },
-            "6": {
-              "name": "storage.type.rsgl"
+            "3": {
+              "name": "meta.object-key.rsgl"
             }
           }
         },
         {
-          "match": "\\b(extern)(!?)(\\s+)(var)\\b",
+          "match": "(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "2": {
+              "name": "meta.member-name.rsgl"
+            }
+          }
+        }
+      ]
+    },
+    "structuralStatements": {
+      "patterns": [
+        {
+          "match": "(^|\\{)[ \\t]*(formats|block|directory|paletted_permutations|palette_key|permutations|layer|models|gui|scaling|layers)\\b(?![ \\t]*[:=])(?=[ \\t]+|[ \\t]*\\{)",
+          "captures": {
+            "2": {
+              "name": "keyword.control.rsgl"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(target)([ \\t]+)(java)([ \\t]+)(format|mc)\\b",
           "captures": {
             "1": {
               "name": "storage.type.rsgl"
             },
-            "2": {
-              "name": "keyword.operator.rsgl"
+            "3": {
+              "name": "storage.modifier.rsgl"
             },
-            "4": {
+            "5": {
+              "name": "storage.modifier.rsgl"
+            }
+          }
+        },
+        {
+          "match": "\\b(model)([ \\t]+)(block|item)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            },
+            "3": {
               "name": "storage.modifier.rsgl"
             }
           }
         },
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|impl|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append)\\b"
         },
         {
           "name": "storage.type.rsgl",
-          "match": "\\b(?:target|namespace|extern|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
+          "match": "\\b(?:target|namespace|extern|overlay|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
         },
         {
           "name": "constant.language.rsgl",

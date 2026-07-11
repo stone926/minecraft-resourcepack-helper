@@ -133,6 +133,17 @@ describe("RSGL semantic tokens", () => {
     assert.ok(keywordOffsets.every(start => !mergeTokens.some(token => token.start === start)));
   });
 
+  it("classifies resource property statements as properties", () => {
+    expectToken(tokens, offsetOf(source, "parent minecraft"), "property", 0, "parent".length);
+
+    const literalSource = "model block sample { \"quoted\" 1\n  123 2 }";
+    const literalModule = parseRsgl(literalSource);
+    assert.deepStrictEqual(literalModule.diagnostics, []);
+    const literalTokens = getRsglSemanticTokens(bindRsglModule(literalModule));
+    assert.ok(!literalTokens.some(token => token.start === offsetOf(literalSource, "\"quoted\"")));
+    assert.ok(!literalTokens.some(token => token.start === offsetOf(literalSource, "123")));
+  });
+
   it("keeps parameter-bound resource ids as references, not declarations", () => {
     const start = offsetOf(source, "model block id") + "model block ".length;
     expectToken(tokens, start, "parameter", 0, "id".length);
@@ -146,6 +157,72 @@ describe("RSGL semantic tokens", () => {
       assert.match(text, /^[A-Za-z_][A-Za-z0-9_]*$/, `token text '${text}' must be a single identifier`);
       assert.ok(!text.includes("\n"), "tokens must be single-line");
     }
+  });
+
+  it("classifies object keys, named arguments, and member names as properties", () => {
+    const contextualSource = [
+      "template collect(parent: ModelId, model: ModelId) {",
+      "  let record = { parent: parent, model: model }",
+      "  let selected = record.model",
+      "  let frames = seq(\"frame_{}\", pad: 2)",
+      "  let applied = @minecraft:block/stone y=90 uvlock",
+      "  let commented = { extern /* multi",
+      "  line */: \"value\" }",
+      "}",
+      "blockstate demo {",
+      "  multipart {",
+      "    apply { model: block/foo }",
+      "  }",
+      "}"
+    ].join("\n");
+    const contextualModule = parseRsgl(contextualSource);
+    assert.deepStrictEqual(contextualModule.diagnostics, []);
+    const contextualTokens = getRsglSemanticTokens(bindRsglModule(contextualModule));
+    const parentKey = offsetOf(contextualSource, "parent: parent");
+    const modelKey = offsetOf(contextualSource, "model: model");
+    const memberName = offsetOf(contextualSource, ".model") + 1;
+    const namedArgument = offsetOf(contextualSource, "pad: 2");
+    const sugarProperty = offsetOf(contextualSource, "y=90");
+    const shorthandSugarProperty = offsetOf(contextualSource, "uvlock");
+    const commentedKey = offsetOf(contextualSource, "extern /* multi");
+    const applyModelKey = offsetOf(contextualSource, "model: block/foo");
+
+    expectToken(contextualTokens, parentKey, "property", 0, "parent".length);
+    expectToken(contextualTokens, modelKey, "property", 0, "model".length);
+    expectToken(contextualTokens, memberName, "property", 0, "model".length);
+    expectToken(contextualTokens, namedArgument, "property", 0, "pad".length);
+    expectToken(contextualTokens, sugarProperty, "property", 0, "y".length);
+    expectToken(contextualTokens, shorthandSugarProperty, "property", 0, "uvlock".length);
+    expectToken(contextualTokens, commentedKey, "property", 0, "extern".length);
+    expectToken(contextualTokens, applyModelKey, "property", 0, "model".length);
+    expectToken(
+      contextualTokens,
+      offsetOf(contextualSource, "seq("),
+      "function",
+      defaultLibrary,
+      "seq".length
+    );
+    expectToken(
+      contextualTokens,
+      offsetOf(contextualSource, "record", 1),
+      "variable",
+      readonlyFlag,
+      "record".length
+    );
+    expectToken(
+      contextualTokens,
+      parentKey + "parent: ".length,
+      "parameter",
+      0,
+      "parent".length
+    );
+    expectToken(
+      contextualTokens,
+      modelKey + "model: ".length,
+      "parameter",
+      0,
+      "model".length
+    );
   });
 
   it("returns sorted, non-overlapping tokens", () => {

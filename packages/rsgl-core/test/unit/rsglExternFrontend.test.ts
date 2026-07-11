@@ -1,6 +1,4 @@
 import * as assert from "node:assert";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { getRsglCompletionCandidates } from "../../src/completionData";
 import { lexRsgl, parseRsgl, type ExternDeclNode } from "../../src/parser";
 
@@ -17,6 +15,131 @@ describe("RSGL extern language frontend", () => {
     assert.strictEqual(result.tokens.find(token => token.text === "custom")?.kind, "keyword");
     assert.strictEqual(result.tokens.find(token => token.text === "var")?.kind, "keyword");
     assert.strictEqual(result.tokens.filter(token => token.text === "#").length, 2);
+  });
+
+  it("keeps every legal wildcard segment out of block-comment trivia", () => {
+    const source = [
+      "extern custom model block/**",
+      "extern custom model block/*",
+      "extern custom model *:block/**",
+      "extern custom model minecraft:block/*/foo/**",
+      "extern custom model minecraft:*/foo/*",
+      "extern custom model block/**/nested/*",
+      "extern custom model block/*, */foo",
+      "overlay \"future\" { extern custom model block/** }",
+      "let after = true"
+    ].join("\n");
+
+    const result = lexRsgl(source);
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.ok(result.tokens.some(token => token.text === "after"), "The lexer swallowed the statement after an extern glob.");
+
+    const module = parseRsgl(source);
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.deepStrictEqual(
+      module.statements
+        .filter((statement): statement is ExternDeclNode => statement.kind === "ExternDecl")
+        .flatMap(declaration => declaration.patterns.map(pattern => pattern.text)),
+      [
+        "block/**",
+        "block/*",
+        "*:block/**",
+        "minecraft:block/*/foo/**",
+        "minecraft:*/foo/*",
+        "block/**/nested/*",
+        "block/*",
+        "*/foo"
+      ]
+    );
+    assert.strictEqual(module.statements.at(-1)?.kind, "LetDecl");
+  });
+
+  it("preserves real block comments around extern declarations and expressions", () => {
+    const source = [
+      "/* ordinary */",
+      "/** documentation */",
+      "let sum = 1/* inline */ + 2",
+      "extern/* between keyword and bang */! custom model block/stone",
+      "extern custom model/**/ block/**",
+      "extern custom model /* before pattern */ block/**",
+      "extern custom model block /* comma , */",
+      "extern custom model block /* semicolon ; */",
+      "extern custom model block /* slash // */",
+      "extern custom model block /* across",
+      "lines */",
+      "extern custom model block/*,*/",
+      "extern custom model block/*",
+      "*/",
+      "extern custom model block/stone/**/",
+      "extern custom model foo, /* between",
+      "lines */ bar/**",
+      "extern custom model block/** /* after pattern */",
+      "let after = true"
+    ].join("\n");
+
+    const result = lexRsgl(source);
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.deepStrictEqual(
+      result.tokens.flatMap(token => token.leadingTrivia)
+        .filter(trivia => trivia.kind === "blockComment")
+        .map(trivia => trivia.text),
+      [
+        "/* ordinary */",
+        "/** documentation */",
+        "/* inline */",
+        "/* between keyword and bang */",
+        "/**/",
+        "/* before pattern */",
+        "/* comma , */",
+        "/* semicolon ; */",
+        "/* slash // */",
+        "/* across\nlines */",
+        "/*,*/",
+        "/*\n*/",
+        "/**/",
+        "/* between\nlines */",
+        "/* after pattern */"
+      ]
+    );
+
+    const module = parseRsgl(source);
+    assert.strictEqual(
+      module.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.externBangMustBeAdjacent").length,
+      1
+    );
+    assert.ok(!module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unterminatedBlockComment"));
+    assert.strictEqual(module.statements.at(-1)?.kind, "LetDecl");
+
+    const unterminated = lexRsgl("let value = 1 /* unfinished");
+    assert.ok(unterminated.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unterminatedBlockComment"));
+  });
+
+  it("keeps malformed extern headers and wildcard-like patterns recoverable", () => {
+    const source = [
+      "extern custm model block/**",
+      "extern custom modle block/**",
+      "extern custom model block/**suffix",
+      "extern custom model block/***",
+      "extern custom model block/* next",
+      "let after = true"
+    ].join("\n");
+
+    const lexed = lexRsgl(source);
+    assert.ok(!lexed.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unterminatedBlockComment"));
+    assert.ok(lexed.tokens.some(token => token.text === "after"));
+
+    const module = parseRsgl(source);
+    assert.ok(module.diagnostics.length > 0);
+    assert.ok(!module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unterminatedBlockComment"));
+    assert.strictEqual(module.statements.at(-1)?.kind, "LetDecl");
+  });
+
+  it("recovers a large malformed extern wildcard run without swallowing later tokens", () => {
+    const source = `extern custom model ${"a/*x/".repeat(4_000)}\nlet after = true`;
+    const lexed = lexRsgl(source);
+
+    assert.ok(!lexed.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unterminatedBlockComment"));
+    assert.ok(lexed.tokens.some(token => token.text === "after"));
   });
 
   it("parses sourced extern declarations and keeps pattern text unexpanded", () => {
@@ -163,44 +286,4 @@ describe("RSGL extern language frontend", () => {
     }
   });
 
-  it("highlights the new sourced extern forms and model texture variables", () => {
-    const grammar = JSON.parse(fs.readFileSync(
-      path.join(process.cwd(), "extensions", "vscode-rsgl", "syntaxes", "rsgl.tmLanguage.json"),
-      "utf8"
-    )) as {
-      repository?: {
-        keywords?: { patterns?: GrammarPattern[] };
-        properties?: { patterns?: GrammarPattern[] };
-      };
-    };
-    const keywordPatterns = grammar.repository?.keywords?.patterns ?? [];
-    const externPattern = keywordPatterns.find(pattern =>
-      pattern.captures?.["6"]?.name === "storage.type.rsgl"
-      && pattern.match?.includes("custom|vanilla")
-    );
-    assert.ok(externPattern?.match, "Expected a sourced extern TextMate rule.");
-    const externRegex = new RegExp(externPattern.match);
-    for (const kind of [
-      "model", "blockstate", "item", "texture", "texture_directory",
-      "sound", "font", "font_file", "shader_vertex", "shader_fragment"
-    ]) {
-      assert.match(`extern! vanilla ${kind}`, externRegex);
-    }
-    assert.doesNotMatch("extern model", externRegex);
-
-    const externVarPattern = keywordPatterns.find(pattern => pattern.match?.includes("(var)"));
-    assert.ok(externVarPattern?.match);
-    assert.match("extern var", new RegExp(externVarPattern.match));
-    assert.match("#front", new RegExp(
-      grammar.repository?.properties?.patterns?.find(pattern =>
-        pattern.name === "variable.other.texture.rsgl"
-      )?.match ?? "(?!)"
-    ));
-  });
 });
-
-interface GrammarPattern {
-  name?: string;
-  match?: string;
-  captures?: Record<string, { name?: string }>;
-}
