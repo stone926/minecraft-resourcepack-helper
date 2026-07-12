@@ -2,7 +2,11 @@ import { bindRsglArguments } from "../arguments";
 import { ArgumentNode, ExprNode, RsglDiagnostic } from "../parser";
 import { walkRsglModule } from "../parser/astTraversal";
 import { diagnostic } from "./diagnostics";
-import { checkExpression, RsglExpressionCheckContext } from "./expressionChecker";
+import {
+  checkExpression,
+  checkResourceIdExpression,
+  RsglExpressionCheckContext
+} from "./expressionChecker";
 import { formatType, isAssignable } from "./typeRelations";
 import {
   anyType,
@@ -114,17 +118,19 @@ class ResolvedImportCallValidator {
   }
 
   /**
-   * Lambda arguments get the full expression check (parameter scoping, body
-   * resolution, purity) against the scope snapshot the binder recorded at the
-   * call site, so captures of loop variables, template parameters, and local
-   * lets resolve. Without a recorded scope (import-all form) the binder
-   * already checked the arguments at bind time; everything else keeps the
-   * shallow structural inference that tolerates bare identifiers in id-like
-   * positions.
+   * Lambda arguments and simple id references use the call-site scope snapshot
+   * so captures and local id variables resolve after import linking. Limiting
+   * the latter to identifiers and simple interpolations avoids pre-checking an
+   * opaque imported call whose descendants the structural walk must validate.
+   * Without a recorded scope (import-all form) the binder already checked the
+   * arguments at bind time; other argument kinds keep structural inference.
    */
   private inferArgumentType(expression: ExprNode, expectedType: RsglType, callScope: RsglScope | undefined): RsglType {
     if (expression.kind === "LambdaExpr" && callScope) {
       return this.checkLambdaArgument(expression, callScope) ?? inferImportedArgumentType(expression, expectedType);
+    }
+    if (callScope && isResourceIdLike(expectedType) && isSimpleResourceReference(expression)) {
+      return checkResourceIdExpression(this.checkContext, expression, callScope);
     }
     return inferImportedArgumentType(expression, expectedType);
   }
@@ -136,6 +142,13 @@ class ResolvedImportCallValidator {
     this.checkedLambdaArgs.add(expression);
     return checkExpression(this.checkContext, expression, callScope);
   }
+}
+
+function isSimpleResourceReference(expression: ExprNode): boolean {
+  return expression.kind === "IdentifierExpr" || (
+    expression.kind === "TemplateStringExpr"
+    && expression.parts.every(part => part.kind === "text" || part.expression.kind === "IdentifierExpr")
+  );
 }
 
 function inferImportedArgumentType(expression: ExprNode, expectedType: RsglType): RsglType {

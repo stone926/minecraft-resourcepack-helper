@@ -263,6 +263,50 @@ describe("RSGL semantic tokens", () => {
     expectToken(mainTokens, offsetOf(mainText, "cubeModel", 1), "function", 0, "cubeModel".length);
   });
 
+  it("classifies local model ids passed to linked imported templates as variables", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const mainText = [
+      "import { slab } from \"./templates.rsgl\"",
+      "let model = `minecraft:block/custom_slab`",
+      "blockstate custom_slab {",
+      "  use slab(",
+      "    bottom: model,",
+      "    top: `${model}_top`,",
+      "    double: `${model}_double`",
+      "  )",
+      "}"
+    ].join("\n");
+    const program = bindRsglProgram([
+      { fileName: mainFile, module: parseRsgl(mainText) },
+      {
+        fileName: templatesFile,
+        module: parseRsgl([
+          "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
+          "  variants {",
+          "    [type=bottom] -> @bottom",
+          "    [type=top] -> @top",
+          "    [type=double] -> @double",
+          "  }",
+          "}"
+        ].join("\n"))
+      }
+    ]);
+    const mainModel = program.models.find(candidate => candidate.fileName === mainFile);
+    assert.ok(mainModel, "expected the entry model to be bound");
+
+    const referenceOffsets = [1, 2, 3].map(occurrence => offsetOf(mainText, "model", occurrence));
+    assert.deepStrictEqual(
+      mainModel.references.filter(reference => reference.name === "model").map(reference => reference.range.start),
+      referenceOffsets
+    );
+    const mainTokens = getRsglSemanticTokens(mainModel);
+    expectToken(mainTokens, offsetOf(mainText, "model"), "variable", declaration | readonlyFlag, "model".length);
+    for (const referenceOffset of referenceOffsets) {
+      expectToken(mainTokens, referenceOffset, "variable", readonlyFlag, "model".length);
+    }
+  });
+
   it("uses only standard VS Code token types and modifiers", () => {
     const standardTypes = new Set([
       "namespace", "class", "enum", "interface", "struct", "typeParameter", "type", "parameter",

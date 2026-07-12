@@ -7,6 +7,9 @@
       "include": "#comments"
     },
     {
+      "include": "#moduleLinkDeclarations"
+    },
+    {
       "include": "#strings"
     },
     {
@@ -48,6 +51,47 @@
           "name": "comment.block.rsgl",
           "begin": "/\\*",
           "end": "\\*/"
+        }
+      ]
+    },
+    "moduleLinkDeclarations": {
+      "patterns": [
+        {
+          "begin": "(?:^|(?<=[{};]))[ \\t]*(import|export)\\b(?!(?:[ \\t]+|/\\*[^\\r\\n]*?\\*/)*[:=])",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.rsgl"
+            }
+          },
+          "end": "(?<=\")|^(?![ \\t]*(?:from\\b|\"|//|/\\*|$))",
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                {
+                  "include": "#comments"
+                },
+                {
+                  "name": "keyword.control.rsgl",
+                  "match": "\\bas\\b"
+                }
+              ]
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "name": "keyword.control.rsgl",
+              "match": "\\b(?:from|as)\\b"
+            },
+            {
+              "include": "#operators"
+            }
+          ]
         }
       ]
     },
@@ -96,7 +140,7 @@
               "name": "storage.type.rsgl"
             },
             "2": {
-              "name": "keyword.operator.rsgl"
+              "name": "storage.type.rsgl"
             }
           },
           "end": "$|(?=[.()\\[\\],:;=?+*%<>|&}\\-])|(?=/(?!\\*))",
@@ -331,7 +375,7 @@
         },
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|from|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append)\\b"
         },
         {
           "name": "storage.type.rsgl",

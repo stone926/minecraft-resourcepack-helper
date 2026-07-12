@@ -47,6 +47,8 @@ describe("RSGL TextMate grammar", () => {
       const source = `extern! custom model ${resourcePattern}\nlet after = true`;
       const tokenization = tokenizeGrammar(grammar, source);
       expectScope(tokenization, source, resourcePattern, "entity.name.resource-pattern.rsgl");
+      expectScopeAcross(tokenization, source, "extern!", "storage.type.rsgl");
+      expectNoScope(tokenization, source, "extern!", "keyword.operator.rsgl", 0, "extern".length);
       expectScope(tokenization, source, "custom", "storage.modifier.rsgl");
       expectScope(tokenization, source, "model", "storage.type.rsgl");
       expectRootScope(tokenization, source, "after");
@@ -198,7 +200,8 @@ describe("RSGL TextMate grammar", () => {
       "}",
       "let named = call(base: block/foo, pad: 2)",
       "let member = entry.model",
-      "let ternary = condition ? true : false"
+      "let ternary = condition ? true : false",
+      "let moduleKeys = { import: 1, export: 2 }"
     ].join("\n");
     const tokenization = tokenizeGrammar(grammar, source);
 
@@ -210,6 +213,10 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "true : false", "constant.language.rsgl");
     expectNoScope(tokenization, source, "parent:", "variable.other.property.rsgl");
     expectNoScope(tokenization, source, "model:", "storage.type.rsgl");
+    expectScope(tokenization, source, "import:", "meta.object-key.rsgl");
+    expectScope(tokenization, source, "export:", "meta.object-key.rsgl");
+    expectNoScope(tokenization, source, "import:", "keyword.control.rsgl");
+    expectNoScope(tokenization, source, "export:", "keyword.control.rsgl");
   });
 
   it("highlights compound declarations and parser-recognized structural vocabulary", () => {
@@ -245,6 +252,42 @@ describe("RSGL TextMate grammar", () => {
     }
     expectNoScope(tokenization, source, "block/foo", "storage.modifier.rsgl");
     expectScope(tokenization, source, "block:", "meta.object-key.rsgl");
+  });
+
+  it("distinguishes import-source and model-geometry from scopes", () => {
+    const grammar = readGrammar();
+    const source = [
+      "import geometry from \"./geometry.rsgl\"",
+      "import alternateGeometry",
+      "from \"./alternate-geometry.rsgl\"",
+      "export { geometry }",
+      "from /* shared",
+      "  comment */ \"./geometry.rsgl\"",
+      "let metadata = {",
+      "  from: \"source\"",
+      "}",
+      "json metadata {",
+      "  from \"source\"",
+      "}",
+      "model block sample {",
+      "  element from [0.8, 0, 8] to [15.2, 16, 8] {",
+      "    all texture \"#all\"",
+      "  }",
+      "}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    for (let occurrence = 0; occurrence < 3; occurrence++) {
+      expectScope(tokenization, source, "from", "keyword.control.rsgl", occurrence);
+      expectNoScope(tokenization, source, "from", "variable.other.property.rsgl", occurrence);
+    }
+    expectScope(tokenization, source, "from", "meta.object-key.rsgl", 3);
+    expectNoScope(tokenization, source, "from", "keyword.control.rsgl", 3);
+    expectScope(tokenization, source, "from", "variable.other.property.rsgl", 4);
+    expectNoScope(tokenization, source, "from", "keyword.control.rsgl", 4);
+    expectScope(tokenization, source, "from", "variable.other.property.rsgl", 5);
+    expectNoScope(tokenization, source, "from", "keyword.control.rsgl", 5);
+    expectScope(tokenization, source, "to", "variable.other.property.rsgl");
   });
 
   it("matches complete resource locations at punctuation-valid boundaries", () => {
