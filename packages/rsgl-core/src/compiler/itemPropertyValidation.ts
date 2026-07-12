@@ -1,11 +1,8 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { parseResourceId as parseStrictResourceId } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
-import {
-  asObject,
-  itemModelType,
-  sourceRangeForGeneratedPath
-} from "./validationShared";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
+import { requireArray, requireObject, stripMinecraftPrefix } from "./validationPrimitives";
 
 export type ValidateNestedItemModel = (
   value: JsonValue | undefined,
@@ -211,42 +208,30 @@ export function validateItemRangeDispatch(
   );
   validateItemPropertyFieldTypes(model, rangeDispatchFieldRules, unit, diagnostics, generatedPath);
   const entriesPath = appendGeneratedPath(generatedPath, "entries");
-  const entries = Array.isArray(model.entries) ? model.entries : null;
-  if (!entries) {
-    diagnostics.push({
-      code: "rsgl.invalidItemRangeEntries",
-      message: "Item range_dispatch entries must be an array.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, entriesPath)
-    });
-  } else {
+  const entries = requireArray(model.entries, unit, diagnostics, {
+    code: "rsgl.invalidItemRangeEntries",
+    message: "Item range_dispatch entries must be an array.",
+    generatedPath: entriesPath
+  });
+  if (entries) {
     if (entries.length === 0) {
-      diagnostics.push({
-        code: "rsgl.emptyItemRangeEntries",
-        message: "Item range_dispatch should define at least one entry.",
-        severity: "warning",
-        range: sourceRangeForGeneratedPath(unit, entriesPath)
-      });
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.emptyItemRangeEntries", "Item range_dispatch should define at least one entry.", "warning", entriesPath);
     }
     let previousThreshold = -Infinity;
     for (const [index, entry] of entries.entries()) {
       const entryPath = appendGeneratedPath(entriesPath, String(index));
       const thresholdPath = appendGeneratedPath(entryPath, "threshold");
-      const entryObject = asObject(entry);
-      if (!entryObject || typeof entryObject.threshold !== "number" || !Number.isFinite(entryObject.threshold)) {
-        diagnostics.push({
-          code: "rsgl.invalidItemRangeThreshold",
-          message: "Item range_dispatch entry threshold must be a finite number.",
-          severity: "error",
-          range: sourceRangeForGeneratedPath(unit, thresholdPath)
-        });
+      const entryObject = requireObject(entry, unit, diagnostics, {
+        code: "rsgl.invalidItemRangeThreshold",
+        message: "Item range_dispatch entry threshold must be a finite number.",
+        generatedPath: thresholdPath
+      });
+      if (!entryObject) {
+        // The shared object primitive already emitted the range-threshold diagnostic.
+      } else if (typeof entryObject.threshold !== "number" || !Number.isFinite(entryObject.threshold)) {
+        pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemRangeThreshold", "Item range_dispatch entry threshold must be a finite number.", "error", thresholdPath);
       } else if (entryObject.threshold < previousThreshold) {
-        diagnostics.push({
-          code: "rsgl.unsortedItemRangeThresholds",
-          message: "Item range_dispatch entries should be sorted by threshold ascending.",
-          severity: "warning",
-          range: sourceRangeForGeneratedPath(unit, thresholdPath)
-        });
+        pushUnitDiagnostic(diagnostics, unit, "rsgl.unsortedItemRangeThresholds", "Item range_dispatch entries should be sorted by threshold ascending.", "warning", thresholdPath);
       } else {
         previousThreshold = entryObject.threshold;
       }
@@ -255,12 +240,7 @@ export function validateItemRangeDispatch(
   }
 
   if (!("fallback" in model)) {
-    diagnostics.push({
-      code: "rsgl.itemModelMissingFallback",
-      message: "Item range_dispatch should define a fallback model.",
-      severity: "warning",
-      range: sourceRangeForGeneratedPath(unit, generatedPath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.itemModelMissingFallback", "Item range_dispatch should define a fallback model.", "warning", generatedPath);
   } else {
     validateNestedItemModel(model.fallback, appendGeneratedPath(generatedPath, "fallback"));
   }
@@ -285,27 +265,25 @@ export function validateItemSelect(
     generatedPath
   );
   validateItemPropertyFieldTypes(model, selectFieldRules, unit, diagnostics, generatedPath);
-  const property = itemModelType(model.property);
+  const property = stripMinecraftPrefix(model.property);
   const casesPath = appendGeneratedPath(generatedPath, "cases");
-  const cases = Array.isArray(model.cases) ? model.cases : null;
-  if (!cases) {
-    diagnostics.push({
-      code: "rsgl.invalidItemSelectCases",
-      message: "Item select cases must be an array.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, casesPath)
-    });
-  } else {
+  const cases = requireArray(model.cases, unit, diagnostics, {
+    code: "rsgl.invalidItemSelectCases",
+    message: "Item select cases must be an array.",
+    generatedPath: casesPath
+  });
+  if (cases) {
     for (const [index, itemCase] of cases.entries()) {
       const casePath = appendGeneratedPath(casesPath, String(index));
-      const caseObject = asObject(itemCase);
-      if (!caseObject || !("when" in caseObject)) {
-        diagnostics.push({
-          code: "rsgl.invalidItemSelectCase",
-          message: "Item select cases must define a when value.",
-          severity: "error",
-          range: sourceRangeForGeneratedPath(unit, casePath)
-        });
+      const caseObject = requireObject(itemCase, unit, diagnostics, {
+        code: "rsgl.invalidItemSelectCase",
+        message: "Item select cases must define a when value.",
+        generatedPath: casePath
+      });
+      if (!caseObject) {
+        // The shared object primitive already emitted the invalid-case diagnostic.
+      } else if (!("when" in caseObject)) {
+        pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSelectCase", "Item select cases must define a when value.", "error", casePath);
       } else {
         validateItemSelectCaseWhen(property, caseObject.when, unit, diagnostics, appendGeneratedPath(casePath, "when"));
       }
@@ -314,12 +292,7 @@ export function validateItemSelect(
   }
 
   if (!("fallback" in model)) {
-    diagnostics.push({
-      code: "rsgl.itemModelMissingFallback",
-      message: "Item select should define a fallback model.",
-      severity: "warning",
-      range: sourceRangeForGeneratedPath(unit, generatedPath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.itemModelMissingFallback", "Item select should define a fallback model.", "warning", generatedPath);
   } else {
     validateNestedItemModel(model.fallback, appendGeneratedPath(generatedPath, "fallback"));
   }
@@ -345,23 +318,13 @@ export function validateItemCondition(
   );
   validateItemPropertyFieldTypes(model, conditionFieldRules, unit, diagnostics, generatedPath);
   if (!("on_true" in model)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemConditionBranch",
-      message: "Item condition must define an on_true model.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, generatedPath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemConditionBranch", "Item condition must define an on_true model.", "error", generatedPath);
   } else {
     validateNestedItemModel(model.on_true, appendGeneratedPath(generatedPath, "on_true"));
   }
 
   if (!("on_false" in model)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemConditionBranch",
-      message: "Item condition must define an on_false model.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, generatedPath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemConditionBranch", "Item condition must define an on_false model.", "error", generatedPath);
   } else {
     validateNestedItemModel(model.on_false, appendGeneratedPath(generatedPath, "on_false"));
   }
@@ -386,14 +349,9 @@ function validateItemSelectCaseWhen(
   }
   const values = Array.isArray(value) ? value : [value];
   for (const item of values) {
-    const normalized = itemModelType(item);
+    const normalized = stripMinecraftPrefix(item);
     if (!normalized || !allowedValues.includes(normalized)) {
-      diagnostics.push({
-        code: "rsgl.invalidItemSelectWhenValue",
-        message: `Item select property '${property}' has an invalid case value.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, generatedPath)
-      });
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSelectWhenValue", `Item select property '${property}' has an invalid case value.`, "error", generatedPath);
       return;
     }
   }
@@ -410,12 +368,7 @@ function validateItemSelectCaseResourceIds(
   const namespace = unit.id?.namespace ?? "minecraft";
   for (const item of values) {
     if (typeof item !== "string" || !parseStrictResourceId(item, namespace)) {
-      diagnostics.push({
-        code: "rsgl.invalidItemSelectWhenValue",
-        message: `Item select property '${property}' case values must be resource ids.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, generatedPath)
-      });
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSelectWhenValue", `Item select property '${property}' case values must be resource ids.`, "error", generatedPath);
       return;
     }
   }
@@ -431,25 +384,15 @@ function validateItemProperty(
   generatedPath: string
 ): void {
   const propertyPath = appendGeneratedPath(generatedPath, "property");
-  const property = itemModelType(model.property);
+  const property = stripMinecraftPrefix(model.property);
   if (!property || !knownProperties.has(property)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemProperty",
-      message: `Item ${modelType} model must define a known property.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, propertyPath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemProperty", `Item ${modelType} model must define a known property.`, "error", propertyPath);
     return;
   }
 
   for (const field of requiredFieldsByProperty.get(property) ?? []) {
     if (!(field in model)) {
-      diagnostics.push({
-        code: "rsgl.missingItemPropertyField",
-        message: `Item ${modelType} property '${property}' must define '${field}'.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, propertyPath)
-      });
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.missingItemPropertyField", `Item ${modelType} property '${property}' must define '${field}'.`, "error", propertyPath);
     }
   }
 }
@@ -464,7 +407,7 @@ function validateItemPropertyFields(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const property = itemModelType(model.property);
+  const property = stripMinecraftPrefix(model.property);
   if (!property) {
     return;
   }
@@ -476,12 +419,14 @@ function validateItemPropertyFields(
     if (!Object.hasOwn(model, field) || allowedFields.has(field)) {
       continue;
     }
-    diagnostics.push({
-      code: "rsgl.unexpectedItemPropertyField",
-      message: `Item ${modelType} property '${property}' does not support field '${field}'.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
-    });
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.unexpectedItemPropertyField",
+      `Item ${modelType} property '${property}' does not support field '${field}'.`,
+      "error",
+      appendGeneratedPath(generatedPath, field)
+    );
   }
 }
 
@@ -499,12 +444,14 @@ function validateItemPropertyFieldTypes(
     const value = model[rule.field];
     const message = itemPropertyFieldMessage(rule, value, unit.id?.namespace ?? "minecraft");
     if (message) {
-      diagnostics.push({
-        code: "rsgl.invalidItemPropertyField",
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.invalidItemPropertyField",
         message,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, rule.field))
-      });
+        "error",
+        appendGeneratedPath(generatedPath, rule.field)
+      );
     }
   }
 }
@@ -535,6 +482,6 @@ function itemPropertyFieldMessage(
   if (rule.kind === "positiveNumber") {
     return typeof value === "number" && Number.isFinite(value) && Number(value) > 0 ? null : `Field '${rule.field}' must be a positive number.`;
   }
-  const normalized = itemModelType(value);
+  const normalized = stripMinecraftPrefix(value);
   return normalized && (rule.values ?? []).includes(normalized) ? null : `Field '${rule.field}' has an invalid value.`;
 }

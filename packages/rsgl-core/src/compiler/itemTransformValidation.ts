@@ -1,11 +1,8 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import {
-  asObject,
-  sourceRangeForGeneratedPath,
-  unitRange,
-  type ValidationRange
-} from "./validationShared";
+import { pushDiagnosticAtRange, pushUnitDiagnostic, sourceRangeForGeneratedPath, unitRange } from "./validationDiagnostics";
+import { requireObject } from "./validationPrimitives";
+import type { ValidationRange } from "./validationTypes";
 
 export function validateItemTransformation(
   model: Record<string, JsonValue>,
@@ -30,25 +27,18 @@ export function validateItemTransformation(
     );
     return;
   }
-  const object = asObject(transformation);
+  const object = requireObject(transformation, unit, diagnostics, {
+    code: "rsgl.invalidItemTransformation",
+    message: "Item transformation must be a matrix array or transformation object.",
+    generatedPath: transformationPath
+  });
   if (!object) {
-    diagnostics.push({
-      code: "rsgl.invalidItemTransformation",
-      message: "Item transformation must be a matrix array or transformation object.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, transformationPath)
-    });
     return;
   }
 
   for (const field of ["left_rotation", "right_rotation", "scale", "translation"]) {
     if (!(field in object)) {
-      diagnostics.push({
-        code: "rsgl.missingItemTransformationField",
-        message: `Item transformation must define '${field}'.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, transformationPath)
-      });
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.missingItemTransformationField", `Item transformation must define '${field}'.`, "error", transformationPath);
     }
   }
   validateRotationValue(object.left_rotation, "left_rotation", unit, diagnostics, transformationPath);
@@ -93,14 +83,20 @@ function validateRotationValue(
     );
     return;
   }
-  const object = asObject(value);
-  if (!object || typeof object.angle !== "number" || !Number.isFinite(object.angle) || !isNumericArray(object.axis, 3)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemTransformation",
-      message: `Item transformation '${field}' must be a quaternion or axis-angle rotation.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, fieldPath)
-    });
+  const object = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidItemTransformation",
+    message: `Item transformation '${field}' must be a quaternion or axis-angle rotation.`,
+    generatedPath: fieldPath
+  });
+  if (object && (typeof object.angle !== "number" || !Number.isFinite(object.angle) || !isNumericArray(object.axis, 3))) {
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.invalidItemTransformation",
+      `Item transformation '${field}' must be a quaternion or axis-angle rotation.`,
+      "error",
+      fieldPath
+    );
   }
 }
 
@@ -114,12 +110,7 @@ function validateNumericArray(
   range: ValidationRange = unitRange(unit)
 ): void {
   if (!isNumericArray(value, length)) {
-    diagnostics.push({
-      code,
-      message,
-      severity: "error",
-      range
-    });
+    pushDiagnosticAtRange(diagnostics, code, message, "error", range);
   }
 }
 

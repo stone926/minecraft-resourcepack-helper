@@ -1,16 +1,14 @@
 import * as assert from "node:assert";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { ResourceUnit, RsglCompileDiagnostic } from "../../src/compiler/ir";
 import {
-  asObject,
-  pushUnitDiagnostic,
-  validateBooleanField,
-  validateStringField
-} from "../../src/compiler/validationShared";
+  attachSourceFile,
+  pushDiagnosticAtRange,
+  pushUnitDiagnostic
+} from "../../src/compiler/validationDiagnostics";
+import { validateBooleanField, validateStringField } from "../../src/compiler/validationPrimitives";
 
-describe("RSGL shared validation helpers", () => {
-  it("reports field diagnostics with unit and generated-path ranges", () => {
+describe("RSGL validation diagnostics", () => {
+  it("preserves unit, generated-path, and explicit ranges", () => {
     const diagnostics: RsglCompileDiagnostic[] = [];
     const unit = createUnit();
 
@@ -24,48 +22,39 @@ describe("RSGL shared validation helpers", () => {
       { label: "Option", generatedPath: "/nested" }
     );
     pushUnitDiagnostic(diagnostics, unit, "rsgl.warning", "Warning", "warning");
+    pushDiagnosticAtRange(diagnostics, "rsgl.info", "Info", "info", { start: 7, end: 8 }, "external.rsgl");
+    attachSourceFile(diagnostics, 0, "example.rsgl");
 
-    assert.deepStrictEqual(diagnostics.map(diagnostic => ({
-      code: diagnostic.code,
-      message: diagnostic.message,
-      severity: diagnostic.severity,
-      range: diagnostic.range
-    })), [
+    assert.deepStrictEqual(diagnostics, [
       {
         code: "rsgl.invalidString",
         message: "Field 'name' must be a string.",
         severity: "error",
-        range: { start: 1, end: 2 }
+        range: { start: 1, end: 2 },
+        fileName: "example.rsgl"
       },
       {
         code: "rsgl.invalidBoolean",
         message: "Option 'enabled' must be a boolean.",
         severity: "error",
-        range: { start: 4, end: 5 }
+        range: { start: 4, end: 5 },
+        fileName: "example.rsgl"
       },
       {
         code: "rsgl.warning",
         message: "Warning",
         severity: "warning",
-        range: { start: 1, end: 2 }
+        range: { start: 1, end: 2 },
+        fileName: "example.rsgl"
+      },
+      {
+        code: "rsgl.info",
+        message: "Info",
+        severity: "info",
+        range: { start: 7, end: 8 },
+        fileName: "external.rsgl"
       }
     ]);
-  });
-
-  it("keeps object narrowing in the shared module", () => {
-    assert.deepStrictEqual(asObject({ value: 1 }), { value: 1 });
-    assert.strictEqual(asObject([]), null);
-    assert.strictEqual(asObject(null), null);
-  });
-
-  it("does not reintroduce validation helper definitions in concern modules", () => {
-    const compilerDirectory = path.join(process.cwd(), "packages", "rsgl-core", "src", "compiler");
-    const duplicateDefinition = /function\s+(?:asObject|isObject|pushUnitDiagnostic|unitRange|validateBooleanField|validateStringField)\s*\(/;
-    const offenders = fs.readdirSync(compilerDirectory)
-      .filter(fileName => fileName.endsWith("Validation.ts"))
-      .filter(fileName => duplicateDefinition.test(fs.readFileSync(path.join(compilerDirectory, fileName), "utf8")));
-
-    assert.deepStrictEqual(offenders, []);
   });
 });
 

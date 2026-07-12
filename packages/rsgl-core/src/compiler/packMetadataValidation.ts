@@ -1,5 +1,12 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { asObject, pushUnitDiagnostic } from "./validationShared";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
+import {
+  asObject,
+  isNonNegativeInteger,
+  isPositiveInteger,
+  requireArray,
+  requireObject
+} from "./validationPrimitives";
 
 export interface PackMetadataValidationOptions {
   targetPackFormat?: { major: number; minor?: number };
@@ -28,11 +35,12 @@ export function validatePackMetadata(
   }
 
   if (Object.hasOwn(content, "pack")) {
-    const pack = asObject(content.pack);
+    const pack = requireObject(content.pack, unit, diagnostics, {
+      code: "rsgl.invalidPackMetadata",
+      message: "pack.mcmeta 'pack' must be an object."
+    });
     if (pack) {
       validatePackFormatMetadata(pack, unit, options, diagnostics);
-    } else {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPackMetadata", "pack.mcmeta 'pack' must be an object.");
     }
   }
 
@@ -235,7 +243,10 @@ function validatePackOverlays(
   const overlays = asObject(content.overlays);
   if (!overlays) {
     if (Object.hasOwn(content, "overlays")) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayEntry", "pack.mcmeta overlays must be an object.");
+      requireObject(content.overlays, unit, diagnostics, {
+        code: "rsgl.invalidOverlayEntry",
+        message: "pack.mcmeta overlays must be an object."
+      });
     }
     return;
   }
@@ -243,18 +254,23 @@ function validatePackOverlays(
   if (!Object.hasOwn(overlays, "entries")) {
     return;
   }
-  if (!Array.isArray(overlays.entries)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayEntry", "pack.mcmeta overlays.entries must be an array.");
+  const entries = requireArray(overlays.entries, unit, diagnostics, {
+    code: "rsgl.invalidOverlayEntry",
+    message: "pack.mcmeta overlays.entries must be an array."
+  });
+  if (!entries) {
     return;
   }
 
-  const entries = overlays.entries as JsonValue[];
   const directories = new Set<string>();
   for (const [index, entry] of entries.entries()) {
     const entryPath = overlayEntryPath(index);
-    const overlay = asObject(entry);
+    const overlay = requireObject(entry, unit, diagnostics, {
+      code: "rsgl.invalidOverlayEntry",
+      message: "Overlay entries must be objects.",
+      generatedPath: entryPath
+    });
     if (!overlay) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayEntry", "Overlay entries must be objects.", "error", entryPath);
       continue;
     }
     if (typeof overlay.directory !== "string" || !/^[a-z0-9_-]+$/.test(overlay.directory)) {
@@ -391,14 +407,6 @@ function targetPackFormatValue(options: PackMetadataValidationOptions): PackForm
 
 function comparePackFormats(left: PackFormatVersion, right: PackFormatVersion): number {
   return left.major === right.major ? left.minor - right.minor : left.major - right.major;
-}
-
-function isPositiveInteger(value: JsonValue | undefined): value is number {
-  return Number.isInteger(value) && Number(value) > 0;
-}
-
-function isNonNegativeInteger(value: JsonValue | undefined): value is number {
-  return Number.isInteger(value) && Number(value) >= 0;
 }
 
 function overlayEntryPath(index: number): string {

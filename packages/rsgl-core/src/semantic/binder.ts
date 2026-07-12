@@ -1,21 +1,13 @@
 import {
-  BlockNode,
   ExprNode,
   ExternDeclNode,
-  ForStmtNode,
   IdentifierNode,
-  MultipartBodyNode,
-  MultipartSectionStatementNode,
-  ResourceBodyNode,
   ResourceDeclNode,
-  ResourceStatementNode,
   RsglDiagnostic,
   RsglModule,
   RsglNode,
   TemplateDeclNode,
-  TopLevelStatementNode,
-  VariantBodyNode,
-  VariantSectionStatementNode
+  TopLevelStatementNode
 } from "../parser";
 import { externResourceKindDescription, getExternResourceKind } from "../resourceKinds";
 import { createBuiltinSymbols } from "./builtins";
@@ -23,22 +15,18 @@ import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
 import {
   checkAssignable,
-  checkEquipmentLayerListExpression,
-  checkEquipmentLayerNameExpression,
   checkExpression,
-  checkLocalLetDecl,
   checkObject,
   checkResourceIdExpression,
-  checkStringEnumLikeExpression,
   RsglExpressionCheckContext,
   validateResourceLocationLike
 } from "./expressionChecker";
+import { RsglResourceBodyChecker } from "./resourceBodyChecker";
 import { createChildScope, createScope, lookup } from "./scopes";
 import {
   anyType,
   identifierName,
   jsonType,
-  numberType,
   resourceIdType,
   RsglBindOptions,
   RsglExportRecord,
@@ -49,12 +37,8 @@ import {
   RsglSemanticModel,
   RsglSymbol,
   RsglType,
-  stringType,
-  typeFromAnnotation,
-  unknownType
+  typeFromAnnotation
 } from "./types";
-
-type CheckableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
 export function bindRsglModule(module: RsglModule, options: RsglBindOptions = {}): RsglSemanticModel {
   const binder = new RsglBinder(module, options.fileName ?? "<anonymous>", options);
@@ -70,13 +54,19 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly importCallScopes = new Map<ExprNode, RsglScope>();
   private readonly globalScope: RsglScope = createScope("global");
+  private readonly bodyChecker: RsglResourceBodyChecker;
   private namespace: string | undefined;
 
   public constructor(
     private readonly module: RsglModule,
     private readonly fileName: string,
     private readonly options: RsglBindOptions
-  ) { }
+  ) {
+    this.bodyChecker = new RsglResourceBodyChecker(this, (statements, scope) => {
+      this.predeclareTopLevel(statements, scope);
+      this.checkTopLevelStatements(statements, scope);
+    });
+  }
 
   public bind(): RsglSemanticModel {
     this.module.diagnostics.forEach(item => this.diagnostics.push(item));
@@ -167,12 +157,12 @@ class RsglBinder implements RsglExpressionCheckContext {
       } else if (statement.kind === "UseDecl") {
         this.checkExpression(statement.expression, scope);
       } else if (statement.kind === "ForStmt") {
-        this.checkForStatement(statement, scope);
+        this.bodyChecker.checkForStatement(statement, scope);
       } else if (statement.kind === "IfStmt") {
         this.checkExpression(statement.condition, scope);
-        this.checkBody(statement.thenBody, createChildScope(scope, "block"));
+        this.bodyChecker.checkBody(statement.thenBody, createChildScope(scope, "block"));
         if (statement.elseBody) {
-          this.checkBody(statement.elseBody, createChildScope(scope, "block"));
+          this.bodyChecker.checkBody(statement.elseBody, createChildScope(scope, "block"));
         }
       } else if (statement.kind === "TargetDecl") {
         this.checkExpression(statement.value, scope);
@@ -181,7 +171,7 @@ class RsglBinder implements RsglExpressionCheckContext {
         if (statement.formatRange) {
           this.checkOverlayFormatExpression(statement.formatRange, scope);
         }
-        this.checkBody(statement.body, createChildScope(scope, "block"));
+        this.bodyChecker.checkBody(statement.body, createChildScope(scope, "block"));
       }
     }
   }
@@ -190,9 +180,9 @@ class RsglBinder implements RsglExpressionCheckContext {
     const scope = createChildScope(parentScope, "template");
     this.checkCallableParameters(statement.parameters, scope);
     if (statement.body.kind === "ResourceBody") {
-      this.checkResourceBody(statement.body, scope);
+      this.bodyChecker.checkResourceBody(statement.body, scope);
     } else {
-      this.checkBody(statement.body, scope);
+      this.bodyChecker.checkBody(statement.body, scope);
     }
   }
 
@@ -224,7 +214,7 @@ class RsglBinder implements RsglExpressionCheckContext {
     if (statement.impl) {
       this.checkModelImpl(statement.impl, scope);
     }
-    this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.resourceKind);
+    this.bodyChecker.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.resourceKind);
   }
 
   private checkModelImpl(expression: ExprNode, scope: RsglScope): void {
@@ -256,271 +246,8 @@ class RsglBinder implements RsglExpressionCheckContext {
     this.checkExpression(expression, scope);
   }
 
-  private checkBody(body: CheckableBody, scope: RsglScope): void {
-    if (body.kind === "ResourceBody") {
-      this.checkResourceBody(body, scope);
-    } else if (body.kind === "Block") {
-      this.predeclareTopLevel(body.statements, scope);
-      this.checkTopLevelStatements(body.statements, scope);
-    } else if (body.kind === "VariantBody") {
-      this.checkVariantBody(body, scope);
-    } else {
-      this.checkMultipartBody(body, scope);
-    }
-  }
-
-  private checkResourceBody(body: ResourceBodyNode, scope: RsglScope, owner = "resource"): void {
-    for (const statement of body.statements) {
-      this.checkResourceStatement(statement, scope, owner);
-    }
-  }
-
-  private checkResourceStatement(statement: ResourceStatementNode, scope: RsglScope, owner: string): void {
-    if (statement.kind === "PropertyStmt") {
-      if (owner === "equipment" && statement.name.text === "layers") {
-        checkEquipmentLayerListExpression(this, statement.value, scope);
-      } else if (owner === "scaling" && statement.name.text === "type") {
-        checkStringEnumLikeExpression(this, statement.value, scope);
-      } else {
-        this.checkExpression(statement.value, scope);
-      }
-      validateResourceLocationLike(this, statement.value);
-    } else if (statement.kind === "SectionStmt") {
-      if (statement.value) {
-        if (owner === "equipment" && statement.name.text === "layers") {
-          checkEquipmentLayerListExpression(this, statement.value, scope);
-        } else if (owner === "scaling" && statement.name.text === "type") {
-          checkStringEnumLikeExpression(this, statement.value, scope);
-        } else {
-          this.checkExpression(statement.value, scope);
-        }
-      }
-      if (statement.body) {
-        this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.name.text);
-      }
-    } else if (statement.kind === "VariantsSection") {
-      this.checkVariantStatements(statement.entries, scope);
-    } else if (statement.kind === "MultipartSection") {
-      this.checkMultipartStatements(statement.entries, scope);
-    } else if (statement.kind === "UseDecl") {
-      this.checkExpression(statement.expression, scope);
-    } else if (statement.kind === "LetDecl") {
-      checkLocalLetDecl(this, statement, scope);
-    } else if (statement.kind === "PackFormatsStmt") {
-      if (statement.min) {
-        this.checkExpression(statement.min, scope);
-      }
-      if (statement.max) {
-        this.checkExpression(statement.max, scope);
-      }
-    } else if (statement.kind === "PackOverlayStmt") {
-      this.checkExpression(statement.directory, scope);
-      this.checkResourceBody(statement.body, createChildScope(scope, "block"), "packOverlay");
-    } else if (statement.kind === "PackFilterBlockStmt") {
-      if (statement.namespace) {
-        this.checkExpression(statement.namespace, scope);
-      }
-      if (statement.path) {
-        this.checkExpression(statement.path, scope);
-      }
-    } else if (statement.kind === "AtlasDirectoryStmt") {
-      if (statement.source) {
-        this.checkExpression(statement.source, scope);
-      }
-      if (statement.prefix) {
-        this.checkExpression(statement.prefix, scope);
-      }
-    } else if (statement.kind === "AtlasFilterStmt") {
-      if (statement.namespace) {
-        this.checkExpression(statement.namespace, scope);
-      }
-      if (statement.path) {
-        this.checkExpression(statement.path, scope);
-      }
-    } else if (statement.kind === "AtlasPalettedPermutationsStmt") {
-      this.checkResourceBody(statement.body, createChildScope(scope, "block"), "atlasPalettedPermutations");
-    } else if (statement.kind === "EquipmentLayerStmt") {
-      checkEquipmentLayerNameExpression(this, statement.layer, scope);
-      if (statement.texture) {
-        this.checkExpression(statement.texture, scope);
-      }
-      if (statement.dyeable) {
-        this.checkExpression(statement.dyeable, scope);
-      }
-      if (statement.color) {
-        this.checkExpression(statement.color, scope);
-      }
-      if (statement.usePlayerTexture) {
-        this.checkExpression(statement.usePlayerTexture, scope);
-      }
-    } else if (statement.kind === "ItemRangeStmt") {
-      this.checkExpression(statement.property, scope);
-      statement.options.forEach(option => this.checkExpression(option.value, scope));
-      if (statement.frames) {
-        this.checkExpression(statement.frames.frames, scope);
-        const frameScope = createChildScope(scope, "block");
-        this.defineIdentifier(frameScope, this.syntheticIdentifier("index", statement.frames.range), "variable", numberType, statement.frames);
-        this.defineIdentifier(frameScope, this.syntheticIdentifier("frame", statement.frames.range), "variable", anyType, statement.frames);
-        this.checkExpression(statement.frames.model, frameScope);
-      }
-      if (statement.fallback) {
-        this.checkExpression(statement.fallback, scope);
-      }
-    } else if (statement.kind === "ItemSelectStmt") {
-      this.checkExpression(statement.property, scope);
-      statement.options.forEach(option => this.checkExpression(option.value, scope));
-      statement.cases.forEach(item => {
-        this.checkExpression(item.when, scope);
-        this.checkExpression(item.model, scope);
-      });
-      if (statement.fallback) {
-        this.checkExpression(statement.fallback, scope);
-      }
-    } else if (statement.kind === "ItemConditionStmt") {
-      this.checkExpression(statement.property, scope);
-      statement.options.forEach(option => this.checkExpression(option.value, scope));
-      if (statement.onTrue) {
-        this.checkExpression(statement.onTrue, scope);
-      }
-      if (statement.onFalse) {
-        this.checkExpression(statement.onFalse, scope);
-      }
-    } else if (statement.kind === "ItemCompositeStmt") {
-      statement.models.forEach(model => this.checkExpression(model, scope));
-    } else if (statement.kind === "ItemSpecialStmt") {
-      this.checkExpression(statement.base, scope);
-      this.checkExpression(statement.model, scope);
-    } else if (statement.kind === "ForStmt") {
-      this.checkForStatement(statement, scope);
-    } else if (statement.kind === "IfStmt") {
-      this.checkExpression(statement.condition, scope);
-      this.checkBody(statement.thenBody, createChildScope(scope, "block"));
-      if (statement.elseBody) {
-        this.checkBody(statement.elseBody, createChildScope(scope, "block"));
-      }
-    } else if (statement.kind === "BaseStmt") {
-      this.checkExpression(statement.path, scope);
-    } else if (statement.kind === "MergeStmt") {
-      this.checkExpression(statement.value, scope);
-    }
-  }
-
-  private checkForStatement(statement: ForStmtNode, scope: RsglScope): void {
-    const loopScope = createChildScope(scope, "loop");
-    const seen = new Set<string>();
-    const forDimensions = statement.dimensions.length ? statement.dimensions : [{
-      kind: "ForDimension" as const,
-      bindings: statement.bindings,
-      iterable: statement.iterable,
-      range: statement.range,
-      fullRange: statement.fullRange
-    }];
-    for (const dimension of forDimensions) {
-      this.checkForIterableExpression(dimension.iterable, loopScope);
-      const finiteDomain = dimension.bindings.length === 1 ? finiteStringDomain(dimension.iterable, loopScope) : null;
-      for (const binding of dimension.bindings) {
-        if (seen.has(binding.text)) {
-          this.diagnostics.push(diagnostic("rsgl.duplicateLoopBinding", `Duplicate loop binding '${binding.text}'.`, binding.range));
-        }
-        seen.add(binding.text);
-        this.defineIdentifier(loopScope, binding, "variable", anyType, binding);
-        if (finiteDomain) {
-          const symbol = lookup(loopScope, binding.text);
-          if (symbol) {
-            symbol.finiteDomain = finiteDomain;
-          }
-        }
-      }
-    }
-    this.checkBody(statement.body, loopScope);
-  }
-
-  private checkForIterableExpression(expression: ExprNode, scope: RsglScope): RsglType {
-    if (expression.kind !== "ListExpr") {
-      return this.checkExpression(expression, scope);
-    }
-    const elementTypes = expression.elements.map(element => this.checkForIterableListElement(element, scope));
-    return { kind: "List", elementType: elementTypes[0] ?? unknownType };
-  }
-
-  private checkForIterableListElement(expression: ExprNode, scope: RsglScope): RsglType {
-    if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-      return stringType;
-    }
-    return this.checkExpression(expression, scope);
-  }
-
-  private checkVariantBody(body: VariantBodyNode, scope: RsglScope): void {
-    this.checkVariantStatements(body.statements, scope);
-  }
-
-  private checkVariantStatements(statements: VariantSectionStatementNode[], scope: RsglScope): void {
-    for (const statement of statements) {
-      this.checkVariantStatement(statement, scope);
-    }
-  }
-
-  private checkVariantStatement(statement: VariantSectionStatementNode, scope: RsglScope): void {
-    if (statement.kind === "VariantEntry") {
-      this.checkExpression(statement.state, scope);
-      this.checkExpression(statement.value, scope);
-    } else if (statement.kind === "LetDecl") {
-      checkLocalLetDecl(this, statement, scope);
-    } else if (statement.kind === "UseDecl") {
-      this.checkExpression(statement.expression, scope);
-    } else if (statement.kind === "ForStmt") {
-      this.checkForStatement(statement, scope);
-    } else if (statement.kind === "IfStmt") {
-      this.checkExpression(statement.condition, scope);
-      this.checkBody(statement.thenBody, createChildScope(scope, "block"));
-      if (statement.elseBody) {
-        this.checkBody(statement.elseBody, createChildScope(scope, "block"));
-      }
-    }
-  }
-
-  private checkMultipartBody(body: MultipartBodyNode, scope: RsglScope): void {
-    this.checkMultipartStatements(body.statements, scope);
-  }
-
-  private checkMultipartStatements(statements: MultipartSectionStatementNode[], scope: RsglScope): void {
-    for (const statement of statements) {
-      this.checkMultipartStatement(statement, scope);
-    }
-  }
-
-  private checkMultipartStatement(statement: MultipartSectionStatementNode, scope: RsglScope): void {
-    if (statement.kind === "MultipartEntry") {
-      if (statement.when) {
-        this.checkExpression(statement.when, scope);
-      }
-      this.checkExpression(statement.apply, scope);
-    } else if (statement.kind === "LetDecl") {
-      checkLocalLetDecl(this, statement, scope);
-    } else if (statement.kind === "UseDecl") {
-      this.checkExpression(statement.expression, scope);
-    } else if (statement.kind === "ForStmt") {
-      this.checkForStatement(statement, scope);
-    } else if (statement.kind === "IfStmt") {
-      this.checkExpression(statement.condition, scope);
-      this.checkBody(statement.thenBody, createChildScope(scope, "block"));
-      if (statement.elseBody) {
-        this.checkBody(statement.elseBody, createChildScope(scope, "block"));
-      }
-    }
-  }
-
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
     return checkExpression(this, expression, scope);
-  }
-
-  private syntheticIdentifier(text: string, range: { start: number; end: number }): IdentifierNode {
-    return {
-      kind: "Identifier",
-      text,
-      range,
-      fullRange: range
-    };
   }
 
   private recordImport(statement: Extract<TopLevelStatementNode, { kind: "ImportDecl" }>, scope: RsglScope): void {

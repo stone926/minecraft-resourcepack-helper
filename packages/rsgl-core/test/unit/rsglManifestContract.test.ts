@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { rsglModelGeometryKeywords } from "../../src/modelGeometrySyntax";
 import { rsglResourceKinds } from "../../src/resourceKinds";
 
 describe("RSGL extension manifest contract", () => {
@@ -55,12 +56,23 @@ describe("RSGL extension manifest contract", () => {
     const grammar = rsglPackageJson.contributes?.grammars?.find(entry => entry.language === "rsgl");
     assert.strictEqual(grammar?.scopeName, "source.rsgl");
     assert.ok(grammar.path);
-    const grammarJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, grammar.path!), "utf8")) as unknown;
+    const grammarJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, grammar.path!), "utf8")) as {
+      repository?: {
+        properties?: {
+          patterns?: Array<{ name?: string; match?: string }>;
+        };
+      };
+    };
     for (const kind of rsglResourceKinds) {
       assert.ok(JSON.stringify(grammarJson).includes(kind), `Expected RSGL grammar to include resource kind '${kind}'.`);
     }
-    for (const keyword of ["box", "element", "cullface", "mirror", "translate"]) {
-      assert.ok(JSON.stringify(grammarJson).includes(keyword), `Expected RSGL grammar to include geometry keyword '${keyword}'.`);
+    const geometryPropertyRule = grammarJson.repository?.properties?.patterns?.find(
+      pattern => pattern.name === "variable.other.property.rsgl"
+    );
+    assert.strictEqual(typeof geometryPropertyRule?.match, "string");
+    const geometryPropertyPattern = new RegExp(`^(?:${geometryPropertyRule!.match})$`);
+    for (const keyword of rsglModelGeometryKeywords) {
+      assert.ok(geometryPropertyPattern.test(keyword), `Expected RSGL grammar to include geometry keyword '${keyword}'.`);
     }
 
     for (const command of [

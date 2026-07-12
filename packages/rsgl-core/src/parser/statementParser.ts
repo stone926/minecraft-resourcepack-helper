@@ -1,24 +1,22 @@
 import { ExpressionParser, unquoteString } from "./expressionParser";
+import {
+  parseMultipartBody,
+  parseMultipartSection,
+  parseVariantBody,
+  parseVariantsSection
+} from "./blockstateStatementParser";
+import { tryParseItemModelStatement } from "./itemModelStatementParser";
+import { tryParseModelGeometryStatement } from "./modelGeometryStatementParser";
+import { tryParsePackAtlasEquipmentStatement } from "./packAtlasEquipmentStatementParser";
 import { getRsglResourceKindDescriptor } from "../resourceKinds";
 import { tokenRange } from "./parserContext";
 import {
   BodyMode,
-  equipmentLayerClauseKeywords,
-  itemConditionOptionKeywords,
-  itemRangeOptionKeywords,
-  itemSelectOptionKeywords,
-  modelElementBodyClauseKeywords,
-  modelElementHeaderClauseKeywords,
-  modelFaceTargets,
-  modelGeometryStatementKeywords,
   resourceBodySectionKeywords
 } from "./statementKeywords";
+import { ResourceStatementParserHost } from "./statementParserHost";
 import {
-  AtlasDirectoryStmtNode,
-  AtlasFilterStmtNode,
-  AtlasPalettedPermutationsStmtNode,
   BlockNode,
-  EquipmentLayerStmtNode,
   ExprNode,
   ExternVarStmtNode,
   ForDimensionNode,
@@ -28,27 +26,18 @@ import {
   LetDeclNode,
   MergeMode,
   MergeModifierNode,
-  ModelElementStmtNode,
-  ModelFaceClauseNode,
-  ModelGeometryPropertyNode,
-  ModelTextureStmtNode,
   MultipartBodyNode,
-  MultipartEntryNode,
-  MultipartSectionStatementNode,
-  PackFilterBlockStmtNode,
-  PackFormatsStmtNode,
-  PackOverlayStmtNode,
   ResourceBodyNode,
   ResourceStatementNode,
   RsglToken,
   TopLevelStatementNode,
   UseDeclNode,
-  VariantBodyNode,
-  VariantEntryNode,
-  VariantSectionStatementNode
+  VariantBodyNode
 } from "./types";
 
 export abstract class StatementParser extends ExpressionParser {
+  private resourceStatementParserHostValue: ResourceStatementParserHost | undefined;
+
   protected abstract parseTopLevelStatement(): TopLevelStatementNode;
 
   protected parseLetDecl(): LetDeclNode {
@@ -181,10 +170,10 @@ export abstract class StatementParser extends ExpressionParser {
       return this.parseResourceBody(owner);
     }
     if (mode === "variants") {
-      return this.parseVariantBody();
+      return parseVariantBody(this.resourceStatementParserHost());
     }
     if (mode === "multipart") {
-      return this.parseMultipartBody();
+      return parseMultipartBody(this.resourceStatementParserHost());
     }
     return this.parseBlock();
   }
@@ -206,12 +195,12 @@ export abstract class StatementParser extends ExpressionParser {
         if (bodyDialect === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "variants");
         }
-        statement = this.parseVariantsSection();
+        statement = parseVariantsSection(this.resourceStatementParserHost());
       } else if (this.current().text === "multipart") {
         if (bodyDialect === "blockstate") {
           this.noteBlockstateSection(seenBlockstateSections, "multipart");
         }
-        statement = this.parseMultipartSection();
+        statement = parseMultipartSection(this.resourceStatementParserHost());
       } else {
         statement = this.parseResourceStatement(owner);
       }
@@ -250,90 +239,6 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parseVariantBody(): VariantBodyNode {
-    const start = this.current();
-    if (!this.matchText("{")) {
-      return {
-        kind: "VariantBody",
-        statements: [],
-        ...this.nodeRanges(start, start)
-      };
-    }
-
-    const statements: VariantSectionStatementNode[] = [];
-    while (!this.isAtEnd() && this.current().text !== "}") {
-      const mark = this.mark();
-      statements.push(this.parseVariantSectionStatement());
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse variant statement; skipping token.");
-    }
-    this.expectText("}", "Expected '}' after variants body.");
-    return {
-      kind: "VariantBody",
-      statements,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseVariantSectionStatement(): VariantSectionStatementNode {
-    const token = this.current();
-    if (token.text === "let") {
-      return this.parseLetDecl();
-    }
-    if (token.text === "use") {
-      return this.parseUseDecl();
-    }
-    if (token.text === "for") {
-      return this.parseForStmt("variants");
-    }
-    if (token.text === "if") {
-      return this.parseIfStmt("variants");
-    }
-    return this.parseVariantEntry();
-  }
-
-  private parseMultipartBody(): MultipartBodyNode {
-    const start = this.current();
-    if (!this.matchText("{")) {
-      return {
-        kind: "MultipartBody",
-        statements: [],
-        ...this.nodeRanges(start, start)
-      };
-    }
-
-    const statements: MultipartSectionStatementNode[] = [];
-    while (!this.isAtEnd() && this.current().text !== "}") {
-      const mark = this.mark();
-      statements.push(this.parseMultipartSectionStatement());
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse multipart statement; skipping token.");
-    }
-    this.expectText("}", "Expected '}' after multipart body.");
-    return {
-      kind: "MultipartBody",
-      statements,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseMultipartSectionStatement(): MultipartSectionStatementNode {
-    const token = this.current();
-    if (token.text === "let") {
-      return this.parseLetDecl();
-    }
-    if (token.text === "use") {
-      return this.parseUseDecl();
-    }
-    if (token.text === "for") {
-      return this.parseForStmt("multipart");
-    }
-    if (token.text === "if") {
-      return this.parseIfStmt("multipart");
-    }
-    return this.parseMultipartEntry();
-  }
-
   private parseResourceStatement(owner: string): ResourceStatementNode {
     const token = this.current();
     const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
@@ -369,56 +274,22 @@ export abstract class StatementParser extends ExpressionParser {
     if (token.text === "merge" && !this.isExplicitPropertyStart()) {
       return this.parseMergeStmt();
     }
-    if ((bodyDialect === "pack" || owner === "packOverlay") && token.text === "formats") {
-      return this.parsePackFormatsStmt();
+
+    const host = this.resourceStatementParserHost();
+    const packAtlasEquipmentStatement = tryParsePackAtlasEquipmentStatement(host, owner, bodyDialect);
+    if (packAtlasEquipmentStatement) {
+      return packAtlasEquipmentStatement;
     }
-    if (bodyDialect === "pack" && token.text === "overlay") {
-      return this.parsePackOverlayStmt();
-    }
-    if (owner === "filter" && token.text === "block" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parsePackFilterBlockStmt();
-    }
-    if (bodyDialect === "atlas" && token.text === "directory" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parseAtlasDirectoryStmt();
-    }
-    if (bodyDialect === "atlas" && token.text === "filter" && this.peekText(1) !== "{" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parseAtlasFilterStmt();
-    }
-    if (bodyDialect === "atlas" && token.text === "paletted_permutations" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parseAtlasPalettedPermutationsStmt();
-    }
-    if (bodyDialect === "equipment" && token.text === "layer" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parseEquipmentLayerStmt();
-    }
-    if (bodyDialect === "model" && token.text === "texture" && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parseModelTextureStmt();
-    }
-    if (bodyDialect === "model" && modelGeometryStatementKeywords.has(token.text) && this.peekText(1) !== ":" && this.peekText(1) !== "=") {
-      return this.parseModelElementStmt();
+    const modelGeometryStatement = tryParseModelGeometryStatement(host, bodyDialect);
+    if (modelGeometryStatement) {
+      return modelGeometryStatement;
     }
     if (bodyDialect === "mcmeta" && token.text === "texture") {
       return this.parseSectionStmt();
     }
-    if (token.text === "range") {
-      return this.parseItemRangeStmt();
-    }
-    if (token.text === "select") {
-      return this.parseItemSelectStmt();
-    }
-    if (token.text === "condition") {
-      return this.parseItemConditionStmt();
-    }
-    if (token.text === "composite") {
-      return this.parseItemCompositeStmt();
-    }
-    if (token.text === "empty") {
-      return this.parseItemEmptyStmt();
-    }
-    if (token.text === "selected_item") {
-      return this.parseItemSelectedItemStmt();
-    }
-    if (token.text === "special") {
-      return this.parseItemSpecialStmt();
+    const itemModelStatement = tryParseItemModelStatement(host);
+    if (itemModelStatement) {
+      return itemModelStatement;
     }
     if (resourceBodySectionKeywords.has(token.text)) {
       return this.parseSectionStmt();
@@ -577,305 +448,6 @@ export abstract class StatementParser extends ExpressionParser {
     return this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
   }
 
-  private parsePackFormatsStmt(): PackFormatsStmtNode {
-    const start = this.advance();
-    let min: ExprNode | undefined;
-    let max: ExprNode | undefined;
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
-      const mark = this.mark();
-      if (this.matchText("min")) {
-        min = this.parseExpression({ stopTexts: ["max", "}"] });
-      } else if (this.matchText("max")) {
-        max = this.parseExpression({ stopTexts: ["min", "}"] });
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedPackFormatClause", "Expected 'min' or 'max' in pack formats.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse pack formats clause; skipping token.");
-    }
-    return {
-      kind: "PackFormatsStmt",
-      keyword: start.text,
-      min,
-      max,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parsePackOverlayStmt(): PackOverlayStmtNode {
-    const start = this.advance();
-    const directory = this.parseExpression({ stopTexts: ["{"] });
-    const body = this.current().text === "{"
-      ? this.parseResourceBody("packOverlay")
-      : this.emptyResourceBodyAt(this.current(), "Expected pack overlay body.");
-    return {
-      kind: "PackOverlayStmt",
-      keyword: start.text,
-      directory,
-      body,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parsePackFilterBlockStmt(): PackFilterBlockStmtNode {
-    const start = this.advance();
-    let namespace: ExprNode | undefined;
-    let path: ExprNode | undefined;
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
-      const mark = this.mark();
-      if (this.matchText("namespace")) {
-        namespace = this.parseExpression({ stopTexts: ["path", "}"] });
-      } else if (this.matchText("path")) {
-        path = this.parseExpression({ stopTexts: ["namespace", "}"] });
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedPackFilterBlockClause", "Expected 'namespace' or 'path' in pack filter block.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse pack filter block clause; skipping token.");
-    }
-    return {
-      kind: "PackFilterBlockStmt",
-      keyword: start.text,
-      namespace,
-      path,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseAtlasDirectoryStmt(): AtlasDirectoryStmtNode {
-    const start = this.advance();
-    let source: ExprNode | undefined;
-    let prefix: ExprNode | undefined;
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
-      const mark = this.mark();
-      if (this.matchText("source")) {
-        source = this.parseExpression({ stopTexts: ["prefix", "}"] });
-      } else if (this.matchText("prefix")) {
-        prefix = this.parseExpression({ stopTexts: ["source", "}"] });
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedAtlasDirectoryClause", "Expected 'source' or 'prefix' in atlas directory source.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse atlas directory clause; skipping token.");
-    }
-    return {
-      kind: "AtlasDirectoryStmt",
-      keyword: start.text,
-      source,
-      prefix,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseAtlasFilterStmt(): AtlasFilterStmtNode {
-    const start = this.advance();
-    let namespace: ExprNode | undefined;
-    let path: ExprNode | undefined;
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
-      const mark = this.mark();
-      if (this.matchText("namespace")) {
-        namespace = this.parseExpression({ stopTexts: ["path", "}"] });
-      } else if (this.matchText("path")) {
-        path = this.parseExpression({ stopTexts: ["namespace", "}"] });
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedAtlasFilterClause", "Expected 'namespace' or 'path' in atlas filter source.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse atlas filter clause; skipping token.");
-    }
-    return {
-      kind: "AtlasFilterStmt",
-      keyword: start.text,
-      namespace,
-      path,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseAtlasPalettedPermutationsStmt(): AtlasPalettedPermutationsStmtNode {
-    const start = this.advance();
-    const body = this.current().text === "{"
-      ? this.parseResourceBody("atlasPalettedPermutations")
-      : this.emptyResourceBodyAt(this.current(), "Expected paletted_permutations body.");
-    return {
-      kind: "AtlasPalettedPermutationsStmt",
-      keyword: start.text,
-      body,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseEquipmentLayerStmt(): EquipmentLayerStmtNode {
-    const start = this.advance();
-    const layer = this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
-    let texture: ExprNode | undefined;
-    let dyeable: ExprNode | undefined;
-    let color: ExprNode | undefined;
-    let usePlayerTexture: ExprNode | undefined;
-
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
-      const mark = this.mark();
-      if (this.matchText("texture")) {
-        texture = this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
-      } else if (this.current().text === "dyeable") {
-        dyeable = this.parseEquipmentBooleanClause();
-      } else if (this.matchText("color")) {
-        color = this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
-      } else if (this.current().text === "use_player_texture" || this.current().text === "usePlayerTexture") {
-        usePlayerTexture = this.parseEquipmentBooleanClause();
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedEquipmentLayerClause", "Expected 'texture', 'dyeable', 'color', or 'use_player_texture' in equipment layer.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse equipment layer clause; skipping token.");
-    }
-
-    return {
-      kind: "EquipmentLayerStmt",
-      keyword: start.text,
-      layer,
-      texture,
-      dyeable,
-      color,
-      usePlayerTexture,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseEquipmentBooleanClause(): ExprNode {
-    const start = this.advance();
-    if (this.isAtEnd() || this.isLineBoundaryOr("}") || equipmentLayerClauseKeywords.includes(this.current().text)) {
-      return this.booleanLiteral(start, true);
-    }
-    return this.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
-  }
-
-  private parseModelTextureStmt(): ModelTextureStmtNode {
-    const start = this.advance();
-    const key = this.parseIdentifier("Expected model texture key.") ?? this.syntheticIdentifier(start, "");
-    const value = this.parseExpression({ stopTexts: [] });
-    return {
-      kind: "ModelTextureStmt",
-      keyword: start.text,
-      key,
-      value,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseModelElementStmt(): ModelElementStmtNode {
-    const start = this.advance();
-    const elementKind = start.text === "element" ? "element" : "box";
-    const label = this.current().kind === "string" ? this.parseStringLiteral() : undefined;
-    let from: ExprNode | undefined;
-    let to: ExprNode | undefined;
-    const properties: ModelGeometryPropertyNode[] = [];
-    const faces: ModelFaceClauseNode[] = [];
-
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("{", "}")) {
-      const mark = this.mark();
-      if (this.matchText("from")) {
-        from = this.parseExpression({ stopTexts: [...modelElementHeaderClauseKeywords, "{", "}"] });
-      } else if (this.matchText("to")) {
-        to = this.parseExpression({ stopTexts: [...modelElementHeaderClauseKeywords, "{", "}"] });
-      } else if (modelElementHeaderClauseKeywords.includes(this.current().text)) {
-        properties.push(this.parseModelGeometryProperty(modelElementHeaderClauseKeywords));
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedModelElementClause", "Expected 'from', 'to', or a model element clause.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse model element clause; skipping token.");
-    }
-
-    if (this.current().text === "{") {
-      const body = this.parseModelElementBody();
-      properties.push(...body.properties);
-      faces.push(...body.faces);
-    }
-
-    return {
-      kind: "ModelElementStmt",
-      keyword: start.text,
-      elementKind,
-      label,
-      from,
-      to,
-      properties,
-      faces,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseModelElementBody(): { properties: ModelGeometryPropertyNode[]; faces: ModelFaceClauseNode[] } {
-    this.matchText("{");
-    const properties: ModelGeometryPropertyNode[] = [];
-    const faces: ModelFaceClauseNode[] = [];
-    while (!this.isAtEnd() && this.current().text !== "}") {
-      const mark = this.mark();
-      if (this.current().text === "face" || modelFaceTargets.has(this.current().text)) {
-        faces.push(this.parseModelFaceClause());
-      } else if (modelElementBodyClauseKeywords.includes(this.current().text)) {
-        properties.push(this.parseModelGeometryProperty(modelElementBodyClauseKeywords));
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedModelElementBodyClause", "Expected a model element property or face clause.");
-        this.recoverToLineEnd();
-      }
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse model element body clause; skipping token.");
-    }
-    this.expectText("}", "Expected '}' after model element body.");
-    return { properties, faces };
-  }
-
-  private parseModelFaceClause(): ModelFaceClauseNode {
-    const start = this.current();
-    if (this.matchText("face")) {
-      // optional readability keyword
-    }
-    const target = this.parseIdentifier("Expected model face direction or 'all'.") ?? this.syntheticIdentifier(start, "all");
-    if (!modelFaceTargets.has(target.text)) {
-      this.addDiagnostic("rsgl.invalidModelFaceTarget", "Expected model face direction or 'all'.", target.range);
-    }
-    const properties: ModelGeometryPropertyNode[] = [];
-    while (!this.isAtEnd() && !this.isLineBoundaryOr("}")) {
-      const mark = this.mark();
-      if (modelElementBodyClauseKeywords.includes(this.current().text)) {
-        properties.push(this.parseModelGeometryProperty(modelElementBodyClauseKeywords));
-      } else {
-        this.addDiagnosticAtCurrent("rsgl.expectedModelFaceClause", "Expected model face property.");
-        this.recoverToLineEnd();
-        break;
-      }
-      this.ensureProgress(mark, "Unable to parse model face clause; skipping token.");
-    }
-    return {
-      kind: "ModelFaceClause",
-      target,
-      properties,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseModelGeometryProperty(stopClauses: string[]): ModelGeometryPropertyNode {
-    const start = this.current();
-    const name = this.parseIdentifier("Expected model geometry property.") ?? this.syntheticIdentifier(start, start.text);
-    const value = this.isAtEnd() || this.isLineBoundaryOr("}") || stopClauses.includes(this.current().text)
-      ? this.booleanLiteral(start, true)
-      : this.parseExpression({ stopTexts: [...stopClauses, "}"] });
-    return {
-      kind: "ModelGeometryProperty",
-      name,
-      value,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
   private parseBaseStmt(): ResourceStatementNode {
     const start = this.advance();
     const path = this.parseExpression({ stopTexts: [] });
@@ -937,301 +509,39 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parseVariantsSection(): ResourceStatementNode {
-    const start = this.advance();
-    const entries: VariantSectionStatementNode[] = [];
-    this.expectText("{", "Expected variants body.");
-    while (!this.isAtEnd() && this.current().text !== "}") {
-      const mark = this.mark();
-      entries.push(this.parseVariantSectionStatement());
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse variant entry; skipping token.");
-    }
-    this.expectText("}", "Expected '}' after variants.");
-    return {
-      kind: "VariantsSection",
-      keyword: start.text,
-      entries,
-      ...this.nodeRanges(start, this.previousOr(start))
+  private resourceStatementParserHost(): ResourceStatementParserHost {
+    return this.resourceStatementParserHostValue ??= {
+      current: () => this.current(),
+      advance: () => this.advance(),
+      previousOr: fallback => this.previousOr(fallback),
+      isAtEnd: () => this.isAtEnd(),
+      isLineBoundaryOr: (...texts) => this.isLineBoundaryOr(...texts),
+      peekText: ahead => this.peekText(ahead),
+      mark: () => this.mark(),
+      ensureProgress: (mark, message) => this.ensureProgress(mark, message),
+      matchText: text => this.matchText(text),
+      expectText: (text, message) => this.expectText(text, message),
+      consumeOptionalSeparator: () => this.consumeOptionalSeparator(),
+      consumeBalancedBlock: message => this.consumeBalancedBlock(message),
+      recoverToLineEnd: () => this.recoverToLineEnd(),
+      addDiagnosticAtCurrent: (code, message, severity) => this.addDiagnosticAtCurrent(code, message, severity),
+      addDiagnostic: (code, message, range, severity) => this.addDiagnostic(code, message, range, severity),
+      parseExpression: (options, minPrecedence) => this.parseExpression(options, minPrecedence),
+      parseIdentifier: message => this.parseIdentifier(message),
+      parseStringLiteral: () => this.parseStringLiteral(),
+      parseObjectExpression: () => this.parseObjectExpression(),
+      parseBlockstateEntryValue: () => this.parseBlockstateEntryValue(),
+      parseLetDecl: () => this.parseLetDecl(),
+      parseUseDecl: () => this.parseUseDecl(),
+      parseForStmt: mode => this.parseForStmt(mode),
+      parseIfStmt: mode => this.parseIfStmt(mode),
+      parseResourceBody: (owner, allowBase) => this.parseResourceBody(owner, allowBase),
+      emptyResourceBodyAt: (token, message) => this.emptyResourceBodyAt(token, message),
+      missingExprAt: token => this.missingExprAt(token),
+      syntheticIdentifier: (token, text) => this.syntheticIdentifier(token, text),
+      booleanLiteral: (token, value) => this.booleanLiteral(token, value),
+      nodeRanges: (start, end) => this.nodeRanges(start, end)
     };
-  }
-
-  private parseVariantEntry(): VariantEntryNode {
-    const start = this.current();
-    const state = this.parseExpression({ stopTexts: ["->"] });
-    const hasArrow = this.expectText("->", "Expected '->' in variant entry.");
-    const value = hasArrow
-      ? this.parseBlockstateEntryValue()
-      : this.recoverMalformedEntryValue();
-    return {
-      kind: "VariantEntry",
-      keyword: "variant",
-      state,
-      value,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseMultipartSection(): ResourceStatementNode {
-    const start = this.advance();
-    const entries: MultipartSectionStatementNode[] = [];
-    this.expectText("{", "Expected multipart body.");
-    while (!this.isAtEnd() && this.current().text !== "}") {
-      const mark = this.mark();
-      entries.push(this.parseMultipartSectionStatement());
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse multipart entry; skipping token.");
-    }
-    this.expectText("}", "Expected '}' after multipart.");
-    return {
-      kind: "MultipartSection",
-      keyword: start.text,
-      entries,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseMultipartEntry(): MultipartEntryNode {
-    const start = this.current();
-    let when: ExprNode | undefined;
-    if (this.matchText("when")) {
-      when = this.parseExpression({ stopTexts: ["apply"] });
-    }
-    const hasApply = this.expectText("apply", "Expected 'apply' in multipart entry.");
-    const apply = hasApply
-      ? this.parseBlockstateEntryValue()
-      : this.recoverMalformedEntryValue();
-    return {
-      kind: "MultipartEntry",
-      keyword: "multipartEntry",
-      when,
-      apply,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemRangeStmt(): ResourceStatementNode {
-    const start = this.advance();
-    const { property, options } = this.parseItemModelStatementHeader("range", itemRangeOptionKeywords);
-    let frames: ReturnType<typeof this.parseItemRangeFrames> | undefined;
-    let fallback: ExprNode | undefined;
-
-    if (this.matchText("{")) {
-      while (!this.isAtEnd() && this.current().text !== "}") {
-        const mark = this.mark();
-        if (this.current().text === "frames") {
-          frames = this.parseItemRangeFrames();
-        } else if (this.current().text === "fallback") {
-          this.advance();
-          fallback = this.parseExpression({ stopTexts: [] });
-        } else {
-          this.addDiagnosticAtCurrent("rsgl.unexpectedItemRangeStatement", "Expected 'frames' or 'fallback' in item range body.");
-          this.recoverToLineEnd();
-        }
-        this.ensureProgress(mark, "Unable to parse item range statement; skipping token.");
-      }
-      this.expectText("}", "Expected '}' after item range body.");
-    } else {
-      this.addDiagnosticAtCurrent("rsgl.expectedItemRangeBody", "Expected item range body.");
-    }
-
-    return {
-      kind: "ItemRangeStmt",
-      keyword: start.text,
-      property,
-      options,
-      frames,
-      fallback,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemRangeFrames() {
-    const start = this.advance();
-    const frames = this.parseExpression({ stopTexts: ["model"] });
-    this.expectText("model", "Expected 'model' in item range frames clause.");
-    const model = this.parseExpression({ stopTexts: [] });
-    return {
-      kind: "ItemRangeFrames" as const,
-      frames,
-      model,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemSelectStmt(): ResourceStatementNode {
-    const start = this.advance();
-    const { property, options } = this.parseItemModelStatementHeader("select", itemSelectOptionKeywords);
-    const cases: ReturnType<typeof this.parseItemSelectCase>[] = [];
-    let fallback: ExprNode | undefined;
-
-    if (this.matchText("{")) {
-      while (!this.isAtEnd() && this.current().text !== "}") {
-        const mark = this.mark();
-        if (this.current().text === "case") {
-          cases.push(this.parseItemSelectCase());
-        } else if (this.current().text === "fallback") {
-          this.advance();
-          fallback = this.parseExpression({ stopTexts: [] });
-        } else {
-          this.addDiagnosticAtCurrent("rsgl.unexpectedItemSelectStatement", "Expected 'case' or 'fallback' in item select body.");
-          this.recoverToLineEnd();
-        }
-        this.ensureProgress(mark, "Unable to parse item select statement; skipping token.");
-      }
-      this.expectText("}", "Expected '}' after item select body.");
-    } else {
-      this.addDiagnosticAtCurrent("rsgl.expectedItemSelectBody", "Expected item select body.");
-    }
-
-    return {
-      kind: "ItemSelectStmt",
-      keyword: start.text,
-      property,
-      options,
-      cases,
-      fallback,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemSelectCase() {
-    const start = this.advance();
-    const when = this.parseExpression({ stopTexts: ["->"] });
-    this.expectText("->", "Expected '->' in item select case.");
-    const model = this.parseExpression({ stopTexts: [] });
-    return {
-      kind: "ItemSelectCase" as const,
-      when,
-      model,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemConditionStmt(): ResourceStatementNode {
-    const start = this.advance();
-    const { property, options } = this.parseItemModelStatementHeader("condition", itemConditionOptionKeywords);
-    let onTrue: ExprNode | undefined;
-    let onFalse: ExprNode | undefined;
-
-    if (this.matchText("{")) {
-      while (!this.isAtEnd() && this.current().text !== "}") {
-        const mark = this.mark();
-        if (this.current().text === "on_true") {
-          this.advance();
-          onTrue = this.parseExpression({ stopTexts: [] });
-        } else if (this.current().text === "on_false") {
-          this.advance();
-          onFalse = this.parseExpression({ stopTexts: [] });
-        } else {
-          this.addDiagnosticAtCurrent("rsgl.unexpectedItemConditionStatement", "Expected 'on_true' or 'on_false' in item condition body.");
-          this.recoverToLineEnd();
-        }
-        this.ensureProgress(mark, "Unable to parse item condition statement; skipping token.");
-      }
-      this.expectText("}", "Expected '}' after item condition body.");
-    } else {
-      this.addDiagnosticAtCurrent("rsgl.expectedItemConditionBody", "Expected item condition body.");
-    }
-
-    return {
-      kind: "ItemConditionStmt",
-      keyword: start.text,
-      property,
-      options,
-      onTrue,
-      onFalse,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemCompositeStmt(): ResourceStatementNode {
-    const start = this.advance();
-    const models = [];
-
-    if (this.matchText("{")) {
-      while (!this.isAtEnd() && this.current().text !== "}") {
-        const mark = this.mark();
-        if (this.current().text === "model") {
-          this.advance();
-          models.push(this.parseExpression({ stopTexts: [] }));
-        } else {
-          this.addDiagnosticAtCurrent("rsgl.unexpectedItemCompositeStatement", "Expected 'model' in item composite body.");
-          this.recoverToLineEnd();
-        }
-        this.ensureProgress(mark, "Unable to parse item composite statement; skipping token.");
-      }
-      this.expectText("}", "Expected '}' after item composite body.");
-    } else {
-      this.addDiagnosticAtCurrent("rsgl.expectedItemCompositeBody", "Expected item composite body.");
-    }
-
-    return {
-      kind: "ItemCompositeStmt",
-      keyword: start.text,
-      models,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemEmptyStmt(): ResourceStatementNode {
-    const start = this.advance();
-    return {
-      kind: "ItemEmptyStmt",
-      keyword: start.text,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemSelectedItemStmt(): ResourceStatementNode {
-    const start = this.advance();
-    return {
-      kind: "ItemSelectedItemStmt",
-      keyword: start.text,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemSpecialStmt(): ResourceStatementNode {
-    const start = this.advance();
-    this.expectText("base", "Expected 'base' in item special statement.");
-    const base = this.parseExpression({ stopTexts: ["model"] });
-    this.expectText("model", "Expected 'model' in item special statement.");
-    const model = this.current().text === "{"
-      ? this.parseObjectExpression()
-      : this.parseExpression({ stopTexts: [] });
-    return {
-      kind: "ItemSpecialStmt",
-      keyword: start.text,
-      base,
-      model,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseItemModelStatementHeader(owner: "range" | "select" | "condition", optionKeywords: string[]) {
-    this.expectText("property", `Expected 'property' in item ${owner} statement.`);
-    const property = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
-    const options = [];
-    while (!this.isAtEnd() && this.current().text !== "{") {
-      const mark = this.mark();
-      const start = this.current();
-      const name = this.parseIdentifier(`Expected item ${owner} option name.`);
-      if (!name) {
-        this.recoverToLineEnd();
-        this.ensureProgress(mark, `Unable to parse item ${owner} option; skipping token.`);
-        continue;
-      }
-      const value = this.parseExpression({ stopTexts: [...optionKeywords, "{"] });
-      options.push({
-        kind: "ItemOption" as const,
-        name,
-        value,
-        ...this.nodeRanges(start, this.previousOr(start))
-      });
-      this.ensureProgress(mark, `Unable to parse item ${owner} option; skipping token.`);
-    }
-    return { property, options };
   }
 
   private noteBlockstateSection(seen: Set<string>, section: "variants" | "multipart"): void {
@@ -1244,16 +554,6 @@ export abstract class StatementParser extends ExpressionParser {
         "warning"
       );
     }
-  }
-
-  private recoverMalformedEntryValue(): ExprNode {
-    const value = this.missingExprAt(this.current());
-    if (this.current().text === "{") {
-      this.consumeBalancedBlock("Expected '}' after malformed entry block.");
-    } else {
-      this.recoverToLineEnd();
-    }
-    return value;
   }
 
   private isLineBoundaryOr(...texts: string[]): boolean {

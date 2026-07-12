@@ -1,10 +1,10 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import { asObject, unitRange } from "./validationShared";
+import { pushDiagnosticAtRange, unitRange } from "./validationDiagnostics";
+import { asObject } from "./validationPrimitives";
+import type { RsglBlockstateSchema } from "./validationTypes";
 
-export interface RsglBlockstateSchema {
-  properties: Record<string, readonly string[]>;
-}
+export type { RsglBlockstateSchema } from "./validationTypes";
 
 interface StateDomain {
   values: Set<string>;
@@ -222,12 +222,13 @@ function mergeAndConstraints(
       allowed?.size === 0 ||
       (allowed && [...allowed].every(value => denied.has(value)))
     ) {
-      diagnostics.push({
-        code: "rsgl.contradictoryBlockstateWhenCondition",
-        message: `Blockstate multipart AND condition has contradictory requirements for state '${name}'.`,
-        severity: "warning",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.contradictoryBlockstateWhenCondition",
+        `Blockstate multipart AND condition has contradictory requirements for state '${name}'.`,
+        "warning",
         range
-      });
+      );
     }
     target.set(name, { allowed, denied });
   }
@@ -328,12 +329,13 @@ function reportDuplicateWhenTerms(
   for (const term of terms) {
     const key = `${term.negated ? "!" : ""}${term.value}`;
     if (seen.has(key)) {
-      diagnostics.push({
-        code: "rsgl.duplicateBlockstateWhenValue",
-        message: `Blockstate multipart when value '${key}' is repeated in the same state condition.`,
-        severity: "warning",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.duplicateBlockstateWhenValue",
+        `Blockstate multipart when value '${key}' is repeated in the same state condition.`,
+        "warning",
         range
-      });
+      );
       return;
     }
     seen.add(key);
@@ -347,12 +349,13 @@ function reportTautologicalWhenTerms(
 ): void {
   const positives = new Set(terms.filter(term => !term.negated).map(term => term.value));
   if (terms.some(term => term.negated && positives.has(term.value))) {
-    diagnostics.push({
-      code: "rsgl.tautologicalBlockstateWhenValue",
-      message: "Blockstate multipart when value includes both a state value and its negation.",
-      severity: "warning",
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.tautologicalBlockstateWhenValue",
+      "Blockstate multipart when value includes both a state value and its negation.",
+      "warning",
       range
-    });
+    );
   }
 }
 
@@ -364,12 +367,13 @@ function validateStateName(
   if (stateNamePattern.test(name)) {
     return true;
   }
-  diagnostics.push({
-    code: "rsgl.invalidBlockstateStateProperty",
-    message: `Blockstate state property '${name}' must use lowercase letters, digits, or underscores.`,
-    severity: "error",
+  pushDiagnosticAtRange(
+    diagnostics,
+    "rsgl.invalidBlockstateStateProperty",
+    `Blockstate state property '${name}' must use lowercase letters, digits, or underscores.`,
+    "error",
     range
-  });
+  );
   return false;
 }
 
@@ -381,12 +385,13 @@ function validateStateValue(
   if (stateValuePattern.test(value)) {
     return true;
   }
-  diagnostics.push({
-    code: "rsgl.invalidBlockstateStateValue",
-    message: `Blockstate state value '${value}' must use lowercase letters, digits, or underscores.`,
-    severity: "error",
+  pushDiagnosticAtRange(
+    diagnostics,
+    "rsgl.invalidBlockstateStateValue",
+    `Blockstate state value '${value}' must use lowercase letters, digits, or underscores.`,
+    "error",
     range
-  });
+  );
   return false;
 }
 
@@ -402,21 +407,23 @@ function validateStateAgainstSchema(
   }
   const allowedValues = schema.properties[name];
   if (!allowedValues) {
-    diagnostics.push({
-      code: "rsgl.unknownBlockstateStateProperty",
-      message: `Blockstate state property '${name}' is not defined by the block schema.`,
-      severity: "error",
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.unknownBlockstateStateProperty",
+      `Blockstate state property '${name}' is not defined by the block schema.`,
+      "error",
       range
-    });
+    );
     return;
   }
   if (!allowedValues.includes(value)) {
-    diagnostics.push({
-      code: "rsgl.invalidBlockstateStateSchemaValue",
-      message: `Blockstate state '${name}' does not allow value '${value}'.`,
-      severity: "error",
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidBlockstateStateSchemaValue",
+      `Blockstate state '${name}' does not allow value '${value}'.`,
+      "error",
       range
-    });
+    );
   }
 }
 
@@ -440,12 +447,13 @@ function validateInferredStateDomains(
       values.some(value => value === "true" || value === "false") &&
       values.some(value => value !== "true" && value !== "false")
     ) {
-      diagnostics.push({
-        code: "rsgl.mixedBlockstateStateValueDomain",
-        message: `Blockstate state '${name}' mixes boolean values with non-boolean values.`,
-        severity: "warning",
-        range: unitRange(unit)
-      });
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.mixedBlockstateStateValueDomain",
+        `Blockstate state '${name}' mixes boolean values with non-boolean values.`,
+        "warning",
+        unitRange(unit)
+      );
     }
   }
 }

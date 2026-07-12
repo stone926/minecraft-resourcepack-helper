@@ -1,11 +1,9 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import {
-  asObject,
-  checkResourceExists,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { asObject, stripMinecraftPrefix } from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 
 export function validateAtlasUnit(
@@ -22,7 +20,7 @@ export function validateAtlasUnit(
     if (!sourceObject) {
       continue;
     }
-    const sourceType = atlasSourceType(sourceObject.type);
+    const sourceType = stripMinecraftPrefix(sourceObject.type);
     if (sourceType === "directory" && typeof sourceObject.source === "string") {
       checkResourceExists(
         "textureDirectory",
@@ -91,13 +89,6 @@ export function validateAtlasUnit(
   }
 }
 
-function atlasSourceType(value: JsonValue | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  return value.startsWith("minecraft:") ? value.slice("minecraft:".length) : value;
-}
-
 function validateAtlasFilterPattern(
   sourceObject: Record<string, JsonValue>,
   unit: ResourceUnit,
@@ -117,12 +108,14 @@ function validateAtlasFilterPattern(
     try {
       new RegExp(value);
     } catch {
-      diagnostics.push({
-        code: "rsgl.invalidAtlasFilterPattern",
-        message: `Atlas filter ${key} pattern is not a valid regular expression.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(patternPath, key))
-      });
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.invalidAtlasFilterPattern",
+        `Atlas filter ${key} pattern is not a valid regular expression.`,
+        "error",
+        appendGeneratedPath(patternPath, key)
+      );
     }
   }
 }

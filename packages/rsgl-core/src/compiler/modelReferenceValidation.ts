@@ -2,17 +2,19 @@ import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import type { ExternResourceSource } from "../externDeclarations";
 import { validateModelStructure } from "./modelStructureValidation";
 import { appendGeneratedPath } from "./sourcePaths";
+import { visitJsonWithPath } from "./jsonValues";
 import {
-  asObject,
   checkInheritedExternalResourceExists,
   checkResourceExists,
-  isObject,
-  isVirtualBuiltinModelId,
+  isVirtualBuiltinModelId
+} from "./resourceReferenceValidation";
+import {
+  pushDiagnosticAtRange,
   sourceFileForValidationRange,
-  sourceRangeForGeneratedPath,
-  visitJsonWithPath,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+  sourceRangeForGeneratedPath
+} from "./validationDiagnostics";
+import { asObject, isObject } from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../mc-assets/src";
 
 type TextureVariableResolution =
@@ -160,12 +162,13 @@ function validateModelParentChain(
   let current: ModelDocument | undefined = root;
   while (current) {
     if (seen.has(current.id)) {
-      diagnostics.push({
-        code: "rsgl.modelParentCycle",
-        message: `Model parent chain contains a cycle at ${current.id}.`,
-        severity: "error",
-        range: unit.sourceMap.mappings[0].sourceRange
-      });
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.modelParentCycle",
+        `Model parent chain contains a cycle at ${current.id}.`,
+        "error",
+        unit.sourceMap.mappings[0].sourceRange
+      );
       return;
     }
     seen.add(current.id);
@@ -271,19 +274,21 @@ function validateModelTextureVariables(
       if (externalVariables.has(resolution.name)) {
         return;
       }
-      diagnostics.push({
-        code: "rsgl.unresolvedTextureVariable",
-        message: `Texture variable '#${reference}' is not defined in the model parent chain.`,
-        severity: "warning",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.unresolvedTextureVariable",
+        `Texture variable '#${reference}' is not defined in the model parent chain.`,
+        "warning",
         range
-      });
+      );
     } else if (resolution.kind === "cycle") {
-      diagnostics.push({
-        code: "rsgl.textureVariableCycle",
-        message: `Texture variable '#${reference}' resolves through a cycle.`,
-        severity: "error",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.textureVariableCycle",
+        `Texture variable '#${reference}' resolves through a cycle.`,
+        "error",
         range
-      });
+      );
     } else {
       if (resolution.source) {
         checkTransitiveTextureExists(resolution.texture, resolution.source, unit, options, diagnostics, range);

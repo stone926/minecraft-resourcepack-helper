@@ -1,13 +1,16 @@
 import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   asObject,
-  checkResourceExists,
-  pushUnitDiagnostic,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions,
+  requireArray,
+  requireFiniteNumber,
+  requireObject,
+  stripMinecraftPrefix,
   validateStringField
-} from "./validationShared";
+} from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export type FontValidationOptions = RsglResourceValidationOptions;
@@ -31,13 +34,16 @@ export function validateFontMetadata(
   if (!content) {
     return;
   }
-  if (!Array.isArray(content.providers)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviders", "Font resource must define a providers array.");
+  const providers = requireArray(content.providers, unit, diagnostics, {
+    code: "rsgl.invalidFontProviders",
+    message: "Font resource must define a providers array."
+  });
+  if (!providers) {
     return;
   }
 
   const namespace = unit.id?.namespace ?? "minecraft";
-  for (const [providerIndex, provider] of content.providers.entries()) {
+  for (const [providerIndex, provider] of providers.entries()) {
     validateFontProvider(
       provider,
       namespace,
@@ -59,13 +65,15 @@ function validateFontProvider(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const provider = asObject(value);
+  const provider = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidFontProvider",
+    message: "Font providers must be objects."
+  });
   if (!provider) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProvider", "Font providers must be objects.");
     return;
   }
 
-  const type = providerType(provider.type);
+  const type = stripMinecraftPrefix(provider.type);
   const requiredFields = type ? providerRequiredFields.get(type) : undefined;
   if (!type || !requiredFields) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderType", "Font provider must define a known provider type.");
@@ -171,11 +179,14 @@ function validateShift(value: JsonValue | undefined, unit: ResourceUnit, diagnos
 }
 
 function validateFilter(value: JsonValue | undefined, unit: ResourceUnit, diagnostics: RsglCompileDiagnostic[]): void {
-  const filter = asObject(value);
+  if (value === undefined) {
+    return;
+  }
+  const filter = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidFontProviderField",
+    message: "Font provider 'filter' must be an object."
+  });
   if (!filter) {
-    if (value !== undefined) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderField", "Font provider 'filter' must be an object.");
-    }
     return;
   }
   for (const field of ["uniform", "jp"]) {
@@ -195,11 +206,14 @@ function validateSkip(value: JsonValue | undefined, unit: ResourceUnit, diagnost
 }
 
 function validateAdvances(value: JsonValue | undefined, unit: ResourceUnit, diagnostics: RsglCompileDiagnostic[]): void {
-  const advances = asObject(value);
+  if (value === undefined) {
+    return;
+  }
+  const advances = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidFontProviderField",
+    message: "Font provider 'advances' must be an object."
+  });
   if (!advances) {
-    if (value !== undefined) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderField", "Font provider 'advances' must be an object.");
-    }
     return;
   }
   for (const advance of Object.values(advances)) {
@@ -213,14 +227,19 @@ function validateSizeOverrides(value: JsonValue | undefined, unit: ResourceUnit,
   if (value === undefined) {
     return;
   }
-  if (!Array.isArray(value)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderField", "Font provider 'size_overrides' must be an array.");
+  const overrides = requireArray(value, unit, diagnostics, {
+    code: "rsgl.invalidFontProviderField",
+    message: "Font provider 'size_overrides' must be an array."
+  });
+  if (!overrides) {
     return;
   }
-  for (const item of value) {
-    const override = asObject(item);
+  for (const item of overrides) {
+    const override = requireObject(item, unit, diagnostics, {
+      code: "rsgl.invalidFontProviderField",
+      message: "Font provider size overrides must be objects."
+    });
     if (!override) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderField", "Font provider size overrides must be objects.");
       continue;
     }
     validateStringField(override, "from", "rsgl.invalidFontProviderField", unit, diagnostics);
@@ -250,8 +269,11 @@ function validateNumberField(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]))) {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a finite number.`);
+  if (field in object) {
+    requireFiniteNumber(object[field], unit, diagnostics, {
+      code,
+      message: `Field '${field}' must be a finite number.`
+    });
   }
 }
 
@@ -293,11 +315,4 @@ function checkFontResourceExists(
     diagnostics,
     sourceRangeForGeneratedPath(unit, generatedPath)
   );
-}
-
-function providerType(value: JsonValue | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  return value.startsWith("minecraft:") ? value.slice("minecraft:".length) : value;
 }

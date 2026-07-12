@@ -5,13 +5,17 @@ import {
 } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
-  asObject,
-  checkResourceExists,
-  itemModelType,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+  requireArray,
+  requireEnum,
+  requireNumberInRange,
+  requireObject,
+  requireString,
+  stripMinecraftPrefix
+} from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 
 const specialModelRequiredFields = new Map<string, string[]>([
   ["banner", ["color"]],
@@ -79,29 +83,22 @@ export function validateItemSpecial(
   if (typeof model.base === "string") {
     checkResourceExists("model", model.base, unit, generatedModels, options, diagnostics, sourceRangeForGeneratedPath(unit, basePath));
   } else {
-    diagnostics.push({
-      code: "rsgl.invalidItemSpecialBase",
-      message: "Item special model must define a base model id.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, basePath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSpecialBase", "Item special model must define a base model id.", "error", basePath);
   }
 
-  const specialModel = asObject(model.model);
+  const specialModel = requireObject(model.model, unit, diagnostics, {
+    code: "rsgl.invalidItemSpecialModel",
+    message: "Item special model must define a model object.",
+    generatedPath: specialModelPath
+  });
   if (!specialModel) {
-    diagnostics.push({
-      code: "rsgl.invalidItemSpecialModel",
-      message: "Item special model must define a model object.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, specialModelPath)
-    });
     return;
   }
 
   validateSpecialModelShape(specialModel, unit, diagnostics, specialModelPath);
   const texture = typeof specialModel.texture === "string" ? specialModel.texture : null;
   if (texture) {
-    const target = itemSpecialTextureId(itemModelType(specialModel.type), texture, unit.id?.namespace ?? "minecraft");
+    const target = itemSpecialTextureId(stripMinecraftPrefix(specialModel.type), texture, unit.id?.namespace ?? "minecraft");
     if (target) {
       checkResourceExists(
         "texture",
@@ -126,38 +123,34 @@ export function validateItemTints(
     return;
   }
   const tintsPath = appendGeneratedPath(generatedPath, "tints");
-  if (!Array.isArray(model.tints)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemTints",
-      message: "Item model tints must be an array.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, tintsPath)
-    });
+  const tints = requireArray(model.tints, unit, diagnostics, {
+    code: "rsgl.invalidItemTints",
+    message: "Item model tints must be an array.",
+    generatedPath: tintsPath
+  });
+  if (!tints) {
     return;
   }
 
-  for (const [index, tint] of model.tints.entries()) {
+  for (const [index, tint] of tints.entries()) {
     const tintPath = appendGeneratedPath(tintsPath, String(index));
-    const tintObject = asObject(tint);
-    const type = itemModelType(tintObject?.type);
+    const tintObject = requireObject(tint, unit, diagnostics, {
+      code: "rsgl.invalidItemTint",
+      message: "Item tint must define a known tint type.",
+      generatedPath: tintPath
+    });
+    if (!tintObject) {
+      continue;
+    }
+    const type = stripMinecraftPrefix(tintObject.type);
     const requiredFields = type ? itemTintRequiredFields.get(type) : undefined;
-    if (!tintObject || !type || !requiredFields) {
-      diagnostics.push({
-        code: "rsgl.invalidItemTint",
-        message: "Item tint must define a known tint type.",
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, tintPath)
-      });
+    if (!type || !requiredFields) {
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemTint", "Item tint must define a known tint type.", "error", tintPath);
       continue;
     }
     for (const field of requiredFields) {
       if (!(field in tintObject)) {
-        diagnostics.push({
-          code: "rsgl.missingItemTintField",
-          message: `Item tint '${type}' must define '${field}'.`,
-          severity: "error",
-          range: sourceRangeForGeneratedPath(unit, tintPath)
-        });
+        pushUnitDiagnostic(diagnostics, unit, "rsgl.missingItemTintField", `Item tint '${type}' must define '${field}'.`, "error", tintPath);
       }
     }
     validateTintValue(tintObject, type, unit, diagnostics, tintPath);
@@ -171,96 +164,53 @@ function validateSpecialModelShape(
   generatedPath: string
 ): void {
   const typePath = appendGeneratedPath(generatedPath, "type");
-  const type = itemModelType(specialModel.type);
+  const type = stripMinecraftPrefix(specialModel.type);
   const requiredFields = type ? specialModelRequiredFields.get(type) : undefined;
   if (!type || !requiredFields) {
-    diagnostics.push({
-      code: "rsgl.invalidItemSpecialModelType",
-      message: "Item special model must define a known special model type.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, typePath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSpecialModelType", "Item special model must define a known special model type.", "error", typePath);
     return;
   }
 
   for (const field of requiredFields) {
     if (!(field in specialModel)) {
-      diagnostics.push({
-        code: "rsgl.missingItemSpecialModelField",
-        message: `Item special model '${type}' must define '${field}'.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, typePath)
-      });
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.missingItemSpecialModelField", `Item special model '${type}' must define '${field}'.`, "error", typePath);
     }
   }
 
   for (const { field, values } of specialModelEnumFields.get(type) ?? []) {
     const value = specialModel[field];
-    if (value !== undefined && (typeof value !== "string" || !values.includes(value))) {
-      diagnostics.push({
+    if (value !== undefined) {
+      requireEnum(value, values, unit, diagnostics, {
         code: "rsgl.invalidItemSpecialModelField",
         message: `Item special model '${type}' field '${field}' has an invalid value.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
+        generatedPath: appendGeneratedPath(generatedPath, field)
       });
     }
   }
 
   for (const field of specialModelStringFields.get(type) ?? []) {
-    validateSpecialStringField(specialModel, field, unit, diagnostics, generatedPath);
+    if (field in specialModel) {
+      requireString(specialModel[field], unit, diagnostics, {
+        code: "rsgl.invalidItemSpecialModelField",
+        message: `Field '${field}' must be a string.`,
+        generatedPath: appendGeneratedPath(generatedPath, field)
+      });
+    }
   }
 
-  validateSpecialNumberInRange(specialModel, "page1", 0, 1, unit, diagnostics, generatedPath);
-  validateSpecialNumberInRange(specialModel, "page2", 0, 1, unit, diagnostics, generatedPath);
-  validateSpecialNumberInRange(specialModel, "openness", 0, 1, unit, diagnostics, generatedPath);
-  validateSpecialNumberInRange(specialModel, "animation", -Infinity, Infinity, unit, diagnostics, generatedPath);
+  validateNumberFieldInRange(specialModel, "page1", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
+  validateNumberFieldInRange(specialModel, "page2", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
+  validateNumberFieldInRange(specialModel, "openness", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
+  validateNumberFieldInRange(specialModel, "animation", -Infinity, Infinity, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
   if ("open_angle" in specialModel && !Number.isInteger(specialModel.open_angle)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemSpecialModelField",
-      message: "Item special model 'book' field 'open_angle' must be an integer.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "open_angle"))
-    });
-  }
-}
-
-function validateSpecialStringField(
-  object: Record<string, JsonValue>,
-  field: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
-): void {
-  if (field in object && typeof object[field] !== "string") {
-    diagnostics.push({
-      code: "rsgl.invalidItemSpecialModelField",
-      message: `Field '${field}' must be a string.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
-    });
-  }
-}
-
-function validateSpecialNumberInRange(
-  object: Record<string, JsonValue>,
-  field: string,
-  min: number,
-  max: number,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
-): void {
-  const value = object[field];
-  if (value === undefined) {
-    return;
-  }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
-    diagnostics.push({
-      code: "rsgl.invalidItemSpecialModelField",
-      message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
-    });
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.invalidItemSpecialModelField",
+      "Item special model 'book' field 'open_angle' must be an integer.",
+      "error",
+      appendGeneratedPath(generatedPath, "open_angle")
+    );
   }
 }
 
@@ -273,27 +223,31 @@ function validateTintValue(
 ): void {
   for (const field of ["value", "default"]) {
     if (field in tint && !isColorValue(tint[field])) {
-      diagnostics.push({
-        code: "rsgl.invalidItemTintColor",
-        message: `Item tint '${type}' field '${field}' must be a packed color integer or RGB triplet.`,
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
-      });
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.invalidItemTintColor",
+        `Item tint '${type}' field '${field}' must be a packed color integer or RGB triplet.`,
+        "error",
+        appendGeneratedPath(generatedPath, field)
+      );
     }
   }
-  validateNumberInRange(tint, "temperature", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
-  validateNumberInRange(tint, "downfall", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
+  validateNumberFieldInRange(tint, "temperature", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
+  validateNumberFieldInRange(tint, "downfall", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
   if ("index" in tint && (!Number.isInteger(tint.index) || Number(tint.index) < 0)) {
-    diagnostics.push({
-      code: "rsgl.invalidItemTintField",
-      message: `Item tint '${type}' field 'index' must be a non-negative integer.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "index"))
-    });
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.invalidItemTintField",
+      `Item tint '${type}' field 'index' must be a non-negative integer.`,
+      "error",
+      appendGeneratedPath(generatedPath, "index")
+    );
   }
 }
 
-function validateNumberInRange(
+function validateNumberFieldInRange(
   object: Record<string, JsonValue>,
   field: string,
   min: number,
@@ -303,18 +257,14 @@ function validateNumberInRange(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const value = object[field];
-  if (value === undefined) {
+  if (!(field in object)) {
     return;
   }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
-    diagnostics.push({
-      code,
-      message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field))
-    });
-  }
+  requireNumberInRange(object[field], min, max, unit, diagnostics, {
+    code,
+    message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
+    generatedPath: appendGeneratedPath(generatedPath, field)
+  });
 }
 
 function isColorValue(value: JsonValue | undefined): boolean {

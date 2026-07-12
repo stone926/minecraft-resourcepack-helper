@@ -1,12 +1,9 @@
 import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import {
-  asObject,
-  checkResourceExists,
-  pushUnitDiagnostic,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { requireArray, requireNumberInRange, requireObject } from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export type WaypointStyleValidationOptions = RsglResourceValidationOptions;
@@ -20,9 +17,11 @@ export function validateWaypointStyleMetadata(
   options: WaypointStyleValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const content = asObject(unit.content);
+  const content = requireObject(unit.content, unit, diagnostics, {
+    code: "rsgl.invalidWaypointStyle",
+    message: "Waypoint style resource must be an object."
+  });
   if (!content) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointStyle", "Waypoint style resource must be an object.");
     return;
   }
 
@@ -43,15 +42,18 @@ function validateSprites(
     pushUnitDiagnostic(diagnostics, unit, "rsgl.missingWaypointSprites", "Waypoint style resource must define a sprites array.");
     return;
   }
-  if (!Array.isArray(value)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprites", "Waypoint style 'sprites' must be an array.");
+  const sprites = requireArray(value, unit, diagnostics, {
+    code: "rsgl.invalidWaypointSprites",
+    message: "Waypoint style 'sprites' must be an array."
+  });
+  if (!sprites) {
     return;
   }
-  if (value.length === 0) {
+  if (sprites.length === 0) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprites", "Waypoint style 'sprites' must contain at least one sprite.");
   }
 
-  for (const [spriteIndex, sprite] of value.entries()) {
+  for (const [spriteIndex, sprite] of sprites.entries()) {
     if (typeof sprite !== "string" || sprite.length === 0) {
       pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprite", "Waypoint style sprites must be non-empty strings.");
       continue;
@@ -76,14 +78,10 @@ function validateDistanceField(
   if (value === undefined) {
     return;
   }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < minDistance || value > maxDistance) {
-    pushUnitDiagnostic(
-      diagnostics,
-      unit,
-      "rsgl.invalidWaypointDistance",
-      `Waypoint style '${field}' must be a finite number between ${minDistance} and ${maxDistance}.`
-    );
-  }
+  requireNumberInRange(value, minDistance, maxDistance, unit, diagnostics, {
+    code: "rsgl.invalidWaypointDistance",
+    message: `Waypoint style '${field}' must be a finite number between ${minDistance} and ${maxDistance}.`
+  });
 }
 
 function validateDistanceOrder(

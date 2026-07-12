@@ -8,14 +8,16 @@ import {
 import { validateItemSpecial, validateItemTints } from "./itemSpecialValidation";
 import { validateItemTransformation } from "./itemTransformValidation";
 import { appendGeneratedPath } from "./sourcePaths";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   asObject,
-  checkResourceExists,
-  itemModelType,
-  sourceRangeForGeneratedPath,
-  validateBooleanField,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+  requireArray,
+  requireObject,
+  stripMinecraftPrefix,
+  validateBooleanField
+} from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 
 const itemModelTypes = new Set([
   "model",
@@ -43,7 +45,7 @@ export function validateItemModelDefinition(
 
   validateItemTransformation(model, unit, diagnostics, generatedPath);
   validateItemTints(model, unit, diagnostics, generatedPath);
-  const type = itemModelType(model.type);
+  const type = stripMinecraftPrefix(model.type);
   if (type === "model") {
     validateModelReference(model, unit, generatedModels, options, diagnostics, generatedPath);
     return;
@@ -89,12 +91,14 @@ export function validateItemModelDefinition(
     return;
   }
 
-  diagnostics.push({
-    code: "rsgl.invalidItemModelType",
-    message: "Item model definition must define a known item model type.",
-    severity: "error",
-    range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "type"))
-  });
+  pushUnitDiagnostic(
+    diagnostics,
+    unit,
+    "rsgl.invalidItemModelType",
+    "Item model definition must define a known item model type.",
+    "error",
+    appendGeneratedPath(generatedPath, "type")
+  );
   validateNestedItemModels(model, unit, generatedModels, options, diagnostics, generatedPath);
 }
 
@@ -110,12 +114,14 @@ export function validateItemTopLevelFields(
   validateBooleanField(content, "hand_animation_on_swap", "rsgl.invalidItemTopLevelField", unit, diagnostics, { generatedPath });
   validateBooleanField(content, "oversized_in_gui", "rsgl.invalidItemTopLevelField", unit, diagnostics, { generatedPath });
   if ("swap_animation_scale" in content && (typeof content.swap_animation_scale !== "number" || !Number.isFinite(content.swap_animation_scale))) {
-    diagnostics.push({
-      code: "rsgl.invalidItemTopLevelField",
-      message: "Item top-level field 'swap_animation_scale' must be a finite number.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "swap_animation_scale"))
-    });
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.invalidItemTopLevelField",
+      "Item top-level field 'swap_animation_scale' must be a finite number.",
+      "error",
+      appendGeneratedPath(generatedPath, "swap_animation_scale")
+    );
   }
 }
 
@@ -140,12 +146,7 @@ function validateModelReference(
     );
     return;
   }
-  diagnostics.push({
-    code: "rsgl.invalidItemModelReference",
-    message: "Item model definition must reference a model id.",
-    severity: "error",
-    range: sourceRangeForGeneratedPath(unit, modelPath)
-  });
+  pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemModelReference", "Item model definition must reference a model id.", "error", modelPath);
 }
 
 function validateItemComposite(
@@ -157,37 +158,29 @@ function validateItemComposite(
   generatedPath: string
 ): void {
   const modelsPath = appendGeneratedPath(generatedPath, "models");
-  const models = Array.isArray(model.models) ? model.models : null;
+  const models = requireArray(model.models, unit, diagnostics, {
+    code: "rsgl.invalidItemCompositeModels",
+    message: "Item composite model must define a models array.",
+    generatedPath: modelsPath
+  });
   if (!models) {
-    diagnostics.push({
-      code: "rsgl.invalidItemCompositeModels",
-      message: "Item composite model must define a models array.",
-      severity: "error",
-      range: sourceRangeForGeneratedPath(unit, modelsPath)
-    });
     return;
   }
   if (models.length === 0) {
-    diagnostics.push({
-      code: "rsgl.emptyItemCompositeModels",
-      message: "Item composite model should define at least one child model.",
-      severity: "warning",
-      range: sourceRangeForGeneratedPath(unit, modelsPath)
-    });
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.emptyItemCompositeModels", "Item composite model should define at least one child model.", "warning", modelsPath);
   }
   for (const [index, nested] of models.entries()) {
     const childPath = appendGeneratedPath(modelsPath, String(index));
-    if (!asObject(nested)) {
-      diagnostics.push({
-        code: "rsgl.invalidItemCompositeModel",
-        message: "Item composite children must be item model objects.",
-        severity: "error",
-        range: sourceRangeForGeneratedPath(unit, childPath)
-      });
+    const child = requireObject(nested, unit, diagnostics, {
+      code: "rsgl.invalidItemCompositeModel",
+      message: "Item composite children must be item model objects.",
+      generatedPath: childPath
+    });
+    if (!child) {
       continue;
     }
     validateItemModelDefinition(
-      nested,
+      child,
       unit,
       generatedModels,
       options,
@@ -205,7 +198,7 @@ function validateNestedItemModels(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const type = itemModelType(model.type);
+  const type = stripMinecraftPrefix(model.type);
   if (type && !itemModelTypes.has(type)) {
     return;
   }

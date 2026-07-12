@@ -1,4 +1,5 @@
 import * as assert from "node:assert";
+import { rsglModelGeometryKeywords } from "../../src/modelGeometrySyntax";
 import { lexRsgl } from "../../src/parser";
 
 describe("RSGL lexer", () => {
@@ -25,6 +26,22 @@ describe("RSGL lexer", () => {
     }
     for (const removed of ["raw_json", "raw_json_file", "override"]) {
       assert.strictEqual(kinds.get(removed), "identifier");
+    }
+  });
+
+  it("classifies every model geometry descriptor keyword", () => {
+    assert.strictEqual(
+      new Set(rsglModelGeometryKeywords).size,
+      rsglModelGeometryKeywords.length,
+      "Model geometry descriptors must have unique keywords."
+    );
+
+    const result = lexRsgl(rsglModelGeometryKeywords.join(" "));
+    const tokens = result.tokens.filter(token => token.kind !== "endOfFile");
+
+    assert.deepStrictEqual(tokens.map(token => token.text), [...rsglModelGeometryKeywords]);
+    for (const token of tokens) {
+      assert.strictEqual(token.kind, "keyword", `Expected geometry keyword '${token.text}' to be lexed as a keyword.`);
     }
   });
 });

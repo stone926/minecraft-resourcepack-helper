@@ -10,13 +10,10 @@ import { createModelResolver, validateModelUnit } from "./modelReferenceValidati
 import { validatePackMetadata } from "./packMetadataValidation";
 import { validateEquipmentUnit, validateParticlesUnit } from "./particlesEquipmentValidation";
 import { validatePostEffectMetadata } from "./postEffectValidation";
-import {
-  asObject,
-  attachSourceFile,
-  checkResourceExists,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { attachSourceFile, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { asObject } from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
 import { createGeneratedResourceIndex } from "./generatedResources";
 
@@ -27,7 +24,7 @@ export type {
   RsglResourceValidationOptions,
   RsglSoundMetadata,
   RsglTextureMetadata
-} from "./validationShared";
+} from "./validationTypes";
 
 interface ResourceValidationContext {
   generatedModels: Map<string, ResourceUnit>;

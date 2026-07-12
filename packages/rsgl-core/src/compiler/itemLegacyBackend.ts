@@ -10,7 +10,8 @@ import { isJsonObject } from "./jsonValues";
 import { resourceOutputPath } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
 import { RsglTargetPackFormat } from "./target";
-import { itemModelType, sourceFileForValidationRange, sourceRangeForGeneratedPath } from "./validationShared";
+import { sourceFileForValidationRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { stripMinecraftPrefix } from "./validationPrimitives";
 
 export interface LowerItemUnitsForTargetResult {
   units: ResourceUnit[];
@@ -86,7 +87,7 @@ function lowerLegacyItemModel(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): LegacyItemLowering | null {
-  const type = itemModelType(model.type);
+  const type = stripMinecraftPrefix(model.type);
   if (type === "model") {
     const modelValue = modelRef(model, appendGeneratedPath(generatedPath, "model"));
     return modelValue ? { baseModel: modelValue, overrides: [] } : null;
@@ -493,7 +494,7 @@ function legacyReferenceOrigins(
 }
 
 function modelRef(model: Record<string, JsonValue>, sourcePath: string): LegacyModelReference | null {
-  return itemModelType(model.type) === "model" && typeof model.model === "string"
+  return stripMinecraftPrefix(model.type) === "model" && typeof model.model === "string"
     ? { id: model.model, sourcePath }
     : null;
 }

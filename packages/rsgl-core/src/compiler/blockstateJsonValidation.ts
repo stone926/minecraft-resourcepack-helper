@@ -2,13 +2,10 @@ import { validateBlockstateStateDomains } from "./blockstateStateValidation";
 import { blockstateMultipartPath, blockstateVariantPath } from "./compilerHelpers";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import {
-  asObject,
-  checkResourceExists,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions,
-  type ValidationRange
-} from "./validationShared";
+import { pushDiagnosticAtRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { asObject } from "./validationPrimitives";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import type { RsglResourceValidationOptions, ValidationRange } from "./validationTypes";
 
 export function validateBlockstateUnit(
   unit: ResourceUnit,
@@ -63,21 +60,23 @@ function validateBlockstateVariantKey(
     const stateName = separatorIndex >= 0 ? part.slice(0, separatorIndex) : "";
     const stateValue = separatorIndex >= 0 ? part.slice(separatorIndex + 1) : "";
     if (!stateName || !stateValue || separatorIndex !== part.lastIndexOf("=")) {
-      diagnostics.push({
-        code: "rsgl.invalidBlockstateVariantKey",
-        message: `Blockstate variant key '${key}' must use comma-separated state=value pairs.`,
-        severity: "error",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.invalidBlockstateVariantKey",
+        `Blockstate variant key '${key}' must use comma-separated state=value pairs.`,
+        "error",
         range
-      });
+      );
       continue;
     }
     if (seen.has(stateName)) {
-      diagnostics.push({
-        code: "rsgl.duplicateBlockstateVariantProperty",
-        message: `Blockstate variant key '${key}' defines '${stateName}' more than once.`,
-        severity: "error",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.duplicateBlockstateVariantProperty",
+        `Blockstate variant key '${key}' defines '${stateName}' more than once.`,
+        "error",
         range
-      });
+      );
     }
     seen.add(stateName);
   }
@@ -126,28 +125,13 @@ function validateBlockstateModelProps(
     validateBlockstateRotation(axis, model[axis], diagnostics, range);
   }
   if ("z" in model && options.targetPackFormat && options.targetPackFormat.major < 75) {
-    diagnostics.push({
-      code: "rsgl.unsupportedBlockstateZRotation",
-      message: "Blockstate z rotation requires pack format 75.0 or newer.",
-      severity: "error",
-      range
-    });
+    pushDiagnosticAtRange(diagnostics, "rsgl.unsupportedBlockstateZRotation", "Blockstate z rotation requires pack format 75.0 or newer.", "error", range);
   }
   if ("uvlock" in model && typeof model.uvlock !== "boolean") {
-    diagnostics.push({
-      code: "rsgl.invalidBlockstateUvlock",
-      message: "Blockstate model uvlock must be a boolean.",
-      severity: "error",
-      range
-    });
+    pushDiagnosticAtRange(diagnostics, "rsgl.invalidBlockstateUvlock", "Blockstate model uvlock must be a boolean.", "error", range);
   }
   if ("weight" in model && (!Number.isInteger(model.weight) || Number(model.weight) <= 0)) {
-    diagnostics.push({
-      code: "rsgl.invalidRandomWeight",
-      message: "Random model weight must be a positive integer.",
-      severity: "error",
-      range
-    });
+    pushDiagnosticAtRange(diagnostics, "rsgl.invalidRandomWeight", "Random model weight must be a positive integer.", "error", range);
   }
 }
 
@@ -160,12 +144,13 @@ function validateBlockstateRotation(
   if (value === undefined || value === 0 || value === 90 || value === 180 || value === 270) {
     return;
   }
-  diagnostics.push({
-    code: "rsgl.invalidBlockstateRotation",
-    message: `Blockstate model ${axis} rotation must be one of 0, 90, 180, or 270.`,
-    severity: "error",
+  pushDiagnosticAtRange(
+    diagnostics,
+    "rsgl.invalidBlockstateRotation",
+    `Blockstate model ${axis} rotation must be one of 0, 90, 180, or 270.`,
+    "error",
     range
-  });
+  );
 }
 
 function validateBlockstateWhen(
@@ -178,12 +163,7 @@ function validateBlockstateWhen(
   }
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      diagnostics.push({
-        code: "rsgl.emptyBlockstateWhen",
-        message: "Blockstate multipart when array must contain at least one condition.",
-        severity: "error",
-        range
-      });
+      pushDiagnosticAtRange(diagnostics, "rsgl.emptyBlockstateWhen", "Blockstate multipart when array must contain at least one condition.", "error", range);
     }
     for (const item of value) {
       validateBlockstateCondition(item, diagnostics, range);
@@ -200,34 +180,31 @@ function validateBlockstateCondition(
 ): void {
   const condition = asObject(value);
   if (!condition || Object.keys(condition).length === 0) {
-    diagnostics.push({
-      code: "rsgl.invalidBlockstateWhen",
-      message: "Blockstate multipart when condition must be a non-empty object.",
-      severity: "error",
-      range
-    });
+    pushDiagnosticAtRange(diagnostics, "rsgl.invalidBlockstateWhen", "Blockstate multipart when condition must be a non-empty object.", "error", range);
     return;
   }
 
   const logicalKeys = ["OR", "AND"].filter(key => key in condition);
   if (logicalKeys.length > 0 && Object.keys(condition).some(key => key !== "OR" && key !== "AND")) {
-    diagnostics.push({
-      code: "rsgl.mixedBlockstateWhenCondition",
-      message: "Blockstate multipart OR/AND conditions cannot be mixed with state properties in the same condition object.",
-      severity: "error",
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.mixedBlockstateWhenCondition",
+      "Blockstate multipart OR/AND conditions cannot be mixed with state properties in the same condition object.",
+      "error",
       range
-    });
+    );
   }
 
   for (const key of logicalKeys) {
     const nested = condition[key];
     if (!Array.isArray(nested) || nested.length === 0) {
-      diagnostics.push({
-        code: "rsgl.invalidBlockstateLogicalCondition",
-        message: `Blockstate multipart ${key} condition must be a non-empty condition array.`,
-        severity: "error",
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.invalidBlockstateLogicalCondition",
+        `Blockstate multipart ${key} condition must be a non-empty condition array.`,
+        "error",
         range
-      });
+      );
       continue;
     }
     for (const item of nested) {
@@ -254,10 +231,11 @@ function validateBlockstateConditionValue(
   if (typeof value === "string" && /^!?[^|]+(?:\|!?[^|]+)*$/.test(value)) {
     return;
   }
-  diagnostics.push({
-    code: "rsgl.invalidBlockstateWhenValue",
-    message: "Blockstate multipart when values must be boolean, number, or a non-empty string list separated by '|'.",
-    severity: "error",
+  pushDiagnosticAtRange(
+    diagnostics,
+    "rsgl.invalidBlockstateWhenValue",
+    "Blockstate multipart when values must be boolean, number, or a non-empty string list separated by '|'.",
+    "error",
     range
-  });
+  );
 }

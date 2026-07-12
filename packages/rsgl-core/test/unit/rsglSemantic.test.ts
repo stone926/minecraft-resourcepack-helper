@@ -45,6 +45,30 @@ describe("RSGL semantic model", () => {
     assert.ok(model.outputResources.some(resource => resource.kind === "blockstate" && resource.id === "acacia_stairs"));
   });
 
+  it("checks expressions in model geometry statements", () => {
+    const source = [
+      "model block semantic_geometry {",
+      "  texture wall missingTexture",
+      "  box from missingFrom to missingTo shade missingShade {",
+      "    north texture missingFace",
+      "  }",
+      "}"
+    ].join("\n");
+    const model = bindRsglModule(parseRsgl(source));
+
+    const undefinedNames = model.diagnostics
+      .filter(diagnostic => diagnostic.code === "rsgl.undefinedSymbol")
+      .map(diagnostic => source.slice(diagnostic.range.start, diagnostic.range.end))
+      .sort();
+    assert.deepStrictEqual(undefinedNames, [
+      "missingFace",
+      "missingFrom",
+      "missingShade",
+      "missingTexture",
+      "missingTo"
+    ]);
+  });
+
   it("reports duplicate symbols, undefined symbols, and simple type mismatches", () => {
     const module = parseRsgl([
       "let count: Number = \"many\"",
@@ -568,5 +592,56 @@ describe("RSGL semantic model", () => {
     assert.ok(codes.includes("rsgl.unknownArgument"));
     assert.ok(codes.includes("rsgl.tooManyArguments"));
     assert.ok(codes.includes("rsgl.duplicateArgument"));
+  });
+
+  it("finds imported calls inside for-in generator iterables", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { supply } from \"./templates.rsgl\"",
+          "let values = seq(i => `${i}`, i in supply())"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl("template supply(id: ResourceId) { let value = id }")
+      }
+    ]);
+
+    assert.strictEqual(
+      program.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.missingArgument").length,
+      1
+    );
+  });
+
+  it("validates imported calls in every model geometry expression container", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const templatesFile = path.resolve("pack", "templates.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { geometryValue } from \"./templates.rsgl\"",
+          "model block linked_geometry {",
+          "  texture wall geometryValue()",
+          "  box from geometryValue() to geometryValue() shade geometryValue() {",
+          "    north texture geometryValue()",
+          "  }",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: templatesFile,
+        module: parseRsgl("template geometryValue(required: Number) { let value = required }")
+      }
+    ]);
+
+    assert.strictEqual(
+      program.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.missingArgument").length,
+      5
+    );
   });
 });

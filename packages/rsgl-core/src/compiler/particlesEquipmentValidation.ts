@@ -1,11 +1,9 @@
 import { ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import {
-  asObject,
-  checkResourceExists,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions
-} from "./validationShared";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { asObject } from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 
 export function validateParticlesUnit(

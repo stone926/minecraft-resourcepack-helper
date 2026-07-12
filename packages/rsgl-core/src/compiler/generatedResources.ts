@@ -1,6 +1,6 @@
 import { minecraftResourceTarget, tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { isExternalResourceUnit, type ResourceUnit } from "./ir";
-import type { RsglResourceExistenceKind } from "./validationShared";
+import type { RsglResourceExistenceKind } from "./validationTypes";
 
 const generatedReferenceKinds: readonly RsglResourceExistenceKind[] = [
   "model",

@@ -1,14 +1,19 @@
 import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { checkResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   asObject,
-  checkResourceExists,
-  pushUnitDiagnostic,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions,
+  isPositiveInteger,
+  requireArray,
+  requireEnum,
+  requireObject,
+  requirePositiveInteger,
+  requirePositiveNumber,
   validateBooleanField,
   validateStringField
-} from "./validationShared";
+} from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import type { ExternResourceSource } from "../externDeclarations";
 import { appendGeneratedPath } from "./sourcePaths";
 
@@ -99,9 +104,11 @@ function validateSoundEvent(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const event = asObject(value);
+  const event = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidSoundsEvent",
+    message: `Sound event '${eventName}' must be an object.`
+  });
   if (!event) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundsEvent", `Sound event '${eventName}' must be an object.`);
     return;
   }
 
@@ -111,13 +118,16 @@ function validateSoundEvent(
   if (!("sounds" in event)) {
     return;
   }
-  if (!Array.isArray(event.sounds)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundsList", `Sound event '${eventName}' sounds field must be an array.`);
+  const sounds = requireArray(event.sounds, unit, diagnostics, {
+    code: "rsgl.invalidSoundsList",
+    message: `Sound event '${eventName}' sounds field must be an array.`
+  });
+  if (!sounds) {
     return;
   }
 
   const soundsPath = appendGeneratedPath(generatedPath, "sounds");
-  for (const [soundIndex, sound] of event.sounds.entries()) {
+  for (const [soundIndex, sound] of sounds.entries()) {
     validateSoundEntry(
       sound,
       namespace,
@@ -144,18 +154,37 @@ function validateSoundEntry(
     return;
   }
 
-  const sound = asObject(value);
+  const sound = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidSoundEntry",
+    message: "Sound entries must be strings or objects."
+  });
   if (!sound) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundEntry", "Sound entries must be strings or objects.");
     return;
   }
 
   validateStringField(sound, "name", "rsgl.invalidSoundField", unit, diagnostics);
-  validateEnumField(sound, "type", ["file", "event"], "rsgl.invalidSoundField", unit, diagnostics);
-  validatePositiveIntegerField(sound, "weight", "rsgl.invalidSoundField", unit, diagnostics);
-  validatePositiveIntegerField(sound, "attenuation_distance", "rsgl.invalidSoundField", unit, diagnostics);
-  validatePositiveNumberField(sound, "volume", "rsgl.invalidSoundField", unit, diagnostics);
-  validatePositiveNumberField(sound, "pitch", "rsgl.invalidSoundField", unit, diagnostics);
+  if ("type" in sound) {
+    requireEnum(sound.type, ["file", "event"], unit, diagnostics, {
+      code: "rsgl.invalidSoundField",
+      message: "Field 'type' has an invalid value."
+    });
+  }
+  for (const field of ["weight", "attenuation_distance"] as const) {
+    if (field in sound) {
+      requirePositiveInteger(sound[field], unit, diagnostics, {
+        code: "rsgl.invalidSoundField",
+        message: `Field '${field}' must be a positive integer.`
+      });
+    }
+  }
+  for (const field of ["volume", "pitch"] as const) {
+    if (field in sound) {
+      requirePositiveNumber(sound[field], unit, diagnostics, {
+        code: "rsgl.invalidSoundField",
+        message: `Field '${field}' must be a positive number.`
+      });
+    }
+  }
   validateBooleanField(sound, "preload", "rsgl.invalidSoundField", unit, diagnostics);
   validateBooleanField(sound, "stream", "rsgl.invalidSoundField", unit, diagnostics);
 
@@ -261,45 +290,4 @@ function validateSoundEventReference(
 function isDeprecatedLangShape(content: Record<string, JsonValue>): boolean {
   const keys = Object.keys(content);
   return keys.length > 0 && keys.every(key => key === "removed" || key === "renamed");
-}
-
-function validateEnumField(
-  object: Record<string, JsonValue>,
-  field: string,
-  values: string[],
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && (typeof object[field] !== "string" || !values.includes(object[field] as string))) {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' has an invalid value.`);
-  }
-}
-
-function validatePositiveIntegerField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && (!Number.isInteger(object[field]) || Number(object[field]) <= 0)) {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a positive integer.`);
-  }
-}
-
-function validatePositiveNumberField(
-  object: Record<string, JsonValue>,
-  field: string,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
-): void {
-  if (field in object && (typeof object[field] !== "number" || !Number.isFinite(object[field]) || Number(object[field]) <= 0)) {
-    pushUnitDiagnostic(diagnostics, unit, code, `Field '${field}' must be a positive number.`);
-  }
-}
-
-function isPositiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) > 0;
 }

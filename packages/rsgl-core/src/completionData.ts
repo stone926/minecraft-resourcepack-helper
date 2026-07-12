@@ -2,6 +2,7 @@ import {
   rsglExternResourceCompletionDescriptors,
   rsglResourceCompletionDescriptors
 } from "./resourceKinds";
+import { rsglModelGeometryCompletionDescriptors } from "./modelGeometrySyntax";
 import { getRsglCompletionContext } from "./completionContext";
 
 export interface RsglCompletionCandidate {
@@ -129,8 +130,10 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "extern var", insertText: "extern var #${1:front}, #${2:back}", detail: "Declare texture variables supplied by child models", kind: "snippet" },
   { label: "texture", insertText: "texture ${1:all} ${2:minecraft:block/stone}", detail: "Model texture variable", kind: "snippet" },
   { label: "textures", insertText: "textures {\n  ${1:all}: ${2:minecraft:block/stone}\n}", detail: "Model texture map", kind: "snippet" },
-  { label: "box", insertText: "box \"${1:element}\" from [${2:0, 0, 0}] to [${3:16, 16, 16}] {\n  all texture \"#${4:all}\"\n}", detail: "Model element box", kind: "snippet" },
-  { label: "element", insertText: "element from [${1:0, 0, 0}] to [${2:16, 16, 16}] {\n  all texture \"#${3:all}\"\n}", detail: "Model element geometry", kind: "snippet" },
+  ...rsglModelGeometryCompletionDescriptors.map(descriptor => ({
+    ...descriptor,
+    kind: "snippet" as const
+  })),
   { label: "variants", insertText: "variants {\n  ${1:{}} -> { model: ${2:minecraft:block/stone} }\n}", detail: "Blockstate variants section", kind: "snippet" },
   { label: "multipart", insertText: "multipart {\n  apply { model: ${1:minecraft:block/stone} }\n}", detail: "Blockstate multipart section", kind: "snippet" },
   { label: "range", insertText: "range property ${1:minecraft:time} source ${2:daytime} wobble ${3:true} {\n  frames ${4:0..31} model ${5:minecraft:item/clock_00}\n  fallback ${6:minecraft:item/clock_00}\n}", detail: "Item range_dispatch model", kind: "snippet" },

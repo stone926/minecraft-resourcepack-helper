@@ -107,6 +107,86 @@ describe("RSGL parser", () => {
     assert.deepStrictEqual(box.faces.map(face => face.target.text), ["all", "north"]);
   });
 
+  it("derives model element kinds and clauses from the geometry syntax registry", () => {
+    const module = parseRsgl([
+      "model block shifted_element {",
+      "  element from [0, 0, 0] to [16, 16, 16] light_emission 7 translate [1, 2, 3] {",
+      "    face east texture \"#all\" tintindex 2",
+      "  }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const model = module.statements[0];
+    assert.strictEqual(model.kind, "ResourceDecl");
+    if (model.kind !== "ResourceDecl") {
+      return;
+    }
+    const element = model.body.statements[0];
+    assert.strictEqual(element.kind, "ModelElementStmt");
+    if (element.kind !== "ModelElementStmt") {
+      return;
+    }
+
+    assert.strictEqual(element.elementKind, "element");
+    assert.strictEqual(element.from?.kind, "ListExpr");
+    assert.strictEqual(element.to?.kind, "ListExpr");
+    assert.deepStrictEqual(
+      element.properties.map(property => property.name.text),
+      ["light_emission", "translate"]
+    );
+    assert.deepStrictEqual(element.faces.map(face => face.target.text), ["east"]);
+    assert.deepStrictEqual(
+      element.faces[0]?.properties.map(property => property.name.text),
+      ["texture", "tintindex"]
+    );
+  });
+
+  it("keeps guarded domain statement words available as explicit JSON fields", () => {
+    const module = parseRsgl([
+      "atlas minecraft:blocks {",
+      "  directory: \"block\"",
+      "  paletted_permutations: {}",
+      "}",
+      "equipment minecraft:leather {",
+      "  layer: []",
+      "}",
+      "model block explicit_fields {",
+      "  texture: \"plain\"",
+      "  box: {}",
+      "  element = 1",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const resources = module.statements.filter(statement => statement.kind === "ResourceDecl");
+    assert.deepStrictEqual(resources.map(resource => resource.body.statements.map(statement => statement.kind)), [
+      ["PropertyStmt", "PropertyStmt"],
+      ["PropertyStmt"],
+      ["PropertyStmt", "PropertyStmt", "PropertyStmt"]
+    ]);
+  });
+
+  it("recovers from a malformed domain statement before parsing the next field", () => {
+    const module = parseRsgl([
+      "atlas minecraft:blocks {",
+      "  directory unexpected clause",
+      "  sources: []",
+      "}"
+    ].join("\n"));
+
+    assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedAtlasDirectoryClause"));
+    const atlas = module.statements[0];
+    assert.strictEqual(atlas.kind, "ResourceDecl");
+    if (atlas.kind !== "ResourceDecl") {
+      return;
+    }
+    assert.deepStrictEqual(atlas.body.statements.map(statement => statement.kind), [
+      "AtlasDirectoryStmt",
+      "SectionStmt"
+    ]);
+  });
+
   it("parses export declarations", () => {
     const module = parseRsgl([
       "export { cube as cubeModel, woods }",

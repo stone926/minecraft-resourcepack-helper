@@ -1,4 +1,5 @@
 import { rsglExternResourceKinds, rsglResourceKinds } from "../resourceKinds";
+import { rsglModelGeometryKeywords } from "../modelGeometrySyntax";
 
 const declarationKeywords = [
   "target",
@@ -73,30 +74,7 @@ export const rsglKeywords = new Set<string>([
   "palette_key",
   "parent",
   "generate",
-  "box",
-  "element",
-  "from",
-  "to",
-  "face",
-  "all",
-  "down",
-  "up",
-  "north",
-  "south",
-  "west",
-  "east",
-  "uv",
-  "rotation",
-  "origin",
-  "axis",
-  "angle",
-  "rescale",
-  "cullface",
-  "shade",
-  "tintindex",
-  "light_emission",
-  "mirror",
-  "translate"
+  ...rsglModelGeometryKeywords
 ]);
 
 export function isTopLevelKeyword(text: string): boolean {

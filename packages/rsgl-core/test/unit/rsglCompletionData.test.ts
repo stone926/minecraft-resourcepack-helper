@@ -1,5 +1,9 @@
 import * as assert from "node:assert";
-import { getRsglCompletionCandidates } from "../../src/completionData";
+import {
+  blockRsglCompletions,
+  getRsglCompletionCandidates
+} from "../../src/completionData";
+import { rsglModelGeometryCompletionDescriptors } from "../../src/modelGeometrySyntax";
 
 describe("RSGL completion data", () => {
   it("provides top-level and block-aware completion candidates", () => {
@@ -25,6 +29,7 @@ describe("RSGL completion data", () => {
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);
     assert.ok(inBlock.some(candidate => candidate.label === "textures"));
     assert.ok(inBlock.some(candidate => candidate.label === "box"));
+    assert.ok(inBlock.some(candidate => candidate.label === "element"));
     assert.ok(inBlock.some(candidate => candidate.label === "base"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge deep"));
@@ -34,6 +39,23 @@ describe("RSGL completion data", () => {
     assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json"), false);
     assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json_file"), false);
     assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
+  });
+
+  it("keeps model geometry completion metadata and ordering descriptor-backed", () => {
+    const geometryLabels = new Set(
+      rsglModelGeometryCompletionDescriptors.map(descriptor => descriptor.label)
+    );
+    const geometryCandidates = blockRsglCompletions.filter(candidate =>
+      geometryLabels.has(candidate.label)
+    );
+
+    assert.deepStrictEqual(
+      geometryCandidates,
+      rsglModelGeometryCompletionDescriptors.map(descriptor => ({
+        ...descriptor,
+        kind: "snippet"
+      }))
+    );
   });
 
   it("offers base only at the first position of a concrete resource root", () => {

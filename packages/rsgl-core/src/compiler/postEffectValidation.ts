@@ -1,13 +1,15 @@
 import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { checkResourceExists as checkDeclaredResourceExists } from "./resourceReferenceValidation";
+import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
-  asObject,
-  checkResourceExists as checkDeclaredResourceExists,
-  pushUnitDiagnostic,
-  sourceRangeForGeneratedPath,
-  type RsglResourceValidationOptions,
+  requireArray,
+  requireObject,
+  requirePositiveInteger,
+  requireString,
   validateBooleanField
-} from "./validationShared";
+} from "./validationPrimitives";
+import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export type PostEffectValidationOptions = RsglResourceValidationOptions;
@@ -34,9 +36,11 @@ export function validatePostEffectMetadata(
   options: PostEffectValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const content = asObject(unit.content);
+  const content = requireObject(unit.content, unit, diagnostics, {
+    code: "rsgl.invalidPostEffect",
+    message: "Post effect resource must be an object."
+  });
   if (!content) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffect", "Post effect resource must be an object.");
     return;
   }
 
@@ -54,9 +58,11 @@ function collectDeclaredTargets(
     return targets;
   }
 
-  const targetMap = asObject(value);
+  const targetMap = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectTargets",
+    message: "Post effect 'targets' must be an object."
+  });
   if (!targetMap) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectTargets", "Post effect 'targets' must be an object.");
     return targets;
   }
 
@@ -74,9 +80,11 @@ function validateTarget(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const target = asObject(value);
+  const target = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectTarget",
+    message: "Post effect targets must be objects."
+  });
   if (!target) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectTarget", "Post effect targets must be objects.");
     return;
   }
 
@@ -99,12 +107,15 @@ function validatePasses(
   if (value === undefined) {
     return;
   }
-  if (!Array.isArray(value)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectPasses", "Post effect 'passes' must be an array.");
+  const passes = requireArray(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectPasses",
+    message: "Post effect 'passes' must be an array."
+  });
+  if (!passes) {
     return;
   }
 
-  for (const [passIndex, passValue] of value.entries()) {
+  for (const [passIndex, passValue] of passes.entries()) {
     validatePass(
       passValue,
       declaredTargets,
@@ -126,9 +137,11 @@ function validatePass(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const pass = asObject(value);
+  const pass = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectPass",
+    message: "Post effect passes must be objects."
+  });
   if (!pass) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectPass", "Post effect passes must be objects.");
     return;
   }
 
@@ -179,13 +192,16 @@ function validateInputs(
   if (value === undefined) {
     return;
   }
-  if (!Array.isArray(value)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectInputs", "Post effect pass 'inputs' must be an array.");
+  const inputs = requireArray(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectInputs",
+    message: "Post effect pass 'inputs' must be an array."
+  });
+  if (!inputs) {
     return;
   }
 
   const inputsPath = appendGeneratedPath(generatedPath, "inputs");
-  for (const [inputIndex, inputValue] of value.entries()) {
+  for (const [inputIndex, inputValue] of inputs.entries()) {
     validateInput(
       inputValue,
       outputName,
@@ -209,9 +225,11 @@ function validateInput(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
-  const input = asObject(value);
+  const input = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectInput",
+    message: "Post effect inputs must be objects."
+  });
   if (!input) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectInput", "Post effect inputs must be objects.");
     return;
   }
 
@@ -253,18 +271,23 @@ function validateUniforms(
   if (value === undefined) {
     return;
   }
-  const uniforms = asObject(value);
+  const uniforms = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectUniforms",
+    message: "Post effect pass 'uniforms' must be an object."
+  });
   if (!uniforms) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectUniforms", "Post effect pass 'uniforms' must be an object.");
     return;
   }
 
   for (const entries of Object.values(uniforms)) {
-    if (!Array.isArray(entries)) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectUniforms", "Post effect uniform groups must be arrays.");
+    const uniformEntries = requireArray(entries, unit, diagnostics, {
+      code: "rsgl.invalidPostEffectUniforms",
+      message: "Post effect uniform groups must be arrays."
+    });
+    if (!uniformEntries) {
       continue;
     }
-    for (const entry of entries) {
+    for (const entry of uniformEntries) {
       validateUniform(entry, unit, diagnostics);
     }
   }
@@ -275,9 +298,11 @@ function validateUniform(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const uniform = asObject(value);
+  const uniform = requireObject(value, unit, diagnostics, {
+    code: "rsgl.invalidPostEffectUniform",
+    message: "Post effect uniforms must be objects."
+  });
   if (!uniform) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidPostEffectUniform", "Post effect uniforms must be objects.");
     return;
   }
 
@@ -329,11 +354,10 @@ function stringField(
   if (value === undefined) {
     return null;
   }
-  if (typeof value !== "string") {
-    pushUnitDiagnostic(diagnostics, unit, code, `${label} '${field}' must be a string.`);
-    return null;
-  }
-  return value;
+  return requireString(value, unit, diagnostics, {
+    code,
+    message: `${label} '${field}' must be a string.`
+  });
 }
 
 function validatePositiveIntegerField(
@@ -348,9 +372,10 @@ function validatePositiveIntegerField(
   if (value === undefined) {
     return;
   }
-  if (!Number.isInteger(value) || Number(value) < 1) {
-    pushUnitDiagnostic(diagnostics, unit, code, `${label} '${field}' must be a positive integer.`);
-  }
+  requirePositiveInteger(value, unit, diagnostics, {
+    code,
+    message: `${label} '${field}' must be a positive integer.`
+  });
 }
 
 function checkResourceExists(
