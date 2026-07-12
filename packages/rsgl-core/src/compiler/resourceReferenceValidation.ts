@@ -205,20 +205,9 @@ function resolveExternDeclaration(
   const equallySpecific = sorted.filter(candidate =>
     compareExternPatternSpecificity(candidate.pattern, selected.pattern) === 0
   );
-  const sources = new Set(equallySpecific.map(candidate => candidate.source));
-  if (sources.size > 1) {
-    pushDiagnosticAtRange(
-      diagnostics,
-      "rsgl.ambiguousExternalResource",
-      `${resourceLabel(kind)} '${id}' matches equally specific custom and vanilla extern declarations.`,
-      "error",
-      range,
-      diagnosticFile
-    );
-    return null;
-  }
-
-  return equallySpecific.find(candidate => candidate.skipExistenceCheck) ?? selected;
+  const customCandidates = equallySpecific.filter(candidate => candidate.source === "custom");
+  const sourceCandidates = customCandidates.length > 0 ? customCandidates : equallySpecific;
+  return sourceCandidates.find(candidate => candidate.skipExistenceCheck) ?? sourceCandidates[0];
 }
 
 function pushResourceDiagnostic(

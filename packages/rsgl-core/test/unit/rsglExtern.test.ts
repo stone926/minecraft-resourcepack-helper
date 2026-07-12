@@ -230,21 +230,22 @@ describe("RSGL extern declarations", () => {
     assert.strictEqual(externalUnits(global)[0].external?.source, "vanilla");
   });
 
-  it("rejects equally specific declarations from different sources", () => {
+  it("prefers custom over vanilla for equally specific declarations", () => {
+    const existenceChecks: string[] = [];
     const result = compileSource([
-      "extern! custom model minecraft:block/stone",
-      "extern! vanilla model minecraft:block/stone",
-      ...blockstateUsing("ambiguous", "minecraft:block/stone")
-    ]);
+      "extern vanilla model minecraft:block/stone",
+      "extern custom model minecraft:block/stone",
+      ...blockstateUsing("overridden", "minecraft:block/stone")
+    ], {
+      externResourceExists: source => {
+        existenceChecks.push(source);
+        return source === "custom";
+      }
+    });
 
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => ({
-      code: diagnostic.code,
-      severity: diagnostic.severity
-    })), [{
-      code: "rsgl.ambiguousExternalResource",
-      severity: "error"
-    }]);
-    assert.deepStrictEqual(externalUnits(result), []);
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(existenceChecks, ["custom"]);
+    assert.strictEqual(externalUnits(result)[0].external?.source, "custom");
   });
 
   it("selects the most specific matching declaration", () => {
