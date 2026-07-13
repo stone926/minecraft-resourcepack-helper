@@ -8,7 +8,7 @@ import {
 describe("RSGL template expansion", () => {
   it("expands local templates with positional, named, and default arguments", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "template cube(id: TextureId, texture: TextureId = id) {",
       "  model block id {",
       "    parent minecraft:block/cube_all",
       "    textures { all: texture }",
@@ -89,7 +89,7 @@ describe("RSGL template expansion", () => {
 
   it("reports invalid template call arguments during compilation", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "template cube(id: TextureId, texture: TextureId = id) {",
       "  model block id { parent minecraft:block/cube_all }",
       "}",
       "use cube(",

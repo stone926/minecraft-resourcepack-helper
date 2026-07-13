@@ -17,6 +17,10 @@ import { asObject } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
 import { createGeneratedResourceIndex } from "./generatedResources";
+import {
+  beginResourceValueValidation,
+  completeResourceValueValidation
+} from "./resourceValueValidation";
 
 export type {
   RsglExternalResourceUsage,
@@ -83,9 +87,14 @@ export function canonicalizeAndValidateResourceUnits(
     if (isExternalResourceUnit(unit)) {
       continue;
     } else {
-      const validationHandler = getRsglResourceKindDescriptor(unit.kind)?.validation.handler ?? "none";
-      if (validationHandler !== "none") {
-        resourceValidators[validationHandler](unit, validationContext, validationOptions, diagnostics);
+      beginResourceValueValidation(unit);
+      try {
+        const validationHandler = getRsglResourceKindDescriptor(unit.kind)?.validation.handler ?? "none";
+        if (validationHandler !== "none") {
+          resourceValidators[validationHandler](unit, validationContext, validationOptions, diagnostics);
+        }
+      } finally {
+        completeResourceValueValidation(unit, diagnostics);
       }
     }
     for (const diagnostic of diagnostics.slice(diagnosticStart)) {

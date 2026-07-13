@@ -183,7 +183,7 @@ function validateBlockstateModelObject(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
+      appendGeneratedPath(generatedPath, "model")
     );
   } else {
     pushDiagnosticAtRange(

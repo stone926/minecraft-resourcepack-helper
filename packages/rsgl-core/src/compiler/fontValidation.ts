@@ -3,7 +3,7 @@ import {
   canonicalizeJsonResourceReference,
   checkJsonResourceReference
 } from "./jsonResourceReferenceValidation";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import {
   asObject,
   requireArray,
@@ -111,7 +111,7 @@ function validateFontProviderFields(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "file"))
+        appendGeneratedPath(generatedPath, "file")
       );
     }
   } else if (type === "reference") {
@@ -124,7 +124,7 @@ function validateFontProviderFields(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "id"))
+        appendGeneratedPath(generatedPath, "id")
       );
     }
   } else if (type === "ttf") {
@@ -138,7 +138,7 @@ function validateFontProviderFields(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "file"))
+        appendGeneratedPath(generatedPath, "file")
       );
     }
   } else if (type === "unihex") {
@@ -152,7 +152,7 @@ function validateFontProviderFields(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "hex_file"))
+        appendGeneratedPath(generatedPath, "hex_file")
       );
     }
   } else if (type === "space") {
@@ -167,7 +167,7 @@ function validateFontProviderFields(
         "fontLegacyUnicodeTemplate",
         unit,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "template"))
+        appendGeneratedPath(generatedPath, "template")
       );
     }
     if (typeof provider.sizes === "string") {
@@ -178,7 +178,7 @@ function validateFontProviderFields(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "sizes"))
+        appendGeneratedPath(generatedPath, "sizes")
       );
     }
   }

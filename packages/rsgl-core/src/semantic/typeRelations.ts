@@ -11,6 +11,13 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return (expected.options ?? []).some(option => isAssignable(option, actual));
   }
   if (expected.kind === actual.kind) {
+    if (
+      expected.kind === "Json"
+      && expected.contextualEscapeOnly
+      && actual.explicitAnnotation !== true
+    ) {
+      return false;
+    }
     if (hasLiteralValue(expected)) {
       return hasLiteralValue(actual) && Object.is(expected.literalValue, actual.literalValue);
     }
@@ -43,23 +50,19 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return true;
   }
   if (expected.kind === "Json") {
+    if (expected.contextualEscapeOnly) {
+      return actual.kind === "Json" && actual.explicitAnnotation === true;
+    }
     return actual.kind !== "TextureVariable"
       && actual.kind !== "TextureRef"
       && actual.kind !== "Missing";
   }
-  if (expected.kind === "ResourceId" && (actual.kind === "ModelId" || actual.kind === "TextureId" || actual.kind === "String")) {
-    return true;
-  }
-  // Plain strings coerce to resource ids at evaluation time (namespace prefixing),
-  // so String is accepted wherever a concrete id kind is expected.
-  if ((expected.kind === "ModelId" || expected.kind === "TextureId") && (actual.kind === "ResourceId" || actual.kind === "String")) {
+  if (expected.kind === "ResourceId" && (actual.kind === "ModelId" || actual.kind === "TextureId")) {
     return true;
   }
   if (expected.kind === "TextureRef") {
     return actual.kind === "TextureVariable"
-      || actual.kind === "TextureId"
-      || actual.kind === "ResourceId"
-      || actual.kind === "String";
+      || actual.kind === "TextureId";
   }
   return false;
 }

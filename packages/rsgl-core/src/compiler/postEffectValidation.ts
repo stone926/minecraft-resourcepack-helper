@@ -1,6 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import {
   requireArray,
   requireObject,
@@ -174,7 +174,7 @@ function validateShaderField(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field)),
+      appendGeneratedPath(generatedPath, field),
       undefined,
       namespace
     );
@@ -253,7 +253,7 @@ function validateInput(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "location")),
+      appendGeneratedPath(generatedPath, "location"),
       undefined,
       namespace
     );

@@ -1,5 +1,10 @@
 import { parseMinecraftResourceId } from "../../../mc-assets/src";
 import {
+  resourceValueKindForTypeKind,
+  typeKindForResourceValueKind,
+  type RsglResourceValueKind
+} from "../resourceIdSemantics";
+import {
   ExprNode,
   LetDeclNode,
   ObjectExprNode,
@@ -27,7 +32,8 @@ import {
 } from "./structuralTypes";
 import {
   combineRsglTypes,
-  inferListType
+  inferListType,
+  rsglTypeKey
 } from "./typeNormalization";
 import { formatType, isAssignable } from "./typeRelations";
 import { inferredUnionBudgetOptions } from "./unionBudget";
@@ -35,6 +41,7 @@ import {
   identifierName,
   inferLiteralType,
   jsonType,
+  modelIdType,
   numberType,
   resourceIdType,
   RsglScope,
@@ -75,7 +82,11 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
   }
   if (expression.kind === "ResourceLocationExpr") {
     validateResourceLocationValue(context, expression.value, expression.range);
-    return resourceIdType;
+    // A resource-location token is ordinary text until an annotation or a
+    // known sink supplies the nominal ID kind. This mirrors evaluator
+    // behavior: unannotated lets/records/lists keep a string and are converted
+    // exactly once at their eventual contextual boundary.
+    return stringType;
   }
   if (expression.kind === "ListExpr") {
     const elementTypes = expression.elements.map(element => checkExpression(context, element, scope));
@@ -94,7 +105,8 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
     return jsonType;
   }
   if (expression.kind === "ModelApplySugar") {
-    checkResourceIdExpression(context, expression.model, scope);
+    const modelType = checkExpressionForExpectedType(context, expression.model, scope, modelIdType);
+    checkAssignable(context, modelIdType, modelType, expression.model);
     for (const property of expression.properties) {
       checkExpression(context, property.value, scope);
     }
@@ -215,19 +227,15 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
 
 export function checkResourceIdExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
   if (expression.kind === "StringLiteral") {
-    if (expression.value.startsWith("#")) {
-      context.diagnostics.push(diagnostic(
-        "rsgl.textureVariableInvalidContext",
-        `Texture variable '${expression.value}' is only valid where TextureRef is expected.`,
-        expression.range
-      ));
-      return textureVariableType;
-    }
-    validateResourceLocationValue(context, expression.value, expression.range);
+    validateContextualResourceLiteral(context, expression);
     return resourceIdType;
   }
   if (expression.kind === "TemplateStringExpr") {
     checkExpression(context, expression, scope);
+    return resourceIdType;
+  }
+  if (expression.kind === "ResourceLocationExpr") {
+    validateResourceLocationValue(context, expression.value, expression.range);
     return resourceIdType;
   }
   if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
@@ -261,6 +269,7 @@ export function checkExpressionForExpectedType(
   expectedType: RsglType
 ): RsglType {
   if (expression.kind === "LambdaExpr" && expectedType.kind === "Function") {
+    recordResolvedExpectedType(context, expression, expectedType);
     return checkLambdaExpression(
       context,
       expression,
@@ -271,9 +280,51 @@ export function checkExpressionForExpectedType(
         : checkExpression(context, body, bodyScope)
     );
   }
+  if (expression.kind === "ConditionalExpr") {
+    recordResolvedExpectedType(context, expression, expectedType);
+    checkExpression(context, expression.condition, scope);
+    const trueType = checkExpressionForExpectedType(
+      context,
+      expression.whenTrue,
+      scopeForTruthyCondition(scope, expression.condition),
+      expectedType
+    );
+    const falseType = checkExpressionForExpectedType(
+      context,
+      expression.whenFalse,
+      scope,
+      expectedType
+    );
+    return expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable"
+      ? mergeTextureRefBranchTypes([trueType, falseType])
+      : combineRsglTypes(
+        [trueType, falseType],
+        false,
+        inferredUnionBudgetOptions(context.diagnostics, expression.range)
+      );
+  }
+  if (expression.kind === "MatchExpr") {
+    recordResolvedExpectedType(context, expression, expectedType);
+    const matchedType = checkExpression(context, expression.expression, scope);
+    const armTypes = expression.arms.map(arm => {
+      arm.patterns
+        .filter(pattern => !isWildcardPattern(pattern))
+        .forEach(pattern => checkExpression(context, pattern, scope));
+      return checkExpressionForExpectedType(context, arm.value, scope, expectedType);
+    });
+    checkMatchExhaustiveness(expression, scope, context.diagnostics, matchedType);
+    return expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable"
+      ? mergeTextureRefBranchTypes(armTypes)
+      : combineRsglTypes(
+        armTypes,
+        false,
+        inferredUnionBudgetOptions(context.diagnostics, expression.range)
+      );
+  }
   if (expression.kind === "ObjectExpr") {
     const contextualObject = selectContextualObjectArm(expression, expectedType, scope);
     if (contextualObject) {
+      recordResolvedExpectedType(context, expression, contextualObject.type);
       if (contextualObject.ambiguous) {
         context.diagnostics.push(diagnostic(
           "rsgl.ambiguousRecordUnion",
@@ -284,29 +335,37 @@ export function checkExpressionForExpectedType(
       return checkObject(context, expression, scope, contextualObject.type);
     }
   }
-  if (expression.kind === "ListExpr" && expectedType.kind === "List") {
+  const contextualListType = expression.kind === "ListExpr"
+    ? selectUniqueUnionArmOfKind(expectedType, "List")
+    : undefined;
+  if (expression.kind === "ListExpr" && contextualListType) {
+    recordResolvedExpectedType(context, expression, contextualListType);
     const elementTypes = expression.elements.map(element => {
       const actualType = checkExpressionForExpectedType(
         context,
         element,
         scope,
-        expectedType.elementType ?? unknownType
+        contextualListType.elementType ?? unknownType
       );
-      checkAssignable(context, expectedType.elementType ?? unknownType, actualType, element);
+      checkAssignable(context, contextualListType.elementType ?? unknownType, actualType, element);
       return actualType;
     });
     return inferListType(elementTypes, inferredUnionBudgetOptions(context.diagnostics, expression.range));
   }
   if (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable") {
-    return checkTextureRefExpression(context, expression, scope);
+    return checkContextualTextureRefExpression(context, expression, scope, expectedType);
   }
   if (
     expectedType.kind === "ResourceId"
     || expectedType.kind === "ModelId"
     || expectedType.kind === "TextureId"
   ) {
-    return checkResourceIdExpression(context, expression, scope);
+    return checkContextualResourceIdExpression(context, expression, scope, expectedType);
   }
+  if (expectedType.kind === "Union") {
+    return checkExpressionForUnionExpectedType(context, expression, scope, expectedType);
+  }
+  recordResolvedExpectedType(context, expression, expectedType);
   return checkExpression(context, expression, scope);
 }
 
@@ -315,47 +374,51 @@ export function checkTextureRefExpression(
   expression: ExprNode,
   scope: RsglScope
 ): RsglType {
+  return checkExpressionForExpectedType(context, expression, scope, textureRefType);
+}
+
+function checkContextualTextureRefExpression(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  expectedType: RsglType
+): RsglType {
   if (expression.kind === "StringLiteral") {
     validateTextureRefExpressionSyntax(context, expression);
-    return expression.value.startsWith("#") ? textureVariableType : textureIdType;
+    const resolvedType = expression.value.startsWith("#") ? textureVariableType : textureIdType;
+    recordResolvedExpectedType(context, expression, resolvedType);
+    return resolvedType;
   }
   if (expression.kind === "TemplateStringExpr") {
     checkExpression(context, expression, scope);
+    recordResolvedExpectedType(context, expression, textureRefType);
     return textureRefType;
   }
   if (expression.kind === "ResourceLocationExpr") {
-    checkResourceIdExpression(context, expression, scope);
+    validateResourceLocationValue(context, expression.value, expression.range);
+    recordResolvedExpectedType(context, expression, textureIdType);
     return textureIdType;
   }
-  if (expression.kind === "ConditionalExpr") {
-    checkExpression(context, expression.condition, scope);
-    return mergeTextureRefBranchTypes([
-      checkTextureRefExpression(context, expression.whenTrue, scope),
-      checkTextureRefExpression(context, expression.whenFalse, scope)
-    ]);
+  const actualType = checkExpression(context, expression, scope);
+  if (expectedType.kind === "TextureRef" && isStringLikeType(actualType)) {
+    recordResolvedExpectedType(context, expression, textureRefType);
+    return textureRefType;
   }
-  if (expression.kind === "MatchExpr") {
-    const matchedType = checkExpression(context, expression.expression, scope);
-    const armTypes = expression.arms.map(arm => {
-      arm.patterns
-        .filter(pattern => !isWildcardPattern(pattern))
-        .forEach(pattern => checkExpression(context, pattern, scope));
-      return checkTextureRefExpression(context, arm.value, scope);
-    });
-    checkMatchExhaustiveness(expression, scope, context.diagnostics, matchedType);
-    return mergeTextureRefBranchTypes(armTypes);
-  }
-  return checkExpression(context, expression, scope);
+  const resolvedType = actualType.kind === "TextureId" || actualType.kind === "TextureVariable"
+    ? actualType
+    : expectedType;
+  recordResolvedExpectedType(context, expression, resolvedType);
+  return actualType;
 }
 
-/** Preserves incompatible result branches instead of widening them to Any. */
+/** Preserves source branch order for precise TextureRef mismatch diagnostics. */
 function mergeTextureRefBranchTypes(types: readonly RsglType[]): RsglType {
   const options: RsglType[] = [];
   const seen = new Set<string>();
   for (const type of types) {
     const candidates = type.kind === "Union" ? type.options ?? [] : [type];
     for (const candidate of candidates) {
-      const key = formatType(candidate);
+      const key = rsglTypeKey(candidate);
       if (!seen.has(key)) {
         seen.add(key);
         options.push(candidate);
@@ -366,6 +429,222 @@ function mergeTextureRefBranchTypes(types: readonly RsglType[]): RsglType {
     return unknownType;
   }
   return options.length === 1 ? options[0] : { kind: "Union", options };
+}
+
+function checkContextualResourceIdExpression(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  expectedType: RsglType
+): RsglType {
+  if (expression.kind === "StringLiteral") {
+    validateContextualResourceLiteral(context, expression);
+    recordResolvedExpectedType(context, expression, expectedType);
+    return expectedType;
+  }
+  if (expression.kind === "TemplateStringExpr") {
+    checkExpression(context, expression, scope);
+    recordResolvedExpectedType(context, expression, expectedType);
+    return expectedType;
+  }
+  if (expression.kind === "ResourceLocationExpr") {
+    validateResourceLocationValue(context, expression.value, expression.range);
+    recordResolvedExpectedType(context, expression, expectedType);
+    return expectedType;
+  }
+  if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
+    recordResolvedExpectedType(context, expression, expectedType);
+    return expectedType;
+  }
+
+  const actualType = checkExpression(context, expression, scope);
+  recordResolvedExpectedType(context, expression, expectedType);
+  return isStringLikeType(actualType) ? expectedType : actualType;
+}
+
+function checkExpressionForUnionExpectedType(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  expectedType: RsglType
+): RsglType {
+  const options = expectedType.options ?? [];
+  if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
+    const shorthandCandidates = contextualResourceUnionCandidates(options, expression);
+    if (shorthandCandidates.length > 0) {
+      return resolveContextualResourceUnion(
+        context,
+        expression,
+        scope,
+        expectedType,
+        shorthandCandidates,
+        unknownType,
+        false
+      );
+    }
+  }
+
+  const actualType = checkExpression(context, expression, scope);
+  const assignableOptions = options.filter(option => isAssignable(option, actualType));
+  const exactOptions = assignableOptions.filter(option =>
+    rsglTypeKey(option) === rsglTypeKey(actualType)
+    || option.kind === actualType.kind
+  );
+  if (exactOptions.length === 1) {
+    recordResolvedExpectedType(context, expression, exactOptions[0]);
+    return actualType;
+  }
+  if (exactOptions.length === 0 && assignableOptions.length === 1) {
+    recordResolvedExpectedType(context, expression, assignableOptions[0]);
+    return actualType;
+  }
+  if (assignableOptions.length > 0) {
+    recordResolvedExpectedType(context, expression, expectedType);
+    return actualType;
+  }
+
+  if (isContextualResourceConversionSource(expression, actualType)) {
+    const candidates = contextualResourceUnionCandidates(options, expression);
+    if (candidates.length > 0) {
+      return resolveContextualResourceUnion(
+        context,
+        expression,
+        scope,
+        expectedType,
+        candidates,
+        actualType,
+        true
+      );
+    }
+  }
+
+  recordResolvedExpectedType(context, expression, expectedType);
+  return actualType;
+}
+
+function resolveContextualResourceUnion(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  expectedType: RsglType,
+  candidates: readonly RsglType[],
+  actualType: RsglType,
+  alreadyChecked: boolean
+): RsglType {
+  if (candidates.length > 1) {
+    context.diagnostics.push(diagnostic(
+      "rsgl.ambiguousResourceIdContext",
+      `Resource reference has multiple possible contextual types (${candidates.map(formatType).join(" | ")}); use resource_id(...), model_id(...), or texture_id(...) to choose one.`,
+      expression.range
+    ));
+    recordResolvedExpectedType(context, expression, expectedType);
+    return expectedType;
+  }
+  const selected = candidates[0];
+  if (!alreadyChecked) {
+    return selected.kind === "TextureRef" || selected.kind === "TextureVariable"
+      ? checkContextualTextureRefExpression(context, expression, scope, selected)
+      : checkContextualResourceIdExpression(context, expression, scope, selected);
+  }
+  return contextualizeCheckedResourceExpression(context, expression, selected, actualType);
+}
+
+function contextualizeCheckedResourceExpression(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  expectedType: RsglType,
+  actualType: RsglType
+): RsglType {
+  if (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable") {
+    if (expression.kind === "StringLiteral") {
+      validateTextureRefExpressionSyntax(context, expression);
+      const resolvedType = expression.value.startsWith("#") ? textureVariableType : textureIdType;
+      recordResolvedExpectedType(context, expression, resolvedType);
+      return resolvedType;
+    }
+    if (expression.kind === "ResourceLocationExpr") {
+      recordResolvedExpectedType(context, expression, textureIdType);
+      return textureIdType;
+    }
+    recordResolvedExpectedType(context, expression, expectedType);
+    return expectedType.kind === "TextureRef" && isStringLikeType(actualType)
+      ? textureRefType
+      : actualType;
+  }
+
+  if (expression.kind === "StringLiteral") {
+    validateContextualResourceLiteral(context, expression);
+  }
+  recordResolvedExpectedType(context, expression, expectedType);
+  return expectedType;
+}
+
+function contextualResourceUnionCandidates(
+  options: readonly RsglType[],
+  expression: ExprNode
+): RsglType[] {
+  const textureVariableSyntax = expression.kind === "StringLiteral" && expression.value.startsWith("#");
+  return options.filter(option => textureVariableSyntax
+    ? option.kind === "TextureRef" || option.kind === "TextureVariable"
+    : option.kind === "ResourceId"
+      || option.kind === "ModelId"
+      || option.kind === "TextureId"
+      || option.kind === "TextureRef");
+}
+
+function isContextualResourceConversionSource(expression: ExprNode, actualType: RsglType): boolean {
+  return expression.kind === "StringLiteral"
+    || expression.kind === "TemplateStringExpr"
+    || expression.kind === "ResourceLocationExpr"
+    || isStringLikeType(actualType);
+}
+
+function isStringLikeType(type: RsglType): boolean {
+  if (type.kind === "String") {
+    return true;
+  }
+  return type.kind === "Union"
+    && (type.options?.length ?? 0) > 0
+    && (type.options ?? []).every(option => option.kind === "String");
+}
+
+function validateContextualResourceLiteral(
+  context: Pick<RsglExpressionCheckContext, "diagnostics">,
+  expression: Extract<ExprNode, { kind: "StringLiteral" }>
+): void {
+  if (expression.value.startsWith("#")) {
+    context.diagnostics.push(diagnostic(
+      "rsgl.textureVariableInvalidContext",
+      `Texture variable '${expression.value}' is only valid where TextureRef is expected.`,
+      expression.range
+    ));
+    return;
+  }
+  validateResourceLocationValue(context, expression.value, expression.range);
+}
+
+function selectUniqueUnionArmOfKind(
+  expectedType: RsglType,
+  kind: RsglType["kind"]
+): RsglType | undefined {
+  if (expectedType.kind === kind) {
+    return expectedType;
+  }
+  if (expectedType.kind !== "Union") {
+    return undefined;
+  }
+  const candidates = (expectedType.options ?? []).filter(option => option.kind === kind);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function recordResolvedExpectedType(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  expectedType: RsglType
+): void {
+  if (expectedType.kind !== "Unknown") {
+    context.recordResolvedExpectedType?.(expression, expectedType);
+  }
 }
 
 /** Runs only the syntax checks that depend on a value being used as TextureRef. */
@@ -450,6 +729,16 @@ export function checkAssignable(context: RsglExpressionCheckContext, expected: R
     return;
   }
   if (!isAssignable(expected, actual)) {
+    const expectedResourceKind = singleExpectedResourceValueKind(expected);
+    const actualResourceKind = resourceValueKindForTypeKind(actual.kind);
+    if (expectedResourceKind && (actualResourceKind || actual.kind === "TextureVariable")) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.resourceIdKindMismatch",
+        `${actualResourceKind ? typeKindForResourceValueKind(actualResourceKind) : "TextureVariable"} cannot be used where ${typeKindForResourceValueKind(expectedResourceKind)} is required.`,
+        node.range
+      ));
+      return;
+    }
     context.diagnostics.push(diagnostic(
       "rsgl.typeMismatch",
       `Expected ${formatType(expected)}, got ${formatType(actual)}.`,
@@ -524,6 +813,25 @@ function reportStructuralAccessIssues(
       ));
     }
   }
+}
+
+function singleExpectedResourceValueKind(type: RsglType): RsglResourceValueKind | undefined {
+  const direct = resourceValueKindForTypeKind(type.kind);
+  if (direct) {
+    return direct;
+  }
+  if (type.kind === "TextureRef" || type.kind === "TextureVariable") {
+    return "texture";
+  }
+  if (type.kind !== "Union") {
+    return undefined;
+  }
+  const kinds = new Set(
+    (type.options ?? [])
+      .map(singleExpectedResourceValueKind)
+      .filter((kind): kind is RsglResourceValueKind => Boolean(kind))
+  );
+  return kinds.size === 1 ? [...kinds][0] : undefined;
 }
 
 function reportOptionalFieldAccess(

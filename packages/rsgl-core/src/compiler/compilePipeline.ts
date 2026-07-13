@@ -88,6 +88,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
   const namespace = effectiveNamespace(semanticModel.namespace, configuration);
   const loaderDiagnostics: RsglCompileDiagnostic[] = [];
+  const environmentDiagnostics: RsglCompileDiagnostic[] = [];
   const baseDocumentLoader = createCachedBaseDocumentLoader(
     options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: fileName })
   );
@@ -102,6 +103,15 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     {
       baseDocumentLoader,
       globLoader,
+      onError: (code, message, range, diagnosticFileName) => {
+        environmentDiagnostics.push({
+          code,
+          message,
+          range,
+          severity: "error",
+          fileName: diagnosticFileName ?? fileName
+        });
+      },
       definitionFingerprintContext: configuration.semanticFingerprint
     }
   );
@@ -115,7 +125,8 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     targetPackFormat: target.targetPackFormat,
     maxEvaluationItems: configuration.maxEvaluationItems,
     stdlibRoot: options.stdlibRoot,
-    blockstateApplyFacts: semanticModel.blockstateApplyFacts
+    blockstateApplyFacts: semanticModel.blockstateApplyFacts,
+    resolvedExpectedTypes: semanticModel.resolvedExpectedTypes
   });
   const result = compiler.compile();
   const externs = collectExternDeclarations([{ fileName, module }], options.globalExterns, options.externDeclarations);
@@ -132,6 +143,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
       ...externs.diagnostics,
       ...target.diagnostics,
       ...loaderDiagnostics,
+      ...environmentDiagnostics,
       ...result.diagnostics,
       ...finished.diagnostics
     ]),
@@ -201,7 +213,19 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: options.entryFileName })
   );
   const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
-  const environments = createProgramCompileEnvironments(program, configuration, { baseDocumentLoader, globLoader });
+  const environments = createProgramCompileEnvironments(program, configuration, {
+    baseDocumentLoader,
+    globLoader,
+    onError: (code, message, range, fileName) => {
+      diagnostics.push({
+        code,
+        message,
+        range,
+        severity: "error",
+        ...(fileName ? { fileName } : {})
+      });
+    }
+  });
   const externs = collectExternDeclarations(sourceFiles, options.globalExterns, options.externDeclarations);
   diagnostics.push(...externs.diagnostics);
   const stdlibTemplates = createRsglStdlibPreludeTemplates(options.stdlibRoot, configuration);
@@ -234,6 +258,15 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     const namespace = effectiveNamespace(model.namespace, configuration);
     const environment = environments.get(normalizeFileName(model.fileName))
       ?? createStandaloneCompileEnvironment(model, namespace, {
+        onError: (code, message, range, fileName) => {
+          diagnostics.push({
+            code,
+            message,
+            range,
+            severity: "error",
+            fileName: fileName ?? model.fileName
+          });
+        },
         definitionFingerprintContext: configuration.semanticFingerprint
       });
     const compiler = new RsglCompiler(model.module, {
@@ -253,7 +286,8 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       targetPackFormat: target.targetPackFormat,
       maxEvaluationItems: configuration.maxEvaluationItems,
       stdlibRoot: options.stdlibRoot,
-      blockstateApplyFacts
+      blockstateApplyFacts,
+      resolvedExpectedTypes: model.resolvedExpectedTypes
     });
     const result = compiler.compile();
     units.push(...result.units);

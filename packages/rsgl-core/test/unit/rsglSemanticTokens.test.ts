@@ -243,7 +243,7 @@ describe("RSGL semantic tokens", () => {
       {
         fileName: templatesFile,
         module: parseRsgl([
-          "template cube(id: ResourceId, texture: TextureId = id) {",
+          "template cube(id: TextureId, texture: TextureId = id) {",
           "  model block id {",
           "    parent minecraft:block/cube_all",
           "    textures { all: texture }",
@@ -343,7 +343,8 @@ describe("RSGL semantic tokens", () => {
         { name: "value", range: { start: 14, end: 17 }, symbol: variableSymbol }
       ],
       outputResources: [],
-      diagnostics: []
+      diagnostics: [],
+      resolvedExpectedTypes: new Map()
     };
 
     assert.deepStrictEqual(getRsglSemanticTokens(model), [

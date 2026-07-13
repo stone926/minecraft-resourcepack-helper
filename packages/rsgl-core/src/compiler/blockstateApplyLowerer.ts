@@ -11,6 +11,10 @@ import type {
   RsglBlockstateApplySiteNode
 } from "../semantic";
 import {
+  isEvaluatedResourceId,
+  type RsglResourceValueObservation
+} from "./evaluatedResourceValues";
+import {
   evaluateExpressionResult,
   type EvaluationOrigin,
   type EvaluationResult,
@@ -42,6 +46,13 @@ export interface BlockstateLoweredMapping {
 export interface LoweredBlockstateApply {
   readonly value: JsonValue;
   readonly mappings: readonly BlockstateLoweredMapping[];
+  /** Resource values at paths relative to this variant value or multipart apply. */
+  readonly resourceValueObservations: readonly RsglResourceValueObservation[];
+}
+
+interface LoweredBlockstateApplyCore {
+  readonly value: JsonValue;
+  readonly mappings: readonly BlockstateLoweredMapping[];
 }
 
 /** Canonical model/apply lowering; each head and property expression is evaluated once. */
@@ -50,6 +61,16 @@ export function lowerBlockstateApply(
   context: RsglCompileContext,
   host: BlockstateApplyLoweringHost
 ): LoweredBlockstateApply | undefined {
+  return captureApplyResourceValues(host, loweringHost =>
+    lowerBlockstateApplyCore(value, context, loweringHost)
+  );
+}
+
+function lowerBlockstateApplyCore(
+  value: BlockstateApplyValueNode,
+  context: RsglCompileContext,
+  host: BlockstateApplyLoweringHost
+): LoweredBlockstateApplyCore | undefined {
   if (value.kind === "BlockstateRandomValue") {
     if (value.items.length === 0) {
       host.onError(
@@ -62,12 +83,16 @@ export function lowerBlockstateApply(
     const entries: JsonValue[] = [];
     const mappings: BlockstateLoweredMapping[] = [mapping("", value.range)];
     for (const [index, item] of value.items.entries()) {
-      const lowered = lowerRandomItem(item, context, host);
+      const itemPath = appendGeneratedPath("", String(index));
+      const lowered = lowerRandomItem(
+        item,
+        context,
+        withResourceValuePathPrefix(host, itemPath)
+      );
       if (!lowered) {
         return undefined;
       }
       entries.push(lowered.value);
-      const itemPath = appendGeneratedPath("", String(index));
       mappings.push(mapping(itemPath, item.range));
       mappings.push(...lowered.mappings.map(itemMapping => ({
         ...itemMapping,
@@ -85,8 +110,25 @@ export function lowerLegacyBlockstateApply(
   context: RsglCompileContext,
   host: BlockstateApplyLoweringHost
 ): LoweredBlockstateApply | undefined {
-  const result = evaluateExpressionResult(expression, context);
-  const value = lowerSerializableBlockstateJsonValue(result, expression.range, host);
+  return captureApplyResourceValues(host, loweringHost =>
+    lowerLegacyBlockstateApplyCore(expression, context, loweringHost)
+  );
+}
+
+function lowerLegacyBlockstateApplyCore(
+  expression: ExprNode,
+  context: RsglCompileContext,
+  host: BlockstateApplyLoweringHost
+): LoweredBlockstateApplyCore | undefined {
+  const result = evaluateBlockstateExpressionResult(expression, context);
+  if (!result) {
+    return undefined;
+  }
+  const value = lowerSerializableBlockstateJsonValue(
+    result,
+    expression.range,
+    withSourceFile(host, context.sourceFile)
+  );
   if (value === undefined) {
     return undefined;
   }
@@ -100,7 +142,7 @@ function lowerRandomItem(
   item: BlockstateRandomItemNode,
   context: RsglCompileContext,
   host: BlockstateApplyLoweringHost
-): LoweredBlockstateApply | undefined {
+): LoweredBlockstateApplyCore | undefined {
   return lowerApplyExpression(item, context, host, false, item);
 }
 
@@ -110,13 +152,20 @@ function lowerApplyExpression(
   host: BlockstateApplyLoweringHost,
   allowList: boolean,
   factNode: RsglBlockstateApplySiteNode
-): LoweredBlockstateApply | undefined {
+): LoweredBlockstateApplyCore | undefined {
   const fact = host.getApplyFact?.(factNode);
-  const headResult = evaluateExpressionResult(expression.head, context);
+  const headResult = evaluateBlockstateExpressionResult(expression.head, context);
+  if (!headResult) {
+    return undefined;
+  }
+  const loweringHost = withSourceFile(host, context.sourceFile);
   const serialHead = lowerSerializableBlockstateJsonValue(
     headResult,
     expression.head.range,
-    host
+    loweringHost,
+    expression.properties.length > 0 || isEvaluatedResourceId(headResult.value)
+      ? "/model"
+      : ""
   );
   if (serialHead === undefined) {
     return undefined;
@@ -363,9 +412,17 @@ function applyModelProperties(
       return false;
     }
     seen.add(name);
-    const result = evaluateExpressionResult(property.value, context);
+    const result = evaluateBlockstateExpressionResult(property.value, context);
+    if (!result) {
+      return false;
+    }
     const location = evaluationLocation(result, "", property.value.range);
-    const value = lowerSerializableBlockstateJsonValue(result, location.range, host);
+    const value = lowerSerializableBlockstateJsonValue(
+      result,
+      location.range,
+      withSourceFile(host, context.sourceFile),
+      appendGeneratedPath("", name)
+    );
     if (value === undefined) {
       return false;
     }
@@ -377,6 +434,21 @@ function applyModelProperties(
     ));
   }
   return true;
+}
+
+function evaluateBlockstateExpressionResult(
+  expression: ExprNode,
+  context: RsglCompileContext
+): EvaluationResult | undefined {
+  let evaluationFailed = false;
+  const result = evaluateExpressionResult(expression, {
+    ...context,
+    onEvaluationFailure: () => {
+      evaluationFailed = true;
+      context.onEvaluationFailure?.();
+    }
+  });
+  return evaluationFailed ? undefined : result;
 }
 
 function validateKnownModelFields(
@@ -521,6 +593,46 @@ function mappingPathExists(path: string, value: JsonValue): boolean {
     }
   }
   return true;
+}
+
+function captureApplyResourceValues(
+  host: BlockstateApplyLoweringHost,
+  lower: (capturingHost: BlockstateApplyLoweringHost) => LoweredBlockstateApplyCore | undefined
+): LoweredBlockstateApply | undefined {
+  const resourceValueObservations: RsglResourceValueObservation[] = [];
+  const lowered = lower({
+    ...host,
+    onResourceValueObservation: observation => resourceValueObservations.push(observation)
+  });
+  return lowered
+    ? { ...lowered, resourceValueObservations }
+    : undefined;
+}
+
+function withResourceValuePathPrefix(
+  host: BlockstateApplyLoweringHost,
+  generatedPathPrefix: string
+): BlockstateApplyLoweringHost {
+  const observe = host.onResourceValueObservation;
+  if (!observe) {
+    return host;
+  }
+  return {
+    ...host,
+    onResourceValueObservation: observation => observe({
+      ...observation,
+      generatedPath: joinGeneratedPath(generatedPathPrefix, observation.generatedPath)
+    })
+  };
+}
+
+function withSourceFile(
+  host: BlockstateApplyLoweringHost,
+  sourceFile: string | undefined
+): BlockstateApplyLoweringHost {
+  return sourceFile && sourceFile !== host.sourceFile
+    ? { ...host, sourceFile }
+    : host;
 }
 
 const knownModelFields = new Set(["x", "y", "z", "uvlock", "weight"]);

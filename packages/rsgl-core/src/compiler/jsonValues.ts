@@ -1,4 +1,5 @@
 import type { JsonValue } from "./ir";
+import { isEvaluatedResourceValue } from "./evaluatedResourceValues";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export function isJsonObject(value: unknown): value is Record<string, JsonValue> {
@@ -6,6 +7,7 @@ export function isJsonObject(value: unknown): value is Record<string, JsonValue>
     value &&
     typeof value === "object" &&
     !Array.isArray(value) &&
+    !isEvaluatedResourceValue(value) &&
     !isLambdaRuntimeValue(value)
   );
 }

@@ -9,13 +9,18 @@ import { isJsonObject } from "./compilerHelpers";
 import {
   EvaluationContext,
   type EvaluationOrigin,
-  EvaluationValue,
   evaluateExpression,
   expressionEvaluationOrigin
 } from "./evaluate";
+import {
+  evaluationScalarText,
+  isEvaluatedResourceId,
+  isEvaluatedTextureVariable
+} from "./evaluatedResourceValues";
 import { JsonValue, RsglMapping } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 import { normalizeResourceValue } from "./templates";
+import { typeKindForResourceValueKind } from "../resourceIdSemantics";
 
 export interface ModelImplOptions {
   onError: (code: string, message: string, range: TextRange) => void;
@@ -120,13 +125,42 @@ function modelImplData(
 ): ModelImplData | null {
   const call = expression.kind === "CallExpr" ? expression : undefined;
   const parentExpression = call?.callee ?? expression;
-  const parentValue = scalarText(evaluateExpression(parentExpression, context));
+  const evaluatedParent = evaluateExpression(parentExpression, context);
+  if (isEvaluatedTextureVariable(evaluatedParent)) {
+    context.onResourceValueFailure?.();
+    onError(
+      "rsgl.resourceIdKindMismatch",
+      "TextureVariable cannot be used where ModelId is required.",
+      parentExpression.range
+    );
+    return null;
+  }
+  if (isEvaluatedResourceId(evaluatedParent) && evaluatedParent.resourceKind !== "model") {
+    context.onResourceValueFailure?.();
+    onError(
+      "rsgl.resourceIdKindMismatch",
+      `${typeKindForResourceValueKind(evaluatedParent.resourceKind)} cannot be used where ModelId is required.`,
+      parentExpression.range
+    );
+    return null;
+  }
+  const parentValue = evaluationScalarText(evaluatedParent);
   if (!parentValue) {
     onError("rsgl.invalidModelImplParent", "Model impl parent must evaluate to a static model id.", parentExpression.range);
     return null;
   }
+  if (parentValue.startsWith("#")) {
+    onError(
+      "rsgl.resourceReferenceExpected",
+      `Texture variable '${parentValue}' cannot be used where ModelId is required.`,
+      parentExpression.range
+    );
+    return null;
+  }
   return {
-    parent: normalizeModelParent(parentValue, subtype, context.namespace),
+    parent: isEvaluatedResourceId(evaluatedParent)
+      ? parentValue
+      : normalizeModelParent(parentValue, subtype, context.namespace),
     parentRange: parentExpression.range,
     parentOrigin: expressionEvaluationOrigin(parentExpression, context),
     implRange: expression.range,
@@ -177,10 +211,29 @@ function modelImplTextureValue(
   context: EvaluationContext,
   onError: ModelImplOptions["onError"]
 ): string | null {
-  const value = scalarText(evaluateExpression(arg.value, context));
+  const evaluatedValue = evaluateExpression(arg.value, context);
+  if (isEvaluatedTextureVariable(evaluatedValue)) {
+    return evaluatedValue.value;
+  }
+  if (isEvaluatedResourceId(evaluatedValue)) {
+    if (evaluatedValue.resourceKind !== "texture") {
+      context.onResourceValueFailure?.();
+      onError(
+        "rsgl.resourceIdKindMismatch",
+        `${typeKindForResourceValueKind(evaluatedValue.resourceKind)} cannot be used where TextureId is required.`,
+        arg.value.range
+      );
+      return null;
+    }
+    return evaluationScalarText(evaluatedValue);
+  }
+  const value = evaluationScalarText(evaluatedValue);
   if (!value) {
     onError("rsgl.invalidModelImplArgument", "Model impl texture argument must evaluate to a static texture id.", arg.value.range);
     return null;
+  }
+  if (value.startsWith("#")) {
+    return value;
   }
   return normalizeResourceValue(value, context.namespace, subtype === "item" ? "item" : "block");
 }
@@ -193,8 +246,4 @@ function normalizeModelParent(value: string, subtype: string, namespace: string)
     return `${namespace}:${value}`;
   }
   return `minecraft:${subtype}/${value}`;
-}
-
-function scalarText(value: EvaluationValue): string | null {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
 }

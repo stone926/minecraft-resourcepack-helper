@@ -1,15 +1,19 @@
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import {
+  ExprNode,
   LetDeclNode,
   TableDeclNode,
-  TemplateDeclNode
+  TemplateDeclNode,
+  TextRange
 } from "../parser";
 import {
   createRsglExportMaps,
   RsglProgram,
   RsglSemanticModel,
-  RsglSymbol
+  RsglSignature,
+  RsglSymbol,
+  RsglType
 } from "../semantic";
 import {
   EvaluationContext,
@@ -40,6 +44,7 @@ import { inferResolvedTemplateOutputMetadata } from "../semantic/templateOutputR
 export interface RsglModuleCompileEnvironment {
   fileName: string;
   namespace: string;
+  resolvedExpectedTypes: ReadonlyMap<ExprNode, RsglType>;
   importedValues: Map<string, EvaluationValue>;
   importedValueOrigins: Map<string, EvaluationOrigin>;
   importedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
@@ -69,6 +74,10 @@ export interface RsglTemplateDefinition {
   definitionTargetFingerprint: string;
   fileName: string;
   namespace: string;
+  /** Linked signature, including resolved type aliases. */
+  signature?: RsglSignature;
+  /** Definition-module contextual facts used by defaults and the body. */
+  resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
   values: Map<string, EvaluationValue>;
   valueOrigins?: Map<string, EvaluationOrigin>;
   valuePathOrigins?: Map<string, EvaluationPathOrigin[]>;
@@ -88,6 +97,10 @@ export interface RsglCompileEnvironmentOptions {
   baseDocumentLoader?: BaseDocumentLoader;
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
+  /** Receives runtime diagnostics raised while imported/local values are pre-evaluated. */
+  onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
+  /** Marks a pre-evaluation failure even when another layer owns its diagnostic. */
+  onEvaluationFailure?: () => void;
   /** Stable effective project configuration used by definition/dispatch fingerprints. */
   definitionFingerprintContext?: string;
 }
@@ -159,7 +172,11 @@ export function createTemplateDefinition(
   outputMetadata: ResolvedTemplateOutputMetadata = inferResolvedTemplateOutputMetadata(node),
   definitionTargetFingerprint = "unresolved-target",
   definitionFingerprintContext = "unresolved-target",
-  outputConflict?: ResolvedTemplateOutputConflict
+  outputConflict?: ResolvedTemplateOutputConflict,
+  semantic?: {
+    signature?: RsglSignature;
+    resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
+  }
 ): RsglTemplateDefinition {
   const definition: RsglTemplateDefinition = {
     name,
@@ -170,6 +187,10 @@ export function createTemplateDefinition(
     definitionTargetFingerprint,
     fileName,
     namespace,
+    ...(semantic?.signature ? { signature: semantic.signature } : {}),
+    ...(semantic?.resolvedExpectedTypes
+      ? { resolvedExpectedTypes: semantic.resolvedExpectedTypes }
+      : {}),
     values,
     templates
   };
@@ -209,6 +230,7 @@ function createEmptyCompileEnvironment(model: RsglSemanticModel, namespace: stri
   return {
     fileName: model.fileName,
     namespace,
+    resolvedExpectedTypes: model.resolvedExpectedTypes,
     importedValues: new Map(),
     importedValueOrigins: new Map(),
     importedValuePathOrigins: new Map(),
@@ -418,6 +440,19 @@ function evaluateLocalEnvironmentValues(
   const context: EvaluationContext = {
     namespace: environment.namespace,
     variables: new Map(environment.importedValues),
+    resolvedExpectedTypes: environment.resolvedExpectedTypes,
+    // Match semantic predeclaration: a later local value still shadows a
+    // same-named builtin while earlier initializers are pre-evaluated. Without
+    // this set, `let result = model_id(...); let model_id = ...` can silently
+    // execute the constructor and export a branded value.
+    valueBindingNames: new Set([
+      ...environment.importedValues.keys(),
+      ...model.module.statements.flatMap(statement =>
+        (isLetDeclNode(statement) || isTableDeclNode(statement)) && statement.name
+          ? [statement.name.text]
+          : []
+      )
+    ]),
     valueOrigins: new Map(environment.importedValueOrigins),
     valuePathOrigins: new Map(environment.importedValuePathOrigins),
     valueIssues: new Map(environment.importedValueIssues),
@@ -426,7 +461,9 @@ function evaluateLocalEnvironmentValues(
     expansionStack: [],
     baseDocumentLoader: options.baseDocumentLoader,
     globLoader: options.globLoader,
-    onDependency: options.onDependency
+    onDependency: options.onDependency,
+    onError: options.onError,
+    onEvaluationFailure: options.onEvaluationFailure
   };
 
   for (const statement of model.module.statements) {
@@ -492,7 +529,11 @@ function collectLocalEnvironmentTemplates(
         outputMetadata,
         JSON.stringify(model.module.statements.filter(statement => statement.kind === "TargetDecl")),
         "unresolved-target",
-        signature?.templateOutputConflict
+        signature?.templateOutputConflict,
+        {
+          ...(signature ? { signature } : {}),
+          resolvedExpectedTypes: model.resolvedExpectedTypes
+        }
       );
       definition.valueOrigins = environment.allValueOrigins;
       definition.valuePathOrigins = environment.allValuePathOrigins;

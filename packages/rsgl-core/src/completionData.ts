@@ -5,6 +5,10 @@ import {
 import { rsglModelGeometryCompletionDescriptors } from "./modelGeometrySyntax";
 import { getRsglCompletionContext } from "./completionContext";
 import { getBlockstateEntryCompletions } from "./blockstateCompletionData";
+import {
+  rsglResourceIdConstructors,
+  typeKindForResourceValueKind
+} from "./resourceIdSemantics";
 
 export interface RsglCompletionCandidate {
   label: string;
@@ -193,6 +197,12 @@ const blockstateRootOperationLabels = new Set([
 ]);
 
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
+  ...Object.entries(rsglResourceIdConstructors).map(([label, kind]) => ({
+    label,
+    insertText: `${label}(\${1:value})`,
+    detail: `Construct a validated ${typeKindForResourceValueKind(kind)} value`,
+    kind: "function" as const
+  })),
   { label: "seq", insertText: "seq(${1:i} => \"minecraft:block/name_\" + ${1:i}, ${1:i}: ${2:0..3})", detail: "Compile-time string sequence", kind: "function" },
   { label: "atlasDirectory", detail: "Atlas directory source helper", kind: "function" },
   { label: "particlesSeq", insertText: "particlesSeq(\"${1:minecraft:particle/explosion_{0..2}}\", pad: ${2:0})", detail: "Particle texture sequence helper", kind: "function" },

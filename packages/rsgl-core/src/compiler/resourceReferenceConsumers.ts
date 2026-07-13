@@ -4,6 +4,7 @@ import {
   tryParseMinecraftResourceId
 } from "../../../mc-assets/src";
 import type { RsglResourceExistenceKind } from "./validationTypes";
+import type { RsglResourceValueKind } from "../resourceIdSemantics";
 
 export interface RsglResourceReferenceConsumerContext {
   equipmentLayer?: string;
@@ -97,6 +98,26 @@ export const resourceReferenceConsumers = {
 } as const satisfies Record<string, RsglResourceReferenceConsumerDescriptor>;
 
 export type RsglResourceReferenceConsumer = keyof typeof resourceReferenceConsumers;
+
+/** Typed runtime kind required by a schema-known consumer. */
+export function resourceValueKindForConsumer(
+  consumer: RsglResourceReferenceConsumer
+): RsglResourceValueKind {
+  const targetKind = resourceReferenceConsumers[consumer].targetKind;
+  if (targetKind === "model") {
+    return "model";
+  }
+  if (targetKind === "texture" || targetKind === "textureDirectory") {
+    return "texture";
+  }
+  return "generic";
+}
+
+export function resourceConsumerAllowsTextureVariable(
+  consumer: RsglResourceReferenceConsumer
+): boolean {
+  return resourceReferenceConsumers[consumer].allowTextureVariable === true;
+}
 
 const itemSpecialTextureConsumers = {
   chest: "itemSpecialChestTexture",

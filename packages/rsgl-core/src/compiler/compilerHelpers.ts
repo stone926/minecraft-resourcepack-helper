@@ -19,6 +19,7 @@ import { appendGeneratedPath, prefixGeneratedPath } from "./sourcePaths";
 import type { RsglProgram, RsglSemanticModel, RsglSourceFile } from "../semantic";
 import type { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglMapping } from "./ir";
 import { isJsonObject } from "./jsonValues";
+import { evaluationScalarText } from "./evaluatedResourceValues";
 
 export { isJsonObject } from "./jsonValues";
 import { parseResourceId } from "./resourceIds";
@@ -52,8 +53,7 @@ function isLambdaLikeValue(value: unknown): boolean {
 }
 
 export function staticText(expression: ExprNode, context: EvaluationContext): string | null {
-  const value = evaluateExpression(expression, context);
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
+  return evaluationScalarText(evaluateExpression(expression, context));
 }
 
 export const packRootFields = new Set(["description", "pack_format", "supported_formats", "min_format", "max_format"]);

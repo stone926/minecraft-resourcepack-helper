@@ -78,6 +78,8 @@ export interface RsglType {
   options?: RsglType[];
   /** Internal provenance used by contextual compatibility escapes. */
   explicitAnnotation?: true;
+  /** Internal union arm accepted only when static checking proves explicit Json. */
+  contextualEscapeOnly?: true;
 }
 
 export function objectProperty(
@@ -245,6 +247,8 @@ export interface RsglSemanticModel {
   outputResources: RsglOutputResourcePreview[];
   diagnostics: RsglDiagnostic[];
   namespace?: string;
+  /** Final contextual types selected for expressions at typed boundaries. */
+  resolvedExpectedTypes: ReadonlyMap<ExprNode, RsglType>;
   /**
    * Enclosing scope of each known import call and unresolved call that may be
    * linked by a bare import. Lets post-resolution validation use the captures

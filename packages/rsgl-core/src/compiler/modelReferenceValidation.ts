@@ -60,7 +60,7 @@ export function validateModelUnit(
           unit,
           options,
           diagnostics,
-          sourceRangeForGeneratedPath(unit, texturePath)
+          texturePath
         );
       } else if (isObject(value) && typeof value.sprite === "string") {
         checkJsonResourceReference(
@@ -70,7 +70,7 @@ export function validateModelUnit(
           unit,
           options,
           diagnostics,
-          sourceRangeForGeneratedPath(unit, appendGeneratedPath(texturePath, "sprite"))
+          appendGeneratedPath(texturePath, "sprite")
         );
       }
     }
@@ -114,7 +114,7 @@ function validateModelFaceTextureReferences(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, texturePath)
+        texturePath
       );
     }
   }
@@ -140,7 +140,7 @@ function validateLegacyItemOverrides(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, modelPath)
+      modelPath
     );
   }
 }
@@ -218,7 +218,6 @@ function validateModelParentChain(
     }
 
     const referencingUnit = current.generatedUnit ?? unit;
-    const range = sourceRangeForGeneratedPath(referencingUnit, "/parent");
     const checked = checkJsonResourceReference(
       current.content,
       "parent",
@@ -226,7 +225,7 @@ function validateModelParentChain(
       referencingUnit,
       options,
       diagnostics,
-      range,
+      "/parent",
       undefined,
       current.namespace
     );

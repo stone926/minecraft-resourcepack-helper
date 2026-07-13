@@ -6,7 +6,24 @@ import {
 import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { builtinEffect } from "../semantic/builtins";
 import { findLambdaImpureCalls, LambdaImpureCall } from "../semantic/lambdaPurity";
+import type { RsglType } from "../semantic/types";
+import {
+  isRsglResourceIdConstructorName,
+  rsglResourceIdConstructors,
+  typeKindForResourceValueKind
+} from "../resourceIdSemantics";
 import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
+import {
+  contextualResourceKinds,
+  contextualizeEvaluatedValue
+} from "./contextualResourceValueConversion";
+import {
+  createEvaluatedResourceId,
+  evaluationScalarText,
+  isEvaluatedResourceId,
+  isEvaluatedResourceValue,
+  type RsglEvaluatedResourceValue
+} from "./evaluatedResourceValues";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
@@ -17,11 +34,16 @@ export interface LambdaValue {
   parameters: string[];
   body: ExprNode;
   context: EvaluationContext;
+  /** Contextual function type retained for runtime argument/return boundaries. */
+  signature?: {
+    parameters: readonly RsglType[];
+    returnType: RsglType;
+  };
   /** Impure builtin calls found in the body; a non-empty list blocks execution. */
   impureCalls: LambdaImpureCall[];
 }
 
-export type EvaluationValue = JsonValue | LambdaValue | undefined;
+export type EvaluationValue = JsonValue | RsglEvaluatedResourceValue | LambdaValue | undefined;
 export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
 
 export interface EvaluationOrigin {
@@ -73,6 +95,8 @@ export interface EvaluationResult {
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
+  /** Semantic contextual-type facts for AST nodes owned by this module. */
+  resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
   /** Lexically bound value names, including predeclared bindings not evaluated yet. */
   valueBindingNames?: ReadonlySet<string>;
   /** Lexical origins of values bound from template call arguments. */
@@ -91,6 +115,8 @@ export interface EvaluationContext {
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
   /** @internal Signals that evaluation failed even when semantic analysis owns the diagnostic. */
   onEvaluationFailure?: () => void;
+  /** @internal Marks a typed resource-value failure as fatal for the enclosing resource transaction. */
+  onResourceValueFailure?: () => void;
   /** @internal Active only for one evaluateExpressionResult call. */
   evaluationTrace?: EvaluationTraceSession;
 }
@@ -305,6 +331,19 @@ function buildEvaluationResult(
     );
   }
 
+  if (expression.kind === "TemplateStringExpr") {
+    // Interpolation constructs one new scalar value. Its root provenance is
+    // therefore the complete template-string expression, not the origin of an
+    // interpolated binding. Child failures still belong to the constructed
+    // value and must survive binding/template expansion.
+    return evaluationResult(
+      value,
+      direct.pathRanges,
+      [],
+      [...direct.valueIssues, ...frame.children.flatMap(child => child.result.valueIssues)]
+    );
+  }
+
   if (expression.kind === "ListExpr") {
     return structuralEvaluationResult(
       value,
@@ -376,9 +415,9 @@ function buildEvaluationResult(
   if (expression.kind === "IndexExpr") {
     const object = childForExpression(frame, expression.object);
     const index = childForExpression(frame, expression.index);
-    const key = index?.result.value;
-    return object && (typeof key === "string" || typeof key === "number")
-      ? selectedEvaluationResult(value, expression.range, object.result, appendGeneratedPath("", String(key)))
+    const key = scalarText(index?.result.value);
+    return object && key !== null
+      ? selectedEvaluationResult(value, expression.range, object.result, appendGeneratedPath("", key))
       : direct;
   }
 
@@ -416,6 +455,22 @@ function buildEvaluationResult(
         origin ? [{ generatedPath: "", ...origin }] : [],
         direct.valueIssues
       );
+    }
+    if (
+      expression.callee.kind === "IdentifierExpr"
+      && isRsglResourceIdConstructorName(expression.callee.name.text)
+    ) {
+      const argument = expression.args[0]
+        ? childForExpression(frame, expression.args[0].value)
+        : undefined;
+      if (argument) {
+        return evaluationResult(
+          value,
+          argument.result.pathRanges,
+          materializeEvaluationPathOrigins(argument.result, argument.context.sourceFile),
+          materializeEvaluationValueIssues(argument.result, argument.context.sourceFile)
+        );
+      }
     }
     const callee = childForExpression(frame, expression.callee);
     const calleeValue = callee?.result.value;
@@ -635,7 +690,7 @@ function tracedPropertyKey(
   }
   const child = childForExpression(frame, property.key.expression);
   const value = child?.result.value;
-  return stateKey ? scalarText(value) : value === undefined ? null : String(value);
+  return scalarText(value);
 }
 
 function tracedObjectKeyIssues(
@@ -929,7 +984,11 @@ export function evaluateExpressionResult(
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
   const frame = context.evaluationTrace?.enter(expression, context);
   try {
-    const value = evaluateExpressionCore(expression, context);
+    const value = contextualizeExpressionValue(
+      expression,
+      evaluateExpressionCore(expression, context),
+      context
+    );
     if (frame) {
       context.evaluationTrace!.leave(frame, value);
     }
@@ -956,7 +1015,7 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     return null;
   }
   if (expression.kind === "ResourceLocationExpr") {
-    return expression.value.includes(":") ? expression.value : `${context.namespace}:${expression.value}`;
+    return evaluateResourceLocationExpression(expression, context);
   }
   if (expression.kind === "IdentifierExpr") {
     if (context.variables.has(expression.name.text)) {
@@ -969,7 +1028,7 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
       if (part.kind === "text") {
         return part.text;
       }
-      return String(evaluateExpression(part.expression, context) ?? "");
+      return evaluationScalarText(evaluateExpression(part.expression, context)) ?? "";
     }).join("");
   }
   if (expression.kind === "ListExpr") {
@@ -1022,6 +1081,13 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     if (isLambdaValue(calleeValue)) {
       return evaluateLambdaCall(calleeValue, expression.args.length, args, context);
     }
+    if (
+      expression.callee.kind === "IdentifierExpr"
+      && hasEvaluationValueBinding(context, expression.callee.name.text)
+    ) {
+      context.onEvaluationFailure?.();
+      return undefined;
+    }
     return evaluateCallExpression(expression.callee, args, context, expression.range);
   }
   if (expression.kind === "LambdaExpr") {
@@ -1057,7 +1123,8 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
       return objectValue[indexValue] as EvaluationValue;
     }
     if (isJsonObject(objectValue)) {
-      return objectValue[String(indexValue)] as EvaluationValue;
+      const key = scalarText(indexValue);
+      return key === null ? undefined : objectValue[key] as EvaluationValue;
     }
     return undefined;
   }
@@ -1075,6 +1142,79 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     return expression.operator === "!" ? !truthy(value) : -Number(value);
   }
   return undefined;
+}
+
+function contextualizeExpressionValue(
+  expression: ExprNode,
+  value: EvaluationValue,
+  context: EvaluationContext
+): EvaluationValue {
+  const expectedType = context.resolvedExpectedTypes?.get(expression);
+  if (!expectedType || value === undefined) {
+    return value;
+  }
+  if (isLambdaValue(value) && expectedType.kind === "Function") {
+    return {
+      ...value,
+      signature: {
+        parameters: expectedType.parameters ?? [],
+        returnType: expectedType.returnType ?? { kind: "Unknown" }
+      }
+    };
+  }
+  const converted = contextualizeEvaluatedValue(value, expectedType, context.namespace);
+  if (!converted.ok) {
+    reportContextualValueError(converted.error, expression.range, context);
+    return undefined;
+  }
+  return converted.value as EvaluationValue;
+}
+
+function evaluateResourceLocationExpression(
+  expression: Extract<ExprNode, { kind: "ResourceLocationExpr" }>,
+  context: EvaluationContext
+): EvaluationValue {
+  const expectedType = context.resolvedExpectedTypes?.get(expression);
+  const contextualKinds = expectedType ? contextualResourceKinds(expectedType) : [];
+  if (contextualKinds.length === 0) {
+    // Compatibility boundary: legacy resource-reference consumers still own
+    // contextual canonicalization when semantic analysis did not publish an
+    // explicit typed fact. Do not turn those values into generic brands that
+    // a concrete model/texture sink must correctly reject.
+    return expression.value.includes(":")
+      ? expression.value
+      : `${context.namespace}:${expression.value}`;
+  }
+  if (contextualKinds.length > 1) {
+    // Preserve the raw spelling for the outer contextual converter so it can
+    // report the ambiguity instead of first creating an arbitrary generic ID.
+    return expression.value;
+  }
+  const resourceKind = contextualKinds[0] ?? "generic";
+  const value = createEvaluatedResourceId(expression.value, resourceKind, context.namespace);
+  if (value) {
+    return value;
+  }
+  reportContextualValueError(
+    {
+      code: "rsgl.invalidConstructedResourceId",
+      message: `Invalid ${typeKindForResourceValueKind(resourceKind)} '${expression.value}'.`
+    },
+    expression.range,
+    context
+  );
+  return undefined;
+}
+
+function reportContextualValueError(
+  error: { code: string; message: string },
+  range: TextRange,
+  context: EvaluationContext,
+  sourceFile = context.sourceFile
+): void {
+  context.onEvaluationFailure?.();
+  context.onResourceValueFailure?.();
+  context.onError?.(error.code, error.message, range, sourceFile);
 }
 
 function evaluateSeqExpression(
@@ -1103,9 +1243,9 @@ function evaluateSeqExpression(
     const patternValue = evaluateExpression(patternArg.value, context);
     if (isLambdaValue(patternValue)) {
       const value = evaluateLambdaCall(patternValue, 0, [], context);
-      return expandSequencePattern(String(value ?? ""), { pad: padWidth });
+      return expandSequencePattern(scalarText(value) ?? "", { pad: padWidth });
     }
-    return expandSequencePattern(String(patternValue ?? ""), { pad: padWidth });
+    return expandSequencePattern(scalarText(patternValue) ?? "", { pad: padWidth });
   }
   if (positionalGenerators.length !== positionalGeneratorArgs.length) {
     return [];
@@ -1131,7 +1271,7 @@ function evaluateSeqGeneratorPatterns(
   if (index >= generators.length) {
     const args = boundValues.map(value => ({ value, range: patternRange }));
     const value = evaluateLambdaCall(lambdaPattern, boundValues.length, args, context);
-    return expandSequencePattern(String(value ?? ""), { pad: padWidth });
+    return expandSequencePattern(scalarText(value) ?? "", { pad: padWidth });
   }
 
   const generator = generators[index];
@@ -1224,7 +1364,7 @@ function propertyKeyToString(property: ObjectPropertyNode, context: EvaluationCo
     return property.key.raw;
   }
   const value = evaluateExpression(property.key.expression, context);
-  return value === undefined ? null : String(value);
+  return scalarText(value);
 }
 
 function stateKeyToString(property: ObjectPropertyNode, context: EvaluationContext): string | null {
@@ -1254,14 +1394,15 @@ function normalizeModelApplyValue(value: EvaluationValue, namespace: string): Js
 }
 
 function scalarText(value: EvaluationValue): string | null {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-    ? String(value)
-    : null;
+  return evaluationScalarText(value);
 }
 
 function evaluateBinaryExpression(operator: string, left: EvaluationValue, right: EvaluationValue): EvaluationValue {
   if (operator === "+") {
-    return typeof left === "string" || typeof right === "string" ? `${left ?? ""}${right ?? ""}` : Number(left) + Number(right);
+    if (typeof left === "string" || typeof right === "string" || isEvaluatedResourceValue(left) || isEvaluatedResourceValue(right)) {
+      return `${scalarText(left) ?? ""}${scalarText(right) ?? ""}`;
+    }
+    return Number(left) + Number(right);
   }
   if (operator === "-") {
     return Number(left) - Number(right);
@@ -1320,43 +1461,49 @@ function evaluateCallExpression(
     return undefined;
   }
 
+  if (isRsglResourceIdConstructorName(callee.name.text)) {
+    return evaluateResourceIdConstructor(callee.name.text, args, context);
+  }
+
   if (callee.name.text === "glob") {
     const pattern = argumentValue(args, "pattern", 0);
     return typeof pattern === "string" ? context.globLoader?.(pattern, context, range) ?? [] : [];
   }
   if (callee.name.text === "product") {
     const source = normalizeJsonValue(argumentValue(args, "source", 0));
-    return source && typeof source === "object" && !Array.isArray(source) ? product(source as Record<string, JsonValue>) : [];
+    return isJsonObject(source) ? product(source) : [];
   }
   if (callee.name.text === "pad") {
-    const value = String(argumentValue(args, "value", 0) ?? "");
+    const value = scalarText(argumentValue(args, "value", 0)) ?? "";
     const width = Number(argumentValue(args, "width", 1) ?? 0);
     return value.padStart(width, "0");
   }
   if (callee.name.text === "seq") {
-    const pattern = String(argumentValue(args, "pattern", 0) ?? "");
+    const pattern = scalarText(argumentValue(args, "pattern", 0)) ?? "";
     return expandSequencePattern(pattern);
   }
   if (callee.name.text === "yaw") {
-    return horizontalYaw[String(argumentValue(args, "direction", 0))] ?? 0;
+    return horizontalYaw[scalarText(argumentValue(args, "direction", 0)) ?? ""] ?? 0;
   }
   if (callee.name.text === "model_path") {
-    return resourceAssetPath(String(argumentValue(args, "id", 0) ?? ""), context.namespace, "models", "json");
+    return resourceAssetPath(argumentValue(args, "id", 0), context.namespace, "models", "json");
   }
   if (callee.name.text === "texture_path") {
-    return resourceAssetPath(String(argumentValue(args, "id", 0) ?? ""), context.namespace, "textures", "png");
+    return resourceAssetPath(argumentValue(args, "id", 0), context.namespace, "textures", "png");
   }
   if (callee.name.text === "resource_namespace") {
-    return parseResourceIdValue(String(argumentValue(args, "id", 0) ?? ""), context.namespace)?.namespace ?? "";
+    return parseResourceIdValue(argumentValue(args, "id", 0), context.namespace)?.namespace ?? "";
   }
   if (callee.name.text === "resource_path") {
-    return parseResourceIdValue(String(argumentValue(args, "id", 0) ?? ""), context.namespace)?.path ?? "";
+    return parseResourceIdValue(argumentValue(args, "id", 0), context.namespace)?.path ?? "";
   }
   if (callee.name.text === "startsWith") {
-    return String(argumentValue(args, "str", 0) ?? "").startsWith(String(argumentValue(args, "prefix", 1) ?? ""));
+    return (scalarText(argumentValue(args, "str", 0)) ?? "")
+      .startsWith(scalarText(argumentValue(args, "prefix", 1)) ?? "");
   }
   if (callee.name.text === "endsWith") {
-    return String(argumentValue(args, "str", 0) ?? "").endsWith(String(argumentValue(args, "suffix", 1) ?? ""));
+    return (scalarText(argumentValue(args, "str", 0)) ?? "")
+      .endsWith(scalarText(argumentValue(args, "suffix", 1)) ?? "");
   }
   if (callee.name.text === "has") {
     const object = argumentValue(args, "object", 0);
@@ -1364,26 +1511,70 @@ function evaluateCallExpression(
     return isJsonObject(object) && typeof key === "string" && Object.hasOwn(object, key);
   }
   if (callee.name.text === "replace") {
-    const source = String(argumentValue(args, "str", 0) ?? "");
-    const oldText = String(argumentValue(args, "old", 1) ?? "");
-    const newText = String(argumentValue(args, "new", 2) ?? "");
+    const source = scalarText(argumentValue(args, "str", 0)) ?? "";
+    const oldText = scalarText(argumentValue(args, "old", 1)) ?? "";
+    const newText = scalarText(argumentValue(args, "new", 2)) ?? "";
     return oldText ? source.split(oldText).join(newText) : source;
   }
   if (callee.name.text === "padStart") {
-    const source = String(argumentValue(args, "str", 0) ?? "");
+    const source = scalarText(argumentValue(args, "str", 0)) ?? "";
     const length = Number(argumentValue(args, "len", 1) ?? 0);
-    const pad = String(argumentValue(args, "pad", 2) ?? "");
+    const pad = scalarText(argumentValue(args, "pad", 2)) ?? "";
     return source.padStart(length, pad);
   }
   if (callee.name.text === "padEnd") {
-    const source = String(argumentValue(args, "str", 0) ?? "");
+    const source = scalarText(argumentValue(args, "str", 0)) ?? "";
     const length = Number(argumentValue(args, "len", 1) ?? 0);
-    const pad = String(argumentValue(args, "pad", 2) ?? "");
+    const pad = scalarText(argumentValue(args, "pad", 2)) ?? "";
     return source.padEnd(length, pad);
   }
 
   context.onEvaluationFailure?.();
   return undefined;
+}
+
+function evaluateResourceIdConstructor(
+  constructorName: keyof typeof rsglResourceIdConstructors,
+  args: EvaluationCallArgument[],
+  context: EvaluationContext
+): EvaluationValue {
+  if (args.length !== 1) {
+    // Semantic argument binding owns the arity/name diagnostic. Runtime still
+    // gates the call so a malformed constructor cannot materialize a value.
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+  const argument = args[0];
+  if (argument.value === undefined) {
+    // The argument evaluation already owns the actionable diagnostic. Do not
+    // reinterpret its failure as a second resource-reference shape error at
+    // the enclosing constructor boundary.
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+  const expectedKind = rsglResourceIdConstructors[constructorName];
+  const argumentText = evaluationScalarText(argument.value);
+  if (constructorName === "texture_id" && argumentText?.startsWith("#")) {
+    reportContextualValueError(
+      {
+        code: "rsgl.invalidConstructedResourceId",
+        message: `texture_id cannot construct a TextureId from texture variable '${argumentText}'.`
+      },
+      argument.range,
+      context
+    );
+    return undefined;
+  }
+  const converted = contextualizeEvaluatedValue(
+    argument.value,
+    { kind: typeKindForResourceValueKind(expectedKind) },
+    context.namespace
+  );
+  if (!converted.ok) {
+    reportContextualValueError(converted.error, argument.range, context);
+    return undefined;
+  }
+  return converted.value as EvaluationValue;
 }
 
 function isValidListIndex(index: number, length: number): boolean {
@@ -1443,20 +1634,40 @@ function evaluateLambdaCall(
   const bindings = new Map<string, EvaluationCallArgument | undefined>();
   lambda.parameters.forEach((parameter, index) => {
     const arg = args.find(item => item.name === parameter) ?? positional[index];
-    values[parameter] = arg?.value;
+    const expectedType = lambda.signature?.parameters[index];
+    if (!arg || !expectedType || arg.value === undefined) {
+      values[parameter] = arg?.value;
+    } else {
+      const converted = contextualizeEvaluatedValue(
+        arg.value,
+        expectedType,
+        callContext.namespace
+      );
+      if (!converted.ok) {
+        reportContextualValueError(converted.error, arg.range, callContext);
+        values[parameter] = undefined;
+      } else {
+        values[parameter] = converted.value as EvaluationValue;
+      }
+    }
     bindings.set(parameter, arg);
   });
+  if (lambda.parameters.some(parameter => values[parameter] === undefined)) {
+    return undefined;
+  }
 
   const bodyContext = childEvaluationContext(lambda.context, values, { onError });
   bodyContext.evaluationTrace = callContext.evaluationTrace;
   bodyContext.onEvaluationFailure = callContext.onEvaluationFailure
     ?? lambda.context.onEvaluationFailure;
+  bodyContext.onResourceValueFailure = callContext.onResourceValueFailure
+    ?? lambda.context.onResourceValueFailure;
   for (const [parameter, arg] of bindings) {
     if (arg?.result) {
       bindEvaluationResult(
         bodyContext,
         parameter,
-        { ...arg.result, value: arg.value },
+        { ...arg.result, value: values[parameter] },
         callContext.sourceFile
       );
     }
@@ -1466,7 +1677,26 @@ function evaluateLambdaCall(
   bodyContext.baseDocumentLoader = undefined;
   bodyContext.onDependency = undefined;
   bodyContext.globLoader = undefined;
-  return evaluateExpression(lambda.body, bodyContext);
+  const value = evaluateExpression(lambda.body, bodyContext);
+  const returnType = lambda.signature?.returnType;
+  if (!returnType || value === undefined) {
+    return value;
+  }
+  const converted = contextualizeEvaluatedValue(
+    value,
+    returnType,
+    lambda.context.namespace
+  );
+  if (!converted.ok) {
+    reportContextualValueError(
+      converted.error,
+      lambda.body.range,
+      bodyContext,
+      lambda.context.sourceFile
+    );
+    return undefined;
+  }
+  return converted.value as EvaluationValue;
 }
 
 function isLambdaValue(value: EvaluationValue): value is LambdaValue {
@@ -1542,10 +1772,15 @@ function compareValues(left: EvaluationValue, right: EvaluationValue): number {
   if (typeof left === "number" && typeof right === "number") {
     return left - right;
   }
-  return String(left ?? "").localeCompare(String(right ?? ""));
+  return (scalarText(left) ?? "").localeCompare(scalarText(right) ?? "");
 }
 
-function resourceAssetPath(value: string, namespace: string, root: string, extension: string): string {
+function resourceAssetPath(
+  value: EvaluationValue,
+  namespace: string,
+  root: string,
+  extension: string
+): string {
   const id = parseResourceIdValue(value, namespace);
   if (!id) {
     return "";
@@ -1553,13 +1788,32 @@ function resourceAssetPath(value: string, namespace: string, root: string, exten
   return `assets/${id.namespace}/${root}/${id.path}.${extension}`;
 }
 
-function parseResourceIdValue(value: string, namespace: string): { namespace: string; path: string } | null {
-  return tryParseMinecraftResourceId(value, namespace);
+function parseResourceIdValue(
+  value: EvaluationValue,
+  namespace: string
+): { namespace: string; path: string } | null {
+  if (isEvaluatedResourceId(value)) {
+    return { namespace: value.namespace, path: value.path };
+  }
+  const text = scalarText(value);
+  return text && !text.startsWith("#") ? tryParseMinecraftResourceId(text, namespace) : null;
 }
 
 function jsonEquals(left: JsonValue, right: JsonValue): boolean {
   if (left === right) {
     return true;
+  }
+  if (isEvaluatedResourceId(left) || isEvaluatedResourceId(right)) {
+    return isEvaluatedResourceId(left)
+      && isEvaluatedResourceId(right)
+      && left.resourceKind === right.resourceKind
+      && left.namespace === right.namespace
+      && left.path === right.path;
+  }
+  if (isEvaluatedResourceValue(left) || isEvaluatedResourceValue(right)) {
+    return isEvaluatedResourceValue(left)
+      && isEvaluatedResourceValue(right)
+      && evaluationScalarText(left) === evaluationScalarText(right);
   }
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {

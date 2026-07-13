@@ -1,7 +1,6 @@
 import { ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
-import { sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 
@@ -21,7 +20,7 @@ export function validateParticlesUnit(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath("/textures", String(index)))
+        appendGeneratedPath("/textures", String(index))
       );
     }
   }
@@ -57,7 +56,7 @@ export function validateEquipmentUnit(
           unit,
           options,
           diagnostics,
-          sourceRangeForGeneratedPath(unit, texturePath),
+          texturePath,
           undefined,
           unit.id?.namespace ?? "minecraft",
           { equipmentLayer: layerName }

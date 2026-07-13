@@ -16,13 +16,13 @@ describe("RSGL import entry loading", () => {
       fs.mkdirSync(packDir, { recursive: true });
       fs.writeFileSync(tablesFile, [
         "namespace custom",
-        "let defaultParent = minecraft:block/cube_all",
+        "let defaultParent: ModelId = minecraft:block/cube_all",
         "table woods {",
-        "  acacia: block/acacia_planks",
+        "  acacia: texture_id(block/acacia_planks)",
         "}"
       ].join("\n"));
       fs.writeFileSync(templatesFile, [
-        "template cube(id: ResourceId, texture: TextureId = id) {",
+        "template cube(id: TextureId, texture: TextureId = id) {",
         "  model block id {",
         "    parent minecraft:block/cube_all",
         "    textures { all: texture }",

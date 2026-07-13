@@ -14,7 +14,8 @@ import { BlockstateCompileOptions, compileBlockstateResource } from "./blockstat
 import {
   bindRsglProgram,
   type RsglBlockstateApplyFact,
-  type RsglBlockstateApplySiteNode
+  type RsglBlockstateApplySiteNode,
+  type RsglType
 } from "../semantic";
 import {
   classifyResolvedTemplateOutputMetadata,
@@ -90,6 +91,8 @@ import {
 import type { RsglTemplateCallerContext, TemplateOutputDispatch } from "../templateOutput";
 import { RsglTemplateDispatchCache } from "./templateDispatchCache";
 import type { JsonValueSinkOptions } from "./jsonValueLowerer";
+import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
+import { finalizeResourceValueObservations } from "./resourceValueObservationFinalization";
 
 export {
   compileRsglDirectory,
@@ -121,10 +124,12 @@ interface RsglCompilerOptions {
   maxEvaluationItems?: number;
   stdlibRoot?: string;
   blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
+  resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
 }
 
 interface JsonValueLoweringSession {
   invalid: boolean;
+  resourceValueObservations: RsglResourceValueObservation[];
 }
 
 export class RsglCompiler {
@@ -158,6 +163,8 @@ export class RsglCompiler {
       namespace: this.options.namespace,
       targetPackFormat: this.options.targetPackFormat
     });
+    const resolvedExpectedTypes = this.options.resolvedExpectedTypes
+      ?? this.options.environment?.resolvedExpectedTypes;
     for (const template of this.options.stdlibTemplates ?? createRsglStdlibPreludeTemplates(this.options.stdlibRoot)) {
       this.registerTemplate(template);
     }
@@ -185,7 +192,10 @@ export class RsglCompiler {
             classification!.metadata,
             definitionTargetFingerprint,
             definitionFingerprintContext,
-            classification!.kind === "conflict" ? classification!.conflict : undefined
+            classification!.kind === "conflict" ? classification!.conflict : undefined,
+            {
+              ...(resolvedExpectedTypes ? { resolvedExpectedTypes } : {})
+            }
           );
         if (!environmentTemplate) {
           localDefinitions.push(template);
@@ -240,11 +250,25 @@ export class RsglCompiler {
         .flatMap(bodyStatement => bodyStatement.variables.map(variable => variable.text)))
       : [];
     const previousSession = this.activeJsonValueLoweringSession;
-    const session: JsonValueLoweringSession = { invalid: false };
+    const session: JsonValueLoweringSession = {
+      invalid: false,
+      resourceValueObservations: []
+    };
+    const resourceContext: RsglCompileContext = {
+      ...context,
+      onResourceValueFailure: () => {
+        session.invalid = true;
+        context.onResourceValueFailure?.();
+      }
+    };
     this.activeJsonValueLoweringSession = session;
     let compiledUnits: ResourceUnit[];
     try {
-      compiledUnits = compileResourceDeclaration(statement, context, this.resourceDeclarationCompilerHost());
+      compiledUnits = compileResourceDeclaration(
+        statement,
+        resourceContext,
+        this.resourceDeclarationCompilerHost()
+      );
     } finally {
       this.activeJsonValueLoweringSession = previousSession;
     }
@@ -261,6 +285,20 @@ export class RsglCompiler {
       }
       if (unit.kind === "model" && externalTextureVariables.length > 0) {
         unit.validation = { ...unit.validation, externalTextureVariables };
+      }
+      const resourceValueObservations = finalizeResourceValueObservations(
+        unit,
+        session.resourceValueObservations,
+        referenceOrigins
+      );
+      if (resourceValueObservations.length > 0) {
+        unit.validation = {
+          ...unit.validation,
+          resourceValueObservations: [
+            ...(unit.validation?.resourceValueObservations ?? []),
+            ...resourceValueObservations
+          ]
+        };
       }
       if (referenceOrigins.length > 0) {
         unit.validation = {
@@ -282,7 +320,11 @@ export class RsglCompiler {
         return [mapping];
       }
       const { validationOrigin, validationOnly, ...publicMapping } = mapping;
-      origins.push({ generatedPath: mapping.generatedPath, ...validationOrigin });
+      // Some producers pass an EvaluationPathOrigin through the narrower
+      // EvaluationOrigin contract. Its relative path belongs to the value
+      // before a sugar/backend transform; the mapping path is the authoritative
+      // final JSON location.
+      origins.push({ ...validationOrigin, generatedPath: mapping.generatedPath });
       return validationOnly ? [] : [publicMapping];
     });
     if (origins.length > 0) {
@@ -473,6 +515,8 @@ export class RsglCompiler {
       globLoader: this.options.globLoader,
       onDependency: dependency => this.recordDependency(dependency),
       onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
+      resolvedExpectedTypes: this.options.resolvedExpectedTypes
+        ?? this.options.environment?.resolvedExpectedTypes,
       templates: this.templates
     };
   }
@@ -576,6 +620,9 @@ export class RsglCompiler {
         if (this.activeJsonValueLoweringSession) {
           this.activeJsonValueLoweringSession.invalid = true;
         }
+      },
+      onResourceValueObservation: observation => {
+        this.activeJsonValueLoweringSession?.resourceValueObservations.push(observation);
       }
     };
   }
@@ -683,6 +730,9 @@ export class RsglCompiler {
       onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
       sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context),
+      onResourceValueObservation: observation => {
+        this.activeJsonValueLoweringSession?.resourceValueObservations.push(observation);
+      },
       getBlockstateApplyFact: node => this.options.blockstateApplyFacts?.get(node)
     };
   }

@@ -18,6 +18,7 @@ import {
   type RsglResourceReferenceConsumer,
   type RsglResourceReferenceConsumerContext
 } from "./resourceReferenceConsumers";
+import { validateResourceValueConsumer } from "./resourceValueValidation";
 
 const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
 
@@ -43,8 +44,12 @@ export function checkResourceExists(
   range: ValidationRange = unitRange(unit),
   externScopeFile?: string,
   defaultNamespace: string = unit.id?.namespace ?? "minecraft",
-  consumerContext: RsglResourceReferenceConsumerContext = {}
+  consumerContext: RsglResourceReferenceConsumerContext = {},
+  generatedPath?: string
 ): RsglCheckedResourceReference {
+  if (!validateResourceValueConsumer(unit, consumer, diagnostics, range, generatedPath)) {
+    return { available: false, external: false };
+  }
   const sourceFile = sourceFileForValidationRange(unit, range);
   const reference = canonicalizeResourceReference(consumer, rawValue, defaultNamespace, consumerContext);
   if (reference.kind === "invalid") {

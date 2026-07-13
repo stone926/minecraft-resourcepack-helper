@@ -1,6 +1,6 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import { requireArray, requireNumberInRange, requireObject } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
@@ -62,7 +62,7 @@ function validateSprites(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, appendGeneratedPath("/sprites", String(spriteIndex)))
+      appendGeneratedPath("/sprites", String(spriteIndex))
     );
   }
 }

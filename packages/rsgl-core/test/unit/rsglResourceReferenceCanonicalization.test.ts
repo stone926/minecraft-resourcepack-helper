@@ -93,8 +93,7 @@ describe("RSGL resource reference canonicalization", () => {
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
       "rsgl.invalidResourcePath",
-      "rsgl.invalidBlockstateModelId",
-      "rsgl.missingBlockstateModel"
+      "rsgl.invalidConstructedResourceId"
     ]);
     assert.strictEqual(resolverCalls, 0);
     assert.ok(result.diagnostics[0].range.end > result.diagnostics[0].range.start);

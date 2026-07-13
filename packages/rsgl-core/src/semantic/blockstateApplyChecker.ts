@@ -19,12 +19,12 @@ import {
   checkExpressionForExpectedType,
   type RsglExpressionCheckContext
 } from "./expressionChecker";
-import { lookup } from "./scopes";
 import { combineRsglTypes } from "./typeNormalization";
 import { formatType, isAssignable } from "./typeRelations";
 import {
   blockstateModelObjectType,
   booleanType,
+  jsonType,
   modelIdType,
   numberType,
   type RsglBlockstateApplyExpectation,
@@ -98,11 +98,13 @@ function checkModelIdOnlyHead(
 ): RsglType {
   const actualType = checkExpressionForExpectedType(context, head, scope, modelIdType);
   if (!isAssignable(modelIdType, actualType)) {
-    context.diagnostics.push(diagnostic(
-      "rsgl.invalidBlockstateApplyHead",
-      `Blockstate apply modifiers require a ModelId head, got ${formatType(actualType)}.`,
-      head.range
-    ));
+    if (!reportModelIdKindMismatch(context, actualType, head.range)) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.invalidBlockstateApplyHead",
+        `Blockstate apply modifiers require a ModelId head, got ${formatType(actualType)}.`,
+        head.range
+      ));
+    }
   }
   return actualType;
 }
@@ -139,11 +141,18 @@ function checkPotentialModelExpression(
   expression: ExprNode,
   scope: RsglScope
 ): RsglType {
-  if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-    return checkExpressionForExpectedType(context, expression, scope, modelIdType);
-  }
-  return checkExpression(context, expression, scope);
+  return checkExpressionForExpectedType(context, expression, scope, blockstateCompositeHeadType);
 }
+
+const blockstateCompositeHeadType: RsglType = {
+  kind: "Union",
+  options: [
+    modelIdType,
+    blockstateModelObjectType,
+    { kind: "Object", open: true, indexType: jsonType },
+    { kind: "List", elementType: jsonType }
+  ]
+};
 
 function validateCompositeType(
   context: RsglExpressionCheckContext,
@@ -177,6 +186,9 @@ function validateCompositeType(
     return;
   }
   if (actualType.kind === "Json" || actualType.kind === "Any" || actualType.kind === "Unknown") {
+    return;
+  }
+  if (reportModelIdKindMismatch(context, actualType, range)) {
     return;
   }
   context.diagnostics.push(diagnostic(
@@ -325,11 +337,13 @@ function checkModelObjectField(
   if (name === "model") {
     const actualType = checkExpressionForExpectedType(context, value, scope, modelIdType);
     if (!isAssignable(modelIdType, actualType)) {
-      context.diagnostics.push(diagnostic(
-        "rsgl.invalidBlockstateApplyHead",
-        `Blockstate model field 'model' requires ModelId, got ${formatType(actualType)}.`,
-        value.range
-      ));
+      if (!reportModelIdKindMismatch(context, actualType, value.range)) {
+        context.diagnostics.push(diagnostic(
+          "rsgl.invalidBlockstateApplyHead",
+          `Blockstate model field 'model' requires ModelId, got ${formatType(actualType)}.`,
+          value.range
+        ));
+      }
     }
     return;
   }
@@ -427,12 +441,18 @@ function validateStructuralModelObject(
       ));
       continue;
     }
-    if (name === "model" && !isAssignable(modelIdType, valueType)) {
-      context.diagnostics.push(diagnostic(
-        "rsgl.invalidBlockstateApplyHead",
-        `Blockstate model field 'model' requires ModelId, got ${formatType(valueType)}.`,
-        range
-      ));
+    if (
+      name === "model"
+      && !isAssignable(modelIdType, valueType)
+      && !isContextualModelIdTextType(valueType)
+    ) {
+      if (!reportModelIdKindMismatch(context, valueType, range)) {
+        context.diagnostics.push(diagnostic(
+          "rsgl.invalidBlockstateApplyHead",
+          `Blockstate model field 'model' requires ModelId, got ${formatType(valueType)}.`,
+          range
+        ));
+      }
     } else if (name === "uvlock" && !isAssignable(booleanType, valueType)) {
       context.diagnostics.push(diagnostic(
         "rsgl.invalidBlockstateUvlock",
@@ -448,6 +468,33 @@ function validateStructuralModelObject(
       ));
     }
   }
+}
+
+function isContextualModelIdTextType(type: RsglType): boolean {
+  if (type.kind === "String") {
+    return true;
+  }
+  return type.kind === "Union"
+    && (type.options?.length ?? 0) > 0
+    && (type.options ?? []).every(option =>
+      isAssignable(modelIdType, option) || isContextualModelIdTextType(option)
+    );
+}
+
+function reportModelIdKindMismatch(
+  context: RsglExpressionCheckContext,
+  actualType: RsglType,
+  range: TextRange
+): boolean {
+  if (actualType.kind !== "ResourceId" && actualType.kind !== "TextureId") {
+    return false;
+  }
+  context.diagnostics.push(diagnostic(
+    "rsgl.resourceIdKindMismatch",
+    `${actualType.kind} cannot be used where ModelId is required.`,
+    range
+  ));
+  return true;
 }
 
 function modelObjectPropertyName(property: ObjectPropertyNode): string | undefined {

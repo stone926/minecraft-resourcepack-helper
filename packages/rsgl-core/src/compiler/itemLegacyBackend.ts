@@ -6,6 +6,7 @@ import {
   RsglCompileDiagnostic,
   RsglValidationReferenceOrigin
 } from "./ir";
+import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { isJsonObject } from "./jsonValues";
 import { resourceOutputPath } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
@@ -446,6 +447,7 @@ function legacyUnit(
     ? { namespace: source.id.namespace, path: `item/${source.id.path}` }
     : undefined;
   const referenceOrigins = legacyReferenceOrigins(source, lowering);
+  const resourceValueObservations = legacyResourceValueObservations(source, lowering);
   return {
     ...source,
     id,
@@ -457,7 +459,8 @@ function legacyUnit(
       referenceOrigins: [
         ...(source.validation?.referenceOrigins ?? []),
         ...referenceOrigins
-      ]
+      ],
+      resourceValueObservations
     },
     sourceMap: {
       ...source.sourceMap,
@@ -470,6 +473,43 @@ function legacyReferenceOrigins(
   source: ResourceUnit,
   lowering: LegacyItemLowering
 ): RsglValidationReferenceOrigin[] {
+  return legacyReferences(source, lowering).map(([generatedPath, reference]) => {
+    const sourceRange = sourceRangeForGeneratedPath(source, reference.sourcePath);
+    return {
+      generatedPath,
+      sourceFile: sourceFileForValidationRange(source, sourceRange),
+      sourceRange
+    };
+  });
+}
+
+function legacyResourceValueObservations(
+  source: ResourceUnit,
+  lowering: LegacyItemLowering
+): RsglResourceValueObservation[] {
+  const observations = source.validation?.resourceValueObservations ?? [];
+  return legacyReferences(source, lowering).flatMap(([generatedPath, reference]) => {
+    for (let index = observations.length - 1; index >= 0; index--) {
+      if (observations[index].generatedPath === reference.sourcePath) {
+        return [{
+          ...observations[index],
+          generatedPath,
+          // The legacy self-model convention materializes the modern ModelId
+          // as the generated model's layer0 texture. Record the kind at the
+          // output seam so validation does not reinterpret a valid modern
+          // item-model reference as a source-level kind mismatch.
+          ...(generatedPath === "/textures/layer0" ? { valueKind: "texture" as const } : {})
+        }];
+      }
+    }
+    return [];
+  });
+}
+
+function legacyReferences(
+  source: ResourceUnit,
+  lowering: LegacyItemLowering
+): Array<[string, LegacyModelReference]> {
   if (!source.id) {
     return [];
   }
@@ -483,14 +523,7 @@ function legacyReferenceOrigins(
       override.model
     ]);
   });
-  return references.map(([generatedPath, reference]) => {
-    const sourceRange = sourceRangeForGeneratedPath(source, reference.sourcePath);
-    return {
-      generatedPath,
-      sourceFile: sourceFileForValidationRange(source, sourceRange),
-      sourceRange
-    };
-  });
+  return references;
 }
 
 function modelRef(model: Record<string, JsonValue>, sourcePath: string): LegacyModelReference | null {

@@ -170,7 +170,10 @@ describe("RSGL resource kind descriptors", () => {
     const statementParserSource = readSource("packages", "rsgl-core", "src", "parser", "statementParser.ts");
     const bodyContextSource = readSource("packages", "rsgl-core", "src", "parser", "bodyParseContext.ts");
 
-    assert.ok(compilerSource.includes("compileResourceDeclaration(statement, context"));
+    assert.match(
+      compilerSource,
+      /compileResourceDeclaration\(\s*statement,\s*resourceContext,\s*this\.resourceDeclarationCompilerHost\(\)\s*\)/
+    );
     assert.strictEqual(compilerSource.includes("private compileModel("), false);
     assert.ok(resourceCompilerSource.includes("satisfies Record<RsglResourceCompileHandler, ResourceCompileHandler>"));
     assert.ok(resourceCompilerSource.includes("resourceCompileHandlers[descriptor.compile.handler]"));

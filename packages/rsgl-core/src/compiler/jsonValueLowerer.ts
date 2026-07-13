@@ -9,6 +9,10 @@ import {
 } from "./evaluate";
 import type { JsonValue } from "./ir";
 import { isJsonObject } from "./jsonValues";
+import {
+  resourceValueJsonAdapters,
+  type RsglResourceValueObserver
+} from "./resourceValueJsonAdapter";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 
 export interface JsonValueSinkOptions {
@@ -17,6 +21,8 @@ export interface JsonValueSinkOptions {
   onInvalidJsonValue?: () => void;
   /** Runtime adapters extend lowering without weakening recursive serializability checks. */
   jsonValueAdapters?: readonly JsonRuntimeValueAdapter[];
+  /** Collects typed resource values at their final generated JSON paths. */
+  onResourceValueObservation?: RsglResourceValueObserver;
 }
 
 export interface JsonRuntimeValueAdapterContext {
@@ -75,6 +81,8 @@ export interface JsonValueLoweringHost {
   onInvalidJsonValue?: () => void;
   adapters?: readonly JsonRuntimeValueAdapter[];
   generatedPathPrefix?: string;
+  /** Fallback origin when the evaluated value has no bound/imported origin. */
+  sourceFile?: string;
 }
 
 /** Evaluates an expression exactly once, then lowers it at a real JSON sink. */
@@ -159,7 +167,11 @@ function genericJsonLoweringHost(
   const onError = options.onError ?? context.onError;
   return {
     onInvalidJsonValue: options.onInvalidJsonValue,
-    adapters: options.jsonValueAdapters,
+    adapters: resourceValueJsonAdapters(
+      options.jsonValueAdapters,
+      options.onResourceValueObservation
+    ),
+    sourceFile: context.sourceFile,
     reporter: {
       report: failure => {
         if (!onError) {
@@ -222,9 +234,13 @@ function cloneSerializableValue(
   host: JsonValueLoweringHost,
   ancestors: Set<object>
 ): JsonValue | undefined {
-  const range = rangeForEvaluationPath(result.pathRanges, generatedPath) ?? fallbackRange;
-  const sourceFile = originForEvaluationPath(result.pathOrigins, generatedPath)?.sourceFile
-    ?? result.origin?.sourceFile;
+  const origin = originForEvaluationPath(result.pathOrigins, generatedPath);
+  const range = origin?.sourceRange
+    ?? rangeForEvaluationPath(result.pathRanges, generatedPath)
+    ?? fallbackRange;
+  const sourceFile = origin?.sourceFile
+    ?? result.origin?.sourceFile
+    ?? host.sourceFile;
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
   }

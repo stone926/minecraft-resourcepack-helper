@@ -49,7 +49,11 @@ export function lowerBlockstateSelector(
     );
     return undefined;
   }
-  const value = lowerSerializableBlockstateJsonValue(result, expression.range, host);
+  const value = lowerSerializableBlockstateJsonValue(
+    result,
+    expression.range,
+    { ...host, sourceFile: context.sourceFile }
+  );
   if (value === undefined) {
     return undefined;
   }
@@ -101,7 +105,11 @@ export function lowerBlockstateCondition(
     );
     return undefined;
   }
-  const value = lowerSerializableBlockstateJsonValue(result, expression.range, host);
+  const value = lowerSerializableBlockstateJsonValue(
+    result,
+    expression.range,
+    { ...host, sourceFile: context.sourceFile }
+  );
   if (value === undefined) {
     return undefined;
   }

@@ -2,7 +2,7 @@ import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import { getItemSpecialTextureConsumer } from "./resourceReferenceConsumers";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import {
   requireArray,
   requireEnum,
@@ -83,7 +83,7 @@ export function validateItemSpecial(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, basePath)
+      basePath
     );
   } else {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSpecialBase", "Item special model must define a base model id.", "error", basePath);
@@ -110,7 +110,7 @@ export function validateItemSpecial(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(specialModelPath, "texture"))
+        appendGeneratedPath(specialModelPath, "texture")
       );
     }
   }

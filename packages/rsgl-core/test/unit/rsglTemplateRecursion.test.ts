@@ -109,6 +109,7 @@ function createSyntheticCycleModel(templateCount: number): RsglSemanticModel {
     references: [],
     outputResources: [],
     diagnostics: [],
+    resolvedExpectedTypes: new Map(),
     templateUses
   };
 }

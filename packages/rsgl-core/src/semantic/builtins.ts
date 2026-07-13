@@ -1,4 +1,9 @@
 import {
+  rsglResourceIdConstructors,
+  typeKindForResourceValueKind
+} from "../resourceIdSemantics";
+import type { RsglResourceValueKind } from "../resourceIdSemantics";
+import {
   anyType,
   booleanType,
   jsonType,
@@ -69,6 +74,9 @@ export function createBuiltinSymbols(): RsglSymbol[] {
     builtinValue("STAIR_SHAPES", listOf(stringType)),
     builtinValue("COLORS_16", listOf(stringType)),
     ...enumConstants.map(name => builtinValue(name, stringType)),
+    ...Object.entries(rsglResourceIdConstructors).map(([name, kind]) =>
+      resourceIdConstructor(name, kind)
+    ),
     builtinFunction("product", "pure", [{ name: "source", type: jsonType, optional: false }], { kind: "List", elementType: jsonType }),
     builtinFunction("seq", "pure", [
       { name: "pattern", type: { kind: "Union", options: [stringType, { kind: "Function" }] }, optional: false },
@@ -162,6 +170,20 @@ function listOf(elementType: RsglSymbol["type"]): RsglSymbol["type"] {
 
 function builtinValue(name: string, type = anyType): RsglSymbol {
   return { name, kind: "builtin", type };
+}
+
+function resourceIdConstructor(name: string, kind: RsglResourceValueKind): RsglSymbol {
+  const typeKind = typeKindForResourceValueKind(kind);
+  const returnType = typeKind === "ModelId"
+    ? modelIdType
+    : typeKind === "TextureId"
+      ? textureIdType
+      : resourceIdType;
+  return builtinFunction(name, "pure", [{
+    name: "value",
+    type: { kind: "Union", options: [stringType, returnType] },
+    optional: false
+  }], returnType);
 }
 
 function builtinFunction(

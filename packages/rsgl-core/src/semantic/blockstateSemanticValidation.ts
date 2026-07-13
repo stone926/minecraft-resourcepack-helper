@@ -50,6 +50,10 @@ export function validateResolvedProgramBlockstateSemantics(
   const result: RsglFileDiagnostic[] = [];
 
   for (const model of models) {
+    const resolvedExpectedTypes = model.resolvedExpectedTypes instanceof Map
+      ? model.resolvedExpectedTypes
+      : new Map(model.resolvedExpectedTypes);
+    model.resolvedExpectedTypes = resolvedExpectedTypes;
     // Apply-site diagnostics are provisional until import-all/re-export linking
     // has populated the final global scope. Every code in this set is produced
     // by a recorded site and is regenerated below from the linked program.
@@ -68,6 +72,12 @@ export function validateResolvedProgramBlockstateSemantics(
         {
           diagnostics,
           references: [],
+          // This linked recheck is authoritative. Replacing a provisional
+          // fact is essential for bare import-all values whose first-pass type
+          // was Unknown but whose final type may be explicit Json.
+          recordResolvedExpectedType: (expression, expectedType) => {
+            resolvedExpectedTypes.set(expression, expectedType);
+          },
           defineIdentifier: () => undefined
         },
         record.node,

@@ -6,10 +6,16 @@ import {
   type JsonValueLoweringFailure,
   lowerJsonEvaluationResult
 } from "./jsonValueLowerer";
+import {
+  resourceValueJsonAdapters,
+  type RsglResourceValueObserver
+} from "./resourceValueJsonAdapter";
 
 export interface BlockstateJsonValueLoweringHost {
   onError: (code: string, message: string, range: TextRange, fileName?: string) => void;
   jsonValueAdapters?: readonly JsonRuntimeValueAdapter[];
+  onResourceValueObservation?: RsglResourceValueObserver;
+  sourceFile?: string;
 }
 
 /**
@@ -20,16 +26,20 @@ export interface BlockstateJsonValueLoweringHost {
 export function lowerSerializableBlockstateJsonValue(
   result: EvaluationResult,
   fallbackRange: TextRange,
-  host: BlockstateJsonValueLoweringHost
+  host: BlockstateJsonValueLoweringHost,
+  generatedPathPrefix = ""
 ): JsonValue | undefined {
   return lowerJsonEvaluationResult(result, fallbackRange, {
-    ...(host.jsonValueAdapters
-      ? { adapters: host.jsonValueAdapters }
-      : {}),
+    adapters: resourceValueJsonAdapters(
+      host.jsonValueAdapters,
+      host.onResourceValueObservation
+    ),
     reporter: {
       selectIssue: selectBlockstateIssue,
       report: failure => reportUnserializable(failure, host)
-    }
+    },
+    generatedPathPrefix,
+    sourceFile: host.sourceFile
   });
 }
 

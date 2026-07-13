@@ -9,7 +9,7 @@ import { validateItemSpecial, validateItemTints } from "./itemSpecialValidation"
 import { validateItemTransformation } from "./itemTransformValidation";
 import { appendGeneratedPath } from "./sourcePaths";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import {
   asObject,
   requireArray,
@@ -139,7 +139,7 @@ function validateModelReference(
       unit,
       options,
       diagnostics,
-      sourceRangeForGeneratedPath(unit, modelPath)
+      modelPath
     );
     return;
   }

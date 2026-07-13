@@ -4,7 +4,7 @@ import {
   canonicalizeJsonResourceReference,
   checkJsonResourceReference
 } from "./jsonResourceReferenceValidation";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import {
   asObject,
   isPositiveInteger,
@@ -237,7 +237,7 @@ function validateSoundFileReference(
     unit,
     options,
     diagnostics,
-    sourceRangeForGeneratedPath(unit, generatedPath)
+    generatedPath
   );
   if (!checked.available) {
     return;
@@ -295,7 +295,7 @@ function validateSoundEventReference(
     "sound",
     unit,
     diagnostics,
-    sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "name")),
+    appendGeneratedPath(generatedPath, "name"),
     namespace
   );
   const id = canonicalId ? tryParseMinecraftResourceId(canonicalId, namespace) : null;

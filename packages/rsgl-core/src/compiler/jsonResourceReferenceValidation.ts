@@ -5,7 +5,12 @@ import {
   type RsglResourceReferenceConsumerContext
 } from "./resourceReferenceConsumers";
 import { checkResourceExists, resourceLabel } from "./resourceReferenceValidation";
-import { pushDiagnosticAtRange, sourceFileForValidationRange, unitRange } from "./validationDiagnostics";
+import { validateResourceValueConsumer } from "./resourceValueValidation";
+import {
+  pushDiagnosticAtRange,
+  sourceFileForValidationRange,
+  sourceRangeForGeneratedPath
+} from "./validationDiagnostics";
 import type {
   RsglCheckedResourceReference,
   RsglResourceExistenceKind,
@@ -22,12 +27,16 @@ export function canonicalizeJsonResourceReference(
   consumer: RsglResourceReferenceConsumer,
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[],
-  range: ValidationRange = unitRange(unit),
+  generatedPath: string,
   defaultNamespace: string = unit.id?.namespace ?? "minecraft",
   consumerContext: RsglResourceReferenceConsumerContext = {}
 ): string | null {
   const rawValue = jsonReferenceValue(owner, key);
   if (typeof rawValue !== "string") {
+    return null;
+  }
+  const range = sourceRangeForGeneratedPath(unit, generatedPath);
+  if (!validateResourceValueConsumer(unit, consumer, diagnostics, range, generatedPath)) {
     return null;
   }
   const reference = canonicalizeResourceReference(consumer, rawValue, defaultNamespace, consumerContext);
@@ -54,7 +63,7 @@ export function checkJsonResourceReference(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
-  range: ValidationRange = unitRange(unit),
+  generatedPath: string,
   externScopeFile?: string,
   defaultNamespace: string = unit.id?.namespace ?? "minecraft",
   consumerContext: RsglResourceReferenceConsumerContext = {}
@@ -63,6 +72,7 @@ export function checkJsonResourceReference(
   if (typeof rawValue !== "string") {
     return { available: false, external: false };
   }
+  const range = sourceRangeForGeneratedPath(unit, generatedPath);
   const checked = checkResourceExists(
     consumer,
     rawValue,
@@ -72,7 +82,8 @@ export function checkJsonResourceReference(
     range,
     externScopeFile,
     defaultNamespace,
-    consumerContext
+    consumerContext,
+    generatedPath
   );
   if (checked.canonicalId) {
     writeJsonReferenceValue(owner, key, checked.canonicalId);

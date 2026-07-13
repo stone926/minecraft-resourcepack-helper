@@ -16,9 +16,16 @@ import { applyBaseDocument } from "./base/application";
 import {
   type BlockstateApplyLoweringHost,
   type BlockstateLoweredMapping,
+  type LoweredBlockstateApply,
   lowerBlockstateApply,
   lowerLegacyBlockstateApply
 } from "./blockstateApplyLowerer";
+import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
+import {
+  mappingTargetsAppliedContent,
+  offsetFragmentMappingPath,
+  type MergeResult
+} from "./fragmentMerge";
 import {
   BlockstateContentMerger,
   BlockstateRootMerger,
@@ -39,6 +46,7 @@ import {
 } from "./blockstateSelectorLowerer";
 import { blockstateRootModeEvidence } from "./blockstateModePolicy";
 import {
+  blockstateMultipartPath,
   blockstateVariantPath,
 } from "./compilerHelpers";
 import {
@@ -108,6 +116,7 @@ interface ExecutionFrame {
 export class BlockstateOperationExecutor {
   private readonly rootMerger: BlockstateRootMerger;
   private readonly contentMerger: BlockstateContentMerger;
+  private activeResourceValueObservations?: RsglResourceValueObservation[];
 
   public constructor(private readonly host: BlockstateOperationExecutorHost) {
     this.rootMerger = new BlockstateRootMerger(host);
@@ -119,28 +128,36 @@ export class BlockstateOperationExecutor {
     context: RsglCompileContext,
     options: BlockstateRootExecutionOptions
   ): BlockstateRootExecutionResult {
-    const root: ExecutionRoot = { neutral: { content: {}, mappings: [] } };
-    if (options.declaredMode) {
-      this.selectMode(root, options.declaredMode, options.finalizeOrigin ?? {
-        sourceRange: program.range,
-        context
+    const previousObservations = this.activeResourceValueObservations;
+    const observations: RsglResourceValueObservation[] = [];
+    this.activeResourceValueObservations = observations;
+    try {
+      const root: ExecutionRoot = { neutral: { content: {}, mappings: [] } };
+      if (options.declaredMode) {
+        this.selectMode(root, options.declaredMode, options.finalizeOrigin ?? {
+          sourceRange: program.range,
+          context
+        });
+      }
+      this.executeProgram(root, program, context, {
+        scope: program.scope,
+        concreteRoot: true,
+        allowBase: true
       });
-    }
-    this.executeProgram(root, program, context, {
-      scope: program.scope,
-      concreteRoot: true,
-      allowBase: true
-    });
 
-    if (root.state && options.finalizeSelectedMode) {
-      this.rootMerger.finalize(root.state, options.finalizeOrigin ?? root.modeOrigin);
+      if (root.state && options.finalizeSelectedMode) {
+        this.rootMerger.finalize(root.state, options.finalizeOrigin ?? root.modeOrigin);
+      }
+      const body = root.state ?? root.neutral;
+      this.flushResourceValueObservations(observations, body.mappings);
+      return {
+        content: body.content,
+        mappings: body.mappings,
+        ...(root.state ? { mode: root.state.mode } : {})
+      };
+    } finally {
+      this.activeResourceValueObservations = previousObservations;
     }
-    const body = root.state ?? root.neutral;
-    return {
-      content: body.content,
-      mappings: body.mappings,
-      ...(root.state ? { mode: root.state.mode } : {})
-    };
   }
 
   private executeProgram(
@@ -343,10 +360,11 @@ export class BlockstateOperationExecutor {
     context: RsglCompileContext
   ): void {
     const result = evaluateExpressionResult(operation.statement.value, context);
+    const observations: RsglResourceValueObservation[] = [];
     const value = lowerSerializableBlockstateJsonValue(
       result,
       operation.statement.value.range,
-      this.host
+      this.resourceValueCaptureHost(context, observations)
     );
     if (value === undefined) {
       return;
@@ -366,7 +384,7 @@ export class BlockstateOperationExecutor {
       context,
       this.host
     );
-    this.applyRootOperand(
+    const mergeResult = this.applyRootOperand(
       root,
       value,
       operation.statement.mode,
@@ -374,6 +392,9 @@ export class BlockstateOperationExecutor {
       context,
       mappings
     );
+    if (mergeResult) {
+      this.commitMergedResourceValueObservations(observations, mergeResult);
+    }
   }
 
   private executeRootProperty(
@@ -382,15 +403,17 @@ export class BlockstateOperationExecutor {
     context: RsglCompileContext
   ): void {
     const result = evaluateExpressionResult(statement.value, context);
+    const path = appendGeneratedPath("", statement.name.text);
+    const observations: RsglResourceValueObservation[] = [];
     const value = lowerSerializableBlockstateJsonValue(
       result,
       statement.value.range,
-      this.host
+      this.resourceValueCaptureHost(context, observations),
+      path
     );
     if (value === undefined) {
       return;
     }
-    const path = appendGeneratedPath("", statement.name.text);
     const valueMappings = evaluationMappingsForValue(
       value,
       result,
@@ -406,7 +429,7 @@ export class BlockstateOperationExecutor {
       rangeForEvaluationPath(result.pathRanges, "") ?? statement.value.range,
       context
     );
-    this.applyRootOperand(
+    const mergeResult = this.applyRootOperand(
       root,
       { [statement.name.text]: value },
       "shallow",
@@ -419,6 +442,9 @@ export class BlockstateOperationExecutor {
           : {})
       }, ...valueMappings.filter(item => item.generatedPath !== path)]
     );
+    if (mergeResult) {
+      this.commitMergedResourceValueObservations(observations, mergeResult);
+    }
   }
 
   private executeVariantEntry(
@@ -454,7 +480,7 @@ export class BlockstateOperationExecutor {
       context,
       this.host
     ));
-    this.rootMerger.insertVariant(
+    const inserted = this.rootMerger.insertVariant(
       root.state,
       selector.key,
       lowered.value,
@@ -462,6 +488,9 @@ export class BlockstateOperationExecutor {
       context,
       mappings
     );
+    if (inserted) {
+      this.emitResourceValueObservations(lowered.resourceValueObservations, entryPath);
+    }
   }
 
   private executeMultipartEntry(
@@ -495,13 +524,86 @@ export class BlockstateOperationExecutor {
       value.when = when.value;
       mappings.push(relativeMapping("/when", statement.when.range, when.origin));
     }
-    this.rootMerger.appendMultipart(
+    const index = this.rootMerger.appendMultipart(
       root.state,
       value,
       statement.range,
       context,
       materializeMappings(mappings, "", context, this.host)
     );
+    if (index !== undefined) {
+      this.emitResourceValueObservations(
+        apply.resourceValueObservations,
+        joinGeneratedPath(blockstateMultipartPath(index), "/apply")
+      );
+    }
+  }
+
+  private emitResourceValueObservations(
+    observations: LoweredBlockstateApply["resourceValueObservations"],
+    generatedPathPrefix: string
+  ): void {
+    observations.forEach(observation => this.recordResourceValueObservation({
+      ...observation,
+      generatedPath: joinGeneratedPath(generatedPathPrefix, observation.generatedPath)
+    }));
+  }
+
+  private resourceValueCaptureHost(
+    context: RsglCompileContext,
+    observations: RsglResourceValueObservation[]
+  ): BlockstateApplyLoweringHost {
+    return {
+      ...this.host,
+      sourceFile: context.sourceFile,
+      onResourceValueObservation: observation => observations.push(observation)
+    };
+  }
+
+  private commitMergedResourceValueObservations(
+    observations: readonly RsglResourceValueObservation[],
+    mergeResult: MergeResult
+  ): void {
+    for (const observation of observations) {
+      if (!mappingTargetsAppliedContent(observation.generatedPath, mergeResult.applied)) {
+        continue;
+      }
+      this.recordResourceValueObservation({
+        ...observation,
+        generatedPath: offsetFragmentMappingPath(
+          observation.generatedPath,
+          mergeResult.arrayOffsets
+        )
+      });
+    }
+  }
+
+  private recordResourceValueObservation(observation: RsglResourceValueObservation): void {
+    if (this.activeResourceValueObservations) {
+      this.activeResourceValueObservations.push(observation);
+      return;
+    }
+    this.host.onResourceValueObservation?.(observation);
+  }
+
+  private flushResourceValueObservations(
+    observations: readonly RsglResourceValueObservation[],
+    mappings: readonly RsglMapping[]
+  ): void {
+    const observe = this.host.onResourceValueObservation;
+    if (!observe || observations.length === 0) {
+      return;
+    }
+    const latestMappingByPath = new Map<string, RsglMapping>();
+    mappings.forEach(mapping => latestMappingByPath.set(mapping.generatedPath, mapping));
+    const effective = new Map<string, RsglResourceValueObservation>();
+    for (const observation of observations) {
+      const mapping = latestMappingByPath.get(observation.generatedPath);
+      if (mapping && observationMatchesMapping(observation, mapping)) {
+        effective.set(observation.generatedPath, observation);
+      }
+    }
+    effective.forEach(observation => observe(observation));
   }
 
   private applyRootOperand(
@@ -511,31 +613,30 @@ export class BlockstateOperationExecutor {
     sourceRange: TextRange,
     context: RsglCompileContext,
     mappings?: readonly RsglMapping[]
-  ): void {
+  ): MergeResult | undefined {
     const evidence = blockstateRootModeEvidence(content);
     if (evidence === "both") {
       if (root.state) {
-        this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
+        return this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
       } else {
         this.reportUnselectedModeConflict(sourceRange);
       }
-      return;
+      return undefined;
     }
     if (evidence !== "none" && !this.selectMode(root, evidence, { sourceRange, context })) {
-      return;
+      return undefined;
     }
     if (root.state) {
-      this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
-    } else {
-      this.contentMerger.applyWithResult(
-        root.neutral,
-        content,
-        mode,
-        sourceRange,
-        context,
-        mappings
-      );
+      return this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
     }
+    return this.contentMerger.applyWithResult(
+      root.neutral,
+      content,
+      mode,
+      sourceRange,
+      context,
+      mappings
+    );
   }
 
   private selectMode(
@@ -679,4 +780,19 @@ function relativeMapping(
   origin?: EvaluationOrigin
 ): BlockstateLoweredMapping {
   return { generatedPath, sourceRange, ...(origin ? { origin } : {}) };
+}
+
+function observationMatchesMapping(
+  observation: RsglResourceValueObservation,
+  mapping: RsglMapping
+): boolean {
+  const candidates = [
+    { sourceFile: mapping.sourceFile, sourceRange: mapping.sourceRange },
+    ...(mapping.validationOrigin ? [mapping.validationOrigin] : [])
+  ];
+  return candidates.some(candidate =>
+    candidate.sourceRange.start === observation.range.start
+    && candidate.sourceRange.end === observation.range.end
+    && (!observation.sourceFile || candidate.sourceFile === observation.sourceFile)
+  );
 }

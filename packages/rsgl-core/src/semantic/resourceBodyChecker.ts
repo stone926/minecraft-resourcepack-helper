@@ -20,8 +20,9 @@ import { finiteStringDomain } from "./domainChecks";
 import {
   checkEquipmentLayerListExpression,
   checkEquipmentLayerNameExpression,
+  checkAssignable,
   checkExpression,
-  checkTextureRefExpression,
+  checkExpressionForExpectedType,
   checkLocalLetDecl,
   checkStringEnumLikeExpression,
   checkTemplateUseExpression,
@@ -29,6 +30,11 @@ import {
   validateResourceLocationLike
 } from "./expressionChecker";
 import { createChildScope, lookup } from "./scopes";
+import {
+  expectedTypeForResourceReferenceSink,
+  resourcePropertyReferenceSink,
+  type RsglResourceReferenceSinkType
+} from "./resourceReferenceSinkTypes";
 import { scopeForTruthyCondition } from "./typeNarrowing";
 import {
   resolveLoopBindingTypes,
@@ -197,17 +203,18 @@ export class RsglResourceBodyChecker {
     callerContext?: RsglTemplateCallerContext
   ): void {
     switch (statement.kind) {
-      case "PropertyStmt":
+      case "PropertyStmt": {
+        const propertySink = resourcePropertyReferenceSink(
+          callerContext?.kind === "resourceBody" ? callerContext.resourceKind : undefined,
+          owner,
+          statement.name.text
+        );
         if (owner === "equipment" && statement.name.text === "layers") {
           checkEquipmentLayerListExpression(this.context, statement.value, scope);
         } else if (owner === "scaling" && statement.name.text === "type") {
           checkStringEnumLikeExpression(this.context, statement.value, scope);
-        } else if (
-          owner === "textures"
-          && callerContext?.kind === "resourceBody"
-          && callerContext.resourceKind === "model"
-        ) {
-          checkTextureRefExpression(this.context, statement.value, scope);
+        } else if (propertySink) {
+          this.checkResourceReference(statement.value, scope, propertySink);
         } else if (owner === "textures" && !callerContext) {
           const valueType = this.checkExpression(statement.value, scope);
           this.recordContextualTextureSink(statement.value, valueType, scope);
@@ -217,6 +224,7 @@ export class RsglResourceBodyChecker {
         }
         validateResourceLocationLike(this.context, statement.value);
         break;
+      }
       case "SectionStmt":
         if (statement.value) {
           if (owner === "equipment" && statement.name.text === "layers") {
@@ -294,7 +302,7 @@ export class RsglResourceBodyChecker {
       case "EquipmentLayerStmt":
         checkEquipmentLayerNameExpression(this.context, statement.layer, scope);
         if (statement.texture) {
-          this.checkExpression(statement.texture, scope);
+          this.checkResourceReference(statement.texture, scope, "texture");
         }
         if (statement.dyeable) {
           this.checkExpression(statement.dyeable, scope);
@@ -307,7 +315,7 @@ export class RsglResourceBodyChecker {
         }
         break;
       case "ModelTextureStmt":
-        checkTextureRefExpression(this.context, statement.value, scope);
+        this.checkResourceReference(statement.value, scope, "modelTexture");
         break;
       case "ModelElementStmt":
         if (statement.label) {
@@ -322,7 +330,7 @@ export class RsglResourceBodyChecker {
         statement.properties.forEach(property => this.checkExpression(property.value, scope));
         statement.faces.forEach(face => face.properties.forEach(property => {
           if (property.name.text === "texture") {
-            checkTextureRefExpression(this.context, property.value, scope);
+            this.checkResourceReference(property.value, scope, "modelTexture");
           } else {
             this.checkExpression(property.value, scope);
           }
@@ -336,10 +344,10 @@ export class RsglResourceBodyChecker {
           const frameScope = createChildScope(scope, "block");
           this.context.defineIdentifier(frameScope, syntheticIdentifier("index", statement.frames.range), "variable", numberType, statement.frames);
           this.context.defineIdentifier(frameScope, syntheticIdentifier("frame", statement.frames.range), "variable", anyType, statement.frames);
-          this.checkExpression(statement.frames.model, frameScope);
+          this.checkResourceReference(statement.frames.model, frameScope, "itemModel");
         }
         if (statement.fallback) {
-          this.checkExpression(statement.fallback, scope);
+          this.checkResourceReference(statement.fallback, scope, "itemModel");
         }
         break;
       case "ItemSelectStmt":
@@ -347,27 +355,27 @@ export class RsglResourceBodyChecker {
         statement.options.forEach(option => this.checkExpression(option.value, scope));
         statement.cases.forEach(item => {
           this.checkExpression(item.when, scope);
-          this.checkExpression(item.model, scope);
+          this.checkResourceReference(item.model, scope, "itemModel");
         });
         if (statement.fallback) {
-          this.checkExpression(statement.fallback, scope);
+          this.checkResourceReference(statement.fallback, scope, "itemModel");
         }
         break;
       case "ItemConditionStmt":
         this.checkExpression(statement.property, scope);
         statement.options.forEach(option => this.checkExpression(option.value, scope));
         if (statement.onTrue) {
-          this.checkExpression(statement.onTrue, scope);
+          this.checkResourceReference(statement.onTrue, scope, "itemModel");
         }
         if (statement.onFalse) {
-          this.checkExpression(statement.onFalse, scope);
+          this.checkResourceReference(statement.onFalse, scope, "itemModel");
         }
         break;
       case "ItemCompositeStmt":
-        statement.models.forEach(model => this.checkExpression(model, scope));
+        statement.models.forEach(model => this.checkResourceReference(model, scope, "itemModel"));
         break;
       case "ItemSpecialStmt":
-        this.checkExpression(statement.base, scope);
+        this.checkResourceReference(statement.base, scope, "model");
         this.checkExpression(statement.model, scope);
         break;
       case "ForStmt":
@@ -423,6 +431,17 @@ export class RsglResourceBodyChecker {
 
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
     return checkExpression(this.context, expression, scope);
+  }
+
+  private checkResourceReference(
+    expression: ExprNode,
+    scope: RsglScope,
+    sink: RsglResourceReferenceSinkType
+  ): RsglType {
+    const expectedType = expectedTypeForResourceReferenceSink(sink);
+    const actualType = checkExpressionForExpectedType(this.context, expression, scope, expectedType);
+    checkAssignable(this.context, expectedType, actualType, expression);
+    return actualType;
   }
 
   private rejectTextureVariableOutsideModelSink(type: RsglType, expression: ExprNode): void {

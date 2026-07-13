@@ -69,6 +69,17 @@ describe("RSGL legacy item model backend", () => {
       ]
     });
     assert.strictEqual(result.units[0].kind, "model");
+    assert.deepStrictEqual(
+      result.units[0].validation?.resourceValueObservations?.map(observation => [
+        observation.generatedPath,
+        observation.valueKind
+      ]),
+      [
+        ["/textures/layer0", "texture"],
+        ["/overrides/0/model", "model"],
+        ["/overrides/1/model", "model"]
+      ]
+    );
   });
 
   it("validates and records external models referenced by lowered legacy overrides", () => {

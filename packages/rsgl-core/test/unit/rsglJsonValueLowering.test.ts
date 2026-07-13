@@ -112,7 +112,7 @@ describe("RSGL JSON value lowering", () => {
 
   it("applies the same recursive checks to specialized JSON resource sinks", () => {
     const source = [
-      "model block geometry_bad { texture layer0 (() => 1) }",
+      "model block geometry_bad { callback (() => 1) }",
       "mcmeta \"assets/minecraft/textures/block/anim.png\" { use mcmetaAnimation(frames: [(() => 2)]) }",
       "equipment minecraft:bad { layer humanoid texture minecraft:bad dyeable color (() => 3) }"
     ].join("\n");
@@ -126,7 +126,7 @@ describe("RSGL JSON value lowering", () => {
       diagnostics.map(diagnostic => source.slice(diagnostic.range.start, diagnostic.range.end)),
       ["() => 1", "() => 2", "() => 3"]
     );
-    assert.ok(diagnostics[0].message.includes("'/textures/layer0'"));
+    assert.ok(diagnostics[0].message.includes("'/callback'"));
     assert.ok(diagnostics[1].message.includes("'/animation/frames/0'"));
     assert.ok(diagnostics[2].message.includes("'/layers/humanoid/0/dyeable/color_when_undyed'"));
     assert.deepStrictEqual(result.units, []);

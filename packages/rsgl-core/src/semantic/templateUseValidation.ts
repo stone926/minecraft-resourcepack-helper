@@ -10,6 +10,7 @@ import {
   type RsglTemplateCallerContext
 } from "../templateOutput";
 import { fileDiagnostic, toDiagnostic } from "./diagnostics";
+import { mergeResolvedExpectedTypeFact } from "./expectedTypeFacts";
 import { checkTextureRefExpression } from "./expressionChecker";
 import { lookup } from "./scopes";
 import type {
@@ -276,9 +277,16 @@ class ResolvedTemplateUseValidator {
     const isModelSink = callerContext.kind === "resourceBody" && callerContext.resourceKind === "model";
     if (isModelSink) {
       const diagnostics: RsglDiagnostic[] = [];
+      const resolvedExpectedTypes = site.model.resolvedExpectedTypes instanceof Map
+        ? site.model.resolvedExpectedTypes
+        : new Map(site.model.resolvedExpectedTypes);
+      site.model.resolvedExpectedTypes = resolvedExpectedTypes;
       checkTextureRefExpression({
         diagnostics,
         references: [],
+        recordResolvedExpectedType: (expression, expectedType) => {
+          mergeResolvedExpectedTypeFact(resolvedExpectedTypes, expression, expectedType);
+        },
         defineIdentifier: () => undefined
       }, site.record.expression, site.record.scope);
       for (const item of diagnostics) {

@@ -2,6 +2,7 @@ import { TextRange } from "../parser";
 import type { ExternResourceKind, RsglResourceKind } from "../resourceKinds";
 import type { ExternResourceSource } from "../externDeclarations";
 import type { CompileDependency } from "./base/types";
+import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -44,6 +45,7 @@ export interface ResourceUnit {
   validation?: {
     externalTextureVariables?: string[];
     referenceOrigins?: RsglValidationReferenceOrigin[];
+    resourceValueObservations?: RsglResourceValueObservation[];
   };
   mergePolicy: MergePolicy;
   sourceMap: RsglSourceMap;

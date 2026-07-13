@@ -286,8 +286,10 @@ function rsglTypeKeyInternal(type: RsglType, ancestors: Set<RsglType>): string {
       return `Union<${Array.from(new Set(options)).join("|")}>`;
     }
     default:
-      return Object.prototype.hasOwnProperty.call(type, "literalValue")
-        ? `${type.kind}<${JSON.stringify(type.literalValue)}>`
-        : type.kind;
+      return type.contextualEscapeOnly
+        ? `${type.kind}<contextual-escape-only>`
+        : Object.prototype.hasOwnProperty.call(type, "literalValue")
+          ? `${type.kind}<${JSON.stringify(type.literalValue)}>`
+          : type.kind;
   }
 }

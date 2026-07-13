@@ -19,7 +19,7 @@ describe("RSGL import semantics", () => {
       {
         fileName: templatesFile,
         module: parseRsgl([
-          "template cube(id: ResourceId, texture: TextureId = id) {",
+          "template cube(id: TextureId, texture: TextureId = id) {",
           "  model block id {",
           "    parent minecraft:block/cube_all",
           "    textures { all: texture }",
@@ -65,7 +65,7 @@ describe("RSGL import semantics", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "let defaultTexture = block/stone",
+          "let defaultTexture: TextureId = block/stone",
           "template cubeFields(texture: TextureId = defaultTexture) -> model {",
           "  textures { all: texture }",
           "}",
@@ -216,7 +216,7 @@ describe("RSGL import semantics", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "let defaultModel = block/lamp",
+          "let defaultModel: ModelId = block/lamp",
           "template lampFacing(modelId: ModelId = defaultModel) -> variants {",
           "    { facing: north }: { model: modelId }",
           "}",
@@ -340,7 +340,7 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace custom",
           "import { woods } from \"./tables.rsgl\"",
-          "let parentModel = block/cube_all",
+          "let parentModel: ModelId = block/cube_all",
           "template cube(id: ResourceId, texture: TextureId = woods.acacia) {",
           "  model block id {",
           "    parent parentModel",
@@ -357,7 +357,7 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace textures",
           "table woods {",
-          "  acacia: block/acacia_planks",
+          "  acacia: texture_id(block/acacia_planks)",
           "}"
         ].join("\n"))
       }
@@ -442,7 +442,7 @@ describe("RSGL import semantics", () => {
         fileName: mainFile,
         module: parseRsgl([
           "import { woods as importedWoods, defaultParent } from \"./tables.rsgl\"",
-          "table localWoods { spruce: minecraft:block/spruce_planks }",
+          "table localWoods { spruce: texture_id(minecraft:block/spruce_planks) }",
           "model block acacia_planks {",
           "  parent defaultParent",
           "  textures { all: importedWoods.acacia }",
@@ -457,9 +457,9 @@ describe("RSGL import semantics", () => {
         fileName: tablesFile,
         module: parseRsgl([
           "namespace custom",
-          "let defaultParent = minecraft:block/cube_all",
+          "let defaultParent: ModelId = minecraft:block/cube_all",
           "table woods {",
-          "  acacia: block/acacia_planks",
+          "  acacia: texture_id(block/acacia_planks)",
           "}"
         ].join("\n"))
       }

@@ -26,6 +26,7 @@ import {
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { RsglCompileDiagnostic } from "./ir";
 import { RsglType, typeFromAnnotation } from "../semantic/types";
+import { contextualizeEvaluatedValue } from "./contextualResourceValueConversion";
 
 export type RsglCompileContext = EvaluationContext & {
   templates?: Map<string, RsglTemplateDefinition>;
@@ -79,12 +80,21 @@ export function createTemplateExpansion(
   }
   const frameLabel = `use ${templateName}`;
 
-  const templateBaseContext = createTemplateBaseContext(template, options);
+  const templateBaseContext = createTemplateBaseContext(
+    template,
+    options,
+    context.onEvaluationFailure,
+    context.onResourceValueFailure
+  );
+  const resolvedParameters = new Map(
+    template.signature?.parameters.map(parameter => [parameter.name, parameter]) ?? []
+  );
   const parameters = template.node.parameters
     .filter(parameter => parameter.name)
         .map((parameter): TemplateCallParameter => ({
           name: parameter.name!.text,
-          type: typeFromAnnotation(parameter.typeAnnotation),
+          type: resolvedParameters.get(parameter.name!.text)?.type
+            ?? typeFromAnnotation(parameter.typeAnnotation),
           optional: Boolean(parameter.defaultValue),
           node: parameter,
           parameterNode: parameter
@@ -211,7 +221,18 @@ function bindCallableValues(
     }
     const name = parameter.name;
     const result = evaluateExpressionResult(assignment.arg.value, callContext);
-    values[name] = normalizeCallableValue(result.value, parameter.type, callContext.namespace);
+    const normalized = normalizeCallableValue(
+      result.value,
+      parameter.type,
+      callContext.namespace,
+      assignment.arg.value.range,
+      callContext,
+      options
+    );
+    if (!normalized.ok) {
+      return null;
+    }
+    values[name] = normalized.value;
     assignedNames.add(name);
     const materialized = materializeEvaluationPathOrigins(result, callContext.sourceFile);
     if (materialized.length > 0) {
@@ -248,11 +269,18 @@ function bindCallableValues(
         ...valueIssues
       ]);
       const result = evaluateExpressionResult(parameter.parameterNode.defaultValue, defaultContext);
-      values[name] = normalizeCallableValue(
+      const normalized = normalizeCallableValue(
         result.value,
         parameter.type,
-        definitionContext.namespace
+        definitionContext.namespace,
+        parameter.parameterNode.defaultValue.range,
+        definitionContext,
+        options
       );
+      if (!normalized.ok) {
+        return null;
+      }
+      values[name] = normalized.value;
       const materialized = materializeEvaluationPathOrigins(result, definitionContext.sourceFile);
       if (materialized.length > 0) {
         pathOrigins.set(name, materialized);
@@ -270,33 +298,45 @@ function bindCallableValues(
   return { values, origins, pathOrigins, valueIssues };
 }
 
-function normalizeCallableValue(value: EvaluationValue, type: RsglType, namespace: string): EvaluationValue {
-  if (
-    (
-      type.kind === "ResourceId"
-      || type.kind === "ModelId"
-      || type.kind === "TextureId"
-      || type.kind === "TextureVariable"
-      || type.kind === "TextureRef"
-    ) &&
-    (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-  ) {
-    const text = String(value);
-    if ((type.kind === "TextureVariable" || type.kind === "TextureRef") && text.startsWith("#")) {
-      return text;
-    }
-    return text.includes(":") ? text : `${namespace}:${text}`;
+function normalizeCallableValue(
+  value: EvaluationValue,
+  type: RsglType,
+  namespace: string,
+  range: { start: number; end: number },
+  context: EvaluationContext,
+  options: TemplateExpansionOptions
+): { ok: true; value: EvaluationValue } | { ok: false } {
+  // The expression evaluator owns the primary diagnostic for a failed
+  // argument/default. Re-contextualizing its undefined sentinel would add a
+  // misleading `resourceReferenceExpected` cascade at the same source site.
+  if (value === undefined) {
+    return { ok: false };
   }
-  return value;
+  const converted = contextualizeEvaluatedValue(value, type, namespace);
+  if (!converted.ok) {
+    context.onEvaluationFailure?.();
+    context.onResourceValueFailure?.();
+    options.onError(
+      converted.error.code,
+      converted.error.message,
+      range,
+      context.sourceFile
+    );
+    return { ok: false };
+  }
+  return { ok: true, value: converted.value as EvaluationValue };
 }
 
 function createTemplateBaseContext(
   template: RsglTemplateDefinition,
-  options: TemplateExpansionOptions
+  options: TemplateExpansionOptions,
+  onEvaluationFailure?: () => void,
+  onResourceValueFailure?: () => void
 ): RsglCompileContext {
   return {
     namespace: template.namespace,
     variables: new Map(template.values),
+    resolvedExpectedTypes: template.resolvedExpectedTypes,
     valueOrigins: template.valueOrigins ? new Map(template.valueOrigins) : undefined,
     valuePathOrigins: template.valuePathOrigins ? new Map(template.valuePathOrigins) : undefined,
     valueIssues: template.valueIssues ? new Map(template.valueIssues) : undefined,
@@ -310,6 +350,8 @@ function createTemplateBaseContext(
     // Invariant: compile-phase contexts always carry onError so diagnostics
     // raised inside template bodies and parameter defaults are not swallowed.
     onError: options.onError,
+    onEvaluationFailure,
+    onResourceValueFailure,
     templates: template.templates
   };
 }

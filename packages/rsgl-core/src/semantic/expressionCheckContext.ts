@@ -1,5 +1,6 @@
 import type {
   CallExprNode,
+  ExprNode,
   IdentifierNode,
   RsglDiagnostic,
   RsglNode
@@ -23,6 +24,8 @@ export interface RsglExpressionCheckContext {
   ): void;
   /** Called for known imports and unresolved calls that may become bare import-all bindings. */
   recordImportCallScope?(expression: CallExprNode, scope: RsglScope): void;
+  /** Records the contextual type selected for runtime conversion/validation. */
+  recordResolvedExpectedType?(expression: ExprNode, expectedType: RsglType): void;
   /** Suppresses cascaded undefined-symbol noise for rejected syntax with its own primary diagnostic. */
   isUndefinedSymbolDiagnosticSuppressed?(name: string): boolean;
 }

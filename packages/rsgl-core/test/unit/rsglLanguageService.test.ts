@@ -33,7 +33,7 @@ describe("RSGL language service", () => {
       ].join("\n");
       fs.writeFileSync(mainFile, mainText);
       fs.writeFileSync(templatesFile, [
-        "template cube(id: ResourceId, texture: TextureId = id) {",
+        "template cube(id: TextureId, texture: TextureId = id) {",
         "  model block id {",
         "    parent minecraft:block/cube_all",
         "    textures { all: texture }",
@@ -102,7 +102,7 @@ describe("RSGL language service", () => {
       ].join("\n");
       const barrelText = "export { exportedCube as forwardedCube } from \"./templates.rsgl\"";
       const templatesText = [
-        "template cube(id: ResourceId, texture: TextureId = id) -> model {",
+        "template cube(id: TextureId, texture: TextureId = id) -> model {",
         "}",
         "export { cube as exportedCube }"
       ].join("\n");
@@ -117,13 +117,13 @@ describe("RSGL language service", () => {
 
       assert.deepStrictEqual(hover, {
         range: { start: referenceOffset, end: referenceOffset + "buildCube".length },
-        label: "template buildCube(id: ResourceId, texture: TextureId = ...): Json",
+        label: "template buildCube(id: TextureId, texture: TextureId = ...): Json",
         detail: "template -> model"
       });
 
       const textureArgumentOffset = mainText.lastIndexOf("minecraft:block/stone") + 5;
       const signature = getRsglDocumentSignatureHelpInfo(document, textureArgumentOffset, cache);
-      assert.strictEqual(signature?.signatures[0].label, "buildCube(id: ResourceId, texture: TextureId = ...): Json");
+      assert.strictEqual(signature?.signatures[0].label, "buildCube(id: TextureId, texture: TextureId = ...): Json");
       assert.strictEqual(signature?.activeParameter, 1, "named arguments select their declared parameter");
 
       const definition = getRsglDocumentDefinitionLocation(document, referenceOffset + 2, cache);

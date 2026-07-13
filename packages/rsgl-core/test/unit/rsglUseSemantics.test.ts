@@ -87,6 +87,28 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     });
   });
 
+  it("preserves subtype-relative model impl shorthands and texture variables", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "namespace demo",
+      "model block legacy impl cube_all(all: stone, side: \"stone\", particle: \"#side\") {}",
+      "model item legacy_item impl generated(layer0: \"base\") {}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(unitByPath(result, "models/block/legacy.json").content, {
+      parent: "minecraft:block/cube_all",
+      textures: {
+        all: "demo:block/stone",
+        side: "demo:block/stone",
+        particle: "#side"
+      }
+    });
+    assert.deepStrictEqual(unitByPath(result, "models/item/legacy_item.json").content, {
+      parent: "minecraft:item/generated",
+      textures: { layer0: "demo:item/base" }
+    });
+  });
+
   it("maps model impl parent and texture slots in the source map", () => {
     const source = [
       "model block ruby impl minecraft:block/cube_all(all: minecraft:block/ruby) {",

@@ -11,12 +11,17 @@ import {
   TemplateDeclNode,
   TopLevelStatementNode
 } from "../parser";
-import { externResourceKindDescription, getExternResourceKind } from "../resourceKinds";
+import {
+  externResourceKindDescription,
+  getExternResourceKind,
+  getRsglResourceKindDescriptor
+} from "../resourceKinds";
 import { inferStaticBlockstateMode } from "../blockstateModeEvidence";
 import { walkRsglExpression } from "../parser/astTraversal";
 import { createBuiltinSymbols } from "./builtins";
 import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
+import { mergeResolvedExpectedTypeFact } from "./expectedTypeFacts";
 import {
   applyLambdaValueDiagnostics,
   exportedLambdaAnnotationDiagnostics
@@ -50,6 +55,7 @@ import {
   anyType,
   identifierName,
   jsonType,
+  modelIdType,
   resourceIdType,
   RsglBindOptions,
   RsglExportRecord,
@@ -67,6 +73,7 @@ import {
   RsglContextualTextureSinkRecord,
   RsglTemplateUseRecord,
   RsglType,
+  textureRefType,
   typeFromAnnotation
 } from "./types";
 import type { RsglTemplateCallerContext } from "../templateOutput";
@@ -95,6 +102,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly exports: RsglExportRecord[] = [];
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly importCallScopes = new Map<ExprNode, RsglScope>();
+  private readonly resolvedExpectedTypes = new Map<ExprNode, RsglType>();
   private readonly templateUses: RsglTemplateUseRecord[] = [];
   private readonly legacyBlockstateRoots: RsglLegacyBlockstateRootRecord[] = [];
   private readonly contextualTextureSinks: RsglContextualTextureSinkRecord[] = [];
@@ -172,6 +180,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       outputResources: this.outputResources,
       diagnostics: this.diagnostics,
       namespace: this.namespace,
+      resolvedExpectedTypes: this.resolvedExpectedTypes,
       importCallScopes: this.importCallScopes,
       templateUses: this.templateUses,
       legacyBlockstateRoots: this.legacyBlockstateRoots,
@@ -184,6 +193,10 @@ class RsglBinder implements RsglExpressionCheckContext {
 
   public recordImportCallScope(expression: ExprNode, scope: RsglScope): void {
     this.importCallScopes.set(expression, snapshotScope(scope, [expression]));
+  }
+
+  public recordResolvedExpectedType(expression: ExprNode, expectedType: RsglType): void {
+    mergeResolvedExpectedTypeFact(this.resolvedExpectedTypes, expression, expectedType);
   }
 
   public isUndefinedSymbolDiagnosticSuppressed(name: string): boolean {
@@ -340,7 +353,15 @@ class RsglBinder implements RsglExpressionCheckContext {
 
   private checkResourceDecl(statement: ResourceDeclNode, scope: RsglScope): void {
     if (statement.id) {
-      checkResourceIdExpression(this, statement.id, scope);
+      const pathStrategy = getRsglResourceKindDescriptor(statement.resourceKind)?.emit.pathStrategy;
+      if (pathStrategy === "resourceId") {
+        const actualType = checkExpressionForExpectedType(this, statement.id, scope, resourceIdType);
+        checkAssignable(this, resourceIdType, actualType, statement.id);
+      } else {
+        // Pack-relative, mcmeta, and namespace-only targets are not
+        // unambiguously ResourceId values and must stay ordinary strings.
+        checkResourceIdExpression(this, statement.id, scope);
+      }
       validateResourceLocationLike(this, statement.id);
     }
     if (statement.impl) {
@@ -386,11 +407,81 @@ class RsglBinder implements RsglExpressionCheckContext {
 
   private checkModelImpl(expression: ExprNode, scope: RsglScope): void {
     if (expression.kind === "CallExpr") {
-      checkResourceIdExpression(this, expression.callee, scope);
-      expression.args.forEach(arg => checkResourceIdExpression(this, arg.value, scope));
+      this.checkModelImplParent(expression.callee, scope);
+      expression.args.forEach(arg => this.checkModelImplTexture(arg.value, scope));
       return;
     }
-    checkResourceIdExpression(this, expression, scope);
+    this.checkModelImplParent(expression, scope);
+  }
+
+  private checkModelImplParent(expression: ExprNode, scope: RsglScope): void {
+    if (
+      expression.kind === "ResourceLocationExpr"
+      || (
+        expression.kind === "StringLiteral"
+        && (expression.value.includes(":") || expression.value.includes("/"))
+      )
+    ) {
+      // Already path-shaped text does not need the legacy subtype folder and
+      // can safely participate in the normal ModelId fact pipeline.
+      const actualType = checkExpressionForExpectedType(this, expression, scope, modelIdType);
+      checkAssignable(this, modelIdType, actualType, expression);
+      return;
+    }
+    const symbol = expression.kind === "IdentifierExpr"
+      ? lookup(scope, expression.name.text)
+      : undefined;
+    if (
+      expression.kind === "StringLiteral"
+      || expression.kind === "TemplateStringExpr"
+      || (expression.kind === "IdentifierExpr" && (!symbol || symbol.kind === "builtin"))
+    ) {
+      // Model impl text is a legacy subtype-relative shorthand. Keep it
+      // unbranded so modelImpl can still expand `cube_all` to
+      // `minecraft:block/cube_all`; explicitly typed ModelId values remain
+      // branded and bypass that compatibility rule.
+      checkResourceIdExpression(this, expression, scope);
+      return;
+    }
+    const actualType = checkExpression(this, expression, scope);
+    if (isLegacyModelImplParentType(actualType)) {
+      return;
+    }
+    checkAssignable(this, modelIdType, actualType, expression);
+  }
+
+  private checkModelImplTexture(expression: ExprNode, scope: RsglScope): void {
+    if (expression.kind === "StringLiteral" && expression.value.startsWith("#")) {
+      const actualType = checkExpressionForExpectedType(this, expression, scope, textureRefType);
+      checkAssignable(this, textureRefType, actualType, expression);
+      return;
+    }
+    if (
+      expression.kind === "ResourceLocationExpr"
+      || (
+        expression.kind === "StringLiteral"
+        && (expression.value.includes(":") || expression.value.includes("/"))
+      )
+    ) {
+      const actualType = checkExpressionForExpectedType(this, expression, scope, textureRefType);
+      checkAssignable(this, textureRefType, actualType, expression);
+      return;
+    }
+    if (
+      expression.kind === "StringLiteral"
+      || expression.kind === "TemplateStringExpr"
+      || (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text))
+    ) {
+      // As with the parent shorthand, raw text keeps its subtype-relative
+      // spelling until modelImpl knows whether `block/` or `item/` applies.
+      checkResourceIdExpression(this, expression, scope);
+      return;
+    }
+    const actualType = checkExpression(this, expression, scope);
+    if (isLegacyModelImplTextureType(actualType)) {
+      return;
+    }
+    checkAssignable(this, textureRefType, actualType, expression);
   }
 
   private checkExternDecl(statement: ExternDeclNode): void {
@@ -533,10 +624,41 @@ class RsglBinder implements RsglExpressionCheckContext {
       exports: this.exports,
       references: this.references,
       outputResources: this.outputResources,
-      diagnostics: this.diagnostics
+      diagnostics: this.diagnostics,
+      resolvedExpectedTypes: this.resolvedExpectedTypes
     };
     resolveProgramTemplateOutputMetadata([model]);
   }
+}
+
+function isLegacyModelImplParentType(type: RsglType): boolean {
+  if (
+    type.kind === "String"
+    || type.kind === "ModelId"
+    || type.kind === "Any"
+    || type.kind === "Unknown"
+  ) {
+    return true;
+  }
+  return type.kind === "Union"
+    && (type.options?.length ?? 0) > 0
+    && (type.options ?? []).every(isLegacyModelImplParentType);
+}
+
+function isLegacyModelImplTextureType(type: RsglType): boolean {
+  if (
+    type.kind === "String"
+    || type.kind === "TextureId"
+    || type.kind === "TextureVariable"
+    || type.kind === "TextureRef"
+    || type.kind === "Any"
+    || type.kind === "Unknown"
+  ) {
+    return true;
+  }
+  return type.kind === "Union"
+    && (type.options?.length ?? 0) > 0
+    && (type.options ?? []).every(isLegacyModelImplTextureType);
 }
 
 const resourcesCallerContext: RsglTemplateCallerContext = { kind: "resources" };

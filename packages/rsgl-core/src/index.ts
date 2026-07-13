@@ -10,6 +10,7 @@ export * from "./languageService";
 export * from "./memberLanguageIntelligence";
 export * from "./migration";
 export * from "./resourceKinds";
+export * from "./resourceIdSemantics";
 export * from "./resourceBodyHelpers";
 export * from "./rsglConfig";
 export * from "./semanticTokens";

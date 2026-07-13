@@ -81,7 +81,7 @@ export function compileBlockstateResource(
     return null;
   }
 
-  const executor = new BlockstateOperationExecutor(executorHost(options));
+  const executor = new BlockstateOperationExecutor(executorHost(options, context.sourceFile));
   const canonical = statement.blockstateSyntax === "modeHeader";
   const program = canonical
     ? canonicalBlockstateOperationProgram(statement.body)
@@ -113,7 +113,10 @@ export function compileBlockstateResource(
   };
 }
 
-function executorHost(options: BlockstateCompileOptions): BlockstateOperationExecutorHost {
+function executorHost(
+  options: BlockstateCompileOptions,
+  defaultSourceFile?: string
+): BlockstateOperationExecutorHost {
   return {
     resolveTemplate: options.resolveTemplate,
     expandUse: options.expandUse,
@@ -121,6 +124,12 @@ function executorHost(options: BlockstateCompileOptions): BlockstateOperationExe
     onError: options.onError,
     ...(options.jsonValueAdapters
       ? { jsonValueAdapters: options.jsonValueAdapters }
+      : {}),
+    ...(options.onResourceValueObservation
+      ? { onResourceValueObservation: options.onResourceValueObservation }
+      : {}),
+    ...((options.sourceFile ?? defaultSourceFile)
+      ? { sourceFile: options.sourceFile ?? defaultSourceFile }
       : {}),
     sourceMapping: options.sourceMapping,
     ...(options.getBlockstateApplyFact

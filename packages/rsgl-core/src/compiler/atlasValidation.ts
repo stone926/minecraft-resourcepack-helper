@@ -4,7 +4,7 @@ import {
   canonicalizeJsonResourceReference,
   checkJsonResourceReference
 } from "./jsonResourceReferenceValidation";
-import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { pushUnitDiagnostic } from "./validationDiagnostics";
 import { asObject, stripMinecraftPrefix } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 
@@ -30,7 +30,7 @@ export function validateAtlasUnit(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "source"))
+        appendGeneratedPath(sourcePath, "source")
       );
     }
     if ((sourceType === "single" || sourceType === "unstitch") && typeof sourceObject.resource === "string") {
@@ -41,7 +41,7 @@ export function validateAtlasUnit(
         unit,
         options,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "resource"))
+        appendGeneratedPath(sourcePath, "resource")
       );
     }
     if (sourceType === "single" && typeof sourceObject.sprite === "string") {
@@ -51,7 +51,7 @@ export function validateAtlasUnit(
         "texture",
         unit,
         diagnostics,
-        sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "sprite"))
+        appendGeneratedPath(sourcePath, "sprite")
       );
     }
     if (sourceType === "unstitch" && Array.isArray(sourceObject.regions)) {
@@ -70,7 +70,7 @@ export function validateAtlasUnit(
           "texture",
           unit,
           diagnostics,
-          sourceRangeForGeneratedPath(unit, spritePath)
+          spritePath
         );
       }
     }
@@ -88,7 +88,7 @@ export function validateAtlasUnit(
             unit,
             options,
             diagnostics,
-            sourceRangeForGeneratedPath(unit, appendGeneratedPath(appendGeneratedPath(sourcePath, "textures"), String(textureIndex)))
+            appendGeneratedPath(appendGeneratedPath(sourcePath, "textures"), String(textureIndex))
           );
         }
       }
@@ -100,7 +100,7 @@ export function validateAtlasUnit(
           unit,
           options,
           diagnostics,
-          sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "palette_key"))
+          appendGeneratedPath(sourcePath, "palette_key")
         );
       }
       const permutations = asObject(sourceObject.permutations) ?? {};
@@ -113,7 +113,7 @@ export function validateAtlasUnit(
             unit,
             options,
             diagnostics,
-            sourceRangeForGeneratedPath(unit, appendGeneratedPath(appendGeneratedPath(sourcePath, "permutations"), key))
+            appendGeneratedPath(appendGeneratedPath(sourcePath, "permutations"), key)
           );
         }
       }

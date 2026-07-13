@@ -267,11 +267,15 @@ function checkArguments(
     }
     const comparableType = actualType.kind === "Unknown" ? anyType : actualType;
     if (!isAssignable(parameter.type, comparableType) && context.diagnostics.length === diagnosticStart) {
-      context.diagnostics.push(diagnostic(
-        signature.valueFunction ? "rsgl.lambdaArgumentTypeMismatch" : "rsgl.typeMismatch",
-        `${signature.valueFunction ? "Expected lambda argument" : "Expected"} ${formatType(parameter.type)}, got ${formatType(comparableType)}.`,
-        arg.value.range
-      ));
+      if (signature.valueFunction) {
+        context.diagnostics.push(diagnostic(
+          "rsgl.lambdaArgumentTypeMismatch",
+          `Expected lambda argument ${formatType(parameter.type)}, got ${formatType(comparableType)}.`,
+          arg.value.range
+        ));
+      } else {
+        host.checkAssignable(context, parameter.type, comparableType, arg.value);
+      }
     }
   }
   for (const arg of binding.unmatchedArgs) {

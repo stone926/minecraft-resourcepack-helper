@@ -9,8 +9,8 @@ describe("RSGL semantic model", () => {
       "target java format [88, 0]",
       "namespace minecraft",
       "import { woods as woodTable } from \"./woods.rsgl\"",
-      "let id: ResourceId = minecraft:block/acacia_planks",
-      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "let id: TextureId = minecraft:block/acacia_planks",
+      "template cube(id: ResourceId, texture: TextureId = minecraft:block/acacia_planks) {",
       "  model block id {",
       "    parent minecraft:block/cube_all",
       "    textures { all: texture }",
@@ -279,7 +279,7 @@ describe("RSGL semantic model", () => {
 
   it("reports unknown, duplicate, and excessive template call arguments", () => {
     const module = parseRsgl([
-      "template cube(id: ResourceId, texture: TextureId = id) {",
+      "template cube(id: TextureId, texture: TextureId = id) {",
       "  model block id { parent minecraft:block/cube_all }",
       "}",
       "use cube(",
@@ -594,7 +594,7 @@ describe("RSGL semantic model", () => {
       {
         fileName: templatesFile,
         module: parseRsgl([
-          "template cube(id: ResourceId, texture: TextureId = id) {",
+          "template cube(id: TextureId, texture: TextureId = id) {",
           "  model block id { parent minecraft:block/cube_all }",
           "}"
         ].join("\n"))

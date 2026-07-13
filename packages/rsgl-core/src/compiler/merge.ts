@@ -106,16 +106,30 @@ function mergeObjectUnits(
     }
   }
 
-  const validation = mergeUnitValidation(units);
-  return {
+  const validation = mergeUnitValidation(
+    units,
+    undefined,
+    (unit, generatedPath) => observationBelongsToFinalObjectField(
+      unit,
+      generatedPath,
+      seen,
+      units[0].kind
+    )
+  );
+  const merged: ResourceUnit = {
     ...units[0],
     content,
-    ...(validation ? { validation } : {}),
     sourceMap: {
       generatedFile: units[0].outputPath,
       mappings: units.flatMap(unit => unit.sourceMap.mappings)
     }
   };
+  if (validation) {
+    merged.validation = validation;
+  } else {
+    delete merged.validation;
+  }
+  return merged;
 }
 
 function isPackOverlayMerge(kind: ResourceUnit["kind"], key: string, existing: JsonValue | undefined, next: JsonValue): boolean {
@@ -144,28 +158,98 @@ function mergeArrayUnits(units: ResourceUnit[]): ResourceUnit | null {
     return null;
   }
 
-  const validation = mergeUnitValidation(units);
+  let nextOffset = 0;
+  const rootArrayOffsets = units.map(unit => {
+    const offset = nextOffset;
+    nextOffset += (unit.content as JsonValue[]).length;
+    return offset;
+  });
+  const validation = mergeUnitValidation(units, rootArrayOffsets);
   return {
     ...units[0],
     content: units.flatMap(unit => unit.content as JsonValue[]),
     ...(validation ? { validation } : {}),
     sourceMap: {
       generatedFile: units[0].outputPath,
-      mappings: units.flatMap(unit => unit.sourceMap.mappings)
+      mappings: units.flatMap((unit, index) => unit.sourceMap.mappings.map(mapping => ({
+        ...mapping,
+        generatedPath: rebaseRootArrayGeneratedPath(mapping.generatedPath, rootArrayOffsets[index])
+      })))
     }
   };
 }
 
-function mergeUnitValidation(units: readonly ResourceUnit[]): ResourceUnit["validation"] | undefined {
+function mergeUnitValidation(
+  units: readonly ResourceUnit[],
+  rootArrayOffsets?: readonly number[],
+  includeObservation: (unit: ResourceUnit, generatedPath: string) => boolean = () => true
+): ResourceUnit["validation"] | undefined {
   const externalTextureVariables = uniqueValues(units.flatMap(unit =>
     unit.validation?.externalTextureVariables ?? []
   ));
-  const referenceOrigins = units.flatMap(unit => unit.validation?.referenceOrigins ?? []);
-  if (externalTextureVariables.length === 0 && referenceOrigins.length === 0) {
+  const referenceOrigins = units.flatMap((unit, index) =>
+    (unit.validation?.referenceOrigins ?? []).map(origin => ({
+      ...origin,
+      generatedPath: rebaseRootArrayGeneratedPath(
+        origin.generatedPath,
+        rootArrayOffsets?.[index] ?? 0
+      )
+    }))
+  );
+  const resourceValueObservations = units.flatMap((unit, index) =>
+    (unit.validation?.resourceValueObservations ?? [])
+      .filter(observation => includeObservation(unit, observation.generatedPath))
+      .map(observation => ({
+        ...observation,
+        generatedPath: rebaseRootArrayGeneratedPath(
+          observation.generatedPath,
+          rootArrayOffsets?.[index] ?? 0
+        )
+      }))
+  );
+  if (
+    externalTextureVariables.length === 0
+    && referenceOrigins.length === 0
+    && resourceValueObservations.length === 0
+  ) {
     return undefined;
   }
   return {
     ...(externalTextureVariables.length > 0 ? { externalTextureVariables } : {}),
-    ...(referenceOrigins.length > 0 ? { referenceOrigins } : {})
+    ...(referenceOrigins.length > 0 ? { referenceOrigins } : {}),
+    ...(resourceValueObservations.length > 0 ? { resourceValueObservations } : {})
   };
+}
+
+function observationBelongsToFinalObjectField(
+  unit: ResourceUnit,
+  generatedPath: string,
+  finalFieldOwners: ReadonlyMap<string, ResourceUnit>,
+  resourceKind: ResourceUnit["kind"]
+): boolean {
+  const field = rootObjectFieldAtGeneratedPath(generatedPath);
+  if (field === undefined) {
+    return true;
+  }
+  if (resourceKind === "pack" && field === "overlays") {
+    return true;
+  }
+  return finalFieldOwners.get(field) === unit;
+}
+
+function rootObjectFieldAtGeneratedPath(generatedPath: string): string | undefined {
+  if (!generatedPath.startsWith("/")) {
+    return undefined;
+  }
+  const segment = generatedPath.slice(1).split("/", 1)[0];
+  return segment.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+function rebaseRootArrayGeneratedPath(generatedPath: string, offset: number): string {
+  if (offset === 0) {
+    return generatedPath;
+  }
+  return generatedPath.replace(/^\/(\d+)(?=\/|$)/, (_match, index: string) =>
+    `/${Number(index) + offset}`
+  );
 }

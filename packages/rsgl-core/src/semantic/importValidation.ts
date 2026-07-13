@@ -2,7 +2,9 @@ import { bindRsglArguments } from "../arguments";
 import { ArgumentNode, ExprNode, RsglDiagnostic } from "../parser";
 import { walkRsglModule } from "../parser/astTraversal";
 import { diagnostic } from "./diagnostics";
+import { mergeResolvedExpectedTypeFact } from "./expectedTypeFacts";
 import {
+  checkAssignable,
   checkExpression,
   checkExpressionForExpectedType,
   RsglExpressionCheckContext
@@ -32,9 +34,16 @@ class ResolvedImportCallValidator {
   private readonly checkContext: RsglExpressionCheckContext;
 
   public constructor(private readonly model: RsglSemanticModel) {
+    const resolvedExpectedTypes = model.resolvedExpectedTypes instanceof Map
+      ? model.resolvedExpectedTypes
+      : new Map(model.resolvedExpectedTypes);
+    model.resolvedExpectedTypes = resolvedExpectedTypes;
     this.checkContext = {
       diagnostics: this.diagnostics,
       references: this.references,
+      recordResolvedExpectedType: (expression, expectedType) => {
+        mergeResolvedExpectedTypeFact(resolvedExpectedTypes, expression, expectedType);
+      },
       defineIdentifier: (scope, identifier, kind, type, node) => {
         const name = identifierName(identifier);
         if (!name) {
@@ -183,11 +192,15 @@ class ResolvedImportCallValidator {
         this.diagnostics.length === diagnosticsBeforeCheck
         && !isAssignable(parameter.type, actualType)
       ) {
-        this.diagnostics.push(diagnostic(
-          signature.valueFunction ? "rsgl.lambdaArgumentTypeMismatch" : "rsgl.typeMismatch",
-          `${signature.valueFunction ? "Expected lambda argument" : "Expected"} ${formatType(parameter.type)}, got ${formatType(actualType)}.`,
-          arg.value.range
-        ));
+        if (signature.valueFunction) {
+          this.diagnostics.push(diagnostic(
+            "rsgl.lambdaArgumentTypeMismatch",
+            `Expected lambda argument ${formatType(parameter.type)}, got ${formatType(actualType)}.`,
+            arg.value.range
+          ));
+        } else {
+          checkAssignable(this.checkContext, parameter.type, actualType, arg.value);
+        }
       }
     }
     for (const arg of binding.unmatchedArgs) {
