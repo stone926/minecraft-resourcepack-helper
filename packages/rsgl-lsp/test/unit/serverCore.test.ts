@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { CompletionItemKind, DiagnosticSeverity } from "vscode-languageserver/node";
+import { CompletionItemKind, DiagnosticSeverity, InsertTextFormat } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   RsglWorkspaceSemanticCache,
@@ -21,6 +21,7 @@ import {
   documentsDependingOnPath,
   encodeSemanticTokens,
   handleSemanticWatchedFileBatch,
+  identifierAtOffset,
   normalizeDependencyPath,
   toLspDiagnostic,
   toLspSeverity,
@@ -627,6 +628,7 @@ describe("RSGL LSP server core", () => {
     const target = items.find(item => item.label === "target");
     assert.strictEqual(target?.kind, CompletionItemKind.Snippet);
     assert.strictEqual(typeof target?.insertText, "string");
+    assert.strictEqual(target?.insertTextFormat, InsertTextFormat.Snippet);
     assert.strictEqual(typeof target?.detail, "string");
 
     const seq = items.find(item => item.label === "seq");
@@ -652,6 +654,16 @@ describe("RSGL LSP server core", () => {
     const matches = items.filter(item => item.label === "target");
     assert.strictEqual(matches.length, 1);
     assert.strictEqual(matches[0].kind, CompletionItemKind.Snippet);
+  });
+
+  it("resolves the complete hover identifier at its start, middle, and end", () => {
+    const text = "use stateSequence()";
+    const start = text.indexOf("stateSequence");
+
+    assert.strictEqual(identifierAtOffset(text, start), "stateSequence");
+    assert.strictEqual(identifierAtOffset(text, start + 5), "stateSequence");
+    assert.strictEqual(identifierAtOffset(text, start + "stateSequence".length), "stateSequence");
+    assert.strictEqual(identifierAtOffset(text, text.length), null);
   });
 
   it("encodes semantic tokens relative to the previous token across lines", () => {

@@ -7,10 +7,16 @@ import {
   RsglDiagnostic,
   RsglModule,
   RsglNode,
+  TemplateDeclNode,
   TextRange,
   TypeNode
 } from "../parser";
 import type { ExternResourceKind } from "../resourceKinds";
+import type {
+  ResolvedTemplateOutputConflict,
+  ResolvedTemplateOutputMetadata,
+  RsglTemplateCallerContext
+} from "../templateOutput";
 
 export type RsglSymbolKind =
   | "builtin"
@@ -32,6 +38,8 @@ export type RsglTypeKind =
   | "ResourceId"
   | "ModelId"
   | "TextureId"
+  | "TextureVariable"
+  | "TextureRef"
   | "Path"
   | "Json"
   | "List"
@@ -52,6 +60,23 @@ export interface RsglType {
 export interface RsglSignature {
   parameters: RsglParameterSymbol[];
   returnType: RsglType;
+  templateOutput?: ResolvedTemplateOutputMetadata;
+  templateOutputConflict?: ResolvedTemplateOutputConflict;
+}
+
+export interface RsglTemplateUseRecord {
+  expression: ExprNode;
+  /** Undefined only inside a legacy contextual template whose caller chooses the body dialect. */
+  callerContext?: RsglTemplateCallerContext;
+  scope: RsglScope;
+  enclosingTemplate?: TemplateDeclNode;
+}
+
+export interface RsglContextualTextureSinkRecord {
+  expression: ExprNode;
+  actualType: RsglType;
+  scope: RsglScope;
+  enclosingTemplate: TemplateDeclNode;
 }
 
 export interface RsglParameterSymbol {
@@ -125,11 +150,13 @@ export interface RsglSemanticModel {
   diagnostics: RsglDiagnostic[];
   namespace?: string;
   /**
-   * Enclosing scope of each imported-template call whose arguments the binder
-   * skipped (signature unknown at bind time). Lets post-resolution validation
-   * check lambda arguments with the captures the call site actually sees.
+   * Enclosing scope of each known import call and unresolved call that may be
+   * linked by a bare import. Lets post-resolution validation use the captures
+   * and local values the call site actually sees.
    */
   importCallScopes?: ReadonlyMap<ExprNode, RsglScope>;
+  templateUses?: readonly RsglTemplateUseRecord[];
+  contextualTextureSinks?: readonly RsglContextualTextureSinkRecord[];
 }
 
 export interface RsglSourceFile {
@@ -171,6 +198,8 @@ export const nullType: RsglType = { kind: "Null" };
 export const resourceIdType: RsglType = { kind: "ResourceId" };
 export const modelIdType: RsglType = { kind: "ModelId" };
 export const textureIdType: RsglType = { kind: "TextureId" };
+export const textureVariableType: RsglType = { kind: "TextureVariable" };
+export const textureRefType: RsglType = { kind: "TextureRef" };
 export const jsonType: RsglType = { kind: "Json" };
 
 export function typeFromAnnotation(typeNode: TypeNode | undefined): RsglType {
@@ -218,6 +247,12 @@ export function namedType(name: string): RsglType {
   }
   if (name === "TextureId") {
     return textureIdType;
+  }
+  if (name === "TextureVariable") {
+    return textureVariableType;
+  }
+  if (name === "TextureRef") {
+    return textureRefType;
   }
   if (name === "Range") {
     return { kind: "Range", elementType: numberType };

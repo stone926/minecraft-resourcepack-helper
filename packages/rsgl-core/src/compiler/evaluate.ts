@@ -36,6 +36,8 @@ export interface EvaluationPathOrigin extends EvaluationOrigin {
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
+  /** Lexically bound value names, including predeclared bindings not evaluated yet. */
+  valueBindingNames?: ReadonlySet<string>;
   /** Lexical origins of values bound from template call arguments. */
   valueOrigins?: ReadonlyMap<string, EvaluationOrigin>;
   stateKeyAliases?: ReadonlySet<string>;
@@ -56,6 +58,7 @@ export function bindEvaluationValue(
   origin?: EvaluationOrigin
 ): void {
   context.variables.set(name, value);
+  context.valueBindingNames = new Set([...(context.valueBindingNames ?? []), name]);
   const origins = new Map(context.valueOrigins ?? []);
   if (origin) {
     origins.set(name, origin);
@@ -63,6 +66,11 @@ export function bindEvaluationValue(
     origins.delete(name);
   }
   context.valueOrigins = origins;
+}
+
+/** True when a value binding shadows a same-named template or builtin helper. */
+export function hasEvaluationValueBinding(context: EvaluationContext, name: string): boolean {
+  return context.variables.has(name) || Boolean(context.valueBindingNames?.has(name));
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -503,9 +511,13 @@ export function childEvaluationContext(
   values: Record<string, EvaluationValue>,
   metadata: Partial<Pick<EvaluationContext, "sourceFile" | "mappingReason" | "expansionStack" | "onError">> = {}
 ): EvaluationContext {
+  const bindingNames = Object.keys(values);
   return {
     ...context,
     variables: new Map([...context.variables, ...Object.entries(values)]),
+    valueBindingNames: bindingNames.length > 0
+      ? new Set([...(context.valueBindingNames ?? []), ...bindingNames])
+      : context.valueBindingNames,
     sourceFile: metadata.sourceFile ?? context.sourceFile,
     mappingReason: metadata.mappingReason ?? context.mappingReason,
     expansionStack: metadata.expansionStack ?? context.expansionStack,

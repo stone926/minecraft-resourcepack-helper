@@ -66,7 +66,7 @@ describe("RSGL template expansion", () => {
 
   it("expands local resource body templates", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId = minecraft:block/stone) -> model {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}",

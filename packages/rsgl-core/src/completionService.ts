@@ -3,6 +3,7 @@ import {
   type RsglCompletionCandidate
 } from "./completionData";
 import type { RsglSymbol } from "./semantic";
+import { formatTemplateOutputMetadata } from "./templateOutput";
 
 export type RsglCompletionItemKind =
   | RsglCompletionCandidate["kind"]
@@ -53,7 +54,7 @@ function symbolCompletionItem(symbol: RsglSymbol): RsglCompletionItem {
 }
 
 function symbolCompletionKind(symbol: RsglSymbol): RsglCompletionItemKind {
-  if (symbol.kind === "template") {
+  if (symbol.kind === "template" || symbol.signature?.templateOutput) {
     return "function";
   }
   if (symbol.kind === "table") {
@@ -67,7 +68,9 @@ function symbolCompletionKind(symbol: RsglSymbol): RsglCompletionItemKind {
 
 function formatSymbolType(symbol: RsglSymbol): string {
   if (symbol.signature) {
-    return "function";
+    return symbol.signature.templateOutput
+      ? formatTemplateOutputMetadata(symbol.signature.templateOutput)
+      : "function";
   }
   return symbol.type.kind;
 }

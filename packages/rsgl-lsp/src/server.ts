@@ -28,6 +28,7 @@ import {
   documentsDependingOnPath,
   fileNameFromUri,
   handleSemanticWatchedFileBatch,
+  identifierAtOffset,
   normalizeFileName,
   projectSemanticConfigurationFingerprint,
   toValidationSettings,
@@ -127,7 +128,7 @@ connection.onHover(params => {
     return null;
   }
   const offset = document.offsetAt(params.position);
-  const word = document.getText().slice(0, offset).match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0];
+  const word = identifierAtOffset(document.getText(), offset);
   if (!word) {
     return null;
   }

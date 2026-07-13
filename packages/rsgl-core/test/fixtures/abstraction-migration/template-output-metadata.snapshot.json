@@ -3,33 +3,24 @@
     "source": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
     "templateName": "slab",
     "metadata": {
-      "outputSource": "legacyInferredBody",
-      "bodyKind": "blockstateRoot",
-      "mode": "variants",
-      "allowRootMerge": true,
-      "allowBase": false
+      "outputSource": "explicitArrow",
+      "outputDialect": "variants"
     }
   },
   {
     "source": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
     "templateName": "stairs",
     "metadata": {
-      "outputSource": "legacyInferredBody",
-      "bodyKind": "blockstateRoot",
-      "mode": "variants",
-      "allowRootMerge": true,
-      "allowBase": false
+      "outputSource": "explicitArrow",
+      "outputDialect": "variants"
     }
   },
   {
     "source": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
     "templateName": "stateSequence",
     "metadata": {
-      "outputSource": "legacyInferredBody",
-      "bodyKind": "blockstateRoot",
-      "mode": "variants",
-      "allowRootMerge": true,
-      "allowBase": false
+      "outputSource": "explicitArrow",
+      "outputDialect": "variants"
     }
   },
   {
@@ -125,10 +116,12 @@
     "templateName": "fenceMultipart",
     "metadata": {
       "outputSource": "legacyInferredBody",
-      "bodyKind": "blockstateRoot",
-      "mode": "multipart",
-      "allowRootMerge": true,
-      "allowBase": false
+      "legacyOutputDialect": {
+        "kind": "blockstateRoot",
+        "mode": "multipart",
+        "allowRootMerge": true,
+        "allowBase": false
+      }
     }
   },
   {
@@ -136,10 +129,12 @@
     "templateName": "poweredVariants",
     "metadata": {
       "outputSource": "legacyInferredBody",
-      "bodyKind": "blockstateRoot",
-      "mode": "variants",
-      "allowRootMerge": true,
-      "allowBase": false
+      "legacyOutputDialect": {
+        "kind": "blockstateRoot",
+        "mode": "variants",
+        "allowRootMerge": true,
+        "allowBase": false
+      }
     }
   },
   {

@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import { compileRsglProgram } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
+import { compileSource, compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
 
 describe("RSGL legacy item model backend", () => {
   it("lowers item mappings to legacy item model files for older targets", () => {
@@ -151,7 +151,7 @@ describe("RSGL legacy item model backend", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectNoDiagnostics(result);
+    expectOnlyLegacyTemplateWarnings(result);
     assert.deepStrictEqual(
       result.units
         .filter(unit => unit.external?.resourceKind === "model")

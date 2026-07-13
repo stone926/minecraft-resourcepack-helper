@@ -23,6 +23,26 @@ describe("RSGL TextMate grammar", () => {
     }
   });
 
+  it("highlights only the public template output dialects", () => {
+    const grammar = readGrammar();
+    const source = [
+      "template modelBody() -> model {}",
+      "template states() -> variants {}",
+      "template parts() -> multipart {}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 0);
+    expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 1);
+    expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 2);
+    expectScope(tokenization, source, "model", "storage.type.template-output.rsgl", 1);
+    expectScope(tokenization, source, "variants", "storage.type.template-output.rsgl");
+    expectScope(tokenization, source, "multipart", "storage.type.template-output.rsgl");
+    const grammarText = readGrammarText();
+    assert.doesNotMatch(grammarText, /(?<!shader_)\bfragment\b/);
+    assert.doesNotMatch(grammarText, /\bfn\b/);
+  });
+
   it("keeps valid, commented, and malformed extern patterns out of block-comment leakage", () => {
     const grammar = readGrammar();
     const externContext = repositoryPatterns(grammar, "externDeclarations").find(pattern =>

@@ -31,6 +31,9 @@ import {
   RsglSymbol,
   RsglType,
   stringType,
+  textureIdType,
+  textureRefType,
+  textureVariableType,
   typeFromAnnotation,
   unknownType
 } from "./types";
@@ -45,7 +48,7 @@ export interface RsglExpressionCheckContext {
     type: RsglType,
     node: RsglNode
   ): void;
-  /** Called for imported-template calls whose arguments are skipped at bind time. */
+  /** Called for known imports and unresolved calls that may become bare import-all bindings. */
   recordImportCallScope?(expression: CallExprNode, scope: RsglScope): void;
   /** Suppresses cascaded undefined-symbol noise for rejected syntax with its own primary diagnostic. */
   isUndefinedSymbolDiagnosticSuppressed?(name: string): boolean;
@@ -177,6 +180,14 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
 
 export function checkResourceIdExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
   if (expression.kind === "StringLiteral") {
+    if (expression.value.startsWith("#")) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.textureVariableInvalidContext",
+        `Texture variable '${expression.value}' is only valid where TextureRef is expected.`,
+        expression.range
+      ));
+      return textureVariableType;
+    }
     validateResourceLocationValue(context, expression.value, expression.range);
     return resourceIdType;
   }
@@ -188,6 +199,122 @@ export function checkResourceIdExpression(context: RsglExpressionCheckContext, e
     return resourceIdType;
   }
   return checkExpression(context, expression, scope);
+}
+
+export function checkTemplateUseExpression(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope
+): RsglType {
+  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+    const type = checkExpression(context, expression, scope);
+    context.diagnostics.push(diagnostic(
+      "rsgl.functionValueCannotUse",
+      "use requires a template call or a registered resource-body helper.",
+      expression.range
+    ));
+    return type;
+  }
+  const type = checkCallExpression(context, expression, scope, true);
+  return type;
+}
+
+export function checkExpressionForExpectedType(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  expectedType: RsglType
+): RsglType {
+  if (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable") {
+    return checkTextureRefExpression(context, expression, scope);
+  }
+  if (
+    expectedType.kind === "ResourceId"
+    || expectedType.kind === "ModelId"
+    || expectedType.kind === "TextureId"
+  ) {
+    return checkResourceIdExpression(context, expression, scope);
+  }
+  return checkExpression(context, expression, scope);
+}
+
+export function checkTextureRefExpression(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope
+): RsglType {
+  if (expression.kind === "StringLiteral") {
+    validateTextureRefExpressionSyntax(context, expression);
+    return expression.value.startsWith("#") ? textureVariableType : textureIdType;
+  }
+  if (expression.kind === "TemplateStringExpr") {
+    checkExpression(context, expression, scope);
+    return textureRefType;
+  }
+  if (expression.kind === "ResourceLocationExpr") {
+    checkResourceIdExpression(context, expression, scope);
+    return textureIdType;
+  }
+  if (expression.kind === "ConditionalExpr") {
+    checkExpression(context, expression.condition, scope);
+    return mergeTextureRefBranchTypes([
+      checkTextureRefExpression(context, expression.whenTrue, scope),
+      checkTextureRefExpression(context, expression.whenFalse, scope)
+    ]);
+  }
+  if (expression.kind === "MatchExpr") {
+    checkExpression(context, expression.expression, scope);
+    const armTypes = expression.arms.map(arm => {
+      arm.patterns
+        .filter(pattern => !isWildcardPattern(pattern))
+        .forEach(pattern => checkExpression(context, pattern, scope));
+      return checkTextureRefExpression(context, arm.value, scope);
+    });
+    checkMatchExhaustiveness(expression, scope, context.diagnostics);
+    return mergeTextureRefBranchTypes(armTypes);
+  }
+  return checkExpression(context, expression, scope);
+}
+
+/** Preserves incompatible result branches instead of widening them to Any. */
+function mergeTextureRefBranchTypes(types: readonly RsglType[]): RsglType {
+  const options: RsglType[] = [];
+  const seen = new Set<string>();
+  for (const type of types) {
+    const candidates = type.kind === "Union" ? type.options ?? [] : [type];
+    for (const candidate of candidates) {
+      const key = formatType(candidate);
+      if (!seen.has(key)) {
+        seen.add(key);
+        options.push(candidate);
+      }
+    }
+  }
+  if (options.length === 0) {
+    return unknownType;
+  }
+  return options.length === 1 ? options[0] : { kind: "Union", options };
+}
+
+/** Runs only the syntax checks that depend on a value being used as TextureRef. */
+export function validateTextureRefExpressionSyntax(
+  context: Pick<RsglExpressionCheckContext, "diagnostics">,
+  expression: ExprNode
+): void {
+  if (expression.kind !== "StringLiteral") {
+    return;
+  }
+  if (expression.value.startsWith("#")) {
+    if (!/^#[A-Za-z0-9_.\-/]+$/.test(expression.value)) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.invalidTextureVariable",
+        `Invalid texture variable '${expression.value}'.`,
+        expression.range
+      ));
+    }
+    return;
+  }
+  validateResourceLocationValue(context, expression.value, expression.range);
 }
 
 export function checkEquipmentLayerListExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): void {
@@ -213,8 +340,8 @@ export function checkStringEnumLikeExpression(context: RsglExpressionCheckContex
 }
 
 export function checkLocalLetDecl(context: RsglExpressionCheckContext, statement: LetDeclNode, scope: RsglScope): void {
-  const actualType = checkExpression(context, statement.value, scope);
   const expectedType = typeFromAnnotation(statement.typeAnnotation);
+  const actualType = checkExpressionForExpectedType(context, statement.value, scope, expectedType);
   checkAssignable(context, expectedType, actualType, statement.value);
   const declaredType = statement.typeAnnotation ? expectedType : actualType;
   context.defineIdentifier(scope, statement.name, "variable", declaredType, statement);
@@ -263,7 +390,12 @@ function checkStateKeyValueExpression(context: RsglExpressionCheckContext, expre
   return checkExpression(context, expression, scope);
 }
 
-function checkCallExpression(context: RsglExpressionCheckContext, expression: CallExprNode, scope: RsglScope): RsglType {
+function checkCallExpression(
+  context: RsglExpressionCheckContext,
+  expression: CallExprNode,
+  scope: RsglScope,
+  allowTemplate = false
+): RsglType {
   const { callee, args } = expression;
   const calleeType = checkExpression(context, callee, scope);
 
@@ -283,8 +415,10 @@ function checkCallExpression(context: RsglExpressionCheckContext, expression: Ca
     return checkSeqCallExpression(context, expression, scope);
   }
   if (!symbol?.signature) {
-    if (symbol?.kind === "import") {
+    if (!symbol || symbol.kind === "import") {
       context.recordImportCallScope?.(expression, scope);
+    }
+    if (symbol?.kind === "import") {
       return anyType;
     }
     for (const arg of args) {
@@ -302,6 +436,14 @@ function checkCallExpression(context: RsglExpressionCheckContext, expression: Ca
       ));
     }
     return symbol?.type ?? unknownType;
+  }
+
+  if (symbol.signature.templateOutput && !allowTemplate) {
+    context.diagnostics.push(diagnostic(
+      "rsgl.templateRequiresUse",
+      `Template '${callee.name.text}' must be invoked with use.`,
+      expression.range
+    ));
   }
 
   checkArguments(context, symbol.signature, args, scope, expression.range);
@@ -407,9 +549,7 @@ function checkArguments(context: RsglExpressionCheckContext, signature: RsglSign
 
   for (const { parameter, arg } of binding.assignments) {
     checkedArgs.add(arg);
-    const actualType = parameter.type.kind === "ResourceId" || parameter.type.kind === "ModelId" || parameter.type.kind === "TextureId"
-      ? checkResourceIdExpression(context, arg.value, scope)
-      : checkExpression(context, arg.value, scope);
+    const actualType = checkExpressionForExpectedType(context, arg.value, scope, parameter.type);
     checkAssignable(context, parameter.type, actualType.kind === "Unknown" ? anyType : actualType, arg.value);
   }
   for (const arg of binding.unmatchedArgs) {
@@ -419,7 +559,11 @@ function checkArguments(context: RsglExpressionCheckContext, signature: RsglSign
   }
 }
 
-function validateResourceLocationValue(context: RsglExpressionCheckContext, value: string, range: TextRange): void {
+function validateResourceLocationValue(
+  context: Pick<RsglExpressionCheckContext, "diagnostics">,
+  value: string,
+  range: TextRange
+): void {
   const parsed = parseMinecraftResourceId(value);
   if (value.includes(":") && !parsed.isValid) {
     context.diagnostics.push(diagnostic("rsgl.invalidResourceLocation", `Invalid resource location '${value}'.`, range));

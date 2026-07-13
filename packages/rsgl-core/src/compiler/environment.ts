@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 import {
   LetDeclNode,
   TableDeclNode,
@@ -22,6 +23,12 @@ import {
   type ResolvedRsglCompileConfiguration
 } from "./compileConfiguration";
 import { normalizeJsonValue } from "./compilerHelpers";
+import type {
+  ResolvedTemplateOutputConflict,
+  ResolvedTemplateOutputMetadata
+} from "../templateOutput";
+import { templateOutputMetadataFingerprint } from "../templateOutput";
+import { inferResolvedTemplateOutputMetadata } from "../semantic/templateOutputResolution";
 
 export interface RsglModuleCompileEnvironment {
   fileName: string;
@@ -38,6 +45,12 @@ export interface RsglModuleCompileEnvironment {
 export interface RsglTemplateDefinition {
   name: string;
   node: TemplateDeclNode;
+  outputMetadata: ResolvedTemplateOutputMetadata;
+  /** Frozen semantic/link failure that must stop dispatch before evaluation. */
+  outputConflict?: ResolvedTemplateOutputConflict;
+  /** Immutable-input fingerprint used only for dispatch-plan caching. */
+  definitionFingerprint: string;
+  definitionTargetFingerprint: string;
   fileName: string;
   namespace: string;
   values: Map<string, EvaluationValue>;
@@ -53,6 +66,8 @@ export interface RsglCompileEnvironmentOptions {
   baseDocumentLoader?: BaseDocumentLoader;
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
+  /** Stable effective project configuration used by definition/dispatch fingerprints. */
+  definitionFingerprintContext?: string;
 }
 
 export function createStandaloneCompileEnvironment(
@@ -63,12 +78,17 @@ export function createStandaloneCompileEnvironment(
   const environment = createEmptyCompileEnvironment(model, namespace);
   evaluateLocalEnvironmentValues(environment, model, options);
   collectLocalEnvironmentTemplates(environment, model);
+  refreshEnvironmentTemplateFingerprints(
+    environment,
+    options.definitionFingerprintContext ?? JSON.stringify({ namespace })
+  );
   return environment;
 }
 
 export function createProgramCompileEnvironments(
   program: RsglProgram,
-  configuration: Pick<ResolvedRsglCompileConfiguration, "namespaceOverride" | "defaultNamespace">,
+  configuration: Pick<ResolvedRsglCompileConfiguration, "namespaceOverride" | "defaultNamespace">
+    & Partial<Pick<ResolvedRsglCompileConfiguration, "semanticFingerprint">>,
   options: RsglCompileEnvironmentOptions = {}
 ): Map<string, RsglModuleCompileEnvironment> {
   const modelsByFile = new Map(program.models.map(model => [normalizeFileName(model.fileName), model]));
@@ -98,6 +118,12 @@ export function createProgramCompileEnvironments(
   for (const model of program.models) {
     createEnvironment(model);
   }
+  const fingerprintContext = "semanticFingerprint" in configuration
+    ? String(configuration.semanticFingerprint)
+    : JSON.stringify(configuration);
+  for (const environment of environments.values()) {
+    refreshEnvironmentTemplateFingerprints(environment, fingerprintContext);
+  }
   return environments;
 }
 
@@ -107,9 +133,39 @@ export function createTemplateDefinition(
   fileName: string,
   namespace: string,
   values: Map<string, EvaluationValue>,
-  templates: Map<string, RsglTemplateDefinition>
+  templates: Map<string, RsglTemplateDefinition>,
+  outputMetadata: ResolvedTemplateOutputMetadata = inferResolvedTemplateOutputMetadata(node),
+  definitionTargetFingerprint = "unresolved-target",
+  definitionFingerprintContext = "unresolved-target",
+  outputConflict?: ResolvedTemplateOutputConflict
 ): RsglTemplateDefinition {
-  return { name, node, fileName, namespace, values, templates };
+  const definition: RsglTemplateDefinition = {
+    name,
+    node,
+    outputMetadata,
+    outputConflict,
+    definitionFingerprint: "",
+    definitionTargetFingerprint,
+    fileName,
+    namespace,
+    values,
+    templates
+  };
+  refreshTemplateDefinitionFingerprint(definition, definitionFingerprintContext);
+  return definition;
+}
+
+export function refreshTemplateDefinitionFingerprint(
+  definition: RsglTemplateDefinition,
+  targetContext: string
+): string {
+  definition.definitionFingerprint = calculateTemplateDefinitionFingerprint(
+    definition,
+    targetContext,
+    new Map(),
+    new Set()
+  );
+  return definition.definitionFingerprint;
 }
 
 export function mapToExternalValues(values: Map<string, EvaluationValue>): RsglExternalValueDefinition[] {
@@ -257,13 +313,20 @@ function collectLocalEnvironmentTemplates(
 ): void {
   for (const statement of model.module.statements) {
     if (statement.kind === "TemplateDecl" && statement.name) {
+      const signature = model.scope.symbols.get(statement.name.text)?.signature;
+      const outputMetadata = signature?.templateOutput
+        ?? inferResolvedTemplateOutputMetadata(statement);
       environment.allTemplates.set(statement.name.text, createTemplateDefinition(
         statement.name.text,
         statement,
         model.fileName,
         environment.namespace,
         environment.allValues,
-        environment.allTemplates
+        environment.allTemplates,
+        outputMetadata,
+        JSON.stringify(model.module.statements.filter(statement => statement.kind === "TargetDecl")),
+        "unresolved-target",
+        signature?.templateOutputConflict
       ));
     }
   }
@@ -298,6 +361,111 @@ function copyTemplates(target: Map<string, RsglTemplateDefinition>, source: Map<
       target.set(name, template);
     }
   }
+}
+
+function refreshEnvironmentTemplateFingerprints(
+  environment: RsglModuleCompileEnvironment,
+  targetContext: string
+): void {
+  const definitions = new Set([
+    ...environment.allTemplates.values(),
+    ...environment.exportedTemplates.values()
+  ]);
+  for (const definition of definitions) {
+    refreshTemplateDefinitionFingerprint(definition, targetContext);
+  }
+}
+
+function calculateTemplateDefinitionFingerprint(
+  definition: RsglTemplateDefinition,
+  targetContext: string,
+  memo: Map<string, string>,
+  active: Set<string>
+): string {
+  const sourceIdentity = templateDefinitionSourceIdentity(definition);
+  const cached = memo.get(sourceIdentity);
+  if (cached) {
+    return cached;
+  }
+  if (active.has(sourceIdentity)) {
+    return `recursive:${sourceIdentity}`;
+  }
+
+  active.add(sourceIdentity);
+  const callees = collectTemplateCalleeNames(definition.node)
+    .map(name => {
+      const callee = definition.templates.get(name);
+      return callee
+        ? {
+            name,
+            sourceIdentity: templateDefinitionSourceIdentity(callee),
+            fingerprint: calculateTemplateDefinitionFingerprint(callee, targetContext, memo, active)
+          }
+        : { name, unresolved: true };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, "en"));
+  const fingerprint = createHash("sha256")
+    .update(JSON.stringify({
+      sourceIdentity,
+      namespace: definition.namespace,
+      targetContext,
+      definitionTarget: definition.definitionTargetFingerprint,
+      outputMetadata: templateOutputMetadataFingerprint(definition.outputMetadata),
+      outputConflict: definition.outputConflict?.evidence ?? null,
+      outputSyntax: definition.node.outputSyntax,
+      declaredOutputDialect: definition.node.declaredOutputDialect,
+      parameters: definition.node.parameters,
+      body: definition.node.body,
+      callees
+    }))
+    .digest("hex");
+  active.delete(sourceIdentity);
+  memo.set(sourceIdentity, fingerprint);
+  return fingerprint;
+}
+
+function templateDefinitionSourceIdentity(definition: RsglTemplateDefinition): string {
+  return JSON.stringify([
+    normalizeFileName(definition.fileName),
+    definition.node.name?.text ?? definition.name,
+    definition.node.range.start,
+    definition.node.range.end
+  ]);
+}
+
+function collectTemplateCalleeNames(node: TemplateDeclNode): string[] {
+  const names = new Set<string>();
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== "object" || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.kind === "UseDecl") {
+      const expression = record.expression as {
+        kind?: string;
+        callee?: { kind?: string; name?: { text?: string } };
+      } | undefined;
+      if (expression?.kind === "CallExpr" && expression.callee?.kind === "IdentifierExpr") {
+        const name = expression.callee.name?.text;
+        if (name) {
+          names.add(name);
+        }
+      }
+    }
+    for (const [key, child] of Object.entries(record)) {
+      if (key !== "range" && key !== "fullRange") {
+        visit(child);
+      }
+    }
+  };
+  visit(node.body);
+  return [...names];
 }
 
 function normalizeFileName(fileName: string): string {

@@ -1,4 +1,5 @@
 import { ResourceStatementParserHost } from "./statementParserHost";
+import { multipartBodyParseContext, variantsBodyParseContext } from "./bodyParseContext";
 import {
   MultipartBodyNode,
   MultipartEntryNode,
@@ -13,6 +14,7 @@ import {
 export function parseVariantBody(host: ResourceStatementParserHost): VariantBodyNode {
   const start = host.current();
   if (!host.matchText("{")) {
+    host.addDiagnosticAtCurrent("rsgl.expectedVariantBody", "Expected variants body.");
     return {
       kind: "VariantBody",
       statements: [],
@@ -38,6 +40,7 @@ export function parseVariantBody(host: ResourceStatementParserHost): VariantBody
 export function parseMultipartBody(host: ResourceStatementParserHost): MultipartBodyNode {
   const start = host.current();
   if (!host.matchText("{")) {
+    host.addDiagnosticAtCurrent("rsgl.expectedMultipartBody", "Expected multipart body.");
     return {
       kind: "MultipartBody",
       statements: [],
@@ -105,9 +108,9 @@ function parseVariantSectionStatement(host: ResourceStatementParserHost): Varian
     case "use":
       return host.parseUseDecl();
     case "for":
-      return host.parseForStmt("variants");
+      return host.parseForStmt(variantsBodyParseContext);
     case "if":
-      return host.parseIfStmt("variants");
+      return host.parseIfStmt(variantsBodyParseContext);
     default:
       return parseVariantEntry(host);
   }
@@ -120,9 +123,9 @@ function parseMultipartSectionStatement(host: ResourceStatementParserHost): Mult
     case "use":
       return host.parseUseDecl();
     case "for":
-      return host.parseForStmt("multipart");
+      return host.parseForStmt(multipartBodyParseContext);
     case "if":
-      return host.parseIfStmt("multipart");
+      return host.parseIfStmt(multipartBodyParseContext);
     default:
       return parseMultipartEntry(host);
   }

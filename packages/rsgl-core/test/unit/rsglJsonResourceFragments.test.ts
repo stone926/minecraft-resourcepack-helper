@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import { compileRsglModule, stableJsonStringify, type JsonValue } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
 
 describe("RSGL JSON resources and generic fragments", () => {
   it("emits arbitrary pack-relative JSON resources", () => {
@@ -104,7 +104,7 @@ describe("RSGL JSON resources and generic fragments", () => {
       }
     });
 
-    expectNoDiagnostics(result);
+    expectOnlyLegacyTemplateWarnings(result);
     assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/atlases/blocks.json",
       "assets/minecraft/equipment/iron.json",

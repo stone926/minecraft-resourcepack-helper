@@ -47,6 +47,14 @@ export function expectDiagnosticCodes(result: RsglCompileResult, codes: readonly
   assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), codes);
 }
 
+/** Asserts that a compatibility fixture emits only per-use implicit-template warnings. */
+export function expectOnlyLegacyTemplateWarnings(result: RsglCompileResult, count = 1): void {
+  assert.deepStrictEqual(
+    result.diagnostics.map(diagnostic => [diagnostic.code, diagnostic.severity]),
+    Array.from({ length: count }, () => ["rsgl.implicitTemplateOutputDialect", "warning"])
+  );
+}
+
 /** Returns compiler-generated resources without manifest-only external dependency markers. */
 export function generatedResourceUnits(result: RsglCompileResult): ResourceUnit[] {
   return result.units.filter(unit => !unit.external);

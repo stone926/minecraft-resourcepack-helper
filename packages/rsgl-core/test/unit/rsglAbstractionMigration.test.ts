@@ -9,8 +9,10 @@ import {
   type RsglCompileSnapshot
 } from "../../src/compiler";
 import { walkRsglModule } from "../../src/parser/astTraversal";
-import type { RsglModule, TemplateDeclNode } from "../../src/parser";
+import type { RsglModule } from "../../src/parser";
 import { rsglResourceKindDescriptors } from "../../src/resourceKinds";
+import { bindRsglProgram } from "../../src/semantic";
+import type { ResolvedTemplateOutputMetadata } from "../../src/templateOutput";
 import { createAllRsglStdlibSourceFiles } from "../../src/stdlib";
 
 interface DiagnosticExpectation {
@@ -18,16 +20,7 @@ interface DiagnosticExpectation {
   severity: "error" | "warning" | "info";
 }
 
-type FrozenTemplateOutputMetadata =
-  | { outputSource: "noArrowResources"; outputDialect: "resources" }
-  | {
-      outputSource: "legacyInferredBody";
-      bodyKind: "blockstateRoot";
-      mode: "variants" | "multipart";
-      allowRootMerge: true;
-      allowBase: false;
-    }
-  | { outputSource: "legacyContextualAdapter"; bodyNodeKind: "ResourceBody" };
+type FrozenTemplateOutputMetadata = ResolvedTemplateOutputMetadata;
 
 interface MigrationCaseManifest {
   version: number;
@@ -37,7 +30,7 @@ interface MigrationCaseManifest {
   };
   resourceBodyConsumerSnapshot: string;
   templateOutputMetadataSnapshot: string;
-  templateOutputMetadataSnapshotKind: "preSemanticStructuralBaseline";
+  templateOutputMetadataSnapshotKind: "resolvedSemanticMetadata";
   templateOutputMetadataReplacementGate: string;
   compatibilityRemovalGate: {
     exactLegacyDefinitionsMustReach: number;
@@ -46,6 +39,7 @@ interface MigrationCaseManifest {
   };
   legacyTemplateCensus: {
     noArrowResourceDefinitions: number;
+    explicitPublicDefinitions: number;
     exactLegacyDefinitions: number;
     contextualAdapterDefinitions: number;
     exactLegacyUses: number;
@@ -190,7 +184,12 @@ describe("RSGL abstraction migration baseline", () => {
 
     assert.deepStrictEqual(actual, expected);
     assert.strictEqual(actual.resources.length, 12);
-    assert.deepStrictEqual(actual.diagnostics, []);
+    assert.deepStrictEqual(actual.diagnostics.map(item => item.code), [
+      "rsgl.implicitTemplateOutputDialect",
+      "rsgl.implicitTemplateOutputDialect",
+      "rsgl.implicitTemplateOutputDialect",
+      "rsgl.implicitTemplateOutputDialect"
+    ]);
 
     const stairs = actual.resources.find(resource => resource.outputPath.endsWith("stdlib_stairs.json"));
     const slab = actual.resources.find(resource => resource.outputPath.endsWith("stdlib_slab.json"));
@@ -216,12 +215,12 @@ describe("RSGL abstraction migration baseline", () => {
   });
 
   it("freezes every tracked legacy template definition and compatibility use", () => {
-    assert.strictEqual(manifest.templateOutputMetadataSnapshotKind, "preSemanticStructuralBaseline");
+    assert.strictEqual(manifest.templateOutputMetadataSnapshotKind, "resolvedSemanticMetadata");
     assert.ok(manifest.templateOutputMetadataReplacementGate.includes("resolvedTemplateOutputMetadata"));
     const legacyRoot = path.join(fixtureRoot, manifest.legacyProject.root);
     const projectSourceFiles = loadRsglSourceFilesFromDirectory(legacyRoot)
       .filter(sourceFile => isFileWithinRoot(legacyRoot, sourceFile.fileName));
-    const sourceFiles = [...projectSourceFiles, ...createAllRsglStdlibSourceFiles()];
+    const program = bindRsglProgram([...projectSourceFiles, ...createAllRsglStdlibSourceFiles()]);
     const definitions: Array<{
       source: string;
       templateName: string;
@@ -229,16 +228,19 @@ describe("RSGL abstraction migration baseline", () => {
     }> = [];
     const useCounts = new Map<string, number>();
 
-    for (const sourceFile of sourceFiles) {
-      walkRsglModule(sourceFile.module, {
+    for (const model of program.models) {
+      for (const symbol of model.symbols) {
+        if (symbol.kind === "template" && symbol.node?.kind === "TemplateDecl" && symbol.signature?.templateOutput) {
+          definitions.push({
+            source: portableSourceFile(fixtureRoot, model.fileName),
+            templateName: symbol.name,
+            metadata: symbol.signature.templateOutput
+          });
+        }
+      }
+      walkRsglModule(model.module, {
         enterStatement(statement) {
-          if (statement.kind === "TemplateDecl" && statement.name) {
-            definitions.push({
-              source: portableSourceFile(fixtureRoot, sourceFile.fileName),
-              templateName: statement.name.text,
-              metadata: inferFrozenTemplateOutput(statement)
-            });
-          } else if (
+          if (
             statement.kind === "UseDecl"
             && statement.expression.kind === "CallExpr"
             && statement.expression.callee.kind === "IdentifierExpr"
@@ -290,9 +292,22 @@ describe("RSGL abstraction migration baseline", () => {
     const contextualTemplateNames = definitions
       .filter(definition => definition.metadata.outputSource === "legacyContextualAdapter")
       .map(definition => definition.templateName);
+    assert.strictEqual(
+      definitions.filter(definition =>
+        definition.source.startsWith("<rsgl-stdlib>/")
+        && (
+          definition.metadata.outputSource === "legacyInferredBody"
+          || definition.metadata.outputSource === "legacyContextualAdapter"
+        )
+      ).length,
+      0,
+      "Bundled stdlib must not retain implicit template output definitions."
+    );
     assert.deepStrictEqual({
       noArrowResourceDefinitions: definitions
         .filter(definition => definition.metadata.outputSource === "noArrowResources").length,
+      explicitPublicDefinitions: definitions
+        .filter(definition => definition.metadata.outputSource === "explicitArrow").length,
       exactLegacyDefinitions: exactTemplateNames.length,
       contextualAdapterDefinitions: contextualTemplateNames.length,
       exactLegacyUses: exactTemplateNames.reduce((total, name) => total + (useCounts.get(name) ?? 0), 0),
@@ -337,31 +352,6 @@ function diagnosticProjection(result: ReturnType<typeof compileRsglFile>): Diagn
     );
 }
 
-function inferFrozenTemplateOutput(template: TemplateDeclNode): FrozenTemplateOutputMetadata {
-  if (template.body.kind === "Block") {
-    return { outputSource: "noArrowResources", outputDialect: "resources" };
-  }
-  if (template.body.statements.some(statement => statement.kind === "VariantsSection")) {
-    return {
-      outputSource: "legacyInferredBody",
-      bodyKind: "blockstateRoot",
-      mode: "variants",
-      allowRootMerge: true,
-      allowBase: false
-    };
-  }
-  if (template.body.statements.some(statement => statement.kind === "MultipartSection")) {
-    return {
-      outputSource: "legacyInferredBody",
-      bodyKind: "blockstateRoot",
-      mode: "multipart",
-      allowRootMerge: true,
-      allowBase: false
-    };
-  }
-  return { outputSource: "legacyContextualAdapter", bodyNodeKind: "ResourceBody" };
-}
-
 function expectedDefinitionMetadata(
   output: NonNullable<MigrationCaseManifest["cases"][number]["legacy"]["expectedTemplateOutput"]>
 ): FrozenTemplateOutputMetadata {
@@ -371,10 +361,12 @@ function expectedDefinitionMetadata(
   if (output.outputSource === "legacyInferredBody") {
     return {
       outputSource: output.outputSource,
-      bodyKind: output.bodyKind as "blockstateRoot",
-      mode: output.mode as "variants" | "multipart",
-      allowRootMerge: output.allowRootMerge as true,
-      allowBase: output.allowBase as false
+      legacyOutputDialect: {
+        kind: output.bodyKind as "blockstateRoot",
+        mode: output.mode as "variants" | "multipart",
+        allowRootMerge: output.allowRootMerge as true,
+        allowBase: output.allowBase as false
+      }
     };
   }
   return { outputSource: output.outputSource, bodyNodeKind: output.bodyNodeKind as "ResourceBody" };

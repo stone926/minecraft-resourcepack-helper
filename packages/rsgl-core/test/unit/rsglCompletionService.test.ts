@@ -52,4 +52,24 @@ describe("RSGL completion service", () => {
     assert.strictEqual(matches.length, 1);
     assert.strictEqual(matches[0].kind, "snippet");
   });
+
+  it("presents linked template output metadata for local and imported symbols", () => {
+    const explicit: RsglSymbol = {
+      name: "states",
+      kind: "import",
+      type: { kind: "Function" },
+      signature: {
+        parameters: [],
+        returnType: { kind: "Json" },
+        templateOutput: { outputSource: "explicitArrow", outputDialect: "variants" }
+      }
+    };
+    const item = getRsglCompletionItems("", 0, [explicit]).find(candidate => candidate.label === "states");
+
+    assert.deepStrictEqual(item, {
+      label: "states",
+      kind: "function",
+      detail: "import: template -> variants"
+    });
+  });
 });

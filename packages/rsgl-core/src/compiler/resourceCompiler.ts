@@ -3,7 +3,8 @@ import { ResourceDeclNode } from "../parser";
 import {
   getRsglResourceKindDescriptor,
   isRsglGenericJsonResourceKind,
-  RsglResourceCompileHandler
+  RsglResourceCompileHandler,
+  type RsglResourceKind
 } from "../resourceKinds";
 import {
   compactEquipmentSourceMappings,
@@ -37,7 +38,7 @@ export interface ResourceDeclarationCompilerHost {
   compileBody: (
     body: ResourceDeclNode["body"],
     context: RsglCompileContext,
-    fragmentKind?: "model" | "item"
+    resourceKind: Exclude<RsglResourceKind, "blockstate" | "pack">
   ) => { content: Record<string, JsonValue>; mappings: RsglMapping[] };
   compileJsonBody: (
     body: ResourceDeclNode["body"],
@@ -46,7 +47,8 @@ export interface ResourceDeclarationCompilerHost {
   ) => { content: Record<string, JsonValue>; mappings: RsglMapping[] };
   compileRawBody: (
     body: ResourceDeclNode["body"],
-    context: RsglCompileContext
+    context: RsglCompileContext,
+    resourceKind: "text" | "copy"
   ) => { content: Record<string, JsonValue>; mappings: ResourceBodyMapping[] };
   onError: (code: string, message: string, range: SourceRange) => void;
   sourceMap: (
@@ -208,7 +210,7 @@ function compileArbitraryJsonResource(
     host.onError("rsgl.compileInvalidJsonTarget", `Invalid JSON resource target '${targetValue}'.`, statement.id.range);
     return null;
   }
-  const body = host.compileBody(statement.body, context);
+  const body = host.compileBody(statement.body, context, "json");
   return {
     id: target.id,
     kind: "json",
@@ -231,7 +233,7 @@ function compileLang(
     return null;
   }
   const outputPath = resourceOutputPath("lang", id);
-  const body = host.compileBody(statement.body, context);
+  const body = host.compileBody(statement.body, context, "lang");
   return {
     id,
     kind: "lang",
@@ -254,7 +256,7 @@ function compileSounds(
   }
   const id = { namespace, path: "sounds" };
   const outputPath = `assets/${namespace}/sounds.json`;
-  const body = host.compileBody(statement.body, context);
+  const body = host.compileBody(statement.body, context, "sounds");
   return {
     id,
     kind: "sounds",
@@ -280,7 +282,7 @@ function compileTextResource(
     host.onError("rsgl.compileInvalidTextTarget", `Invalid text resource target '${targetValue}'.`, statement.id.range);
     return null;
   }
-  const body = host.compileRawBody(statement.body, context);
+  const body = host.compileRawBody(statement.body, context, "text");
   for (const key of Object.keys(body.content)) {
     if (key !== "content") {
       host.onError("rsgl.invalidTextResourceField", `Text resources do not support field '${key}'.`, statement.body.range);
@@ -319,7 +321,7 @@ function compileCopyResource(
     host.onError("rsgl.compileInvalidCopyTarget", `Invalid copy resource target '${targetValue}'.`, statement.id.range);
     return null;
   }
-  const body = host.compileRawBody(statement.body, context);
+  const body = host.compileRawBody(statement.body, context, "copy");
   for (const key of Object.keys(body.content)) {
     if (key !== "from") {
       host.onError("rsgl.invalidCopyResourceField", `Copy resources do not support field '${key}'.`, statement.body.range);

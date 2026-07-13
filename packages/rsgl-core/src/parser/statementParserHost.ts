@@ -14,6 +14,7 @@ import {
   TextRange,
   UseDeclNode
 } from "./types";
+import type { BodyParseContext, ResourceBodyParseContext } from "./bodyParseContext";
 
 export interface StatementExpressionOptions {
   stopTexts?: readonly string[];
@@ -43,9 +44,9 @@ export interface ResourceStatementParserHost {
   parseBlockstateEntryValue(): ExprNode;
   parseLetDecl(): LetDeclNode;
   parseUseDecl(): UseDeclNode;
-  parseForStmt(mode: "resource" | "variants" | "multipart"): ForStmtNode;
-  parseIfStmt(mode: "resource" | "variants" | "multipart"): IfStmtNode;
-  parseResourceBody(owner: string, allowBase?: boolean): ResourceBodyNode;
+  parseForStmt(context: BodyParseContext): ForStmtNode;
+  parseIfStmt(context: BodyParseContext): IfStmtNode;
+  parseResourceBody(context: ResourceBodyParseContext): ResourceBodyNode;
   emptyResourceBodyAt(token: RsglToken, message: string): ResourceBodyNode;
   missingExprAt(token: RsglToken | RsglNode): ExprNode;
   syntheticIdentifier(token: RsglToken | RsglNode, text: string): IdentifierNode;

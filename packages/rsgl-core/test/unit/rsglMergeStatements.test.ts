@@ -63,7 +63,7 @@ describe("RSGL merge statements", () => {
 
   it("deep-merges template, if, and for fragments with array mapping offsets", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template addTexture(key: String, texture: TextureId) {",
+      "template addTexture(key: String, texture: TextureId) -> model {",
       "  merge { textures: { [key]: texture } }",
       "}",
       "model block generated {",

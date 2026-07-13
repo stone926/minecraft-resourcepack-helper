@@ -10,6 +10,9 @@
       "include": "#moduleLinkDeclarations"
     },
     {
+      "include": "#templateOutputHeaders"
+    },
+    {
       "include": "#strings"
     },
     {
@@ -41,6 +44,21 @@
     }
   ],
   "repository": {
+    "templateOutputHeaders": {
+      "patterns": [
+        {
+          "match": "(->)[ \\t]*(model|variants|multipart)\\b(?=[ \\t]*\\{)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.template-output.rsgl"
+            },
+            "2": {
+              "name": "storage.type.template-output.rsgl"
+            }
+          }
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {

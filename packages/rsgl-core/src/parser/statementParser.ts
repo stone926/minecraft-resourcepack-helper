@@ -8,12 +8,14 @@ import {
 import { tryParseItemModelStatement } from "./itemModelStatementParser";
 import { tryParseModelGeometryStatement } from "./modelGeometryStatementParser";
 import { tryParsePackAtlasEquipmentStatement } from "./packAtlasEquipmentStatementParser";
-import { getRsglResourceKindDescriptor } from "../resourceKinds";
 import { tokenRange } from "./parserContext";
+import { resourceBodySectionKeywords } from "./statementKeywords";
 import {
-  BodyMode,
-  resourceBodySectionKeywords
-} from "./statementKeywords";
+  type BodyParseContext,
+  nestedControlFlowBodyParseContext,
+  sectionResourceBodyParseContext,
+  type ResourceBodyParseContext
+} from "./bodyParseContext";
 import { ResourceStatementParserHost } from "./statementParserHost";
 import {
   BlockNode,
@@ -69,7 +71,7 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  protected parseForStmt(mode: BodyMode): ForStmtNode {
+  protected parseForStmt(context: BodyParseContext): ForStmtNode {
     const start = this.advance();
     const dimensions: ForDimensionNode[] = [];
     dimensions.push(this.parseForDimension(start));
@@ -77,7 +79,7 @@ export abstract class StatementParser extends ExpressionParser {
       this.advance();
       dimensions.push(this.parseForDimension(this.current()));
     }
-    const body = this.parseBodyForMode(mode, "for");
+    const body = this.parseBodyForContext(nestedControlFlowBodyParseContext(context));
     const first = dimensions[0];
     return {
       kind: "ForStmt",
@@ -128,12 +130,13 @@ export abstract class StatementParser extends ExpressionParser {
     return false;
   }
 
-  protected parseIfStmt(mode: BodyMode): IfStmtNode {
+  protected parseIfStmt(context: BodyParseContext): IfStmtNode {
     const start = this.advance();
     const condition = this.parseExpression({ stopTexts: ["{"] });
-    const thenBody = this.parseBodyForMode(mode, "if");
+    const nestedContext = nestedControlFlowBodyParseContext(context);
+    const thenBody = this.parseBodyForContext(nestedContext);
     const elseBody = this.matchText("else")
-      ? this.parseBodyForMode(mode, "else")
+      ? this.parseBodyForContext(nestedContext)
       : undefined;
     return {
       kind: "IfStmt",
@@ -165,20 +168,20 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parseBodyForMode(mode: BodyMode, owner: string): BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode {
-    if (mode === "resource") {
-      return this.parseResourceBody(owner);
+  protected parseBodyForContext(context: BodyParseContext): BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode {
+    if (context.kind === "resource") {
+      return this.parseResourceBody(context);
     }
-    if (mode === "variants") {
+    if (context.kind === "variants") {
       return parseVariantBody(this.resourceStatementParserHost());
     }
-    if (mode === "multipart") {
+    if (context.kind === "multipart") {
       return parseMultipartBody(this.resourceStatementParserHost());
     }
     return this.parseBlock();
   }
 
-  protected parseResourceBody(owner: string, allowBase = false): ResourceBodyNode {
+  protected parseResourceBody(context: ResourceBodyParseContext): ResourceBodyNode {
     const start = this.current();
     if (!this.matchText("{")) {
       return this.emptyResourceBodyAt(start, "Expected resource body.");
@@ -187,25 +190,21 @@ export abstract class StatementParser extends ExpressionParser {
     const statements: ResourceStatementNode[] = [];
     const seenBlockstateSections = new Set<string>();
     let seenBase = false;
-    const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
     while (!this.isAtEnd() && this.current().text !== "}") {
       const mark = this.mark();
       let statement: ResourceStatementNode;
-      if (this.current().text === "variants") {
-        if (bodyDialect === "blockstate") {
-          this.noteBlockstateSection(seenBlockstateSections, "variants");
-        }
+      const blockstateSection = context.dialect === "blockstate" && !this.isExplicitPropertyStart();
+      if (blockstateSection && this.current().text === "variants") {
+        this.noteBlockstateSection(seenBlockstateSections, "variants");
         statement = parseVariantsSection(this.resourceStatementParserHost());
-      } else if (this.current().text === "multipart") {
-        if (bodyDialect === "blockstate") {
-          this.noteBlockstateSection(seenBlockstateSections, "multipart");
-        }
+      } else if (blockstateSection && this.current().text === "multipart") {
+        this.noteBlockstateSection(seenBlockstateSections, "multipart");
         statement = parseMultipartSection(this.resourceStatementParserHost());
       } else {
-        statement = this.parseResourceStatement(owner);
+        statement = this.parseResourceStatement(context);
       }
       if (statement.kind === "BaseStmt") {
-        if (!allowBase) {
+        if (!context.allowBase) {
           this.addDiagnostic(
             "rsgl.baseInvalidContext",
             "base is only valid in a concrete resource declaration body.",
@@ -239,26 +238,26 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parseResourceStatement(owner: string): ResourceStatementNode {
+  private parseResourceStatement(context: ResourceBodyParseContext): ResourceStatementNode {
     const token = this.current();
-    const bodyDialect = getRsglResourceKindDescriptor(owner)?.ast.bodyDialect;
-    if (token.text === "extern") {
-      return this.parseExternVarStmt(bodyDialect === "model");
+    const explicitPropertyStart = this.isExplicitPropertyStart();
+    if (!explicitPropertyStart && token.text === "extern") {
+      return this.parseExternVarStmt(context.allowModelExternVariables);
     }
-    if (token.text === "let") {
+    if (!explicitPropertyStart && token.text === "let") {
       return this.parseLetDecl();
     }
-    if (token.text === "use") {
+    if (!explicitPropertyStart && token.text === "use") {
       return this.parseUseDecl();
     }
-    if (token.text === "for") {
-      return this.parseForStmt("resource");
+    if (!explicitPropertyStart && token.text === "for") {
+      return this.parseForStmt(context);
     }
-    if (token.text === "if") {
-      return this.parseIfStmt("resource");
+    if (!explicitPropertyStart && token.text === "if") {
+      return this.parseIfStmt(context);
     }
     if (
-      !this.isExplicitPropertyStart()
+      !explicitPropertyStart
       && (
         token.text === "raw_json"
         || token.text === "raw_json_file"
@@ -268,30 +267,34 @@ export abstract class StatementParser extends ExpressionParser {
     ) {
       return this.parseRemovedMergeStmt();
     }
-    if (token.text === "base" && !this.isExplicitPropertyStart()) {
+    if (token.text === "base" && !explicitPropertyStart) {
       return this.parseBaseStmt();
     }
-    if (token.text === "merge" && !this.isExplicitPropertyStart()) {
+    if (token.text === "merge" && !explicitPropertyStart) {
       return this.parseMergeStmt();
     }
 
     const host = this.resourceStatementParserHost();
-    const packAtlasEquipmentStatement = tryParsePackAtlasEquipmentStatement(host, owner, bodyDialect);
+    const packAtlasEquipmentStatement = explicitPropertyStart
+      ? undefined
+      : tryParsePackAtlasEquipmentStatement(host, context.owner, context.dialect);
     if (packAtlasEquipmentStatement) {
       return packAtlasEquipmentStatement;
     }
-    const modelGeometryStatement = tryParseModelGeometryStatement(host, bodyDialect);
+    const modelGeometryStatement = tryParseModelGeometryStatement(host, context.dialect);
     if (modelGeometryStatement) {
       return modelGeometryStatement;
     }
-    if (bodyDialect === "mcmeta" && token.text === "texture") {
+    if (!explicitPropertyStart && context.dialect === "mcmeta" && token.text === "texture") {
       return this.parseSectionStmt();
     }
-    const itemModelStatement = tryParseItemModelStatement(host);
+    const itemModelStatement = !explicitPropertyStart && context.dialect === "item"
+      ? tryParseItemModelStatement(host)
+      : undefined;
     if (itemModelStatement) {
       return itemModelStatement;
     }
-    if (resourceBodySectionKeywords.has(token.text)) {
+    if (!explicitPropertyStart && resourceBodySectionKeywords.has(token.text)) {
       return this.parseSectionStmt();
     }
     return this.parsePropertyStmt();
@@ -391,7 +394,7 @@ export abstract class StatementParser extends ExpressionParser {
     let body: ResourceBodyNode | undefined;
     let value: ExprNode | undefined;
     if (this.current().text === "{") {
-      body = this.parseResourceBody(name.text);
+      body = this.parseResourceBody(sectionResourceBodyParseContext(name.text));
     } else {
       value = this.parseExpression({ stopTexts: [] });
     }
@@ -533,9 +536,9 @@ export abstract class StatementParser extends ExpressionParser {
       parseBlockstateEntryValue: () => this.parseBlockstateEntryValue(),
       parseLetDecl: () => this.parseLetDecl(),
       parseUseDecl: () => this.parseUseDecl(),
-      parseForStmt: mode => this.parseForStmt(mode),
-      parseIfStmt: mode => this.parseIfStmt(mode),
-      parseResourceBody: (owner, allowBase) => this.parseResourceBody(owner, allowBase),
+      parseForStmt: context => this.parseForStmt(context),
+      parseIfStmt: context => this.parseIfStmt(context),
+      parseResourceBody: context => this.parseResourceBody(context),
       emptyResourceBodyAt: (token, message) => this.emptyResourceBodyAt(token, message),
       missingExprAt: token => this.missingExprAt(token),
       syntheticIdentifier: (token, text) => this.syntheticIdentifier(token, text),

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import {
   CompletionItemKind,
   DiagnosticSeverity,
+  InsertTextFormat,
   type CompletionItem,
   type Diagnostic,
   type Position
@@ -329,6 +330,9 @@ export function toCompletionItem(candidate: RsglCompletionItem): CompletionItem 
   };
   if (candidate.insertText) {
     item.insertText = candidate.insertText;
+    if (candidate.kind === "snippet") {
+      item.insertTextFormat = InsertTextFormat.Snippet;
+    }
   }
   return item;
 }
@@ -356,6 +360,33 @@ function toCompletionKind(kind: RsglCompletionItem["kind"]): CompletionItemKind 
     return CompletionItemKind.Variable;
   }
   return CompletionItemKind.Keyword;
+}
+
+/** Returns the complete identifier touched by an LSP offset, including when the offset is inside it. */
+export function identifierAtOffset(text: string, offset: number): string | null {
+  const clamped = Math.max(0, Math.min(text.length, offset));
+  let anchor = clamped;
+  if (!isIdentifierCharacter(text[anchor]) && anchor > 0 && isIdentifierCharacter(text[anchor - 1])) {
+    anchor--;
+  }
+  if (!isIdentifierCharacter(text[anchor])) {
+    return null;
+  }
+
+  let start = anchor;
+  let end = anchor + 1;
+  while (start > 0 && isIdentifierCharacter(text[start - 1])) {
+    start--;
+  }
+  while (end < text.length && isIdentifierCharacter(text[end])) {
+    end++;
+  }
+  const identifier = text.slice(start, end);
+  return /^[A-Za-z_]/.test(identifier) ? identifier : null;
+}
+
+function isIdentifierCharacter(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_]/.test(char);
 }
 
 /** Converts an RSGL diagnostic to an LSP diagnostic, clamping offsets to the document. */

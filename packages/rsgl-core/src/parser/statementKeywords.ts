@@ -37,5 +37,3 @@ export const binaryPrecedence = new Map<string, number>([
   ["%", 6],
   ["..", 7]
 ]);
-
-export type BodyMode = "topLevel" | "resource" | "variants" | "multipart";

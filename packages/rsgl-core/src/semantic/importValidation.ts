@@ -5,6 +5,7 @@ import { diagnostic } from "./diagnostics";
 import {
   checkExpression,
   checkResourceIdExpression,
+  checkTextureRefExpression,
   RsglExpressionCheckContext
 } from "./expressionChecker";
 import { formatType, isAssignable } from "./typeRelations";
@@ -19,6 +20,8 @@ import {
   RsglSemanticModel,
   RsglSignature,
   RsglType,
+  textureIdType,
+  textureVariableType,
   unknownType
 } from "./types";
 
@@ -32,10 +35,8 @@ class ResolvedImportCallValidator {
   /** Lambda arguments already fully checked against the resolved signature; the structural walk skips their bodies. */
   private readonly checkedLambdaArgs = new Set<ExprNode>();
   private readonly checkContext: RsglExpressionCheckContext;
-  private readonly hasImportAllImports: boolean;
 
   public constructor(private readonly model: RsglSemanticModel) {
-    this.hasImportAllImports = model.imports.some(record => record.importAll);
     this.checkContext = {
       diagnostics: this.diagnostics,
       references: model.references,
@@ -87,10 +88,10 @@ class ResolvedImportCallValidator {
       }
       return;
     }
-    if (!callScope && !this.hasImportAllImports) {
-      // The binder records a scope for every call it resolved to an import.
-      // No record without an import-all form means the name was shadowed by a
-      // local binding at the call site — the import's signature does not apply.
+    if (!callScope) {
+      // The binder records named imports and unresolved calls that may later
+      // become bare import-all bindings. No record means a lexical binding
+      // shadowed the module-level import at this call site.
       return;
     }
     this.validateImportedArguments(symbol.signature, args, expression.range, callScope);
@@ -122,14 +123,22 @@ class ResolvedImportCallValidator {
    * so captures and local id variables resolve after import linking. Limiting
    * the latter to identifiers and simple interpolations avoids pre-checking an
    * opaque imported call whose descendants the structural walk must validate.
-   * Without a recorded scope (import-all form) the binder already checked the
-   * arguments at bind time; other argument kinds keep structural inference.
+   * Other argument kinds keep structural inference.
    */
   private inferArgumentType(expression: ExprNode, expectedType: RsglType, callScope: RsglScope | undefined): RsglType {
+    if (
+      (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable")
+      && isContextualTextureRefExpression(expression)
+    ) {
+      return checkTextureRefExpression(this.checkContext, expression, callScope ?? this.model.scope);
+    }
     if (expression.kind === "LambdaExpr" && callScope) {
       return this.checkLambdaArgument(expression, callScope) ?? inferImportedArgumentType(expression, expectedType);
     }
     if (callScope && isResourceIdLike(expectedType) && isSimpleResourceReference(expression)) {
+      if (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable") {
+        return checkTextureRefExpression(this.checkContext, expression, callScope);
+      }
       return checkResourceIdExpression(this.checkContext, expression, callScope);
     }
     return inferImportedArgumentType(expression, expectedType);
@@ -151,7 +160,19 @@ function isSimpleResourceReference(expression: ExprNode): boolean {
   );
 }
 
+function isContextualTextureRefExpression(expression: ExprNode): boolean {
+  return expression.kind === "StringLiteral"
+    || expression.kind === "ConditionalExpr"
+    || expression.kind === "MatchExpr";
+}
+
 function inferImportedArgumentType(expression: ExprNode, expectedType: RsglType): RsglType {
+  if (
+    (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable")
+    && expression.kind === "StringLiteral"
+  ) {
+    return expression.value.startsWith("#") ? textureVariableType : textureIdType;
+  }
   if (
     isResourceIdLike(expectedType)
     && (expression.kind === "IdentifierExpr" || expression.kind === "StringLiteral" || expression.kind === "TemplateStringExpr")
@@ -172,5 +193,9 @@ function inferImportedArgumentType(expression: ExprNode, expectedType: RsglType)
 }
 
 function isResourceIdLike(type: RsglType): boolean {
-  return type.kind === "ResourceId" || type.kind === "ModelId" || type.kind === "TextureId";
+  return type.kind === "ResourceId"
+    || type.kind === "ModelId"
+    || type.kind === "TextureId"
+    || type.kind === "TextureVariable"
+    || type.kind === "TextureRef";
 }

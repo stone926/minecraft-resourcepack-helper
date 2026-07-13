@@ -66,7 +66,7 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace library",
           "let defaultTexture = block/stone",
-          "template cubeFields(texture: TextureId = defaultTexture) {",
+          "template cubeFields(texture: TextureId = defaultTexture) -> model {",
           "  textures { all: texture }",
           "}",
           "export { cubeFields }"
@@ -108,10 +108,10 @@ describe("RSGL import semantics", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "template modelFields(parentModel: ModelId) {",
+          "template modelFields(parentModel: ModelId) -> model {",
           "  parent parentModel",
           "}",
-          "template textureLayer(key: String, texture: TextureId) {",
+          "template textureLayer(key: String, texture: TextureId) -> model {",
           "  merge { [key]: texture }",
           "}",
           "export { modelFields, textureLayer }"
@@ -167,10 +167,10 @@ describe("RSGL import semantics", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "template textureLayer(texture: TextureId) {",
+          "template textureLayer(texture: TextureId) -> model {",
           "  textures { layer0: texture }",
           "}",
-          "template generatedLayers(textures: Json = [block/stone, block/dirt]) {",
+          "template generatedLayers(textures: Json = [block/stone, block/dirt]) -> model {",
           "  parent minecraft:item/generated",
           "  for texture in textures {",
           "    use textureLayer(texture)",
@@ -221,17 +221,13 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace library",
           "let defaultModel = block/lamp",
-          "template lampFacing(modelId: ModelId = defaultModel) {",
-          "  variants {",
+          "template lampFacing(modelId: ModelId = defaultModel) -> variants {",
           "    { facing: north } -> { model: modelId }",
-          "  }",
           "}",
-          "template connectedPane(side: ModelId = block/pane_side) {",
-          "  multipart {",
+          "template connectedPane(side: ModelId = block/pane_side) -> multipart {",
           "    for facing in [north, east] {",
           "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
           "    }",
-          "  }",
           "}",
           "export { connectedPane, lampFacing }"
         ].join("\n"))
@@ -302,10 +298,8 @@ describe("RSGL import semantics", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "namespace library",
-          "template keyed(property: String, modelId: ModelId) {",
-          "  variants {",
+          "template keyed(property: String, modelId: ModelId) -> variants {",
           "    [property=full] -> @modelId",
-          "  }",
           "}",
           "export { keyed }"
         ].join("\n"))
@@ -365,7 +359,7 @@ describe("RSGL import semantics", () => {
     const units = generatedResourceUnits(result);
     expectNoDiagnostics(result);
     assert.deepStrictEqual(units.map(unit => unit.outputPath), [
-      "assets/custom/models/block/oak_planks.json"
+      "assets/caller/models/block/oak_planks.json"
     ]);
     assert.deepStrictEqual(units[0].content, {
       parent: "custom:block/cube_all",

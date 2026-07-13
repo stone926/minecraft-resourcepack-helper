@@ -169,20 +169,16 @@ describe("RSGL blockstate bodies and fragments", () => {
 
   it("expands user blockstate section templates", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template lampFacing(modelId: ModelId, states: Json = HORIZONTAL) {",
-      "  variants {",
+      "template lampFacing(modelId: ModelId, states: Json = HORIZONTAL) -> variants {",
       "    for facing in states {",
       "      { facing: facing } -> { model: modelId, y: yaw(facing) }",
       "    }",
-      "  }",
       "}",
-      "template connectedPane(post: ModelId, side: ModelId) {",
-      "  multipart {",
+      "template connectedPane(post: ModelId, side: ModelId) -> multipart {",
       "    apply { model: post }",
       "    for facing in [north, east] {",
       "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
       "    }",
-      "  }",
       "}",
       "blockstate lamp {",
       "  variants {",
@@ -217,11 +213,9 @@ describe("RSGL blockstate bodies and fragments", () => {
   it("supports parameterized blockstate templates used by real-world packs", () => {
     const result = compileSourceWithUncheckedExterns([
       "let suffix = \"lamp\"",
-      "template keyed(property: String, prop1: String, modelId: ModelId) {",
-      "  variants {",
+      "template keyed(property: String, prop1: String, modelId: ModelId) -> variants {",
       "    [property=full prop1=false] ->",
       "      @modelId y=yaw(east)",
-      "  }",
       "}",
       "blockstate example {",
       "  use keyed(\"tilt\", \"powered\", `minecraft:block/${suffix}`)",
@@ -298,7 +292,8 @@ describe("RSGL blockstate bodies and fragments", () => {
       "}"
     ]);
 
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"));
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateOutputDialectMismatch"));
+    assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"), false);
   });
 
   it("reports removed randomVariants function calls", () => {

@@ -312,7 +312,10 @@ export interface BlockNode extends RsglNode {
   statements: TopLevelStatementNode[];
 }
 
-export type TemplateBodyNode = BlockNode | ResourceBodyNode;
+export type TemplateOutputDialect = "resources" | "model" | "variants" | "multipart";
+export type DeclaredTemplateOutputDialect = Exclude<TemplateOutputDialect, "resources">;
+
+export type TemplateBodyNode = BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
 
 export interface ResourceBodyNode extends RsglNode {
   kind: "ResourceBody";
@@ -412,6 +415,10 @@ export interface TemplateDeclNode extends StatementNodeBase {
   kind: "TemplateDecl";
   name: IdentifierNode | null;
   parameters: ParameterNode[];
+  /** Public output dialect written after an explicit arrow. */
+  declaredOutputDialect?: DeclaredTemplateOutputDialect;
+  /** Parser-level syntax fact; semantic output metadata is stored on the symbol. */
+  outputSyntax: "noArrow" | "explicitArrow";
   body: TemplateBodyNode;
 }
 

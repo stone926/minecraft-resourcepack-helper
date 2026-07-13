@@ -47,4 +47,22 @@ describe("RSGL formatter core", () => {
       "}"
     ].join("\n"));
   });
+
+  it("keeps explicit template output headers and nested bodies idempotent", () => {
+    const source = [
+      "template hopperBowl(",
+      "tex: TextureRef",
+      ") -> model {",
+      "for y in [0, 8] {",
+      "if true {",
+      "element from [0, y, 0] to [16, y + 4, 16] { face up texture tex }",
+      "}",
+      "}",
+      "}"
+    ].join("\n");
+    const formatted = formatRsglText(source);
+
+    assert.ok(formatted.includes(") -> model {"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
 });

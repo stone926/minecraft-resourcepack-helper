@@ -13,11 +13,16 @@ import { compileAtlasSpecialStatement } from "./atlasSugar";
 import { BlockstateCompileOptions, compileBlockstateResource } from "./blockstateCompiler";
 import { bindRsglProgram } from "../semantic";
 import {
+  classifyResolvedTemplateOutputMetadata,
+  type ResolvedTemplateOutputClassification
+} from "../semantic/templateOutputResolution";
+import {
   RsglExternalValueDefinition,
   RsglModuleCompileEnvironment,
   RsglTemplateDefinition,
   createProgramCompileEnvironments,
-  createTemplateDefinition
+  createTemplateDefinition,
+  refreshTemplateDefinitionFingerprint
 } from "./environment";
 import { compileEquipmentLayerStatement } from "./equipmentSugar";
 import {
@@ -27,7 +32,8 @@ import {
   RawGlobLoader,
   bindEvaluationValue,
   evaluateExpression,
-  expressionEvaluationOrigin
+  expressionEvaluationOrigin,
+  hasEvaluationValueBinding
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import {
@@ -59,6 +65,7 @@ import { compileResourceDeclaration, ResourceDeclarationCompilerHost } from "./r
 import { RsglTargetPackFormat } from "./target";
 import {
   createTemplateExpansion,
+  resolveTemplateDefinition,
   templateResourceBody,
   RsglCompileContext,
   TemplateExpansion,
@@ -71,6 +78,12 @@ import {
   normalizeJsonValue
 } from "./compilerHelpers";
 import { uniqueValues } from "../../../mc-assets/src";
+import {
+  isRsglGenericJsonResourceKind,
+  type RsglResourceKind
+} from "../resourceKinds";
+import type { RsglTemplateCallerContext, TemplateOutputDispatch } from "../templateOutput";
+import { RsglTemplateDispatchCache } from "./templateDispatchCache";
 
 export {
   compileRsglDirectory,
@@ -109,33 +122,70 @@ export class RsglCompiler {
   private readonly dependencies: CompileDependency[] = [];
   private readonly dependencyKeys = new Set<string>();
   private readonly templates = new Map<string, RsglTemplateDefinition>();
+  private readonly templateDispatchCache = new RsglTemplateDispatchCache();
   private readonly overlayEntries: RsglOverlayEntry[] = [];
+  private readonly moduleValueBindingNames: ReadonlySet<string>;
 
   public constructor(
     private readonly module: RsglModule,
     private readonly options: RsglCompilerOptions
-  ) { }
+  ) {
+    this.moduleValueBindingNames = new Set(module.statements.flatMap(statement =>
+      (statement.kind === "LetDecl" || statement.kind === "TableDecl") && statement.name
+        ? [statement.name.text]
+        : []
+    ));
+  }
 
   public compile(): RsglCompileResult {
+    const localDefinitions: RsglTemplateDefinition[] = [];
+    const definitionTargetFingerprint = JSON.stringify(
+      this.module.statements.filter(statement => statement.kind === "TargetDecl")
+    );
+    const definitionFingerprintContext = JSON.stringify({
+      namespace: this.options.namespace,
+      targetPackFormat: this.options.targetPackFormat
+    });
     for (const template of this.options.stdlibTemplates ?? createRsglStdlibPreludeTemplates(this.options.stdlibRoot)) {
-      this.templates.set(template.name, template);
+      this.registerTemplate(template);
     }
     for (const template of this.options.externalTemplates ?? []) {
-      this.templates.set(template.name, template);
+      this.registerTemplate(template);
     }
     for (const statement of this.module.statements) {
       if (statement.kind === "TemplateDecl" && statement.name) {
-        const template = this.options.environment?.allTemplates.get(statement.name.text)
+        const environmentTemplate = this.options.environment?.allTemplates.get(statement.name.text);
+        const classification = environmentTemplate
+          ? undefined
+          : classifyResolvedTemplateOutputMetadata(
+            statement,
+            name => templateDefinitionClassification(this.templates.get(name))
+              ?? (this.moduleValueBindingNames.has(name) ? null : undefined)
+          );
+        const template = environmentTemplate
           ?? createTemplateDefinition(
             statement.name.text,
             statement,
             this.options.fileName,
             this.options.namespace,
             new Map(),
-            this.templates
+            this.templates,
+            classification!.metadata,
+            definitionTargetFingerprint,
+            definitionFingerprintContext,
+            classification!.kind === "conflict" ? classification!.conflict : undefined
           );
-        this.templates.set(statement.name.text, template);
+        if (!environmentTemplate) {
+          localDefinitions.push(template);
+        }
+        this.registerTemplate(template);
       }
+    }
+    // Local fallback definitions share the completed local map. Refresh only
+    // those compiler-owned definitions so forward callees enter the closure
+    // without rewriting imported/shared definitions for the caller namespace.
+    for (const definition of localDefinitions) {
+      refreshTemplateDefinitionFingerprint(definition, definitionFingerprintContext);
     }
     const context = this.createRootContext();
     for (const statement of this.module.statements) {
@@ -224,11 +274,11 @@ export class RsglCompiler {
         compileBlockstateResource(statement, context, this.blockstateCompileOptions()),
       compilePack: (statement, context) =>
         compilePackResource(statement, context, this.packOverlayOptions()),
-      compileBody: (body, context, fragmentKind) =>
+      compileBody: (body, context, resourceKind) =>
         this.resourceBodyToObjectWithMappings(
           body,
           context,
-          { ...this.resourceBodyFragmentOptions(fragmentKind), allowBase: true }
+          { ...this.resourceBodyFragmentOptions(resourceKind), allowBase: true }
         ),
       compileJsonBody: (body, context, fragmentKind) =>
         this.resourceBodyToObjectWithMappings(
@@ -236,11 +286,11 @@ export class RsglCompiler {
           context,
           { ...this.jsonResourceFragmentOptions(fragmentKind), allowBase: true }
         ),
-      compileRawBody: (body, context) =>
+      compileRawBody: (body, context, resourceKind) =>
         this.resourceBodyToObjectWithRawMappings(
           body,
           context,
-          { ...this.resourceBodyFragmentOptions(), allowBase: true }
+          { ...this.resourceBodyFragmentOptions(resourceKind), allowBase: true }
         ),
       onError: (code, message, range) => this.error(code, message, range),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
@@ -271,36 +321,52 @@ export class RsglCompiler {
   }
 
   private compileUseDecl(expression: ExprNode, context: RsglCompileContext): void {
-    const expansion = this.createTemplateExpansion(expression, context);
-    if (expansion) {
-      if (expansion.definition.node.body.kind !== "Block") {
-        this.error(
-          "rsgl.invalidTemplateContext",
-          `Template '${expansion.definition.name}' expands resource body content and must be used inside a resource declaration.`,
-          expression.range
-        );
-        return;
-      }
-      this.compileBlock(expansion.definition.node.body, expansion.context);
+    const definition = this.findTemplateDefinition(expression, context);
+    if (!definition) {
+      this.error("rsgl.unknownTemplate", "Top-level use must expand a known template.", expression.range);
       return;
     }
-    this.error("rsgl.unknownTemplate", "Top-level use must expand a known template.", expression.range);
+    const dispatch = this.resolveTemplateDispatch(definition, { kind: "resources" });
+    if (!dispatch.compatible) {
+      return;
+    }
+    const expansion = this.createTemplateExpansion(expression, context, definition);
+    if (!expansion) {
+      return;
+    }
+    if (definition.node.body.kind !== "Block") {
+      this.error(
+        "rsgl.invalidTemplateContext",
+        `Template '${definition.name}' expands resource body content and must be used inside a resource declaration.`,
+        expression.range
+      );
+      return;
+    }
+    this.compileBlock(definition.node.body, expansion.context);
   }
 
   private compileResourceBodyFragment(
     useStatement: Extract<ResourceStatementNode, { kind: "UseDecl" }>,
     context: RsglCompileContext,
-    kind?: "model" | "item" | JsonResourceFragmentKind
+    kind: Exclude<RsglResourceKind, "blockstate">
   ): ResourceBodyFragment | undefined {
-    const expansion = this.createTemplateExpansion(useStatement.expression, context);
-    if (!expansion) {
+    const definition = this.findTemplateDefinition(useStatement.expression, context);
+    if (!definition) {
       return undefined;
     }
-    const resourceBody = templateResourceBody(expansion.definition.node.body);
+    const dispatch = this.resolveTemplateDispatch(definition, { kind: "resourceBody", resourceKind: kind });
+    if (!dispatch.compatible) {
+      return { content: {}, mappings: [] };
+    }
+    const expansion = this.createTemplateExpansion(useStatement.expression, context, definition);
+    if (!expansion) {
+      return { content: {}, mappings: [] };
+    }
+    const resourceBody = templateResourceBody(definition.node.body);
     if (!resourceBody) {
       this.error(
         "rsgl.invalidTemplateContext",
-        `Template '${expansion.definition.name}' emits resources and cannot be used inside a resource body.`,
+        `Template '${definition.name}' emits resources and cannot be used inside a resource body.`,
         useStatement.range
       );
       return undefined;
@@ -318,9 +384,17 @@ export class RsglCompiler {
 
   private createTemplateExpansion(
     expression: ExprNode,
-    context: RsglCompileContext
+    context: RsglCompileContext,
+    definition?: RsglTemplateDefinition
   ): TemplateExpansion | undefined {
-    return createTemplateExpansion(expression, context, this.templateExpansionOptions());
+    return createTemplateExpansion(expression, context, this.templateExpansionOptions(), definition);
+  }
+
+  private findTemplateDefinition(
+    expression: ExprNode,
+    context: RsglCompileContext
+  ): RsglTemplateDefinition | undefined {
+    return resolveTemplateDefinition(expression, context, this.templates);
   }
 
   private compileForStmt(statement: ForStmtNode, context: RsglCompileContext): void {
@@ -334,17 +408,33 @@ export class RsglCompiler {
   }
 
   private compileBlock(body: BlockNode, context: RsglCompileContext): void {
+    const blockContext: RsglCompileContext = {
+      ...context,
+      valueBindingNames: new Set([
+        ...(context.valueBindingNames ?? []),
+        ...body.statements.flatMap(statement =>
+          (statement.kind === "LetDecl" || statement.kind === "TableDecl") && statement.name
+            ? [statement.name.text]
+            : []
+        )
+      ])
+    };
     for (const statement of body.statements) {
-      this.compileStatement(statement, context);
+      this.compileStatement(statement, blockContext);
     }
   }
 
   private createRootContext(): RsglCompileContext {
+    const externalValues = this.options.externalValues ?? [];
     return {
       namespace: this.options.namespace,
       variables: new Map<string, EvaluationValue>(
-        (this.options.externalValues ?? []).map(item => [item.name, item.value])
+        externalValues.map(item => [item.name, item.value])
       ),
+      valueBindingNames: new Set([
+        ...this.moduleValueBindingNames,
+        ...externalValues.map(item => item.name)
+      ]),
       sourceFile: this.options.fileName,
       mappingReason: "direct",
       expansionStack: [],
@@ -434,14 +524,27 @@ export class RsglCompiler {
     };
   }
 
-  private resourceBodyFragmentOptions(kind?: "model" | "item" | JsonResourceFragmentKind): ResourceBodyCompileOptions {
+  private resourceBodyFragmentOptions(kind: Exclude<RsglResourceKind, "blockstate">): ResourceBodyCompileOptions {
     return {
       onUseFragment: (useStatement, fragmentContext) => {
         const templateFragment = this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
         if (templateFragment) {
           return templateFragment;
         }
-        if (kind && kind !== "model" && kind !== "item") {
+        const calleeName = useStatement.expression.kind === "CallExpr"
+          && useStatement.expression.callee.kind === "IdentifierExpr"
+          ? useStatement.expression.callee.name.text
+          : undefined;
+        if (
+          calleeName
+          && (
+            this.moduleValueBindingNames.has(calleeName)
+            || hasEvaluationValueBinding(fragmentContext, calleeName)
+          )
+        ) {
+          return undefined;
+        }
+        if (kind !== "model" && kind !== "item" && isJsonResourceFragmentKind(kind)) {
           return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
             onError: (code, message, range) => this.error(code, message, range)
           });
@@ -463,7 +566,7 @@ export class RsglCompiler {
 
   private packResourceBodyOptions(): ResourceBodyCompileOptions {
     return {
-      ...this.resourceBodyFragmentOptions(),
+      ...this.resourceBodyFragmentOptions("pack"),
       onSpecialStatement: (statement, context) => compilePackSpecialStatement(statement, context, this.packOverlayOptions())
     };
   }
@@ -508,7 +611,11 @@ export class RsglCompiler {
 
   private blockstateCompileOptions(): BlockstateCompileOptions {
     return {
-      expandUse: (statement, context) => this.createTemplateExpansion(statement.expression, context),
+      resolveTemplate: (statement, context) => this.findTemplateDefinition(statement.expression, context),
+      expandUse: (statement, context, definition) =>
+        this.createTemplateExpansion(statement.expression, context, definition),
+      resolveTemplateDispatch: (definition, callerContext) =>
+        this.resolveTemplateDispatch(definition, callerContext),
       onError: (code, message, range) => this.error(code, message, range),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
       sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context)
@@ -527,6 +634,17 @@ export class RsglCompiler {
         this.diagnostics.push(diagnostic);
       }
     };
+  }
+
+  private registerTemplate(definition: RsglTemplateDefinition): void {
+    this.templates.set(definition.name, definition);
+  }
+
+  private resolveTemplateDispatch(
+    definition: RsglTemplateDefinition,
+    callerContext: RsglTemplateCallerContext
+  ): TemplateOutputDispatch {
+    return this.templateDispatchCache.resolve(definition, callerContext);
   }
 
   private recordDependency(dependency: CompileDependency): void {
@@ -596,6 +714,21 @@ export class RsglCompiler {
   }
 }
 
+function templateDefinitionClassification(
+  definition: RsglTemplateDefinition | undefined
+): ResolvedTemplateOutputClassification | undefined {
+  if (!definition) {
+    return undefined;
+  }
+  return definition.outputConflict
+    ? {
+        kind: "conflict",
+        metadata: definition.outputMetadata,
+        conflict: definition.outputConflict
+      }
+    : { kind: "resolved", metadata: definition.outputMetadata };
+}
+
 function compileDependencyKey(dependency: CompileDependency): string {
   const normalizedPath = normalizeDependencyIdentity(dependency.path);
   const normalizedSource = normalizeDependencyIdentity(dependency.sourceFile);
@@ -611,6 +744,12 @@ function compileDependencyKey(dependency: CompileDependency): string {
 function normalizeDependencyIdentity(fileName: string): string {
   const normalized = normalizeFileName(fileName);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function isJsonResourceFragmentKind(
+  kind: Exclude<RsglResourceKind, "blockstate">
+): kind is JsonResourceFragmentKind {
+  return kind === "mcmeta" || isRsglGenericJsonResourceKind(kind);
 }
 
 export function createRsglStdlibPreludeTemplates(

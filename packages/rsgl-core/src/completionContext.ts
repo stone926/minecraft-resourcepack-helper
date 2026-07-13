@@ -2,6 +2,7 @@ import {
   lexRsgl,
   parseRsgl,
   type BlockNode,
+  type DeclaredTemplateOutputDialect,
   type TopLevelStatementNode
 } from "./parser";
 
@@ -9,6 +10,7 @@ export interface RsglCompletionContext {
   insideBlock: boolean;
   allowBase: boolean;
   allowExternVar: boolean;
+  templateOutputDialect?: DeclaredTemplateOutputDialect;
 }
 
 /** Computes the small amount of syntax context needed by static completions. */
@@ -20,14 +22,42 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
     return { insideBlock: false, allowBase: false, allowExternVar: false };
   }
 
-  const resourceKind = concreteResourceKindAt(prefix, openBrace);
+  // Completion is a hot LSP path. Parse the prefix once, then derive each
+  // independent context facet from the same immutable syntax tree.
+  const module = parseRsgl(prefix);
+  const resourceKind = resourceKindInStatementsAt(module.statements, openBrace);
+  const templateOutputDialect = templateDialectInStatementsAt(module.statements, openBrace);
 
   return {
     insideBlock: true,
     allowBase: isBaseOperandPosition(prefix.slice(openBrace + 1))
       && resourceKind !== null,
-    allowExternVar: resourceKind === "model"
+    allowExternVar: resourceKind === "model",
+    templateOutputDialect
   };
+}
+
+function templateDialectInStatementsAt(
+  statements: readonly TopLevelStatementNode[],
+  openBrace: number
+): DeclaredTemplateOutputDialect | undefined {
+  for (const statement of statements) {
+    if (
+      statement.kind === "TemplateDecl"
+      && statement.body.range.start <= openBrace
+      && openBrace <= statement.body.range.end
+      && statement.outputSyntax === "explicitArrow"
+    ) {
+      return statement.declaredOutputDialect;
+    }
+    for (const block of childTopLevelBlocks(statement)) {
+      const dialect = templateDialectInStatementsAt(block.statements, openBrace);
+      if (dialect) {
+        return dialect;
+      }
+    }
+  }
+  return undefined;
 }
 
 function isBaseOperandPosition(bodyPrefix: string): boolean {
@@ -46,11 +76,6 @@ function isBaseOperandPosition(bodyPrefix: string): boolean {
   return !continuedOnAnotherLine
     && (token.kind === "identifier" || token.kind === "keyword")
     && "base".startsWith(token.text);
-}
-
-function concreteResourceKindAt(prefix: string, openBrace: number): string | null {
-  const module = parseRsgl(prefix);
-  return resourceKindInStatementsAt(module.statements, openBrace);
 }
 
 function resourceKindInStatementsAt(

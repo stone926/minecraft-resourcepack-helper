@@ -16,13 +16,20 @@ import { finiteStringDomain } from "./domainChecks";
 import {
   checkAssignable,
   checkExpression,
+  checkExpressionForExpectedType,
   checkObject,
   checkResourceIdExpression,
+  checkTemplateUseExpression,
   RsglExpressionCheckContext,
   validateResourceLocationLike
 } from "./expressionChecker";
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
 import { createChildScope, createScope, lookup } from "./scopes";
+import {
+  inferResolvedTemplateOutputMetadata,
+  resolveProgramTemplateOutputMetadata,
+  templateOutputClassificationForSymbol
+} from "./templateOutputResolution";
 import {
   anyType,
   identifierName,
@@ -36,13 +43,27 @@ import {
   RsglScope,
   RsglSemanticModel,
   RsglSymbol,
+  RsglContextualTextureSinkRecord,
+  RsglTemplateUseRecord,
   RsglType,
   typeFromAnnotation
 } from "./types";
+import type { RsglTemplateCallerContext } from "../templateOutput";
+import { templateOutputBodyCallerContext } from "../templateOutput";
+import { validateResolvedTemplateUses } from "./templateUseValidation";
+import { validateTemplateRecursion } from "./templateRecursion";
 
 export function bindRsglModule(module: RsglModule, options: RsglBindOptions = {}): RsglSemanticModel {
   const binder = new RsglBinder(module, options.fileName ?? "<anonymous>", options);
-  return binder.bind();
+  const model = binder.bind();
+  model.diagnostics.push(...validateResolvedTemplateUses(model));
+  model.diagnostics.push(...validateTemplateRecursion([model]).map(item => ({
+    code: item.code,
+    message: item.message,
+    range: item.range,
+    severity: item.severity
+  })));
+  return model;
 }
 
 class RsglBinder implements RsglExpressionCheckContext {
@@ -53,9 +74,12 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly exports: RsglExportRecord[] = [];
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly importCallScopes = new Map<ExprNode, RsglScope>();
+  private readonly templateUses: RsglTemplateUseRecord[] = [];
+  private readonly contextualTextureSinks: RsglContextualTextureSinkRecord[] = [];
   private readonly unsupportedDefaultImportNames = new Set<string>();
   private readonly globalScope: RsglScope = createScope("global");
   private readonly bodyChecker: RsglResourceBodyChecker;
+  private enclosingTemplate: TemplateDeclNode | undefined;
   private namespace: string | undefined;
 
   public constructor(
@@ -63,9 +87,25 @@ class RsglBinder implements RsglExpressionCheckContext {
     private readonly fileName: string,
     private readonly options: RsglBindOptions
   ) {
-    this.bodyChecker = new RsglResourceBodyChecker(this, (statements, scope) => {
+    this.bodyChecker = new RsglResourceBodyChecker(this, (statements, scope, callerContext) => {
       this.predeclareTopLevel(statements, scope);
-      this.checkTopLevelStatements(statements, scope);
+      this.checkTopLevelStatements(statements, scope, callerContext);
+    }, (expression, scope, callerContext) => {
+      this.templateUses.push({
+        expression,
+        scope: snapshotScope(scope),
+        callerContext,
+        enclosingTemplate: this.enclosingTemplate
+      });
+    }, (expression, actualType, scope) => {
+      if (this.enclosingTemplate) {
+        this.contextualTextureSinks.push({
+          expression,
+          actualType,
+          scope: snapshotScope(scope),
+          enclosingTemplate: this.enclosingTemplate
+        });
+      }
     });
   }
 
@@ -76,7 +116,8 @@ class RsglBinder implements RsglExpressionCheckContext {
     }
 
     this.predeclareTopLevel(this.module.statements, this.globalScope);
-    this.checkTopLevelStatements(this.module.statements, this.globalScope);
+    this.resolveLocalTemplateOutputs();
+    this.checkTopLevelStatements(this.module.statements, this.globalScope, resourcesCallerContext);
 
     return {
       fileName: this.fileName,
@@ -89,7 +130,9 @@ class RsglBinder implements RsglExpressionCheckContext {
       outputResources: this.outputResources,
       diagnostics: this.diagnostics,
       namespace: this.namespace,
-      importCallScopes: this.importCallScopes
+      importCallScopes: this.importCallScopes,
+      templateUses: this.templateUses,
+      contextualTextureSinks: this.contextualTextureSinks
     };
   }
 
@@ -137,11 +180,15 @@ class RsglBinder implements RsglExpressionCheckContext {
     }
   }
 
-  private checkTopLevelStatements(statements: TopLevelStatementNode[], scope: RsglScope): void {
+  private checkTopLevelStatements(
+    statements: TopLevelStatementNode[],
+    scope: RsglScope,
+    callerContext?: RsglTemplateCallerContext
+  ): void {
     for (const statement of statements) {
       if (statement.kind === "LetDecl") {
-        const actualType = this.checkExpression(statement.value, scope);
         const expectedType = typeFromAnnotation(statement.typeAnnotation);
+        const actualType = checkExpressionForExpectedType(this, statement.value, scope, expectedType);
         checkAssignable(this, expectedType, actualType, statement.value);
         const name = identifierName(statement.name);
         const symbol = name ? lookup(scope, name) : undefined;
@@ -160,14 +207,20 @@ class RsglBinder implements RsglExpressionCheckContext {
       } else if (statement.kind === "ResourceDecl") {
         this.checkResourceDecl(statement, scope);
       } else if (statement.kind === "UseDecl") {
-        this.checkExpression(statement.expression, scope);
+        checkTemplateUseExpression(this, statement.expression, scope);
+        this.templateUses.push({
+          expression: statement.expression,
+          scope: snapshotScope(scope),
+          callerContext,
+          enclosingTemplate: this.enclosingTemplate
+        });
       } else if (statement.kind === "ForStmt") {
-        this.bodyChecker.checkForStatement(statement, scope);
+        this.bodyChecker.checkForStatement(statement, scope, callerContext);
       } else if (statement.kind === "IfStmt") {
         this.checkExpression(statement.condition, scope);
-        this.bodyChecker.checkBody(statement.thenBody, createChildScope(scope, "block"));
+        this.bodyChecker.checkBody(statement.thenBody, createChildScope(scope, "block"), callerContext);
         if (statement.elseBody) {
-          this.bodyChecker.checkBody(statement.elseBody, createChildScope(scope, "block"));
+          this.bodyChecker.checkBody(statement.elseBody, createChildScope(scope, "block"), callerContext);
         }
       } else if (statement.kind === "TargetDecl") {
         this.checkExpression(statement.value, scope);
@@ -176,7 +229,7 @@ class RsglBinder implements RsglExpressionCheckContext {
         if (statement.formatRange) {
           this.checkOverlayFormatExpression(statement.formatRange, scope);
         }
-        this.bodyChecker.checkBody(statement.body, createChildScope(scope, "block"));
+        this.bodyChecker.checkBody(statement.body, createChildScope(scope, "block"), resourcesCallerContext);
       }
     }
   }
@@ -184,11 +237,14 @@ class RsglBinder implements RsglExpressionCheckContext {
   private checkTemplate(statement: TemplateDeclNode, parentScope: RsglScope): void {
     const scope = createChildScope(parentScope, "template");
     this.checkCallableParameters(statement.parameters, scope);
-    if (statement.body.kind === "ResourceBody") {
-      this.bodyChecker.checkResourceBody(statement.body, scope);
-    } else {
-      this.bodyChecker.checkBody(statement.body, scope);
-    }
+    const metadata = statement.name
+      ? lookup(parentScope, statement.name.text)?.signature?.templateOutput
+      : undefined;
+    const callerContext = metadata ? templateOutputBodyCallerContext(metadata) : undefined;
+    const previousTemplate = this.enclosingTemplate;
+    this.enclosingTemplate = statement;
+    this.bodyChecker.checkBody(statement.body, scope, callerContext);
+    this.enclosingTemplate = previousTemplate;
   }
 
   private checkCallableParameters(parameters: TemplateDeclNode["parameters"], scope: RsglScope): void {
@@ -205,7 +261,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       this.defineIdentifier(scope, parameter.name, "parameter", typeFromAnnotation(parameter.typeAnnotation), parameter);
       if (parameter.defaultValue) {
         const expectedType = typeFromAnnotation(parameter.typeAnnotation);
-        const actualType = this.checkExpression(parameter.defaultValue, scope);
+        const actualType = checkExpressionForExpectedType(this, parameter.defaultValue, scope, expectedType);
         checkAssignable(this, expectedType, actualType, parameter.defaultValue);
       }
     }
@@ -219,7 +275,12 @@ class RsglBinder implements RsglExpressionCheckContext {
     if (statement.impl) {
       this.checkModelImpl(statement.impl, scope);
     }
-    this.bodyChecker.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.resourceKind);
+    this.bodyChecker.checkResourceBody(
+      statement.body,
+      createChildScope(scope, "block"),
+      statement.resourceKind,
+      resourceDeclarationCallerContext(statement)
+    );
   }
 
   private checkModelImpl(expression: ExprNode, scope: RsglScope): void {
@@ -326,7 +387,10 @@ class RsglBinder implements RsglExpressionCheckContext {
             optional: Boolean(parameter.defaultValue),
             node: parameter
           })),
-        returnType: jsonType
+        returnType: jsonType,
+        templateOutput: inferResolvedTemplateOutputMetadata(statement, calleeName =>
+          templateOutputClassificationForSymbol(lookup(scope, calleeName))
+        )
       }
     });
   }
@@ -355,6 +419,37 @@ class RsglBinder implements RsglExpressionCheckContext {
       this.symbols.push(symbol);
     }
   }
+
+  private resolveLocalTemplateOutputs(): void {
+    const model: RsglSemanticModel = {
+      fileName: this.fileName,
+      module: this.module,
+      scope: this.globalScope,
+      symbols: this.symbols,
+      imports: this.imports,
+      exports: this.exports,
+      references: this.references,
+      outputResources: this.outputResources,
+      diagnostics: this.diagnostics
+    };
+    resolveProgramTemplateOutputMetadata([model]);
+  }
+}
+
+const resourcesCallerContext: RsglTemplateCallerContext = { kind: "resources" };
+
+function resourceDeclarationCallerContext(statement: ResourceDeclNode): RsglTemplateCallerContext {
+  if (statement.resourceKind !== "blockstate") {
+    return { kind: "resourceBody", resourceKind: statement.resourceKind };
+  }
+  const hasVariants = statement.body.statements.some(child => child.kind === "VariantsSection");
+  const hasMultipart = statement.body.statements.some(child => child.kind === "MultipartSection");
+  return {
+    kind: "blockstateRoot",
+    mode: hasVariants === hasMultipart ? "neutral" : hasVariants ? "variants" : "multipart",
+    allowRootMerge: true,
+    allowBase: true
+  };
 }
 
 function expressionToStaticText(expression: ExprNode): string | undefined {

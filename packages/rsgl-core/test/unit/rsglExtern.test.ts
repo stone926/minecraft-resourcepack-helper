@@ -8,7 +8,7 @@ import {
   type RsglCompileResult
 } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, expectNoDiagnostics } from "./helpers/compile";
+import { compileSource, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL extern declarations", () => {
@@ -330,13 +330,11 @@ describe("RSGL extern declarations", () => {
       {
         fileName: templatesFile,
         module: parseRsgl([
-          "template scopedModels(callerModel: ModelId) {",
-          "  variants {",
+          "template scopedModels(callerModel: ModelId) -> variants {",
           "    {} -> [",
           "      { model: minecraft:block/fixed_missing },",
           "      { model: callerModel }",
           "    ]",
-          "  }",
           "}",
           "export { scopedModels }"
         ].join("\n"))
@@ -374,8 +372,8 @@ describe("RSGL extern declarations", () => {
         fileName: templatesFile,
         module: parseRsgl([
           "extern! vanilla model minecraft:block/library_model",
-          "template modelVariant(modelId: ModelId = minecraft:block/library_model) {",
-          "  variants { {} -> { model: modelId } }",
+          "template modelVariant(modelId: ModelId = minecraft:block/library_model) -> variants {",
+          "  {} -> { model: modelId }",
           "}",
           "export { modelVariant }"
         ].join("\n"))
@@ -443,13 +441,11 @@ describe("RSGL extern declarations", () => {
         fileName: templatesFile,
         module: parseRsgl([
           "extern! vanilla model minecraft:block/library_model",
-          "template mixedModels(callerModel: ModelId) {",
-          "  variants {",
+          "template mixedModels(callerModel: ModelId) -> variants {",
           "    {} -> [",
           "      { model: minecraft:block/library_model },",
           "      { model: callerModel }",
           "    ]",
-          "  }",
           "}",
           "export { mixedModels }"
         ].join("\n"))
@@ -504,7 +500,7 @@ describe("RSGL extern declarations", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectNoDiagnostics(result);
+    expectOnlyLegacyTemplateWarnings(result);
     assert.deepStrictEqual(
       externalUnits(result)
         .map(unit => [unit.external!.id, unit.external!.source])
@@ -543,7 +539,7 @@ describe("RSGL extern declarations", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectNoDiagnostics(result);
+    expectOnlyLegacyTemplateWarnings(result);
     assert.deepStrictEqual(
       externalUnits(result)
         .map(unit => [unit.external!.id, unit.external!.source])
@@ -746,7 +742,7 @@ describe("RSGL extern declarations", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectNoDiagnostics(result);
+    expectOnlyLegacyTemplateWarnings(result, 4);
     const resources = externalUnits(result).map(unit => unit.external!);
     assert.strictEqual(resources.length, 12);
     assert.ok(resources

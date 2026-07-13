@@ -56,9 +56,27 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
-    label: "template",
-    insertText: "template ${1:name}(${2:id}: ${3:ResourceId}) {\n  ${4}\n}",
-    detail: "Declarative template",
+    label: "template resources",
+    insertText: "template ${1:name}(${2:id}: ResourceId) {\n  model block ${2:id} {\n    ${3}\n  }\n}",
+    detail: "Complete-resource template",
+    kind: "snippet"
+  },
+  {
+    label: "template -> model",
+    insertText: "template ${1:name}(${2:texture}: TextureRef) -> model {\n  ${3}\n}",
+    detail: "Reusable model-body template",
+    kind: "snippet"
+  },
+  {
+    label: "template -> variants",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> variants {\n  ${3:{}} -> { model: ${2:model} }\n}",
+    detail: "Reusable blockstate variants template",
+    kind: "snippet"
+  },
+  {
+    label: "template -> multipart",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> multipart {\n  apply { model: ${2:model} }\n}",
+    detail: "Reusable blockstate multipart template",
     kind: "snippet"
   },
   ...rsglExternResourceCompletionDescriptors.map(descriptor => ({
@@ -106,9 +124,9 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
-    label: "import blockstate fragments",
+    label: "import blockstate templates",
     insertText: "import { ${1:stairs} } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
-    detail: "Import RSGL blockstate fragment templates",
+    detail: "Import reusable RSGL blockstate templates",
     kind: "snippet"
   },
   {
@@ -136,6 +154,7 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   })),
   { label: "variants", insertText: "variants {\n  ${1:{}} -> { model: ${2:minecraft:block/stone} }\n}", detail: "Blockstate variants section", kind: "snippet" },
   { label: "multipart", insertText: "multipart {\n  apply { model: ${1:minecraft:block/stone} }\n}", detail: "Blockstate multipart section", kind: "snippet" },
+  { label: "variant entry", insertText: "${1:{}} -> { model: ${2:minecraft:block/stone} }", detail: "Blockstate variant entry", kind: "snippet" },
   { label: "range", insertText: "range property ${1:minecraft:time} source ${2:daytime} wobble ${3:true} {\n  frames ${4:0..31} model ${5:minecraft:item/clock_00}\n  fallback ${6:minecraft:item/clock_00}\n}", detail: "Item range_dispatch model", kind: "snippet" },
   { label: "select", insertText: "select property ${1:minecraft:potion_contents} component ${2:minecraft:potion_contents} {\n  case ${3:\"minecraft:healing\"} -> ${4:minecraft:item/potion_healing}\n  fallback ${5:minecraft:item/potion}\n}", detail: "Item select model", kind: "snippet" },
   { label: "condition", insertText: "condition property ${1:minecraft:using_item} {\n  on_true ${2:minecraft:item/bow_pulling}\n  on_false ${3:minecraft:item/bow}\n}", detail: "Item condition model", kind: "snippet" },
@@ -191,6 +210,42 @@ export function getRsglCompletionCandidates(text: string, offset: number): RsglC
   const blockCandidates = blockRsglCompletions.filter(candidate =>
     (candidate.label !== "base" || context.allowBase)
     && (candidate.label !== "extern var" || context.allowExternVar)
+    && completionMatchesTemplateDialect(candidate, context.templateOutputDialect)
   );
   return [...blockCandidates, ...builtinRsglCompletions];
+}
+
+function completionMatchesTemplateDialect(
+  candidate: RsglCompletionCandidate,
+  dialect: "model" | "variants" | "multipart" | undefined
+): boolean {
+  if (!dialect) {
+    return true;
+  }
+  const shared = new Set(["use", "for", "for multidim", "if"]);
+  if (shared.has(candidate.label)) {
+    return true;
+  }
+  if (dialect === "variants") {
+    return candidate.label === "variant entry";
+  }
+  if (dialect === "multipart") {
+    return candidate.label === "when" || candidate.label === "apply";
+  }
+  return !new Set([
+    "variants",
+    "multipart",
+    "range",
+    "select",
+    "condition",
+    "composite",
+    "special",
+    "empty",
+    "selected_item",
+    "when",
+    "apply",
+    "random",
+    "@block",
+    "base"
+  ]).has(candidate.label);
 }

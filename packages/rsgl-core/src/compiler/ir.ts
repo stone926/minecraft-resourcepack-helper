@@ -80,6 +80,8 @@ export interface RsglValidationReferenceOrigin {
 
 export interface ExpansionFrame {
   label: string;
+  /** Caller file for cross-module expansion frames. */
+  sourceFile?: string;
   sourceRange?: TextRange;
 }
 

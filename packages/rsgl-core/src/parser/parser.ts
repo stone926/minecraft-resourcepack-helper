@@ -5,13 +5,8 @@ import {
 import { parseExternResourcePattern } from "../externDeclarations";
 import { lexRsgl } from "./lexer";
 import { tokenRange } from "./parserContext";
-import {
-  modelGeometryStatementKeywords,
-  resourceBodySectionKeywords
-} from "./statementKeywords";
 import { StatementParser } from "./statementParser";
 import {
-  BlockNode,
   ExternDeclNode,
   ExternPatternNode,
   ExternResourceSource,
@@ -20,15 +15,24 @@ import {
   IdentifierNode,
   ImportSpecifierNode,
   ParameterNode,
-  ResourceBodyNode,
   ResourceDeclNode,
   ResourceKind,
   RsglModule,
   RsglToken,
   StringLiteralNode,
+  DeclaredTemplateOutputDialect,
+  TemplateBodyNode,
   TopLevelStatementNode
 } from "./types";
 import { getRsglResourceKindDescriptor } from "../resourceKinds";
+import {
+  concreteResourceBodyParseContext,
+  multipartBodyParseContext,
+  templateResourceBodyParseContext,
+  topLevelBodyParseContext,
+  variantsBodyParseContext
+} from "./bodyParseContext";
+import { legacyTemplateBodyParsePlan } from "./resourceBodyDialectRegistry";
 
 export function parseRsgl(text: string): RsglModule {
   const lexResult = lexRsgl(text);
@@ -103,10 +107,10 @@ class RsglParser extends StatementParser {
       return this.parseUseDecl();
     }
     if (keyword === "for") {
-      return this.parseForStmt("topLevel");
+      return this.parseForStmt(topLevelBodyParseContext);
     }
     if (keyword === "if") {
-      return this.parseIfStmt("topLevel");
+      return this.parseIfStmt(topLevelBodyParseContext);
     }
 
     this.addDiagnostic("rsgl.unexpectedToken", `Unexpected token '${token.text}'.`, tokenRange(token));
@@ -454,61 +458,66 @@ class RsglParser extends StatementParser {
     if (parameters.length === 0 && this.previousOr(start) === start) {
       this.addDiagnosticAtCurrent("rsgl.expectedParameters", "Expected template parameter list.");
     }
-    const body = this.current().text === "{"
-      ? this.parseTemplateBody()
+    let outputSyntax: "noArrow" | "explicitArrow" = "noArrow";
+    let declaredOutputDialect: DeclaredTemplateOutputDialect | undefined;
+    if (this.matchText("->")) {
+      outputSyntax = "explicitArrow";
+      const dialect = this.current();
+      if (isTemplateOutputDialect(dialect.text)) {
+        declaredOutputDialect = this.advance().text as DeclaredTemplateOutputDialect;
+      } else {
+        this.addDiagnosticAtCurrent(
+          "rsgl.invalidTemplateOutputDialect",
+          "Template output dialect must be 'model', 'variants', or 'multipart'."
+        );
+        if (dialect.kind === "identifier" || dialect.kind === "keyword") {
+          this.advance();
+        }
+      }
+    }
+    const body = outputSyntax === "explicitArrow" || this.current().text === "{"
+      ? this.parseTemplateBody(declaredOutputDialect, outputSyntax)
       : this.emptyBlockAt(this.current(), "Expected template body.");
     return {
       kind: "TemplateDecl",
       keyword: start.text,
       name,
       parameters,
+      declaredOutputDialect,
+      outputSyntax,
       body,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
 
-  private parseTemplateBody(): BlockNode | ResourceBodyNode {
-    if (this.templateBodyLooksLikeResourceBody()) {
-      return this.parseResourceBody("template");
+  private parseTemplateBody(
+    declaredOutputDialect?: DeclaredTemplateOutputDialect,
+    outputSyntax: "noArrow" | "explicitArrow" = "noArrow"
+  ): TemplateBodyNode {
+    if (outputSyntax === "explicitArrow") {
+      if (declaredOutputDialect === "model") {
+        return this.parseResourceBody(templateResourceBodyParseContext("model"));
+      }
+      if (declaredOutputDialect === "variants") {
+        return this.parseBodyForContext(variantsBodyParseContext);
+      }
+      if (declaredOutputDialect === "multipart") {
+        return this.parseBodyForContext(multipartBodyParseContext);
+      }
+      return this.parseBlock();
+    }
+    const parsePlan = legacyTemplateBodyParsePlan(this.tokens, this.mark());
+    if (parsePlan.kind === "resourceBody") {
+      if (parsePlan.detectedDialects.length > 1) {
+        this.addDiagnostic(
+          "rsgl.conflictingLegacyTemplateBodyDialects",
+          `Legacy template body mixes incompatible dialects: ${parsePlan.detectedDialects.join(", ")}. Add an explicit public output dialect or split the template.`,
+          tokenRange(this.current())
+        );
+      }
+      return this.parseResourceBody(templateResourceBodyParseContext(parsePlan.dialect));
     }
     return this.parseBlock();
-  }
-
-  private templateBodyLooksLikeResourceBody(): boolean {
-    if (this.current().text !== "{") {
-      return false;
-    }
-    const first = this.peekText(1);
-    if (first === "}" || first === "") {
-      return false;
-    }
-    if (first === "variants" || first === "multipart") {
-      return true;
-    }
-    if (
-      first === "extern"
-      && (this.peekText(2) === "var" || (this.peekText(2) === "!" && this.peekText(3) === "var"))
-    ) {
-      return true;
-    }
-    if (this.isResourceStatementStart(first)) {
-      return true;
-    }
-    return !isTopLevelKeyword(first);
-  }
-
-  private isResourceStatementStart(text: string): boolean {
-    return text === "base"
-      || text === "merge"
-      || text === "range"
-      || text === "select"
-      || text === "condition"
-      || text === "composite"
-      || text === "empty"
-      || text === "selected_item"
-      || text === "special"
-      || modelGeometryStatementKeywords.has(text)
-      || resourceBodySectionKeywords.has(text);
   }
 
   private parseParameters(): ParameterNode[] {
@@ -553,7 +562,7 @@ class RsglParser extends StatementParser {
     }
 
     const body = this.current().text === "{"
-      ? this.parseResourceBody(resourceKind, true)
+      ? this.parseResourceBody(concreteResourceBodyParseContext(resourceKind))
       : this.emptyResourceBodyAt(this.current(), "Expected resource body.");
     return {
       kind: "ResourceDecl",
@@ -577,4 +586,8 @@ class RsglParser extends StatementParser {
       this.advance();
     }
   }
+}
+
+function isTemplateOutputDialect(text: string): text is DeclaredTemplateOutputDialect {
+  return text === "model" || text === "variants" || text === "multipart";
 }

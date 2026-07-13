@@ -22,7 +22,7 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return true;
   }
   if (expected.kind === "Json") {
-    return true;
+    return actual.kind !== "TextureVariable" && actual.kind !== "TextureRef";
   }
   if (expected.kind === "ResourceId" && (actual.kind === "ModelId" || actual.kind === "TextureId" || actual.kind === "String")) {
     return true;
@@ -31,6 +31,12 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
   // so String is accepted wherever a concrete id kind is expected.
   if ((expected.kind === "ModelId" || expected.kind === "TextureId") && (actual.kind === "ResourceId" || actual.kind === "String")) {
     return true;
+  }
+  if (expected.kind === "TextureRef") {
+    return actual.kind === "TextureVariable"
+      || actual.kind === "TextureId"
+      || actual.kind === "ResourceId"
+      || actual.kind === "String";
   }
   return false;
 }

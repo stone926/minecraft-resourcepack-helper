@@ -7,8 +7,8 @@
   },
   "resourceBodyConsumerSnapshot": "resource-body-consumers.snapshot.json",
   "templateOutputMetadataSnapshot": "template-output-metadata.snapshot.json",
-  "templateOutputMetadataSnapshotKind": "preSemanticStructuralBaseline",
-  "templateOutputMetadataReplacementGate": "Replace the structural classifier with resolvedTemplateOutputMetadata symbol/export metadata when TPL-01 lands.",
+  "templateOutputMetadataSnapshotKind": "resolvedSemanticMetadata",
+  "templateOutputMetadataReplacementGate": "resolvedTemplateOutputMetadata is carried by semantic signatures, imports, re-exports, and compiler definitions.",
   "compatibilityRemovalGate": {
     "exactLegacyDefinitionsMustReach": 0,
     "contextualAdapterUsesMustReach": 0,
@@ -16,9 +16,10 @@
   },
   "legacyTemplateCensus": {
     "noArrowResourceDefinitions": 10,
-    "exactLegacyDefinitions": 5,
+    "explicitPublicDefinitions": 3,
+    "exactLegacyDefinitions": 2,
     "contextualAdapterDefinitions": 2,
-    "exactLegacyUses": 7,
+    "exactLegacyUses": 2,
     "contextualAdapterUses": 2
   },
   "snapshotProjection": [
@@ -59,7 +60,9 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/implicit-model-body-template.rsgl",
-        "expectedDiagnostics": [],
+        "expectedDiagnostics": [
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+        ],
         "expectedTemplateOutput": {
           "templateName": "modelFields",
           "outputSource": "legacyContextualAdapter",
@@ -69,7 +72,7 @@
         }
       },
       "canonical": {
-        "status": "planned",
+        "status": "executable",
         "source": "canonical/explicit-model-body-template.rsgl",
         "expectedDiagnostics": [],
         "target": "template ... -> model"
@@ -81,7 +84,9 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/implicit-variants-body-template.rsgl",
-        "expectedDiagnostics": [],
+        "expectedDiagnostics": [
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+        ],
         "expectedTemplateOutput": {
           "templateName": "poweredVariants",
           "outputSource": "legacyInferredBody",
@@ -93,7 +98,7 @@
         }
       },
       "canonical": {
-        "status": "planned",
+        "status": "executable",
         "source": "canonical/explicit-variants-body-template.rsgl",
         "expectedDiagnostics": [],
         "target": "template ... -> variants used by blockstate variants <id>",
@@ -106,7 +111,9 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/implicit-multipart-body-template.rsgl",
-        "expectedDiagnostics": [],
+        "expectedDiagnostics": [
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+        ],
         "expectedTemplateOutput": {
           "templateName": "fenceMultipart",
           "outputSource": "legacyInferredBody",
@@ -118,7 +125,7 @@
         }
       },
       "canonical": {
-        "status": "planned",
+        "status": "executable",
         "source": "canonical/explicit-multipart-body-template.rsgl",
         "expectedDiagnostics": [],
         "target": "template ... -> multipart used by blockstate multipart <id>",
@@ -147,7 +154,9 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/root-merge-value-helper.rsgl",
-        "expectedDiagnostics": [],
+        "expectedDiagnostics": [
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+        ],
         "expectedTemplateOutput": {
           "templateName": "rootMetadata",
           "outputSource": "legacyContextualAdapter",
@@ -202,7 +211,7 @@
         "expectedDiagnostics": []
       },
       "canonical": {
-        "status": "planned",
+        "status": "executable",
         "source": "canonical/stdlib-blockstate-conventions.rsgl",
         "expectedDiagnostics": [],
         "target": "Keep public import paths while stdlib templates migrate to explicit variants output",

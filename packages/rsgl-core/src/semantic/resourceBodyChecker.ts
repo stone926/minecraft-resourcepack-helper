@@ -17,18 +17,34 @@ import {
   checkEquipmentLayerListExpression,
   checkEquipmentLayerNameExpression,
   checkExpression,
+  checkTextureRefExpression,
   checkLocalLetDecl,
   checkStringEnumLikeExpression,
+  checkTemplateUseExpression,
   RsglExpressionCheckContext,
   validateResourceLocationLike
 } from "./expressionChecker";
 import { createChildScope, lookup } from "./scopes";
 import { anyType, numberType, RsglScope, RsglType, stringType, unknownType } from "./types";
+import type { RsglTemplateCallerContext } from "../templateOutput";
 
 type CheckableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
 
 export type RsglBlockStatementChecker = (
   statements: TopLevelStatementNode[],
+  scope: RsglScope,
+  callerContext?: RsglTemplateCallerContext
+) => void;
+
+export type RsglTemplateUseRecorder = (
+  expression: ExprNode,
+  scope: RsglScope,
+  callerContext?: RsglTemplateCallerContext
+) => void;
+
+export type RsglContextualTextureSinkRecorder = (
+  expression: ExprNode,
+  actualType: RsglType,
   scope: RsglScope
 ) => void;
 
@@ -36,16 +52,18 @@ export type RsglBlockStatementChecker = (
 export class RsglResourceBodyChecker {
   public constructor(
     private readonly context: RsglExpressionCheckContext,
-    private readonly checkBlockStatements: RsglBlockStatementChecker
+    private readonly checkBlockStatements: RsglBlockStatementChecker,
+    private readonly recordTemplateUse: RsglTemplateUseRecorder,
+    private readonly recordContextualTextureSink: RsglContextualTextureSinkRecorder
   ) { }
 
-  public checkBody(body: CheckableBody, scope: RsglScope): void {
+  public checkBody(body: CheckableBody, scope: RsglScope, callerContext?: RsglTemplateCallerContext): void {
     switch (body.kind) {
       case "ResourceBody":
-        this.checkResourceBody(body, scope);
+        this.checkResourceBody(body, scope, "resource", callerContext);
         break;
       case "Block":
-        this.checkBlockStatements(body.statements, scope);
+        this.checkBlockStatements(body.statements, scope, callerContext);
         break;
       case "VariantBody":
         this.checkVariantStatements(body.statements, scope);
@@ -58,13 +76,22 @@ export class RsglResourceBodyChecker {
     }
   }
 
-  public checkResourceBody(body: ResourceBodyNode, scope: RsglScope, owner = "resource"): void {
+  public checkResourceBody(
+    body: ResourceBodyNode,
+    scope: RsglScope,
+    owner = "resource",
+    callerContext?: RsglTemplateCallerContext
+  ): void {
     for (const statement of body.statements) {
-      this.checkResourceStatement(statement, scope, owner);
+      this.checkResourceStatement(statement, scope, owner, callerContext);
     }
   }
 
-  public checkForStatement(statement: ForStmtNode, scope: RsglScope): void {
+  public checkForStatement(
+    statement: ForStmtNode,
+    scope: RsglScope,
+    callerContext?: RsglTemplateCallerContext
+  ): void {
     const loopScope = createChildScope(scope, "loop");
     const seen = new Set<string>();
     const forDimensions = statement.dimensions.length ? statement.dimensions : [{
@@ -91,18 +118,33 @@ export class RsglResourceBodyChecker {
         }
       }
     }
-    this.checkBody(statement.body, loopScope);
+    this.checkBody(statement.body, loopScope, callerContext);
   }
 
-  private checkResourceStatement(statement: ResourceStatementNode, scope: RsglScope, owner: string): void {
+  private checkResourceStatement(
+    statement: ResourceStatementNode,
+    scope: RsglScope,
+    owner: string,
+    callerContext?: RsglTemplateCallerContext
+  ): void {
     switch (statement.kind) {
       case "PropertyStmt":
         if (owner === "equipment" && statement.name.text === "layers") {
           checkEquipmentLayerListExpression(this.context, statement.value, scope);
         } else if (owner === "scaling" && statement.name.text === "type") {
           checkStringEnumLikeExpression(this.context, statement.value, scope);
+        } else if (
+          owner === "textures"
+          && callerContext?.kind === "resourceBody"
+          && callerContext.resourceKind === "model"
+        ) {
+          checkTextureRefExpression(this.context, statement.value, scope);
+        } else if (owner === "textures" && !callerContext) {
+          const valueType = this.checkExpression(statement.value, scope);
+          this.recordContextualTextureSink(statement.value, valueType, scope);
         } else {
-          this.checkExpression(statement.value, scope);
+          const valueType = this.checkExpression(statement.value, scope);
+          this.rejectTextureVariableOutsideModelSink(valueType, statement.value);
         }
         validateResourceLocationLike(this.context, statement.value);
         break;
@@ -117,7 +159,7 @@ export class RsglResourceBodyChecker {
           }
         }
         if (statement.body) {
-          this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.name.text);
+          this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.name.text, callerContext);
         }
         break;
       case "VariantsSection":
@@ -137,7 +179,8 @@ export class RsglResourceBodyChecker {
         this.checkExpression(statement.apply, scope);
         break;
       case "UseDecl":
-        this.checkExpression(statement.expression, scope);
+        checkTemplateUseExpression(this.context, statement.expression, scope);
+        this.recordTemplateUse(statement.expression, scope, callerContext);
         break;
       case "LetDecl":
         checkLocalLetDecl(this.context, statement, scope);
@@ -152,7 +195,7 @@ export class RsglResourceBodyChecker {
         break;
       case "PackOverlayStmt":
         this.checkExpression(statement.directory, scope);
-        this.checkResourceBody(statement.body, createChildScope(scope, "block"), "packOverlay");
+        this.checkResourceBody(statement.body, createChildScope(scope, "block"), "packOverlay", callerContext);
         break;
       case "PackFilterBlockStmt":
         if (statement.namespace) {
@@ -179,7 +222,7 @@ export class RsglResourceBodyChecker {
         }
         break;
       case "AtlasPalettedPermutationsStmt":
-        this.checkResourceBody(statement.body, createChildScope(scope, "block"), "atlasPalettedPermutations");
+        this.checkResourceBody(statement.body, createChildScope(scope, "block"), "atlasPalettedPermutations", callerContext);
         break;
       case "EquipmentLayerStmt":
         checkEquipmentLayerNameExpression(this.context, statement.layer, scope);
@@ -197,7 +240,7 @@ export class RsglResourceBodyChecker {
         }
         break;
       case "ModelTextureStmt":
-        this.checkExpression(statement.value, scope);
+        checkTextureRefExpression(this.context, statement.value, scope);
         break;
       case "ModelElementStmt":
         if (statement.label) {
@@ -210,7 +253,13 @@ export class RsglResourceBodyChecker {
           this.checkExpression(statement.to, scope);
         }
         statement.properties.forEach(property => this.checkExpression(property.value, scope));
-        statement.faces.forEach(face => face.properties.forEach(property => this.checkExpression(property.value, scope)));
+        statement.faces.forEach(face => face.properties.forEach(property => {
+          if (property.name.text === "texture") {
+            checkTextureRefExpression(this.context, property.value, scope);
+          } else {
+            this.checkExpression(property.value, scope);
+          }
+        }));
         break;
       case "ItemRangeStmt":
         this.checkExpression(statement.property, scope);
@@ -255,13 +304,13 @@ export class RsglResourceBodyChecker {
         this.checkExpression(statement.model, scope);
         break;
       case "ForStmt":
-        this.checkForStatement(statement, scope);
+        this.checkForStatement(statement, scope, callerContext);
         break;
       case "IfStmt":
         this.checkExpression(statement.condition, scope);
-        this.checkBody(statement.thenBody, createChildScope(scope, "block"));
+        this.checkBody(statement.thenBody, createChildScope(scope, "block"), callerContext);
         if (statement.elseBody) {
-          this.checkBody(statement.elseBody, createChildScope(scope, "block"));
+          this.checkBody(statement.elseBody, createChildScope(scope, "block"), callerContext);
         }
         break;
       case "BaseStmt":
@@ -306,16 +355,17 @@ export class RsglResourceBodyChecker {
           checkLocalLetDecl(this.context, statement, scope);
           break;
         case "UseDecl":
-          this.checkExpression(statement.expression, scope);
+          checkTemplateUseExpression(this.context, statement.expression, scope);
+          this.recordTemplateUse(statement.expression, scope, variantsCallerContext);
           break;
         case "ForStmt":
-          this.checkForStatement(statement, scope);
+          this.checkForStatement(statement, scope, variantsCallerContext);
           break;
         case "IfStmt":
           this.checkExpression(statement.condition, scope);
-          this.checkBody(statement.thenBody, createChildScope(scope, "block"));
+          this.checkBody(statement.thenBody, createChildScope(scope, "block"), variantsCallerContext);
           if (statement.elseBody) {
-            this.checkBody(statement.elseBody, createChildScope(scope, "block"));
+            this.checkBody(statement.elseBody, createChildScope(scope, "block"), variantsCallerContext);
           }
           break;
         case "UnknownStmt":
@@ -339,16 +389,17 @@ export class RsglResourceBodyChecker {
           checkLocalLetDecl(this.context, statement, scope);
           break;
         case "UseDecl":
-          this.checkExpression(statement.expression, scope);
+          checkTemplateUseExpression(this.context, statement.expression, scope);
+          this.recordTemplateUse(statement.expression, scope, multipartCallerContext);
           break;
         case "ForStmt":
-          this.checkForStatement(statement, scope);
+          this.checkForStatement(statement, scope, multipartCallerContext);
           break;
         case "IfStmt":
           this.checkExpression(statement.condition, scope);
-          this.checkBody(statement.thenBody, createChildScope(scope, "block"));
+          this.checkBody(statement.thenBody, createChildScope(scope, "block"), multipartCallerContext);
           if (statement.elseBody) {
-            this.checkBody(statement.elseBody, createChildScope(scope, "block"));
+            this.checkBody(statement.elseBody, createChildScope(scope, "block"), multipartCallerContext);
           }
           break;
         case "UnknownStmt":
@@ -362,7 +413,32 @@ export class RsglResourceBodyChecker {
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
     return checkExpression(this.context, expression, scope);
   }
+
+  private rejectTextureVariableOutsideModelSink(type: RsglType, expression: ExprNode): void {
+    if (type.kind !== "TextureVariable" && type.kind !== "TextureRef") {
+      return;
+    }
+    this.context.diagnostics.push(diagnostic(
+      "rsgl.textureVariableInvalidContext",
+      "Texture variables are only valid in model texture sinks.",
+      expression.range
+    ));
+  }
 }
+
+const variantsCallerContext: RsglTemplateCallerContext = {
+  kind: "blockstateEntries",
+  mode: "variants",
+  allowRootMerge: false,
+  allowBase: false
+};
+
+const multipartCallerContext: RsglTemplateCallerContext = {
+  kind: "blockstateEntries",
+  mode: "multipart",
+  allowRootMerge: false,
+  allowBase: false
+};
 
 function syntheticIdentifier(text: string, range: { start: number; end: number }): IdentifierNode {
   return {

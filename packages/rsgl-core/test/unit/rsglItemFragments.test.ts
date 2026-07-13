@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
 
 describe("RSGL item model fragments", () => {
   it("lowers stdlib range frames with lambda model mapping", () => {
@@ -100,7 +100,7 @@ describe("RSGL item model fragments", () => {
       "}"
     ]);
 
-    expectNoDiagnostics(result);
+    expectOnlyLegacyTemplateWarnings(result);
     assert.deepStrictEqual(result.units[0].content, {
       model: {
         type: "minecraft:range_dispatch",

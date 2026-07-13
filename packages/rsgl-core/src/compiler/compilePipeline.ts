@@ -95,7 +95,11 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
     namespace,
-    { baseDocumentLoader, globLoader }
+    {
+      baseDocumentLoader,
+      globLoader,
+      definitionFingerprintContext: configuration.semanticFingerprint
+    }
   );
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
@@ -217,7 +221,9 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   for (const model of selectedModels) {
     const namespace = effectiveNamespace(model.namespace, configuration);
     const environment = environments.get(normalizeFileName(model.fileName))
-      ?? createStandaloneCompileEnvironment(model, namespace);
+      ?? createStandaloneCompileEnvironment(model, namespace, {
+        definitionFingerprintContext: configuration.semanticFingerprint
+      });
     const compiler = new RsglCompiler(model.module, {
       fileName: model.fileName,
       namespace,

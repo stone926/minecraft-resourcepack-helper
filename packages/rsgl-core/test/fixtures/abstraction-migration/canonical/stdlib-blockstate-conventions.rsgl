@@ -1,0 +1,37 @@
+target java format [50, 0]
+namespace minecraft
+
+import { stairs, slab } from "rsgl:conventions/blockstate_fragments.rsgl"
+import { stateSequence } from "rsgl:conventions/blockstate_tables.rsgl"
+
+extern! vanilla model minecraft:block/oak_stairs
+extern! vanilla model minecraft:block/oak_stairs_inner
+extern! vanilla model minecraft:block/oak_stairs_outer
+extern! vanilla model minecraft:block/oak_slab
+extern! vanilla model minecraft:block/oak_slab_top
+extern! vanilla model minecraft:block/oak_planks
+extern! vanilla model minecraft:block/**
+
+blockstate abstraction/stdlib_stairs {
+  use stairs(
+    base: minecraft:block/oak_stairs,
+    inner: minecraft:block/oak_stairs_inner,
+    outer: minecraft:block/oak_stairs_outer
+  )
+}
+
+blockstate abstraction/stdlib_slab {
+  use slab(
+    bottom: minecraft:block/oak_slab,
+    top: minecraft:block/oak_slab_top,
+    double: minecraft:block/oak_planks
+  )
+}
+
+blockstate abstraction/stdlib_state_sequence {
+  use stateSequence(
+    key: "age",
+    values: 0..2,
+    model: age => `minecraft:block/wheat_stage_${age}`
+  )
+}

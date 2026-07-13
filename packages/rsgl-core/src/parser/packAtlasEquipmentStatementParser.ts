@@ -1,6 +1,11 @@
 import { equipmentLayerClauseKeywords } from "./statementKeywords";
 import { ResourceStatementParserHost } from "./statementParserHost";
 import {
+  domainResourceBodyParseContext,
+  resourceBodyOwnerName,
+  type ResourceBodyOwner
+} from "./bodyParseContext";
+import {
   AtlasDirectoryStmtNode,
   AtlasFilterStmtNode,
   AtlasPalettedPermutationsStmtNode,
@@ -14,17 +19,18 @@ import {
 
 export function tryParsePackAtlasEquipmentStatement(
   host: ResourceStatementParserHost,
-  owner: string,
+  owner: ResourceBodyOwner,
   bodyDialect: string | undefined
 ): ResourceStatementNode | undefined {
   const token = host.current();
-  if ((bodyDialect === "pack" || owner === "packOverlay") && token.text === "formats") {
+  const ownerName = resourceBodyOwnerName(owner);
+  if ((bodyDialect === "pack" || ownerName === "packOverlay") && token.text === "formats") {
     return parsePackFormatsStmt(host);
   }
   if (bodyDialect === "pack" && token.text === "overlay") {
     return parsePackOverlayStmt(host);
   }
-  if (owner === "filter" && token.text === "block" && host.peekText(1) !== ":" && host.peekText(1) !== "=") {
+  if (ownerName === "filter" && token.text === "block" && host.peekText(1) !== ":" && host.peekText(1) !== "=") {
     return parsePackFilterBlockStmt(host);
   }
   if (bodyDialect === "atlas" && token.text === "directory" && host.peekText(1) !== ":" && host.peekText(1) !== "=") {
@@ -72,7 +78,7 @@ function parsePackOverlayStmt(host: ResourceStatementParserHost): PackOverlayStm
   const start = host.advance();
   const directory = host.parseExpression({ stopTexts: ["{"] });
   const body = host.current().text === "{"
-    ? host.parseResourceBody("packOverlay")
+    ? host.parseResourceBody(domainResourceBodyParseContext("packOverlay"))
     : host.emptyResourceBodyAt(host.current(), "Expected pack overlay body.");
   return {
     kind: "PackOverlayStmt",
@@ -164,7 +170,7 @@ function parseAtlasFilterStmt(host: ResourceStatementParserHost): AtlasFilterStm
 function parseAtlasPalettedPermutationsStmt(host: ResourceStatementParserHost): AtlasPalettedPermutationsStmtNode {
   const start = host.advance();
   const body = host.current().text === "{"
-    ? host.parseResourceBody("atlasPalettedPermutations")
+    ? host.parseResourceBody(domainResourceBodyParseContext("atlasPalettedPermutations"))
     : host.emptyResourceBodyAt(host.current(), "Expected paletted_permutations body.");
   return {
     kind: "AtlasPalettedPermutationsStmt",

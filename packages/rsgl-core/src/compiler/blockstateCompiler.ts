@@ -33,11 +33,28 @@ import { isJsonObject } from "./jsonValues";
 import { forEachLoopContext } from "./looping";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import { RsglCompileContext, TemplateExpansion, templateResourceBody } from "./templateExpansion";
+import {
+  type RsglTemplateCallerContext,
+  type TemplateOutputDispatch
+} from "../templateOutput";
+import type { RsglTemplateDefinition } from "./environment";
 
 type SourceRange = { start: number; end: number };
 
 export interface BlockstateCompileOptions {
-  expandUse: (statement: UseDeclNode, context: RsglCompileContext) => TemplateExpansion | undefined;
+  resolveTemplate: (
+    statement: UseDeclNode,
+    context: RsglCompileContext
+  ) => RsglTemplateDefinition | undefined;
+  expandUse: (
+    statement: UseDeclNode,
+    context: RsglCompileContext,
+    definition: RsglTemplateDefinition
+  ) => TemplateExpansion | undefined;
+  resolveTemplateDispatch: (
+    definition: RsglTemplateDefinition,
+    callerContext: RsglTemplateCallerContext
+  ) => TemplateOutputDispatch;
   onError: (code: string, message: string, range: SourceRange) => void;
   sourceMap: (
     outputPath: string,
@@ -84,7 +101,7 @@ class BlockstateCompiler {
       this.error("rsgl.compileMissingResourceId", "Blockstate declaration requires a static id.", statement.range);
       return null;
     }
-    const body = this.compileBody(statement.body, context);
+    const body = this.compileBody(statement.body, context, true, blockstateRootMode(statement.body));
     const outputPath = resourceOutputPath("blockstate", id);
     return {
       id,
@@ -99,11 +116,12 @@ class BlockstateCompiler {
   private compileBody(
     body: ResourceBodyNode,
     context: RsglCompileContext,
-    allowBase = true
+    allowBase = true,
+    rootMode: BlockstateRootMode = blockstateRootMode(body)
   ): BlockstateBodyContent {
     const result: BlockstateBodyContent = { content: {}, mappings: [] };
     body.statements.forEach((statement, index) => {
-      this.compileBodyStatement(statement, context, result, allowBase, index === 0);
+      this.compileBodyStatement(statement, context, result, allowBase, index === 0, rootMode);
     });
     return result;
   }
@@ -113,7 +131,8 @@ class BlockstateCompiler {
     context: RsglCompileContext,
     result: BlockstateBodyContent,
     allowBase: boolean,
-    isFirstStatement: boolean
+    isFirstStatement: boolean,
+    rootMode: BlockstateRootMode
   ): void {
     if (statement.kind === "VariantsSection") {
       const variants = this.compileVariantEntries(statement.entries, context);
@@ -136,7 +155,11 @@ class BlockstateCompiler {
         [this.sourceMapping("/multipart", statement.range, context), ...multipart.mappings]
       );
     } else if (statement.kind === "UseDecl") {
-      const fragment = this.compileUse(statement, context);
+      const fragment = this.compileUse(
+        statement,
+        context,
+        blockstateRootCallerContext(rootMode, allowBase && isFirstStatement)
+      );
       this.contentMerger.apply(
         result,
         fragment.content,
@@ -153,7 +176,7 @@ class BlockstateCompiler {
         return;
       }
       forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
-        const loopContent = this.compileBody(body, loopContext, false);
+        const loopContent = this.compileBody(body, loopContext, false, rootMode);
         this.contentMerger.apply(
           result,
           loopContent.content,
@@ -166,7 +189,7 @@ class BlockstateCompiler {
     } else if (statement.kind === "IfStmt") {
       const body = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
       if (body?.kind === "ResourceBody") {
-        const branchContent = this.compileBody(body, context, false);
+        const branchContent = this.compileBody(body, context, false, rootMode);
         this.contentMerger.apply(
           result,
           branchContent.content,
@@ -238,7 +261,7 @@ class BlockstateCompiler {
     } else if (statement.kind === "LetDecl") {
       this.compileLet(statement, context);
     } else if (statement.kind === "UseDecl") {
-      const fragment = this.compileUse(statement, context);
+      const fragment = this.compileUse(statement, context, variantsCallerContext);
       const variants = fragment.content.variants;
       this.reportIncompatibleSectionFragment(fragment, "variants", statement.range);
       if (isJsonObject(variants)) {
@@ -310,7 +333,7 @@ class BlockstateCompiler {
     } else if (statement.kind === "LetDecl") {
       this.compileLet(statement, context);
     } else if (statement.kind === "UseDecl") {
-      const fragment = this.compileUse(statement, context);
+      const fragment = this.compileUse(statement, context, multipartCallerContext);
       const multipart = fragment.content.multipart;
       this.reportIncompatibleSectionFragment(fragment, "multipart", statement.range);
       if (Array.isArray(multipart)) {
@@ -336,28 +359,63 @@ class BlockstateCompiler {
     }
   }
 
-  private compileUse(useStatement: UseDeclNode, context: RsglCompileContext): RsglBlockstateFragment {
-    return this.compileUserFragment(useStatement, context) ?? { content: {} };
+  private compileUse(
+    useStatement: UseDeclNode,
+    context: RsglCompileContext,
+    callerContext: RsglTemplateCallerContext
+  ): RsglBlockstateFragment {
+    return this.compileUserFragment(useStatement, context, callerContext) ?? { content: {} };
   }
 
   private compileUserFragment(
     useStatement: UseDeclNode,
-    context: RsglCompileContext
+    context: RsglCompileContext,
+    callerContext: RsglTemplateCallerContext
   ): RsglBlockstateFragment | undefined {
-    const expansion = this.options.expandUse(useStatement, context);
-    if (!expansion) {
+    const definition = this.options.resolveTemplate(useStatement, context);
+    if (!definition) {
       return undefined;
     }
-    const resourceBody = templateResourceBody(expansion.definition.node.body);
+    const dispatch = this.options.resolveTemplateDispatch(definition, callerContext);
+    if (!dispatch.compatible) {
+      return { content: {} };
+    }
+    const expansion = this.options.expandUse(useStatement, context, definition);
+    if (!expansion) {
+      return { content: {} };
+    }
+    const templateBody = definition.node.body;
+    if (templateBody.kind === "VariantBody") {
+      const variants = this.compileVariantEntries(templateBody.statements, expansion.context);
+      return {
+        content: { variants: variants.entries },
+        mappings: [this.sourceMapping("/variants", templateBody.range, expansion.context), ...variants.mappings]
+      };
+    }
+    if (templateBody.kind === "MultipartBody") {
+      const multipart = this.compileMultipartEntries(templateBody.statements, expansion.context);
+      return {
+        content: { multipart: multipart.entries },
+        mappings: [this.sourceMapping("/multipart", templateBody.range, expansion.context), ...multipart.mappings]
+      };
+    }
+    const resourceBody = templateResourceBody(templateBody);
     if (!resourceBody) {
       this.error(
         "rsgl.invalidTemplateContext",
-        `Template '${expansion.definition.name}' emits resources and cannot be used inside a blockstate body.`,
+        `Template '${definition.name}' emits resources and cannot be used inside a blockstate body.`,
         useStatement.range
       );
       return undefined;
     }
-    const body = this.compileBody(resourceBody, expansion.context, false);
+    const body = this.compileBody(
+      resourceBody,
+      expansion.context,
+      false,
+      callerContext.kind === "blockstateRoot" && callerContext.mode !== "neutral"
+        ? callerContext.mode
+        : blockstateRootMode(resourceBody)
+    );
     return { content: body.content, mappings: body.mappings };
   }
 
@@ -443,4 +501,38 @@ class BlockstateCompiler {
   private error(code: string, message: string, range: SourceRange): void {
     this.options.onError(code, message, range);
   }
+}
+
+type BlockstateRootMode = "neutral" | "variants" | "multipart";
+
+const variantsCallerContext: RsglTemplateCallerContext = {
+  kind: "blockstateEntries",
+  mode: "variants",
+  allowRootMerge: false,
+  allowBase: false
+};
+
+const multipartCallerContext: RsglTemplateCallerContext = {
+  kind: "blockstateEntries",
+  mode: "multipart",
+  allowRootMerge: false,
+  allowBase: false
+};
+
+function blockstateRootCallerContext(
+  mode: BlockstateRootMode,
+  allowBase: boolean
+): RsglTemplateCallerContext {
+  return {
+    kind: "blockstateRoot",
+    mode,
+    allowRootMerge: true,
+    allowBase
+  };
+}
+
+function blockstateRootMode(body: ResourceBodyNode): BlockstateRootMode {
+  const hasVariants = body.statements.some(statement => statement.kind === "VariantsSection");
+  const hasMultipart = body.statements.some(statement => statement.kind === "MultipartSection");
+  return hasVariants === hasMultipart ? "neutral" : hasVariants ? "variants" : "multipart";
 }

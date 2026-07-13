@@ -92,9 +92,8 @@ describe("RSGL blockstate fragment merge policy", () => {
       "}"
     ]);
 
-    expectNoDiagnostics(result);
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateOutputDialectRequired"));
     assert.deepStrictEqual(unitByPath(result, "blockstates/templated.json").content, {
-      custom: { enabled: true },
       variants: { "powered=true": { model: "minecraft:block/base" } }
     });
   });

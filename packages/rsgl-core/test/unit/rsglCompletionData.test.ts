@@ -24,6 +24,12 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "copy"));
     assert.ok(topLevel.some(candidate => candidate.label === "extern model"));
     assert.ok(topLevel.some(candidate => candidate.label === "model block impl"));
+    assert.ok(topLevel.some(candidate => candidate.label === "template resources"));
+    assert.ok(topLevel.some(candidate => candidate.label === "template -> model"));
+    assert.ok(topLevel.some(candidate => candidate.label === "template -> variants"));
+    assert.ok(topLevel.some(candidate => candidate.label === "template -> multipart"));
+    assert.strictEqual(topLevel.some(candidate => candidate.label === "template"), false);
+    assert.strictEqual(topLevel.some(candidate => candidate.label === "fragment" || candidate.label === "fn"), false);
     assert.strictEqual(topLevel.some(candidate => candidate.label === "cubeAll"), false);
 
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);
@@ -39,6 +45,56 @@ describe("RSGL completion data", () => {
     assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json"), false);
     assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json_file"), false);
     assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
+  });
+
+  it("filters explicit template body completions by output dialect", () => {
+    const labelsAtEnd = (text: string) => new Set(
+      getRsglCompletionCandidates(text, text.length).map(candidate => candidate.label)
+    );
+    const model = labelsAtEnd("template geometry() -> model {\n  ");
+    assert.ok(model.has("element"));
+    assert.ok(model.has("textures"));
+    assert.strictEqual(model.has("variants"), false);
+    assert.strictEqual(model.has("extern var"), false);
+    assert.strictEqual(model.has("base"), false);
+
+    const variants = labelsAtEnd("template states() -> variants {\n  ");
+    assert.ok(variants.has("use"));
+    assert.ok(variants.has("for"));
+    assert.ok(variants.has("variant entry"));
+    assert.strictEqual(variants.has("random"), false);
+    assert.strictEqual(variants.has("element"), false);
+    assert.strictEqual(variants.has("multipart"), false);
+
+    const multipart = labelsAtEnd("template parts() -> multipart {\n  ");
+    assert.ok(multipart.has("apply"));
+    assert.ok(multipart.has("when"));
+    assert.strictEqual(multipart.has("random"), false);
+  });
+
+  it("retains explicit template completion dialects inside nested control flow", () => {
+    const labelsAtEnd = (text: string) => new Set(
+      getRsglCompletionCandidates(text, text.length).map(candidate => candidate.label)
+    );
+    const nestedModel = labelsAtEnd([
+      "template geometry() -> model {",
+      "  for part in [top] {",
+      "    if true {",
+      "      "
+    ].join("\n"));
+    assert.ok(nestedModel.has("element"));
+    assert.strictEqual(nestedModel.has("range"), false);
+    assert.strictEqual(nestedModel.has("variants"), false);
+
+    const nestedVariants = labelsAtEnd([
+      "template states() -> variants {",
+      "  for state in [off, on] {",
+      "    if true {",
+      "      "
+    ].join("\n"));
+    assert.ok(nestedVariants.has("variant entry"));
+    assert.strictEqual(nestedVariants.has("element"), false);
+    assert.strictEqual(nestedVariants.has("apply"), false);
   });
 
   it("keeps model geometry completion metadata and ordering descriptor-backed", () => {

@@ -15,16 +15,18 @@ import {
   type EvaluationOrigin,
   EvaluationValue,
   expressionEvaluationOrigin,
+  hasEvaluationValueBinding,
   RawGlobLoader,
   evaluateExpression
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { RsglCompileDiagnostic } from "./ir";
 import { RsglType, typeFromAnnotation } from "../semantic/types";
-import { isRsglStdlibVirtualFileName } from "../stdlib";
 
 export type RsglCompileContext = EvaluationContext & {
   templates?: Map<string, RsglTemplateDefinition>;
+  /** Internal definition identities used for recursion detection; never emitted in source maps. */
+  templateDefinitionStack?: readonly string[];
 };
 
 export type TemplateExpansion = {
@@ -54,21 +56,24 @@ export interface TemplateExpansionOptions {
 export function createTemplateExpansion(
   expression: ExprNode,
   context: RsglCompileContext,
-  options: TemplateExpansionOptions
+  options: TemplateExpansionOptions,
+  resolvedDefinition?: RsglTemplateDefinition
 ): TemplateExpansion | undefined {
   if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
     return undefined;
   }
   const templateName = expression.callee.name.text;
-  const template = (context.templates ?? options.templates).get(templateName);
+  const template = resolvedDefinition
+    ?? resolveTemplateDefinition(expression, context, options.templates);
   if (!template) {
     return undefined;
   }
-  const recursionKey = `use ${templateName}`;
-  if ((context.expansionStack ?? []).some(frame => frame.label === recursionKey)) {
+  const definitionIdentity = templateDefinitionIdentity(template);
+  if ((context.templateDefinitionStack ?? []).includes(definitionIdentity)) {
     options.onError("rsgl.templateRecursion", `Template '${template.name}' cannot recursively expand itself.`, expression.range);
     return undefined;
   }
+  const frameLabel = `use ${templateName}`;
 
   const templateBaseContext = createTemplateBaseContext(template, options);
   const parameters = template.node.parameters
@@ -85,7 +90,6 @@ export function createTemplateExpansion(
     expression,
     context,
     templateBaseContext,
-    template.fileName,
     "template",
     options
   );
@@ -98,22 +102,47 @@ export function createTemplateExpansion(
     mappingReason: "template",
     expansionStack: [
       ...(context.expansionStack ?? []),
-      { label: recursionKey, sourceRange: expression.range }
+      { label: frameLabel, sourceFile: context.sourceFile, sourceRange: expression.range }
     ]
   });
+  templateContext.templateDefinitionStack = [
+    ...(context.templateDefinitionStack ?? []),
+    definitionIdentity
+  ];
   templateContext.valueOrigins = new Map([
     ...(templateBaseContext.valueOrigins ?? []),
     ...binding.origins
   ]);
   templateContext.stateKeyAliases = callableStateKeyAliases(templateBaseContext, parameters);
+  if (template.node.body.kind === "Block") {
+    templateContext.valueBindingNames = new Set([
+      ...(templateContext.valueBindingNames ?? []),
+      ...blockValueBindingNames(template.node.body)
+    ]);
+  }
   return { definition: template, context: templateContext };
+}
+
+/** Resolves a template definition without binding or evaluating any call arguments/defaults. */
+export function resolveTemplateDefinition(
+  expression: ExprNode,
+  context: RsglCompileContext,
+  templates: ReadonlyMap<string, RsglTemplateDefinition>
+): RsglTemplateDefinition | undefined {
+  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+    return undefined;
+  }
+  if (hasEvaluationValueBinding(context, expression.callee.name.text)) {
+    return undefined;
+  }
+  return (context.templates ?? templates).get(expression.callee.name.text);
 }
 
 export function templateResourceBody(body: TemplateBodyNode): ResourceBodyNode | null {
   if (body.kind === "ResourceBody") {
     return body;
   }
-  return blockAsResourceBody(body);
+  return body.kind === "Block" ? blockAsResourceBody(body) : null;
 }
 
 interface BoundCallableValues {
@@ -126,7 +155,6 @@ function bindCallableValues(
   expression: Extract<ExprNode, { kind: "CallExpr" }>,
   callContext: RsglCompileContext,
   definitionContext: RsglCompileContext,
-  definitionFileName: string,
   label: "template",
   options: TemplateExpansionOptions
 ): BoundCallableValues | null {
@@ -155,14 +183,11 @@ function bindCallableValues(
   }
 
   const argsByParameter = new Map(binding.primaryAssignments.map(assignment => [assignment.parameter.name, assignment.arg]));
-  const argumentNamespace = isRsglStdlibVirtualFileName(definitionFileName)
-    ? callContext.namespace
-    : definitionContext.namespace;
   for (const parameter of parameters) {
     const name = parameter.name;
     const arg = argsByParameter.get(name);
     if (arg) {
-      values[name] = normalizeCallableValue(evaluateExpression(arg.value, callContext), parameter.type, argumentNamespace);
+      values[name] = normalizeCallableValue(evaluateExpression(arg.value, callContext), parameter.type, callContext.namespace);
       const inheritedOrigin = expressionEvaluationOrigin(arg.value, callContext);
       const sourceFile = inheritedOrigin?.sourceFile ?? callContext.sourceFile;
       if (sourceFile) {
@@ -195,10 +220,19 @@ function bindCallableValues(
 
 function normalizeCallableValue(value: EvaluationValue, type: RsglType, namespace: string): EvaluationValue {
   if (
-    (type.kind === "ResourceId" || type.kind === "ModelId" || type.kind === "TextureId") &&
+    (
+      type.kind === "ResourceId"
+      || type.kind === "ModelId"
+      || type.kind === "TextureId"
+      || type.kind === "TextureVariable"
+      || type.kind === "TextureRef"
+    ) &&
     (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
   ) {
     const text = String(value);
+    if ((type.kind === "TextureVariable" || type.kind === "TextureRef") && text.startsWith("#")) {
+      return text;
+    }
     return text.includes(":") ? text : `${namespace}:${text}`;
   }
   return value;
@@ -211,6 +245,7 @@ function createTemplateBaseContext(
   return {
     namespace: template.namespace,
     variables: new Map(template.values),
+    valueBindingNames: new Set(template.values.keys()),
     sourceFile: template.fileName,
     mappingReason: "template",
     expansionStack: [],
@@ -222,6 +257,23 @@ function createTemplateBaseContext(
     onError: options.onError,
     templates: template.templates
   };
+}
+
+function blockValueBindingNames(body: BlockNode): string[] {
+  return body.statements.flatMap(statement =>
+    (statement.kind === "LetDecl" || statement.kind === "TableDecl") && statement.name
+      ? [statement.name.text]
+      : []
+  );
+}
+
+function templateDefinitionIdentity(template: RsglTemplateDefinition): string {
+  return template.definitionFingerprint || JSON.stringify([
+    template.fileName,
+    template.node.name?.text ?? template.name,
+    template.node.range.start,
+    template.node.range.end
+  ]);
 }
 
 function callableStateKeyAliases(

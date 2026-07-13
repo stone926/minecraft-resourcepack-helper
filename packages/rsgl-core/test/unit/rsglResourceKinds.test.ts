@@ -168,6 +168,7 @@ describe("RSGL resource kind descriptors", () => {
     const validationSource = readSource("packages", "rsgl-core", "src", "compiler", "validation.ts");
     const parserSource = readSource("packages", "rsgl-core", "src", "parser", "parser.ts");
     const statementParserSource = readSource("packages", "rsgl-core", "src", "parser", "statementParser.ts");
+    const bodyContextSource = readSource("packages", "rsgl-core", "src", "parser", "bodyParseContext.ts");
 
     assert.ok(compilerSource.includes("compileResourceDeclaration(statement, context"));
     assert.strictEqual(compilerSource.includes("private compileModel("), false);
@@ -177,7 +178,9 @@ describe("RSGL resource kind descriptors", () => {
     assert.ok(validationSource.includes("resourceValidators[validationHandler]"));
     assert.ok(validationSource.includes("getRsglResourceKindDescriptor(unit.kind)"));
     assert.ok(parserSource.includes("descriptor?.ast.shape"));
-    assert.ok(statementParserSource.includes("getRsglResourceKindDescriptor(owner)?.ast.bodyDialect"));
+    assert.ok(bodyContextSource.includes("getRsglResourceKindDescriptor(resourceKind)"));
+    assert.ok(statementParserSource.includes("context.dialect"));
+    assert.strictEqual(statementParserSource.includes("getRsglResourceKindDescriptor"), false);
     for (const keyword of rsglResourceKinds) {
       assert.strictEqual(statementParserSource.includes(`owner === "${keyword}"`), false);
     }

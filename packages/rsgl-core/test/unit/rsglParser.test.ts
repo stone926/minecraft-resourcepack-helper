@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import { parseRsgl } from "../../src/parser";
 import { resourceKeywords } from "../../src/parser/keywords";
+import { getLegacyResourceBodyDialectForStatement } from "../../src/parser/resourceBodyDialectRegistry";
 import { rsglResourceKinds } from "../../src/resourceKinds";
 
 describe("RSGL parser", () => {
@@ -183,7 +184,7 @@ describe("RSGL parser", () => {
     }
     assert.deepStrictEqual(atlas.body.statements.map(statement => statement.kind), [
       "AtlasDirectoryStmt",
-      "SectionStmt"
+      "PropertyStmt"
     ]);
   });
 
@@ -230,8 +231,272 @@ describe("RSGL parser", () => {
     }
     assert.strictEqual(fragment.name?.text, "cubeFields");
     assert.deepStrictEqual(fragment.parameters.map(parameter => parameter.name?.text), ["parentModel", "texture"]);
+    assert.strictEqual(fragment.outputSyntax, "noArrow");
+    assert.strictEqual(fragment.declaredOutputDialect, undefined);
     assert.strictEqual(fragment.body.kind, "ResourceBody");
     assert.deepStrictEqual(fragment.body.statements.map(statement => statement.kind), ["PropertyStmt", "SectionStmt"]);
+  });
+
+  it("parses explicit template output dialects and preserves them through control flow", () => {
+    const module = parseRsgl([
+      "template hopperBowl(texture: TextureId) -> model {",
+      "  for offset in [0, 1] {",
+      "    if true {",
+      "      element from [0, 0, 0] to [16, 4, 16] { face up texture texture }",
+      "    }",
+      "  }",
+      "}",
+      "template stateSequence(model: ModelId) -> variants {",
+      "  for state in [off, on] { [powered=state] -> { model: model } }",
+      "}",
+      "template connected(model: ModelId) -> multipart {",
+      "  if true { when { north: true } apply { model: model } }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const [modelTemplate, variantsTemplate, multipartTemplate] = module.statements;
+    assert.strictEqual(modelTemplate.kind, "TemplateDecl");
+    assert.strictEqual(variantsTemplate.kind, "TemplateDecl");
+    assert.strictEqual(multipartTemplate.kind, "TemplateDecl");
+    if (
+      modelTemplate.kind !== "TemplateDecl"
+      || variantsTemplate.kind !== "TemplateDecl"
+      || multipartTemplate.kind !== "TemplateDecl"
+    ) {
+      throw new Error("Expected template declarations.");
+    }
+
+    assert.deepStrictEqual(
+      [modelTemplate, variantsTemplate, multipartTemplate].map(template => [
+        template.outputSyntax,
+        template.declaredOutputDialect,
+        template.body.kind
+      ]),
+      [
+        ["explicitArrow", "model", "ResourceBody"],
+        ["explicitArrow", "variants", "VariantBody"],
+        ["explicitArrow", "multipart", "MultipartBody"]
+      ]
+    );
+    const modelLoop = modelTemplate.body.kind === "ResourceBody" ? modelTemplate.body.statements[0] : undefined;
+    assert.strictEqual(modelLoop?.kind, "ForStmt");
+    if (modelLoop?.kind === "ForStmt" && modelLoop.body.kind === "ResourceBody") {
+      const branch = modelLoop.body.statements[0];
+      assert.strictEqual(branch.kind, "IfStmt");
+      if (branch.kind === "IfStmt" && branch.thenBody.kind === "ResourceBody") {
+        assert.strictEqual(branch.thenBody.statements[0]?.kind, "ModelElementStmt");
+      }
+    }
+  });
+
+  it("rejects non-public template output dialects", () => {
+    const module = parseRsgl("template old() -> blockstate {}");
+
+    assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidTemplateOutputDialect"));
+    const template = module.statements[0];
+    assert.strictEqual(template.kind, "TemplateDecl");
+    if (template.kind === "TemplateDecl") {
+      assert.strictEqual(template.outputSyntax, "explicitArrow");
+      assert.strictEqual(template.declaredOutputDialect, undefined);
+    }
+  });
+
+  it("keeps explicit template body kinds during incomplete-editor recovery", () => {
+    const model = parseRsgl("template geometry() -> model");
+    const variants = parseRsgl("template states() -> variants");
+    const multipart = parseRsgl("template parts() -> multipart");
+
+    assert.strictEqual(model.statements[0].kind === "TemplateDecl" && model.statements[0].body.kind, "ResourceBody");
+    assert.strictEqual(variants.statements[0].kind === "TemplateDecl" && variants.statements[0].body.kind, "VariantBody");
+    assert.strictEqual(multipart.statements[0].kind === "TemplateDecl" && multipart.statements[0].body.kind, "MultipartBody");
+    assert.ok(model.diagnostics.some(item => item.code === "rsgl.expectedResourceBody"));
+    assert.ok(variants.diagnostics.some(item => item.code === "rsgl.expectedVariantBody"));
+    assert.ok(multipart.diagnostics.some(item => item.code === "rsgl.expectedMultipartBody"));
+  });
+
+  it("retains specialized model AST for legacy no-arrow compatibility", () => {
+    const module = parseRsgl([
+      "template bowl() {",
+      "  if true { element from [0, 0, 0] to [16, 4, 16] { face up texture \"#side\" } }",
+      "}"
+    ].join("\n"));
+    const template = module.statements[0];
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.strictEqual(template.kind, "TemplateDecl");
+    if (template.kind === "TemplateDecl" && template.body.kind === "ResourceBody") {
+      const branch = template.body.statements[0];
+      assert.strictEqual(branch.kind, "IfStmt");
+      if (branch.kind === "IfStmt" && branch.thenBody.kind === "ResourceBody") {
+        assert.strictEqual(branch.thenBody.statements[0]?.kind, "ModelElementStmt");
+      }
+    }
+  });
+
+  it("recognizes multiline model impl resources without promoting bare item model fields", () => {
+    const module = parseRsgl([
+      "template suspiciousModel(type: String, file: String, tex: String) {",
+      "  model block `suspicious_${type}/${file}`",
+      "  impl minecraft:block/cube_all(all: `minecraft:block/suspicious_${type}/${tex}`) {",
+      "    textures {",
+      "      if file == \"dusted_0\" {",
+      "        particle: `minecraft:block/suspicious_${type}_0`",
+      "      }",
+      "    }",
+      "  }",
+      "}",
+      "template itemBody() {",
+      "  model block",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const [resourceTemplate, itemTemplate] = module.statements;
+    assert.strictEqual(resourceTemplate.kind, "TemplateDecl");
+    assert.strictEqual(itemTemplate.kind, "TemplateDecl");
+    if (resourceTemplate.kind !== "TemplateDecl" || itemTemplate.kind !== "TemplateDecl") {
+      assert.fail("Expected template declarations.");
+      return;
+    }
+
+    assert.strictEqual(resourceTemplate.body.kind, "Block");
+    if (resourceTemplate.body.kind === "Block") {
+      const model = resourceTemplate.body.statements[0];
+      assert.strictEqual(model.kind, "ResourceDecl");
+      if (model.kind === "ResourceDecl") {
+        assert.strictEqual(model.resourceKind, "model");
+        assert.strictEqual(model.subtype?.text, "block");
+        assert.strictEqual(model.impl?.kind, "CallExpr");
+      }
+    }
+
+    assert.strictEqual(itemTemplate.body.kind, "ResourceBody");
+    if (itemTemplate.body.kind === "ResourceBody") {
+      const modelField = itemTemplate.body.statements[0];
+      assert.strictEqual(modelField.kind, "PropertyStmt");
+      if (modelField.kind === "PropertyStmt") {
+        assert.strictEqual(modelField.name.text, "model");
+        assert.strictEqual(modelField.value.kind, "IdentifierExpr");
+      }
+    }
+  });
+
+  it("retains legacy resource-body dialects through leading control flow", () => {
+    const module = parseRsgl([
+      "template genericFields(values: Json) {",
+      "  for value in values { custom value }",
+      "}",
+      "template itemBody() {",
+      "  if true { range property minecraft:compass { frames 0..1 model minecraft:item/compass } }",
+      "}",
+      "template packBody() {",
+      "  if true { formats min [88, 0] max [9999, 0] }",
+      "}",
+      "template atlasBody() {",
+      "  for source in [\"block\"] { directory source source prefix \"block/\" }",
+      "}",
+      "template equipmentBody() {",
+      "  if true { layer humanoid texture minecraft:iron }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const expectedNestedKinds = [
+      "PropertyStmt",
+      "ItemRangeStmt",
+      "PackFormatsStmt",
+      "AtlasDirectoryStmt",
+      "EquipmentLayerStmt"
+    ];
+    module.statements.forEach((statement, index) => {
+      assert.strictEqual(statement.kind, "TemplateDecl");
+      if (statement.kind !== "TemplateDecl") {
+        return;
+      }
+      assert.strictEqual(statement.body.kind, "ResourceBody");
+      if (statement.body.kind !== "ResourceBody") {
+        return;
+      }
+      const control = statement.body.statements[0];
+      assert.ok(control.kind === "ForStmt" || control.kind === "IfStmt");
+      const nestedBody = control.kind === "ForStmt" ? control.body : control.thenBody;
+      assert.strictEqual(nestedBody.kind, "ResourceBody");
+      if (nestedBody.kind === "ResourceBody") {
+        assert.strictEqual(nestedBody.statements[0]?.kind, expectedNestedKinds[index]);
+      }
+    });
+  });
+
+  it("uses explicit property syntax to escape every specialized body grammar", () => {
+    const module = parseRsgl([
+      "json \"assets/minecraft/custom/escaped.json\" {",
+      "  range: 1",
+      "  variants: { enabled: true }",
+      "  textures: {}",
+      "  if: true",
+      "}",
+      "item escaped { range: 2 }",
+      "blockstate escaped { variants: {} }"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.deepStrictEqual(module.statements.map(statement =>
+      statement.kind === "ResourceDecl"
+        ? statement.body.statements.map(item => item.kind)
+        : []
+    ), [
+      ["PropertyStmt", "PropertyStmt", "PropertyStmt", "PropertyStmt"],
+      ["PropertyStmt"],
+      ["PropertyStmt"]
+    ]);
+  });
+
+  it("classifies overlay-only pack templates and diagnoses mixed legacy dialects", () => {
+    const overlay = parseRsgl("template overlayBody() { overlay \"future\" {} }");
+    const overlayTemplate = overlay.statements[0];
+
+    assert.deepStrictEqual(overlay.diagnostics, []);
+    assert.strictEqual(overlayTemplate.kind, "TemplateDecl");
+    if (overlayTemplate.kind === "TemplateDecl" && overlayTemplate.body.kind === "ResourceBody") {
+      assert.strictEqual(overlayTemplate.body.statements[0]?.kind, "PackOverlayStmt");
+    } else {
+      assert.fail("Expected an overlay-only legacy pack ResourceBody.");
+    }
+
+    const mixed = parseRsgl([
+      "template mixedBody() {",
+      "  texture all minecraft:block/stone",
+      "  layer humanoid",
+      "}"
+    ].join("\n"));
+    const mixedTemplate = mixed.statements[0];
+
+    assert.ok(mixed.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.conflictingLegacyTemplateBodyDialects"
+    ));
+    assert.strictEqual(mixedTemplate.kind, "TemplateDecl");
+    if (mixedTemplate.kind === "TemplateDecl" && mixedTemplate.body.kind === "ResourceBody") {
+      assert.deepStrictEqual(
+        mixedTemplate.body.statements.map(statement => statement.kind),
+        ["ModelTextureStmt", "PropertyStmt"]
+      );
+    }
+  });
+
+  it("retains node-aware mcmeta evidence in the legacy dialect registry", () => {
+    const module = parseRsgl("template textureMetadata() { texture { blur: true } }");
+    const template = module.statements[0];
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.strictEqual(template.kind, "TemplateDecl");
+    if (template.kind !== "TemplateDecl" || template.body.kind !== "ResourceBody") {
+      assert.fail("Expected a legacy mcmeta ResourceBody.");
+      return;
+    }
+    const texture = template.body.statements[0];
+    assert.strictEqual(texture.kind, "SectionStmt");
+    assert.strictEqual(getLegacyResourceBodyDialectForStatement(texture), "mcmeta");
   });
 
   it("rejects legacy fragment declarations", () => {

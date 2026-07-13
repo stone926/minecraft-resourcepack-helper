@@ -1680,5 +1680,26 @@
       }
     }
   ],
-  "diagnostics": []
+  "diagnostics": [
+    {
+      "code": "rsgl.implicitTemplateOutputDialect",
+      "severity": "warning",
+      "fileName": "implicit-model-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.implicitTemplateOutputDialect",
+      "severity": "warning",
+      "fileName": "implicit-multipart-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.implicitTemplateOutputDialect",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.implicitTemplateOutputDialect",
+      "severity": "warning",
+      "fileName": "root-merge-value-helper.rsgl"
+    }
+  ]
 }
