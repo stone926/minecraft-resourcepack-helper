@@ -1,13 +1,12 @@
 import { EquipmentLayerStmtNode, TextRange } from "../parser";
-import { EvaluationContext, evaluateExpression, expressionEvaluationOrigin } from "./evaluate";
+import { EvaluationContext, expressionEvaluationOrigin } from "./evaluate";
 import { JsonValue } from "./ir";
 import { isJsonObject } from "./jsonValues";
+import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
 import { ResourceBodyFragment } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export interface EquipmentSugarOptions {
-  onError?: (code: string, message: string, range: TextRange) => void;
-}
+export type EquipmentSugarOptions = JsonValueSinkOptions;
 
 export interface EquipmentBodySugarResult {
   content: Record<string, JsonValue>;
@@ -19,25 +18,70 @@ export function compileEquipmentLayerStatement(
   context: EvaluationContext,
   options: EquipmentSugarOptions = {}
 ): ResourceBodyFragment | undefined {
-  const layer = evaluateExpression(statement.layer, context);
+  const layer = evaluateJsonExpression(statement.layer, context, options, "/layers");
+  if (layer === undefined) {
+    return undefined;
+  }
   if (typeof layer !== "string" || layer.length === 0) {
     options.onError?.("rsgl.invalidEquipmentLayer", "Equipment layer name must evaluate to a non-empty string.", statement.layer.range);
     return undefined;
   }
 
-  const texture = statement.texture ? evaluateExpression(statement.texture, context) : undefined;
+  const entryPath = appendGeneratedPath(appendGeneratedPath("/layers", layer), "0");
+  const texture = statement.texture
+    ? evaluateJsonExpression(
+      statement.texture,
+      context,
+      options,
+      appendGeneratedPath(entryPath, "texture")
+    )
+    : undefined;
+  if (statement.texture && texture === undefined) {
+    return undefined;
+  }
   if (typeof texture !== "string" || texture.length === 0) {
     options.onError?.("rsgl.invalidEquipmentLayerTexture", "Equipment layer statement requires a non-empty texture id.", statement.range);
     return undefined;
   }
 
+  const dyeable = statement.dyeable
+    ? evaluateJsonExpression(
+      statement.dyeable,
+      context,
+      options,
+      appendGeneratedPath(entryPath, "dyeable")
+    )
+    : undefined;
+  const color = statement.color
+    ? evaluateJsonExpression(
+      statement.color,
+      context,
+      options,
+      appendGeneratedPath(appendGeneratedPath(entryPath, "dyeable"), "color_when_undyed")
+    )
+    : undefined;
+  const usePlayerTexture = statement.usePlayerTexture
+    ? evaluateJsonExpression(
+      statement.usePlayerTexture,
+      context,
+      options,
+      appendGeneratedPath(entryPath, "use_player_texture")
+    )
+    : undefined;
+  if (
+    (statement.dyeable && dyeable === undefined)
+    || (statement.color && color === undefined)
+    || (statement.usePlayerTexture && usePlayerTexture === undefined)
+  ) {
+    return undefined;
+  }
   const entry = createEquipmentLayerEntry(
     texture,
     context,
     {
-      dyeable: statement.dyeable ? Boolean(evaluateExpression(statement.dyeable, context)) : undefined,
-      color: statement.color ? normalizeOptionalJsonValue(evaluateExpression(statement.color, context)) : undefined,
-      usePlayerTexture: statement.usePlayerTexture ? Boolean(evaluateExpression(statement.usePlayerTexture, context)) : undefined,
+      dyeable: statement.dyeable ? Boolean(dyeable) : undefined,
+      color,
+      usePlayerTexture: statement.usePlayerTexture ? Boolean(usePlayerTexture) : undefined,
       colorRange: statement.color?.range
     },
     options
@@ -54,13 +98,6 @@ export function compileEquipmentLayerStatement(
     content,
     mappings: equipmentLayerMappings(statement, layer, entry, context)
   };
-}
-
-function normalizeOptionalJsonValue(value: unknown): JsonValue | undefined {
-  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda")) {
-    return undefined;
-  }
-  return value as JsonValue;
 }
 
 export function lowerEquipmentBodySugar(

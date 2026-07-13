@@ -1,53 +1,32 @@
-import { ParserContext, tokenRange } from "./parserContext";
 import { binaryPrecedence } from "./statementKeywords";
 import { parseTemplateStringParts } from "./templateString";
 import {
+  getNodeOrTokenFullRange,
+  getNodeOrTokenRange,
+  TypeParser
+} from "./typeParser";
+import {
   ArgumentNode,
   BlockNode,
-  BooleanLiteralNode,
   ExprNode,
-  FunctionTypeNode,
   IdentifierNode,
   LambdaExprNode,
   MatchArmNode,
-  NumberLiteralNode,
   ObjectExprNode,
   ObjectPropertyNode,
   ResourceBodyNode,
   RsglNode,
   RsglToken,
-  StateKeySugarNode,
-  StringLiteralNode,
-  TypeNode
+  StateKeySugarNode
 } from "./types";
 
 interface ExpressionOptions {
   stopTexts?: readonly string[];
 }
 
-export function unquoteString(raw: string): string {
-  if (!raw.startsWith("\"")) {
-    return raw;
-  }
-  const body = raw.endsWith("\"") ? raw.slice(1, -1) : raw.slice(1);
-  return body.replace(/\\(u[0-9A-Fa-f]{4}|[nrt"\\])/g, (_match, escape: string) => {
-    if (escape === "n") {
-      return "\n";
-    }
-    if (escape === "r") {
-      return "\r";
-    }
-    if (escape === "t") {
-      return "\t";
-    }
-    if (escape.startsWith("u")) {
-      return String.fromCharCode(Number.parseInt(escape.slice(1), 16));
-    }
-    return escape;
-  });
-}
+export { unquoteString } from "./typeParser";
 
-export class ExpressionParser extends ParserContext {
+export class ExpressionParser extends TypeParser {
   protected parseExpression(options: ExpressionOptions = {}, minPrecedence = 0): ExprNode {
     const stopTexts = options.stopTexts ?? [];
     if (this.isExpressionStop(stopTexts)) {
@@ -494,144 +473,12 @@ export class ExpressionParser extends ParserContext {
     };
   }
 
-  protected parseStringLiteral(): StringLiteralNode {
-    const token = this.advance();
-    return {
-      kind: "StringLiteral",
-      value: unquoteString(token.text),
-      raw: token.text,
-      ...this.nodeRanges(token, token)
-    };
-  }
-
   private parseTemplateStringExpression(): ExprNode {
     const token = this.advance();
     return {
       kind: "TemplateStringExpr",
       raw: token.text,
       parts: parseTemplateStringParts(token),
-      ...this.nodeRanges(token, token)
-    };
-  }
-
-  private parseNumberLiteral(): NumberLiteralNode {
-    const token = this.advance();
-    return {
-      kind: "NumberLiteral",
-      value: token.text.startsWith("0x") || token.text.startsWith("0X") ? Number.parseInt(token.text.slice(2), 16) : Number(token.text),
-      raw: token.text,
-      ...this.nodeRanges(token, token)
-    };
-  }
-
-  protected parseType(): TypeNode {
-    const first = this.parsePrimaryType();
-    const options = [first];
-    while (this.matchText("|")) {
-      options.push(this.parsePrimaryType());
-    }
-    if (options.length === 1) {
-      return first;
-    }
-    return {
-      kind: "UnionType",
-      options,
-      range: { start: options[0].range.start, end: options[options.length - 1].range.end },
-      fullRange: { start: options[0].fullRange.start, end: options[options.length - 1].fullRange.end }
-    };
-  }
-
-  private parsePrimaryType(): TypeNode {
-    const start = this.current();
-    if (this.current().text === "(") {
-      return this.parseFunctionType();
-    }
-    if (this.current().kind === "string") {
-      return { kind: "LiteralType", value: this.parseStringLiteral(), ...this.nodeRanges(start, this.previousOr(start)) };
-    }
-    if (this.current().kind === "number") {
-      return { kind: "LiteralType", value: this.parseNumberLiteral(), ...this.nodeRanges(start, this.previousOr(start)) };
-    }
-    if (this.current().text === "true" || this.current().text === "false") {
-      return { kind: "LiteralType", value: this.booleanLiteral(this.advance(), start.text === "true"), ...this.nodeRanges(start, this.previousOr(start)) };
-    }
-    if (this.current().text === "null") {
-      return { kind: "LiteralType", value: { kind: "NullLiteral", ...this.nodeRanges(this.advance(), this.previousOr(start)) }, ...this.nodeRanges(start, this.previousOr(start)) };
-    }
-
-    const name = this.parseIdentifier("Expected type name.");
-    if (!name) {
-      return { kind: "MissingType", ...this.nodeRanges(start, start) };
-    }
-    if (this.matchText("<")) {
-      const args: TypeNode[] = [];
-      while (!this.isAtEnd() && this.current().text !== ">") {
-        const mark = this.mark();
-        args.push(this.parseType());
-        this.consumeOptionalSeparator();
-        this.ensureProgress(mark, "Unable to parse type argument; skipping token.");
-      }
-      this.expectText(">", "Expected '>' after generic type arguments.");
-      return {
-        kind: "GenericType",
-        name,
-        args,
-        ...this.nodeRanges(start, this.previousOr(start))
-      };
-    }
-    return {
-      kind: "NamedType",
-      name,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseFunctionType(): FunctionTypeNode {
-    const start = this.current();
-    const parameters: TypeNode[] = [];
-    this.expectText("(", "Expected function parameter type list.");
-    while (!this.isAtEnd() && this.current().text !== ")") {
-      const mark = this.mark();
-      parameters.push(this.parseType());
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse function parameter type; skipping token.");
-    }
-    this.expectText(")", "Expected ')' after function parameter types.");
-    this.expectText("->", "Expected '->' in function type.");
-    const returnType = this.parseType();
-    return {
-      kind: "FunctionType",
-      parameters,
-      returnType,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  protected parseIdentifier(message: string): IdentifierNode | null {
-    const token = this.current();
-    if (token.kind !== "identifier" && token.kind !== "keyword") {
-      this.addDiagnosticAtCurrent("rsgl.expectedIdentifier", message);
-      return null;
-    }
-    this.advance();
-    return this.syntheticIdentifier(token, token.text);
-  }
-
-  protected syntheticIdentifier(token: RsglToken | RsglNode, text: string): IdentifierNode {
-    const range = getNodeOrTokenRange(token);
-    const fullRange = getNodeOrTokenFullRange(token);
-    return {
-      kind: "Identifier",
-      text,
-      range,
-      fullRange
-    };
-  }
-
-  protected booleanLiteral(token: RsglToken, value: boolean): BooleanLiteralNode {
-    return {
-      kind: "BooleanLiteral",
-      value,
       ...this.nodeRanges(token, token)
     };
   }
@@ -689,56 +536,14 @@ export class ExpressionParser extends ParserContext {
       this.peekText(2) === "=";
   }
 
-  protected consumeOptionalSeparator(): void {
-    if (this.current().text === "," || this.current().text === ";") {
-      this.advance();
-    }
-  }
-
-  protected expectText(text: string, message: string): boolean {
-    if (this.matchText(text)) {
-      return true;
-    }
-    this.addDiagnosticAtCurrent(expectedTokenDiagnosticCode(text), message);
-    return false;
-  }
-
   protected recoverToLineEnd(): void {
     while (!this.isAtEnd() && !this.isStatementBoundary(this.current()) && this.current().text !== "}") {
       this.advance();
     }
   }
 
-  protected nodeRanges(start: RsglToken, end: RsglToken): Pick<RsglNode, "range" | "fullRange"> {
-    return {
-      range: { start: start.offset, end: end.offset + end.length },
-      fullRange: { start: this.fullStart(start), end: end.offset + end.length }
-    };
-  }
-
-  private fullStart(token: RsglToken): number {
-    return token.leadingTrivia.length > 0 ? token.leadingTrivia[0].offset : token.offset;
-  }
-
   private hasLeadingTrivia(token: RsglToken): boolean {
     return token.leadingTrivia.length > 0;
-  }
-
-  private peek(ahead: number): RsglToken {
-    return this.tokens[this.tokenOffset() + ahead] ?? this.current();
-  }
-
-  protected peekText(ahead: number): string {
-    return this.peek(ahead).text;
-  }
-
-  private peekKind(ahead: number): RsglToken["kind"] {
-    return this.peek(ahead).kind;
-  }
-
-  private tokenOffset(): number {
-    const current = this.current();
-    return this.tokens.indexOf(current);
   }
 
   private looksLikeParenthesizedLambda(): boolean {
@@ -773,31 +578,4 @@ export class StandaloneExpressionParser extends ExpressionParser {
   public parse(): ExprNode {
     return this.parseExpression();
   }
-}
-
-function getNodeOrTokenRange(value: RsglToken | RsglNode) {
-  if ("range" in value) {
-    return value.range;
-  }
-  return tokenRange(value);
-}
-
-function getNodeOrTokenFullRange(value: RsglToken | RsglNode) {
-  if ("fullRange" in value) {
-    return value.fullRange;
-  }
-  return tokenRange(value);
-}
-
-function expectedTokenDiagnosticCode(text: string): string {
-  if (text === "}") {
-    return "rsgl.expectedClosingBrace";
-  }
-  if (text === "]") {
-    return "rsgl.expectedClosingBracket";
-  }
-  if (text === ")") {
-    return "rsgl.expectedClosingParen";
-  }
-  return "rsgl.expectedToken";
 }

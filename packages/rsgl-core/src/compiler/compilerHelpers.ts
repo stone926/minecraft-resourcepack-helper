@@ -34,7 +34,21 @@ export function normalizeJsonValue(value: unknown): JsonValue {
 }
 
 function isLambdaLikeValue(value: unknown): boolean {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as {
+    kind?: string;
+    parameters?: unknown;
+    body?: unknown;
+    context?: unknown;
+    impureCalls?: unknown;
+  };
+  return candidate.kind === "lambda"
+    && Array.isArray(candidate.parameters)
+    && Boolean(candidate.body && typeof candidate.body === "object")
+    && Boolean(candidate.context && typeof candidate.context === "object")
+    && Array.isArray(candidate.impureCalls);
 }
 
 export function staticText(expression: ExprNode, context: EvaluationContext): string | null {

@@ -4,7 +4,7 @@ template simpleModelItem(id: ResourceId, model: ModelId) {
   }
 }
 
-template rangeFrames(id: ResourceId, property: ResourceId, values: List<Json> | Range, model: (Json) -> ModelId | Json, fallback: ModelId) {
+template rangeFrames(id: ResourceId, property: ResourceId, values: List<Number> | Range, model: (Number) -> ModelId | Json, fallback: ModelId) {
   item id {
     range property property {
       frames values model model(frame)

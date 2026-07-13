@@ -438,7 +438,7 @@ export class BlockstateOperationExecutor {
     }
     const lowered = statement.kind === "BlockstateVariantEntry"
       ? lowerBlockstateApply(statement.value, context, this.host)
-      : lowerLegacyBlockstateApply(statement.value, context);
+      : lowerLegacyBlockstateApply(statement.value, context, this.host);
     if (!lowered || !root.state) {
       return;
     }
@@ -477,7 +477,7 @@ export class BlockstateOperationExecutor {
     }
     const apply = statement.kind === "BlockstateMultipartEntry"
       ? lowerBlockstateApply(statement.apply, context, this.host)
-      : lowerLegacyBlockstateApply(statement.apply, context);
+      : lowerLegacyBlockstateApply(statement.apply, context, this.host);
     if (!apply || !root.state) {
       return;
     }

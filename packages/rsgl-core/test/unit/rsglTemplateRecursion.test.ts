@@ -76,7 +76,7 @@ describe("RSGL template recursion validation", () => {
 });
 
 function createSyntheticCycleModel(templateCount: number): RsglSemanticModel {
-  const scope: RsglScope = { kind: "global", symbols: new Map() };
+  const scope: RsglScope = { kind: "global", symbols: new Map(), typeAliases: new Map() };
   const templates = Array.from({ length: templateCount }, (_, index) => createTemplate(index));
   const symbols = templates.map((template, index): RsglSymbol => ({
     name: templateName(index),

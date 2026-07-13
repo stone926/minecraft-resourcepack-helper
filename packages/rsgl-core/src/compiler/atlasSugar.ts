@@ -4,19 +4,17 @@ import {
   AtlasPalettedPermutationsStmtNode,
   ExprNode,
   ResourceBodyNode,
-  ResourceStatementNode,
-  TextRange
+  ResourceStatementNode
 } from "../parser";
-import { EvaluationContext, evaluateExpression, expressionEvaluationPathOrigins } from "./evaluate";
+import { EvaluationContext, expressionEvaluationPathOrigins } from "./evaluate";
 import { JsonValue } from "./ir";
+import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
 import { ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult } from "./resourceBody";
-import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
+import { appendGeneratedPath } from "./sourcePaths";
 
 const paletteKeyField = "palette_key";
 
-export interface RsglAtlasSugarOptions {
-  onError?: (code: string, message: string, range: TextRange) => void;
-}
+export type RsglAtlasSugarOptions = JsonValueSinkOptions;
 
 export type AtlasBodyCompiler = (
   body: ResourceBodyNode,
@@ -46,8 +44,12 @@ function compileAtlasDirectoryStatement(
   context: EvaluationContext,
   options: RsglAtlasSugarOptions
 ): ResourceBodyFragment | undefined {
-  const source = statement.source ? staticText(statement.source, context) : null;
-  const prefix = statement.prefix ? staticText(statement.prefix, context) : null;
+  const source = statement.source
+    ? staticText(statement.source, context, options, "/sources/0/source")
+    : null;
+  const prefix = statement.prefix
+    ? staticText(statement.prefix, context, options, "/sources/0/prefix")
+    : null;
   if (!source) {
     options.onError?.("rsgl.invalidAtlasDirectorySource", "Atlas directory source requires a static source string.", statement.range);
     return undefined;
@@ -82,8 +84,12 @@ function compileAtlasFilterStatement(
   context: EvaluationContext,
   options: RsglAtlasSugarOptions
 ): Record<string, JsonValue> | undefined {
-  const namespace = statement.namespace ? staticText(statement.namespace, context) : null;
-  const path = statement.path ? staticText(statement.path, context) : null;
+  const namespace = statement.namespace
+    ? staticText(statement.namespace, context, options, "/sources/0/pattern/namespace")
+    : null;
+  const path = statement.path
+    ? staticText(statement.path, context, options, "/sources/0/pattern/path")
+    : null;
   if (!namespace || !path) {
     options.onError?.("rsgl.invalidAtlasFilter", "Atlas filter requires static namespace and path patterns.", statement.range);
     return undefined;
@@ -150,10 +156,7 @@ function atlasSourceMappings(
       sourceRange: statement.range,
       context
     },
-    ...mappings.map(mapping => ({
-      ...mapping,
-      generatedPath: joinGeneratedPath(sourcePath, mapping.generatedPath)
-    }))
+    ...mappings
   ];
 }
 
@@ -173,7 +176,15 @@ function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> | n
     : null;
 }
 
-function staticText(expression: ExprNode, context: EvaluationContext): string | null {
-  const value = evaluateExpression(expression, context);
+function staticText(
+  expression: ExprNode,
+  context: EvaluationContext,
+  options: RsglAtlasSugarOptions,
+  generatedPath: string
+): string | null {
+  const value = evaluateJsonExpression(expression, context, options, generatedPath);
+  if (value === undefined) {
+    return null;
+  }
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
 }

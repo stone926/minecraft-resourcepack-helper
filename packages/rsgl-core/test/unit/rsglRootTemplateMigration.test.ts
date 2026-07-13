@@ -154,6 +154,45 @@ describe("RSGL legacy root-template migration", () => {
     }
   });
 
+  it("uses resolved builtin identity for value-helper effect safety", () => {
+    const shadowedSource = [
+      "let publicMarker = true",
+      "export { publicMarker }",
+      "template metadata(value: String) {",
+      "  let glob = item => item",
+      "  merge deep { custom: glob(value) }",
+      "}",
+      "blockstate variants shadowed_effect {",
+      "  use metadata(\"kept\")",
+      "  {}: minecraft:block/stone",
+      "}"
+    ].join("\n");
+    const shadowed = migrate(shadowedSource);
+
+    assert.deepStrictEqual(shadowed.result.issues, []);
+    assert.ok(shadowed.migrated.includes("let metadata: (String) -> Json"));
+    assert.ok(shadowed.migrated.includes("glob(value)"));
+
+    const builtinSource = [
+      "let publicMarker = true",
+      "export { publicMarker }",
+      "template metadata(value: String) {",
+      "  merge deep { custom: glob(value) }",
+      "}",
+      "blockstate variants builtin_effect {",
+      "  use metadata(\"kept\")",
+      "  {}: minecraft:block/stone",
+      "}"
+    ].join("\n");
+    const builtin = migrate(builtinSource);
+
+    assert.deepStrictEqual(builtin.result.edits, []);
+    assert.deepStrictEqual(builtin.result.issues.map(issue => issue.code), [
+      "manualRootTemplateMigrationRequired"
+    ]);
+    assert.match(builtin.result.issues[0].message, /effect.*forbidden/u);
+  });
+
   it("hygienically inlines a capture-free mixed loop without reordering merge and entry", () => {
     const sourceText = [
       "let publicMarker = true",

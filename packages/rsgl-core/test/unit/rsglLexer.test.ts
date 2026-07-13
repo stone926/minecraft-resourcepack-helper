@@ -29,6 +29,16 @@ describe("RSGL lexer", () => {
     }
   });
 
+  it("reserves type aliases without exposing fn or Missing as keywords", () => {
+    const result = lexRsgl("type Record = { optional?: String } fn Missing");
+    const kinds = new Map(result.tokens.map(token => [token.text, token.kind]));
+
+    assert.strictEqual(kinds.get("type"), "keyword");
+    assert.strictEqual(kinds.get("fn"), "identifier");
+    assert.strictEqual(kinds.get("Missing"), "identifier");
+    assert.ok(result.tokens.some(token => token.kind === "operator" && token.text === "?"));
+  });
+
   it("classifies every model geometry descriptor keyword", () => {
     assert.strictEqual(
       new Set(rsglModelGeometryKeywords).size,

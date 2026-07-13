@@ -4,6 +4,7 @@ import {
   TextRange
 } from "../parser";
 import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
+import { builtinEffect } from "../semantic/builtins";
 import { findLambdaImpureCalls, LambdaImpureCall } from "../semantic/lambdaPurity";
 import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
@@ -18,7 +19,6 @@ export interface LambdaValue {
   context: EvaluationContext;
   /** Impure builtin calls found in the body; a non-empty list blocks execution. */
   impureCalls: LambdaImpureCall[];
-  arityReported?: boolean;
 }
 
 export type EvaluationValue = JsonValue | LambdaValue | undefined;
@@ -89,6 +89,8 @@ export interface EvaluationContext {
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
+  /** @internal Signals that evaluation failed even when semantic analysis owns the diagnostic. */
+  onEvaluationFailure?: () => void;
   /** @internal Active only for one evaluateExpressionResult call. */
   evaluationTrace?: EvaluationTraceSession;
 }
@@ -403,6 +405,18 @@ function buildEvaluationResult(
   }
 
   if (expression.kind === "CallExpr") {
+    if (expression.callee.kind === "IdentifierExpr" && expression.callee.name.text === "seq") {
+      const childOrigins = frame.children.flatMap(child =>
+        materializeEvaluationPathOrigins(child.result, child.context.sourceFile)
+      );
+      const origin = mergeEvaluationOrigins(childOrigins);
+      return evaluationResult(
+        value,
+        direct.pathRanges,
+        origin ? [{ generatedPath: "", ...origin }] : [],
+        direct.valueIssues
+      );
+    }
     const callee = childForExpression(frame, expression.callee);
     const calleeValue = callee?.result.value;
     if (isLambdaValue(calleeValue)) {
@@ -422,15 +436,19 @@ function buildEvaluationResult(
       materializeEvaluationPathOrigins(child.result, child.context.sourceFile)
     );
     const origin = mergeEvaluationOrigins(childOrigins);
+    const retainedIssues = expression.callee.kind === "IdentifierExpr"
+      && expression.callee.name.text === "product"
+      ? frame.children.flatMap(child =>
+        materializeEvaluationValueIssues(child.result, child.context.sourceFile)
+      )
+      : [];
     return evaluationResult(
       value,
       direct.pathRanges,
       origin ? [{ generatedPath: "", ...origin }] : [],
       [
         ...direct.valueIssues,
-        ...frame.children.flatMap(child =>
-          materializeEvaluationValueIssues(child.result, child.context.sourceFile)
-        )
+        ...retainedIssues
       ]
     );
   }
@@ -1002,17 +1020,23 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     }));
     const calleeValue = evaluateExpression(expression.callee, context);
     if (isLambdaValue(calleeValue)) {
-      return evaluateLambdaCall(calleeValue, expression.args.length, args, context, expression.range);
+      return evaluateLambdaCall(calleeValue, expression.args.length, args, context);
     }
     return evaluateCallExpression(expression.callee, args, context, expression.range);
   }
   if (expression.kind === "LambdaExpr") {
+    const parameterNames = new Set(expression.parameters.map(parameter => parameter.text));
     return {
       kind: "lambda",
       parameters: expression.parameters.map(parameter => parameter.text),
       body: expression.body,
       context: captureEvaluationContext(context),
-      impureCalls: findLambdaImpureCalls(expression.body)
+      impureCalls: findLambdaImpureCalls(
+        expression.body,
+        name => parameterNames.has(name) || hasEvaluationValueBinding(context, name)
+          ? undefined
+          : builtinEffect(name)
+      )
     };
   }
   if (expression.kind === "MemberExpr") {
@@ -1026,6 +1050,10 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     const objectValue = evaluateExpression(expression.object, context);
     const indexValue = evaluateExpression(expression.index, context);
     if (Array.isArray(objectValue) && typeof indexValue === "number") {
+      if (!isValidListIndex(indexValue, objectValue.length)) {
+        reportRuntimeListIndexError(expression, indexValue, objectValue.length, context);
+        return undefined;
+      }
       return objectValue[indexValue] as EvaluationValue;
     }
     if (isJsonObject(objectValue)) {
@@ -1074,7 +1102,7 @@ function evaluateSeqExpression(
   if (generators.length === 0) {
     const patternValue = evaluateExpression(patternArg.value, context);
     if (isLambdaValue(patternValue)) {
-      const value = evaluateLambdaCall(patternValue, 0, [], context, patternArg.value.range);
+      const value = evaluateLambdaCall(patternValue, 0, [], context);
       return expandSequencePattern(String(value ?? ""), { pad: padWidth });
     }
     return expandSequencePattern(String(patternValue ?? ""), { pad: padWidth });
@@ -1102,7 +1130,7 @@ function evaluateSeqGeneratorPatterns(
 ): string[] {
   if (index >= generators.length) {
     const args = boundValues.map(value => ({ value, range: patternRange }));
-    const value = evaluateLambdaCall(lambdaPattern, boundValues.length, args, context, patternRange);
+    const value = evaluateLambdaCall(lambdaPattern, boundValues.length, args, context);
     return expandSequencePattern(String(value ?? ""), { pad: padWidth });
   }
 
@@ -1288,6 +1316,7 @@ function evaluateCallExpression(
   range: TextRange
 ): EvaluationValue {
   if (callee.kind !== "IdentifierExpr") {
+    context.onEvaluationFailure?.();
     return undefined;
   }
 
@@ -1329,6 +1358,11 @@ function evaluateCallExpression(
   if (callee.name.text === "endsWith") {
     return String(argumentValue(args, "str", 0) ?? "").endsWith(String(argumentValue(args, "suffix", 1) ?? ""));
   }
+  if (callee.name.text === "has") {
+    const object = argumentValue(args, "object", 0);
+    const key = argumentValue(args, "key", 1);
+    return isJsonObject(object) && typeof key === "string" && Object.hasOwn(object, key);
+  }
   if (callee.name.text === "replace") {
     const source = String(argumentValue(args, "str", 0) ?? "");
     const oldText = String(argumentValue(args, "old", 1) ?? "");
@@ -1348,36 +1382,61 @@ function evaluateCallExpression(
     return source.padEnd(length, pad);
   }
 
+  context.onEvaluationFailure?.();
   return undefined;
+}
+
+function isValidListIndex(index: number, length: number): boolean {
+  return Number.isInteger(index) && index >= 0 && index < length;
+}
+
+function reportRuntimeListIndexError(
+  expression: Extract<ExprNode, { kind: "IndexExpr" }>,
+  index: number,
+  length: number,
+  context: EvaluationContext
+): void {
+  context.onEvaluationFailure?.();
+  // A literal index into a literal list has an exact static length. The
+  // semantic checker owns that diagnostic so compilation never reports the
+  // same out-of-bounds access twice.
+  if (expression.object.kind === "ListExpr" && expression.index.kind === "NumberLiteral") {
+    return;
+  }
+  const message = !Number.isInteger(index) || index < 0
+    ? `List index ${index} must be a non-negative integer.`
+    : length === 0
+      ? `List index ${index} is outside an empty runtime list.`
+      : `List index ${index} is outside the runtime list bounds 0..${length - 1}.`;
+  context.onError?.(
+    "rsgl.indexOutOfBounds",
+    message,
+    expression.index.range,
+    context.sourceFile
+  );
 }
 
 function evaluateLambdaCall(
   lambda: LambdaValue,
   argCount: number,
   args: EvaluationCallArgument[],
-  callContext: EvaluationContext,
-  range: TextRange
+  callContext: EvaluationContext
 ): EvaluationValue {
   if (lambda.impureCalls.length > 0) {
     // Enforcement only: the semantic layer reports rsgl.lambdaImpureCall at the
     // lambda's definition site, so the gate refuses execution without adding a
     // duplicate diagnostic.
+    callContext.onEvaluationFailure?.();
+    return undefined;
+  }
+  if (argCount !== lambda.parameters.length) {
+    // Semantic checking owns the single diagnostic, including calls through
+    // imported/re-exported signatures. Runtime remains a strict gate so an
+    // invalid call cannot materialize output with partially bound values.
+    callContext.onEvaluationFailure?.();
     return undefined;
   }
   const onError = callContext.onError ?? lambda.context.onError;
-  if (argCount !== lambda.parameters.length && onError && !lambda.arityReported) {
-    // Report at the call, attributed to the file containing it, once per
-    // lambda value: template bodies invoke the same mapper once per
-    // frame/variant. The pipeline dedupes this against the semantic layer's
-    // identical call-site report when the callee type was statically known.
-    lambda.arityReported = true;
-    onError(
-      "rsgl.lambdaArityMismatch",
-      `Expected ${lambda.parameters.length} lambda argument(s), got ${argCount}.`,
-      range,
-      callContext.sourceFile
-    );
-  }
 
   const positional = args.filter(arg => !arg.name);
   const values: Record<string, EvaluationValue> = {};
@@ -1390,6 +1449,8 @@ function evaluateLambdaCall(
 
   const bodyContext = childEvaluationContext(lambda.context, values, { onError });
   bodyContext.evaluationTrace = callContext.evaluationTrace;
+  bodyContext.onEvaluationFailure = callContext.onEvaluationFailure
+    ?? lambda.context.onEvaluationFailure;
   for (const [parameter, arg] of bindings) {
     if (arg?.result) {
       bindEvaluationResult(
@@ -1409,7 +1470,15 @@ function evaluateLambdaCall(
 }
 
 function isLambdaValue(value: EvaluationValue): value is LambdaValue {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Partial<LambdaValue>;
+  return candidate.kind === "lambda"
+    && Array.isArray(candidate.parameters)
+    && Boolean(candidate.body && typeof candidate.body === "object")
+    && Boolean(candidate.context && typeof candidate.context === "object")
+    && Array.isArray(candidate.impureCalls);
 }
 
 function captureEvaluationContext(context: EvaluationContext): EvaluationContext {

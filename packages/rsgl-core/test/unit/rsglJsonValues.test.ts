@@ -7,7 +7,14 @@ describe("RSGL JSON value helpers", () => {
   it("recognizes JSON objects without accepting arrays or compiler lambdas", () => {
     assert.strictEqual(isJsonObject({ value: 1 }), true);
     assert.strictEqual(isJsonObject({ kind: "text", text: "hello" }), true);
-    assert.strictEqual(isJsonObject({ kind: "lambda" }), false);
+    assert.strictEqual(isJsonObject({ kind: "lambda" }), true);
+    assert.strictEqual(isJsonObject({
+      kind: "lambda",
+      parameters: [],
+      body: { kind: "LiteralExpr" },
+      context: {},
+      impureCalls: []
+    }), false);
     assert.strictEqual(isJsonObject([]), false);
     assert.strictEqual(isJsonObject(null), false);
   });

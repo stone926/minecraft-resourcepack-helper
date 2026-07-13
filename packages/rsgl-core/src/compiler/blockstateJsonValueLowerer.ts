@@ -1,151 +1,80 @@
 import type { TextRange } from "../parser";
-import {
-  type EvaluationResult,
-  rangeForEvaluationPath
-} from "./evaluate";
+import type { EvaluationResult, EvaluationValueIssue } from "./evaluate";
 import type { JsonValue } from "./ir";
-import { isJsonObject } from "./jsonValues";
-import { appendGeneratedPath } from "./sourcePaths";
+import {
+  type JsonRuntimeValueAdapter,
+  type JsonValueLoweringFailure,
+  lowerJsonEvaluationResult
+} from "./jsonValueLowerer";
 
 export interface BlockstateJsonValueLoweringHost {
   onError: (code: string, message: string, range: TextRange, fileName?: string) => void;
+  jsonValueAdapters?: readonly JsonRuntimeValueAdapter[];
 }
 
 /**
- * Clones an evaluated value only after proving recursive JSON serializability.
- * Evaluation trace issues retain invalid children that the legacy evaluator
- * represents as null, so blockstate Json escape values can never hide lambdas,
- * undefined values, or lossy computed object keys behind normalization.
+ * Blockstate compatibility wrapper around the shared recursive JSON lowerer.
+ * It preserves the established diagnostic code/message and issue priority
+ * while using the same serializability assertion as every other JSON sink.
  */
 export function lowerSerializableBlockstateJsonValue(
   result: EvaluationResult,
   fallbackRange: TextRange,
   host: BlockstateJsonValueLoweringHost
 ): JsonValue | undefined {
-  const issue = result.valueIssues.find(item =>
+  return lowerJsonEvaluationResult(result, fallbackRange, {
+    ...(host.jsonValueAdapters
+      ? { adapters: host.jsonValueAdapters }
+      : {}),
+    reporter: {
+      selectIssue: selectBlockstateIssue,
+      report: failure => reportUnserializable(failure, host)
+    }
+  });
+}
+
+function selectBlockstateIssue(
+  issues: readonly EvaluationValueIssue[]
+): EvaluationValueIssue | undefined {
+  return issues.find(item =>
     item.kind === "duplicateObjectKey" || item.kind === "invalidObjectKey"
-  ) ?? result.valueIssues[0];
-  if (issue) {
-    reportUnserializable(
-      describeValueIssue(issue.kind),
-      issue.generatedPath,
-      issue.sourceRange,
-      host,
-      issue.sourceFile
+  ) ?? issues[0];
+}
+
+function reportUnserializable(
+  failure: JsonValueLoweringFailure,
+  host: BlockstateJsonValueLoweringHost
+): void {
+  const location = failure.generatedPath || "<root>";
+  if (failure.kind === "moduleNamespace") {
+    host.onError(
+      "rsgl.moduleNamespaceValueNotSerializable",
+      `Module namespace at '${location}' cannot be emitted as JSON.`,
+      failure.range,
+      failure.sourceFile
     );
-    return undefined;
+    return;
   }
-  return cloneSerializableValue(
-    result.value,
-    "",
-    fallbackRange,
-    result,
-    host,
-    new Set<object>()
+  host.onError(
+    "rsgl.unserializableBlockstateJsonValue",
+    `Blockstate model value at '${location}' is not JSON-serializable (${describeFailure(failure.kind)}).`,
+    failure.range,
+    failure.sourceFile
   );
 }
 
-function describeValueIssue(kind: EvaluationResult["valueIssues"][number]["kind"]): string {
+function describeFailure(kind: JsonValueLoweringFailure["kind"]): string {
   if (kind === "duplicateObjectKey") {
     return "duplicate computed object key";
   }
   if (kind === "invalidObjectKey") {
     return "computed object key without a value";
   }
+  if (kind === "runtimeObject") {
+    return "runtime object";
+  }
+  if (kind === "cyclicObject") {
+    return "cyclic object";
+  }
   return kind;
-}
-
-function cloneSerializableValue(
-  value: unknown,
-  generatedPath: string,
-  fallbackRange: TextRange,
-  result: EvaluationResult,
-  host: BlockstateJsonValueLoweringHost,
-  ancestors: Set<object>
-): JsonValue | undefined {
-  const range = rangeForEvaluationPath(result.pathRanges, generatedPath) ?? fallbackRange;
-  if (value === null || typeof value === "string" || typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "number") {
-    if (Number.isFinite(value)) {
-      return value;
-    }
-    reportUnserializable("nonFiniteNumber", generatedPath, range, host);
-    return undefined;
-  }
-  if (value === undefined) {
-    reportUnserializable("undefined", generatedPath, range, host);
-    return undefined;
-  }
-  if (!Array.isArray(value) && !isJsonObject(value)) {
-    reportUnserializable("runtime object", generatedPath, range, host);
-    return undefined;
-  }
-  if (ancestors.has(value)) {
-    reportUnserializable("cyclic object", generatedPath, range, host);
-    return undefined;
-  }
-
-  ancestors.add(value);
-  if (Array.isArray(value)) {
-    const cloned: JsonValue[] = [];
-    for (const [index, item] of value.entries()) {
-      const child = cloneSerializableValue(
-        item,
-        appendGeneratedPath(generatedPath, String(index)),
-        fallbackRange,
-        result,
-        host,
-        ancestors
-      );
-      if (child === undefined) {
-        ancestors.delete(value);
-        return undefined;
-      }
-      cloned.push(child);
-    }
-    ancestors.delete(value);
-    return cloned;
-  }
-
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-    ancestors.delete(value);
-    reportUnserializable("runtime object", generatedPath, range, host);
-    return undefined;
-  }
-  const cloned: Record<string, JsonValue> = {};
-  for (const [key, item] of Object.entries(value)) {
-    const child = cloneSerializableValue(
-      item,
-      appendGeneratedPath(generatedPath, key),
-      fallbackRange,
-      result,
-      host,
-      ancestors
-    );
-    if (child === undefined) {
-      ancestors.delete(value);
-      return undefined;
-    }
-    cloned[key] = child;
-  }
-  ancestors.delete(value);
-  return cloned;
-}
-
-function reportUnserializable(
-  kind: string,
-  generatedPath: string,
-  range: TextRange,
-  host: BlockstateJsonValueLoweringHost,
-  sourceFile?: string
-): void {
-  const location = generatedPath || "<root>";
-  host.onError(
-    "rsgl.unserializableBlockstateJsonValue",
-    `Blockstate model value at '${location}' is not JSON-serializable (${kind}).`,
-    range,
-    sourceFile
-  );
 }

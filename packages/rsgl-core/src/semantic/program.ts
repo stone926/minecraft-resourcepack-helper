@@ -13,6 +13,8 @@ import { validateResolvedProgramTemplateUses } from "./templateUseValidation";
 import { validateTemplateRecursion } from "./templateRecursion";
 import { validateResolvedProgramBlockstateSemantics } from "./blockstateSemanticValidation";
 import { resolveLinkedLegacyBlockstateCallerContexts } from "./blockstateCallerContextResolution";
+import { exportedLambdaReexportAnnotationDiagnostics } from "./lambdaAnalysis";
+import { createRsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 import {
   RsglBindOptions,
   RsglFileDiagnostic,
@@ -27,9 +29,39 @@ import {
 export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOptions = {}): RsglProgram {
   const sourceFiles = includeRsglStdlibSourceFiles(files, { stdlibRoot: options.stdlibRoot });
   const resolver = options.resolver ?? createDefaultResolver(sourceFiles);
-  const models = sourceFiles.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
-  const importGraph = buildImportGraph(sourceFiles, models, resolver);
-  const linkedSymbols = linkProgramSymbols(models, importGraph);
+  let models = sourceFiles.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
+  let importGraph = buildImportGraph(sourceFiles, models, resolver);
+  const typeAliases = createRsglProgramTypeAliasEnvironment(sourceFiles, importGraph);
+  if (Array.from(typeAliases.importsByFile.values()).some(imports => imports.size > 0)) {
+    let typeOnlyImports = typeOnlyImportNamesByFile(
+      models,
+      importGraph,
+      createRsglExportMaps(models, importGraph).maps,
+      typeAliases.exportMaps
+    );
+    const maximumPasses = Math.max(2, sourceFiles.length + 1);
+    for (let pass = 0; pass < maximumPasses; pass++) {
+      models = sourceFiles.map(file => bindRsglModule(file.module, {
+        ...options,
+        fileName: file.fileName,
+        resolver,
+        prelinkedTypeAliases: typeAliases.importsByFile.get(normalizeFileName(file.fileName)),
+        typeOnlyImportNames: typeOnlyImports.get(normalizeFileName(file.fileName))
+      }));
+      importGraph = buildImportGraph(sourceFiles, models, resolver);
+      const next = typeOnlyImportNamesByFile(
+        models,
+        importGraph,
+        createRsglExportMaps(models, importGraph).maps,
+        typeAliases.exportMaps
+      );
+      if (sameNameSets(typeOnlyImports, next)) {
+        break;
+      }
+      typeOnlyImports = next;
+    }
+  }
+  const linkedSymbols = linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
   resolveProgramTemplateOutputMetadata(models);
   for (const model of models) {
     model.diagnostics = model.diagnostics.filter(diagnostic => !templateOutputDiagnosticCodes.has(diagnostic.code));
@@ -39,10 +71,15 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   const templateRecursionDiagnostics = validateTemplateRecursion(models);
   const blockstateDiagnostics = validateResolvedProgramBlockstateSemantics(models);
   const importedCallDiagnostics = models.flatMap(model => withFileName(model.fileName, validateResolvedImportCalls(model)));
+  const valueExportDiagnostics = linkedSymbols.exportDiagnostics.filter(diagnostic =>
+    !isValueExportDiagnosticSatisfiedByTypeAlias(diagnostic, models, typeAliases.exportMaps)
+  );
   const fileDiagnostics: RsglFileDiagnostic[] = [
     ...models.flatMap(model => withFileName(model.fileName, model.diagnostics)),
-    ...linkedSymbols.exportDiagnostics,
+    ...typeAliases.fileDiagnostics,
+    ...valueExportDiagnostics,
     ...linkedSymbols.importDiagnostics,
+    ...exportedLambdaReexportAnnotationDiagnostics(models, linkedSymbols.exportMaps),
     ...blockstateCallerDiagnostics,
     ...templateUseDiagnostics,
     ...templateRecursionDiagnostics,
@@ -64,6 +101,7 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
     importGraph,
     diagnostics,
     fileDiagnostics,
+    typeAliasExportMaps: typeAliases.exportMaps,
     semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
   };
 }
@@ -94,14 +132,21 @@ interface ImportLinkPassResult {
 
 function linkProgramSymbols(
   models: RsglSemanticModel[],
-  importGraph: RsglImportGraph
+  importGraph: RsglImportGraph,
+  typeAliasExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
 ): LinkedProgramSymbols {
   const importAllBindings = new Map<RsglSemanticModel, Map<string, ImportAllBinding>>();
   const maxPasses = Math.max(4, models.length * 4 + importGraph.edges.length * 2);
 
   for (let pass = 0; pass < maxPasses; pass++) {
     const exports = createRsglExportMaps(models, importGraph);
-    const imports = resolveProgramImports(models, importGraph, exports.maps, importAllBindings);
+    const imports = resolveProgramImports(
+      models,
+      importGraph,
+      exports.maps,
+      importAllBindings,
+      typeAliasExportMaps
+    );
     if (!imports.changed) {
       return {
         exportMaps: exports.maps,
@@ -114,7 +159,13 @@ function linkProgramSymbols(
   // Import cycles are diagnosed separately. Recompute once so the returned
   // diagnostics/maps describe the latest bounded link state.
   const exports = createRsglExportMaps(models, importGraph);
-  const imports = resolveProgramImports(models, importGraph, exports.maps, importAllBindings);
+  const imports = resolveProgramImports(
+    models,
+    importGraph,
+    exports.maps,
+    importAllBindings,
+    typeAliasExportMaps
+  );
   return {
     exportMaps: exports.maps,
     exportDiagnostics: exports.fileDiagnostics,
@@ -126,7 +177,8 @@ function resolveProgramImports(
   models: RsglSemanticModel[],
   importGraph: RsglImportGraph,
   exportMaps: Map<string, Map<string, RsglSymbol>>,
-  importAllBindings: Map<RsglSemanticModel, Map<string, ImportAllBinding>>
+  importAllBindings: Map<RsglSemanticModel, Map<string, ImportAllBinding>>,
+  typeAliasExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
 ): ImportLinkPassResult {
   const diagnostics: RsglFileDiagnostic[] = [];
   let changed = false;
@@ -151,6 +203,9 @@ function resolveProgramImports(
         const exported = exportMaps.get(normalizeFileName(targetModel.fileName))?.get(item.imported);
         const localSymbol = sourceModel.scope.symbols.get(item.local);
         if (!exported) {
+          if (typeAliasExportMaps.get(normalizeFileName(targetModel.fileName))?.has(item.imported)) {
+            continue;
+          }
           diagnostics.push(fileDiagnostic(
             sourceModel.fileName,
             "rsgl.missingImportedSymbol",
@@ -229,6 +284,87 @@ function updateLinkedSymbol(local: RsglSymbol, exported: RsglSymbol): boolean {
   local.node = exported.node;
   local.finiteDomain = exported.finiteDomain;
   return changed;
+}
+
+function typeOnlyImportNamesByFile(
+  models: readonly RsglSemanticModel[],
+  importGraph: RsglImportGraph,
+  valueExportMaps: ReadonlyMap<string, ReadonlyMap<string, RsglSymbol>>,
+  typeExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
+): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>();
+  for (const model of models) {
+    const fileName = normalizeFileName(model.fileName);
+    const names = new Set<string>();
+    for (const record of model.imports) {
+      const edge = importGraph.edges.find(candidate =>
+        candidate.from === fileName && candidate.source === record.source
+      );
+      if (!edge) {
+        continue;
+      }
+      const valueExports = valueExportMaps.get(edge.to);
+      const typeExports = typeExportMaps.get(edge.to);
+      for (const item of record.namedImports) {
+        if (typeExports?.has(item.imported) && !valueExports?.has(item.imported)) {
+          names.add(item.local);
+        }
+      }
+    }
+    result.set(fileName, names);
+  }
+  return result;
+}
+
+function isValueExportDiagnosticSatisfiedByTypeAlias(
+  diagnostic: RsglFileDiagnostic,
+  models: readonly RsglSemanticModel[],
+  typeExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
+): boolean {
+  if (
+    diagnostic.code !== "rsgl.missingExportedSymbol"
+    && diagnostic.code !== "rsgl.missingReExportedSymbol"
+  ) {
+    return false;
+  }
+  const model = models.find(candidate =>
+    normalizeFileName(candidate.fileName) === normalizeFileName(diagnostic.fileName)
+  );
+  if (!model) {
+    return false;
+  }
+  for (const record of model.exports) {
+    for (const specifier of record.specifiers) {
+      if (
+        specifier.range.start === diagnostic.range.start
+        && specifier.range.end === diagnostic.range.end
+        && typeExportMaps.get(normalizeFileName(model.fileName))?.has(specifier.exported)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function sameNameSets(
+  left: ReadonlyMap<string, ReadonlySet<string>>,
+  right: ReadonlyMap<string, ReadonlySet<string>>
+): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const [fileName, leftNames] of left) {
+    const rightNames = right.get(fileName);
+    if (
+      !rightNames
+      || leftNames.size !== rightNames.size
+      || Array.from(leftNames).some(name => !rightNames.has(name))
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnostic[] {

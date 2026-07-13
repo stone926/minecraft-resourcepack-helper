@@ -89,6 +89,7 @@ import {
 } from "../resourceKinds";
 import type { RsglTemplateCallerContext, TemplateOutputDispatch } from "../templateOutput";
 import { RsglTemplateDispatchCache } from "./templateDispatchCache";
+import type { JsonValueSinkOptions } from "./jsonValueLowerer";
 
 export {
   compileRsglDirectory,
@@ -122,6 +123,10 @@ interface RsglCompilerOptions {
   blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
 }
 
+interface JsonValueLoweringSession {
+  invalid: boolean;
+}
+
 export class RsglCompiler {
   private readonly units: ResourceUnit[] = [];
   private readonly diagnostics: RsglCompileDiagnostic[] = [];
@@ -131,6 +136,7 @@ export class RsglCompiler {
   private readonly templateDispatchCache = new RsglTemplateDispatchCache();
   private readonly overlayEntries: RsglOverlayEntry[] = [];
   private readonly moduleValueBindingNames: ReadonlySet<string>;
+  private activeJsonValueLoweringSession?: JsonValueLoweringSession;
 
   public constructor(
     private readonly module: RsglModule,
@@ -233,7 +239,19 @@ export class RsglCompiler {
         .filter(bodyStatement => bodyStatement.kind === "ExternVarStmt")
         .flatMap(bodyStatement => bodyStatement.variables.map(variable => variable.text)))
       : [];
-    for (const unit of compileResourceDeclaration(statement, context, this.resourceDeclarationCompilerHost())) {
+    const previousSession = this.activeJsonValueLoweringSession;
+    const session: JsonValueLoweringSession = { invalid: false };
+    this.activeJsonValueLoweringSession = session;
+    let compiledUnits: ResourceUnit[];
+    try {
+      compiledUnits = compileResourceDeclaration(statement, context, this.resourceDeclarationCompilerHost());
+    } finally {
+      this.activeJsonValueLoweringSession = previousSession;
+    }
+    if (session.invalid) {
+      return;
+    }
+    for (const unit of compiledUnits) {
       const referenceOrigins = this.detachValidationOrigins(unit);
       const resourceIdOrigin = statement.id
         ? expressionEvaluationOrigin(statement.id, context)
@@ -502,7 +520,7 @@ export class RsglCompiler {
     }
     return resourceBodyToObject(body, context, {
       ...options,
-      onError: (code, message, range) => this.error(code, message, range)
+      onError: (code, message, range, fileName) => this.error(code, message, range, fileName)
     });
   }
 
@@ -538,7 +556,7 @@ export class RsglCompiler {
     const mappings: ResourceBodyMapping[] = [];
     const content = resourceBodyToObject(body, context, {
       ...options,
-      onError: (code, message, range) => this.error(code, message, range),
+      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       onMapping: mapping => {
         mappings.push(mapping);
         options.onMapping?.(mapping);
@@ -548,13 +566,23 @@ export class RsglCompiler {
   }
 
   private itemFragmentOptions() {
+    return this.jsonValueSinkOptions();
+  }
+
+  private jsonValueSinkOptions(): JsonValueSinkOptions {
     return {
-      onError: (code: string, message: string, range: { start: number; end: number }) => this.error(code, message, range)
+      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
+      onInvalidJsonValue: () => {
+        if (this.activeJsonValueLoweringSession) {
+          this.activeJsonValueLoweringSession.invalid = true;
+        }
+      }
     };
   }
 
   private resourceBodyFragmentOptions(kind: Exclude<RsglResourceKind, "blockstate">): ResourceBodyCompileOptions {
     return {
+      ...this.jsonValueSinkOptions(),
       onUseFragment: (useStatement, fragmentContext) => {
         const templateFragment = this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
         if (templateFragment) {
@@ -574,17 +602,22 @@ export class RsglCompiler {
           return undefined;
         }
         if (kind !== "model" && kind !== "item" && isJsonResourceFragmentKind(kind)) {
-          return compileJsonResourceUseFragment(kind, useStatement, fragmentContext, {
-            onError: (code, message, range) => this.error(code, message, range)
-          });
+          return compileJsonResourceUseFragment(
+            kind,
+            useStatement,
+            fragmentContext,
+            this.jsonValueSinkOptions()
+          );
         }
         return undefined;
       },
       onSpecialStatement: (statement, fragmentContext) => {
         if (kind === "model") {
-          return compileModelGeometryStatement(statement, fragmentContext, {
-            onError: (code, message, range) => this.error(code, message, range)
-          });
+          return compileModelGeometryStatement(
+            statement,
+            fragmentContext,
+            this.jsonValueSinkOptions()
+          );
         }
         return kind === "item" && isItemModelStatement(statement)
           ? compileItemSpecialStatement(statement, fragmentContext, this.itemFragmentOptions())
@@ -625,15 +658,17 @@ export class RsglCompiler {
         (body, bodyContext) => this.resourceBodyToObjectWithRawMappings(
           body,
           bodyContext,
-          { ...this.resourceBodyFragmentOptions("atlas"), allowBase: false }
+          {
+            ...this.resourceBodyFragmentOptions("atlas"),
+            allowBase: false,
+            generatedPathPrefix: "/sources/0"
+          }
         ),
-        { onError: (code, message, range) => this.error(code, message, range) }
+        this.jsonValueSinkOptions()
       );
     }
     if (kind === "equipment" && statement.kind === "EquipmentLayerStmt") {
-      return compileEquipmentLayerStatement(statement, context, {
-        onError: (code, message, range) => this.error(code, message, range)
-      });
+      return compileEquipmentLayerStatement(statement, context, this.jsonValueSinkOptions());
     }
     return undefined;
   }

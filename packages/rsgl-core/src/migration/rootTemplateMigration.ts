@@ -15,7 +15,11 @@ import type {
   UseDeclNode
 } from "../parser";
 import { walkRsglModule } from "../parser/astTraversal";
-import { findLambdaImpureCalls } from "../semantic/lambdaPurity";
+import {
+  findLambdaImpureCalls,
+  resolvedBuiltinEffect,
+  type LambdaBuiltinEffectResolver
+} from "../semantic/lambdaPurity";
 import type {
   RsglSemanticModel,
   RsglSymbol,
@@ -407,7 +411,10 @@ function valueHelperSafety(
     ...lets.map(operation => operation.statement.value),
     merge.statement.value
   ];
-  if (definitionExpressions.some(expression => findLambdaImpureCalls(expression).length > 0)) {
+  const resolveBuiltinEffect = semanticBuiltinEffectResolver(model);
+  if (definitionExpressions.some(expression =>
+    findLambdaImpureCalls(expression, resolveBuiltinEffect).length > 0
+  )) {
     return "The merge/default/local binding performs an effect that is forbidden in a value-helper lambda.";
   }
   const captureSafety = valueHelperCaptureSafety(template, model, lets, merge);
@@ -418,6 +425,17 @@ function valueHelperSafety(
     return "The generated value helper would relocate comments inside the template body.";
   }
   return callSiteSafety(template, model, calls, false);
+}
+
+function semanticBuiltinEffectResolver(model: RsglSemanticModel): LambdaBuiltinEffectResolver {
+  const symbolsByRange = new Map(
+    model.references.map(reference => [textRangeKey(reference.range), reference.symbol] as const)
+  );
+  return (_name, range) => resolvedBuiltinEffect(symbolsByRange.get(textRangeKey(range)));
+}
+
+function textRangeKey(range: TextRange): string {
+  return `${range.start}:${range.end}`;
 }
 
 function mixedInlineSafety(

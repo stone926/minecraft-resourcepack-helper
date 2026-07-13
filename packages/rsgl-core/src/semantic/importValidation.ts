@@ -4,25 +4,18 @@ import { walkRsglModule } from "../parser/astTraversal";
 import { diagnostic } from "./diagnostics";
 import {
   checkExpression,
-  checkResourceIdExpression,
-  checkTextureRefExpression,
+  checkExpressionForExpectedType,
   RsglExpressionCheckContext
 } from "./expressionChecker";
+import { scopeWithLinkedGlobalFallback } from "./linkedScope";
 import { formatType, isAssignable } from "./typeRelations";
 import {
-  anyType,
   identifierName,
-  inferLiteralType,
-  jsonType,
-  numberType,
-  resourceIdType,
+  RsglReferenceRecord,
   RsglScope,
   RsglSemanticModel,
   RsglSignature,
-  RsglType,
-  textureIdType,
-  textureVariableType,
-  unknownType
+  RsglType
 } from "./types";
 
 export function validateResolvedImportCalls(model: RsglSemanticModel): RsglDiagnostic[] {
@@ -32,14 +25,16 @@ export function validateResolvedImportCalls(model: RsglSemanticModel): RsglDiagn
 
 class ResolvedImportCallValidator {
   private readonly diagnostics: RsglDiagnostic[] = [];
-  /** Lambda arguments already fully checked against the resolved signature; the structural walk skips their bodies. */
-  private readonly checkedLambdaArgs = new Set<ExprNode>();
+  /** Argument subtrees already fully checked against a linked signature. */
+  private readonly checkedExpressions = new Set<ExprNode>();
+  /** References are merged after validation so bare-import first-pass records are not duplicated. */
+  private readonly references: RsglReferenceRecord[] = [];
   private readonly checkContext: RsglExpressionCheckContext;
 
   public constructor(private readonly model: RsglSemanticModel) {
     this.checkContext = {
       diagnostics: this.diagnostics,
-      references: model.references,
+      references: this.references,
       defineIdentifier: (scope, identifier, kind, type, node) => {
         const name = identifierName(identifier);
         if (!name) {
@@ -56,14 +51,30 @@ class ResolvedImportCallValidator {
     walkRsglModule(this.model.module, {
       enterExpression: expression => this.visitExpression(expression)
     });
-    return this.diagnostics;
+    this.mergeReferences();
+    const existingDiagnostics = new Set(this.model.diagnostics.map(item =>
+      diagnosticSiteKey(item.code, item.range.start, item.range.end)
+    ));
+    const dedicatedLambdaSites = new Set(this.model.diagnostics
+      .filter(item => item.code === "rsgl.invalidLambdaCapture")
+      .map(item => rangeSiteKey(item.range.start, item.range.end)));
+    return this.diagnostics.filter(item => {
+      if (existingDiagnostics.has(diagnosticSiteKey(item.code, item.range.start, item.range.end))) {
+        return false;
+      }
+      return !(
+        (item.code === "rsgl.undefinedSymbol" || item.code === "rsgl.notCallable")
+        && dedicatedLambdaSites.has(rangeSiteKey(item.range.start, item.range.end))
+      );
+    });
   }
 
   private visitExpression(expression: ExprNode): "skipChildren" | void {
+    if (this.checkedExpressions.has(expression)) {
+      return "skipChildren";
+    }
     if (expression.kind === "CallExpr") {
       this.validateCallExpression(expression);
-    } else if (expression.kind === "LambdaExpr" && this.checkedLambdaArgs.has(expression)) {
-      return "skipChildren";
     }
   }
 
@@ -78,6 +89,10 @@ class ResolvedImportCallValidator {
     }
     const callScope = this.model.importCallScopes?.get(expression);
     if (!symbol.signature) {
+      if (callScope && symbol.type.kind === "Function") {
+        this.validateAnonymousImportedFunction(symbol.type, args, expression.range, callScope);
+        return;
+      }
       // Imported values (e.g. let-bound lambdas) carry no signature, but lambda
       // arguments still deserve body checking when the binder confirmed the
       // callee resolved to the import.
@@ -97,105 +112,147 @@ class ResolvedImportCallValidator {
     this.validateImportedArguments(symbol.signature, args, expression.range, callScope);
   }
 
-  private validateImportedArguments(
-    signature: RsglSignature,
+  private validateAnonymousImportedFunction(
+    type: RsglType,
     args: ArgumentNode[],
     callRange: { start: number; end: number },
-    callScope: RsglScope | undefined
+    callScope: RsglScope
   ): void {
-    const binding = bindRsglArguments(signature.parameters, args, { callRange });
-    this.diagnostics.push(...binding.diagnostics);
-
-    for (const { parameter, arg } of binding.assignments) {
-      const actualType = this.inferArgumentType(arg.value, parameter.type, callScope);
-      if (!isAssignable(parameter.type, actualType)) {
+    const linkedCallScope = scopeWithLinkedGlobalFallback(callScope, this.model.scope);
+    for (const arg of args) {
+      if (arg.name) {
         this.diagnostics.push(diagnostic(
-          "rsgl.typeMismatch",
-          `Expected ${formatType(parameter.type)}, got ${formatType(actualType)}.`,
+          "rsgl.namedArgumentsRequireSignature",
+          "Named arguments require a concrete let-bound function signature.",
+          arg.range
+        ));
+      }
+    }
+    if (type.parameters && args.length !== type.parameters.length) {
+      this.diagnostics.push(diagnostic(
+        "rsgl.lambdaArityMismatch",
+        `Expected ${type.parameters.length} lambda argument(s), got ${args.length}.`,
+        callRange
+      ));
+    }
+    for (const [index, arg] of args.entries()) {
+      const expectedType = type.parameters?.[index];
+      const diagnosticsBeforeCheck = this.diagnostics.length;
+      const actualType = this.checkArgument(arg.value, expectedType, linkedCallScope);
+      if (
+        expectedType
+        && this.diagnostics.length === diagnosticsBeforeCheck
+        && !isAssignable(expectedType, actualType)
+      ) {
+        this.diagnostics.push(diagnostic(
+          "rsgl.lambdaArgumentTypeMismatch",
+          `Expected lambda argument ${formatType(expectedType)}, got ${formatType(actualType)}.`,
           arg.value.range
         ));
       }
     }
   }
 
-  /**
-   * Lambda arguments and simple id references use the call-site scope snapshot
-   * so captures and local id variables resolve after import linking. Limiting
-   * the latter to identifiers and simple interpolations avoids pre-checking an
-   * opaque imported call whose descendants the structural walk must validate.
-   * Other argument kinds keep structural inference.
-   */
-  private inferArgumentType(expression: ExprNode, expectedType: RsglType, callScope: RsglScope | undefined): RsglType {
-    if (
-      (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable")
-      && isContextualTextureRefExpression(expression)
-    ) {
-      return checkTextureRefExpression(this.checkContext, expression, callScope ?? this.model.scope);
+  private validateImportedArguments(
+    signature: RsglSignature,
+    args: ArgumentNode[],
+    callRange: { start: number; end: number },
+    callScope: RsglScope
+  ): void {
+    const binding = bindRsglArguments(signature.parameters, args, { callRange });
+    if (signature.valueFunction && args.length !== signature.parameters.length) {
+      this.diagnostics.push(...binding.diagnostics.filter(item =>
+        item.code !== "rsgl.missingArgument" && item.code !== "rsgl.tooManyArguments"
+      ));
+      this.diagnostics.push(diagnostic(
+        "rsgl.lambdaArityMismatch",
+        `Expected ${signature.parameters.length} lambda argument(s), got ${args.length}.`,
+        callRange
+      ));
+    } else {
+      this.diagnostics.push(...binding.diagnostics);
     }
-    if (expression.kind === "LambdaExpr" && callScope) {
-      return this.checkLambdaArgument(expression, callScope) ?? inferImportedArgumentType(expression, expectedType);
-    }
-    if (callScope && isResourceIdLike(expectedType) && isSimpleResourceReference(expression)) {
-      if (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable") {
-        return checkTextureRefExpression(this.checkContext, expression, callScope);
+
+    const linkedCallScope = scopeWithLinkedGlobalFallback(callScope, this.model.scope);
+    const checkedArgs = new Set<ArgumentNode>();
+    for (const { parameter, arg } of binding.assignments) {
+      checkedArgs.add(arg);
+      const diagnosticsBeforeCheck = this.diagnostics.length;
+      const actualType = this.checkArgument(arg.value, parameter.type, linkedCallScope);
+      if (
+        this.diagnostics.length === diagnosticsBeforeCheck
+        && !isAssignable(parameter.type, actualType)
+      ) {
+        this.diagnostics.push(diagnostic(
+          signature.valueFunction ? "rsgl.lambdaArgumentTypeMismatch" : "rsgl.typeMismatch",
+          `${signature.valueFunction ? "Expected lambda argument" : "Expected"} ${formatType(parameter.type)}, got ${formatType(actualType)}.`,
+          arg.value.range
+        ));
       }
-      return checkResourceIdExpression(this.checkContext, expression, callScope);
     }
-    return inferImportedArgumentType(expression, expectedType);
+    for (const arg of binding.unmatchedArgs) {
+      if (!checkedArgs.has(arg)) {
+        this.checkArgument(arg.value, undefined, linkedCallScope);
+      }
+    }
   }
 
-  private checkLambdaArgument(expression: ExprNode, callScope: RsglScope): RsglType | null {
+  /**
+   * Checks every ordinary expression against the resolved parameter type. The
+   * lexical snapshot keeps source-position locals authoritative while the
+   * linked global fallback supplies named, bare, and re-exported imports.
+   */
+  private checkArgument(expression: ExprNode, expectedType: RsglType | undefined, callScope: RsglScope): RsglType {
+    this.markChecked(expression);
+    return expectedType
+      ? checkExpressionForExpectedType(this.checkContext, expression, callScope, expectedType)
+      : checkExpression(this.checkContext, expression, callScope);
+  }
+
+  private checkLambdaArgument(
+    expression: ExprNode,
+    callScope: RsglScope,
+    expectedType?: RsglType
+  ): RsglType | null {
     if (expression.kind !== "LambdaExpr") {
       return null;
     }
-    this.checkedLambdaArgs.add(expression);
-    return checkExpression(this.checkContext, expression, callScope);
+    this.markChecked(expression);
+    return expectedType
+      ? checkExpressionForExpectedType(this.checkContext, expression, callScope, expectedType)
+      : checkExpression(this.checkContext, expression, callScope);
+  }
+
+  private markChecked(expression: ExprNode): void {
+    this.checkedExpressions.add(expression);
+  }
+
+  private mergeReferences(): void {
+    const existingBySite = new Map(this.model.references.map(reference => [
+      referenceSiteKey(reference),
+      reference
+    ]));
+    for (const reference of this.references) {
+      const key = referenceSiteKey(reference);
+      const existing = existingBySite.get(key);
+      if (existing) {
+        existing.symbol ??= reference.symbol;
+      } else {
+        this.model.references.push(reference);
+        existingBySite.set(key, reference);
+      }
+    }
   }
 }
 
-function isSimpleResourceReference(expression: ExprNode): boolean {
-  return expression.kind === "IdentifierExpr" || (
-    expression.kind === "TemplateStringExpr"
-    && expression.parts.every(part => part.kind === "text" || part.expression.kind === "IdentifierExpr")
-  );
+function diagnosticSiteKey(code: string, start: number, end: number): string {
+  return `${code}:${start}:${end}`;
 }
 
-function isContextualTextureRefExpression(expression: ExprNode): boolean {
-  return expression.kind === "StringLiteral"
-    || expression.kind === "ConditionalExpr"
-    || expression.kind === "MatchExpr";
+function rangeSiteKey(start: number, end: number): string {
+  return `${start}:${end}`;
 }
 
-function inferImportedArgumentType(expression: ExprNode, expectedType: RsglType): RsglType {
-  if (
-    (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable")
-    && expression.kind === "StringLiteral"
-  ) {
-    return expression.value.startsWith("#") ? textureVariableType : textureIdType;
-  }
-  if (
-    isResourceIdLike(expectedType)
-    && (expression.kind === "IdentifierExpr" || expression.kind === "StringLiteral" || expression.kind === "TemplateStringExpr")
-  ) {
-    return resourceIdType;
-  }
-  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar" || expression.kind === "ModelApplySugar" || expression.kind === "RandomApply") {
-    return jsonType;
-  }
-  if (expression.kind === "ListExpr") {
-    return { kind: "List", elementType: expression.elements[0] ? inferImportedArgumentType(expression.elements[0], anyType) : unknownType };
-  }
-  if (expression.kind === "RangeExpr") {
-    return { kind: "Range", elementType: numberType };
-  }
-  const literalType = inferLiteralType(expression);
-  return literalType.kind === "Unknown" ? anyType : literalType;
-}
-
-function isResourceIdLike(type: RsglType): boolean {
-  return type.kind === "ResourceId"
-    || type.kind === "ModelId"
-    || type.kind === "TextureId"
-    || type.kind === "TextureVariable"
-    || type.kind === "TextureRef";
+function referenceSiteKey(reference: RsglReferenceRecord): string {
+  return `${reference.range.start}:${reference.range.end}:${reference.name}`;
 }

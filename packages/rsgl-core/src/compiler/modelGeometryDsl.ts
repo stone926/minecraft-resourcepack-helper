@@ -7,14 +7,13 @@ import {
   ResourceStatementNode,
   TextRange
 } from "../parser";
-import { EvaluationContext, evaluateExpression, expressionEvaluationOrigin } from "./evaluate";
+import { EvaluationContext, expressionEvaluationOrigin } from "./evaluate";
 import { JsonValue } from "./ir";
+import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export interface ModelGeometryDslOptions {
-  onError?: (code: string, message: string, range: TextRange) => void;
-}
+export type ModelGeometryDslOptions = JsonValueSinkOptions;
 
 type Axis = "x" | "y" | "z";
 type FaceDirection = "down" | "up" | "north" | "south" | "west" | "east";
@@ -55,7 +54,7 @@ export function compileModelGeometryStatement(
   options: ModelGeometryDslOptions = {}
 ): ResourceBodyFragment | undefined {
   if (statement.kind === "ModelTextureStmt") {
-    return compileModelTextureStatement(statement, context);
+    return compileModelTextureStatement(statement, context, options);
   }
   if (statement.kind !== "ModelElementStmt") {
     return undefined;
@@ -77,14 +76,24 @@ export function compileModelGeometryStatement(
 
 function compileModelTextureStatement(
   statement: ModelTextureStmtNode,
-  context: EvaluationContext
-): ResourceBodyFragment {
+  context: EvaluationContext,
+  options: ModelGeometryDslOptions
+): ResourceBodyFragment | undefined {
   const key = statement.key.text;
   const origin = expressionEvaluationOrigin(statement.value, context);
+  const value = evaluateJsonExpression(
+    statement.value,
+    context,
+    options,
+    appendGeneratedPath("/textures", key)
+  );
+  if (value === undefined) {
+    return undefined;
+  }
   return {
     content: {
       textures: {
-        [key]: normalizeJsonValue(evaluateExpression(statement.value, context))
+        [key]: value
       }
     },
     mappings: [
@@ -104,8 +113,8 @@ function compileElement(
   context: EvaluationContext,
   options: ModelGeometryDslOptions
 ): CompiledElement | null {
-  const from = vector3(statement.from, "Model element from", statement.range, context, options);
-  const to = vector3(statement.to, "Model element to", statement.range, context, options);
+  const from = vector3(statement.from, "Model element from", statement.range, context, options, "/elements/0/from");
+  const to = vector3(statement.to, "Model element to", statement.range, context, options, "/elements/0/to");
   if (!from || !to) {
     return null;
   }
@@ -144,23 +153,54 @@ function applyElementProperty(
 ): void {
   const name = property.name.text;
   if (elementFields.has(name)) {
-    compiled.element[name] = normalizeJsonValue(evaluateExpression(property.value, context));
-    compiled.fieldRanges.set(name, property.value.range);
+    const value = evaluateJsonExpression(
+      property.value,
+      context,
+      options,
+      appendGeneratedPath("/elements/0", name)
+    );
+    if (value !== undefined) {
+      compiled.element[name] = value;
+      compiled.fieldRanges.set(name, property.value.range);
+    }
     return;
   }
   if (faceFields.has(name)) {
-    const field = faceField(property, context);
+    const field = faceField(
+      property,
+      context,
+      options,
+      appendGeneratedPath(
+        appendGeneratedPath("/elements/0/faces", faceDirections[0]),
+        name
+      )
+    );
+    if (!field) {
+      return;
+    }
     for (const direction of faceDirections) {
       setFaceField(compiled.faces, direction, property.range, name, field);
     }
     return;
   }
   if (name === "translate") {
-    compiled.translate = vector3(property.value, "Model element translate", property.range, context, options) ?? undefined;
+    compiled.translate = vector3(
+      property.value,
+      "Model element translate",
+      property.range,
+      context,
+      options,
+      "/elements/0/@translate"
+    ) ?? undefined;
     return;
   }
   if (name === "mirror") {
-    compiled.mirrorAxes.push(...mirrorAxes(property.value, context, options));
+    compiled.mirrorAxes.push(...mirrorAxes(
+      property.value,
+      context,
+      options,
+      "/elements/0/@mirror"
+    ));
     return;
   }
   if (transformFields.has(name)) {
@@ -191,16 +231,36 @@ function applyFaceClause(
       options.onError?.("rsgl.unknownModelFaceProperty", `Unknown model face property '${name}'.`, property.name.range);
       continue;
     }
-    const field = faceField(property, context);
+    const field = faceField(
+      property,
+      context,
+      options,
+      appendGeneratedPath(
+        appendGeneratedPath("/elements/0/faces", targets[0]!),
+        name
+      )
+    );
+    if (!field) {
+      continue;
+    }
     for (const target of targets) {
       setFaceField(compiled.faces, target, clause.range, name, field);
     }
   }
 }
 
-function faceField(property: ModelGeometryPropertyNode, context: EvaluationContext): FaceField {
+function faceField(
+  property: ModelGeometryPropertyNode,
+  context: EvaluationContext,
+  options: ModelGeometryDslOptions,
+  generatedPath: string
+): FaceField | undefined {
+  const value = evaluateJsonExpression(property.value, context, options, generatedPath);
+  if (value === undefined) {
+    return undefined;
+  }
   return {
-    value: normalizeJsonValue(evaluateExpression(property.value, context)),
+    value,
     range: property.value.range
   };
 }
@@ -361,8 +421,16 @@ function elementMappings(
   return mappings;
 }
 
-function mirrorAxes(value: ExprNode, context: EvaluationContext, options: ModelGeometryDslOptions): Axis[] {
-  const evaluated = normalizeJsonValue(evaluateExpression(value, context));
+function mirrorAxes(
+  value: ExprNode,
+  context: EvaluationContext,
+  options: ModelGeometryDslOptions,
+  generatedPath: string
+): Axis[] {
+  const evaluated = evaluateJsonExpression(value, context, options, generatedPath);
+  if (evaluated === undefined) {
+    return [];
+  }
   const values = Array.isArray(evaluated) ? evaluated : [evaluated];
   const result: Axis[] = [];
   for (const item of values) {
@@ -381,13 +449,17 @@ function vector3(
   label: string,
   fallbackRange: TextRange,
   context: EvaluationContext,
-  options: ModelGeometryDslOptions
+  options: ModelGeometryDslOptions,
+  generatedPath: string
 ): number[] | null {
   if (!expression) {
     options.onError?.("rsgl.missingModelElementVector", `${label} must be a finite [x, y, z] number vector.`, fallbackRange);
     return null;
   }
-  const value = normalizeJsonValue(evaluateExpression(expression, context));
+  const value = evaluateJsonExpression(expression, context, options, generatedPath);
+  if (value === undefined) {
+    return null;
+  }
   const vector = numberVectorValue(value);
   if (!vector || vector.length !== 3) {
     options.onError?.("rsgl.invalidModelElementVector", `${label} must be a finite [x, y, z] number vector.`, expression.range);
@@ -427,11 +499,4 @@ function mapping(
   validationOrigin?: ResourceBodyMapping["validationOrigin"]
 ): ResourceBodyMapping {
   return { generatedPath, sourceRange, context, validationOrigin };
-}
-
-function normalizeJsonValue(value: unknown): JsonValue {
-  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: string }).kind === "lambda")) {
-    return null;
-  }
-  return value as JsonValue;
 }

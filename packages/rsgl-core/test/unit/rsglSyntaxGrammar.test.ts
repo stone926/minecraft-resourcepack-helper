@@ -10,6 +10,28 @@ import {
 } from "./helpers/textMateGrammar";
 
 describe("RSGL TextMate grammar", () => {
+  it("highlights structural type aliases, optional fields, and nested type names", () => {
+    const grammar = readGrammar();
+    const source = [
+      "type PowerParent = {",
+      "  family: String",
+      "  top?: TextureId",
+      "  mapper: (String | Number) -> List<Json>",
+      "}",
+      "let invalid: Missing = value"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "type", "storage.type.rsgl");
+    expectScope(tokenization, source, "PowerParent", "entity.name.type.alias.rsgl");
+    expectScope(tokenization, source, "top", "meta.object-key.rsgl");
+    expectScope(tokenization, source, "?", "keyword.operator.rsgl");
+    for (const typeName of ["String", "TextureId", "Number", "List", "Json"]) {
+      expectScope(tokenization, source, typeName, "support.type.rsgl");
+    }
+    expectNoScope(tokenization, source, "Missing", "support.type.rsgl");
+  });
+
   it("highlights base and merge vocabulary without retaining removed syntax", () => {
     const grammarText = readGrammarText();
     const grammar = JSON.parse(grammarText) as RsglGrammar;

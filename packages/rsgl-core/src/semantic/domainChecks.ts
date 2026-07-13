@@ -1,7 +1,7 @@
 import { ExprNode, MatchExprNode, RsglDiagnostic } from "../parser";
 import { diagnostic } from "./diagnostics";
 import { lookup } from "./scopes";
-import { RsglScope } from "./types";
+import { RsglScope, RsglType } from "./types";
 
 export const builtinFiniteStringDomains = new Map<string, string[]>([
   ["HORIZONTAL", ["north", "east", "south", "west"]],
@@ -27,16 +27,23 @@ export const builtinFiniteStringDomains = new Map<string, string[]>([
   ]]
 ]);
 
+const maximumTemplateStringDomainSize = 4096;
+
 export function isWildcardPattern(expression: ExprNode): boolean {
   return expression.kind === "IdentifierExpr" && expression.name.text === "_";
 }
 
-export function checkMatchExhaustiveness(expression: MatchExprNode, scope: RsglScope, diagnostics: RsglDiagnostic[]): void {
+export function checkMatchExhaustiveness(
+  expression: MatchExprNode,
+  scope: RsglScope,
+  diagnostics: RsglDiagnostic[],
+  matchedType?: RsglType
+): void {
   if (expression.arms.some(arm => arm.patterns.some(isWildcardPattern))) {
     return;
   }
 
-  const domain = finiteStringDomain(expression.expression, scope);
+  const domain = finiteStringDomain(expression.expression, scope, matchedType);
   if (!domain?.length) {
     return;
   }
@@ -66,11 +73,24 @@ export function checkMatchExhaustiveness(expression: MatchExprNode, scope: RsglS
   ));
 }
 
-export function finiteStringDomain(expression: ExprNode, scope: RsglScope): string[] | null {
+export function finiteStringDomain(
+  expression: ExprNode,
+  scope: RsglScope,
+  expressionType?: RsglType
+): string[] | null {
   if (expression.kind === "IdentifierExpr") {
-    return lookup(scope, expression.name.text)?.finiteDomain
+    const symbol = lookup(scope, expression.name.text);
+    return symbol?.finiteDomain
       ?? builtinFiniteStringDomains.get(expression.name.text)
+      ?? finiteStringDomainFromType(symbol?.type ?? expressionType)
       ?? null;
+  }
+  const typeDomain = finiteStringDomainFromType(expressionType);
+  if (typeDomain) {
+    return typeDomain;
+  }
+  if (expression.kind === "TemplateStringExpr") {
+    return finiteTemplateStringDomain(expression, scope);
   }
   if (expression.kind !== "ListExpr") {
     return null;
@@ -85,6 +105,50 @@ export function finiteStringDomain(expression: ExprNode, scope: RsglScope): stri
     values.push(value);
   }
   return values;
+}
+
+function finiteTemplateStringDomain(expression: ExprNode & { kind: "TemplateStringExpr" }, scope: RsglScope): string[] | null {
+  let values = [""];
+  for (const part of expression.parts) {
+    if (part.kind === "text") {
+      values = values.map(value => value + part.text);
+      continue;
+    }
+
+    const partDomain = finiteTemplateInterpolationDomain(part.expression, scope);
+    if (!partDomain?.length || values.length * partDomain.length > maximumTemplateStringDomainSize) {
+      return null;
+    }
+    values = values.flatMap(prefix => partDomain.map(value => prefix + value));
+  }
+  return Array.from(new Set(values));
+}
+
+function finiteTemplateInterpolationDomain(expression: ExprNode, scope: RsglScope): string[] | null {
+  if (expression.kind === "StringLiteral") {
+    return [expression.value];
+  }
+  if (expression.kind === "NumberLiteral" || expression.kind === "BooleanLiteral") {
+    return [String(expression.value)];
+  }
+  if (expression.kind === "NullLiteral") {
+    return [""];
+  }
+  return finiteStringDomain(expression, scope);
+}
+
+/** Returns an exact finite string domain only when every type arm is a string literal. */
+export function finiteStringDomainFromType(type: RsglType | undefined): string[] | null {
+  if (!type) {
+    return null;
+  }
+  const options = type.kind === "Union" ? type.options ?? [] : [type];
+  if (options.length === 0 || options.some(option =>
+    option.kind !== "String" || typeof option.literalValue !== "string"
+  )) {
+    return null;
+  }
+  return Array.from(new Set(options.map(option => option.literalValue as string)));
 }
 
 export function staticStringPatternValue(expression: ExprNode, scope: RsglScope): string | null {

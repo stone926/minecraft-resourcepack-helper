@@ -15,6 +15,7 @@ import {
 import { RsglBlockstateBodyChecker } from "./blockstateBodyChecker";
 import type { RsglBlockstateApplyFactRecorder } from "./blockstateApplyChecker";
 import { diagnostic } from "./diagnostics";
+import { applyLambdaValueDiagnostics } from "./lambdaAnalysis";
 import { finiteStringDomain } from "./domainChecks";
 import {
   checkEquipmentLayerListExpression,
@@ -28,6 +29,14 @@ import {
   validateResourceLocationLike
 } from "./expressionChecker";
 import { createChildScope, lookup } from "./scopes";
+import { scopeForTruthyCondition } from "./typeNarrowing";
+import {
+  resolveLoopBindingTypes,
+  type StructuralIterationIssue
+} from "./structuralTypes";
+import { inferListType } from "./typeNormalization";
+import { formatType } from "./typeRelations";
+import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   anyType,
   numberType,
@@ -132,6 +141,7 @@ export class RsglResourceBodyChecker {
     for (const statement of body.statements) {
       this.checkResourceStatement(statement, scope, owner, callerContext);
     }
+    applyLambdaValueDiagnostics(this.context.diagnostics, body.statements, scope);
   }
 
   public checkForStatement(
@@ -149,14 +159,26 @@ export class RsglResourceBodyChecker {
       fullRange: statement.fullRange
     }];
     for (const dimension of forDimensions) {
-      this.checkForIterableExpression(dimension.iterable, loopScope);
+      const iterableType = this.checkForIterableExpression(dimension.iterable, loopScope);
+      const bindingResult = resolveLoopBindingTypes(
+        iterableType,
+        dimension.bindings.length,
+        inferredUnionBudgetOptions(this.context.diagnostics, dimension.iterable.range)
+      );
+      this.reportIterationIssues(bindingResult.issues, dimension.iterable);
       const finiteDomain = dimension.bindings.length === 1 ? finiteStringDomain(dimension.iterable, loopScope) : null;
-      for (const binding of dimension.bindings) {
+      for (const [bindingIndex, binding] of dimension.bindings.entries()) {
         if (seen.has(binding.text)) {
           this.context.diagnostics.push(diagnostic("rsgl.duplicateLoopBinding", `Duplicate loop binding '${binding.text}'.`, binding.range));
         }
         seen.add(binding.text);
-        this.context.defineIdentifier(loopScope, binding, "variable", anyType, binding);
+        this.context.defineIdentifier(
+          loopScope,
+          binding,
+          "variable",
+          bindingResult.bindingTypes[bindingIndex] ?? unknownType,
+          binding
+        );
         if (finiteDomain) {
           const symbol = lookup(loopScope, binding.text);
           if (symbol) {
@@ -353,7 +375,14 @@ export class RsglResourceBodyChecker {
         break;
       case "IfStmt":
         this.checkExpression(statement.condition, scope);
-        this.checkBody(statement.thenBody, createChildScope(scope, "block"), callerContext);
+        {
+          const thenScope = scopeForTruthyCondition(scope, statement.condition);
+          this.checkBody(
+            statement.thenBody,
+            thenScope === scope ? createChildScope(scope, "block") : thenScope,
+            callerContext
+          );
+        }
         if (statement.elseBody) {
           this.checkBody(statement.elseBody, createChildScope(scope, "block"), callerContext);
         }
@@ -379,7 +408,10 @@ export class RsglResourceBodyChecker {
       return this.checkExpression(expression, scope);
     }
     const elementTypes = expression.elements.map(element => this.checkForIterableListElement(element, scope));
-    return { kind: "List", elementType: elementTypes[0] ?? unknownType };
+    return inferListType(
+      elementTypes,
+      inferredUnionBudgetOptions(this.context.diagnostics, expression.range)
+    );
   }
 
   private checkForIterableListElement(expression: ExprNode, scope: RsglScope): RsglType {
@@ -402,6 +434,24 @@ export class RsglResourceBodyChecker {
       "Texture variables are only valid in model texture sinks.",
       expression.range
     ));
+  }
+
+  private reportIterationIssues(issues: readonly StructuralIterationIssue[], expression: ExprNode): void {
+    for (const issue of issues) {
+      if (issue.kind === "notIterable") {
+        this.context.diagnostics.push(diagnostic(
+          "rsgl.nonIterable",
+          `A for-loop input must be a List or Range, got ${formatType(issue.actualType)}.`,
+          expression.range
+        ));
+      } else {
+        this.context.diagnostics.push(diagnostic(
+          "rsgl.invalidLoopDestructuring",
+          `Cannot bind ${issue.bindingCount} loop variables from ${formatType(issue.actualType)}.`,
+          expression.range
+        ));
+      }
+    }
   }
 }
 

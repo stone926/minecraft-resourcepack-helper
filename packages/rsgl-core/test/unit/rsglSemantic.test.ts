@@ -178,6 +178,21 @@ describe("RSGL semantic model", () => {
     assert.strictEqual(withFallback.diagnostics.some(item => item.code === "rsgl.nonExhaustiveMatch"), false);
   });
 
+  it("derives match domains from literal unions and record members", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let direct: \"active\" | \"inactive\" = \"active\"",
+      "let directResult = match direct { \"active\" -> 1 }",
+      "type State = { kind: \"ready\" | \"waiting\" }",
+      "let state: State = { kind: \"ready\" }",
+      "let memberResult = match state.kind { \"ready\" -> 1 }"
+    ].join("\n")));
+    const diagnostics = model.diagnostics.filter(item => item.code === "rsgl.nonExhaustiveMatch");
+
+    assert.strictEqual(diagnostics.length, 2);
+    assert.ok(diagnostics[0].message.includes("inactive"));
+    assert.ok(diagnostics[1].message.includes("waiting"));
+  });
+
   // `use stairs(...)` at top level is intentionally unimported: stairs is a
   // stdlib blockstate fragment, not a builtin, so the bare name must resolve
   // to nothing callable. Pins the removed-use-builtin diagnostic behavior.

@@ -14,11 +14,16 @@ export function scopeWithLinkedGlobalFallback(
       for (const [name, symbol] of scope.symbols) {
         symbols.set(name, symbol);
       }
-      return { kind: "global", symbols };
+      const typeAliases = new Map(linkedGlobalScope.typeAliases);
+      for (const [name, alias] of scope.typeAliases) {
+        typeAliases.set(name, alias);
+      }
+      return { kind: "global", symbols, typeAliases };
     }
     return {
       kind: scope.kind,
       symbols: new Map(scope.symbols),
+      typeAliases: new Map(scope.typeAliases),
       parent: scope.parent ? clone(scope.parent) : linkedGlobalScope
     };
   };

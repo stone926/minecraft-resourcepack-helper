@@ -9,9 +9,11 @@ import {
   type RsglExpressionCheckContext
 } from "./expressionChecker";
 import { lookup } from "./scopes";
+import { combineRsglTypes } from "./typeNormalization";
 import {
   type RsglScope,
   type RsglType,
+  objectProperty,
   stringType
 } from "./types";
 
@@ -44,8 +46,8 @@ export function checkBlockstateSelector(
   }
 
   if (actualType.kind === "Object") {
-    for (const valueType of actualType.properties?.values() ?? []) {
-      if (!isPotentialStateScalar(valueType)) {
+    for (const property of actualType.properties?.values() ?? []) {
+      if (!isPotentialStateScalar(property.type)) {
         context.diagnostics.push(diagnostic(
           "rsgl.invalidBlockstateSelectorValue",
           "Blockstate selector values must be scalar strings, numbers, or booleans.",
@@ -88,7 +90,7 @@ export function checkBlockstateCondition(
     ));
   }
 
-  const properties = new Map<string, RsglType>();
+  const properties = new Map<string, ReturnType<typeof objectProperty>>();
   const seenKeys = new Set<string>();
   let hasLogicalProperty = false;
   let hasStateProperty = false;
@@ -108,7 +110,7 @@ export function checkBlockstateCondition(
 
     if (key === "OR" || key === "AND") {
       hasLogicalProperty = true;
-      properties.set(key, checkLogicalConditionValue(context, key, property.value, scope));
+      properties.set(key, objectProperty(checkLogicalConditionValue(context, key, property.value, scope)));
       continue;
     }
 
@@ -122,7 +124,7 @@ export function checkBlockstateCondition(
       ));
     }
     if (key !== undefined) {
-      properties.set(key, valueType);
+      properties.set(key, objectProperty(valueType));
     }
   }
 
@@ -164,11 +166,7 @@ function checkLogicalConditionValue(
   );
   return {
     kind: "List",
-    elementType: elementTypes.length === 0
-      ? { kind: "Unknown" }
-      : elementTypes.length === 1
-        ? elementTypes[0]
-        : { kind: "Union", options: elementTypes }
+    elementType: combineRsglTypes(elementTypes)
   };
 }
 
@@ -177,7 +175,7 @@ function checkInlineStateObject(
   expression: ObjectExprNode,
   scope: RsglScope
 ): RsglType {
-  const properties = new Map<string, RsglType>();
+  const properties = new Map<string, ReturnType<typeof objectProperty>>();
   const seenKeys = new Set<string>();
 
   for (const property of expression.properties) {
@@ -202,7 +200,7 @@ function checkInlineStateObject(
       ));
     }
     if (key !== undefined) {
-      properties.set(key, valueType);
+      properties.set(key, objectProperty(valueType));
     }
   }
 

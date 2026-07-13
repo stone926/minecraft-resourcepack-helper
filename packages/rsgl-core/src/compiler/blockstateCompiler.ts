@@ -15,6 +15,7 @@ import {
   BlockstateOperationExecutor,
   type BlockstateOperationExecutorHost
 } from "./blockstateOperationExecutor";
+import type { BlockstateJsonValueLoweringHost } from "./blockstateJsonValueLowerer";
 import {
   canonicalBlockstateOperationProgram,
   legacyBlockstateOperationProgram
@@ -25,7 +26,7 @@ import { staticText } from "./compilerHelpers";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import type { RsglCompileContext, TemplateExpansion } from "./templateExpansion";
 
-export interface BlockstateCompileOptions {
+export interface BlockstateCompileOptions extends BlockstateJsonValueLoweringHost {
   resolveTemplate: (
     statement: UseDeclNode,
     context: RsglCompileContext
@@ -39,7 +40,6 @@ export interface BlockstateCompileOptions {
     definition: RsglTemplateDefinition,
     callerContext: RsglTemplateCallerContext
   ) => TemplateOutputDispatch;
-  onError: (code: string, message: string, range: TextRange, fileName?: string) => void;
   sourceMap: (
     outputPath: string,
     node: { range: TextRange },
@@ -119,6 +119,9 @@ function executorHost(options: BlockstateCompileOptions): BlockstateOperationExe
     expandUse: options.expandUse,
     resolveTemplateDispatch: options.resolveTemplateDispatch,
     onError: options.onError,
+    ...(options.jsonValueAdapters
+      ? { jsonValueAdapters: options.jsonValueAdapters }
+      : {}),
     sourceMapping: options.sourceMapping,
     ...(options.getBlockstateApplyFact
       ? { getApplyFact: options.getBlockstateApplyFact }

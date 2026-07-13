@@ -330,7 +330,7 @@ describe("RSGL semantic tokens", () => {
     const model: RsglSemanticModel = {
       fileName: "synthetic.rsgl",
       module: parseRsgl(""),
-      scope: { kind: "module", symbols: new Map() },
+      scope: { kind: "module", symbols: new Map(), typeAliases: new Map() },
       symbols: [variableSymbol],
       imports: [],
       exports: [],

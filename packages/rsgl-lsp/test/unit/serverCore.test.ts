@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { CompletionItemKind, DiagnosticSeverity, InsertTextFormat } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
@@ -14,8 +15,12 @@ import {
 import {
   clampOffset,
   completionItemsForContent,
+  completionItemsForDocument,
+  computeDocumentHover,
+  computeDocumentSignatureHelp,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
+  definitionLocationForDocument,
   dependencyPathsForDocument,
   dependencyPathsForDocuments,
   documentsDependingOnPath,
@@ -23,6 +28,7 @@ import {
   handleSemanticWatchedFileBatch,
   identifierAtOffset,
   normalizeDependencyPath,
+  toLspDefinitionLocation,
   toLspDiagnostic,
   toLspSeverity,
   toValidationSettings,
@@ -620,7 +626,16 @@ describe("RSGL LSP server core", () => {
   it("maps completion candidates and workspace symbols to completion items", () => {
     const items = completionItemsForContent("", 0, [
       templateSymbol("myCube"),
-      { name: "tex", kind: "variable", type: { kind: "TextureId" } }
+      { name: "tex", kind: "variable", type: { kind: "TextureId" } },
+      {
+        name: "mapper",
+        kind: "variable",
+        type: {
+          kind: "Function",
+          parameters: [{ kind: "Number" }],
+          returnType: { kind: "String" }
+        }
+      }
     ]);
 
     const target = items.find(item => item.label === "target");
@@ -636,7 +651,7 @@ describe("RSGL LSP server core", () => {
     assert.deepStrictEqual(myCube, {
       label: "myCube",
       kind: CompletionItemKind.Function,
-      detail: "template: function"
+      detail: "template: myCube(): Unknown"
     });
 
     const tex = items.find(item => item.label === "tex");
@@ -644,6 +659,13 @@ describe("RSGL LSP server core", () => {
       label: "tex",
       kind: CompletionItemKind.Variable,
       detail: "variable: TextureId"
+    });
+
+    const mapper = items.find(item => item.label === "mapper");
+    assert.deepStrictEqual(mapper, {
+      label: "mapper",
+      kind: CompletionItemKind.Function,
+      detail: "variable: mapper(arg1: Number): String"
     });
   });
 
@@ -662,6 +684,118 @@ describe("RSGL LSP server core", () => {
     assert.strictEqual(identifierAtOffset(text, start + 5), "stateSequence");
     assert.strictEqual(identifierAtOffset(text, start + "stateSequence".length), "stateSequence");
     assert.strictEqual(identifierAtOffset(text, text.length), null);
+  });
+
+  it("converts linked hover, signatures, and cross-file definitions with UTF-16 positions", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-intelligence-"));
+    try {
+      const mainFile = path.join(root, "main.rsgl");
+      const barrelFile = path.join(root, "barrel.rsgl");
+      const templatesFile = path.join(root, "模板.rsgl");
+      const mainText = [
+        "/*😀*/ import { forwardedCube as buildCube } from \"./barrel.rsgl\"",
+        "model block example {",
+        "  use buildCube(minecraft:block/example, texture: minecraft:block/stone)",
+        "}"
+      ].join("\n");
+      const barrelText = "export { exportedCube as forwardedCube } from \"./模板.rsgl\"";
+      const templatesText = [
+        "/*😀*/ template cube(id: ResourceId, texture: TextureId = id) -> model {",
+        "}",
+        "export { cube as exportedCube }"
+      ].join("\n");
+      fs.writeFileSync(mainFile, mainText);
+      fs.writeFileSync(barrelFile, barrelText);
+      fs.writeFileSync(templatesFile, templatesText);
+
+      const mainDocument = TextDocument.create(pathToFileURL(mainFile).toString(), "rsgl", 1, mainText);
+      const targetDocument = TextDocument.create(pathToFileURL(templatesFile).toString(), "rsgl", 1, templatesText);
+      const cache = RsglWorkspaceSemanticCache.create();
+      const deps = { loadProgramFromEntry: (fileName: string) => cache.loadProgramFromEntry(fileName) };
+      const referenceOffset = mainText.lastIndexOf("buildCube");
+
+      const hover = computeDocumentHover(mainDocument, mainFile, referenceOffset + 2, deps);
+      assert.ok(hover);
+      assert.deepStrictEqual(hover.range, {
+        start: mainDocument.positionAt(referenceOffset),
+        end: mainDocument.positionAt(referenceOffset + "buildCube".length)
+      });
+      assert.ok((hover.contents as { value: string }).value.includes("template buildCube"));
+      assert.ok((hover.contents as { value: string }).value.includes("template -> model"));
+
+      const signatureOffset = mainText.lastIndexOf("minecraft:block/stone") + 5;
+      const signature = computeDocumentSignatureHelp(mainDocument, mainFile, signatureOffset, deps);
+      assert.strictEqual(signature?.activeParameter, 1);
+      assert.strictEqual(signature?.signatures[0].parameters?.[1].label, "texture: TextureId = ...");
+
+      const definition = definitionLocationForDocument(mainDocument, mainFile, referenceOffset + 2, deps);
+      assert.ok(definition);
+      const location = toLspDefinitionLocation(targetDocument, targetDocument.uri, definition);
+      const definitionStart = templatesText.indexOf("cube");
+      assert.deepStrictEqual(location, {
+        uri: targetDocument.uri,
+        range: {
+          start: targetDocument.positionAt(definitionStart),
+          end: targetDocument.positionAt(definitionStart + "cube".length)
+        }
+      });
+      assert.strictEqual(location.range.start.character, "/*😀*/ template ".length);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("converts imported record member tooling and field definitions with UTF-16 positions", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-member-lsp-"));
+    try {
+      const sourceFile = path.join(root, "原始字段.rsgl");
+      const barrelFile = path.join(root, "barrel.rsgl");
+      const mainFile = path.join(root, "入口.rsgl");
+      const sourceText = [
+        "/*😀*/ type Original = { name: String; top?: TextureId }",
+        "export { Original as Public }"
+      ].join("\n");
+      const barrelText = "export { Public as Forwarded } from \"./原始字段.rsgl\"";
+      const mainText = [
+        "import { Forwarded as Local } from \"./barrel.rsgl\"",
+        "let entry: Local = { name: \"wheat\" }",
+        "let title = entry.name"
+      ].join("\n");
+      fs.writeFileSync(sourceFile, sourceText);
+      fs.writeFileSync(barrelFile, barrelText);
+      fs.writeFileSync(mainFile, mainText);
+
+      const mainDocument = TextDocument.create(pathToFileURL(mainFile).toString(), "rsgl", 1, mainText);
+      const targetDocument = TextDocument.create(pathToFileURL(sourceFile).toString(), "rsgl", 1, sourceText);
+      const cache = RsglWorkspaceSemanticCache.create();
+      const deps = { loadProgramFromEntry: (fileName: string) => cache.loadProgramFromEntry(fileName) };
+      const memberStart = mainText.lastIndexOf("name");
+      const completionOffset = mainText.lastIndexOf("entry.name") + "entry.".length;
+
+      assert.deepStrictEqual(completionItemsForDocument(mainDocument, mainFile, completionOffset, deps), [
+        { label: "name", kind: CompletionItemKind.Property, detail: "property: String" },
+        { label: "top", kind: CompletionItemKind.Property, detail: "optional property: TextureId" }
+      ]);
+      const hover = computeDocumentHover(mainDocument, mainFile, memberStart + 1, deps);
+      assert.ok((hover?.contents as { value: string }).value.includes("property name: String"));
+
+      const definition = definitionLocationForDocument(mainDocument, mainFile, memberStart + 1, deps);
+      assert.ok(definition);
+      const location = toLspDefinitionLocation(targetDocument, targetDocument.uri, definition);
+      const fieldStart = sourceText.indexOf("name");
+      assert.deepStrictEqual(location.range, {
+        start: targetDocument.positionAt(fieldStart),
+        end: targetDocument.positionAt(fieldStart + "name".length)
+      });
+      assert.strictEqual(location.range.start.character, sourceText.slice(0, fieldStart).length);
+      assert.notStrictEqual(
+        location.range.start.character,
+        Array.from(sourceText.slice(0, fieldStart)).length,
+        "the astral emoji should occupy two UTF-16 code units"
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("encodes semantic tokens relative to the previous token across lines", () => {

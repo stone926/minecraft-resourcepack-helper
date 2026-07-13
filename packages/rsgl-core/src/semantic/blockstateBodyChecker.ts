@@ -23,6 +23,7 @@ import {
   checkBlockstateSelector
 } from "./blockstateSelectorChecker";
 import { diagnostic } from "./diagnostics";
+import { applyLambdaValueDiagnostics } from "./lambdaAnalysis";
 import {
   checkExpression,
   checkLocalLetDecl,
@@ -30,6 +31,7 @@ import {
   type RsglExpressionCheckContext
 } from "./expressionChecker";
 import { createChildScope } from "./scopes";
+import { scopeForTruthyCondition } from "./typeNarrowing";
 import type { RsglScope } from "./types";
 
 type CheckableBlockstateRootBody =
@@ -78,6 +80,7 @@ export class RsglBlockstateBodyChecker {
     for (const statement of body.statements) {
       this.checkRootStatement(statement, scope, callerContext);
     }
+    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
   }
 
   public checkVariantStatements(
@@ -111,6 +114,7 @@ export class RsglBlockstateBodyChecker {
           assertNever(statement);
       }
     }
+    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
   }
 
   public checkMultipartStatements(
@@ -143,6 +147,7 @@ export class RsglBlockstateBodyChecker {
           assertNever(statement);
       }
     }
+    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
   }
 
   private checkRootStatement(
@@ -271,9 +276,10 @@ export class RsglBlockstateBodyChecker {
     callerContext: RsglTemplateCallerContext
   ): void {
     checkExpression(this.host.context, statement.condition, scope);
+    const thenScope = scopeForTruthyCondition(scope, statement.condition);
     this.host.checkNestedBody(
       statement.thenBody,
-      createChildScope(scope, "block"),
+      thenScope === scope ? createChildScope(scope, "block") : thenScope,
       callerContext
     );
     if (statement.elseBody) {

@@ -7,6 +7,7 @@ import { lexRsgl } from "./lexer";
 import { tokenRange } from "./parserContext";
 import { StatementParser } from "./statementParser";
 import {
+  BlockNode,
   ExternDeclNode,
   ExternPatternNode,
   ExternResourceSource,
@@ -22,6 +23,7 @@ import {
   StringLiteralNode,
   DeclaredTemplateOutputDialect,
   TemplateBodyNode,
+  TypeAliasDeclNode,
   TopLevelStatementNode
 } from "./types";
 import { getRsglResourceKindDescriptor } from "../resourceKinds";
@@ -45,6 +47,7 @@ export function parseRsgl(text: string): RsglModule {
 
 class RsglParser extends StatementParser {
   private targetCount = 0;
+  private blockDepth = 0;
 
   public parseModule(): RsglModule {
     const statements: TopLevelStatementNode[] = [];
@@ -93,6 +96,9 @@ class RsglParser extends StatementParser {
     }
     if (keyword === "overlay") {
       return this.parseOverlayDecl();
+    }
+    if (keyword === "type") {
+      return this.parseTypeAliasDecl();
     }
     if (keyword === "let") {
       return this.parseLetDecl();
@@ -163,6 +169,47 @@ class RsglParser extends StatementParser {
       kind: "NamespaceDecl",
       keyword: start.text,
       name,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  protected override parseBlock(): BlockNode {
+    this.blockDepth++;
+    try {
+      return super.parseBlock();
+    } finally {
+      this.blockDepth--;
+    }
+  }
+
+  private parseTypeAliasDecl(): TypeAliasDeclNode {
+    const start = this.advance();
+    if (this.blockDepth > 0) {
+      this.addDiagnostic(
+        "rsgl.typeAliasMustBeTopLevel",
+        "Type aliases may only be declared at module top level.",
+        tokenRange(start)
+      );
+    }
+    const name = this.parseIdentifier("Expected type alias name.");
+    if (name?.text === "Missing") {
+      this.addDiagnostic(
+        "rsgl.internalMissingType",
+        "Missing is an internal type sentinel and cannot be declared in RSGL source.",
+        name.range
+      );
+    }
+    this.expectText("=", "Expected '=' in type alias declaration.");
+    const typeAnnotation = this.isAtEnd()
+      || this.current().text === "}"
+      || (this.isStatementBoundary(this.current()) && isTopLevelKeyword(this.current().text))
+      ? this.missingTypeAt(this.current())
+      : this.parseType();
+    return {
+      kind: "TypeAliasDecl",
+      keyword: start.text,
+      name,
+      typeAnnotation,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }

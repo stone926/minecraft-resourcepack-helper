@@ -14,10 +14,10 @@ import {
   expressionEvaluationPathOrigins
 } from "./evaluate";
 import { applyBaseDocument } from "./base/application";
-import { normalizeJsonValue } from "./compilerHelpers";
 import type { FragmentMergePolicy } from "./fragmentMerge";
 import { JsonValue } from "./ir";
 import { isJsonObject } from "./jsonValues";
+import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
 import { forEachLoopContext } from "./looping";
 import {
   applyResourceBodyFragment,
@@ -25,14 +25,15 @@ import {
 } from "./resourceBodyContentMerge";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export interface ResourceBodyCompileOptions {
-  onError?: (code: string, message: string, range: { start: number; end: number }) => void;
+export interface ResourceBodyCompileOptions extends JsonValueSinkOptions {
   onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => ResourceBodyFragment | undefined;
   onSpecialStatement?: (statement: ResourceStatementNode, context: EvaluationContext) => ResourceBodySpecialResult | undefined;
   onMapping?: (mapping: ResourceBodyMapping) => void;
   mergePolicy?: FragmentMergePolicy;
   /** Only concrete resource roots may initialize themselves from a base document. */
   allowBase?: boolean;
+  /** Final JSON location when this body is compiled as a nested resource fragment. */
+  generatedPathPrefix?: string;
 }
 
 export type ResourceBodySpecialResult = ResourceBodyFragment | Record<string, JsonValue>;
@@ -55,7 +56,13 @@ export function resourceBodyToObject(
   context: EvaluationContext,
   options: ResourceBodyCompileOptions = {}
 ): Record<string, JsonValue> {
-  return resourceBodyToObjectAtPath(body, context, options, "", options.allowBase ?? false);
+  return resourceBodyToObjectAtPath(
+    body,
+    context,
+    options,
+    options.generatedPathPrefix ?? "",
+    options.allowBase ?? false
+  );
 }
 
 function resourceBodyToObjectAtPath(
@@ -86,8 +93,12 @@ function applyResourceStatement(
   isFirstStatement: boolean
 ): void {
   if (statement.kind === "PropertyStmt") {
-    result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-    emitExpressionMapping(options, appendGeneratedPath(path, statement.name.text), statement.value, statement.range, context);
+    const generatedPath = appendGeneratedPath(path, statement.name.text);
+    const value = evaluateJsonExpression(statement.value, context, options, generatedPath);
+    if (value !== undefined) {
+      result[statement.name.text] = value;
+      emitExpressionMapping(options, generatedPath, statement.value, statement.range, context);
+    }
   } else if (statement.kind === "LetDecl") {
     if (statement.name) {
       bindEvaluationResult(
@@ -102,8 +113,12 @@ function applyResourceStatement(
       emitMapping(options, sectionPath, statement.range, context);
       result[statement.name.text] = resourceBodyToObjectAtPath(statement.body, context, options, sectionPath, false);
     } else if (statement.value) {
-      result[statement.name.text] = normalizeJsonValue(evaluateExpression(statement.value, context));
-      emitExpressionMapping(options, appendGeneratedPath(path, statement.name.text), statement.value, statement.range, context);
+      const generatedPath = appendGeneratedPath(path, statement.name.text);
+      const value = evaluateJsonExpression(statement.value, context, options, generatedPath);
+      if (value !== undefined) {
+        result[statement.name.text] = value;
+        emitExpressionMapping(options, generatedPath, statement.value, statement.range, context);
+      }
     }
   } else if (statement.kind === "IfStmt") {
     const selectedBody = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
@@ -121,7 +136,10 @@ function applyResourceStatement(
   } else if (statement.kind === "ForStmt") {
     applyForStatement(result, statement, context, options, path);
   } else if (statement.kind === "MergeStmt") {
-    const value = normalizeJsonValue(evaluateExpression(statement.value, context));
+    const value = evaluateJsonExpression(statement.value, context, options, path);
+    if (value === undefined) {
+      return;
+    }
     if (isJsonObject(value)) {
       const validationMappings: ResourceBodyMapping[] = expressionEvaluationPathOrigins(
         statement.value,

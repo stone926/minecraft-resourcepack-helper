@@ -18,6 +18,11 @@ import { createBuiltinSymbols } from "./builtins";
 import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
 import {
+  applyLambdaValueDiagnostics,
+  exportedLambdaAnnotationDiagnostics
+} from "./lambdaAnalysis";
+import { lambdaSignature } from "./lambdaTyping";
+import {
   checkAssignable,
   checkExpression,
   checkExpressionForExpectedType,
@@ -30,6 +35,12 @@ import {
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
 import { applyLegacyBlockstateMode, resolveLegacyBlockstateMode } from "./blockstateModeInference";
 import { createChildScope, createScope, lookup } from "./scopes";
+import {
+  installPrelinkedTypeAliases,
+  predeclareTypeAliases,
+  resolveTypeAliases
+} from "./typeAliases";
+import { scopeForTruthyCondition } from "./typeNarrowing";
 import {
   inferResolvedTemplateOutputMetadata,
   resolveProgramTemplateOutputMetadata,
@@ -104,6 +115,7 @@ class RsglBinder implements RsglExpressionCheckContext {
     this.bodyChecker = new RsglResourceBodyChecker(this, (statements, scope, callerContext) => {
       this.predeclareTopLevel(statements, scope);
       this.checkTopLevelStatements(statements, scope, callerContext);
+      applyLambdaValueDiagnostics(this.diagnostics, statements, scope);
     }, (expression, scope, callerContext) => {
       this.templateUses.push({
         expression,
@@ -140,9 +152,14 @@ class RsglBinder implements RsglExpressionCheckContext {
       this.define(this.globalScope, symbol);
     }
 
+    installPrelinkedTypeAliases(this.globalScope, this.options.prelinkedTypeAliases);
+    predeclareTypeAliases(this.module.statements, this.globalScope, this.diagnostics);
+    resolveTypeAliases(this.globalScope, this.diagnostics);
     this.predeclareTopLevel(this.module.statements, this.globalScope);
     this.resolveLocalTemplateOutputs();
     this.checkTopLevelStatements(this.module.statements, this.globalScope, resourcesCallerContext);
+    applyLambdaValueDiagnostics(this.diagnostics, this.module.statements, this.globalScope);
+    this.diagnostics.push(...exportedLambdaAnnotationDiagnostics(this.module.statements, this.globalScope));
 
     return {
       fileName: this.fileName,
@@ -194,7 +211,13 @@ class RsglBinder implements RsglExpressionCheckContext {
       } else if (statement.kind === "ExportDecl") {
         this.recordExport(statement);
       } else if (statement.kind === "LetDecl") {
-        this.defineIdentifier(scope, statement.name, "variable", typeFromAnnotation(statement.typeAnnotation), statement);
+        this.defineIdentifier(
+          scope,
+          statement.name,
+          "variable",
+          typeFromAnnotation(statement.typeAnnotation, scope, this.diagnostics),
+          statement
+        );
       } else if (statement.kind === "TableDecl") {
         this.defineIdentifier(scope, statement.name, "table", jsonType, statement);
       } else if (statement.kind === "TemplateDecl") {
@@ -216,7 +239,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   ): void {
     for (const statement of statements) {
       if (statement.kind === "LetDecl") {
-        const expectedType = typeFromAnnotation(statement.typeAnnotation);
+        const expectedType = typeFromAnnotation(statement.typeAnnotation, scope, this.diagnostics);
         const actualType = checkExpressionForExpectedType(this, statement.value, scope, expectedType);
         checkAssignable(this, expectedType, actualType, statement.value);
         const name = identifierName(statement.name);
@@ -226,9 +249,17 @@ class RsglBinder implements RsglExpressionCheckContext {
             symbol.type = actualType;
           }
           symbol.finiteDomain = finiteStringDomain(statement.value, scope) ?? undefined;
+          if (statement.value.kind === "LambdaExpr") {
+            symbol.signature = lambdaSignature(statement.value, symbol.type);
+          }
         }
       } else if (statement.kind === "TableDecl") {
-        checkObject(this, statement.body, scope);
+        const tableType = checkObject(this, statement.body, scope);
+        const name = identifierName(statement.name);
+        const symbol = name ? lookup(scope, name) : undefined;
+        if (symbol?.node === statement) {
+          symbol.type = tableType;
+        }
       } else if (statement.kind === "TemplateDecl") {
         this.checkTemplate(statement, scope);
       } else if (statement.kind === "ExternDecl") {
@@ -247,7 +278,12 @@ class RsglBinder implements RsglExpressionCheckContext {
         this.bodyChecker.checkForStatement(statement, scope, callerContext);
       } else if (statement.kind === "IfStmt") {
         this.checkExpression(statement.condition, scope);
-        this.bodyChecker.checkBody(statement.thenBody, createChildScope(scope, "block"), callerContext);
+        const thenScope = scopeForTruthyCondition(scope, statement.condition);
+        this.bodyChecker.checkBody(
+          statement.thenBody,
+          thenScope === scope ? createChildScope(scope, "block") : thenScope,
+          callerContext
+        );
         if (statement.elseBody) {
           this.bodyChecker.checkBody(statement.elseBody, createChildScope(scope, "block"), callerContext);
         }
@@ -287,9 +323,15 @@ class RsglBinder implements RsglExpressionCheckContext {
         this.diagnostics.push(diagnostic("rsgl.duplicateParameter", `Duplicate template parameter '${name}'.`, parameter.range));
       }
       seen.add(name);
-      this.defineIdentifier(scope, parameter.name, "parameter", typeFromAnnotation(parameter.typeAnnotation), parameter);
+      this.defineIdentifier(
+        scope,
+        parameter.name,
+        "parameter",
+        typeFromAnnotation(parameter.typeAnnotation, scope, this.diagnostics),
+        parameter
+      );
       if (parameter.defaultValue) {
-        const expectedType = typeFromAnnotation(parameter.typeAnnotation);
+        const expectedType = typeFromAnnotation(parameter.typeAnnotation, scope, this.diagnostics);
         const actualType = checkExpressionForExpectedType(this, parameter.defaultValue, scope, expectedType);
         checkAssignable(this, expectedType, actualType, parameter.defaultValue);
       }
@@ -400,7 +442,9 @@ class RsglBinder implements RsglExpressionCheckContext {
     this.imports.push(record);
 
     for (const specifier of statement.namedImports) {
-      this.defineIdentifier(scope, specifier.local, "import", anyType, specifier);
+      if (!this.options.typeOnlyImportNames?.has(specifier.local.text)) {
+        this.defineIdentifier(scope, specifier.local, "import", anyType, specifier);
+      }
     }
   }
 
@@ -442,7 +486,7 @@ class RsglBinder implements RsglExpressionCheckContext {
           .filter(parameter => parameter.name)
           .map(parameter => ({
             name: parameter.name!.text,
-            type: typeFromAnnotation(parameter.typeAnnotation),
+            type: typeFromAnnotation(parameter.typeAnnotation, scope, this.diagnostics),
             optional: Boolean(parameter.defaultValue),
             node: parameter
           })),
@@ -620,7 +664,8 @@ function snapshotScope(scope: RsglScope, expressions: readonly ExprNode[]): Rsgl
   return {
     kind: scope.kind,
     parent: global,
-    symbols
+    symbols,
+    typeAliases: new Map(scope.typeAliases)
   };
 }
 

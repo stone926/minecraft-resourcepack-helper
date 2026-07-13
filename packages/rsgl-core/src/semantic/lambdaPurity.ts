@@ -1,11 +1,11 @@
 import { ExprNode, TextRange } from "../parser";
+import { builtinEffect } from "./builtins";
+import type { RsglBuiltinEffect, RsglSymbol } from "./types";
 
-/**
- * Builtins with side effects (filesystem IO) that lambda bodies must not call.
- * Shared by the semantic checker (editor diagnostics) and the evaluator
- * (compile-time gate), so the rule cannot drift between the two layers.
- */
-export const lambdaImpureBuiltinNames: ReadonlySet<string> = new Set(["glob"]);
+export type LambdaBuiltinEffectResolver = (
+  name: string,
+  range: TextRange
+) => RsglBuiltinEffect | undefined;
 
 export interface LambdaImpureCall {
   name: string;
@@ -16,76 +16,91 @@ export function lambdaImpureCallMessage(name: string): string {
   return `Lambda body cannot call impure builtin '${name}'.`;
 }
 
+/** Keeps semantic purity tied to the symbol selected by lexical resolution. */
+export function resolvedBuiltinEffect(symbol: RsglSymbol | undefined): RsglBuiltinEffect | undefined {
+  return symbol?.kind === "builtin" ? symbol.effect : undefined;
+}
+
 /**
  * Collects impure builtin calls in a lambda body without descending into
  * nested lambda bodies: each lambda owns its body's report (the checker visits
  * every LambdaExpr), and the evaluator gates nested lambdas when they are
  * called.
  */
-export function findLambdaImpureCalls(expression: ExprNode): LambdaImpureCall[] {
+export function findLambdaImpureCalls(
+  expression: ExprNode,
+  resolveEffect: LambdaBuiltinEffectResolver = name => builtinEffect(name)
+): LambdaImpureCall[] {
   const calls: LambdaImpureCall[] = [];
-  collectLambdaImpureCalls(expression, calls);
+  collectLambdaImpureCalls(expression, calls, resolveEffect);
   return calls;
 }
 
-function collectLambdaImpureCalls(expression: ExprNode, calls: LambdaImpureCall[]): void {
+function collectLambdaImpureCalls(
+  expression: ExprNode,
+  calls: LambdaImpureCall[],
+  resolveEffect: LambdaBuiltinEffectResolver
+): void {
   if (expression.kind === "CallExpr") {
-    if (expression.callee.kind === "IdentifierExpr" && lambdaImpureBuiltinNames.has(expression.callee.name.text)) {
+    if (
+      expression.callee.kind === "IdentifierExpr"
+      && resolveEffect(expression.callee.name.text, expression.callee.range) === "io"
+    ) {
       calls.push({ name: expression.callee.name.text, range: expression.callee.range });
     }
-    collectLambdaImpureCalls(expression.callee, calls);
-    expression.args.forEach(arg => collectLambdaImpureCalls(arg.value, calls));
+    collectLambdaImpureCalls(expression.callee, calls, resolveEffect);
+    expression.args.forEach(arg => collectLambdaImpureCalls(arg.value, calls, resolveEffect));
   } else if (expression.kind === "ListExpr") {
-    expression.elements.forEach(element => collectLambdaImpureCalls(element, calls));
+    expression.elements.forEach(element => collectLambdaImpureCalls(element, calls, resolveEffect));
   } else if (expression.kind === "ObjectExpr") {
     expression.properties.forEach(property => {
       if (property.key.kind === "DynamicKey") {
-        collectLambdaImpureCalls(property.key.expression, calls);
+        collectLambdaImpureCalls(property.key.expression, calls, resolveEffect);
       }
-      collectLambdaImpureCalls(property.value, calls);
+      collectLambdaImpureCalls(property.value, calls, resolveEffect);
     });
   } else if (expression.kind === "TemplateStringExpr") {
     expression.parts.forEach(part => {
       if (part.kind === "expression") {
-        collectLambdaImpureCalls(part.expression, calls);
+        collectLambdaImpureCalls(part.expression, calls, resolveEffect);
       }
     });
   } else if (expression.kind === "MemberExpr") {
-    collectLambdaImpureCalls(expression.object, calls);
+    collectLambdaImpureCalls(expression.object, calls, resolveEffect);
   } else if (expression.kind === "IndexExpr") {
-    collectLambdaImpureCalls(expression.object, calls);
-    collectLambdaImpureCalls(expression.index, calls);
+    collectLambdaImpureCalls(expression.object, calls, resolveEffect);
+    collectLambdaImpureCalls(expression.index, calls, resolveEffect);
   } else if (expression.kind === "UnaryExpr") {
-    collectLambdaImpureCalls(expression.operand, calls);
+    collectLambdaImpureCalls(expression.operand, calls, resolveEffect);
   } else if (expression.kind === "BinaryExpr") {
-    collectLambdaImpureCalls(expression.left, calls);
-    collectLambdaImpureCalls(expression.right, calls);
+    collectLambdaImpureCalls(expression.left, calls, resolveEffect);
+    collectLambdaImpureCalls(expression.right, calls, resolveEffect);
   } else if (expression.kind === "ConditionalExpr") {
-    collectLambdaImpureCalls(expression.condition, calls);
-    collectLambdaImpureCalls(expression.whenTrue, calls);
-    collectLambdaImpureCalls(expression.whenFalse, calls);
+    collectLambdaImpureCalls(expression.condition, calls, resolveEffect);
+    collectLambdaImpureCalls(expression.whenTrue, calls, resolveEffect);
+    collectLambdaImpureCalls(expression.whenFalse, calls, resolveEffect);
   } else if (expression.kind === "MatchExpr") {
-    collectLambdaImpureCalls(expression.expression, calls);
+    collectLambdaImpureCalls(expression.expression, calls, resolveEffect);
     expression.arms.forEach(arm => {
-      arm.patterns.forEach(pattern => collectLambdaImpureCalls(pattern, calls));
-      collectLambdaImpureCalls(arm.value, calls);
+      arm.patterns.forEach(pattern => collectLambdaImpureCalls(pattern, calls, resolveEffect));
+      collectLambdaImpureCalls(arm.value, calls, resolveEffect);
     });
   } else if (expression.kind === "RangeExpr") {
-    collectLambdaImpureCalls(expression.startExpr, calls);
-    collectLambdaImpureCalls(expression.endExpr, calls);
+    collectLambdaImpureCalls(expression.startExpr, calls, resolveEffect);
+    collectLambdaImpureCalls(expression.endExpr, calls, resolveEffect);
   } else if (expression.kind === "StateKeySugar") {
     expression.entries.forEach(entry => {
       if (entry.key.kind === "DynamicKey") {
-        collectLambdaImpureCalls(entry.key.expression, calls);
+        collectLambdaImpureCalls(entry.key.expression, calls, resolveEffect);
       }
-      collectLambdaImpureCalls(entry.value, calls);
+      collectLambdaImpureCalls(entry.value, calls, resolveEffect);
     });
   } else if (expression.kind === "ModelApplySugar") {
-    collectLambdaImpureCalls(expression.model, calls);
-    expression.properties.forEach(property => collectLambdaImpureCalls(property.value, calls));
+    collectLambdaImpureCalls(expression.model, calls, resolveEffect);
+    expression.properties.forEach(property => collectLambdaImpureCalls(property.value, calls, resolveEffect));
   } else if (expression.kind === "RandomApply") {
-    expression.entries.forEach(entry => collectLambdaImpureCalls(entry, calls));
+    expression.entries.forEach(entry => collectLambdaImpureCalls(entry, calls, resolveEffect));
   } else if (expression.kind === "ForInExpr") {
-    collectLambdaImpureCalls(expression.iterable, calls);
+    collectLambdaImpureCalls(expression.iterable, calls, resolveEffect);
   }
 }

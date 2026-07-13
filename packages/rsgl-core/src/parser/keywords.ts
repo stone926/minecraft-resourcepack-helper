@@ -8,6 +8,7 @@ const declarationKeywords = [
   "export",
   "extern",
   "overlay",
+  "type",
   "let",
   "table",
   "template"

@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { findByNormalizedPath } from "../../mc-assets/src";
 import {
   createConnection,
@@ -23,16 +25,19 @@ import {
   completionItemsForDocument as completionItemsForDocumentCore,
   computeDocumentCodeActions,
   computeDocumentDiagnostics,
+  computeDocumentHover,
+  computeDocumentSignatureHelp,
   computeDocumentSemanticTokens,
+  definitionLocationForDocument,
   dependencyPathsForDocument,
   dependencyPathsForDocuments,
   documentsDependingOnPath,
   fileNameFromUri,
   handleSemanticWatchedFileBatch,
-  identifierAtOffset,
   normalizeFileName,
   projectSemanticConfigurationFingerprint,
   rsglBlockstateLegacyFixAllKind,
+  toLspDefinitionLocation,
   toValidationSettings,
   type RsglValidationSettings
 } from "./serverCore";
@@ -56,6 +61,11 @@ connection.onInitialize(params => {
         triggerCharacters: [" ", ".", ":", "@", "[", "("]
       },
       hoverProvider: true,
+      signatureHelpProvider: {
+        triggerCharacters: ["(", ",", ":"],
+        retriggerCharacters: [","]
+      },
+      definitionProvider: true,
       documentFormattingProvider: true,
       codeActionProvider: {
         codeActionKinds: ["quickfix", rsglBlockstateLegacyFixAllKind]
@@ -133,12 +143,42 @@ connection.onHover(params => {
     return null;
   }
   const offset = document.offsetAt(params.position);
-  const word = identifierAtOffset(document.getText(), offset);
-  if (!word) {
+  return computeDocumentHover(document, fileNameFromUri(document.uri), offset, {
+    loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
+  });
+});
+
+connection.onSignatureHelp(params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
     return null;
   }
-  const candidate = completionItemsForDocument(document, offset).find(item => item.label === word);
-  return candidate?.detail ? { contents: candidate.detail } : null;
+  return computeDocumentSignatureHelp(
+    document,
+    fileNameFromUri(document.uri),
+    document.offsetAt(params.position),
+    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+  );
+});
+
+connection.onDefinition(async params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return null;
+  }
+  const definition = definitionLocationForDocument(
+    document,
+    fileNameFromUri(document.uri),
+    document.offsetAt(params.position),
+    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+  );
+  if (!definition) {
+    return null;
+  }
+  const targetDocument = await loadDefinitionDocument(definition.fileName);
+  return targetDocument
+    ? toLspDefinitionLocation(targetDocument, targetDocument.uri, definition)
+    : null;
 });
 
 connection.languages.semanticTokens.on(params => {
@@ -274,4 +314,22 @@ function openDocumentForFileName(fileName: string): { fileName: string; version?
       getText: () => document.getText()
     }
     : null;
+}
+
+async function loadDefinitionDocument(fileName: string): Promise<TextDocument | null> {
+  const openDocument = findByNormalizedPath(
+    documents.all(),
+    path.resolve(fileName),
+    item => item.uri.startsWith("file:") ? path.resolve(fileNameFromUri(item.uri)) : null
+  );
+  if (openDocument) {
+    return openDocument;
+  }
+  try {
+    const normalizedFileName = path.resolve(fileName);
+    const text = await readFile(normalizedFileName, "utf8");
+    return TextDocument.create(pathToFileURL(normalizedFileName).toString(), "rsgl", 0, text);
+  } catch {
+    return null;
+  }
 }

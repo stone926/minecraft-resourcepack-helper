@@ -1,0 +1,222 @@
+import type {
+  BlockNode,
+  BlockstateMultipartRootBodyNode,
+  BlockstateVariantsRootBodyNode,
+  LegacyBlockstateRootBodyNode,
+  MultipartBodyNode,
+  ResourceBodyNode,
+  RsglNode,
+  RsglStatement,
+  TextRange,
+  VariantBodyNode
+} from "./parser";
+import { walkRsglModule } from "./parser/astTraversal";
+import type { RsglSemanticModel, RsglSymbol } from "./semantic";
+
+type RsglBody =
+  | BlockNode
+  | ResourceBodyNode
+  | VariantBodyNode
+  | MultipartBodyNode
+  | BlockstateVariantsRootBodyNode
+  | BlockstateMultipartRootBodyNode
+  | LegacyBlockstateRootBodyNode;
+
+interface LexicalOwner {
+  /** The source region in which the binding can be referenced. */
+  range: TextRange;
+  /** Local lets become visible only after their declaration has finished. */
+  visibleAfter: number;
+}
+
+interface VisibilityIndex {
+  owners: ReadonlyMap<RsglNode, LexicalOwner>;
+}
+
+interface VisibleCandidate {
+  symbol: RsglSymbol;
+  owner?: LexicalOwner;
+}
+
+const visibilityIndexes = new WeakMap<RsglSemanticModel, VisibilityIndex>();
+
+/**
+ * Returns the value symbols visible at a source offset without exposing parser
+ * or editor protocol details. Global bindings keep the semantic model's
+ * existing rules; local bindings must be owned by a containing lexical region.
+ */
+export function visibleRsglSymbolsAtOffset(
+  model: RsglSemanticModel,
+  offset: number
+): RsglSymbol[] {
+  const index = visibilityIndex(model);
+  const selected = new Map<string, VisibleCandidate>();
+
+  for (const symbol of model.symbols) {
+    const owner = symbol.node ? index.owners.get(symbol.node) : undefined;
+    const isGlobal = model.scope.symbols.get(symbol.name) === symbol;
+    if (!isGlobal && (!owner || !isVisibleAt(owner, offset))) {
+      continue;
+    }
+
+    const candidate = { symbol, owner: isGlobal ? undefined : owner };
+    const existing = selected.get(symbol.name);
+    if (!existing || isMoreLocal(candidate, existing)) {
+      selected.set(symbol.name, candidate);
+    }
+  }
+
+  return [...selected.values()].map(candidate => candidate.symbol);
+}
+
+function visibilityIndex(model: RsglSemanticModel): VisibilityIndex {
+  const cached = visibilityIndexes.get(model);
+  if (cached) {
+    return cached;
+  }
+
+  const owners = new Map<RsglNode, LexicalOwner>();
+  for (const statement of model.module.statements) {
+    indexNestedScopes(statement, undefined, owners);
+  }
+
+  // Lambda scopes can occur in any expression position. The AST walker keeps
+  // this independent from the growing set of statement-specific expressions.
+  walkRsglModule(model.module, {
+    enterExpression(expression) {
+      if (expression.kind !== "LambdaExpr") {
+        return;
+      }
+      const owner = lexicalOwner(expression.body.range);
+      for (const parameter of expression.parameters) {
+        owners.set(parameter, owner);
+      }
+    }
+  });
+
+  const created = { owners };
+  visibilityIndexes.set(model, created);
+  return created;
+}
+
+function indexBody(body: RsglBody, owners: Map<RsglNode, LexicalOwner>): void {
+  const region = lexicalOwner(body.range);
+  for (const statement of body.statements) {
+    if (statement.kind === "LetDecl") {
+      owners.set(statement, {
+        range: region.range,
+        visibleAfter: statement.range.end
+      });
+    } else if (
+      statement.kind === "TableDecl"
+      || statement.kind === "TemplateDecl"
+      || statement.kind === "ResourceDecl"
+    ) {
+      // Blocks containing top-level declarations are predeclared by the
+      // binder. Preserve that behavior while keeping the declaration local to
+      // its containing body.
+      owners.set(statement, region);
+    }
+    indexNestedScopes(statement, region, owners);
+  }
+}
+
+function indexNestedScopes(
+  statement: RsglStatement,
+  currentRegion: LexicalOwner | undefined,
+  owners: Map<RsglNode, LexicalOwner>
+): void {
+  switch (statement.kind) {
+    case "TemplateDecl": {
+      const owner = lexicalOwner(statement.body.range);
+      for (const parameter of statement.parameters) {
+        owners.set(parameter, owner);
+      }
+      indexBody(statement.body, owners);
+      break;
+    }
+    case "ResourceDecl":
+      indexBody(statement.body, owners);
+      break;
+    case "OverlayDecl":
+      indexBody(statement.body, owners);
+      break;
+    case "ForStmt": {
+      const owner = lexicalOwner(statement.body.range);
+      for (const dimension of statement.dimensions) {
+        for (const binding of dimension.bindings) {
+          owners.set(binding, owner);
+        }
+      }
+      // Recovery ASTs may retain only the compatibility fields.
+      if (statement.dimensions.length === 0) {
+        for (const binding of statement.bindings) {
+          owners.set(binding, owner);
+        }
+      }
+      indexBody(statement.body, owners);
+      break;
+    }
+    case "IfStmt":
+      indexBody(statement.thenBody, owners);
+      if (statement.elseBody) {
+        indexBody(statement.elseBody, owners);
+      }
+      break;
+    case "SectionStmt":
+      if (statement.body) {
+        indexBody(statement.body, owners);
+      }
+      break;
+    case "PackOverlayStmt":
+    case "AtlasPalettedPermutationsStmt":
+      indexBody(statement.body, owners);
+      break;
+    case "VariantsSection":
+    case "MultipartSection":
+      // Legacy wrappers are checked in the surrounding semantic scope.
+      for (const entry of statement.entries) {
+        if (entry.kind === "LetDecl" && currentRegion) {
+          owners.set(entry, {
+            range: currentRegion.range,
+            visibleAfter: entry.range.end
+          });
+        }
+        indexNestedScopes(entry, currentRegion, owners);
+      }
+      break;
+    case "ItemRangeStmt":
+      if (statement.frames) {
+        // `index` and `frame` are synthetic bindings scoped to the frame model.
+        owners.set(statement.frames, lexicalOwner(statement.frames.model.range));
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+function lexicalOwner(range: TextRange): LexicalOwner {
+  return { range, visibleAfter: range.start };
+}
+
+function isVisibleAt(owner: LexicalOwner, offset: number): boolean {
+  return owner.range.start <= offset
+    && offset <= owner.range.end
+    && owner.visibleAfter <= offset;
+}
+
+function isMoreLocal(candidate: VisibleCandidate, existing: VisibleCandidate): boolean {
+  if (!candidate.owner) {
+    return false;
+  }
+  if (!existing.owner) {
+    return true;
+  }
+  const candidateSpan = candidate.owner.range.end - candidate.owner.range.start;
+  const existingSpan = existing.owner.range.end - existing.owner.range.start;
+  if (candidateSpan !== existingSpan) {
+    return candidateSpan < existingSpan;
+  }
+  return candidate.owner.visibleAfter > existing.owner.visibleAfter;
+}

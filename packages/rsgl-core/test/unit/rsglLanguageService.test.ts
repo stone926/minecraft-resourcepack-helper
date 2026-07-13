@@ -4,6 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   getRsglDocumentCompletionItems,
+  getRsglDocumentDefinitionLocation,
+  getRsglDocumentHoverInfo,
+  getRsglDocumentSignatureHelpInfo,
   getRsglDocumentSemanticTokens
 } from "../../src/languageService";
 import {
@@ -83,6 +86,108 @@ describe("RSGL language service", () => {
     const nested = completions("model block stone {\n  textures {\n    ");
     assert.strictEqual(nested.some(item => item.label === "base"), false);
     assert.ok(nested.some(item => item.label === "merge deep"));
+  });
+
+  it("resolves hover, signature help, and definitions through aliases and re-exports", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-intelligence-"));
+    try {
+      const mainFile = path.join(root, "main.rsgl");
+      const barrelFile = path.join(root, "barrel.rsgl");
+      const templatesFile = path.join(root, "templates.rsgl");
+      const mainText = [
+        "import { forwardedCube as buildCube } from \"./barrel.rsgl\"",
+        "model block example {",
+        "  use buildCube(minecraft:block/example, texture: minecraft:block/stone)",
+        "}"
+      ].join("\n");
+      const barrelText = "export { exportedCube as forwardedCube } from \"./templates.rsgl\"";
+      const templatesText = [
+        "template cube(id: ResourceId, texture: TextureId = id) -> model {",
+        "}",
+        "export { cube as exportedCube }"
+      ].join("\n");
+      fs.writeFileSync(mainFile, mainText);
+      fs.writeFileSync(barrelFile, barrelText);
+      fs.writeFileSync(templatesFile, templatesText);
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const document = { fileName: mainFile, getText: () => mainText };
+      const referenceOffset = mainText.lastIndexOf("buildCube");
+      const hover = getRsglDocumentHoverInfo(document, referenceOffset + 2, cache);
+
+      assert.deepStrictEqual(hover, {
+        range: { start: referenceOffset, end: referenceOffset + "buildCube".length },
+        label: "template buildCube(id: ResourceId, texture: TextureId = ...): Json",
+        detail: "template -> model"
+      });
+
+      const textureArgumentOffset = mainText.lastIndexOf("minecraft:block/stone") + 5;
+      const signature = getRsglDocumentSignatureHelpInfo(document, textureArgumentOffset, cache);
+      assert.strictEqual(signature?.signatures[0].label, "buildCube(id: ResourceId, texture: TextureId = ...): Json");
+      assert.strictEqual(signature?.activeParameter, 1, "named arguments select their declared parameter");
+
+      const definition = getRsglDocumentDefinitionLocation(document, referenceOffset + 2, cache);
+      const definitionStart = templatesText.indexOf("cube");
+      assert.deepStrictEqual(definition, {
+        fileName: templatesFile,
+        range: { start: definitionStart, end: definitionStart + "cube".length }
+      });
+
+      const importAliasOffset = mainText.indexOf("forwardedCube");
+      assert.deepStrictEqual(
+        getRsglDocumentDefinitionLocation(document, importAliasOffset + 1, cache),
+        definition,
+        "the imported side of an aliased import should resolve through the re-export chain"
+      );
+
+      const barrelDocument = { fileName: barrelFile, getText: () => barrelText };
+      const reExportAliasOffset = barrelText.indexOf("forwardedCube");
+      assert.deepStrictEqual(
+        getRsglDocumentDefinitionLocation(barrelDocument, reExportAliasOffset + 1, cache),
+        definition,
+        "the exported side of a re-export alias should resolve to the original declaration"
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("offers semantic tooling for locally inferred function values", () => {
+    const text = [
+      "let identity = (value) => value",
+      "let result = identity(1)"
+    ].join("\n");
+    const fileName = path.resolve("function-tooling.rsgl");
+    const document = { fileName, getText: () => text };
+    const fallbackWorkspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open document fallback.");
+      }
+    };
+    const referenceOffset = text.lastIndexOf("identity");
+
+    const hover = getRsglDocumentHoverInfo(document, referenceOffset + 2, fallbackWorkspace);
+    assert.ok(hover?.label.startsWith("identity("));
+    assert.ok(hover?.label.endsWith(": Any"));
+    assert.strictEqual(
+      getRsglDocumentSignatureHelpInfo(document, text.indexOf("1)"), fallbackWorkspace)?.activeParameter,
+      0
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentDefinitionLocation(document, referenceOffset + 2, fallbackWorkspace),
+      {
+        fileName,
+        range: {
+          start: text.indexOf("identity"),
+          end: text.indexOf("identity") + "identity".length
+        }
+      }
+    );
+    assert.strictEqual(
+      getRsglDocumentCompletionItems(document, text.length, fallbackWorkspace)
+        .find(item => item.label === "identity")?.kind,
+      "function"
+    );
   });
 });
 

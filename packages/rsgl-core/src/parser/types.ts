@@ -64,6 +64,7 @@ export type TopLevelStatementNode =
   | ImportDeclNode
   | ExportDeclNode
   | ExternDeclNode
+  | TypeAliasDeclNode
   | LetDeclNode
   | TableDeclNode
   | TemplateDeclNode
@@ -282,7 +283,14 @@ export type ExprNode =
   | RandomApplyNode
   | MissingExprNode;
 
-export type TypeNode = NamedTypeNode | GenericTypeNode | FunctionTypeNode | UnionTypeNode | LiteralTypeNode | MissingTypeNode;
+export type TypeNode =
+  | NamedTypeNode
+  | GenericTypeNode
+  | FunctionTypeNode
+  | UnionTypeNode
+  | ObjectTypeNode
+  | LiteralTypeNode
+  | MissingTypeNode;
 
 export interface NamedTypeNode extends RsglNode {
   kind: "NamedType";
@@ -304,6 +312,18 @@ export interface FunctionTypeNode extends RsglNode {
 export interface UnionTypeNode extends RsglNode {
   kind: "UnionType";
   options: TypeNode[];
+}
+
+export interface ObjectTypeNode extends RsglNode {
+  kind: "ObjectType";
+  properties: ObjectTypePropertyNode[];
+}
+
+export interface ObjectTypePropertyNode extends RsglNode {
+  kind: "ObjectTypeProperty";
+  name: IdentifierNode | null;
+  optional: boolean;
+  typeAnnotation: TypeNode;
 }
 
 export interface LiteralTypeNode extends RsglNode {
@@ -421,6 +441,12 @@ export interface ExternPatternNode extends RsglNode {
   kind: "ExternPattern";
   /** The original contiguous pattern text, without normalization or expansion. */
   text: string;
+}
+
+export interface TypeAliasDeclNode extends StatementNodeBase {
+  kind: "TypeAliasDecl";
+  name: IdentifierNode | null;
+  typeAnnotation: TypeNode;
 }
 
 export interface LetDeclNode extends StatementNodeBase {

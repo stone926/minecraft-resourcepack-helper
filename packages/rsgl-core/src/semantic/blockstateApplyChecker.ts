@@ -20,6 +20,7 @@ import {
   type RsglExpressionCheckContext
 } from "./expressionChecker";
 import { lookup } from "./scopes";
+import { combineRsglTypes } from "./typeNormalization";
 import { formatType, isAssignable } from "./typeRelations";
 import {
   blockstateModelObjectType,
@@ -219,7 +220,7 @@ function checkModelObjectList(
     elementTypes.push(elementType);
     validateModelListElementType(context, elementType, element.range);
   }
-  return { kind: "List", elementType: combineTypes(elementTypes) };
+  return { kind: "List", elementType: combineRsglTypes(elementTypes) };
 }
 
 function validateModelListElementType(
@@ -408,7 +409,7 @@ function validateStructuralModelObject(
   type: RsglType,
   range: TextRange
 ): void {
-  const properties = type.properties ?? new Map<string, RsglType>();
+  const properties = type.properties ?? new Map();
   if (!properties.has("model")) {
     context.diagnostics.push(diagnostic(
       "rsgl.missingBlockstateModel",
@@ -416,7 +417,8 @@ function validateStructuralModelObject(
       range
     ));
   }
-  for (const [name, valueType] of properties) {
+  for (const [name, property] of properties) {
+    const valueType = property.type;
     if (!isBlockstateModelObjectField(name)) {
       context.diagnostics.push(diagnostic(
         "rsgl.unknownBlockstateModelField",
@@ -459,15 +461,6 @@ function modelObjectPropertyName(property: ObjectPropertyNode): string | undefin
     return property.key.raw;
   }
   return undefined;
-}
-
-function combineTypes(types: readonly RsglType[]): RsglType {
-  const unique = new Map(types.map(type => [formatType(type), type]));
-  const options = Array.from(unique.values());
-  if (options.length === 0) {
-    return unknownType;
-  }
-  return options.length === 1 ? options[0] : { kind: "Union", options };
 }
 
 function containsExplicitJson(type: RsglType): boolean {

@@ -1,26 +1,28 @@
-import type { ExprNode, TextRange } from "../parser";
+import type { ExprNode } from "../parser";
 import { blockstateVariantKey } from "./blockstateKeys";
 import {
   evaluateExpressionResult,
   type EvaluationOrigin,
   originForEvaluationPath
 } from "./evaluate";
-import { normalizeJsonValue } from "./compilerHelpers";
+import {
+  type BlockstateJsonValueLoweringHost,
+  lowerSerializableBlockstateJsonValue
+} from "./blockstateJsonValueLowerer";
 import { cloneJsonObject, isJsonObject } from "./jsonValues";
+import type { JsonValue } from "./ir";
 import type { RsglCompileContext } from "./templateExpansion";
 
-export interface BlockstateSelectorLoweringHost {
-  onError: (code: string, message: string, range: TextRange, fileName?: string) => void;
-}
+export type BlockstateSelectorLoweringHost = BlockstateJsonValueLoweringHost;
 
 export interface LoweredBlockstateSelector {
   readonly key: string;
-  readonly value: Record<string, ReturnType<typeof normalizeJsonValue>>;
+  readonly value: Record<string, JsonValue>;
   readonly origin?: EvaluationOrigin;
 }
 
 export interface LoweredBlockstateCondition {
-  readonly value: Record<string, ReturnType<typeof normalizeJsonValue>>;
+  readonly value: Record<string, JsonValue>;
   readonly origin?: EvaluationOrigin;
 }
 
@@ -47,7 +49,10 @@ export function lowerBlockstateSelector(
     );
     return undefined;
   }
-  const value = normalizeJsonValue(result.value);
+  const value = lowerSerializableBlockstateJsonValue(result, expression.range, host);
+  if (value === undefined) {
+    return undefined;
+  }
   if (!isJsonObject(value)) {
     host.onError(
       "rsgl.invalidBlockstateSelector",
@@ -96,7 +101,10 @@ export function lowerBlockstateCondition(
     );
     return undefined;
   }
-  const value = normalizeJsonValue(result.value);
+  const value = lowerSerializableBlockstateJsonValue(result, expression.range, host);
+  if (value === undefined) {
+    return undefined;
+  }
   if (!isJsonObject(value)) {
     host.onError(
       "rsgl.invalidBlockstateCondition",
@@ -112,6 +120,6 @@ export function lowerBlockstateCondition(
   };
 }
 
-function isBlockstateStateValue(value: ReturnType<typeof normalizeJsonValue>): boolean {
+function isBlockstateStateValue(value: JsonValue): boolean {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }

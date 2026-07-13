@@ -1,6 +1,21 @@
 export { bindRsglModule } from "./binder";
 export { bindRsglProgram } from "./program";
+export { createRsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 export { createRsglExportMaps } from "./exportResolution";
+export { formatType, isAssignable } from "./typeRelations";
+export {
+  combineRsglTypes,
+  inferListType,
+  normalizeRsglType,
+  rsglTypeKey
+} from "./typeNormalization";
+export {
+  hasLiteralValue,
+  missingType,
+  objectProperty,
+  objectPropertyType,
+  typeFromAnnotation
+} from "./types";
 export {
   classifyResolvedTemplateOutputMetadata,
   inferResolvedTemplateOutputMetadata,
@@ -8,12 +23,14 @@ export {
   resolveProgramTemplateOutputMetadata
 } from "./templateOutputResolution";
 export type { RsglExportMapResult } from "./exportResolution";
+export type { RsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 export type {
   ResolvedTemplateOutputClassification,
   ResolvedTemplateOutputConflict
 } from "./templateOutputResolution";
 export type {
   RsglBindOptions,
+  RsglBuiltinEffect,
   RsglBlockstateApplyExpectation,
   RsglBlockstateApplyFact,
   RsglBlockstateApplyRecord,
@@ -24,6 +41,7 @@ export type {
   RsglImportRecord,
   RsglLegacyBlockstateRootRecord,
   RsglOutputResourcePreview,
+  RsglObjectProperty,
   RsglProgram,
   RsglReferenceRecord,
   RsglScope,
@@ -34,5 +52,6 @@ export type {
   RsglSymbolKind,
   RsglTemplateUseRecord,
   RsglType,
+  RsglTypeAliasSymbol,
   RsglTypeKind
 } from "./types";

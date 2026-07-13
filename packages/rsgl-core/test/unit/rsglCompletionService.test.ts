@@ -26,12 +26,12 @@ describe("RSGL completion service", () => {
     assert.deepStrictEqual(items.find(item => item.label === "makeCube"), {
       label: "makeCube",
       kind: "function",
-      detail: "template: function"
+      detail: "template: makeCube(): Unknown"
     });
     assert.deepStrictEqual(items.find(item => item.label === "palette"), {
       label: "palette",
       kind: "struct",
-      detail: "table: Object"
+      detail: "table: {}"
     });
     assert.deepStrictEqual(items.find(item => item.label === "stoneModel"), {
       label: "stoneModel",
@@ -69,7 +69,7 @@ describe("RSGL completion service", () => {
     assert.deepStrictEqual(item, {
       label: "states",
       kind: "function",
-      detail: "import: template -> variants"
+      detail: "import: states(): Json — template -> variants"
     });
   });
 });

@@ -10,6 +10,9 @@
       "include": "#moduleLinkDeclarations"
     },
     {
+      "include": "#typeDeclarations"
+    },
+    {
       "include": "#templateOutputHeaders"
     },
     {
@@ -34,6 +37,9 @@
       "include": "#contextualIdentifiers"
     },
     {
+      "include": "#typeNames"
+    },
+    {
       "include": "#structuralStatements"
     },
     {
@@ -50,6 +56,24 @@
     }
   ],
   "repository": {
+    "typeDeclarations": {
+      "patterns": [
+        {
+          "match": "(?:^|(?<=[{};]))[ \\t]*(type)([ \\t]+)([A-Za-z_][A-Za-z0-9_]*)([ \\t]*)(=)",
+          "captures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            },
+            "3": {
+              "name": "entity.name.type.alias.rsgl"
+            },
+            "5": {
+              "name": "keyword.operator.rsgl"
+            }
+          }
+        }
+      ]
+    },
     "templateOutputHeaders": {
       "patterns": [
         {
@@ -445,7 +469,7 @@
     "contextualIdentifiers": {
       "patterns": [
         {
-          "match": "(^|[\\{\\[\\(,;])([ \\t]*)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*[:=](?!=))",
+          "match": "(^|[\\{\\[\\(,;])([ \\t]*)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*(?:\\?[ \\t]*)?[:=](?!=))",
           "captures": {
             "3": {
               "name": "meta.object-key.rsgl"
@@ -507,11 +531,19 @@
         },
         {
           "name": "storage.type.rsgl",
-          "match": "\\b(?:target|namespace|extern|overlay|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
+          "match": "\\b(?:target|namespace|extern|overlay|type|let|table|template|model|blockstate|item|atlas|mcmeta|particles|equipment|font|waypoint_style|post_effect|json|pack|lang|sounds|text|copy)\\b"
         },
         {
           "name": "constant.language.rsgl",
           "match": "\\b(?:true|false|null)\\b"
+        }
+      ]
+    },
+    "typeNames": {
+      "patterns": [
+        {
+          "name": "support.type.rsgl",
+          "match": "\\b(?:Any|Boolean|Function|Json|List|ModelId|Number|Path|Range|ResourceId|String|TextureId|TextureRef|TextureVariable)\\b"
         }
       ]
     },

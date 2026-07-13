@@ -10,7 +10,6 @@ import type {
   RsglBlockstateApplyFact,
   RsglBlockstateApplySiteNode
 } from "../semantic";
-import { normalizeJsonValue } from "./compilerHelpers";
 import {
   evaluateExpressionResult,
   type EvaluationOrigin,
@@ -21,13 +20,15 @@ import {
 } from "./evaluate";
 import type { JsonValue } from "./ir";
 import { cloneJsonValue, isJsonObject } from "./jsonValues";
-import { lowerSerializableBlockstateJsonValue } from "./blockstateJsonValueLowerer";
+import {
+  type BlockstateJsonValueLoweringHost,
+  lowerSerializableBlockstateJsonValue
+} from "./blockstateJsonValueLowerer";
 import { parseResourceId, resourceIdToString } from "./resourceIds";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 import type { RsglCompileContext } from "./templateExpansion";
 
-export interface BlockstateApplyLoweringHost {
-  onError: (code: string, message: string, range: TextRange, fileName?: string) => void;
+export interface BlockstateApplyLoweringHost extends BlockstateJsonValueLoweringHost {
   getApplyFact?: (node: RsglBlockstateApplySiteNode) => RsglBlockstateApplyFact | undefined;
 }
 
@@ -81,10 +82,14 @@ export function lowerBlockstateApply(
 /** Compatibility path for legacy arbitrary expression values. */
 export function lowerLegacyBlockstateApply(
   expression: ExprNode,
-  context: RsglCompileContext
-): LoweredBlockstateApply {
+  context: RsglCompileContext,
+  host: BlockstateApplyLoweringHost
+): LoweredBlockstateApply | undefined {
   const result = evaluateExpressionResult(expression, context);
-  const value = normalizeJsonValue(result.value);
+  const value = lowerSerializableBlockstateJsonValue(result, expression.range, host);
+  if (value === undefined) {
+    return undefined;
+  }
   return {
     value: cloneJsonValue(value),
     mappings: collectValueMappings(value, expression.range, result)

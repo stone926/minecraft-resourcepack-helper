@@ -6,8 +6,23 @@ export function isJsonObject(value: unknown): value is Record<string, JsonValue>
     value &&
     typeof value === "object" &&
     !Array.isArray(value) &&
-    (value as { kind?: string }).kind !== "lambda"
+    !isLambdaRuntimeValue(value)
   );
+}
+
+function isLambdaRuntimeValue(value: object): boolean {
+  const candidate = value as {
+    kind?: string;
+    parameters?: unknown;
+    body?: unknown;
+    context?: unknown;
+    impureCalls?: unknown;
+  };
+  return candidate.kind === "lambda"
+    && Array.isArray(candidate.parameters)
+    && Boolean(candidate.body && typeof candidate.body === "object")
+    && Boolean(candidate.context && typeof candidate.context === "object")
+    && Array.isArray(candidate.impureCalls);
 }
 
 export function cloneJsonObject(value: Record<string, JsonValue>): Record<string, JsonValue> {

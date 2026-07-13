@@ -10,6 +10,7 @@ import {
   ResourceBodyNode,
   RsglModule,
   RsglStatement,
+  TypeNode,
   VariantBodyNode
 } from "./types";
 
@@ -20,6 +21,8 @@ export interface RsglAstVisitor {
   leaveStatement?(statement: RsglStatement): void;
   enterExpression?(expression: ExprNode): RsglAstVisitControl;
   leaveExpression?(expression: ExprNode): void;
+  enterType?(type: TypeNode): RsglAstVisitControl;
+  leaveType?(type: TypeNode): void;
 }
 
 type RsglBody =
@@ -39,9 +42,22 @@ export function walkRsglModule(module: RsglModule, visitor: RsglAstVisitor): voi
   module.statements.forEach(statement => walkStatement(statement, visitor));
 }
 
+/** Walks an existing statement list without manufacturing a synthetic module. */
+export function walkRsglStatements(
+  statements: readonly RsglStatement[],
+  visitor: RsglAstVisitor
+): void {
+  statements.forEach(statement => walkStatement(statement, visitor));
+}
+
 /** Walks one expression without requiring a synthetic module wrapper. */
 export function walkRsglExpression(expression: ExprNode, visitor: RsglAstVisitor): void {
   walkExpression(expression, visitor);
+}
+
+/** Walks one type annotation or alias body in deterministic source order. */
+export function walkRsglType(type: TypeNode, visitor: RsglAstVisitor): void {
+  walkType(type, visitor);
 }
 
 function walkBody(body: RsglBody, visitor: RsglAstVisitor): void {
@@ -68,7 +84,13 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
     case "ItemSelectedItemStmt":
     case "UnknownStmt":
       break;
+    case "TypeAliasDecl":
+      walkType(statement.typeAnnotation, visitor);
+      break;
     case "LetDecl":
+      if (statement.typeAnnotation) {
+        walkType(statement.typeAnnotation, visitor);
+      }
       walkExpression(statement.value, visitor);
       break;
     case "TableDecl":
@@ -76,6 +98,9 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       break;
     case "TemplateDecl":
       statement.parameters.forEach(parameter => {
+        if (parameter.typeAnnotation) {
+          walkType(parameter.typeAnnotation, visitor);
+        }
         if (parameter.defaultValue) {
           walkExpression(parameter.defaultValue, visitor);
         }
@@ -373,6 +398,36 @@ function walkObjectProperty(
     walkExpression(property.key.expression, visitor);
   }
   walkExpression(property.value, visitor);
+}
+
+function walkType(type: TypeNode, visitor: RsglAstVisitor): void {
+  if (visitor.enterType?.(type) === "skipChildren") {
+    return;
+  }
+
+  switch (type.kind) {
+    case "NamedType":
+    case "LiteralType":
+    case "MissingType":
+      break;
+    case "GenericType":
+      type.args.forEach(argument => walkType(argument, visitor));
+      break;
+    case "FunctionType":
+      type.parameters.forEach(parameter => walkType(parameter, visitor));
+      walkType(type.returnType, visitor);
+      break;
+    case "UnionType":
+      type.options.forEach(option => walkType(option, visitor));
+      break;
+    case "ObjectType":
+      type.properties.forEach(property => walkType(property.typeAnnotation, visitor));
+      break;
+    default:
+      assertNever(type);
+  }
+
+  visitor.leaveType?.(type);
 }
 
 function assertNever(value: never): never {

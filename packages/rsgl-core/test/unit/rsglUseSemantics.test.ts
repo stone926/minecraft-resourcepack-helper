@@ -225,7 +225,7 @@ describe("RSGL lambda arguments to imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate variants cactus {",
-      "  use stateSequence(key: age, values: [0], model: value => `minecraft:block/${vlaue}`)",
+      "  use stateSequence(key: \"age\", values: [0], model: value => `minecraft:block/${vlaue}`)",
       "}"
     ]);
 
@@ -249,14 +249,14 @@ describe("RSGL lambda arguments to imported templates", () => {
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "template lampFamily(base: String) {",
       "  blockstate variants `${base}_lamp` {",
-      "    use stateSequence(key: lit, values: [0], model: value => `minecraft:block/${base}_lamp_${value}`)",
+      "    use stateSequence(key: \"lit\", values: [0], model: value => `minecraft:block/${base}_lamp_${value}`)",
       "  }",
       "}",
       "use lampFamily(base: \"copper\")",
       "for tint in [\"red\", \"green\"] {",
       "  blockstate variants `${tint}_case` {",
       "    let prefix = `minecraft:block/${tint}`",
-      "    use stateSequence(key: lit, values: [0], model: value => `${prefix}_case_${value}`)",
+      "    use stateSequence(key: \"lit\", values: [0], model: value => `${prefix}_case_${value}`)",
       "  }",
       "}"
     ]);
@@ -274,7 +274,7 @@ describe("RSGL lambda arguments to imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate variants cactus {",
-      "  use stateSequence(key: age, values: 0..2, model: value => `minecraft:block/cactus_${value}`)",
+      "  use stateSequence(key: \"age\", values: 0..2, model: value => `minecraft:block/cactus_${value}`)",
       "}"
     ]);
 
@@ -292,7 +292,7 @@ describe("RSGL lambda arguments to imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "blockstate variants cactus {",
-      "  use stateSequence(key: age, values: true, model: value => `minecraft:block/cactus_${value}`)",
+      "  use stateSequence(key: \"age\", values: true, model: value => `minecraft:block/cactus_${value}`)",
       "}"
     ]);
 
@@ -340,12 +340,15 @@ describe("RSGL lambda arguments to imported templates", () => {
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
-    assert.ok(codes.includes("rsgl.typeMismatch"), "expected the semantic layer to reject the () -> ... lambda at the argument");
-    const arityMismatches = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.lambdaArityMismatch");
-    assert.strictEqual(arityMismatches.length, 1, "the evaluator must report the arity mismatch exactly once, not per frame");
     assert.ok(
-      arityMismatches[0].fileName?.includes("item_definitions"),
-      "the evaluator report must be attributed to the stdlib file containing the call"
+      codes.includes("rsgl.lambdaArityMismatch"),
+      "expected the semantic layer to reject the () -> ... lambda at the argument"
+    );
+    const arityMismatches = result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.lambdaArityMismatch");
+    assert.strictEqual(arityMismatches.length, 1, "semantic and evaluator checks must produce one diagnostic");
+    assert.ok(
+      arityMismatches[0].fileName === "<anonymous>",
+      "the semantic report must be attributed to the user lambda argument"
     );
   });
 
@@ -422,7 +425,9 @@ describe("RSGL lambda arguments to imported templates", () => {
       "}"
     ]);
 
-    assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.undefinedSymbol"));
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+    assert.strictEqual(codes.filter(code => code === "rsgl.invalidLambdaCapture").length, 1);
+    assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
   });
 
   it("skips import signature validation for shadowed template parameters", () => {
@@ -448,7 +453,7 @@ describe("RSGL lambda arguments to imported templates", () => {
       "}"
     ]);
 
-    assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.typeMismatch"));
+    assert.ok(result.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.lambdaReturnTypeMismatch"));
   });
 
   it("reports nested impure lambdas once", () => {

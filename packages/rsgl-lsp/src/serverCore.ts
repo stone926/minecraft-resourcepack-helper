@@ -5,12 +5,16 @@ import {
   CompletionItemKind,
   DiagnosticSeverity,
   InsertTextFormat,
+  MarkupKind,
   type CodeAction,
   type CodeActionContext,
   type CompletionItem,
   type Diagnostic,
+  type Hover,
+  type Location,
   type Position,
-  type Range
+  type Range,
+  type SignatureHelp
 } from "vscode-languageserver/node";
 import {
   applyTextEdits,
@@ -18,6 +22,9 @@ import {
   compileRsglProgram,
   getRsglProjectConfigWatchPaths,
   getRsglDocumentCompletionItems,
+  getRsglDocumentDefinitionLocation,
+  getRsglDocumentHoverInfo,
+  getRsglDocumentSignatureHelpInfo,
   getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
   loadRsglProjectConfigForSource,
@@ -31,6 +38,7 @@ import {
   type RsglCompileConfigurationOptions,
   type RsglCompletionItem,
   type RsglDiagnostic,
+  type RsglDefinitionLocation,
   type MigrationIssue,
   type RsglResourceValidationOptions,
   type RsglMigrationProgramFile,
@@ -72,6 +80,9 @@ export interface RsglDocumentValidationDeps {
 export interface RsglDocumentCompletionDeps {
   loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
 }
+
+/** Injected collaborators shared by hover, signature help, and definition lookup. */
+export type RsglDocumentLanguageIntelligenceDeps = RsglDocumentCompletionDeps;
 
 /** Custom fix-all kind advertised by the RSGL language server. */
 export const rsglBlockstateLegacyFixAllKind = "source.fixAll.rsgl.blockstateLegacy";
@@ -483,6 +494,98 @@ export function completionItemsForDocument(
     fileName,
     getText: () => document.getText()
   }, offset, deps).map(toCompletionItem);
+}
+
+/** Computes semantic hover content and converts its source offsets to LSP positions. */
+export function computeDocumentHover(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): Hover | null {
+  try {
+    const hover = getRsglDocumentHoverInfo({
+      fileName,
+      getText: () => document.getText()
+    }, offset, deps);
+    if (!hover) {
+      return null;
+    }
+    const detail = hover.detail ? `\n\n${hover.detail}` : "";
+    return {
+      contents: {
+        kind: MarkupKind.Markdown,
+        value: `\`\`\`rsgl\n${hover.label}\n\`\`\`${detail}`
+      },
+      range: {
+        start: document.positionAt(clampOffset(document, hover.range.start)),
+        end: document.positionAt(clampOffset(document, hover.range.end))
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Computes semantic signature help for template and function-valued calls. */
+export function computeDocumentSignatureHelp(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): SignatureHelp | null {
+  try {
+    const help = getRsglDocumentSignatureHelpInfo({
+      fileName,
+      getText: () => document.getText()
+    }, offset, deps);
+    if (!help) {
+      return null;
+    }
+    return {
+      signatures: help.signatures.map(signature => ({
+        label: signature.label,
+        documentation: signature.detail,
+        parameters: signature.parameters.map(parameter => ({ label: parameter.label }))
+      })),
+      activeSignature: help.activeSignature,
+      activeParameter: help.activeParameter
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Returns an offset-based definition; target-document conversion is intentionally separate. */
+export function definitionLocationForDocument(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): RsglDefinitionLocation | null {
+  try {
+    return getRsglDocumentDefinitionLocation({
+      fileName,
+      getText: () => document.getText()
+    }, offset, deps) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Converts a core definition range using the target document's UTF-16 position mapping. */
+export function toLspDefinitionLocation(
+  targetDocument: RsglLspDocument,
+  targetUri: string,
+  definition: RsglDefinitionLocation
+): Location {
+  return {
+    uri: targetUri,
+    range: {
+      start: targetDocument.positionAt(clampOffset(targetDocument, definition.range.start)),
+      end: targetDocument.positionAt(clampOffset(targetDocument, definition.range.end))
+    }
+  };
 }
 
 /** Finds the semantic model belonging to the given file within a bound workspace program. */

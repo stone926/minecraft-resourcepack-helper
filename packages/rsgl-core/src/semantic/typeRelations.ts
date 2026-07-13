@@ -1,4 +1,4 @@
-import { RsglType, unknownType } from "./types";
+import { hasLiteralValue, RsglObjectProperty, RsglType, unknownType } from "./types";
 
 export function isAssignable(expected: RsglType, actual: RsglType): boolean {
   if (expected.kind === "Unknown" || expected.kind === "Any" || actual.kind === "Unknown" || actual.kind === "Any") {
@@ -11,12 +11,30 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return (expected.options ?? []).some(option => isAssignable(option, actual));
   }
   if (expected.kind === actual.kind) {
-    if (expected.kind === "List") {
+    if (hasLiteralValue(expected)) {
+      return hasLiteralValue(actual) && Object.is(expected.literalValue, actual.literalValue);
+    }
+    if (expected.kind === "List" || expected.kind === "Range") {
       return isAssignable(expected.elementType ?? unknownType, actual.elementType ?? unknownType);
+    }
+    if (expected.kind === "Object") {
+      return isObjectAssignable(expected, actual);
     }
     if (expected.kind === "Function") {
       if (expected.parameters && actual.parameters && expected.parameters.length !== actual.parameters.length) {
         return false;
+      }
+      if (expected.parameters && actual.parameters) {
+        for (let index = 0; index < expected.parameters.length; index++) {
+          const expectedParameter = expected.parameters[index];
+          const actualParameter = actual.parameters[index];
+          // Parameter invariance is intentionally conservative for the first
+          // complete Function relation; return values remain covariant.
+          if (!isAssignable(expectedParameter, actualParameter)
+            || !isAssignable(actualParameter, expectedParameter)) {
+            return false;
+          }
+        }
       }
       if (expected.returnType && actual.returnType) {
         return isAssignable(expected.returnType, actual.returnType);
@@ -25,7 +43,9 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return true;
   }
   if (expected.kind === "Json") {
-    return actual.kind !== "TextureVariable" && actual.kind !== "TextureRef";
+    return actual.kind !== "TextureVariable"
+      && actual.kind !== "TextureRef"
+      && actual.kind !== "Missing";
   }
   if (expected.kind === "ResourceId" && (actual.kind === "ModelId" || actual.kind === "TextureId" || actual.kind === "String")) {
     return true;
@@ -45,6 +65,9 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
 }
 
 export function formatType(type: RsglType): string {
+  if (hasLiteralValue(type)) {
+    return JSON.stringify(type.literalValue);
+  }
   if (type.kind === "Union") {
     return (type.options ?? []).map(formatType).join(" | ");
   }
@@ -57,5 +80,43 @@ export function formatType(type: RsglType): string {
   if (type.kind === "BlockstateModelObject") {
     return "blockstate model object";
   }
+  if (type.kind === "Object") {
+    const fields = Array.from(type.properties ?? [])
+      .map(([name, property]) => `${name}${property.optional ? "?" : ""}: ${formatType(property.type)}`)
+    return fields.length > 0 ? `{ ${fields.join(", ")} }` : "{}";
+  }
   return type.kind;
+}
+
+function isObjectAssignable(expected: RsglType, actual: RsglType): boolean {
+  const expectedProperties = expected.properties ?? new Map<string, RsglObjectProperty>();
+  const actualProperties = actual.properties ?? new Map<string, RsglObjectProperty>();
+  for (const [name, expectedProperty] of expectedProperties) {
+    const actualProperty = actualProperties.get(name);
+    const actualPropertyType = actualProperty?.type ?? actual.indexType;
+    if (!actualPropertyType) {
+      if (expectedProperty.optional) {
+        continue;
+      }
+      return false;
+    }
+    if (!expectedProperty.optional && actualProperty?.optional) {
+      return false;
+    }
+    if (!isAssignable(expectedProperty.type, actualPropertyType)) {
+      return false;
+    }
+  }
+
+  if (expected.indexType) {
+    for (const actualProperty of actualProperties.values()) {
+      if (!isAssignable(expected.indexType, actualProperty.type)) {
+        return false;
+      }
+    }
+    if (actual.indexType && !isAssignable(expected.indexType, actual.indexType)) {
+      return false;
+    }
+  }
+  return true;
 }

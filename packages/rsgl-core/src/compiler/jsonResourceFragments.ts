@@ -9,11 +9,11 @@ import {
 import type { RsglGenericJsonResourceKind } from "../resourceKinds";
 import {
   EvaluationContext,
-  EvaluationValue,
   evaluateExpression,
   expressionEvaluationOrigin
 } from "./evaluate";
 import { JsonValue } from "./ir";
+import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
 import { isJsonObject } from "./jsonValues";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { expandSequencePattern, sequencePadWidth } from "./sequences";
@@ -21,9 +21,7 @@ import { appendGeneratedPath } from "./sourcePaths";
 
 export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
 
-export interface RsglJsonResourceFragmentOptions {
-  onError?: (code: string, message: string, range: TextRange) => void;
-}
+export type RsglJsonResourceFragmentOptions = JsonValueSinkOptions;
 
 interface EvaluatedFragmentArg<T> {
   arg: ArgumentNode;
@@ -48,7 +46,7 @@ export function compileJsonResourceUseFragment(
     return compileParticlesSeq(call, context, options);
   }
   if (kind === "mcmeta" && call.callee.name.text === "mcmetaAnimation") {
-    return compileMcmetaAnimation(call, context);
+    return compileMcmetaAnimation(call, context, options);
   }
   if (kind === "mcmeta" && call.callee.name.text === "nineSliceGui") {
     return compileNineSliceGui(call, context, options);
@@ -65,7 +63,7 @@ function compileAtlasDirectory(
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
 ): ResourceBodyFragment | undefined {
-  const source = stringArg(call, "source", 0, context, options);
+  const source = stringArg(call, "source", 0, context, options, "/sources/0/source");
   if (!source) {
     return undefined;
   }
@@ -74,7 +72,7 @@ function compileAtlasDirectory(
     type: "minecraft:directory",
     source: source.value
   };
-  const prefix = optionalStringArg(call, "prefix", 1, context, options);
+  const prefix = optionalStringArg(call, "prefix", 1, context, options, "/sources/0/prefix");
   if (prefix) {
     entry.prefix = prefix.value;
   }
@@ -106,7 +104,10 @@ function compileParticlesSeq(
     return undefined;
   }
 
-  const value = normalizeJsonValue(evaluateExpression(arg.value, context));
+  const value = evaluateJsonExpression(arg.value, context, options, "/textures");
+  if (value === undefined) {
+    return undefined;
+  }
   const padArg = findArg(call, "pad");
   const padWidth = padArg ? sequencePadWidth(evaluateExpression(padArg.value, context)) : null;
   if (padArg && padWidth === null) {
@@ -139,15 +140,16 @@ function compileParticlesSeq(
 
 function compileMcmetaAnimation(
   call: CallExprNode & { callee: IdentifierExprNode },
-  context: EvaluationContext
+  context: EvaluationContext,
+  options: RsglJsonResourceFragmentOptions
 ): ResourceBodyFragment {
   const animation: Record<string, JsonValue> = {};
   const mappings: ResourceBodyMapping[] = [
     mapping("/animation", call.range, context)
   ];
-  const frametime = copyOptionalArg(animation, "frametime", call, context, 0);
-  const interpolate = copyOptionalArg(animation, "interpolate", call, context, 1);
-  const frames = copyOptionalArg(animation, "frames", call, context, 2);
+  const frametime = copyOptionalArg(animation, "frametime", call, context, 0, options, "/animation/frametime");
+  const interpolate = copyOptionalArg(animation, "interpolate", call, context, 1, options, "/animation/interpolate");
+  const frames = copyOptionalArg(animation, "frames", call, context, 2, options, "/animation/frames");
   addOptionalArgMapping(mappings, "/animation/frametime", frametime, context);
   addOptionalArgMapping(mappings, "/animation/interpolate", interpolate, context);
   addOptionalArgMapping(mappings, "/animation/frames", frames, context);
@@ -159,10 +161,14 @@ function compileNineSliceGui(
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
 ): ResourceBodyFragment | undefined {
-  const width = numberArg(call, "width", 0, context, options);
-  const height = numberArg(call, "height", 1, context, options);
+  const width = numberArg(call, "width", 0, context, options, "/gui/scaling/width");
+  const height = numberArg(call, "height", 1, context, options, "/gui/scaling/height");
   const borderArg = requiredArg(call, "border", 2, options);
   if (width === null || height === null || !borderArg) {
+    return undefined;
+  }
+  const border = evaluateJsonExpression(borderArg.value, context, options, "/gui/scaling/border");
+  if (border === undefined) {
     return undefined;
   }
 
@@ -170,9 +176,17 @@ function compileNineSliceGui(
     type: "nine_slice",
     width: width.value,
     height: height.value,
-    border: normalizeJsonValue(evaluateExpression(borderArg.value, context))
+    border
   };
-  const stretchInner = copyOptionalArg(scaling, "stretch_inner", call, context, 3);
+  const stretchInner = copyOptionalArg(
+    scaling,
+    "stretch_inner",
+    call,
+    context,
+    3,
+    options,
+    "/gui/scaling/stretch_inner"
+  );
   const scalingPath = "/gui/scaling";
   const mappings: ResourceBodyMapping[] = [
     mapping("/gui", call.range, context),
@@ -195,17 +209,43 @@ function compileEquipmentLayers(
   context: EvaluationContext,
   options: RsglJsonResourceFragmentOptions
 ): ResourceBodyFragment | undefined {
-  const texture = stringArg(call, "texture", 0, context, options);
+  const textureArg = requiredArg(call, "texture", 0, options);
   const layersArg = requiredArg(call, "layers", 1, options);
-  if (!texture || !layersArg) {
+  if (!textureArg || !layersArg) {
     return undefined;
   }
 
-  const layers = stringList(evaluateExpression(layersArg.value, context));
+  const layersValue = evaluateJsonExpression(layersArg.value, context, options, "/layers");
+  if (layersValue === undefined) {
+    return undefined;
+  }
+  const layers = stringList(layersValue);
   if (!layers) {
     options.onError?.("rsgl.invalidEquipmentLayersArgument", "equipmentLayers layers must evaluate to a layer name string or list of layer name strings.", layersArg.value.range);
     return undefined;
   }
+
+  const firstEntryPath = layers.length > 0
+    ? appendGeneratedPath(appendGeneratedPath("/layers", layers[0]), "0")
+    : "/layers";
+  const textureValue = evaluateJsonExpression(
+    textureArg.value,
+    context,
+    options,
+    appendGeneratedPath(firstEntryPath, "texture")
+  );
+  if (textureValue === undefined) {
+    return undefined;
+  }
+  if (typeof textureValue !== "string") {
+    options.onError?.(
+      "rsgl.invalidJsonResourceFragmentArgument",
+      "Fragment argument 'texture' must evaluate to a string.",
+      textureArg.value.range
+    );
+    return undefined;
+  }
+  const texture: EvaluatedFragmentArg<string> = { arg: textureArg, value: textureValue };
 
   const layerEntry: Record<string, JsonValue> = {
     texture: normalizeResourceId(texture.value, context.namespace)
@@ -213,8 +253,29 @@ function compileEquipmentLayers(
   const colorArg = findArg(call, "color");
   const dyeableArg = findArg(call, "dyeable");
   const usePlayerTextureArg = findArg(call, "use_player_texture") ?? findArg(call, "usePlayerTexture");
-  const color = colorArg ? evaluateExpression(colorArg.value, context) : undefined;
-  const dyeable = dyeableArg ? Boolean(evaluateExpression(dyeableArg.value, context)) : color !== undefined;
+  const color = colorArg
+    ? evaluateJsonExpression(
+      colorArg.value,
+      context,
+      options,
+      appendGeneratedPath(appendGeneratedPath(firstEntryPath, "dyeable"), "color_when_undyed")
+    )
+    : undefined;
+  if (colorArg && color === undefined) {
+    return undefined;
+  }
+  const dyeableValue = dyeableArg
+    ? evaluateJsonExpression(
+      dyeableArg.value,
+      context,
+      options,
+      appendGeneratedPath(firstEntryPath, "dyeable")
+    )
+    : undefined;
+  if (dyeableArg && dyeableValue === undefined) {
+    return undefined;
+  }
+  const dyeable = dyeableArg ? Boolean(dyeableValue) : color !== undefined;
   if (dyeable) {
     const undyedColorKey = "color_when_undyed";
     layerEntry.dyeable = typeof color === "number" && Number.isFinite(color)
@@ -222,8 +283,17 @@ function compileEquipmentLayers(
       : {};
   }
   if (usePlayerTextureArg) {
+    const usePlayerTexture = evaluateJsonExpression(
+      usePlayerTextureArg.value,
+      context,
+      options,
+      appendGeneratedPath(firstEntryPath, "use_player_texture")
+    );
+    if (usePlayerTexture === undefined) {
+      return undefined;
+    }
     const usePlayerTextureKey = "use_player_texture";
-    layerEntry[usePlayerTextureKey] = Boolean(evaluateExpression(usePlayerTextureArg.value, context));
+    layerEntry[usePlayerTextureKey] = Boolean(usePlayerTexture);
   }
 
   const layerMap: Record<string, JsonValue> = {};
@@ -332,7 +402,7 @@ function textureSequence(value: JsonValue, namespace: string, padWidth: number |
   return value.flatMap(item => expandSequencePattern(item, { pad: padWidth }).map(entry => normalizeResourceId(entry, namespace)));
 }
 
-function stringList(value: EvaluationValue): string[] | null {
+function stringList(value: JsonValue): string[] | null {
   if (typeof value === "string") {
     return [value];
   }
@@ -347,13 +417,17 @@ function stringArg(
   name: string,
   positionalIndex: number,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: RsglJsonResourceFragmentOptions,
+  generatedPath: string
 ): EvaluatedFragmentArg<string> | null {
   const arg = requiredArg(call, name, positionalIndex, options);
   if (!arg) {
     return null;
   }
-  const value = evaluateExpression(arg.value, context);
+  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
+  if (value === undefined) {
+    return null;
+  }
   if (typeof value !== "string") {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a string.`, arg.value.range);
     return null;
@@ -366,13 +440,17 @@ function optionalStringArg(
   name: string,
   positionalIndex: number,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: RsglJsonResourceFragmentOptions,
+  generatedPath: string
 ): EvaluatedFragmentArg<string> | null {
   const arg = findArg(call, name, positionalIndex);
   if (!arg) {
     return null;
   }
-  const value = evaluateExpression(arg.value, context);
+  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
+  if (value === undefined) {
+    return null;
+  }
   if (typeof value !== "string") {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a string.`, arg.value.range);
     return null;
@@ -385,13 +463,17 @@ function numberArg(
   name: string,
   positionalIndex: number,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: RsglJsonResourceFragmentOptions,
+  generatedPath: string
 ): EvaluatedFragmentArg<number> | null {
   const arg = requiredArg(call, name, positionalIndex, options);
   if (!arg) {
     return null;
   }
-  const value = evaluateExpression(arg.value, context);
+  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
+  if (value === undefined) {
+    return null;
+  }
   if (typeof value !== "number" || !Number.isFinite(value)) {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a finite number.`, arg.value.range);
     return null;
@@ -422,24 +504,19 @@ function copyOptionalArg(
   name: string,
   call: CallExprNode,
   context: EvaluationContext,
-  positionalIndex: number
+  positionalIndex: number,
+  options: RsglJsonResourceFragmentOptions,
+  generatedPath: string
 ): ArgumentNode | undefined {
   const arg = findArg(call, name, positionalIndex);
   if (!arg) {
     return undefined;
   }
-  const value = evaluateExpression(arg.value, context);
+  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
   if (value !== undefined) {
-    target[name] = normalizeJsonValue(value);
+    target[name] = value;
   }
   return arg;
-}
-
-function normalizeJsonValue(value: EvaluationValue): JsonValue {
-  if (value === undefined || (value && typeof value === "object" && !Array.isArray(value) && value.kind === "lambda")) {
-    return null;
-  }
-  return value as JsonValue;
 }
 
 function normalizeResourceId(value: string, namespace: string): string {

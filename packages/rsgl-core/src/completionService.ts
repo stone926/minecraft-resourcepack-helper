@@ -2,8 +2,9 @@ import {
   getRsglCompletionCandidates,
   type RsglCompletionCandidate
 } from "./completionData";
-import type { RsglSymbol } from "./semantic";
-import { formatTemplateOutputMetadata } from "./templateOutput";
+import { callablePresentation } from "./languageIntelligence";
+import type { RsglSymbol, RsglTypeAliasSymbol } from "./semantic";
+import { formatType } from "./semantic/typeRelations";
 
 export type RsglCompletionItemKind =
   | RsglCompletionCandidate["kind"]
@@ -18,22 +19,46 @@ export interface RsglCompletionItem {
   kind: RsglCompletionItemKind;
 }
 
+export type RsglCompletionNamespace = "value" | "type" | "both";
+
 /** Merges syntax-aware candidates with workspace symbols, keeping syntax items first. */
 export function getRsglCompletionItems(
   text: string,
   offset: number,
-  semanticSymbols: readonly RsglSymbol[] = []
+  semanticSymbols: readonly RsglSymbol[] = [],
+  typeAliases: ReadonlyMap<string, RsglTypeAliasSymbol> = new Map(),
+  namespace: RsglCompletionNamespace = "both"
 ): RsglCompletionItem[] {
   const items = new Map<string, RsglCompletionItem>();
-  for (const candidate of getRsglCompletionCandidates(text, offset)) {
-    items.set(candidate.label, candidateCompletionItem(candidate));
-  }
-  for (const symbol of semanticSymbols) {
-    if (!items.has(symbol.name)) {
-      items.set(symbol.name, symbolCompletionItem(symbol));
+  if (namespace !== "type") {
+    for (const candidate of getRsglCompletionCandidates(text, offset)) {
+      items.set(candidate.label, candidateCompletionItem(candidate));
+    }
+    for (const symbol of semanticSymbols) {
+      if (!items.has(symbol.name)) {
+        items.set(symbol.name, symbolCompletionItem(symbol));
+      }
     }
   }
-  return [...items.values()];
+  const collidingTypeAliases: RsglCompletionItem[] = [];
+  if (namespace !== "value") {
+    for (const [name, alias] of typeAliases) {
+      const item = {
+        label: name,
+        kind: "struct" as const,
+        detail: `type alias: ${formatType(alias.type ?? { kind: "Unknown" })}`
+      };
+      if (!items.has(name)) {
+        items.set(name, item);
+      } else if (namespace === "both") {
+        // Value and type namespaces are independent. Keep both candidates so
+        // import/export and other syntactically ambiguous positions do not
+        // silently hide one declaration behind the other.
+        collidingTypeAliases.push(item);
+      }
+    }
+  }
+  return [...items.values(), ...collidingTypeAliases];
 }
 
 function candidateCompletionItem(candidate: RsglCompletionCandidate): RsglCompletionItem {
@@ -54,7 +79,7 @@ function symbolCompletionItem(symbol: RsglSymbol): RsglCompletionItem {
 }
 
 function symbolCompletionKind(symbol: RsglSymbol): RsglCompletionItemKind {
-  if (symbol.kind === "template" || symbol.signature?.templateOutput) {
+  if (symbol.kind === "template" || symbol.signature || symbol.type.kind === "Function") {
     return "function";
   }
   if (symbol.kind === "table") {
@@ -67,10 +92,9 @@ function symbolCompletionKind(symbol: RsglSymbol): RsglCompletionItemKind {
 }
 
 function formatSymbolType(symbol: RsglSymbol): string {
-  if (symbol.signature) {
-    return symbol.signature.templateOutput
-      ? formatTemplateOutputMetadata(symbol.signature.templateOutput)
-      : "function";
+  const callable = callablePresentation(symbol);
+  if (callable) {
+    return callable.detail ? `${callable.label} — ${callable.detail}` : callable.label;
   }
-  return symbol.type.kind;
+  return formatType(symbol.type);
 }
