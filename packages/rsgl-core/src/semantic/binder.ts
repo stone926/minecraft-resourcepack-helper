@@ -53,6 +53,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly exports: RsglExportRecord[] = [];
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly importCallScopes = new Map<ExprNode, RsglScope>();
+  private readonly unsupportedDefaultImportNames = new Set<string>();
   private readonly globalScope: RsglScope = createScope("global");
   private readonly bodyChecker: RsglResourceBodyChecker;
   private namespace: string | undefined;
@@ -94,6 +95,10 @@ class RsglBinder implements RsglExpressionCheckContext {
 
   public recordImportCallScope(expression: ExprNode, scope: RsglScope): void {
     this.importCallScopes.set(expression, snapshotScope(scope));
+  }
+
+  public isUndefinedSymbolDiagnosticSuppressed(name: string): boolean {
+    return this.unsupportedDefaultImportNames.has(name);
   }
 
   public defineIdentifier(
@@ -251,6 +256,9 @@ class RsglBinder implements RsglExpressionCheckContext {
   }
 
   private recordImport(statement: Extract<TopLevelStatementNode, { kind: "ImportDecl" }>, scope: RsglScope): void {
+    if (statement.defaultName) {
+      this.unsupportedDefaultImportNames.add(statement.defaultName.text);
+    }
     if (!statement.source) {
       return;
     }
@@ -271,9 +279,6 @@ class RsglBinder implements RsglExpressionCheckContext {
     };
     this.imports.push(record);
 
-    if (statement.defaultName) {
-      this.defineIdentifier(scope, statement.defaultName, "import", { kind: "Object" }, statement);
-    }
     for (const specifier of statement.namedImports) {
       this.defineIdentifier(scope, specifier.local, "import", anyType, specifier);
     }

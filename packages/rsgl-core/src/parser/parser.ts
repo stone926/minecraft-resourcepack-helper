@@ -192,6 +192,13 @@ class RsglParser extends StatementParser {
     } else if (this.current().kind === "identifier" || this.current().kind === "keyword") {
       if (this.peekText(1) === "from") {
         defaultName = this.parseIdentifier("Expected imported binding.") ?? undefined;
+        if (defaultName) {
+          this.addDiagnostic(
+            "rsgl.unsupportedDefaultImport",
+            "Default imports are not supported; use a named import.",
+            defaultName.range
+          );
+        }
         this.matchText("from");
       }
     }

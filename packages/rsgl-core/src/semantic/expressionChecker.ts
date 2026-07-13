@@ -47,6 +47,8 @@ export interface RsglExpressionCheckContext {
   ): void;
   /** Called for imported-template calls whose arguments are skipped at bind time. */
   recordImportCallScope?(expression: CallExprNode, scope: RsglScope): void;
+  /** Suppresses cascaded undefined-symbol noise for rejected syntax with its own primary diagnostic. */
+  isUndefinedSymbolDiagnosticSuppressed?(name: string): boolean;
 }
 
 export function checkExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
@@ -54,7 +56,9 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
     const symbol = lookup(scope, expression.name.text);
     context.references.push({ name: expression.name.text, range: expression.range, symbol });
     if (!symbol) {
-      context.diagnostics.push(diagnostic("rsgl.undefinedSymbol", `Undefined RSGL symbol '${expression.name.text}'.`, expression.range));
+      if (!context.isUndefinedSymbolDiagnosticSuppressed?.(expression.name.text)) {
+        context.diagnostics.push(diagnostic("rsgl.undefinedSymbol", `Undefined RSGL symbol '${expression.name.text}'.`, expression.range));
+      }
       return unknownType;
     }
     return symbol.type;

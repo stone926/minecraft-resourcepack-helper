@@ -171,6 +171,44 @@ describe("RSGL LSP server core", () => {
     assert.ok(diagnostics.every(diagnostic => diagnostic.source === "RSGL"));
   });
 
+  it("reports unsupported default imports consistently through program and fallback paths", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-default-import-"));
+    try {
+      const entryFile = path.join(root, "main.rsgl");
+      const commonFile = path.join(root, "common.rsgl");
+      const text = [
+        "import common from \"./common.rsgl\"",
+        "model block default_import { textures { all: common.stone } }"
+      ].join("\n");
+      fs.writeFileSync(entryFile, text);
+      fs.writeFileSync(commonFile, "let stone = minecraft:block/stone\nexport { stone }");
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const programDiagnostics = computeDocumentDiagnostics(documentOf(text), entryFile, {
+        loadProgramFromEntry: fileName => cache.loadProgramFromEntry(fileName),
+        settings: emptySettings
+      });
+      const fallbackFile = path.join(root, "missing", "untracked.rsgl");
+      const fallbackDiagnostics = computeDocumentDiagnostics(documentOf(text), fallbackFile, {
+        loadProgramFromEntry: fileName => cache.loadProgramFromEntry(fileName),
+        settings: emptySettings
+      });
+
+      for (const diagnostics of [programDiagnostics, fallbackDiagnostics]) {
+        assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), [
+          "rsgl.unsupportedDefaultImport"
+        ]);
+        assert.deepStrictEqual(diagnostics[0].range, {
+          start: { line: 0, character: 7 },
+          end: { line: 0, character: 13 }
+        });
+        assert.strictEqual(diagnostics[0].source, "RSGL");
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reports base-document dependencies from the diagnostics pipeline", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-deps-"));
     try {
