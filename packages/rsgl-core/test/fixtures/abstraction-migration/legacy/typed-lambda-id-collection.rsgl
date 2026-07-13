@@ -1,0 +1,22 @@
+target java format [50, 0]
+namespace minecraft
+
+extern! vanilla model minecraft:block/stone
+
+let fallbackModel: ModelId = minecraft:block/stone
+let chooseModel: (Json) -> ModelId = entry => (entry == true ? fallbackModel : minecraft:block/stone)
+
+let states = product({
+  facing: [north, east]
+  powered: [false, true]
+})
+
+blockstate abstraction/typed_lambda_id_collection {
+  variants {
+    for state in states {
+      let selectedModel = chooseModel(state.powered)
+      [facing=state.facing powered=state.powered] ->
+        @selectedModel y=yaw(state.facing)
+    }
+  }
+}

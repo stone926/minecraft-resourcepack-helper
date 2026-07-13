@@ -1,0 +1,1684 @@
+{
+  "version": 1,
+  "resources": [
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/direct_multipart.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/direct_multipart",
+      "content": {
+        "multipart": [
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_post"
+            }
+          },
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_side",
+              "uvlock": true
+            },
+            "when": {
+              "north": true
+            }
+          }
+        ]
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/direct_multipart.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/0",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/1",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/direct_variants.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/direct_variants",
+      "content": {
+        "variants": {
+          "facing=north": [
+            {
+              "model": "minecraft:block/stone",
+              "weight": 3
+            },
+            {
+              "model": "minecraft:block/stone_mirrored",
+              "y": 180,
+              "uvlock": true
+            }
+          ]
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/direct_variants.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/implicit_multipart_body.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/implicit_multipart_body",
+      "content": {
+        "multipart": [
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_post"
+            }
+          },
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_side",
+              "uvlock": true
+            },
+            "when": {
+              "north": true
+            }
+          },
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_side",
+              "y": 90,
+              "uvlock": true
+            },
+            "when": {
+              "east": true
+            }
+          },
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_side",
+              "y": 180,
+              "uvlock": true
+            },
+            "when": {
+              "south": true
+            }
+          },
+          {
+            "apply": {
+              "model": "minecraft:block/oak_fence_side",
+              "y": 270,
+              "uvlock": true
+            },
+            "when": {
+              "west": true
+            }
+          }
+        ]
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/implicit_multipart_body.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/0",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/1",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/2",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/3",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/4",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/implicit_variants_body.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/implicit_variants_body",
+      "content": {
+        "variants": {
+          "powered=false": {
+            "model": "minecraft:block/redstone_lamp"
+          },
+          "powered=true": {
+            "model": "minecraft:block/redstone_lamp_on"
+          }
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/implicit_variants_body.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use poweredVariants"
+            ]
+          },
+          {
+            "generatedPath": "/variants/powered=false",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use poweredVariants"
+            ]
+          },
+          {
+            "generatedPath": "/variants/powered=true",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use poweredVariants"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/root_merge_value_helper.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/root_merge_value_helper",
+      "content": {
+        "custom": {
+          "enabled": true,
+          "label": "value-helper",
+          "source": "template"
+        },
+        "variants": {
+          "": {
+            "model": "minecraft:block/stone"
+          }
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/root_merge_value_helper.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/custom",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use rootMetadata"
+            ]
+          },
+          {
+            "generatedPath": "/custom/enabled",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use rootMetadata"
+            ]
+          },
+          {
+            "generatedPath": "/custom/source",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use rootMetadata"
+            ]
+          },
+          {
+            "generatedPath": "/custom",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/custom/label",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/stdlib_slab.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/stdlib_slab",
+      "content": {
+        "variants": {
+          "type=bottom": {
+            "model": "minecraft:block/oak_slab"
+          },
+          "type=double": {
+            "model": "minecraft:block/oak_planks"
+          },
+          "type=top": {
+            "model": "minecraft:block/oak_slab_top"
+          }
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/stdlib_slab.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "stdlib-blockstate-conventions.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          },
+          {
+            "generatedPath": "/variants/type=bottom",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          },
+          {
+            "generatedPath": "/variants/type=top",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          },
+          {
+            "generatedPath": "/variants/type=double",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/stdlib_stairs.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/stdlib_stairs",
+      "content": {
+        "variants": {
+          "facing=east,half=bottom,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=east,half=bottom,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner"
+          },
+          "facing=east,half=bottom,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=east,half=bottom,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer"
+          },
+          "facing=east,half=bottom,shape=straight": {
+            "model": "minecraft:block/oak_stairs"
+          },
+          "facing=east,half=top,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "uvlock": true
+          },
+          "facing=east,half=top,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=east,half=top,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "uvlock": true
+          },
+          "facing=east,half=top,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=east,half=top,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "x": 180,
+            "uvlock": true
+          },
+          "facing=north,half=bottom,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=north,half=bottom,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=north,half=bottom,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=north,half=bottom,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=north,half=bottom,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=north,half=top,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=north,half=top,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "uvlock": true
+          },
+          "facing=north,half=top,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=north,half=top,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "uvlock": true
+          },
+          "facing=north,half=top,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "x": 180,
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=south,half=bottom,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner"
+          },
+          "facing=south,half=bottom,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=south,half=bottom,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer"
+          },
+          "facing=south,half=bottom,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=south,half=bottom,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=south,half=top,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=south,half=top,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=south,half=top,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=south,half=top,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=south,half=top,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "x": 180,
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=west,half=bottom,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=west,half=bottom,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=west,half=bottom,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "y": 90,
+            "uvlock": true
+          },
+          "facing=west,half=bottom,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=west,half=bottom,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=west,half=top,shape=inner_left": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=west,half=top,shape=inner_right": {
+            "model": "minecraft:block/oak_stairs_inner",
+            "x": 180,
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=west,half=top,shape=outer_left": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "y": 180,
+            "uvlock": true
+          },
+          "facing=west,half=top,shape=outer_right": {
+            "model": "minecraft:block/oak_stairs_outer",
+            "x": 180,
+            "y": 270,
+            "uvlock": true
+          },
+          "facing=west,half=top,shape=straight": {
+            "model": "minecraft:block/oak_stairs",
+            "x": 180,
+            "y": 180,
+            "uvlock": true
+          }
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/stdlib_stairs.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "stdlib-blockstate-conventions.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/stdlib_state_sequence.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/stdlib_state_sequence",
+      "content": {
+        "variants": {
+          "age=0": {
+            "model": "minecraft:block/wheat_stage_0"
+          },
+          "age=1": {
+            "model": "minecraft:block/wheat_stage_1"
+          },
+          "age=2": {
+            "model": "minecraft:block/wheat_stage_2"
+          }
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/stdlib_state_sequence.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "stdlib-blockstate-conventions.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence"
+            ]
+          },
+          {
+            "generatedPath": "/variants/age=0",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/age=1",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/age=2",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence",
+              "for"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/blockstates/abstraction/typed_lambda_id_collection.json",
+      "kind": "blockstate",
+      "id": "minecraft:abstraction/typed_lambda_id_collection",
+      "content": {
+        "variants": {
+          "facing=east,powered=false": {
+            "model": "minecraft:block/stone",
+            "y": 90
+          },
+          "facing=east,powered=true": {
+            "model": "minecraft:block/stone",
+            "y": 90
+          },
+          "facing=north,powered=false": {
+            "model": "minecraft:block/stone"
+          },
+          "facing=north,powered=true": {
+            "model": "minecraft:block/stone"
+          }
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/blockstates/abstraction/typed_lambda_id_collection.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north,powered=false",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,powered=true",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,powered=false",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,powered=true",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/models/block/abstraction/full_resource_template.json",
+      "kind": "model",
+      "id": "minecraft:block/abstraction/full_resource_template",
+      "content": {
+        "textures": {
+          "all": "minecraft:block/stone"
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/models/block/abstraction/full_resource_template.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "full-resource-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fullResourceModel"
+            ]
+          },
+          {
+            "generatedPath": "/textures",
+            "sourceFile": "full-resource-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fullResourceModel"
+            ]
+          },
+          {
+            "generatedPath": "/textures/all",
+            "sourceFile": "full-resource-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fullResourceModel"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/models/block/abstraction/implicit_model_body.json",
+      "kind": "model",
+      "id": "minecraft:block/abstraction/implicit_model_body",
+      "content": {
+        "textures": {
+          "all": "minecraft:block/dirt",
+          "particle": "minecraft:block/dirt"
+        }
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/models/block/abstraction/implicit_model_body.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "implicit-model-body-template.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/textures",
+            "sourceFile": "implicit-model-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use modelFields"
+            ]
+          },
+          {
+            "generatedPath": "/textures/all",
+            "sourceFile": "implicit-model-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use modelFields"
+            ]
+          },
+          {
+            "generatedPath": "/textures/particle",
+            "sourceFile": "implicit-model-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use modelFields"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "outputPath": "assets/minecraft/models/block/abstraction/mirror_translate.json",
+      "kind": "model",
+      "id": "minecraft:block/abstraction/mirror_translate",
+      "content": {
+        "textures": {
+          "all": "minecraft:block/stone"
+        },
+        "elements": [
+          {
+            "faces": {
+              "down": {
+                "texture": "#all"
+              },
+              "east": {
+                "texture": "#all"
+              },
+              "north": {
+                "texture": "#all"
+              },
+              "south": {
+                "texture": "#all"
+              },
+              "up": {
+                "texture": "#all"
+              },
+              "west": {
+                "cullface": "west",
+                "texture": "#all",
+                "uv": [
+                  0,
+                  0,
+                  2,
+                  4
+                ]
+              }
+            },
+            "from": [
+              1,
+              2,
+              3
+            ],
+            "to": [
+              3,
+              6,
+              9
+            ]
+          },
+          {
+            "faces": {
+              "down": {
+                "texture": "#all"
+              },
+              "east": {
+                "cullface": "east",
+                "texture": "#all",
+                "uv": [
+                  0,
+                  0,
+                  2,
+                  4
+                ]
+              },
+              "north": {
+                "texture": "#all"
+              },
+              "south": {
+                "texture": "#all"
+              },
+              "up": {
+                "texture": "#all"
+              },
+              "west": {
+                "texture": "#all"
+              }
+            },
+            "from": [
+              13,
+              2,
+              3
+            ],
+            "to": [
+              15,
+              6,
+              9
+            ]
+          }
+        ]
+      },
+      "sourceMap": {
+        "generatedFile": "assets/minecraft/models/block/abstraction/mirror_translate.json",
+        "mappings": [
+          {
+            "generatedPath": "",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/textures",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/textures/all",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/from",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/to",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/down",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/down/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/up",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/up/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/north",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/north/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/south",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/south/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/west",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/west/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/west/cullface",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/west/uv",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/east",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/0/faces/east/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/from",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/to",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/down",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/down/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/up",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/up/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/north",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/north/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/south",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/south/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/east",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/east/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/east/cullface",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/east/uv",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/west",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/elements/1/faces/west/texture",
+            "sourceFile": "mirror-translate.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          }
+        ]
+      }
+    }
+  ],
+  "diagnostics": []
+}

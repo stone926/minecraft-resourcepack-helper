@@ -1,0 +1,23 @@
+target java format [50, 0]
+namespace minecraft
+
+extern! vanilla model minecraft:block/stone
+extern! vanilla model minecraft:block/stone_mirrored
+extern! vanilla model minecraft:block/oak_fence_post
+extern! vanilla model minecraft:block/oak_fence_side
+
+blockstate abstraction/direct_variants {
+  variants {
+    [facing=north] -> random [
+      @minecraft:block/stone weight=3,
+      @minecraft:block/stone_mirrored y=180 uvlock=true
+    ]
+  }
+}
+
+blockstate abstraction/direct_multipart {
+  multipart {
+    apply @minecraft:block/oak_fence_post
+    when { north: true } apply @minecraft:block/oak_fence_side uvlock=true
+  }
+}

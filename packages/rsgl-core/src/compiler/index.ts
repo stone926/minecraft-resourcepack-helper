@@ -2,6 +2,15 @@ export { compileRsglDirectory, compileRsglFile, compileRsglModule, compileRsglPr
 export type { RsglCompileOptions, RsglDirectoryCompileOptions, RsglFileCompileOptions, RsglFileLoadOptions, RsglProgramCompileOptions } from "./compiler";
 export { emitRsglFiles, stableJsonStringify, orderJsonValue } from "./emit";
 export type { RsglContentEmittedFile, RsglCopyEmittedFile, RsglEmittedFile, RsglEmitOptions } from "./emit";
+export { createRsglCompileSnapshot, rsglCompileSnapshotVersion } from "./compileSnapshot";
+export type {
+  RsglCompileSnapshot,
+  RsglCompileSnapshotDiagnostic,
+  RsglCompileSnapshotMapping,
+  RsglCompileSnapshotOptions,
+  RsglCompileSnapshotResource,
+  RsglCompileSnapshotSourceAlias
+} from "./compileSnapshot";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
 export { validateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";

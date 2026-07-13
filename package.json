@@ -279,6 +279,7 @@
     "pretest": "npm run compile:test && npm run lint",
     "lint": "eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"extensions/**/*.ts\"",
     "test": "mocha \"./out/src/test/unit/**/*.test.js\" \"./out/packages/**/test/**/*.test.js\"",
+    "test:rsgl:better-textures": "npm run compile && node scripts/verify-rsgl-better-textures.mjs",
     "benchmark:model-preview": "npm run compile && node scripts/model-preview-benchmark.mjs",
     "package:vsix": "node scripts/package-vsix.mjs main",
     "package:main:vsix": "node scripts/package-vsix.mjs main",
