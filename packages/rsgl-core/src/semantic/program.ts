@@ -11,6 +11,8 @@ import { validateResolvedImportCalls } from "./importValidation";
 import { resolveProgramTemplateOutputMetadata } from "./templateOutputResolution";
 import { validateResolvedProgramTemplateUses } from "./templateUseValidation";
 import { validateTemplateRecursion } from "./templateRecursion";
+import { validateResolvedProgramBlockstateSemantics } from "./blockstateSemanticValidation";
+import { resolveLinkedLegacyBlockstateCallerContexts } from "./blockstateCallerContextResolution";
 import {
   RsglBindOptions,
   RsglFileDiagnostic,
@@ -32,15 +34,19 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   for (const model of models) {
     model.diagnostics = model.diagnostics.filter(diagnostic => !templateOutputDiagnosticCodes.has(diagnostic.code));
   }
+  const blockstateCallerDiagnostics = resolveLinkedLegacyBlockstateCallerContexts(models);
   const templateUseDiagnostics = validateResolvedProgramTemplateUses(models);
   const templateRecursionDiagnostics = validateTemplateRecursion(models);
+  const blockstateDiagnostics = validateResolvedProgramBlockstateSemantics(models);
   const importedCallDiagnostics = models.flatMap(model => withFileName(model.fileName, validateResolvedImportCalls(model)));
   const fileDiagnostics: RsglFileDiagnostic[] = [
     ...models.flatMap(model => withFileName(model.fileName, model.diagnostics)),
     ...linkedSymbols.exportDiagnostics,
     ...linkedSymbols.importDiagnostics,
+    ...blockstateCallerDiagnostics,
     ...templateUseDiagnostics,
     ...templateRecursionDiagnostics,
+    ...blockstateDiagnostics,
     ...importedCallDiagnostics,
     ...importGraph.missing.map(missing => fileDiagnostic(
       missing.from,

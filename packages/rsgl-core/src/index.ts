@@ -5,6 +5,7 @@ export * from "./completionService";
 export * from "./externDeclarations";
 export * from "./formatterCore";
 export * from "./languageService";
+export * from "./migration";
 export * from "./resourceKinds";
 export * from "./resourceBodyHelpers";
 export * from "./rsglConfig";

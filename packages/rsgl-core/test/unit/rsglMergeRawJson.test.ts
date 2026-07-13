@@ -102,17 +102,13 @@ describe("RSGL merge fragments and base documents", () => {
 
   it("applies strict, upsert, and append semantics in blockstate bodies", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate lamp {",
-      "  variants {",
-      "    { facing: north } -> { model: minecraft:block/lamp, x: 0 }",
-      "  }",
+      "blockstate variants lamp {",
+      "  { facing: north }: { model: minecraft:block/lamp, x: 0 }",
       "  merge strict { variants: { \"facing=north\": { model: minecraft:block/lamp_changed } } }",
       "  merge upsert { variants: { \"facing=south\": { model: minecraft:block/lamp_south } } }",
       "}",
-      "blockstate fence {",
-      "  multipart {",
-      "    apply { model: minecraft:block/fence_post }",
-      "  }",
+      "blockstate multipart fence {",
+      "  apply { model: minecraft:block/fence_post }",
       "  merge append { multipart: [{ when: { north: true }, apply: { model: minecraft:block/fence_side } }] }",
       "}"
     ]);
@@ -154,20 +150,16 @@ describe("RSGL merge fragments and base documents", () => {
 
   it("reports invalid blockstate merge fragments", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate invalid_variants {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/base }",
-      "  }",
+      "blockstate variants invalid_variants {",
+      "  {}: { model: minecraft:block/base }",
       "  merge strict { variants: { \"facing=north\": { model: minecraft:block/new } } }",
       "  merge append { variants: { \"facing=south\": { model: minecraft:block/south } } }",
       "  merge 1",
       "  merge strict 2",
       "  merge append 3",
       "}",
-      "blockstate invalid_multipart {",
-      "  multipart {",
-      "    apply { model: minecraft:block/post }",
-      "  }",
+      "blockstate multipart invalid_multipart {",
+      "  apply { model: minecraft:block/post }",
       "  merge append { multipart: { apply: { model: minecraft:block/side } } }",
       "}"
     ]);

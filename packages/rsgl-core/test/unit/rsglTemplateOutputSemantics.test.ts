@@ -213,13 +213,13 @@ describe("RSGL template output dialects", () => {
   it("compiles public variants and multipart templates without legacy wrappers", () => {
     const result = compileSourceWithUncheckedExterns([
       "template stateSequence(model: ModelId) -> variants {",
-      "  for powered in [false, true] { [powered=powered] -> { model: model } }",
+      "  for powered in [false, true] { { powered: powered }: { model: model } }",
       "}",
       "template fenceParts(model: ModelId) -> multipart {",
       "  apply { model: model }",
       "}",
-      "blockstate lamp { use stateSequence(minecraft:block/lamp) }",
-      "blockstate fence { use fenceParts(minecraft:block/fence_post) }"
+      "blockstate variants lamp { use stateSequence(minecraft:block/lamp) }",
+      "blockstate multipart fence { use fenceParts(minecraft:block/fence_post) }"
     ]);
 
     assert.deepStrictEqual(result.diagnostics.map(item => item.code), []);
@@ -239,12 +239,12 @@ describe("RSGL template output dialects", () => {
     const program = bindRsglProgram([{
       fileName: path.resolve("pack", "wrong-dialect.rsgl"),
       module: parseRsgl([
-        "template variantsOnly() -> variants { {} -> { model: minecraft:block/stone } }",
-        "blockstate wrong { multipart { use variantsOnly() } }"
+        "template variantsOnly() -> variants { {}: { model: minecraft:block/stone } }",
+        "blockstate multipart wrong { use variantsOnly() }"
       ].join("\n"))
     }]);
 
-    assert.ok(program.diagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"));
+    assert.ok(program.diagnostics.some(item => item.code === "rsgl.blockstateModeConflict"));
   });
 
   it("preserves explicit metadata through import aliases and re-exports", () => {
@@ -256,7 +256,7 @@ describe("RSGL template output dialects", () => {
         fileName: mainFile,
         module: parseRsgl([
           "import { states as importedStates } from \"./barrel.rsgl\"",
-          "blockstate lamp { use importedStates(minecraft:block/lamp) }"
+          "blockstate variants lamp { use importedStates(minecraft:block/lamp) }"
         ].join("\n"))
       },
       {
@@ -268,7 +268,7 @@ describe("RSGL template output dialects", () => {
         module: parseRsgl([
           "export { stateSequence }",
           "template stateSequence(model: ModelId) -> variants {",
-          "  {} -> { model: model }",
+          "  {}: { model: model }",
           "}"
         ].join("\n"))
       }

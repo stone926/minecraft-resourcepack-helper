@@ -43,6 +43,68 @@ describe("RSGL TextMate grammar", () => {
     assert.doesNotMatch(grammarText, /\bfn\b/);
   });
 
+  it("highlights blockstate header modes and scopes legacy syntax as deprecated", () => {
+    const grammar = readGrammar();
+    const source = [
+      "blockstate variants stairs {",
+      "  { facing: north }: minecraft:block/stairs",
+      "}",
+      "blockstate multipart wall {",
+      "  apply minecraft:block/wall",
+      "}",
+      "blockstate stairs {",
+      "  variants {",
+      "    [facing=north] -> @minecraft:block/stairs",
+      "  }",
+      "}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "blockstate", "storage.type.rsgl", 0);
+    expectScope(tokenization, source, "blockstate", "storage.type.rsgl", 1);
+    expectScope(tokenization, source, "variants", "storage.modifier.blockstate-mode.rsgl", 0);
+    expectScope(tokenization, source, "multipart", "storage.modifier.blockstate-mode.rsgl", 0);
+    expectNoScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 0);
+    expectScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 1);
+    expectScope(tokenization, source, "[facing=north]", "invalid.deprecated.blockstate-selector.rsgl");
+    expectScope(tokenization, source, "->", "invalid.deprecated.blockstate-arrow.rsgl");
+    expectScope(tokenization, source, "@", "invalid.deprecated.blockstate-model-apply.rsgl");
+  });
+
+  it("limits legacy wrapper scopes to blockstate declaration bodies", () => {
+    const grammar = readGrammar();
+    const source = [
+      "model block presentation {",
+      "  variants {",
+      "    model: minecraft:block/stone",
+      "  }",
+      "  multipart {",
+      "    model: minecraft:block/stone",
+      "  }",
+      "}",
+      "json metadata {",
+      "  variants {",
+      "    enabled: true",
+      "  }",
+      "  multipart {",
+      "    enabled: true",
+      "  }",
+      "}",
+      "blockstate stone {",
+      "  variants {",
+      "    [facing=north] -> @minecraft:block/stone",
+      "  }",
+      "}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectNoScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 0);
+    expectNoScope(tokenization, source, "multipart", "invalid.deprecated.blockstate-wrapper.rsgl", 0);
+    expectNoScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 1);
+    expectNoScope(tokenization, source, "multipart", "invalid.deprecated.blockstate-wrapper.rsgl", 1);
+    expectScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 2);
+  });
+
   it("keeps valid, commented, and malformed extern patterns out of block-comment leakage", () => {
     const grammar = readGrammar();
     const externContext = repositoryPatterns(grammar, "externDeclarations").find(pattern =>
@@ -213,10 +275,8 @@ describe("RSGL TextMate grammar", () => {
       "    parent parent",
       "  }",
       "}",
-      "blockstate demo {",
-      "  multipart {",
-      "    apply { model: block/foo }",
-      "  }",
+      "blockstate multipart demo {",
+      "  apply { model: block/foo }",
       "}",
       "let named = call(base: block/foo, pad: 2)",
       "let member = entry.model",
@@ -249,7 +309,7 @@ describe("RSGL TextMate grammar", () => {
       "}",
       "let pathValue = block/foo",
       "let blockKey = { block: 1 }",
-      "random [@minecraft:block/stone]",
+      "blockstate variants demo { {}: random [minecraft:block/stone] }",
       "paletted_permutations {",
       "  palette_key minecraft:trims/color_palettes/trim_palette",
       "  permutations palettes",

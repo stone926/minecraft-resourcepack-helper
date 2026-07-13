@@ -13,6 +13,7 @@ import {
   type RsglBuildResult
 } from "../../rsgl-core/src";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
+import { runRsglMigrationCommand } from "./migrationCommand";
 
 export interface RsglCliArgs {
   command: string;
@@ -20,6 +21,7 @@ export interface RsglCliArgs {
   outDir?: string;
   watch?: boolean;
   preview?: boolean;
+  write?: boolean;
 }
 
 /** Output sinks for CLI text, injectable for tests. */
@@ -98,6 +100,9 @@ export function runRsglCli(argv: string[], io: RsglCliIo = processIo): number {
   if (args.command === "check") {
     return check(args, io);
   }
+  if (args.command === "migrate") {
+    return migrate(args, io);
+  }
   if (args.command === "build") {
     return build(args, io);
   }
@@ -131,6 +136,18 @@ function check(args: RsglCliArgs, io: RsglCliIo): number {
 function watch(args: RsglCliArgs, io: RsglCliIo): number {
   startRsglCliWatch(args, io);
   return 0;
+}
+
+function migrate(args: RsglCliArgs, io: RsglCliIo): number {
+  try {
+    return runRsglMigrationCommand({
+      target: createCliContext(args).root,
+      write: args.write === true
+    }, io);
+  } catch (error) {
+    io.writeErr(`RSGL migration failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
 }
 
 /** Starts a rebuild session whose source and config watchers follow config changes. */
@@ -495,6 +512,8 @@ export function parseRsglCliArgs(argv: string[]): RsglCliArgs {
       result.watch = true;
     } else if (arg === "--preview") {
       result.preview = true;
+    } else if (arg === "--write") {
+      result.write = true;
     } else if (!result.root) {
       result.root = arg;
     }
@@ -511,12 +530,13 @@ function printDiagnostics(diagnostics: { severity: string; code: string; message
 
 function printHelp(io: RsglCliIo): void {
   io.writeOut(`${[
-    "Usage: rsgl <command> [root] [--out <dir>]",
+    "Usage: rsgl <command> [root|file] [--out <dir>] [--write]",
     "",
     "Commands:",
     "  init       Create rsgl.config.json",
     "  build      Compile RSGL files and write generated resource pack files",
     "  check      Compile RSGL files without writing generated files",
+    "  migrate    Preview legacy blockstate migration; pass --write to apply atomically",
     "  watch      Rebuild when .rsgl files, project config, or dependencies change"
   ].join("\n")}\n`);
 }

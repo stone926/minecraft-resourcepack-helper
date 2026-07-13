@@ -1,5 +1,5 @@
 template stateSequence(key: String, values: List<Json> | Range, model: (Json) -> ModelId) -> variants {
     for value in values {
-      [key=value] -> { model: model(value) }
+      { [key]: value }: { model: model(value) }
     }
 }

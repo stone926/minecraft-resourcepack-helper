@@ -18,6 +18,8 @@ let valueMetadata: (String) -> Json = label => {
   }
 }
 
+export { valueMetadata }
+
 blockstate abstraction/root_merge_value_helper {
   use rootMetadata(true)
   merge deep valueMetadata("value-helper")

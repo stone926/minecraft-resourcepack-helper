@@ -13,9 +13,16 @@ import {
 } from "../semantic";
 import {
   EvaluationContext,
+  type EvaluationOrigin,
+  type EvaluationPathOrigin,
+  type EvaluationValueIssue,
   EvaluationValue,
   RawGlobLoader,
-  evaluateExpression
+  bindEvaluationResult,
+  evaluateExpressionResult,
+  materializeEvaluationPathOrigins,
+  materializeEvaluationValueIssues,
+  originForEvaluationPath
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import {
@@ -34,11 +41,20 @@ export interface RsglModuleCompileEnvironment {
   fileName: string;
   namespace: string;
   importedValues: Map<string, EvaluationValue>;
+  importedValueOrigins: Map<string, EvaluationOrigin>;
+  importedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
+  importedValueIssues: Map<string, EvaluationValueIssue[]>;
   importedTemplates: Map<string, RsglTemplateDefinition>;
   localValues: Map<string, EvaluationValue>;
   allValues: Map<string, EvaluationValue>;
+  allValueOrigins: Map<string, EvaluationOrigin>;
+  allValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
+  allValueIssues: Map<string, EvaluationValueIssue[]>;
   allTemplates: Map<string, RsglTemplateDefinition>;
   exportedValues: Map<string, EvaluationValue>;
+  exportedValueOrigins: Map<string, EvaluationOrigin>;
+  exportedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
+  exportedValueIssues: Map<string, EvaluationValueIssue[]>;
   exportedTemplates: Map<string, RsglTemplateDefinition>;
 }
 
@@ -54,12 +70,18 @@ export interface RsglTemplateDefinition {
   fileName: string;
   namespace: string;
   values: Map<string, EvaluationValue>;
+  valueOrigins?: Map<string, EvaluationOrigin>;
+  valuePathOrigins?: Map<string, EvaluationPathOrigin[]>;
+  valueIssues?: Map<string, EvaluationValueIssue[]>;
   templates: Map<string, RsglTemplateDefinition>;
 }
 
 export interface RsglExternalValueDefinition {
   name: string;
   value: EvaluationValue;
+  origin?: EvaluationOrigin;
+  pathOrigins?: readonly EvaluationPathOrigin[];
+  valueIssues?: readonly EvaluationValueIssue[];
 }
 
 export interface RsglCompileEnvironmentOptions {
@@ -168,8 +190,19 @@ export function refreshTemplateDefinitionFingerprint(
   return definition.definitionFingerprint;
 }
 
-export function mapToExternalValues(values: Map<string, EvaluationValue>): RsglExternalValueDefinition[] {
-  return Array.from(values, ([name, value]) => ({ name, value }));
+export function mapToExternalValues(
+  values: Map<string, EvaluationValue>,
+  origins: ReadonlyMap<string, EvaluationOrigin> = new Map(),
+  pathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
+  valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]> = new Map()
+): RsglExternalValueDefinition[] {
+  return Array.from(values, ([name, value]) => ({
+    name,
+    value,
+    ...(origins.get(name) ? { origin: origins.get(name) } : {}),
+    ...(pathOrigins.get(name) ? { pathOrigins: pathOrigins.get(name) } : {}),
+    ...(valueIssues.get(name) ? { valueIssues: valueIssues.get(name) } : {})
+  }));
 }
 
 function createEmptyCompileEnvironment(model: RsglSemanticModel, namespace: string): RsglModuleCompileEnvironment {
@@ -177,11 +210,20 @@ function createEmptyCompileEnvironment(model: RsglSemanticModel, namespace: stri
     fileName: model.fileName,
     namespace,
     importedValues: new Map(),
+    importedValueOrigins: new Map(),
+    importedValuePathOrigins: new Map(),
+    importedValueIssues: new Map(),
     importedTemplates: new Map(),
     localValues: new Map(),
     allValues: new Map(),
+    allValueOrigins: new Map(),
+    allValuePathOrigins: new Map(),
+    allValueIssues: new Map(),
     allTemplates: new Map(),
     exportedValues: new Map(),
+    exportedValueOrigins: new Map(),
+    exportedValuePathOrigins: new Map(),
+    exportedValueIssues: new Map(),
     exportedTemplates: new Map()
   };
 }
@@ -201,8 +243,26 @@ function collectImportedEnvironmentBindings(
 
     const targetEnvironment = createEnvironment(targetModel);
     if (record.importAll) {
-      copyValues(environment.importedValues, targetEnvironment.exportedValues);
-      copyValues(environment.allValues, targetEnvironment.exportedValues);
+      copyValueBindings(
+        environment.importedValues,
+        environment.importedValueOrigins,
+        environment.importedValuePathOrigins,
+        environment.importedValueIssues,
+        targetEnvironment.exportedValues,
+        targetEnvironment.exportedValueOrigins,
+        targetEnvironment.exportedValuePathOrigins,
+        targetEnvironment.exportedValueIssues
+      );
+      copyValueBindings(
+        environment.allValues,
+        environment.allValueOrigins,
+        environment.allValuePathOrigins,
+        environment.allValueIssues,
+        targetEnvironment.exportedValues,
+        targetEnvironment.exportedValueOrigins,
+        targetEnvironment.exportedValuePathOrigins,
+        targetEnvironment.exportedValueIssues
+      );
       copyTemplates(environment.importedTemplates, targetEnvironment.exportedTemplates);
       copyTemplates(environment.allTemplates, targetEnvironment.exportedTemplates);
     }
@@ -211,6 +271,34 @@ function collectImportedEnvironmentBindings(
         const value = targetEnvironment.exportedValues.get(item.imported);
         environment.importedValues.set(item.local, value);
         environment.allValues.set(item.local, value);
+        copyAliasedValueProvenance(
+          item.imported,
+          item.local,
+          targetEnvironment.exportedValueOrigins,
+          targetEnvironment.exportedValuePathOrigins,
+          environment.importedValueOrigins,
+          environment.importedValuePathOrigins
+        );
+        copyAliasedValueIssues(
+          item.imported,
+          item.local,
+          targetEnvironment.exportedValueIssues,
+          environment.importedValueIssues
+        );
+        copyAliasedValueProvenance(
+          item.imported,
+          item.local,
+          targetEnvironment.exportedValueOrigins,
+          targetEnvironment.exportedValuePathOrigins,
+          environment.allValueOrigins,
+          environment.allValuePathOrigins
+        );
+        copyAliasedValueIssues(
+          item.imported,
+          item.local,
+          targetEnvironment.exportedValueIssues,
+          environment.allValueIssues
+        );
       }
 
       const template = targetEnvironment.exportedTemplates.get(item.imported);
@@ -232,7 +320,16 @@ function collectExportedEnvironmentBindings(
   createEnvironment: (model: RsglSemanticModel) => RsglModuleCompileEnvironment
 ): void {
   if (model.exports.length === 0) {
-    copyValues(environment.exportedValues, environment.allValues);
+    copyValueBindings(
+      environment.exportedValues,
+      environment.exportedValueOrigins,
+      environment.exportedValuePathOrigins,
+      environment.exportedValueIssues,
+      environment.allValues,
+      environment.allValueOrigins,
+      environment.allValuePathOrigins,
+      environment.allValueIssues
+    );
     copyTemplates(environment.exportedTemplates, environment.allTemplates);
     return;
   }
@@ -243,6 +340,20 @@ function collectExportedEnvironmentBindings(
       const localName = String(symbol.name);
       if (environment.allValues.has(localName)) {
         environment.exportedValues.set(exportedName, environment.allValues.get(localName));
+        copyAliasedValueProvenance(
+          localName,
+          exportedName,
+          environment.allValueOrigins,
+          environment.allValuePathOrigins,
+          environment.exportedValueOrigins,
+          environment.exportedValuePathOrigins
+        );
+        copyAliasedValueIssues(
+          localName,
+          exportedName,
+          environment.allValueIssues,
+          environment.exportedValueIssues
+        );
       }
       const template = environment.allTemplates.get(localName);
       if (template) {
@@ -261,12 +372,35 @@ function collectExportedEnvironmentBindings(
     }
     const targetEnvironment = createEnvironment(targetModel);
     if (record.exportAll) {
-      copyValues(environment.exportedValues, targetEnvironment.exportedValues);
+      copyValueBindings(
+        environment.exportedValues,
+        environment.exportedValueOrigins,
+        environment.exportedValuePathOrigins,
+        environment.exportedValueIssues,
+        targetEnvironment.exportedValues,
+        targetEnvironment.exportedValueOrigins,
+        targetEnvironment.exportedValuePathOrigins,
+        targetEnvironment.exportedValueIssues
+      );
       copyTemplates(environment.exportedTemplates, targetEnvironment.exportedTemplates);
     }
     for (const specifier of record.specifiers) {
       if (targetEnvironment.exportedValues.has(specifier.local)) {
         environment.exportedValues.set(specifier.exported, targetEnvironment.exportedValues.get(specifier.local));
+        copyAliasedValueProvenance(
+          specifier.local,
+          specifier.exported,
+          targetEnvironment.exportedValueOrigins,
+          targetEnvironment.exportedValuePathOrigins,
+          environment.exportedValueOrigins,
+          environment.exportedValuePathOrigins
+        );
+        copyAliasedValueIssues(
+          specifier.local,
+          specifier.exported,
+          targetEnvironment.exportedValueIssues,
+          environment.exportedValueIssues
+        );
       }
       const template = targetEnvironment.exportedTemplates.get(specifier.local);
       if (template) {
@@ -284,6 +418,9 @@ function evaluateLocalEnvironmentValues(
   const context: EvaluationContext = {
     namespace: environment.namespace,
     variables: new Map(environment.importedValues),
+    valueOrigins: new Map(environment.importedValueOrigins),
+    valuePathOrigins: new Map(environment.importedValuePathOrigins),
+    valueIssues: new Map(environment.importedValueIssues),
     sourceFile: model.fileName,
     mappingReason: "direct",
     expansionStack: [],
@@ -294,16 +431,45 @@ function evaluateLocalEnvironmentValues(
 
   for (const statement of model.module.statements) {
     if (isLetDeclNode(statement) && statement.name) {
-      const value = evaluateExpression(statement.value, context);
-      environment.localValues.set(statement.name.text, value);
-      environment.allValues.set(statement.name.text, value);
-      context.variables.set(statement.name.text, value);
+      const result = evaluateExpressionResult(statement.value, context);
+      recordLocalEnvironmentValue(environment, context, statement.name.text, result, model.fileName);
     } else if (isTableDeclNode(statement) && statement.name) {
-      const value = normalizeJsonValue(evaluateExpression(statement.body, context));
-      environment.localValues.set(statement.name.text, value);
-      environment.allValues.set(statement.name.text, value);
-      context.variables.set(statement.name.text, value);
+      const result = evaluateExpressionResult(statement.body, context);
+      recordLocalEnvironmentValue(environment, context, statement.name.text, {
+        ...result,
+        value: normalizeJsonValue(result.value)
+      }, model.fileName);
     }
+  }
+}
+
+function recordLocalEnvironmentValue(
+  environment: RsglModuleCompileEnvironment,
+  context: EvaluationContext,
+  name: string,
+  result: ReturnType<typeof evaluateExpressionResult>,
+  sourceFile: string
+): void {
+  environment.localValues.set(name, result.value);
+  environment.allValues.set(name, result.value);
+  bindEvaluationResult(context, name, result, sourceFile);
+  const materialized = materializeEvaluationPathOrigins(result, sourceFile);
+  const origin = originForEvaluationPath(materialized, "") ?? result.origin;
+  if (origin) {
+    environment.allValueOrigins.set(name, origin);
+  } else {
+    environment.allValueOrigins.delete(name);
+  }
+  if (materialized.length > 0) {
+    environment.allValuePathOrigins.set(name, materialized);
+  } else {
+    environment.allValuePathOrigins.delete(name);
+  }
+  const issues = materializeEvaluationValueIssues(result, sourceFile);
+  if (issues.length > 0) {
+    environment.allValueIssues.set(name, issues);
+  } else {
+    environment.allValueIssues.delete(name);
   }
 }
 
@@ -316,7 +482,7 @@ function collectLocalEnvironmentTemplates(
       const signature = model.scope.symbols.get(statement.name.text)?.signature;
       const outputMetadata = signature?.templateOutput
         ?? inferResolvedTemplateOutputMetadata(statement);
-      environment.allTemplates.set(statement.name.text, createTemplateDefinition(
+      const definition = createTemplateDefinition(
         statement.name.text,
         statement,
         model.fileName,
@@ -327,7 +493,11 @@ function collectLocalEnvironmentTemplates(
         JSON.stringify(model.module.statements.filter(statement => statement.kind === "TargetDecl")),
         "unresolved-target",
         signature?.templateOutputConflict
-      ));
+      );
+      definition.valueOrigins = environment.allValueOrigins;
+      definition.valuePathOrigins = environment.allValuePathOrigins;
+      definition.valueIssues = environment.allValueIssues;
+      environment.allTemplates.set(statement.name.text, definition);
     }
   }
 }
@@ -347,11 +517,65 @@ function aliasTemplate(template: RsglTemplateDefinition, name: string): RsglTemp
   return template.name === name ? template : { ...template, name };
 }
 
-function copyValues(target: Map<string, EvaluationValue>, source: Map<string, EvaluationValue>): void {
+function copyValueBindings(
+  target: Map<string, EvaluationValue>,
+  targetOrigins: Map<string, EvaluationOrigin>,
+  targetPathOrigins: Map<string, EvaluationPathOrigin[]>,
+  targetIssues: Map<string, EvaluationValueIssue[]>,
+  source: ReadonlyMap<string, EvaluationValue>,
+  sourceOrigins: ReadonlyMap<string, EvaluationOrigin>,
+  sourcePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
+  sourceIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>
+): void {
   for (const [name, value] of source) {
     if (!target.has(name)) {
       target.set(name, value);
+      copyAliasedValueProvenance(
+        name,
+        name,
+        sourceOrigins,
+        sourcePathOrigins,
+        targetOrigins,
+        targetPathOrigins
+      );
+      copyAliasedValueIssues(name, name, sourceIssues, targetIssues);
     }
+  }
+}
+
+function copyAliasedValueIssues(
+  sourceName: string,
+  targetName: string,
+  source: ReadonlyMap<string, readonly EvaluationValueIssue[]>,
+  target: Map<string, EvaluationValueIssue[]>
+): void {
+  const issues = source.get(sourceName);
+  if (issues) {
+    target.set(targetName, [...issues]);
+  } else {
+    target.delete(targetName);
+  }
+}
+
+function copyAliasedValueProvenance(
+  sourceName: string,
+  targetName: string,
+  sourceOrigins: ReadonlyMap<string, EvaluationOrigin>,
+  sourcePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
+  targetOrigins: Map<string, EvaluationOrigin>,
+  targetPathOrigins: Map<string, EvaluationPathOrigin[]>
+): void {
+  const origin = sourceOrigins.get(sourceName);
+  if (origin) {
+    targetOrigins.set(targetName, origin);
+  } else {
+    targetOrigins.delete(targetName);
+  }
+  const pathOrigins = sourcePathOrigins.get(sourceName);
+  if (pathOrigins) {
+    targetPathOrigins.set(targetName, [...pathOrigins]);
+  } else {
+    targetPathOrigins.delete(targetName);
   }
 }
 

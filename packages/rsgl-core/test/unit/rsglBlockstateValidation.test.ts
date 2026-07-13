@@ -27,23 +27,25 @@ describe("RSGL blockstate validation", () => {
         "  parent minecraft:block/missing_parent",
         "  textures { all: minecraft:block/missing_texture }",
         "}",
-        "blockstate stone {",
-        "  variants {",
-        "    {} -> { model: minecraft:block/missing_model, z: 90, weight: 0 }",
-        "  }",
+        "blockstate variants stone {",
+        "  {}: minecraft:block/missing_model z=90 weight=0",
         "}",
-        "blockstate malformed {",
+        "blockstate variants malformed_variants {",
         "  merge {",
         "    variants: {",
         "      \"facing=north,facing=south\": { model: minecraft:block/missing_duplicate, x: 45, uvlock: \"yes\" }",
         "      \"broken\": { model: minecraft:block/missing_broken, y: 45 }",
         "    }",
+        "  }",
+        "}",
+        "blockstate multipart malformed_multipart {",
+        "  merge {",
         "    multipart: [",
         "      { apply: [{ model: minecraft:block/missing_part, z: 45, weight: -1 }] }",
         "    ]",
         "  }",
         "}",
-        "blockstate bad_when {",
+        "blockstate multipart bad_when {",
         "  merge {",
         "    multipart: [",
         "      { when: {}, apply: { model: minecraft:block/missing_empty_condition } },",
@@ -53,7 +55,7 @@ describe("RSGL blockstate validation", () => {
         "    ]",
         "  }",
         "}",
-        "blockstate bad_when_file {",
+        "blockstate multipart bad_when_file {",
         "  base \"./bad_when.json\"",
         "}"
       ], {
@@ -83,7 +85,7 @@ describe("RSGL blockstate validation", () => {
 
   it("validates blockstate state names, values, and inferred domains", () => {
     const result = compileSource([
-      "blockstate invalid_variant_states {",
+      "blockstate variants invalid_variant_states {",
       "  merge {",
       "    variants: {",
       "      \"bad-state=north\": { model: minecraft:block/stone }",
@@ -93,7 +95,7 @@ describe("RSGL blockstate validation", () => {
       "    }",
       "  }",
       "}",
-      "blockstate invalid_when_states {",
+      "blockstate multipart invalid_when_states {",
       "  merge {",
       "    multipart: [",
       "      { when: { facing: \"north|north\" }, apply: { model: minecraft:block/stone } },",
@@ -113,6 +115,32 @@ describe("RSGL blockstate validation", () => {
     assert.ok(codes.includes("rsgl.contradictoryBlockstateWhenCondition"));
   });
 
+  it("rejects invalid merged variant and multipart value shapes", () => {
+    const result = compileSource([
+      "blockstate variants invalid_values {",
+      "  merge upsert { variants: {",
+      "    \"null=value\": null,",
+      "    \"empty=list\": [],",
+      "    \"nested=list\": [[{ model: minecraft:block/nested }]],",
+      "    \"missing=model\": {}",
+      "  } }",
+      "}",
+      "blockstate multipart invalid_entries {",
+      "  merge upsert { multipart: [",
+      "    null,",
+      "    {},",
+      "    { apply: {} }",
+      "  ] }",
+      "}"
+    ]);
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.invalidBlockstateMultipartEntry"));
+    assert.ok(codes.includes("rsgl.emptyBlockstateModelList"));
+    assert.ok(codes.includes("rsgl.nestedBlockstateModelList"));
+    assert.ok(codes.filter(code => code === "rsgl.missingBlockstateModel").length >= 3);
+  });
+
   it("validates blockstate states against supplied schemas", () => {
     const schemaRequests: string[] = [];
     const schemas: Record<string, { properties: Record<string, readonly string[]> }> = {
@@ -129,16 +157,12 @@ describe("RSGL blockstate validation", () => {
       }
     };
     const result = compileSource([
-      "blockstate lamp {",
-      "  variants {",
-      "    [facing=north lit=true] -> { model: minecraft:block/lamp }",
-      "    [facing=up lit=maybe bogus=true] -> { model: minecraft:block/lamp }",
-      "  }",
+      "blockstate variants lamp {",
+      "  { facing: north, lit: true }: minecraft:block/lamp",
+      "  { facing: up, lit: maybe, bogus: true }: minecraft:block/lamp",
       "}",
-      "blockstate fence {",
-      "  multipart {",
-      "    when { north: true, side: east } apply { model: minecraft:block/fence_side }",
-      "  }",
+      "blockstate multipart fence {",
+      "  when { north: true, side: east } apply minecraft:block/fence_side",
       "}"
     ], {
       resourceExists: () => true,
@@ -192,15 +216,11 @@ describe("RSGL blockstate validation", () => {
 
   it("maps blockstate validation diagnostics to generated entry source ranges", () => {
     const result = compileSource([
-      "blockstate lamp {",
-      "  variants {",
-      "    [facing=north] -> { model: minecraft:block/missing_variant, x: 45 }",
-      "  }",
+      "blockstate variants lamp {",
+      "  { facing: north }: minecraft:block/missing_variant x=45",
       "}",
-      "blockstate fence {",
-      "  multipart {",
-      "    when { north: \"true||false\" } apply { model: minecraft:block/missing_multipart, z: 45 }",
-      "  }",
+      "blockstate multipart fence {",
+      "  when { north: \"true||false\" } apply minecraft:block/missing_multipart z=45",
       "}"
     ], {
       targetPackFormat: { major: 74 },
@@ -209,18 +229,24 @@ describe("RSGL blockstate validation", () => {
 
     const lamp = result.units.find(unit => unit.outputPath.endsWith("blockstates/lamp.json"));
     const fence = result.units.find(unit => unit.outputPath.endsWith("blockstates/fence.json"));
-    const variantRange = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north")?.sourceRange;
+    const variantModelRange = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north/model")?.sourceRange;
+    const variantRotationRange = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north/x")?.sourceRange;
     const multipartRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0")?.sourceRange;
+    const multipartModelRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0/apply/model")?.sourceRange;
+    const multipartRotationRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0/apply/z")?.sourceRange;
 
-    assert.ok(variantRange);
+    assert.ok(variantModelRange);
+    assert.ok(variantRotationRange);
     assert.ok(multipartRange);
+    assert.ok(multipartModelRange);
+    assert.ok(multipartRotationRange);
     assert.deepStrictEqual(
       result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidBlockstateRotation")?.range,
-      variantRange
+      variantRotationRange
     );
     assert.deepStrictEqual(
       result.diagnostics.find(diagnostic => diagnostic.message.includes("missing_variant"))?.range,
-      variantRange
+      variantModelRange
     );
     assert.deepStrictEqual(
       result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidBlockstateWhenValue")?.range,
@@ -228,11 +254,11 @@ describe("RSGL blockstate validation", () => {
     );
     assert.deepStrictEqual(
       result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.unsupportedBlockstateZRotation")?.range,
-      multipartRange
+      multipartRotationRange
     );
     assert.deepStrictEqual(
       result.diagnostics.find(diagnostic => diagnostic.message.includes("missing_multipart"))?.range,
-      multipartRange
+      multipartModelRange
     );
   });
 });

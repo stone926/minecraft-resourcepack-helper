@@ -1,5 +1,6 @@
 import {
   BooleanLiteralNode,
+  BlockstateRootCommonStatementNode,
   ExprNode,
   ForStmtNode,
   IdentifierNode,
@@ -11,10 +12,16 @@ import {
   RsglNode,
   RsglToken,
   StringLiteralNode,
+  StateKeySugarNode,
   TextRange,
   UseDeclNode
 } from "./types";
-import type { BodyParseContext, ResourceBodyParseContext } from "./bodyParseContext";
+import type {
+  BlockstateRootParseContext,
+  BodyParseContext,
+  LegacyBlockstateRootParseContext,
+  ResourceBodyParseContext
+} from "./bodyParseContext";
 
 export interface StatementExpressionOptions {
   stopTexts?: readonly string[];
@@ -41,7 +48,10 @@ export interface ResourceStatementParserHost {
   parseIdentifier(message: string): IdentifierNode | null;
   parseStringLiteral(): StringLiteralNode;
   parseObjectExpression(): ObjectExprNode;
-  parseBlockstateEntryValue(): ExprNode;
+  parseLegacyStateKeySugar(): StateKeySugarNode;
+  parseBlockstateRootCommonStatement(
+    context: BlockstateRootParseContext | LegacyBlockstateRootParseContext
+  ): BlockstateRootCommonStatementNode;
   parseLetDecl(): LetDeclNode;
   parseUseDecl(): UseDeclNode;
   parseForStmt(context: BodyParseContext): ForStmtNode;

@@ -11,6 +11,9 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return (expected.options ?? []).some(option => isAssignable(option, actual));
   }
   if (expected.kind === actual.kind) {
+    if (expected.kind === "List") {
+      return isAssignable(expected.elementType ?? unknownType, actual.elementType ?? unknownType);
+    }
     if (expected.kind === "Function") {
       if (expected.parameters && actual.parameters && expected.parameters.length !== actual.parameters.length) {
         return false;
@@ -50,6 +53,9 @@ export function formatType(type: RsglType): string {
   }
   if (type.kind === "Function" && type.parameters && type.returnType) {
     return `(${type.parameters.map(formatType).join(", ")}) -> ${formatType(type.returnType)}`;
+  }
+  if (type.kind === "BlockstateModelObject") {
+    return "blockstate model object";
   }
   return type.kind;
 }

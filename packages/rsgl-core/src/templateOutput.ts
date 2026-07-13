@@ -71,7 +71,7 @@ export interface TemplateOutputDispatch {
     | RsglLegacyTemplateBodyDialect
     | Exclude<RsglTemplateCallerContext, { kind: "resources" }>;
   compatibilityWarning: boolean;
-  failure?: "bodyContextRequired" | "dialectMismatch" | "invalidDefinition";
+  failure?: "bodyContextRequired" | "dialectMismatch" | "blockstateModeConflict" | "invalidDefinition";
 }
 
 /**
@@ -112,6 +112,15 @@ export function resolveTemplateOutputDispatch(
   callerContext: RsglTemplateCallerContext,
   metadata: ResolvedTemplateOutputMetadata
 ): TemplateOutputDispatch {
+  const callerMode = concreteBlockstateCallerMode(callerContext);
+  const producerMode = concreteBlockstateProducerMode(metadata);
+  if (callerMode && producerMode && callerMode !== producerMode) {
+    return {
+      compatible: false,
+      compatibilityWarning: metadata.outputSource === "legacyInferredBody",
+      failure: "blockstateModeConflict"
+    };
+  }
   if (metadata.outputSource === "noArrowResources") {
     return publicDispatch(callerContext.kind === "resources", "resources");
   }
@@ -143,6 +152,33 @@ export function resolveTemplateOutputDispatch(
     selectedDialect: callerContext,
     compatibilityWarning: true
   };
+}
+
+function concreteBlockstateCallerMode(
+  callerContext: RsglTemplateCallerContext
+): "variants" | "multipart" | undefined {
+  if (callerContext.kind !== "blockstateRoot" && callerContext.kind !== "blockstateEntries") {
+    return undefined;
+  }
+  return callerContext.mode === "neutral" ? undefined : callerContext.mode;
+}
+
+function concreteBlockstateProducerMode(
+  metadata: ResolvedTemplateOutputMetadata
+): "variants" | "multipart" | undefined {
+  if (metadata.outputSource === "explicitArrow") {
+    return metadata.outputDialect === "variants" || metadata.outputDialect === "multipart"
+      ? metadata.outputDialect
+      : undefined;
+  }
+  if (metadata.outputSource !== "legacyInferredBody") {
+    return undefined;
+  }
+  const dialect = metadata.legacyOutputDialect;
+  if (dialect.kind !== "blockstateRoot" && dialect.kind !== "blockstateEntries") {
+    return undefined;
+  }
+  return dialect.mode === "neutral" ? undefined : dialect.mode;
 }
 
 /**

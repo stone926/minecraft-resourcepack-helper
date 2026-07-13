@@ -3,12 +3,30 @@ import {
   type RsglResourceBodyDialect,
   type RsglResourceKind
 } from "../resourceKinds";
+import type { BlockstateMode } from "./types";
 
 export type BodyParseContext =
   | { kind: "topLevel" }
   | ResourceBodyParseContext
-  | { kind: "variants" }
-  | { kind: "multipart" };
+  | BlockstateEntriesParseContext
+  | BlockstateRootParseContext
+  | LegacyBlockstateRootParseContext;
+
+export interface BlockstateEntriesParseContext {
+  kind: "blockstateEntries";
+  mode: BlockstateMode;
+}
+
+export interface BlockstateRootParseContext {
+  kind: "blockstateRoot";
+  mode: BlockstateMode;
+  allowBase: boolean;
+}
+
+export interface LegacyBlockstateRootParseContext {
+  kind: "legacyBlockstateRoot";
+  allowBase: boolean;
+}
 
 export type ResourceBodyOwner =
   | { kind: "resourceRoot"; resourceKind: RsglResourceKind }
@@ -37,8 +55,26 @@ export type ResourceBodyParseContext =
     };
 
 export const topLevelBodyParseContext: BodyParseContext = Object.freeze({ kind: "topLevel" });
-export const variantsBodyParseContext: BodyParseContext = Object.freeze({ kind: "variants" });
-export const multipartBodyParseContext: BodyParseContext = Object.freeze({ kind: "multipart" });
+export const variantsBodyParseContext: BlockstateEntriesParseContext = Object.freeze({
+  kind: "blockstateEntries",
+  mode: "variants"
+});
+export const multipartBodyParseContext: BlockstateEntriesParseContext = Object.freeze({
+  kind: "blockstateEntries",
+  mode: "multipart"
+});
+export const legacyBlockstateRootParseContext: LegacyBlockstateRootParseContext = Object.freeze({
+  kind: "legacyBlockstateRoot",
+  allowBase: true
+});
+
+export function blockstateRootParseContext(mode: BlockstateMode): BlockstateRootParseContext {
+  return {
+    kind: "blockstateRoot",
+    mode,
+    allowBase: true
+  };
+}
 
 export function concreteResourceBodyParseContext(resourceKind: RsglResourceKind): ResourceBodyParseContext {
   const descriptor = getRsglResourceKindDescriptor(resourceKind);
@@ -98,12 +134,25 @@ export function resourceBodyOwnerName(owner: ResourceBodyOwner): string {
 
 /** Control-flow bodies retain their grammar while losing root-only capabilities. */
 export function nestedControlFlowBodyParseContext(context: BodyParseContext): BodyParseContext {
-  return context.kind === "resource"
-    ? {
+  if (context.kind === "resource") {
+    return {
         ...context,
         position: "nonRoot",
         allowBase: false,
         allowModelExternVariables: false
-      }
-    : context;
+      };
+  }
+  if (context.kind === "blockstateRoot") {
+    return {
+      ...context,
+      allowBase: false
+    };
+  }
+  if (context.kind === "legacyBlockstateRoot") {
+    return {
+      ...context,
+      allowBase: false
+    };
+  }
+  return context;
 }

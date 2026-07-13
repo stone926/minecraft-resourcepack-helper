@@ -5,11 +5,11 @@ extern! vanilla model minecraft:block/redstone_lamp
 extern! vanilla model minecraft:block/redstone_lamp_on
 
 template poweredVariants(off: ModelId, on: ModelId) -> variants {
-  [powered=false] -> @off
-  [powered=true] -> @on
+  { powered: false }: off
+  { powered: true }: on
 }
 
-blockstate abstraction/implicit_variants_body {
+blockstate variants abstraction/implicit_variants_body {
   use poweredVariants(
     off: minecraft:block/redstone_lamp,
     on: minecraft:block/redstone_lamp_on

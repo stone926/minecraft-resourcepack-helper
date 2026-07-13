@@ -25,8 +25,11 @@ import {
   TopLevelStatementNode
 } from "./types";
 import { getRsglResourceKindDescriptor } from "../resourceKinds";
+import { binaryPrecedence } from "./statementKeywords";
 import {
   concreteResourceBodyParseContext,
+  blockstateRootParseContext,
+  legacyBlockstateRootParseContext,
   multipartBodyParseContext,
   templateResourceBodyParseContext,
   topLevelBodyParseContext,
@@ -499,10 +502,18 @@ class RsglParser extends StatementParser {
         return this.parseResourceBody(templateResourceBodyParseContext("model"));
       }
       if (declaredOutputDialect === "variants") {
-        return this.parseBodyForContext(variantsBodyParseContext);
+        const body = this.parseBodyForContext(variantsBodyParseContext);
+        if (body.kind !== "VariantBody") {
+          throw new Error(`Internal parser invariant: expected VariantBody, received ${body.kind}.`);
+        }
+        return body;
       }
       if (declaredOutputDialect === "multipart") {
-        return this.parseBodyForContext(multipartBodyParseContext);
+        const body = this.parseBodyForContext(multipartBodyParseContext);
+        if (body.kind !== "MultipartBody") {
+          throw new Error(`Internal parser invariant: expected MultipartBody, received ${body.kind}.`);
+        }
+        return body;
       }
       return this.parseBlock();
     }
@@ -546,6 +557,9 @@ class RsglParser extends StatementParser {
   private parseResourceDecl(): ResourceDeclNode {
     const start = this.advance();
     const resourceKind = start.text as ResourceKind;
+    if (resourceKind === "blockstate") {
+      return this.parseBlockstateResourceDecl(start);
+    }
     const descriptor = getRsglResourceKindDescriptor(resourceKind);
     let subtype: IdentifierNode | undefined;
     let id: ExprNode | undefined;
@@ -576,6 +590,101 @@ class RsglParser extends StatementParser {
     };
   }
 
+  private parseBlockstateResourceDecl(start: RsglToken): ResourceDeclNode {
+    if (this.current().text === "variants" || this.current().text === "multipart") {
+      const modeToken = this.advance();
+      const mode = modeToken.text as "variants" | "multipart";
+      const modeNode = this.syntheticIdentifier(modeToken, mode);
+      const id = this.parseBlockstateResourceId();
+      const body = this.parseBodyForContext(blockstateRootParseContext(mode));
+      if (mode === "variants") {
+        if (body.kind !== "BlockstateVariantsRootBody") {
+          throw new Error("Parser invariant: variants header must produce a variants root body.");
+        }
+        return {
+          kind: "ResourceDecl",
+          keyword: start.text,
+          resourceKind: "blockstate",
+          blockstateSyntax: "modeHeader",
+          mode,
+          modeNode,
+          id,
+          body,
+          ...this.nodeRanges(start, this.previousOr(start))
+        };
+      }
+      if (body.kind !== "BlockstateMultipartRootBody") {
+        throw new Error("Parser invariant: multipart header must produce a multipart root body.");
+      }
+      return {
+        kind: "ResourceDecl",
+        keyword: start.text,
+        resourceKind: "blockstate",
+        blockstateSyntax: "modeHeader",
+        mode,
+        modeNode,
+        id,
+        body,
+        ...this.nodeRanges(start, this.previousOr(start))
+      };
+    }
+
+    let blockstateSyntax: "legacyMissingMode" | "invalidMode" = "legacyMissingMode";
+    let modeNode: IdentifierNode | undefined;
+    if (!this.isStatementBoundary(this.current()) && this.looksLikeUnknownBlockstateMode()) {
+      const token = this.advance();
+      modeNode = this.syntheticIdentifier(token, token.text);
+      blockstateSyntax = "invalidMode";
+      this.addDiagnostic(
+        "rsgl.unknownBlockstateMode",
+        `Unknown blockstate mode '${token.text}'. Expected 'variants' or 'multipart'.`,
+        tokenRange(token)
+      );
+    } else {
+      this.addDiagnostic(
+        "rsgl.blockstateModeRequired",
+        "Blockstate declarations must specify 'variants' or 'multipart' before the resource id.",
+        tokenRange(this.current()),
+        "warning"
+      );
+    }
+    const id = this.parseBlockstateResourceId();
+    const body = this.parseBodyForContext(legacyBlockstateRootParseContext);
+    if (body.kind !== "LegacyBlockstateRootBody") {
+      throw new Error("Parser invariant: a legacy blockstate header must produce a legacy root body.");
+    }
+    return {
+      kind: "ResourceDecl",
+      keyword: start.text,
+      resourceKind: "blockstate",
+      blockstateSyntax,
+      mode: null,
+      modeNode,
+      id,
+      body,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseBlockstateResourceId(): ExprNode {
+    if (this.current().text === "{" || this.isAtEnd() || this.isStatementBoundary(this.current())) {
+      this.addDiagnosticAtCurrent("rsgl.expectedBlockstateId", "Expected blockstate resource id.");
+      return this.missingExprAt(this.current());
+    }
+    return this.parseExpression({ stopTexts: ["{"] });
+  }
+
+  private looksLikeUnknownBlockstateMode(): boolean {
+    const token = this.current();
+    if (token.kind !== "identifier" && token.kind !== "keyword") {
+      return false;
+    }
+    const next = this.peekText(1);
+    return next !== ""
+      && next !== "{"
+      && !isBlockstateIdExpressionContinuation(next);
+  }
+
   private recoverToNextStatement(): void {
     this.advance();
     while (!this.isAtEnd()) {
@@ -586,6 +695,16 @@ class RsglParser extends StatementParser {
       this.advance();
     }
   }
+}
+
+function isBlockstateIdExpressionContinuation(text: string): boolean {
+  return text === "("
+    || text === "["
+    || text === "."
+    || text === "?"
+    || text === "in"
+    || text === "=>"
+    || binaryPrecedence.has(text);
 }
 
 function isTemplateOutputDialect(text: string): text is DeclaredTemplateOutputDialect {

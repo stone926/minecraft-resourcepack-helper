@@ -398,10 +398,8 @@ describe("RSGL LSP server core", () => {
     const configFile = path.join(root, "rsgl.config.json");
     const text = [
       "model block rotated {}",
-      "blockstate rotated {",
-      "  variants {",
-      "    {} -> { model: project_ns:block/rotated, z: 90 }",
-      "  }",
+      "blockstate variants rotated {",
+      "  {}: { model: project_ns:block/rotated, z: 90 }",
       "}"
     ].join("\n");
     const cache = RsglWorkspaceSemanticCache.create();
@@ -713,8 +711,8 @@ function diagnosticsForFile(fileName: string, text: string) {
 
 function blockstateUsingExternalModel(modelId: string): string {
   return [
-    "blockstate configured {",
-    `  variants { {} -> { model: ${modelId} } }`,
+    "blockstate variants configured {",
+    `  {}: { model: ${modelId} }`,
     "}"
   ].join("\n");
 }

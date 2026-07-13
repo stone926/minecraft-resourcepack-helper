@@ -1,4 +1,4 @@
-import { endRange, ParserContext, tokenRange } from "./parserContext";
+import { ParserContext, tokenRange } from "./parserContext";
 import { binaryPrecedence } from "./statementKeywords";
 import { parseTemplateStringParts } from "./templateString";
 import {
@@ -10,15 +10,14 @@ import {
   IdentifierNode,
   LambdaExprNode,
   MatchArmNode,
-  ModelApplySugarNode,
   NumberLiteralNode,
   ObjectExprNode,
   ObjectPropertyNode,
   ResourceBodyNode,
   RsglNode,
   RsglToken,
+  StateKeySugarNode,
   StringLiteralNode,
-  SugarPropertyNode,
   TypeNode
 } from "./types";
 
@@ -161,16 +160,10 @@ export class ExpressionParser extends ParserContext {
       return this.parseObjectExpression();
     }
     if (token.text === "[") {
-      return this.looksLikeStateKeySugar() ? this.parseStateKeySugar() : this.parseListExpression();
-    }
-    if (token.text === "@") {
-      return this.parseModelApplySugar();
+      return this.parseListExpression();
     }
     if (token.text === "match") {
       return this.parseMatchExpression();
-    }
-    if (token.text === "random") {
-      return this.parseRandomApply();
     }
     if (token.kind === "string") {
       return this.parseStringLiteral();
@@ -438,7 +431,7 @@ export class ExpressionParser extends ParserContext {
     };
   }
 
-  protected parseStateKeySugar(): ExprNode {
+  protected parseStateKeySugar(): StateKeySugarNode {
     const start = this.current();
     const entries: ObjectPropertyNode[] = [];
     this.expectText("[", "Expected state key sugar.");
@@ -466,83 +459,6 @@ export class ExpressionParser extends ParserContext {
       entries,
       ...this.nodeRanges(start, this.previousOr(start))
     };
-  }
-
-  private parseModelApplySugar(): ModelApplySugarNode {
-    const start = this.advance();
-    const model = this.parseModelApplyPath(start);
-    const properties: SugarPropertyNode[] = [];
-    while (!this.isAtEnd() && !this.isModelApplyPropertyStop()) {
-      const propertyStart = this.current();
-      const name = this.parseIdentifier("Expected model apply property.");
-      if (!name) {
-        break;
-      }
-      const value = this.matchText("=")
-        ? this.parseExpression({ stopTexts: [",", "]", "}"] })
-        : this.booleanLiteral(propertyStart, true);
-      properties.push({
-        kind: "SugarProperty",
-        name,
-        value,
-        ...this.nodeRanges(propertyStart, this.previousOr(propertyStart))
-      });
-      this.consumeModelApplyPropertySeparator();
-    }
-    return {
-      kind: "ModelApplySugar",
-      model,
-      properties,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  private parseModelApplyPath(atToken: RsglToken): ExprNode {
-    const start = this.current();
-    if (start.kind === "templateString") {
-      return this.parseTemplateStringExpression();
-    }
-    if (start.kind === "resourceLocation") {
-      const token = this.advance();
-      return {
-        kind: "ResourceLocationExpr",
-        value: token.text,
-        ...this.nodeRanges(token, token)
-      };
-    }
-
-    if (start.kind === "identifier" || start.kind === "keyword") {
-      return this.parseIdentifierOrPathExpression();
-    }
-
-    this.addDiagnostic("rsgl.expectedModelApplyPath", "Expected model path after '@'.", endRange(atToken));
-    return this.missingExprAt(atToken);
-  }
-
-  private parseRandomApply(): ExprNode {
-    const start = this.advance();
-    const entries: ExprNode[] = [];
-    if (!this.matchText("[")) {
-      this.addDiagnosticAtCurrent("rsgl.expectedRandomList", "Expected '[' after random.");
-    }
-    while (!this.isAtEnd() && this.current().text !== "]") {
-      const mark = this.mark();
-      entries.push(this.parseExpression({ stopTexts: [",", "]"] }));
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse random entry; skipping token.");
-    }
-    this.expectText("]", "Expected ']' after random model list.");
-    return {
-      kind: "RandomApply",
-      entries,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
-  protected parseBlockstateEntryValue(): ExprNode {
-    return this.current().text === "random"
-      ? this.parseRandomApply()
-      : this.parseExpression({ stopTexts: ["}"] });
   }
 
   private parseMatchExpression(): ExprNode {
@@ -765,10 +681,6 @@ export class ExpressionParser extends ParserContext {
     return stopTexts.length === 0 && this.isStatementBoundary(this.current());
   }
 
-  private isModelApplyPropertyStop(): boolean {
-    return this.isExpressionStop([",", "]", "}"]) || this.isStatementBoundary(this.current());
-  }
-
   protected looksLikeStateKeySugar(): boolean {
     if (this.current().text !== "[") {
       return false;
@@ -779,19 +691,6 @@ export class ExpressionParser extends ParserContext {
 
   protected consumeOptionalSeparator(): void {
     if (this.current().text === "," || this.current().text === ";") {
-      this.advance();
-    }
-  }
-
-  private consumeModelApplyPropertySeparator(): void {
-    if (this.current().text === ";") {
-      this.advance();
-      return;
-    }
-    if (
-      this.current().text === "," &&
-      (this.peekKind(1) === "identifier" || this.peekKind(1) === "keyword")
-    ) {
       this.advance();
     }
   }

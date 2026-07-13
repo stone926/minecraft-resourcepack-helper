@@ -14,10 +14,15 @@ export type {
 } from "./templateOutputResolution";
 export type {
   RsglBindOptions,
+  RsglBlockstateApplyExpectation,
+  RsglBlockstateApplyFact,
+  RsglBlockstateApplyRecord,
+  RsglBlockstateApplySiteNode,
   RsglExportRecord,
   RsglFileDiagnostic,
   RsglImportGraph,
   RsglImportRecord,
+  RsglLegacyBlockstateRootRecord,
   RsglOutputResourcePreview,
   RsglProgram,
   RsglReferenceRecord,

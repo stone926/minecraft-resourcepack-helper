@@ -12,7 +12,7 @@ import { validatePackMetadata } from "./packMetadataValidation";
 import { validateEquipmentUnit, validateParticlesUnit } from "./particlesEquipmentValidation";
 import { validatePostEffectMetadata } from "./postEffectValidation";
 import { checkResourceExists } from "./resourceReferenceValidation";
-import { attachSourceFile, sourceRangeForGeneratedPath } from "./validationDiagnostics";
+import { sourceFileForValidationRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { validateWaypointStyleMetadata } from "./waypointStyleValidation";
@@ -88,7 +88,9 @@ export function canonicalizeAndValidateResourceUnits(
         resourceValidators[validationHandler](unit, validationContext, validationOptions, diagnostics);
       }
     }
-    attachSourceFile(diagnostics, diagnosticStart, unit.sourceMap.mappings[0]?.sourceFile);
+    for (const diagnostic of diagnostics.slice(diagnosticStart)) {
+      diagnostic.fileName ??= sourceFileForValidationRange(unit, diagnostic.range);
+    }
   }
 
   return diagnostics;

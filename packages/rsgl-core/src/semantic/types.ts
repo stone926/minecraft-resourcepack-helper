@@ -1,4 +1,6 @@
 import {
+  BlockstateApplyExprNode,
+  BlockstateRandomItemNode,
   ExprNode,
   ExportDeclNode,
   IdentifierNode,
@@ -40,6 +42,7 @@ export type RsglTypeKind =
   | "TextureId"
   | "TextureVariable"
   | "TextureRef"
+  | "BlockstateModelObject"
   | "Path"
   | "Json"
   | "List"
@@ -55,7 +58,41 @@ export interface RsglType {
   parameters?: RsglType[];
   returnType?: RsglType;
   options?: RsglType[];
+  /** Internal provenance used by contextual compatibility escapes. */
+  explicitAnnotation?: true;
 }
+
+export type RsglBlockstateApplySiteNode = BlockstateApplyExprNode | BlockstateRandomItemNode;
+
+export type RsglBlockstateApplyExpectation =
+  | "modelIdOnly"
+  | "modelOrObject"
+  | "modelOrObjectOrFlatList";
+
+export interface RsglBlockstateApplyFact {
+  expectation: RsglBlockstateApplyExpectation;
+  actualType: RsglType;
+  unknownFields: "reject" | "preserveExplicitJson";
+}
+
+export interface RsglBlockstateApplyRecord {
+  node: RsglBlockstateApplySiteNode;
+  scope: RsglScope;
+}
+
+export type RsglBlockstateContextualExpression =
+  | {
+      kind: "selector";
+      expression: ExprNode;
+      selectorSyntax: "inlineObject" | "parenthesizedExpression";
+    }
+  | {
+      kind: "condition";
+      expression: ExprNode;
+    };
+
+export type RsglBlockstateContextualExpressionRecord =
+  RsglBlockstateContextualExpression & { scope: RsglScope };
 
 export interface RsglSignature {
   parameters: RsglParameterSymbol[];
@@ -70,6 +107,13 @@ export interface RsglTemplateUseRecord {
   callerContext?: RsglTemplateCallerContext;
   scope: RsglScope;
   enclosingTemplate?: TemplateDeclNode;
+}
+
+export interface RsglLegacyBlockstateRootRecord {
+  range: TextRange;
+  directModes: readonly ("variants" | "multipart")[];
+  /** Only wrapper-less root uses participate in declaration-mode inference. */
+  uses: readonly RsglTemplateUseRecord[];
 }
 
 export interface RsglContextualTextureSinkRecord {
@@ -156,7 +200,15 @@ export interface RsglSemanticModel {
    */
   importCallScopes?: ReadonlyMap<ExprNode, RsglScope>;
   templateUses?: readonly RsglTemplateUseRecord[];
+  /** Legacy declaration roots retained for exact post-link mode inference. */
+  legacyBlockstateRoots?: readonly RsglLegacyBlockstateRootRecord[];
   contextualTextureSinks?: readonly RsglContextualTextureSinkRecord[];
+  /** Final semantic policy consumed by blockstate runtime lowering. */
+  blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
+  /** Source-position scopes retained for the post-link import/re-export pass. */
+  blockstateApplyRecords?: readonly RsglBlockstateApplyRecord[];
+  /** Contextual selectors/conditions rechecked after imported types are linked. */
+  blockstateContextualExpressionRecords?: readonly RsglBlockstateContextualExpressionRecord[];
 }
 
 export interface RsglSourceFile {
@@ -200,6 +252,7 @@ export const modelIdType: RsglType = { kind: "ModelId" };
 export const textureIdType: RsglType = { kind: "TextureId" };
 export const textureVariableType: RsglType = { kind: "TextureVariable" };
 export const textureRefType: RsglType = { kind: "TextureRef" };
+export const blockstateModelObjectType: RsglType = { kind: "BlockstateModelObject" };
 export const jsonType: RsglType = { kind: "Json" };
 
 export function typeFromAnnotation(typeNode: TypeNode | undefined): RsglType {
@@ -207,29 +260,42 @@ export function typeFromAnnotation(typeNode: TypeNode | undefined): RsglType {
     return unknownType;
   }
   if (typeNode.kind === "NamedType") {
-    return namedType(typeNode.name.text);
+    return explicitlyAnnotated(namedType(typeNode.name.text));
   }
   if (typeNode.kind === "GenericType") {
     const name = typeNode.name.text;
     if (name === "List") {
-      return { kind: "List", elementType: typeFromAnnotation(typeNode.args[0]) };
+      return {
+        kind: "List",
+        elementType: typeFromAnnotation(typeNode.args[0]),
+        explicitAnnotation: true
+      };
     }
-    return namedType(name);
+    return explicitlyAnnotated(namedType(name));
   }
   if (typeNode.kind === "FunctionType") {
     return {
       kind: "Function",
       parameters: typeNode.parameters.map(typeFromAnnotation),
-      returnType: typeFromAnnotation(typeNode.returnType)
+      returnType: typeFromAnnotation(typeNode.returnType),
+      explicitAnnotation: true
     };
   }
   if (typeNode.kind === "UnionType") {
-    return { kind: "Union", options: typeNode.options.map(typeFromAnnotation) };
+    return {
+      kind: "Union",
+      options: typeNode.options.map(typeFromAnnotation),
+      explicitAnnotation: true
+    };
   }
   if (typeNode.kind === "LiteralType") {
-    return inferLiteralType(typeNode.value);
+    return explicitlyAnnotated(inferLiteralType(typeNode.value));
   }
   return unknownType;
+}
+
+function explicitlyAnnotated(type: RsglType): RsglType {
+  return { ...type, explicitAnnotation: true };
 }
 
 export function namedType(name: string): RsglType {

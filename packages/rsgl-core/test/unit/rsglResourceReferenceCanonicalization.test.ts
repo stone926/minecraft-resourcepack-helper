@@ -22,8 +22,8 @@ describe("RSGL resource reference canonicalization", () => {
         "  textures { all: block/stone }",
         "  elements [{ from: [0, 0, 0], to: [16, 16, 16], faces: { north: { texture: block/stone } } }]",
         "}",
-        "blockstate stone {",
-        "  variants { {} -> { model: block/stone } }",
+        "blockstate variants stone {",
+        "  {}: { model: block/stone }",
         "}"
       ], {
         fileName: path.join(root, "main.rsgl"),
@@ -81,8 +81,8 @@ describe("RSGL resource reference canonicalization", () => {
     const result = compileSource([
       "namespace demo",
       "extern! custom model *:**",
-      "blockstate invalid {",
-      "  variants { {} -> { model: \"Bad Model\" } }",
+      "blockstate variants invalid {",
+      "  {}: { model: \"Bad Model\" }",
       "}"
     ], {
       externResourceExists: () => {
@@ -92,7 +92,9 @@ describe("RSGL resource reference canonicalization", () => {
     });
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.invalidResourceReference"
+      "rsgl.invalidResourcePath",
+      "rsgl.invalidBlockstateModelId",
+      "rsgl.missingBlockstateModel"
     ]);
     assert.strictEqual(resolverCalls, 0);
     assert.ok(result.diagnostics[0].range.end > result.diagnostics[0].range.start);
@@ -130,8 +132,8 @@ describe("RSGL resource reference canonicalization", () => {
     const resolutionCalls: Array<{ source: string; id: string }> = [];
     const result = compileSource([
       "namespace demo",
-      "blockstate external {",
-      "  variants { {} -> { model: block/external } }",
+      "blockstate variants external {",
+      "  {}: { model: block/external }",
       "}"
     ], {
       globalExterns: [

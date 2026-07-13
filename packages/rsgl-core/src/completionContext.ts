@@ -2,15 +2,24 @@ import {
   lexRsgl,
   parseRsgl,
   type BlockNode,
+  type BlockstateMode,
   type DeclaredTemplateOutputDialect,
+  type RsglModule,
   type TopLevelStatementNode
 } from "./parser";
+import { walkRsglModule } from "./parser/astTraversal";
+
+export interface RsglBlockstateCompletionContext {
+  mode: BlockstateMode;
+  scope: "concreteRoot" | "nestedRoot" | "entryTemplate";
+}
 
 export interface RsglCompletionContext {
   insideBlock: boolean;
   allowBase: boolean;
   allowExternVar: boolean;
   templateOutputDialect?: DeclaredTemplateOutputDialect;
+  blockstate?: RsglBlockstateCompletionContext;
 }
 
 /** Computes the small amount of syntax context needed by static completions. */
@@ -25,16 +34,93 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
   // Completion is a hot LSP path. Parse the prefix once, then derive each
   // independent context facet from the same immutable syntax tree.
   const module = parseRsgl(prefix);
-  const resourceKind = resourceKindInStatementsAt(module.statements, openBrace);
+  const bodyOwner = bodyOwnerAt(module, prefix, openBrace);
   const templateOutputDialect = templateDialectInStatementsAt(module.statements, openBrace);
 
   return {
     insideBlock: true,
     allowBase: isBaseOperandPosition(prefix.slice(openBrace + 1))
-      && resourceKind !== null,
-    allowExternVar: resourceKind === "model",
-    templateOutputDialect
+      && bodyOwner.resourceKind !== null,
+    allowExternVar: bodyOwner.resourceKind === "model",
+    templateOutputDialect,
+    blockstate: bodyOwner.blockstate
   };
+}
+
+interface CompletionBodyOwner {
+  resourceKind: string | null;
+  blockstate?: RsglBlockstateCompletionContext;
+}
+
+function bodyOwnerAt(
+  module: RsglModule,
+  source: string,
+  openBrace: number
+): CompletionBodyOwner {
+  const owner: CompletionBodyOwner = { resourceKind: null };
+  walkRsglModule(module, {
+    enterStatement(statement) {
+      if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
+        owner.resourceKind = statement.resourceKind;
+        if (statement.resourceKind === "blockstate" && statement.blockstateSyntax === "modeHeader") {
+          owner.blockstate = {
+            mode: statement.mode,
+            scope: "concreteRoot"
+          };
+        }
+        return "skipChildren";
+      }
+      if (statement.kind === "TemplateDecl" && statement.body.range.start === openBrace) {
+        owner.blockstate = blockstateContextForBody(statement.body.kind, "entryTemplate");
+        return "skipChildren";
+      }
+      if (statement.kind === "ForStmt" && statement.body.range.start === openBrace) {
+        owner.blockstate = blockstateContextForBody(statement.body.kind, "nestedRoot");
+        return "skipChildren";
+      }
+      if (statement.kind === "IfStmt") {
+        if (statement.thenBody.range.start === openBrace) {
+          owner.blockstate = blockstateContextForBody(statement.thenBody.kind, "nestedRoot");
+          return "skipChildren";
+        }
+        if (statement.elseBody?.range.start === openBrace) {
+          owner.blockstate = blockstateContextForBody(statement.elseBody.kind, "nestedRoot");
+          return "skipChildren";
+        }
+      }
+      if (statement.kind === "VariantsSection" || statement.kind === "MultipartSection") {
+        const sectionOpenBrace = source.indexOf("{", statement.range.start);
+        if (sectionOpenBrace === openBrace) {
+          owner.blockstate = {
+            mode: statement.kind === "VariantsSection" ? "variants" : "multipart",
+            scope: "entryTemplate"
+          };
+          return "skipChildren";
+        }
+      }
+      return undefined;
+    }
+  });
+  return owner;
+}
+
+function blockstateContextForBody(
+  bodyKind: string,
+  rootScope: "nestedRoot" | "entryTemplate"
+): RsglBlockstateCompletionContext | undefined {
+  if (bodyKind === "BlockstateVariantsRootBody") {
+    return { mode: "variants", scope: rootScope };
+  }
+  if (bodyKind === "BlockstateMultipartRootBody") {
+    return { mode: "multipart", scope: rootScope };
+  }
+  if (bodyKind === "VariantBody") {
+    return { mode: "variants", scope: "entryTemplate" };
+  }
+  if (bodyKind === "MultipartBody") {
+    return { mode: "multipart", scope: "entryTemplate" };
+  }
+  return undefined;
 }
 
 function templateDialectInStatementsAt(
@@ -76,24 +162,6 @@ function isBaseOperandPosition(bodyPrefix: string): boolean {
   return !continuedOnAnotherLine
     && (token.kind === "identifier" || token.kind === "keyword")
     && "base".startsWith(token.text);
-}
-
-function resourceKindInStatementsAt(
-  statements: readonly TopLevelStatementNode[],
-  openBrace: number
-): string | null {
-  for (const statement of statements) {
-    if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
-      return statement.resourceKind;
-    }
-    for (const block of childTopLevelBlocks(statement)) {
-      const resourceKind = resourceKindInStatementsAt(block.statements, openBrace);
-      if (resourceKind !== null) {
-        return resourceKind;
-      }
-    }
-  }
-  return null;
 }
 
 function childTopLevelBlocks(statement: TopLevelStatementNode): BlockNode[] {

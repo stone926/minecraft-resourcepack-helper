@@ -1,5 +1,6 @@
 import type {
   ArgumentNode,
+  BlockstateModelPropertyNode,
   IdentifierNode,
   ImportDeclNode,
   MemberExprNode,
@@ -142,6 +143,8 @@ function propertyIdentifiers(node: RsglNode): readonly IdentifierNode[] {
       return [(node as MemberExprNode).property];
     case "SugarProperty":
       return [(node as SugarPropertyNode).name];
+    case "BlockstateModelProperty":
+      return [(node as BlockstateModelPropertyNode).name];
     case "PropertyStmt":
       return [(node as PropertyStmtNode).name];
     default:

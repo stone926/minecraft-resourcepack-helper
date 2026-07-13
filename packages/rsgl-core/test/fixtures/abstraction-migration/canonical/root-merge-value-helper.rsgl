@@ -1,0 +1,25 @@
+target java format [50, 0]
+namespace minecraft
+
+extern! vanilla model minecraft:block/stone
+
+let rootMetadata: (Boolean) -> Json = enabled => {
+  custom: {
+    enabled: enabled
+    source: "template"
+  }
+}
+
+let valueMetadata: (String) -> Json = label => {
+  custom: {
+    label: label
+  }
+}
+
+export { valueMetadata }
+
+blockstate variants abstraction/root_merge_value_helper {
+  merge deep rootMetadata(true)
+  merge deep valueMetadata("value-helper")
+  {}: minecraft:block/stone
+}

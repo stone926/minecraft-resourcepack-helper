@@ -1,16 +1,19 @@
 import {
   BlockNode,
+  BlockstateMultipartRootBodyNode,
+  BlockstateVariantsRootBodyNode,
   ExprNode,
   ForStmtNode,
   IdentifierNode,
+  LegacyBlockstateRootBodyNode,
   MultipartBodyNode,
-  MultipartSectionStatementNode,
   ResourceBodyNode,
   ResourceStatementNode,
   TopLevelStatementNode,
-  VariantBodyNode,
-  VariantSectionStatementNode
+  VariantBodyNode
 } from "../parser";
+import { RsglBlockstateBodyChecker } from "./blockstateBodyChecker";
+import type { RsglBlockstateApplyFactRecorder } from "./blockstateApplyChecker";
 import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
 import {
@@ -25,10 +28,25 @@ import {
   validateResourceLocationLike
 } from "./expressionChecker";
 import { createChildScope, lookup } from "./scopes";
-import { anyType, numberType, RsglScope, RsglType, stringType, unknownType } from "./types";
+import {
+  anyType,
+  numberType,
+  type RsglBlockstateContextualExpression,
+  RsglScope,
+  RsglType,
+  stringType,
+  unknownType
+} from "./types";
 import type { RsglTemplateCallerContext } from "../templateOutput";
 
-type CheckableBody = ResourceBodyNode | BlockNode | VariantBodyNode | MultipartBodyNode;
+type CheckableBody =
+  | ResourceBodyNode
+  | BlockNode
+  | VariantBodyNode
+  | MultipartBodyNode
+  | BlockstateVariantsRootBodyNode
+  | BlockstateMultipartRootBodyNode
+  | LegacyBlockstateRootBodyNode;
 
 export type RsglBlockStatementChecker = (
   statements: TopLevelStatementNode[],
@@ -48,14 +66,34 @@ export type RsglContextualTextureSinkRecorder = (
   scope: RsglScope
 ) => void;
 
+export type RsglBlockstateContextualExpressionRecorder = (
+  record: RsglBlockstateContextualExpression,
+  scope: RsglScope
+) => void;
+
 /** Checks all scope-sensitive statements nested below a top-level declaration. */
 export class RsglResourceBodyChecker {
+  private readonly blockstateBodyChecker: RsglBlockstateBodyChecker;
+
   public constructor(
     private readonly context: RsglExpressionCheckContext,
     private readonly checkBlockStatements: RsglBlockStatementChecker,
     private readonly recordTemplateUse: RsglTemplateUseRecorder,
-    private readonly recordContextualTextureSink: RsglContextualTextureSinkRecorder
-  ) { }
+    private readonly recordContextualTextureSink: RsglContextualTextureSinkRecorder,
+    recordBlockstateApplyFact: RsglBlockstateApplyFactRecorder,
+    recordBlockstateContextualExpression: RsglBlockstateContextualExpressionRecorder
+  ) {
+    this.blockstateBodyChecker = new RsglBlockstateBodyChecker({
+      context,
+      checkForStatement: (statement, scope, callerContext) =>
+        this.checkForStatement(statement, scope, callerContext),
+      checkNestedBody: (body, scope, callerContext) =>
+        this.checkBody(body, scope, callerContext),
+      recordTemplateUse,
+      recordApplyFact: recordBlockstateApplyFact,
+      recordContextualExpression: recordBlockstateContextualExpression
+    });
+  }
 
   public checkBody(body: CheckableBody, scope: RsglScope, callerContext?: RsglTemplateCallerContext): void {
     switch (body.kind) {
@@ -66,10 +104,19 @@ export class RsglResourceBodyChecker {
         this.checkBlockStatements(body.statements, scope, callerContext);
         break;
       case "VariantBody":
-        this.checkVariantStatements(body.statements, scope);
+        this.blockstateBodyChecker.checkVariantStatements(body.statements, scope);
         break;
       case "MultipartBody":
-        this.checkMultipartStatements(body.statements, scope);
+        this.blockstateBodyChecker.checkMultipartStatements(body.statements, scope);
+        break;
+      case "BlockstateVariantsRootBody":
+      case "BlockstateMultipartRootBody":
+      case "LegacyBlockstateRootBody":
+        this.blockstateBodyChecker.checkRootBody(
+          body,
+          scope,
+          blockstateRootContext(callerContext)
+        );
         break;
       default:
         assertNever(body);
@@ -163,20 +210,18 @@ export class RsglResourceBodyChecker {
         }
         break;
       case "VariantsSection":
-        this.checkVariantStatements(statement.entries, scope);
+        this.blockstateBodyChecker.checkVariantStatements(statement.entries, scope);
         break;
       case "MultipartSection":
-        this.checkMultipartStatements(statement.entries, scope);
+        this.blockstateBodyChecker.checkMultipartStatements(statement.entries, scope);
         break;
+      case "BlockstateVariantEntry":
       case "VariantEntry":
-        this.checkExpression(statement.state, scope);
-        this.checkExpression(statement.value, scope);
+        this.blockstateBodyChecker.checkVariantStatements([statement], scope);
         break;
+      case "BlockstateMultipartEntry":
       case "MultipartEntry":
-        if (statement.when) {
-          this.checkExpression(statement.when, scope);
-        }
-        this.checkExpression(statement.apply, scope);
+        this.blockstateBodyChecker.checkMultipartStatements([statement], scope);
         break;
       case "UseDecl":
         checkTemplateUseExpression(this.context, statement.expression, scope);
@@ -344,72 +389,6 @@ export class RsglResourceBodyChecker {
     return this.checkExpression(expression, scope);
   }
 
-  private checkVariantStatements(statements: VariantSectionStatementNode[], scope: RsglScope): void {
-    for (const statement of statements) {
-      switch (statement.kind) {
-        case "VariantEntry":
-          this.checkExpression(statement.state, scope);
-          this.checkExpression(statement.value, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.context, statement, scope);
-          break;
-        case "UseDecl":
-          checkTemplateUseExpression(this.context, statement.expression, scope);
-          this.recordTemplateUse(statement.expression, scope, variantsCallerContext);
-          break;
-        case "ForStmt":
-          this.checkForStatement(statement, scope, variantsCallerContext);
-          break;
-        case "IfStmt":
-          this.checkExpression(statement.condition, scope);
-          this.checkBody(statement.thenBody, createChildScope(scope, "block"), variantsCallerContext);
-          if (statement.elseBody) {
-            this.checkBody(statement.elseBody, createChildScope(scope, "block"), variantsCallerContext);
-          }
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
-      }
-    }
-  }
-
-  private checkMultipartStatements(statements: MultipartSectionStatementNode[], scope: RsglScope): void {
-    for (const statement of statements) {
-      switch (statement.kind) {
-        case "MultipartEntry":
-          if (statement.when) {
-            this.checkExpression(statement.when, scope);
-          }
-          this.checkExpression(statement.apply, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.context, statement, scope);
-          break;
-        case "UseDecl":
-          checkTemplateUseExpression(this.context, statement.expression, scope);
-          this.recordTemplateUse(statement.expression, scope, multipartCallerContext);
-          break;
-        case "ForStmt":
-          this.checkForStatement(statement, scope, multipartCallerContext);
-          break;
-        case "IfStmt":
-          this.checkExpression(statement.condition, scope);
-          this.checkBody(statement.thenBody, createChildScope(scope, "block"), multipartCallerContext);
-          if (statement.elseBody) {
-            this.checkBody(statement.elseBody, createChildScope(scope, "block"), multipartCallerContext);
-          }
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
-      }
-    }
-  }
-
   private checkExpression(expression: ExprNode, scope: RsglScope): RsglType {
     return checkExpression(this.context, expression, scope);
   }
@@ -426,19 +405,18 @@ export class RsglResourceBodyChecker {
   }
 }
 
-const variantsCallerContext: RsglTemplateCallerContext = {
-  kind: "blockstateEntries",
-  mode: "variants",
-  allowRootMerge: false,
-  allowBase: false
-};
-
-const multipartCallerContext: RsglTemplateCallerContext = {
-  kind: "blockstateEntries",
-  mode: "multipart",
-  allowRootMerge: false,
-  allowBase: false
-};
+function blockstateRootContext(
+  callerContext: RsglTemplateCallerContext | undefined
+): Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }> {
+  return callerContext?.kind === "blockstateRoot"
+    ? callerContext
+    : {
+        kind: "blockstateRoot",
+        mode: "neutral",
+        allowRootMerge: true,
+        allowBase: false
+      };
+}
 
 function syntheticIdentifier(text: string, range: { start: number; end: number }): IdentifierNode {
   return {

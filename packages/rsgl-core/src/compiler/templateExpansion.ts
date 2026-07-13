@@ -13,11 +13,15 @@ import { RsglTemplateDefinition } from "./environment";
 import {
   EvaluationContext,
   type EvaluationOrigin,
+  type EvaluationPathOrigin,
+  type EvaluationValueIssue,
   EvaluationValue,
-  expressionEvaluationOrigin,
+  evaluateExpressionResult,
   hasEvaluationValueBinding,
+  materializeEvaluationPathOrigins,
+  materializeEvaluationValueIssues,
+  originForEvaluationPath,
   RawGlobLoader,
-  evaluateExpression
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { RsglCompileDiagnostic } from "./ir";
@@ -113,6 +117,14 @@ export function createTemplateExpansion(
     ...(templateBaseContext.valueOrigins ?? []),
     ...binding.origins
   ]);
+  templateContext.valuePathOrigins = new Map([
+    ...(templateBaseContext.valuePathOrigins ?? []),
+    ...binding.pathOrigins
+  ]);
+  templateContext.valueIssues = new Map([
+    ...(templateBaseContext.valueIssues ?? []),
+    ...binding.valueIssues
+  ]);
   templateContext.stateKeyAliases = callableStateKeyAliases(templateBaseContext, parameters);
   if (template.node.body.kind === "Block") {
     templateContext.valueBindingNames = new Set([
@@ -148,6 +160,8 @@ export function templateResourceBody(body: TemplateBodyNode): ResourceBodyNode |
 interface BoundCallableValues {
   values: Record<string, EvaluationValue>;
   origins: Map<string, EvaluationOrigin>;
+  pathOrigins: Map<string, EvaluationPathOrigin[]>;
+  valueIssues: Map<string, EvaluationValueIssue[]>;
 }
 
 function bindCallableValues(
@@ -160,6 +174,8 @@ function bindCallableValues(
 ): BoundCallableValues | null {
   const values: Record<string, EvaluationValue> = {};
   const origins = new Map<string, EvaluationOrigin>();
+  const pathOrigins = new Map<string, EvaluationPathOrigin[]>();
+  const valueIssues = new Map<string, EvaluationValueIssue[]>();
   const binding = bindRsglArguments(parameters, expression.args, {
     callRange: expression.range,
     codes: {
@@ -182,40 +198,76 @@ function bindCallableValues(
     return null;
   }
 
-  const argsByParameter = new Map(binding.primaryAssignments.map(assignment => [assignment.parameter.name, assignment.arg]));
+  const assignedNames = new Set<string>();
+  const parametersByName = new Map(parameters.map(parameter => [parameter.name, parameter]));
+
+  // Explicit arguments are effectful expressions. Preserve lexical call-site
+  // order even when named arguments target parameters in another order.
+  for (const assignment of [...binding.primaryAssignments]
+    .sort((left, right) => left.arg.range.start - right.arg.range.start)) {
+    const parameter = parametersByName.get(assignment.parameter.name);
+    if (!parameter) {
+      continue;
+    }
+    const name = parameter.name;
+    const result = evaluateExpressionResult(assignment.arg.value, callContext);
+    values[name] = normalizeCallableValue(result.value, parameter.type, callContext.namespace);
+    assignedNames.add(name);
+    const materialized = materializeEvaluationPathOrigins(result, callContext.sourceFile);
+    if (materialized.length > 0) {
+      pathOrigins.set(name, materialized);
+    }
+    const origin = originForEvaluationPath(materialized, "") ?? result.origin;
+    if (origin) {
+      origins.set(name, origin);
+    }
+    const issues = materializeEvaluationValueIssues(result, callContext.sourceFile);
+    if (issues.length > 0) {
+      valueIssues.set(name, issues);
+    }
+  }
+
+  // Defaults retain declaration/parameter order and definition-module scope.
   for (const parameter of parameters) {
     const name = parameter.name;
-    const arg = argsByParameter.get(name);
-    if (arg) {
-      values[name] = normalizeCallableValue(evaluateExpression(arg.value, callContext), parameter.type, callContext.namespace);
-      const inheritedOrigin = expressionEvaluationOrigin(arg.value, callContext);
-      const sourceFile = inheritedOrigin?.sourceFile ?? callContext.sourceFile;
-      if (sourceFile) {
-        origins.set(name, inheritedOrigin ?? { sourceFile, sourceRange: arg.value.range });
-      }
-    } else if (parameter.parameterNode.defaultValue) {
+    if (assignedNames.has(name)) {
+      continue;
+    }
+    if (parameter.parameterNode.defaultValue) {
       const defaultContext = options.createChildContext(definitionContext, values);
       defaultContext.valueOrigins = new Map([
         ...(definitionContext.valueOrigins ?? []),
         ...origins
       ]);
+      defaultContext.valuePathOrigins = new Map([
+        ...(definitionContext.valuePathOrigins ?? []),
+        ...pathOrigins
+      ]);
+      defaultContext.valueIssues = new Map([
+        ...(definitionContext.valueIssues ?? []),
+        ...valueIssues
+      ]);
+      const result = evaluateExpressionResult(parameter.parameterNode.defaultValue, defaultContext);
       values[name] = normalizeCallableValue(
-        evaluateExpression(parameter.parameterNode.defaultValue, defaultContext),
+        result.value,
         parameter.type,
         definitionContext.namespace
       );
-      const inheritedOrigin = expressionEvaluationOrigin(parameter.parameterNode.defaultValue, defaultContext);
-      if (inheritedOrigin) {
-        origins.set(name, inheritedOrigin);
-      } else if (definitionContext.sourceFile) {
-        origins.set(name, {
-          sourceFile: definitionContext.sourceFile,
-          sourceRange: parameter.parameterNode.defaultValue.range
-        });
+      const materialized = materializeEvaluationPathOrigins(result, definitionContext.sourceFile);
+      if (materialized.length > 0) {
+        pathOrigins.set(name, materialized);
+      }
+      const origin = originForEvaluationPath(materialized, "") ?? result.origin;
+      if (origin) {
+        origins.set(name, origin);
+      }
+      const issues = materializeEvaluationValueIssues(result, definitionContext.sourceFile);
+      if (issues.length > 0) {
+        valueIssues.set(name, issues);
       }
     }
   }
-  return { values, origins };
+  return { values, origins, pathOrigins, valueIssues };
 }
 
 function normalizeCallableValue(value: EvaluationValue, type: RsglType, namespace: string): EvaluationValue {
@@ -245,6 +297,9 @@ function createTemplateBaseContext(
   return {
     namespace: template.namespace,
     variables: new Map(template.values),
+    valueOrigins: template.valueOrigins ? new Map(template.valueOrigins) : undefined,
+    valuePathOrigins: template.valuePathOrigins ? new Map(template.valuePathOrigins) : undefined,
+    valueIssues: template.valueIssues ? new Map(template.valueIssues) : undefined,
     valueBindingNames: new Set(template.values.keys()),
     sourceFile: template.fileName,
     mappingReason: "template",

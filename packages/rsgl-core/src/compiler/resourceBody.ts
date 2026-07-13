@@ -8,9 +8,9 @@ import {
 import {
   EvaluationContext,
   type EvaluationOrigin,
-  bindEvaluationValue,
+  bindEvaluationResult,
   evaluateExpression,
-  expressionEvaluationOrigin,
+  evaluateExpressionResult,
   expressionEvaluationPathOrigins
 } from "./evaluate";
 import { applyBaseDocument } from "./base/application";
@@ -90,11 +90,10 @@ function applyResourceStatement(
     emitExpressionMapping(options, appendGeneratedPath(path, statement.name.text), statement.value, statement.range, context);
   } else if (statement.kind === "LetDecl") {
     if (statement.name) {
-      bindEvaluationValue(
+      bindEvaluationResult(
         context,
         statement.name.text,
-        evaluateExpression(statement.value, context),
-        expressionEvaluationOrigin(statement.value, context)
+        evaluateExpressionResult(statement.value, context)
       );
     }
   } else if (statement.kind === "SectionStmt") {

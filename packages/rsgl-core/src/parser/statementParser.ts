@@ -1,5 +1,8 @@
 import { ExpressionParser, unquoteString } from "./expressionParser";
 import {
+  parseBlockstateMultipartRootBody,
+  parseBlockstateVariantsRootBody,
+  parseLegacyBlockstateRootBody,
   parseMultipartBody,
   parseMultipartSection,
   parseVariantBody,
@@ -11,7 +14,9 @@ import { tryParsePackAtlasEquipmentStatement } from "./packAtlasEquipmentStateme
 import { tokenRange } from "./parserContext";
 import { resourceBodySectionKeywords } from "./statementKeywords";
 import {
+  type BlockstateRootParseContext,
   type BodyParseContext,
+  type LegacyBlockstateRootParseContext,
   nestedControlFlowBodyParseContext,
   sectionResourceBodyParseContext,
   type ResourceBodyParseContext
@@ -19,6 +24,10 @@ import {
 import { ResourceStatementParserHost } from "./statementParserHost";
 import {
   BlockNode,
+  BaseStmtNode,
+  BlockstateMultipartRootBodyNode,
+  BlockstateRootCommonStatementNode,
+  BlockstateVariantsRootBodyNode,
   ExprNode,
   ExternVarStmtNode,
   ForDimensionNode,
@@ -26,9 +35,12 @@ import {
   IdentifierNode,
   IfStmtNode,
   LetDeclNode,
+  LegacyBlockstateRootBodyNode,
+  MergeStmtNode,
   MergeMode,
   MergeModifierNode,
   MultipartBodyNode,
+  PropertyStmtNode,
   ResourceBodyNode,
   ResourceStatementNode,
   RsglToken,
@@ -168,15 +180,29 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  protected parseBodyForContext(context: BodyParseContext): BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode {
+  protected parseBodyForContext(context: BodyParseContext):
+    | BlockNode
+    | ResourceBodyNode
+    | VariantBodyNode
+    | MultipartBodyNode
+    | BlockstateVariantsRootBodyNode
+    | BlockstateMultipartRootBodyNode
+    | LegacyBlockstateRootBodyNode {
     if (context.kind === "resource") {
       return this.parseResourceBody(context);
     }
-    if (context.kind === "variants") {
-      return parseVariantBody(this.resourceStatementParserHost());
+    if (context.kind === "blockstateEntries") {
+      return context.mode === "variants"
+        ? parseVariantBody(this.resourceStatementParserHost())
+        : parseMultipartBody(this.resourceStatementParserHost());
     }
-    if (context.kind === "multipart") {
-      return parseMultipartBody(this.resourceStatementParserHost());
+    if (context.kind === "blockstateRoot") {
+      return context.mode === "variants"
+        ? parseBlockstateVariantsRootBody(this.resourceStatementParserHost(), context)
+        : parseBlockstateMultipartRootBody(this.resourceStatementParserHost(), context);
+    }
+    if (context.kind === "legacyBlockstateRoot") {
+      return parseLegacyBlockstateRootBody(this.resourceStatementParserHost(), context);
     }
     return this.parseBlock();
   }
@@ -300,6 +326,32 @@ export abstract class StatementParser extends ExpressionParser {
     return this.parsePropertyStmt();
   }
 
+  private parseBlockstateRootCommonStatement(
+    context: BlockstateRootParseContext | LegacyBlockstateRootParseContext
+  ): BlockstateRootCommonStatementNode {
+    const token = this.current();
+    const explicitPropertyStart = this.isExplicitPropertyStart();
+    if (!explicitPropertyStart && token.text === "let") {
+      return this.parseLetDecl();
+    }
+    if (!explicitPropertyStart && token.text === "use") {
+      return this.parseUseDecl();
+    }
+    if (!explicitPropertyStart && token.text === "for") {
+      return this.parseForStmt(context);
+    }
+    if (!explicitPropertyStart && token.text === "if") {
+      return this.parseIfStmt(context);
+    }
+    if (!explicitPropertyStart && token.text === "base") {
+      return this.parseBaseStmt();
+    }
+    if (!explicitPropertyStart && token.text === "merge") {
+      return this.parseMergeStmt();
+    }
+    return this.parsePropertyStmt();
+  }
+
   private parseExternVarStmt(inModelRoot: boolean): ExternVarStmtNode {
     const start = this.advance();
     let hasBang = false;
@@ -408,7 +460,7 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parsePropertyStmt(): ResourceStatementNode {
+  private parsePropertyStmt(): PropertyStmtNode {
     const start = this.current();
     const name = this.parsePropertyName(start);
     if (this.current().text === ":" || this.current().text === "=") {
@@ -418,8 +470,6 @@ export abstract class StatementParser extends ExpressionParser {
     let value: ExprNode;
     if (this.current().text === "{") {
       value = this.parseObjectExpression();
-    } else if (this.current().text === "[" && this.looksLikeStateKeySugar()) {
-      value = this.parseStateKeySugar();
     } else {
       value = this.parseExpression({ stopTexts: [] });
     }
@@ -451,7 +501,7 @@ export abstract class StatementParser extends ExpressionParser {
     return this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
   }
 
-  private parseBaseStmt(): ResourceStatementNode {
+  private parseBaseStmt(): BaseStmtNode {
     const start = this.advance();
     const path = this.parseExpression({ stopTexts: [] });
     return {
@@ -466,7 +516,7 @@ export abstract class StatementParser extends ExpressionParser {
     return this.peekText(1) === ":" || this.peekText(1) === "=";
   }
 
-  private parseMergeStmt(): ResourceStatementNode {
+  private parseMergeStmt(): MergeStmtNode {
     const start = this.advance();
     let mode: MergeMode = "shallow";
     let modifier: MergeModifierNode | undefined;
@@ -533,7 +583,8 @@ export abstract class StatementParser extends ExpressionParser {
       parseIdentifier: message => this.parseIdentifier(message),
       parseStringLiteral: () => this.parseStringLiteral(),
       parseObjectExpression: () => this.parseObjectExpression(),
-      parseBlockstateEntryValue: () => this.parseBlockstateEntryValue(),
+      parseLegacyStateKeySugar: () => this.parseStateKeySugar(),
+      parseBlockstateRootCommonStatement: context => this.parseBlockstateRootCommonStatement(context),
       parseLetDecl: () => this.parseLetDecl(),
       parseUseDecl: () => this.parseUseDecl(),
       parseForStmt: context => this.parseForStmt(context),

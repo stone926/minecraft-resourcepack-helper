@@ -102,12 +102,20 @@ export const rsglResourceKindDescriptors = [
     ast: { shape: "identified", bodyDialect: "blockstate", supportsImpl: false },
     compile: { handler: "blockstate", cardinality: "one" },
     validation: { handler: "blockstate" },
-    completions: [{
-      order: 20,
-      label: "blockstate",
-      insertText: "blockstate ${1:id} {\n  variants {\n    {} -> { model: minecraft:block/${1:id} }\n  }\n}",
-      detail: "Blockstate resource"
-    }],
+    completions: [
+      {
+        order: 20,
+        label: "blockstate variants",
+        insertText: "blockstate variants ${1:id} {\n  {}: minecraft:block/${1:id}\n}",
+        detail: "Variants blockstate resource"
+      },
+      {
+        order: 21,
+        label: "blockstate multipart",
+        insertText: "blockstate multipart ${1:id} {\n  apply minecraft:block/${1:id}\n}",
+        detail: "Multipart blockstate resource"
+      }
+    ],
     emit: { contentKind: "json", pathStrategy: "resourceId", jsonOrder: "default" }
   },
   {

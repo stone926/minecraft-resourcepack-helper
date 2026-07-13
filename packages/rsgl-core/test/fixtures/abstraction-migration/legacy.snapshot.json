@@ -34,13 +34,6 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/multipart",
-            "sourceFile": "direct-blockstate-modes.rsgl",
-            "reason": "direct",
-            "validationOnly": false,
-            "expansionStack": []
-          },
-          {
             "generatedPath": "/multipart/0",
             "sourceFile": "direct-blockstate-modes.rsgl",
             "reason": "direct",
@@ -48,7 +41,56 @@
             "expansionStack": []
           },
           {
+            "generatedPath": "/multipart/0/apply",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/0/apply/model",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
             "generatedPath": "/multipart/1",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/1/apply",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/1/apply/model",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/1/apply/uvlock",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart/1/when",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/multipart",
             "sourceFile": "direct-blockstate-modes.rsgl",
             "reason": "direct",
             "validationOnly": false,
@@ -87,14 +129,63 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
+            "generatedPath": "/variants/facing=north",
             "sourceFile": "direct-blockstate-modes.rsgl",
             "reason": "direct",
             "validationOnly": false,
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants/facing=north",
+            "generatedPath": "/variants/facing=north/0",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north/0/model",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north/0/weight",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north/1",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north/1/model",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north/1/y",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants/facing=north/1/uvlock",
+            "sourceFile": "direct-blockstate-modes.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
             "sourceFile": "direct-blockstate-modes.rsgl",
             "reason": "direct",
             "validationOnly": false,
@@ -166,15 +257,6 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/multipart",
-            "sourceFile": "implicit-multipart-body-template.rsgl",
-            "reason": "template",
-            "validationOnly": false,
-            "expansionStack": [
-              "use fenceMultipart"
-            ]
-          },
-          {
             "generatedPath": "/multipart/0",
             "sourceFile": "implicit-multipart-body-template.rsgl",
             "reason": "template",
@@ -184,7 +266,65 @@
             ]
           },
           {
+            "generatedPath": "/multipart/0/apply",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/0/apply/model",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart"
+            ]
+          },
+          {
             "generatedPath": "/multipart/1",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/1/apply",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/1/apply/model",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/1/apply/uvlock",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/1/when",
             "sourceFile": "implicit-multipart-body-template.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -204,7 +344,107 @@
             ]
           },
           {
+            "generatedPath": "/multipart/2/apply",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/2/apply/model",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/2/apply/y",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/2/apply/uvlock",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/2/when",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/multipart/3",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/3/apply",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/3/apply/model",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/3/apply/y",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/3/apply/uvlock",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/3/when",
             "sourceFile": "implicit-multipart-body-template.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -221,6 +461,65 @@
             "expansionStack": [
               "use fenceMultipart",
               "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/4/apply",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/4/apply/model",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/4/apply/y",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/4/apply/uvlock",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart/4/when",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/multipart",
+            "sourceFile": "implicit-multipart-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use fenceMultipart"
             ]
           }
         ]
@@ -251,15 +550,6 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
-            "sourceFile": "implicit-variants-body-template.rsgl",
-            "reason": "template",
-            "validationOnly": false,
-            "expansionStack": [
-              "use poweredVariants"
-            ]
-          },
-          {
             "generatedPath": "/variants/powered=false",
             "sourceFile": "implicit-variants-body-template.rsgl",
             "reason": "template",
@@ -269,7 +559,34 @@
             ]
           },
           {
+            "generatedPath": "/variants/powered=false/model",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use poweredVariants"
+            ]
+          },
+          {
             "generatedPath": "/variants/powered=true",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use poweredVariants"
+            ]
+          },
+          {
+            "generatedPath": "/variants/powered=true/model",
+            "sourceFile": "implicit-variants-body-template.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use poweredVariants"
+            ]
+          },
+          {
+            "generatedPath": "/variants",
             "sourceFile": "implicit-variants-body-template.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -307,6 +624,15 @@
             "expansionStack": []
           },
           {
+            "generatedPath": "",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use rootMetadata"
+            ]
+          },
+          {
             "generatedPath": "/custom",
             "sourceFile": "root-merge-value-helper.rsgl",
             "reason": "template",
@@ -334,6 +660,13 @@
             ]
           },
           {
+            "generatedPath": "",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
             "generatedPath": "/custom",
             "sourceFile": "root-merge-value-helper.rsgl",
             "reason": "direct",
@@ -348,14 +681,21 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
+            "generatedPath": "/variants/",
             "sourceFile": "root-merge-value-helper.rsgl",
             "reason": "direct",
             "validationOnly": false,
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants/",
+            "generatedPath": "/variants//model",
+            "sourceFile": "root-merge-value-helper.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
+          },
+          {
+            "generatedPath": "/variants",
             "sourceFile": "root-merge-value-helper.rsgl",
             "reason": "direct",
             "validationOnly": false,
@@ -392,7 +732,7 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
+            "generatedPath": "/variants/type=bottom",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -401,7 +741,7 @@
             ]
           },
           {
-            "generatedPath": "/variants/type=bottom",
+            "generatedPath": "/variants/type=bottom/model",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -419,7 +759,34 @@
             ]
           },
           {
+            "generatedPath": "/variants/type=top/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          },
+          {
             "generatedPath": "/variants/type=double",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          },
+          {
+            "generatedPath": "/variants/type=double/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use slab"
+            ]
+          },
+          {
+            "generatedPath": "/variants",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -654,16 +1021,37 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
+            "generatedPath": "/variants/facing=north,half=bottom,shape=straight",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
             "expansionStack": [
-              "use stairs"
+              "use stairs",
+              "for"
             ]
           },
           {
-            "generatedPath": "/variants/facing=north,half=bottom,shape=straight",
+            "generatedPath": "/variants/facing=north,half=bottom,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=straight/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=straight/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -683,7 +1071,47 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=bottom,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=straight/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=straight/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -703,7 +1131,67 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=straight/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=straight/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=bottom,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_left/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -723,7 +1211,47 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=inner_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=inner_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=bottom,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=inner_left/model",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -743,7 +1271,67 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=bottom,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=inner_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -763,7 +1351,47 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=bottom,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=inner_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=inner_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -783,7 +1411,67 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=inner_right/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=bottom,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_left/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -803,7 +1491,47 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=outer_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=outer_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=bottom,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=outer_left/model",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -823,7 +1551,67 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=bottom,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=bottom,shape=outer_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -843,7 +1631,47 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=bottom,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=bottom,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=outer_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=bottom,shape=outer_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -863,7 +1691,77 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=bottom,shape=outer_right/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=top,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=straight/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=straight/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=straight/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -883,7 +1781,77 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=top,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=straight/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=straight/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=top,shape=straight",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=straight/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=straight/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=straight/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -903,7 +1871,87 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=top,shape=straight/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=straight/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=straight/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=straight/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=top,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_left/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -923,7 +1971,77 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=top,shape=inner_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_left/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -943,7 +2061,77 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=top,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=inner_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -963,7 +2151,87 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=inner_right/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=top,shape=inner_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=inner_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -983,7 +2251,87 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=inner_right/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=top,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_left/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -1003,7 +2351,77 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=top,shape=outer_left",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_left/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -1023,7 +2441,77 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_left/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_left/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_left/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_left/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=north,half=top,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=north,half=top,shape=outer_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -1043,7 +2531,87 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,half=top,shape=outer_right/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=south,half=top,shape=outer_right",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=south,half=top,shape=outer_right/uvlock",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -1060,6 +2628,55 @@
             "expansionStack": [
               "use stairs",
               "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_right/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_right/x",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_right/y",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=west,half=top,shape=outer_right/uvlock",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_fragments.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stairs"
             ]
           }
         ]
@@ -1093,16 +2710,17 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
+            "generatedPath": "/variants/age=0",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
             "reason": "template",
             "validationOnly": false,
             "expansionStack": [
-              "use stateSequence"
+              "use stateSequence",
+              "for"
             ]
           },
           {
-            "generatedPath": "/variants/age=0",
+            "generatedPath": "/variants/age=0/model",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
             "reason": "template",
             "validationOnly": false,
@@ -1122,6 +2740,16 @@
             ]
           },
           {
+            "generatedPath": "/variants/age=1/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence",
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/age=2",
             "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
             "reason": "template",
@@ -1129,6 +2757,25 @@
             "expansionStack": [
               "use stateSequence",
               "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/age=2/model",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence",
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "<rsgl-stdlib>/conventions/blockstate_tables.rsgl",
+            "reason": "template",
+            "validationOnly": false,
+            "expansionStack": [
+              "use stateSequence"
             ]
           }
         ]
@@ -1167,14 +2814,16 @@
             "expansionStack": []
           },
           {
-            "generatedPath": "/variants",
+            "generatedPath": "/variants/facing=north,powered=false",
             "sourceFile": "typed-lambda-id-collection.rsgl",
-            "reason": "direct",
+            "reason": "loop",
             "validationOnly": false,
-            "expansionStack": []
+            "expansionStack": [
+              "for"
+            ]
           },
           {
-            "generatedPath": "/variants/facing=north,powered=false",
+            "generatedPath": "/variants/facing=north,powered=false/model",
             "sourceFile": "typed-lambda-id-collection.rsgl",
             "reason": "loop",
             "validationOnly": false,
@@ -1192,7 +2841,34 @@
             ]
           },
           {
+            "generatedPath": "/variants/facing=north,powered=true/model",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
             "generatedPath": "/variants/facing=east,powered=false",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,powered=false/model",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,powered=false/y",
             "sourceFile": "typed-lambda-id-collection.rsgl",
             "reason": "loop",
             "validationOnly": false,
@@ -1208,6 +2884,31 @@
             "expansionStack": [
               "for"
             ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,powered=true/model",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants/facing=east,powered=true/y",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "loop",
+            "validationOnly": false,
+            "expansionStack": [
+              "for"
+            ]
+          },
+          {
+            "generatedPath": "/variants",
+            "sourceFile": "typed-lambda-id-collection.rsgl",
+            "reason": "direct",
+            "validationOnly": false,
+            "expansionStack": []
           }
         ]
       }
@@ -1682,9 +3383,64 @@
   ],
   "diagnostics": [
     {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateEntryArrow",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateWrapper",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateWrapper",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
+      "code": "rsgl.legacyStateKeySugar",
+      "severity": "warning",
+      "fileName": "direct-blockstate-modes.rsgl"
+    },
+    {
       "code": "rsgl.implicitTemplateOutputDialect",
       "severity": "warning",
       "fileName": "implicit-model-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "implicit-multipart-body-template.rsgl"
     },
     {
       "code": "rsgl.implicitTemplateOutputDialect",
@@ -1692,14 +3448,129 @@
       "fileName": "implicit-multipart-body-template.rsgl"
     },
     {
-      "code": "rsgl.implicitTemplateOutputDialect",
+      "code": "rsgl.legacyBlockstateWrapper",
+      "severity": "warning",
+      "fileName": "implicit-multipart-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "implicit-multipart-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "implicit-multipart-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
       "severity": "warning",
       "fileName": "implicit-variants-body-template.rsgl"
     },
     {
       "code": "rsgl.implicitTemplateOutputDialect",
       "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateEntryArrow",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateEntryArrow",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateWrapper",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyStateKeySugar",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.legacyStateKeySugar",
+      "severity": "warning",
+      "fileName": "implicit-variants-body-template.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
       "fileName": "root-merge-value-helper.rsgl"
+    },
+    {
+      "code": "rsgl.implicitTemplateOutputDialect",
+      "severity": "warning",
+      "fileName": "root-merge-value-helper.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateEntryArrow",
+      "severity": "warning",
+      "fileName": "root-merge-value-helper.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateWrapper",
+      "severity": "warning",
+      "fileName": "root-merge-value-helper.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "root-merge-value-helper.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "stdlib-blockstate-conventions.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "stdlib-blockstate-conventions.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "stdlib-blockstate-conventions.rsgl"
+    },
+    {
+      "code": "rsgl.blockstateModeRequired",
+      "severity": "warning",
+      "fileName": "typed-lambda-id-collection.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateEntryArrow",
+      "severity": "warning",
+      "fileName": "typed-lambda-id-collection.rsgl"
+    },
+    {
+      "code": "rsgl.legacyBlockstateWrapper",
+      "severity": "warning",
+      "fileName": "typed-lambda-id-collection.rsgl"
+    },
+    {
+      "code": "rsgl.legacyModelApplySugar",
+      "severity": "warning",
+      "fileName": "typed-lambda-id-collection.rsgl"
+    },
+    {
+      "code": "rsgl.legacyStateKeySugar",
+      "severity": "warning",
+      "fileName": "typed-lambda-id-collection.rsgl"
     }
   ]
 }

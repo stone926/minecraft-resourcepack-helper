@@ -11,11 +11,11 @@ const expectedResourceCount = 729;
 const expectedSourceFileCount = 32;
 const expectedLegacySurfaceCounts = {
   blockstateDeclarations: 28,
-  variantsWrappers: 18,
-  multipartWrappers: 8,
-  templateDeterminedBlockstates: 2,
-  stateKeySugar: 23,
-  modelApplySugar: 10
+  variantsWrappers: 0,
+  multipartWrappers: 0,
+  templateDeterminedBlockstates: 0,
+  stateKeySugar: 0,
+  modelApplySugar: 0
 };
 const allowedErrorCodes = new Set(["rsgl.undeclaredExternalResource"]);
 const allowedWarningCodes = new Set(["rsgl.unresolvedTextureVariable"]);
@@ -144,10 +144,12 @@ function collectLegacySurface(sourceFiles, walkRsglModule, sourceRoot) {
         if (statement.kind === "ResourceDecl" && statement.resourceKind === "blockstate") {
           counts.blockstateDeclarations++;
           const directKinds = statement.body.statements.map(child => child.kind);
+          const isLegacyDeclaration = statement.blockstateSyntax !== "modeHeader";
           counts.variantsWrappers += directKinds.filter(kind => kind === "VariantsSection").length;
           counts.multipartWrappers += directKinds.filter(kind => kind === "MultipartSection").length;
           if (
-            !directKinds.includes("VariantsSection")
+            isLegacyDeclaration
+            && !directKinds.includes("VariantsSection")
             && !directKinds.includes("MultipartSection")
             && directKinds.includes("UseDecl")
           ) {

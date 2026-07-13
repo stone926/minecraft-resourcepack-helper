@@ -71,6 +71,7 @@ interface MigrationCaseManifest {
       expectedDiagnostics: DiagnosticExpectation[];
       target: string;
       expectedRangeCategories?: string[];
+      equivalenceProjection?: "outputPathAndJson";
     };
   }>;
 }
@@ -153,13 +154,19 @@ describe("RSGL abstraction migration baseline", () => {
         assert.ok(fs.existsSync(canonicalSource), `${migrationCase.id} canonical source must exist`);
         const canonicalResult = compileRsglFile(canonicalSource);
         assert.deepStrictEqual(diagnosticProjection(canonicalResult), migrationCase.canonical.expectedDiagnostics);
+        const canonicalSnapshot = createRsglCompileSnapshot(canonicalResult, {
+          sourceRoot: path.dirname(canonicalSource)
+        });
+        const legacySnapshot = createRsglCompileSnapshot(result, {
+          sourceRoot: path.dirname(legacySource)
+        });
         assert.deepStrictEqual(
-          migrationResourceEquivalenceProjection(createRsglCompileSnapshot(canonicalResult, {
-            sourceRoot: path.dirname(canonicalSource)
-          })),
-          migrationResourceEquivalenceProjection(createRsglCompileSnapshot(result, {
-            sourceRoot: path.dirname(legacySource)
-          })),
+          migrationCase.canonical.equivalenceProjection === "outputPathAndJson"
+            ? migrationOutputEquivalenceProjection(canonicalSnapshot)
+            : migrationResourceEquivalenceProjection(canonicalSnapshot),
+          migrationCase.canonical.equivalenceProjection === "outputPathAndJson"
+            ? migrationOutputEquivalenceProjection(legacySnapshot)
+            : migrationResourceEquivalenceProjection(legacySnapshot),
           `${migrationCase.id} canonical output must remain equivalent to its legacy source`
         );
       }
@@ -184,19 +191,38 @@ describe("RSGL abstraction migration baseline", () => {
 
     assert.deepStrictEqual(actual, expected);
     assert.strictEqual(actual.resources.length, 12);
-    assert.deepStrictEqual(actual.diagnostics.map(item => item.code), [
-      "rsgl.implicitTemplateOutputDialect",
-      "rsgl.implicitTemplateOutputDialect",
-      "rsgl.implicitTemplateOutputDialect",
-      "rsgl.implicitTemplateOutputDialect"
-    ]);
+    assert.deepStrictEqual(
+      Object.fromEntries([...actual.diagnostics.reduce((counts, diagnostic) => {
+        counts.set(diagnostic.code, (counts.get(diagnostic.code) ?? 0) + 1);
+        return counts;
+      }, new Map<string, number>())].sort(([left], [right]) => compareOrdinal(left, right))),
+      {
+        "rsgl.blockstateModeRequired": 9,
+        "rsgl.implicitTemplateOutputDialect": 4,
+        "rsgl.legacyBlockstateEntryArrow": 5,
+        "rsgl.legacyBlockstateWrapper": 6,
+        "rsgl.legacyModelApplySugar": 10,
+        "rsgl.legacyStateKeySugar": 4
+      }
+    );
 
     const stairs = actual.resources.find(resource => resource.outputPath.endsWith("stdlib_stairs.json"));
     const slab = actual.resources.find(resource => resource.outputPath.endsWith("stdlib_slab.json"));
     const sequence = actual.resources.find(resource => resource.outputPath.endsWith("stdlib_state_sequence.json"));
+    const rootMetadata = actual.resources.find(resource => resource.outputPath.endsWith("root_merge_value_helper.json"));
     assert.strictEqual(Object.keys((stairs?.content as { variants: object }).variants).length, 40);
     assert.ok(slab);
     assert.ok(sequence);
+    assert.deepStrictEqual(rootMetadata?.content, {
+      custom: {
+        enabled: true,
+        label: "value-helper",
+        source: "template"
+      },
+      variants: {
+        "": { model: "minecraft:block/stone" }
+      }
+    });
     assert.ok([stairs, slab, sequence].every(resource =>
       resource?.sourceMap.mappings.some(mapping => mapping.sourceFile.startsWith("<rsgl-stdlib>/"))
     ));
@@ -327,10 +353,29 @@ function migrationResourceEquivalenceProjection(snapshot: RsglCompileSnapshot): 
         ...resource.sourceMap,
         mappings: resource.sourceMap.mappings.map(mapping => ({
           ...mapping,
-          sourceFile: mapping.sourceFile.startsWith("<") ? mapping.sourceFile : "<case-source>"
+          sourceFile: mapping.sourceFile.startsWith("<") ? mapping.sourceFile : "<case-source>",
+          ...(
+            mapping.generatedPath === "/variants" || mapping.generatedPath === "/multipart"
+              ? {
+                  reason: "direct" as const,
+                  sourceFile: "<mode-header>",
+                  expansionStack: []
+                }
+              : {}
+          )
         }))
       }
     }));
+}
+
+function migrationOutputEquivalenceProjection(snapshot: RsglCompileSnapshot): Array<{
+  outputPath: string;
+  content: unknown;
+}> {
+  return snapshot.resources.map(resource => ({
+    outputPath: resource.outputPath,
+    content: resource.content
+  }));
 }
 
 function sortDefinitions(

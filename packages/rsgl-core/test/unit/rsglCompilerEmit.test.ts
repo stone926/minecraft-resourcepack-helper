@@ -36,10 +36,8 @@ describe("RSGL compiler emit and write pipeline", () => {
       "item diamond {",
       "  model minecraft:item/diamond",
       "}",
-      "blockstate stone {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/stone }",
-      "  }",
+      "blockstate variants stone {",
+      "  {}: { model: minecraft:block/stone }",
       "}"
     ], { fileName: "pack/rsgl/main.rsgl" });
 
@@ -177,7 +175,7 @@ describe("RSGL compiler emit and write pipeline", () => {
     const sourceMap = JSON.parse(emittedContent(files.find(file => file.outputPath.endsWith("end.txt.rsgl.map")))) as {
       mappings?: Array<{ generatedPath?: string; sourceFile?: string }>;
     };
-    assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), ["", ""]);
+    assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), ["", "", ""]);
     assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
 
     const manifest = JSON.parse(emittedContent(files.find(file => file.outputPath === "rsgl.manifest.json"))) as {
@@ -296,8 +294,8 @@ describe("RSGL compiler emit and write pipeline", () => {
   it("materializes only used extern resources and records concrete manifest dependencies", () => {
     const result = compileSource([
       "extern custom model minecraft:block/stone, minecraft:block/unused",
-      "blockstate stone {",
-      "  variants { {} -> { model: minecraft:block/stone } }",
+      "blockstate variants stone {",
+      "  {}: { model: minecraft:block/stone }",
       "}"
     ], {
       externResourceExists: (source, kind, id) =>
@@ -361,8 +359,8 @@ describe("RSGL compiler emit and write pipeline", () => {
     const result = compileSource([
       "extern custom model minecraft:block/missing_model",
       "extern vanilla texture minecraft:block/missing_texture",
-      "blockstate missing_block {",
-      "  variants { {} -> { model: minecraft:block/missing_model } }",
+      "blockstate variants missing_block {",
+      "  {}: { model: minecraft:block/missing_model }",
       "}",
       "model block missing_texture_user {",
       "  textures { all: minecraft:block/missing_texture }",

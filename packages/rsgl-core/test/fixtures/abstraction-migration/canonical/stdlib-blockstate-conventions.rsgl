@@ -12,7 +12,7 @@ extern! vanilla model minecraft:block/oak_slab_top
 extern! vanilla model minecraft:block/oak_planks
 extern! vanilla model minecraft:block/**
 
-blockstate abstraction/stdlib_stairs {
+blockstate variants abstraction/stdlib_stairs {
   use stairs(
     base: minecraft:block/oak_stairs,
     inner: minecraft:block/oak_stairs_inner,
@@ -20,7 +20,7 @@ blockstate abstraction/stdlib_stairs {
   )
 }
 
-blockstate abstraction/stdlib_slab {
+blockstate variants abstraction/stdlib_slab {
   use slab(
     bottom: minecraft:block/oak_slab,
     top: minecraft:block/oak_slab_top,
@@ -28,7 +28,7 @@ blockstate abstraction/stdlib_slab {
   )
 }
 
-blockstate abstraction/stdlib_state_sequence {
+blockstate variants abstraction/stdlib_state_sequence {
   use stateSequence(
     key: "age",
     values: 0..2,

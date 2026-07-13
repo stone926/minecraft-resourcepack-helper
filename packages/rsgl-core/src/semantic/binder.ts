@@ -1,7 +1,9 @@
 import {
   ExprNode,
   ExternDeclNode,
+  ForStmtNode,
   IdentifierNode,
+  LegacyBlockstateRootBodyNode,
   ResourceDeclNode,
   RsglDiagnostic,
   RsglModule,
@@ -10,6 +12,8 @@ import {
   TopLevelStatementNode
 } from "../parser";
 import { externResourceKindDescription, getExternResourceKind } from "../resourceKinds";
+import { inferStaticBlockstateMode } from "../blockstateModeEvidence";
+import { walkRsglExpression } from "../parser/astTraversal";
 import { createBuiltinSymbols } from "./builtins";
 import { diagnostic } from "./diagnostics";
 import { finiteStringDomain } from "./domainChecks";
@@ -24,6 +28,7 @@ import {
   validateResourceLocationLike
 } from "./expressionChecker";
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
+import { applyLegacyBlockstateMode, resolveLegacyBlockstateMode } from "./blockstateModeInference";
 import { createChildScope, createScope, lookup } from "./scopes";
 import {
   inferResolvedTemplateOutputMetadata,
@@ -38,11 +43,16 @@ import {
   RsglBindOptions,
   RsglExportRecord,
   RsglImportRecord,
+  RsglLegacyBlockstateRootRecord,
   RsglOutputResourcePreview,
   RsglReferenceRecord,
   RsglScope,
   RsglSemanticModel,
   RsglSymbol,
+  RsglBlockstateApplyFact,
+  RsglBlockstateApplyRecord,
+  RsglBlockstateApplySiteNode,
+  RsglBlockstateContextualExpressionRecord,
   RsglContextualTextureSinkRecord,
   RsglTemplateUseRecord,
   RsglType,
@@ -75,7 +85,11 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly importCallScopes = new Map<ExprNode, RsglScope>();
   private readonly templateUses: RsglTemplateUseRecord[] = [];
+  private readonly legacyBlockstateRoots: RsglLegacyBlockstateRootRecord[] = [];
   private readonly contextualTextureSinks: RsglContextualTextureSinkRecord[] = [];
+  private readonly blockstateApplyFacts = new Map<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>();
+  private readonly blockstateApplyRecords: RsglBlockstateApplyRecord[] = [];
+  private readonly blockstateContextualExpressionRecords: RsglBlockstateContextualExpressionRecord[] = [];
   private readonly unsupportedDefaultImportNames = new Set<string>();
   private readonly globalScope: RsglScope = createScope("global");
   private readonly bodyChecker: RsglResourceBodyChecker;
@@ -93,7 +107,7 @@ class RsglBinder implements RsglExpressionCheckContext {
     }, (expression, scope, callerContext) => {
       this.templateUses.push({
         expression,
-        scope: snapshotScope(scope),
+        scope: snapshotScope(scope, [expression]),
         callerContext,
         enclosingTemplate: this.enclosingTemplate
       });
@@ -102,10 +116,21 @@ class RsglBinder implements RsglExpressionCheckContext {
         this.contextualTextureSinks.push({
           expression,
           actualType,
-          scope: snapshotScope(scope),
+          scope: snapshotScope(scope, [expression]),
           enclosingTemplate: this.enclosingTemplate
         });
       }
+    }, (node, scope, fact) => {
+      this.blockstateApplyFacts.set(node, fact);
+      this.blockstateApplyRecords.push({
+        node,
+        scope: snapshotScope(scope, blockstateApplySiteExpressions(node))
+      });
+    }, (record, scope) => {
+      this.blockstateContextualExpressionRecords.push({
+        ...record,
+        scope: snapshotScope(scope, [record.expression])
+      } as RsglBlockstateContextualExpressionRecord);
     });
   }
 
@@ -132,12 +157,16 @@ class RsglBinder implements RsglExpressionCheckContext {
       namespace: this.namespace,
       importCallScopes: this.importCallScopes,
       templateUses: this.templateUses,
-      contextualTextureSinks: this.contextualTextureSinks
+      legacyBlockstateRoots: this.legacyBlockstateRoots,
+      contextualTextureSinks: this.contextualTextureSinks,
+      blockstateApplyFacts: this.blockstateApplyFacts,
+      blockstateApplyRecords: this.blockstateApplyRecords,
+      blockstateContextualExpressionRecords: this.blockstateContextualExpressionRecords
     };
   }
 
   public recordImportCallScope(expression: ExprNode, scope: RsglScope): void {
-    this.importCallScopes.set(expression, snapshotScope(scope));
+    this.importCallScopes.set(expression, snapshotScope(scope, [expression]));
   }
 
   public isUndefinedSymbolDiagnosticSuppressed(name: string): boolean {
@@ -210,7 +239,7 @@ class RsglBinder implements RsglExpressionCheckContext {
         checkTemplateUseExpression(this, statement.expression, scope);
         this.templateUses.push({
           expression: statement.expression,
-          scope: snapshotScope(scope),
+          scope: snapshotScope(scope, [statement.expression]),
           callerContext,
           enclosingTemplate: this.enclosingTemplate
         });
@@ -275,12 +304,42 @@ class RsglBinder implements RsglExpressionCheckContext {
     if (statement.impl) {
       this.checkModelImpl(statement.impl, scope);
     }
-    this.bodyChecker.checkResourceBody(
-      statement.body,
-      createChildScope(scope, "block"),
-      statement.resourceKind,
-      resourceDeclarationCallerContext(statement)
-    );
+    const bodyScope = createChildScope(scope, "block");
+    const templateUseStart = this.templateUses.length;
+    const legacyMode = statement.resourceKind === "blockstate"
+      && statement.blockstateSyntax !== "modeHeader"
+      ? inferLegacyBlockstateMode(statement.body)
+      : undefined;
+    const callerContext = resourceDeclarationCallerContext(statement, legacyMode?.mode);
+    if (statement.resourceKind === "blockstate") {
+      this.bodyChecker.checkBody(statement.body, bodyScope, callerContext);
+    } else {
+      this.bodyChecker.checkResourceBody(
+        statement.body,
+        bodyScope,
+        statement.resourceKind,
+        callerContext
+      );
+    }
+    if (statement.resourceKind === "blockstate" && statement.blockstateSyntax !== "modeHeader") {
+      const record: RsglLegacyBlockstateRootRecord = {
+        range: statement.body.range,
+        directModes: legacyMode?.modes ?? [],
+        uses: this.templateUses.slice(templateUseStart).filter(use =>
+          use.callerContext?.kind === "blockstateRoot"
+        )
+      };
+      const resolvedMode = resolveLegacyBlockstateMode(record);
+      applyLegacyBlockstateMode(record, resolvedMode);
+      this.legacyBlockstateRoots.push(record);
+      if (resolvedMode.conflict) {
+        this.diagnostics.push(diagnostic(
+          "rsgl.blockstateModeConflict",
+          "A legacy blockstate body contains both variants and multipart evidence; select one mode in the declaration header.",
+          statement.body.range
+        ));
+      }
+    }
   }
 
   private checkModelImpl(expression: ExprNode, scope: RsglScope): void {
@@ -438,18 +497,76 @@ class RsglBinder implements RsglExpressionCheckContext {
 
 const resourcesCallerContext: RsglTemplateCallerContext = { kind: "resources" };
 
-function resourceDeclarationCallerContext(statement: ResourceDeclNode): RsglTemplateCallerContext {
+function resourceDeclarationCallerContext(
+  statement: ResourceDeclNode,
+  inferredLegacyMode: "variants" | "multipart" | undefined = undefined
+): RsglTemplateCallerContext {
   if (statement.resourceKind !== "blockstate") {
     return { kind: "resourceBody", resourceKind: statement.resourceKind };
   }
-  const hasVariants = statement.body.statements.some(child => child.kind === "VariantsSection");
-  const hasMultipart = statement.body.statements.some(child => child.kind === "MultipartSection");
   return {
     kind: "blockstateRoot",
-    mode: hasVariants === hasMultipart ? "neutral" : hasVariants ? "variants" : "multipart",
+    mode: statement.blockstateSyntax === "modeHeader"
+      ? statement.mode
+      : inferredLegacyMode ?? "neutral",
     allowRootMerge: true,
     allowBase: true
   };
+}
+
+interface LegacyBlockstateModeEvidence {
+  modes: readonly ("variants" | "multipart")[];
+  mode?: "variants" | "multipart";
+}
+
+function inferLegacyBlockstateMode(body: LegacyBlockstateRootBodyNode): LegacyBlockstateModeEvidence {
+  const modes = new Set<"variants" | "multipart">();
+  collectLegacyBlockstateModeEvidence(body, modes);
+  const values = Array.from(modes);
+  return {
+    modes: values,
+    mode: values.length === 1 ? values[0] : undefined
+  };
+}
+
+function collectLegacyBlockstateModeEvidence(
+  body: LegacyBlockstateRootBodyNode | ForStmtNode["body"],
+  modes: Set<"variants" | "multipart">
+): void {
+  if (!("statements" in body) || !Array.isArray(body.statements)) {
+    return;
+  }
+  if (body.kind === "VariantBody" || body.kind === "BlockstateVariantsRootBody") {
+    modes.add("variants");
+  } else if (body.kind === "MultipartBody" || body.kind === "BlockstateMultipartRootBody") {
+    modes.add("multipart");
+  }
+  for (const statement of body.statements) {
+    if (statement.kind === "VariantsSection"
+      || statement.kind === "VariantEntry"
+      || statement.kind === "BlockstateVariantEntry") {
+      modes.add("variants");
+    } else if (statement.kind === "MultipartSection"
+      || statement.kind === "MultipartEntry"
+      || statement.kind === "BlockstateMultipartEntry") {
+      modes.add("multipart");
+    } else if (statement.kind === "MergeStmt") {
+      const evidence = inferStaticBlockstateMode(statement.value);
+      if (evidence === "variants" || evidence === "conflict") {
+        modes.add("variants");
+      }
+      if (evidence === "multipart" || evidence === "conflict") {
+        modes.add("multipart");
+      }
+    } else if (statement.kind === "ForStmt") {
+      collectLegacyBlockstateModeEvidence(statement.body, modes);
+    } else if (statement.kind === "IfStmt") {
+      collectLegacyBlockstateModeEvidence(statement.thenBody, modes);
+      if (statement.elseBody) {
+        collectLegacyBlockstateModeEvidence(statement.elseBody, modes);
+      }
+    }
+  }
 }
 
 function expressionToStaticText(expression: ExprNode): string | undefined {
@@ -466,19 +583,47 @@ function expressionToStaticText(expression: ExprNode): string | undefined {
 }
 
 /**
- * Freezes the scope chain as the call site sees it. Local scopes (resource
- * bodies have no predeclare pass) keep accreting symbols after the call is
- * bound, so a live reference would let post-resolution validation accept
- * forward references the bind-time check rejects. The complete global scope is
- * shared as-is.
+ * Freezes only bindings referenced by the recorded expression. Local scopes
+ * keep accreting symbols after a site is bound, while cloning every accumulated
+ * map at every blockstate entry is quadratic. A flattened lexical overlay
+ * preserves the winning symbol for each referenced name; the complete global
+ * scope remains shared so the program linker can replace provisional imports.
  */
-function snapshotScope(scope: RsglScope): RsglScope {
+function snapshotScope(scope: RsglScope, expressions: readonly ExprNode[]): RsglScope {
   if (scope.kind === "global") {
     return scope;
   }
+  const names = new Set<string>();
+  for (const expression of expressions) {
+    walkRsglExpression(expression, {
+      enterExpression(node) {
+        if (node.kind === "IdentifierExpr") {
+          names.add(node.name.text);
+        }
+      }
+    });
+  }
+  const symbols = new Map<string, RsglSymbol>();
+  for (const name of names) {
+    let owner: RsglScope | undefined = scope;
+    while (owner && !owner.symbols.has(name)) {
+      owner = owner.parent;
+    }
+    if (owner && owner.kind !== "global") {
+      symbols.set(name, owner.symbols.get(name)!);
+    }
+  }
+  let global: RsglScope = scope;
+  while (global.parent) {
+    global = global.parent;
+  }
   return {
     kind: scope.kind,
-    parent: scope.parent ? snapshotScope(scope.parent) : undefined,
-    symbols: new Map(scope.symbols)
+    parent: global,
+    symbols
   };
+}
+
+function blockstateApplySiteExpressions(node: RsglBlockstateApplySiteNode): ExprNode[] {
+  return [node.head, ...node.properties.map(property => property.value)];
 }

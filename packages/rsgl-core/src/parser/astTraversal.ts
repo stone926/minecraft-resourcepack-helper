@@ -1,6 +1,10 @@
 import {
   BlockNode,
+  BlockstateApplyValueNode,
+  BlockstateMultipartRootBodyNode,
+  BlockstateVariantsRootBodyNode,
   ExprNode,
+  LegacyBlockstateRootBodyNode,
   MultipartBodyNode,
   ObjectPropertyNode,
   ResourceBodyNode,
@@ -18,7 +22,14 @@ export interface RsglAstVisitor {
   leaveExpression?(expression: ExprNode): void;
 }
 
-type RsglBody = BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
+type RsglBody =
+  | BlockNode
+  | ResourceBodyNode
+  | VariantBodyNode
+  | MultipartBodyNode
+  | BlockstateVariantsRootBodyNode
+  | BlockstateMultipartRootBodyNode
+  | LegacyBlockstateRootBodyNode;
 
 /**
  * Walks every statement and expression in deterministic structural order.
@@ -26,6 +37,11 @@ type RsglBody = BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNo
  */
 export function walkRsglModule(module: RsglModule, visitor: RsglAstVisitor): void {
   module.statements.forEach(statement => walkStatement(statement, visitor));
+}
+
+/** Walks one expression without requiring a synthetic module wrapper. */
+export function walkRsglExpression(expression: ExprNode, visitor: RsglAstVisitor): void {
+  walkExpression(expression, visitor);
 }
 
 function walkBody(body: RsglBody, visitor: RsglAstVisitor): void {
@@ -119,11 +135,21 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       walkExpression(statement.state, visitor);
       walkExpression(statement.value, visitor);
       break;
+    case "BlockstateVariantEntry":
+      walkExpression(statement.selector, visitor);
+      walkBlockstateApplyValue(statement.value, visitor);
+      break;
     case "MultipartEntry":
       if (statement.when) {
         walkExpression(statement.when, visitor);
       }
       walkExpression(statement.apply, visitor);
+      break;
+    case "BlockstateMultipartEntry":
+      if (statement.when) {
+        walkExpression(statement.when, visitor);
+      }
+      walkBlockstateApplyValue(statement.apply, visitor);
       break;
     case "PackFormatsStmt":
       if (statement.min) {
@@ -238,6 +264,21 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
   }
 
   visitor.leaveStatement?.(statement);
+}
+
+function walkBlockstateApplyValue(
+  value: BlockstateApplyValueNode,
+  visitor: RsglAstVisitor
+): void {
+  if (value.kind === "BlockstateApplyExpr") {
+    walkExpression(value.head, visitor);
+    value.properties.forEach(property => walkExpression(property.value, visitor));
+    return;
+  }
+  value.items.forEach(item => {
+    walkExpression(item.head, visitor);
+    item.properties.forEach(property => walkExpression(property.value, visitor));
+  });
 }
 
 function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {

@@ -65,4 +65,50 @@ describe("RSGL formatter core", () => {
     assert.ok(formatted.includes(") -> model {"));
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
+
+  it("keeps canonical blockstate bodies and multiline apply properties stable", () => {
+    const formatted = formatRsglText([
+      "blockstate variants stairs {",
+      "{ facing: north }: random [",
+      "minecraft:block/stairs x=90 uvlock=true weight=2",
+      "minecraft:block/stairs_inner y=180",
+      "]",
+      "merge deep {",
+      "custom: { enabled: true }",
+      "}",
+      "}"
+    ].join("\n"));
+
+    assert.strictEqual(formatted, [
+      "blockstate variants stairs {",
+      "  { facing: north }: random [",
+      "    minecraft:block/stairs x=90 uvlock=true weight=2",
+      "    minecraft:block/stairs_inner y=180",
+      "  ]",
+      "  merge deep {",
+      "    custom: { enabled: true }",
+      "  }",
+      "}"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
+  it("indents legacy blockstate syntax without migrating its tokens", () => {
+    const formatted = formatRsglText([
+      "blockstate stairs {",
+      "variants {",
+      "[facing=north] -> @minecraft:block/stairs x=90",
+      "}",
+      "}"
+    ].join("\n"));
+
+    assert.strictEqual(formatted, [
+      "blockstate stairs {",
+      "  variants {",
+      "    [facing=north] -> @minecraft:block/stairs x=90",
+      "  }",
+      "}"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
 });

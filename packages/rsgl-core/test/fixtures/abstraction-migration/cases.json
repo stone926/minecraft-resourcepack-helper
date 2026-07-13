@@ -85,7 +85,15 @@
         "status": "executable",
         "source": "legacy/implicit-variants-body-template.rsgl",
         "expectedDiagnostics": [
-          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateEntryArrow", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateEntryArrow", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateWrapper", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyStateKeySugar", "severity": "warning" },
+          { "code": "rsgl.legacyStateKeySugar", "severity": "warning" }
         ],
         "expectedTemplateOutput": {
           "templateName": "poweredVariants",
@@ -112,7 +120,11 @@
         "status": "executable",
         "source": "legacy/implicit-multipart-body-template.rsgl",
         "expectedDiagnostics": [
-          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateWrapper", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" }
         ],
         "expectedTemplateOutput": {
           "templateName": "fenceMultipart",
@@ -138,10 +150,21 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/direct-blockstate-modes.rsgl",
-        "expectedDiagnostics": []
+        "expectedDiagnostics": [
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateEntryArrow", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateWrapper", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateWrapper", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyStateKeySugar", "severity": "warning" }
+        ]
       },
       "canonical": {
-        "status": "planned",
+        "status": "executable",
         "source": "canonical/direct-blockstate-modes.rsgl",
         "expectedDiagnostics": [],
         "target": "blockstate variants/multipart <id> with object selectors and no @ apply sugar",
@@ -155,7 +178,11 @@
         "status": "executable",
         "source": "legacy/root-merge-value-helper.rsgl",
         "expectedDiagnostics": [
-          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" }
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.implicitTemplateOutputDialect", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateEntryArrow", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateWrapper", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" }
         ],
         "expectedTemplateOutput": {
           "templateName": "rootMetadata",
@@ -166,10 +193,11 @@
         }
       },
       "canonical": {
-        "status": "planned",
+        "status": "executable",
         "source": "canonical/root-merge-value-helper.rsgl",
         "expectedDiagnostics": [],
-        "target": "Ordered root operations migrated to a value helper or full-resource factory without adding -> blockstate"
+        "target": "Ordered root operations migrated to a value helper or full-resource factory without adding -> blockstate",
+        "equivalenceProjection": "outputPathAndJson"
       }
     },
     {
@@ -178,7 +206,13 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/typed-lambda-id-collection.rsgl",
-        "expectedDiagnostics": []
+        "expectedDiagnostics": [
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateEntryArrow", "severity": "warning" },
+          { "code": "rsgl.legacyBlockstateWrapper", "severity": "warning" },
+          { "code": "rsgl.legacyModelApplySugar", "severity": "warning" },
+          { "code": "rsgl.legacyStateKeySugar", "severity": "warning" }
+        ]
       },
       "canonical": {
         "status": "planned",
@@ -208,7 +242,11 @@
       "legacy": {
         "status": "executable",
         "source": "legacy/stdlib-blockstate-conventions.rsgl",
-        "expectedDiagnostics": []
+        "expectedDiagnostics": [
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" },
+          { "code": "rsgl.blockstateModeRequired", "severity": "warning" }
+        ]
       },
       "canonical": {
         "status": "executable",

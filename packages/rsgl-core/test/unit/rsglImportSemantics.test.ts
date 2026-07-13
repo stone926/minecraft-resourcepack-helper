@@ -203,16 +203,12 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace app",
           "import { connectedPane, lampFacing } from \"./fragments.rsgl\"",
-          "blockstate lamp {",
-          "  variants {",
-          "    use lampFacing()",
-          "  }",
+          "blockstate variants lamp {",
+          "  use lampFacing()",
           "}",
-          "blockstate pane {",
-          "  multipart {",
-          "    apply { model: minecraft:block/pane_post }",
-          "    use connectedPane()",
-          "  }",
+          "blockstate multipart pane {",
+          "  apply { model: minecraft:block/pane_post }",
+          "  use connectedPane()",
           "}"
         ].join("\n"))
       },
@@ -222,7 +218,7 @@ describe("RSGL import semantics", () => {
           "namespace library",
           "let defaultModel = block/lamp",
           "template lampFacing(modelId: ModelId = defaultModel) -> variants {",
-          "    { facing: north } -> { model: modelId }",
+          "    { facing: north }: { model: modelId }",
           "}",
           "template connectedPane(side: ModelId = block/pane_side) -> multipart {",
           "    for facing in [north, east] {",
@@ -249,8 +245,9 @@ describe("RSGL import semantics", () => {
     });
     assert.deepStrictEqual(lamp?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
       "",
-      "/variants",
-      "/variants/facing=north"
+      "/variants/facing=north",
+      "/variants/facing=north/model",
+      "/variants"
     ]);
     const lampVariant = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/facing=north");
     assert.strictEqual(lampVariant?.sourceFile, fragmentsFile);
@@ -267,10 +264,20 @@ describe("RSGL import semantics", () => {
     });
     assert.deepStrictEqual(pane?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
       "",
-      "/multipart",
       "/multipart/0",
+      "/multipart/0/apply",
+      "/multipart/0/apply/model",
       "/multipart/1",
-      "/multipart/2"
+      "/multipart/1/apply",
+      "/multipart/1/apply/model",
+      "/multipart/1/apply/y",
+      "/multipart/1/when",
+      "/multipart/2",
+      "/multipart/2/apply",
+      "/multipart/2/apply/model",
+      "/multipart/2/apply/y",
+      "/multipart/2/when",
+      "/multipart"
     ]);
     const paneFragmentMappings = pane?.sourceMap.mappings.filter(mapping =>
       mapping.generatedPath === "/multipart/1" || mapping.generatedPath === "/multipart/2"
@@ -289,7 +296,7 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace app",
           "import \"./fragments.rsgl\"",
-          "blockstate lamp {",
+          "blockstate variants lamp {",
           "  use keyed(\"tilt\", `minecraft:block/${\"lamp\"}`)",
           "}"
         ].join("\n"))
@@ -299,7 +306,7 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace library",
           "template keyed(property: String, modelId: ModelId) -> variants {",
-          "    [property=full] -> @modelId",
+          "    { [property]: full }: modelId",
           "}",
           "export { keyed }"
         ].join("\n"))

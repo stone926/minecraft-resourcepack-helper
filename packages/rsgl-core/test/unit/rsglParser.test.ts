@@ -10,7 +10,11 @@ describe("RSGL parser", () => {
     for (const kind of rsglResourceKinds) {
       const source = kind === "model"
         ? "model block example {}"
-        : kind === "pack" ? "pack {}" : `${kind} example {}`;
+        : kind === "pack"
+          ? "pack {}"
+          : kind === "blockstate"
+            ? "blockstate variants example {}"
+            : `${kind} example {}`;
       const module = parseRsgl(source);
       assert.deepStrictEqual(module.diagnostics, []);
       assert.strictEqual(module.statements[0].kind, "ResourceDecl");
@@ -247,7 +251,7 @@ describe("RSGL parser", () => {
       "  }",
       "}",
       "template stateSequence(model: ModelId) -> variants {",
-      "  for state in [off, on] { [powered=state] -> { model: model } }",
+      "  for state in [off, on] { { powered: state }: { model: model } }",
       "}",
       "template connected(model: ModelId) -> multipart {",
       "  if true { when { north: true } apply { model: model } }",
@@ -437,7 +441,7 @@ describe("RSGL parser", () => {
       "  if: true",
       "}",
       "item escaped { range: 2 }",
-      "blockstate escaped { variants: {} }"
+      "blockstate variants escaped { variants: {} }"
     ].join("\n"));
 
     assert.deepStrictEqual(module.diagnostics, []);
@@ -921,7 +925,13 @@ describe("RSGL parser", () => {
       "}"
     ].join("\n"));
 
-    assert.deepStrictEqual(module.diagnostics, []);
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.blockstateModeRequired",
+      "rsgl.legacyBlockstateWrapper",
+      "rsgl.legacyStateKeySugar",
+      "rsgl.legacyBlockstateEntryArrow",
+      "rsgl.legacyModelApplySugar"
+    ]);
     const blockstate = module.statements[0];
     assert.strictEqual(blockstate.kind, "ResourceDecl");
     const variants = blockstate.body.statements[0];
@@ -938,46 +948,39 @@ describe("RSGL parser", () => {
 
   it("parses multipart entries with structured when/apply nodes", () => {
     const module = parseRsgl([
-      "blockstate minecraft:oak_fence {",
-      "  multipart {",
-      "    apply { model: minecraft:block/oak_fence_post }",
-      "    when { north: true } apply { model: minecraft:block/oak_fence_side }",
-      "  }",
+      "blockstate multipart minecraft:oak_fence {",
+      "  apply { model: minecraft:block/oak_fence_post }",
+      "  when { north: true } apply { model: minecraft:block/oak_fence_side }",
       "}"
     ].join("\n"));
 
     assert.deepStrictEqual(module.diagnostics, []);
     const blockstate = module.statements[0];
     assert.strictEqual(blockstate.kind, "ResourceDecl");
-    const multipart = blockstate.body.statements[0];
-    assert.strictEqual(multipart.kind, "MultipartSection");
-    assert.strictEqual(multipart.entries.length, 2);
-    const firstEntry = multipart.entries[0];
-    const secondEntry = multipart.entries[1];
-    assert.strictEqual(firstEntry.kind, "MultipartEntry");
-    assert.strictEqual(secondEntry.kind, "MultipartEntry");
-    if (firstEntry.kind !== "MultipartEntry" || secondEntry.kind !== "MultipartEntry") {
+    assert.strictEqual(blockstate.body.kind, "BlockstateMultipartRootBody");
+    const firstEntry = blockstate.body.statements[0];
+    const secondEntry = blockstate.body.statements[1];
+    assert.strictEqual(firstEntry.kind, "BlockstateMultipartEntry");
+    assert.strictEqual(secondEntry.kind, "BlockstateMultipartEntry");
+    if (firstEntry.kind !== "BlockstateMultipartEntry" || secondEntry.kind !== "BlockstateMultipartEntry") {
       throw new Error("Expected multipart entries.");
     }
     assert.strictEqual(firstEntry.when, undefined);
     assert.strictEqual(secondEntry.when?.kind, "ObjectExpr");
-    assert.strictEqual(secondEntry.apply.kind, "ObjectExpr");
+    assert.strictEqual(secondEntry.apply.kind, "BlockstateApplyExpr");
+    assert.strictEqual(secondEntry.apply.head.kind, "ObjectExpr");
   });
 
   it("parses control flow inside blockstate sections", () => {
     const module = parseRsgl([
-      "blockstate minecraft:lamp {",
-      "  variants {",
-      "    for state in product({ facing: [north, east], powered: [false, true] }) {",
-      "      [facing=state.facing powered=state.powered] -> { model: `minecraft:block/lamp_${state.facing}` }",
-      "    }",
+      "blockstate variants minecraft:lamp {",
+      "  for state in product({ facing: [north, east], powered: [false, true] }) {",
+      "    { facing: state.facing, powered: state.powered }: { model: `minecraft:block/lamp_${state.facing}` }",
       "  }",
       "}",
-      "blockstate minecraft:fence {",
-      "  multipart {",
-      "    if true {",
-      "      apply { model: minecraft:block/fence_post }",
-      "    }",
+      "blockstate multipart minecraft:fence {",
+      "  if true {",
+      "    apply { model: minecraft:block/fence_post }",
       "  }",
       "}"
     ].join("\n"));
@@ -985,38 +988,30 @@ describe("RSGL parser", () => {
     assert.deepStrictEqual(module.diagnostics, []);
     const lamp = module.statements[0];
     assert.strictEqual(lamp.kind, "ResourceDecl");
-    const variants = lamp.body.statements[0];
-    assert.strictEqual(variants.kind, "VariantsSection");
-    const forEntry = variants.entries[0];
+    const forEntry = lamp.body.statements[0];
     assert.strictEqual(forEntry.kind, "ForStmt");
     if (forEntry.kind !== "ForStmt") {
       throw new Error("Expected for statement.");
     }
-    assert.strictEqual(forEntry.body.kind, "VariantBody");
+    assert.strictEqual(forEntry.body.kind, "BlockstateVariantsRootBody");
 
     const fence = module.statements[1];
     assert.strictEqual(fence.kind, "ResourceDecl");
-    const multipart = fence.body.statements[0];
-    assert.strictEqual(multipart.kind, "MultipartSection");
-    const ifEntry = multipart.entries[0];
+    const ifEntry = fence.body.statements[0];
     assert.strictEqual(ifEntry.kind, "IfStmt");
     if (ifEntry.kind !== "IfStmt") {
       throw new Error("Expected if statement.");
     }
-    assert.strictEqual(ifEntry.thenBody.kind, "MultipartBody");
+    assert.strictEqual(ifEntry.thenBody.kind, "BlockstateMultipartRootBody");
   });
 
   it("parses use declarations inside blockstate sections", () => {
     const module = parseRsgl([
-      "blockstate minecraft:stairs {",
-      "  variants {",
-      "    use stairs(base: minecraft:block/stairs, inner: minecraft:block/stairs_inner, outer: minecraft:block/stairs_outer)",
-      "  }",
+      "blockstate variants minecraft:stairs {",
+      "  use stairs(base: minecraft:block/stairs, inner: minecraft:block/stairs_inner, outer: minecraft:block/stairs_outer)",
       "}",
-      "blockstate minecraft:fence {",
-      "  multipart {",
-      "    use fence(post: minecraft:block/fence_post, side: minecraft:block/fence_side)",
-      "  }",
+      "blockstate multipart minecraft:fence {",
+      "  use fence(post: minecraft:block/fence_post, side: minecraft:block/fence_side)",
       "}"
     ].join("\n"));
 
@@ -1028,15 +1023,8 @@ describe("RSGL parser", () => {
     if (stairs.kind !== "ResourceDecl" || fence.kind !== "ResourceDecl") {
       throw new Error("Expected blockstate resources.");
     }
-    const variants = stairs.body.statements[0];
-    const multipart = fence.body.statements[0];
-    assert.strictEqual(variants.kind, "VariantsSection");
-    assert.strictEqual(multipart.kind, "MultipartSection");
-    if (variants.kind !== "VariantsSection" || multipart.kind !== "MultipartSection") {
-      throw new Error("Expected blockstate sections.");
-    }
-    assert.strictEqual(variants.entries[0].kind, "UseDecl");
-    assert.strictEqual(multipart.entries[0].kind, "UseDecl");
+    assert.strictEqual(stairs.body.statements[0].kind, "UseDecl");
+    assert.strictEqual(fence.body.statements[0].kind, "UseDecl");
   });
 
   it("recovers from syntax errors and reports actionable diagnostics", () => {
@@ -1056,7 +1044,7 @@ describe("RSGL parser", () => {
     ].join("\n"));
 
     const codes = module.diagnostics.map(diagnostic => diagnostic.code);
-    assert.ok(codes.includes("rsgl.blockstateSectionConflict"));
+    assert.ok(codes.includes("rsgl.legacyBlockstateWrapper"));
     assert.ok(codes.includes("rsgl.expectedPropertyValue"));
     assert.ok(codes.includes("rsgl.expectedClosingBrace"));
   });

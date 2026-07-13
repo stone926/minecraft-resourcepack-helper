@@ -170,10 +170,8 @@ describe("RSGL effective project compile configuration", () => {
         "import { emitImported } from \"./库 helper.rsgl\"",
         "model block rotated {}",
         "use emitImported()",
-        "blockstate rotated {",
-        "  variants {",
-        "    {} -> { model: block/rotated, z: 90 }",
-        "  }",
+        "blockstate variants rotated {",
+        "  {}: { model: block/rotated, z: 90 }",
         "}"
       ].join("\n"));
       fs.writeFileSync(helperFile, [
@@ -296,10 +294,8 @@ function compileTargetSensitiveModule(
 
 function targetSensitiveStatements(): string[] {
   return [
-    "blockstate rotated {",
-    "  variants {",
-    "    {} -> { model: minecraft:block/rotated, z: 90 }",
-    "  }",
+    "blockstate variants rotated {",
+    "  {}: { model: minecraft:block/rotated, z: 90 }",
     "}"
   ];
 }

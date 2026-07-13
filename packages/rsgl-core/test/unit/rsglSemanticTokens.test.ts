@@ -165,14 +165,11 @@ describe("RSGL semantic tokens", () => {
       "  let record = { parent: parent, model: model }",
       "  let selected = record.model",
       "  let frames = seq(\"frame_{}\", pad: 2)",
-      "  let applied = @minecraft:block/stone y=90 uvlock",
       "  let commented = { extern /* multi",
       "  line */: \"value\" }",
       "}",
-      "blockstate demo {",
-      "  multipart {",
-      "    apply { model: block/foo }",
-      "  }",
+      "blockstate multipart demo {",
+      "  apply minecraft:block/foo y=90 uvlock=true weight=2",
       "}"
     ].join("\n");
     const contextualModule = parseRsgl(contextualSource);
@@ -183,18 +180,18 @@ describe("RSGL semantic tokens", () => {
     const memberName = offsetOf(contextualSource, ".model") + 1;
     const namedArgument = offsetOf(contextualSource, "pad: 2");
     const sugarProperty = offsetOf(contextualSource, "y=90");
-    const shorthandSugarProperty = offsetOf(contextualSource, "uvlock");
+    const uvlockProperty = offsetOf(contextualSource, "uvlock");
+    const weightProperty = offsetOf(contextualSource, "weight=2");
     const commentedKey = offsetOf(contextualSource, "extern /* multi");
-    const applyModelKey = offsetOf(contextualSource, "model: block/foo");
 
     expectToken(contextualTokens, parentKey, "property", 0, "parent".length);
     expectToken(contextualTokens, modelKey, "property", 0, "model".length);
     expectToken(contextualTokens, memberName, "property", 0, "model".length);
     expectToken(contextualTokens, namedArgument, "property", 0, "pad".length);
     expectToken(contextualTokens, sugarProperty, "property", 0, "y".length);
-    expectToken(contextualTokens, shorthandSugarProperty, "property", 0, "uvlock".length);
+    expectToken(contextualTokens, uvlockProperty, "property", 0, "uvlock".length);
+    expectToken(contextualTokens, weightProperty, "property", 0, "weight".length);
     expectToken(contextualTokens, commentedKey, "property", 0, "extern".length);
-    expectToken(contextualTokens, applyModelKey, "property", 0, "model".length);
     expectToken(
       contextualTokens,
       offsetOf(contextualSource, "seq("),
@@ -282,12 +279,10 @@ describe("RSGL semantic tokens", () => {
       {
         fileName: templatesFile,
         module: parseRsgl([
-          "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
-          "  variants {",
-          "    [type=bottom] -> @bottom",
-          "    [type=top] -> @top",
-          "    [type=double] -> @double",
-          "  }",
+          "template slab(bottom: ModelId, top: ModelId, double: ModelId) -> variants {",
+          "  { type: \"bottom\" }: bottom",
+          "  { type: \"top\" }: top",
+          "  { type: \"double\" }: double",
           "}"
         ].join("\n"))
       }

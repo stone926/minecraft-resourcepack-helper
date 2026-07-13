@@ -303,8 +303,8 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "template generatedBlockstate() {",
           "  extern! vanilla model minecraft:block/template_model",
-          "  blockstate generated {",
-          "    variants { {} -> { model: minecraft:block/template_model } }",
+          "  blockstate variants generated {",
+          "    {}: { model: minecraft:block/template_model }",
           "  }",
           "}",
           "export { generatedBlockstate }"
@@ -324,14 +324,14 @@ describe("RSGL extern declarations", () => {
         fileName: mainFile,
         module: parseRsgl([
           "import { scopedModels } from \"./diagnostic-templates.rsgl\"",
-          "blockstate scoped { use scopedModels(minecraft:block/caller_missing) }"
+          "blockstate variants scoped { use scopedModels(minecraft:block/caller_missing) }"
         ].join("\n"))
       },
       {
         fileName: templatesFile,
         module: parseRsgl([
           "template scopedModels(callerModel: ModelId) -> variants {",
-          "    {} -> [",
+          "    {}: [",
           "      { model: minecraft:block/fixed_missing },",
           "      { model: callerModel }",
           "    ]",
@@ -364,8 +364,8 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "import { modelVariant } from \"./templates.rsgl\"",
           "extern! custom model minecraft:block/caller_model",
-          "blockstate fixed_reference { use modelVariant() }",
-          "blockstate caller_argument { use modelVariant(minecraft:block/caller_model) }"
+          "blockstate variants fixed_reference { use modelVariant() }",
+          "blockstate variants caller_argument { use modelVariant(minecraft:block/caller_model) }"
         ].join("\n"))
       },
       {
@@ -373,7 +373,7 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:block/library_model",
           "template modelVariant(modelId: ModelId = minecraft:block/library_model) -> variants {",
-          "  {} -> { model: modelId }",
+          "  {}: { model: modelId }",
           "}",
           "export { modelVariant }"
         ].join("\n"))
@@ -408,9 +408,9 @@ describe("RSGL extern declarations", () => {
         fileName: templatesFile,
         module: parseRsgl([
           "template aliasedModel(callerModel: ModelId) {",
-          "  blockstate aliased {",
+          "  blockstate variants aliased {",
           "    let alias = callerModel",
-          "    variants { {} -> { model: alias } }",
+          "    {}: { model: alias }",
           "  }",
           "}",
           "export { aliasedModel }"
@@ -434,7 +434,7 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "import { mixedModels } from \"./mixed-templates.rsgl\"",
           "extern! custom model minecraft:block/caller_model",
-          "blockstate mixed { use mixedModels(minecraft:block/caller_model) }"
+          "blockstate variants mixed { use mixedModels(minecraft:block/caller_model) }"
         ].join("\n"))
       },
       {
@@ -442,7 +442,7 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:block/library_model",
           "template mixedModels(callerModel: ModelId) -> variants {",
-          "    {} -> [",
+          "    {}: [",
           "      { model: minecraft:block/library_model },",
           "      { model: callerModel }",
           "    ]",
@@ -464,7 +464,7 @@ describe("RSGL extern declarations", () => {
     );
     const blockstate = result.units.find(unit => !unit.external && unit.kind === "blockstate");
     assert.ok(blockstate?.sourceMap.mappings
-      .filter(mapping => mapping.generatedPath.startsWith("/variants"))
+      .filter(mapping => mapping.generatedPath.startsWith("/variants/"))
       .every(mapping => mapping.sourceFile === templatesFile));
   });
 
@@ -818,8 +818,8 @@ function externalUnits(result: RsglCompileResult): ResourceUnit[] {
 
 function blockstateUsing(id: string, model: string): string[] {
   return [
-    `blockstate ${id} {`,
-    `  variants { {} -> { model: ${model} } }`,
+    `blockstate variants ${id} {`,
+    `  {}: { model: ${model} }`,
     "}"
   ];
 }

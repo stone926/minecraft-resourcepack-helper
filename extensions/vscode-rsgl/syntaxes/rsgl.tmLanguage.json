@@ -13,6 +13,12 @@
       "include": "#templateOutputHeaders"
     },
     {
+      "include": "#blockstateDeclarations"
+    },
+    {
+      "include": "#legacyBlockstateSyntax"
+    },
+    {
       "include": "#strings"
     },
     {
@@ -54,6 +60,110 @@
             },
             "2": {
               "name": "storage.type.template-output.rsgl"
+            }
+          }
+        }
+      ]
+    },
+    "blockstateDeclarations": {
+      "patterns": [
+        {
+          "begin": "\\b(blockstate)([ \\t]+)(?:(variants|multipart)([ \\t]+))?[^\\r\\n{]+?[ \\t]*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.rsgl"
+            },
+            "3": {
+              "name": "storage.modifier.blockstate-mode.rsgl"
+            }
+          },
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "#blockstateBody"
+            }
+          ]
+        }
+      ]
+    },
+    "blockstateBody": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#legacyBlockstateWrappers"
+        },
+        {
+          "match": "(?<=\\{)([ \\t]*)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*[:=](?!=))",
+          "captures": {
+            "2": {
+              "name": "meta.object-key.rsgl"
+            }
+          }
+        },
+        {
+          "include": "#blockstateNestedBraces"
+        },
+        {
+          "include": "$self"
+        }
+      ]
+    },
+    "blockstateNestedBraces": {
+      "patterns": [
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "#blockstateBody"
+            }
+          ]
+        }
+      ]
+    },
+    "legacyBlockstateWrappers": {
+      "patterns": [
+        {
+          "match": "(^[ \\t]*)(variants|multipart)\\b(?=[ \\t]*\\{)",
+          "captures": {
+            "2": {
+              "name": "invalid.deprecated.blockstate-wrapper.rsgl"
+            }
+          }
+        }
+      ]
+    },
+    "legacyBlockstateSyntax": {
+      "patterns": [
+        {
+          "match": "(^[ \\t]*)(\\[[^\\]\\r\\n]*=[^\\]\\r\\n]*\\])([ \\t]*)(->)",
+          "captures": {
+            "2": {
+              "name": "invalid.deprecated.blockstate-selector.rsgl"
+            },
+            "4": {
+              "name": "invalid.deprecated.blockstate-arrow.rsgl"
+            }
+          }
+        },
+        {
+          "match": "(^[ \\t]*)(\\[[^\\]\\r\\n]*=[^\\]\\r\\n]*\\])(?=[ \\t]*:)",
+          "captures": {
+            "2": {
+              "name": "invalid.deprecated.blockstate-selector.rsgl"
+            }
+          }
+        },
+        {
+          "match": "(^[ \\t]*)(\\{[^\\r\\n]*\\}|\\([^\\r\\n]*\\))([ \\t]*)(->)",
+          "captures": {
+            "4": {
+              "name": "invalid.deprecated.blockstate-arrow.rsgl"
             }
           }
         }
@@ -436,7 +546,7 @@
           "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!#]"
         },
         {
-          "name": "keyword.operator.model-apply.rsgl",
+          "name": "invalid.deprecated.blockstate-model-apply.rsgl",
           "match": "@"
         }
       ]

@@ -49,8 +49,8 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
   it("does not require extern declarations for generated resources", () => {
     const result = compileSource([
       "model block stone {}",
-      "blockstate stone {",
-      "  variants { {} -> { model: minecraft:block/stone } }",
+      "blockstate variants stone {",
+      "  {}: { model: minecraft:block/stone }",
       "}"
     ]);
 
@@ -193,7 +193,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
       "import { stairs } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
       "import { stairsBlockstate } from \"rsgl:conventions/blockstates.rsgl\"",
       "use stairsBlockstate(id: ruby_stairs)",
-      "blockstate custom_stairs {",
+      "blockstate variants custom_stairs {",
       "  use stairs(",
       "    base: minecraft:block/custom_stairs,",
       "    inner: minecraft:block/custom_stairs_inner,",
@@ -224,7 +224,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("checks lambda bodies passed to imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: age, values: [0], model: value => `minecraft:block/${vlaue}`)",
       "}"
     ]);
@@ -235,7 +235,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("reports lambda typos once for import-all modules", () => {
     const result = compileSourceWithUncheckedExterns([
       "import \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: value => `minecraft:block/${vlaue}`)",
       "}"
     ]);
@@ -248,13 +248,13 @@ describe("RSGL lambda arguments to imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "template lampFamily(base: String) {",
-      "  blockstate `${base}_lamp` {",
+      "  blockstate variants `${base}_lamp` {",
       "    use stateSequence(key: lit, values: [0], model: value => `minecraft:block/${base}_lamp_${value}`)",
       "  }",
       "}",
       "use lampFamily(base: \"copper\")",
       "for tint in [\"red\", \"green\"] {",
-      "  blockstate `${tint}_case` {",
+      "  blockstate variants `${tint}_case` {",
       "    let prefix = `minecraft:block/${tint}`",
       "    use stateSequence(key: lit, values: [0], model: value => `${prefix}_case_${value}`)",
       "  }",
@@ -273,7 +273,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("expands stateSequence with range values without type diagnostics", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: age, values: 0..2, model: value => `minecraft:block/cactus_${value}`)",
       "}"
     ]);
@@ -291,7 +291,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("rejects stateSequence values that are neither a list nor a range", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: age, values: true, model: value => `minecraft:block/cactus_${value}`)",
       "}"
     ]);
@@ -404,7 +404,7 @@ describe("RSGL lambda arguments to imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
       "overlay \"candy\" {",
-      "  blockstate cactus {",
+      "  blockstate variants cactus {",
       "    use stateSequence(key: \"age\", values: [0], model: value => `minecraft:block/${vlaue}`)",
       "  }",
       "}"
@@ -416,7 +416,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("rejects lambda captures of local lets declared after the call", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: v => `${prefix}_${v}`)",
       "  let prefix = \"minecraft:block/p\"",
       "}"
@@ -443,7 +443,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("rejects object-returning stateSequence model lambdas", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: value => { model: `minecraft:block/c_${value}`, y: 90 })",
       "}"
     ]);
@@ -454,7 +454,7 @@ describe("RSGL lambda arguments to imported templates", () => {
   it("reports nested impure lambdas once", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stateSequence } from \"rsgl:conventions/blockstate_tables.rsgl\"",
-      "blockstate cactus {",
+      "blockstate variants cactus {",
       "  use stateSequence(key: \"age\", values: [0], model: value => [inner => glob(\"./x.json\")][0](value))",
       "}"
     ]);

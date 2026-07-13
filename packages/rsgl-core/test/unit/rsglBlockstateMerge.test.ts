@@ -4,10 +4,8 @@ import { compileSourceWithUncheckedExterns, expectNoDiagnostics, unitByPath } fr
 describe("RSGL blockstate fragment merge policy", () => {
   it("applies strict and upsert through the shared merge engine", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate lamp {",
-      "  variants {",
-      "    { facing: north } -> { model: minecraft:block/lamp, x: 0 }",
-      "  }",
+      "blockstate variants lamp {",
+      "  { facing: north }: { model: minecraft:block/lamp, x: 0 }",
       "  merge strict {",
       "    variants: { \"facing=north\": { model: minecraft:block/lamp_changed } }",
       "  }",
@@ -33,10 +31,8 @@ describe("RSGL blockstate fragment merge policy", () => {
 
   it("appends multipart entries and offsets their field mappings", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate fence {",
-      "  multipart {",
-      "    apply { model: minecraft:block/fence_post }",
-      "  }",
+      "blockstate multipart fence {",
+      "  apply { model: minecraft:block/fence_post }",
       "  merge append {",
       "    multipart: [{ when: { north: true }, apply: { model: minecraft:block/fence_side } }]",
       "  }",
@@ -61,10 +57,8 @@ describe("RSGL blockstate fragment merge policy", () => {
 
   it("rejects append outside multipart and preserves variants/multipart exclusivity", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate invalid {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/base }",
-      "  }",
+      "blockstate variants invalid {",
+      "  {}: { model: minecraft:block/base }",
       "  merge append { variants: { \"powered=true\": { model: minecraft:block/on } } }",
       "  merge upsert { multipart: [] }",
       "}"
@@ -72,6 +66,10 @@ describe("RSGL blockstate fragment merge policy", () => {
 
     assert.strictEqual(
       result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.mergeOperationNotAllowed").length,
+      1
+    );
+    assert.strictEqual(
+      result.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.blockstateModeConflict").length,
       2
     );
     assert.deepStrictEqual(result.units[0].content, {
@@ -81,19 +79,17 @@ describe("RSGL blockstate fragment merge policy", () => {
     });
   });
 
-  it("preserves arbitrary top-level fields from blockstate template fragments", () => {
+  it("preserves arbitrary top-level fields beside full-root merge operands", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template extra() {",
-      "  merge { custom: { enabled: true } }",
-      "}",
-      "blockstate templated {",
-      "  use extra()",
+      "blockstate variants templated {",
+      "  custom { enabled: true }",
       "  merge deep { variants: { \"powered=true\": { model: minecraft:block/base } } }",
       "}"
     ]);
 
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateOutputDialectRequired"));
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(unitByPath(result, "blockstates/templated.json").content, {
+      custom: { enabled: true },
       variants: { "powered=true": { model: "minecraft:block/base" } }
     });
   });

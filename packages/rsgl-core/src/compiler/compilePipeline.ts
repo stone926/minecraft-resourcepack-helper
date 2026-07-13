@@ -7,7 +7,11 @@ import {
 } from "../externDeclarations";
 import { getExternResourceKind } from "../resourceKinds";
 import { bindRsglModule, bindRsglProgram, RsglSourceFile } from "../semantic";
-import type { RsglProgram } from "../semantic";
+import type {
+  RsglBlockstateApplyFact,
+  RsglBlockstateApplySiteNode,
+  RsglProgram
+} from "../semantic";
 import { includeRsglStdlibSourceFiles } from "../stdlib";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
 import {
@@ -110,7 +114,8 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     globLoader,
     targetPackFormat: target.targetPackFormat,
     maxEvaluationItems: configuration.maxEvaluationItems,
-    stdlibRoot: options.stdlibRoot
+    stdlibRoot: options.stdlibRoot,
+    blockstateApplyFacts: semanticModel.blockstateApplyFacts
   });
   const result = compiler.compile();
   const externs = collectExternDeclarations([{ fileName, module }], options.globalExterns, options.externDeclarations);
@@ -218,6 +223,13 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     });
   }
 
+  const blockstateApplyFacts = new Map<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>();
+  for (const semanticModel of program.models) {
+    for (const [node, fact] of semanticModel.blockstateApplyFacts ?? []) {
+      blockstateApplyFacts.set(node, fact);
+    }
+  }
+
   for (const model of selectedModels) {
     const namespace = effectiveNamespace(model.namespace, configuration);
     const environment = environments.get(normalizeFileName(model.fileName))
@@ -229,13 +241,19 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       namespace,
       stdlibTemplates,
       externalTemplates: Array.from(environment.importedTemplates.values()),
-      externalValues: mapToExternalValues(environment.importedValues),
+      externalValues: mapToExternalValues(
+        environment.importedValues,
+        environment.importedValueOrigins,
+        environment.importedValuePathOrigins,
+        environment.importedValueIssues
+      ),
       environment,
       baseDocumentLoader,
       globLoader,
       targetPackFormat: target.targetPackFormat,
       maxEvaluationItems: configuration.maxEvaluationItems,
-      stdlibRoot: options.stdlibRoot
+      stdlibRoot: options.stdlibRoot,
+      blockstateApplyFacts
     });
     const result = compiler.compile();
     units.push(...result.units);

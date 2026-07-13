@@ -33,6 +33,43 @@ export interface EvaluationPathOrigin extends EvaluationOrigin {
   generatedPath: string;
 }
 
+/** Source ranges inside the expression currently being evaluated. */
+export interface EvaluationPathRange {
+  generatedPath: string;
+  sourceRange: TextRange;
+}
+
+export type EvaluationValueIssueKind =
+  | "undefined"
+  | "lambda"
+  | "nonFiniteNumber"
+  | "duplicateObjectKey"
+  | "invalidObjectKey";
+
+/** Runtime value-shape facts captured without evaluating an expression twice. */
+export interface EvaluationValueIssue {
+  generatedPath: string;
+  kind: EvaluationValueIssueKind;
+  sourceRange: TextRange;
+  sourceFile?: string;
+}
+
+/**
+ * One evaluation plus the provenance needed by JSON-path-aware lowerers.
+ *
+ * `pathRanges` describe syntax in the current expression. `pathOrigins`
+ * describe values inherited through a binding/call. Keeping the two layers
+ * separate lets source maps point at a local member/call while validation can
+ * still jump to the argument or definition that produced an individual field.
+ */
+export interface EvaluationResult {
+  value: EvaluationValue;
+  origin?: EvaluationOrigin;
+  pathOrigins: EvaluationPathOrigin[];
+  pathRanges: EvaluationPathRange[];
+  valueIssues: EvaluationValueIssue[];
+}
+
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
@@ -40,6 +77,10 @@ export interface EvaluationContext {
   valueBindingNames?: ReadonlySet<string>;
   /** Lexical origins of values bound from template call arguments. */
   valueOrigins?: ReadonlyMap<string, EvaluationOrigin>;
+  /** JSON-pointer-level origins for structured lexical values. */
+  valuePathOrigins?: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
+  /** Runtime value-shape issues retained across lexical bindings. */
+  valueIssues?: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
   stateKeyAliases?: ReadonlySet<string>;
   sourceFile?: string;
   mappingReason?: RsglMapping["reason"];
@@ -48,6 +89,8 @@ export interface EvaluationContext {
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
+  /** @internal Active only for one evaluateExpressionResult call. */
+  evaluationTrace?: EvaluationTraceSession;
 }
 
 /** Binds a value and its lexical origin without mutating a parent context's origin map. */
@@ -55,7 +98,9 @@ export function bindEvaluationValue(
   context: EvaluationContext,
   name: string,
   value: EvaluationValue,
-  origin?: EvaluationOrigin
+  origin?: EvaluationOrigin,
+  pathOrigins: readonly EvaluationPathOrigin[] = [],
+  valueIssues: readonly EvaluationValueIssue[] = []
 ): void {
   context.variables.set(name, value);
   context.valueBindingNames = new Set([...(context.valueBindingNames ?? []), name]);
@@ -66,11 +111,576 @@ export function bindEvaluationValue(
     origins.delete(name);
   }
   context.valueOrigins = origins;
+  const originsByName = new Map(context.valuePathOrigins ?? []);
+  if (pathOrigins.length > 0) {
+    originsByName.set(name, [...pathOrigins]);
+  } else {
+    originsByName.delete(name);
+  }
+  context.valuePathOrigins = originsByName;
+  const issuesByName = new Map(context.valueIssues ?? []);
+  if (valueIssues.length > 0) {
+    issuesByName.set(name, [...valueIssues]);
+  } else {
+    issuesByName.delete(name);
+  }
+  context.valueIssues = issuesByName;
+}
+
+/** Binds a traced result, materializing direct ranges in the binding's file. */
+export function bindEvaluationResult(
+  context: EvaluationContext,
+  name: string,
+  result: EvaluationResult,
+  sourceFile = context.sourceFile
+): void {
+  const pathOrigins = materializeEvaluationPathOrigins(result, sourceFile);
+  bindEvaluationValue(
+    context,
+    name,
+    result.value,
+    originForEvaluationPath(pathOrigins, "") ?? result.origin,
+    pathOrigins,
+    materializeEvaluationValueIssues(result, sourceFile)
+  );
+}
+
+export function materializeEvaluationValueIssues(
+  result: Pick<EvaluationResult, "valueIssues">,
+  sourceFile?: string
+): EvaluationValueIssue[] {
+  return result.valueIssues.map(issue => ({
+    ...issue,
+    ...(issue.sourceFile || !sourceFile ? {} : { sourceFile })
+  }));
 }
 
 /** True when a value binding shadows a same-named template or builtin helper. */
 export function hasEvaluationValueBinding(context: EvaluationContext, name: string): boolean {
   return context.variables.has(name) || Boolean(context.valueBindingNames?.has(name));
+}
+
+/** Returns the most specific provenance at `generatedPath`. */
+export function originForEvaluationPath(
+  origins: readonly EvaluationPathOrigin[],
+  generatedPath: string
+): EvaluationOrigin | undefined {
+  const origin = mostSpecificPathEntry(origins, generatedPath);
+  return origin ? { sourceFile: origin.sourceFile, sourceRange: origin.sourceRange } : undefined;
+}
+
+/** Returns the most specific direct syntax range at `generatedPath`. */
+export function rangeForEvaluationPath(
+  ranges: readonly EvaluationPathRange[],
+  generatedPath: string
+): TextRange | undefined {
+  return mostSpecificPathEntry(ranges, generatedPath)?.sourceRange;
+}
+
+/** Selects a structured value path and rebases it to the result root. */
+export function selectEvaluationPathOrigins(
+  origins: readonly EvaluationPathOrigin[],
+  selectedPath: string
+): EvaluationPathOrigin[] {
+  const selected = selectPathEntries(origins, selectedPath);
+  if (selected.length > 0) {
+    return selected;
+  }
+  const inherited = originForEvaluationPath(origins, selectedPath);
+  return inherited ? [{ generatedPath: "", ...inherited }] : [];
+}
+
+/** Selects value-shape issues below a JSON pointer and rebases them to the selected value. */
+export function selectEvaluationValueIssues(
+  issues: readonly EvaluationValueIssue[],
+  selectedPath: string
+): EvaluationValueIssue[] {
+  return selectPathEntries(issues, selectedPath);
+}
+
+/**
+ * Converts direct syntax ranges to durable origins for a lexical binding.
+ * An inherited origin wins at the same path (or an ancestor), so wrapping a
+ * caller value in an identifier/conditional never replaces caller provenance
+ * with the wrapper's definition range.
+ */
+export function materializeEvaluationPathOrigins(
+  result: Pick<EvaluationResult, "pathOrigins" | "pathRanges">,
+  sourceFile?: string
+): EvaluationPathOrigin[] {
+  const inheritedOrigins = deduplicatePathEntries(result.pathOrigins);
+  if (!sourceFile) {
+    return inheritedOrigins;
+  }
+  const origins = [...inheritedOrigins];
+  for (const item of result.pathRanges) {
+    if (!originForEvaluationPath(inheritedOrigins, item.generatedPath)) {
+      origins.push({
+        generatedPath: item.generatedPath,
+        sourceFile,
+        sourceRange: item.sourceRange
+      });
+    }
+  }
+  return deduplicatePathEntries(origins);
+}
+
+interface EvaluationTraceFrame {
+  expression: ExprNode;
+  context: EvaluationContext;
+  children: CompletedEvaluationTraceFrame[];
+}
+
+interface CompletedEvaluationTraceFrame extends EvaluationTraceFrame {
+  result: EvaluationResult;
+}
+
+/** Internal stack that observes the real evaluator without executing AST twice. */
+class EvaluationTraceSession {
+  private readonly stack: EvaluationTraceFrame[] = [];
+  private rootResult?: EvaluationResult;
+
+  public enter(expression: ExprNode, context: EvaluationContext): EvaluationTraceFrame {
+    const frame = { expression, context, children: [] };
+    this.stack.push(frame);
+    return frame;
+  }
+
+  public leave(frame: EvaluationTraceFrame, value: EvaluationValue): EvaluationResult {
+    const active = this.stack.pop();
+    if (active !== frame) {
+      throw new Error("RSGL evaluation trace stack became unbalanced.");
+    }
+    const result = buildEvaluationResult(frame, value);
+    const completed = { ...frame, result };
+    const parent = this.stack[this.stack.length - 1];
+    if (parent) {
+      parent.children.push(completed);
+    } else {
+      this.rootResult = result;
+    }
+    return result;
+  }
+
+  public abort(frame: EvaluationTraceFrame): void {
+    const active = this.stack.pop();
+    if (active !== frame) {
+      this.stack.length = 0;
+    }
+  }
+
+  public latestChildResult(expression: ExprNode): EvaluationResult | undefined {
+    const frame = this.stack[this.stack.length - 1];
+    return [...(frame?.children ?? [])].reverse()
+      .find(child => child.expression === expression)?.result;
+  }
+
+  public result(): EvaluationResult | undefined {
+    return this.rootResult;
+  }
+}
+
+function buildEvaluationResult(
+  frame: EvaluationTraceFrame,
+  value: EvaluationValue
+): EvaluationResult {
+  const expression = frame.expression;
+  const direct = directEvaluationResult(expression, value);
+
+  if (expression.kind === "IdentifierExpr") {
+    const pathOrigins = frame.context.valuePathOrigins?.get(expression.name.text)
+      ?? (frame.context.valueOrigins?.get(expression.name.text)
+        ? [{
+            generatedPath: "",
+            ...frame.context.valueOrigins.get(expression.name.text)!
+          }]
+        : []);
+    return evaluationResult(
+      value,
+      direct.pathRanges,
+      pathOrigins,
+      frame.context.valueIssues?.get(expression.name.text) ?? direct.valueIssues
+    );
+  }
+
+  if (expression.kind === "ListExpr") {
+    return structuralEvaluationResult(
+      value,
+      expression.range,
+      expression.elements.flatMap((element, index) => {
+        const child = childForExpression(frame, element);
+        return child ? [rebaseEvaluationResult(child.result, appendGeneratedPath("", String(index)))] : [];
+      })
+    );
+  }
+
+  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
+    const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
+    const children: EvaluationResult[] = [];
+    for (const property of properties) {
+      const valueChild = childForExpression(frame, property.value);
+      if (!valueChild) {
+        continue;
+      }
+      const key = tracedPropertyKey(property, expression.kind === "StateKeySugar", frame);
+      if (key !== null) {
+        children.push(rebaseEvaluationResult(valueChild.result, appendGeneratedPath("", key)));
+      }
+    }
+    return structuralEvaluationResult(
+      value,
+      expression.range,
+      children,
+      tracedObjectKeyIssues(properties, expression.kind === "StateKeySugar", frame)
+    );
+  }
+
+  if (expression.kind === "ModelApplySugar") {
+    const children: EvaluationResult[] = [];
+    const model = childForExpression(frame, expression.model);
+    if (model) {
+      children.push(rebaseEvaluationResult(model.result, "/model"));
+    }
+    for (const property of expression.properties) {
+      const child = childForExpression(frame, property.value);
+      if (child) {
+        children.push(rebaseEvaluationResult(
+          child.result,
+          appendGeneratedPath("", property.name.text)
+        ));
+      }
+    }
+    return structuralEvaluationResult(value, expression.range, children);
+  }
+
+  if (expression.kind === "RandomApply") {
+    return structuralEvaluationResult(
+      value,
+      expression.range,
+      expression.entries.flatMap((entry, index) => {
+        const child = childForExpression(frame, entry);
+        return child ? [rebaseEvaluationResult(child.result, appendGeneratedPath("", String(index)))] : [];
+      })
+    );
+  }
+
+  if (expression.kind === "MemberExpr") {
+    const object = childForExpression(frame, expression.object);
+    return object
+      ? selectedEvaluationResult(value, expression.range, object.result, appendGeneratedPath("", expression.property.text))
+      : direct;
+  }
+
+  if (expression.kind === "IndexExpr") {
+    const object = childForExpression(frame, expression.object);
+    const index = childForExpression(frame, expression.index);
+    const key = index?.result.value;
+    return object && (typeof key === "string" || typeof key === "number")
+      ? selectedEvaluationResult(value, expression.range, object.result, appendGeneratedPath("", String(key)))
+      : direct;
+  }
+
+  if (expression.kind === "ConditionalExpr") {
+    const selected = frame.children.find(child =>
+      child.expression === expression.whenTrue || child.expression === expression.whenFalse
+    );
+    return selected
+      ? wrappedEvaluationResult(value, expression.range, selected.result)
+      : direct;
+  }
+
+  if (expression.kind === "MatchExpr") {
+    const armValues = new Set(expression.arms.map(arm => arm.value));
+    const selected = [...frame.children].reverse().find(child => armValues.has(child.expression));
+    return selected
+      ? wrappedEvaluationResult(value, expression.range, selected.result)
+      : direct;
+  }
+
+  if (expression.kind === "ForInExpr") {
+    const iterable = childForExpression(frame, expression.iterable);
+    return iterable ? wrappedEvaluationResult(value, expression.range, iterable.result) : direct;
+  }
+
+  if (expression.kind === "CallExpr") {
+    const callee = childForExpression(frame, expression.callee);
+    const calleeValue = callee?.result.value;
+    if (isLambdaValue(calleeValue)) {
+      const body = [...frame.children].reverse()
+        .find(child => child.expression === calleeValue.body);
+      if (body) {
+        const pathOrigins = materializeEvaluationPathOrigins(body.result, body.context.sourceFile);
+        return evaluationResult(
+          value,
+          [{ generatedPath: "", sourceRange: expression.range }],
+          pathOrigins,
+          materializeEvaluationValueIssues(body.result, body.context.sourceFile)
+        );
+      }
+    }
+    const childOrigins = frame.children.flatMap(child =>
+      materializeEvaluationPathOrigins(child.result, child.context.sourceFile)
+    );
+    const origin = mergeEvaluationOrigins(childOrigins);
+    return evaluationResult(
+      value,
+      direct.pathRanges,
+      origin ? [{ generatedPath: "", ...origin }] : [],
+      [
+        ...direct.valueIssues,
+        ...frame.children.flatMap(child =>
+          materializeEvaluationValueIssues(child.result, child.context.sourceFile)
+        )
+      ]
+    );
+  }
+
+  const inherited = frame.children.flatMap(child => child.result.pathOrigins);
+  const origin = mergeEvaluationOrigins(inherited);
+  return evaluationResult(
+    value,
+    direct.pathRanges,
+    origin ? [{ generatedPath: "", ...origin }] : [],
+    [...direct.valueIssues, ...frame.children.flatMap(child => child.result.valueIssues)]
+  );
+}
+
+function directEvaluationResult(expression: ExprNode, value: EvaluationValue): EvaluationResult {
+  const kind: EvaluationValueIssueKind | undefined = value === undefined
+    ? "undefined"
+    : isLambdaValue(value)
+      ? "lambda"
+      : typeof value === "number" && !Number.isFinite(value)
+        ? "nonFiniteNumber"
+        : undefined;
+  return evaluationResult(
+    value,
+    [{ generatedPath: "", sourceRange: expression.range }],
+    [],
+    kind ? [{ generatedPath: "", kind, sourceRange: expression.range }] : []
+  );
+}
+
+function structuralEvaluationResult(
+  value: EvaluationValue,
+  range: TextRange,
+  children: readonly EvaluationResult[],
+  additionalIssues: readonly EvaluationValueIssue[] = []
+): EvaluationResult {
+  return evaluationResult(
+    value,
+    deduplicatePathEntries([
+      { generatedPath: "", sourceRange: range },
+      ...children.flatMap(child => child.pathRanges)
+    ]),
+    deduplicatePathEntries(children.flatMap(child => child.pathOrigins)),
+    deduplicateValueIssues([
+      ...children.flatMap(child => child.valueIssues),
+      ...additionalIssues
+    ])
+  );
+}
+
+function wrappedEvaluationResult(
+  value: EvaluationValue,
+  range: TextRange,
+  selected: EvaluationResult
+): EvaluationResult {
+  const ranges = selected.pathRanges.filter(item => item.generatedPath !== "");
+  return evaluationResult(
+    value,
+    [{ generatedPath: "", sourceRange: range }, ...ranges],
+    selected.pathOrigins,
+    selected.valueIssues
+  );
+}
+
+function selectedEvaluationResult(
+  value: EvaluationValue,
+  range: TextRange,
+  source: EvaluationResult,
+  selectedPath: string
+): EvaluationResult {
+  const selected = selectEvaluationResultPath(source, selectedPath);
+  return evaluationResult(
+    value,
+    [{ generatedPath: "", sourceRange: range }, ...selected.pathRanges.filter(item => item.generatedPath !== "")],
+    selected.pathOrigins,
+    selected.valueIssues
+  );
+}
+
+function evaluationResult(
+  value: EvaluationValue,
+  pathRanges: readonly EvaluationPathRange[],
+  pathOrigins: readonly EvaluationPathOrigin[],
+  valueIssues: readonly EvaluationValueIssue[] = []
+): EvaluationResult {
+  const origins = deduplicatePathEntries(pathOrigins);
+  const origin = originForEvaluationPath(origins, "") ?? mergeEvaluationOrigins(origins);
+  const rootRange = rangeForEvaluationPath(pathRanges, "") ?? { start: 0, end: 0 };
+  const intrinsicKind: EvaluationValueIssueKind | undefined = value === undefined
+    ? "undefined"
+    : isLambdaValue(value)
+      ? "lambda"
+      : typeof value === "number" && !Number.isFinite(value)
+        ? "nonFiniteNumber"
+        : undefined;
+  return {
+    value,
+    ...(origin ? { origin } : {}),
+    pathOrigins: origins,
+    pathRanges: deduplicatePathEntries(pathRanges),
+    valueIssues: deduplicateValueIssues([
+      ...valueIssues,
+      ...(intrinsicKind
+        ? [{ generatedPath: "", kind: intrinsicKind, sourceRange: rootRange }]
+        : [])
+    ])
+  };
+}
+
+function rebaseEvaluationResult(result: EvaluationResult, basePath: string): EvaluationResult {
+  return evaluationResult(
+    result.value,
+    result.pathRanges.map(item => ({
+      ...item,
+      generatedPath: appendEvaluationPath(basePath, item.generatedPath)
+    })),
+    result.pathOrigins.map(item => ({
+      ...item,
+      generatedPath: appendEvaluationPath(basePath, item.generatedPath)
+    })),
+    result.valueIssues.map(item => ({
+      ...item,
+      generatedPath: appendEvaluationPath(basePath, item.generatedPath)
+    }))
+  );
+}
+
+function selectEvaluationResultPath(result: EvaluationResult, selectedPath: string): EvaluationResult {
+  const ranges = selectPathEntries(result.pathRanges, selectedPath);
+  const origins = selectPathEntries(result.pathOrigins, selectedPath);
+  const inheritedRange = rangeForEvaluationPath(result.pathRanges, selectedPath);
+  const inheritedOrigin = originForEvaluationPath(result.pathOrigins, selectedPath);
+  return evaluationResult(
+    result.value,
+    ranges.length > 0
+      ? ranges
+      : inheritedRange ? [{ generatedPath: "", sourceRange: inheritedRange }] : [],
+    origins.length > 0
+      ? origins
+      : inheritedOrigin ? [{ generatedPath: "", ...inheritedOrigin }] : [],
+    selectPathEntries(result.valueIssues, selectedPath)
+  );
+}
+
+function selectPathEntries<T extends { generatedPath: string }>(
+  entries: readonly T[],
+  selectedPath: string
+): T[] {
+  return entries
+    .filter(item => item.generatedPath === selectedPath || item.generatedPath.startsWith(`${selectedPath}/`))
+    .map(item => ({
+      ...item,
+      generatedPath: item.generatedPath.slice(selectedPath.length)
+    }));
+}
+
+function appendEvaluationPath(basePath: string, childPath: string): string {
+  return childPath ? `${basePath}${childPath}` : basePath;
+}
+
+function childForExpression(
+  frame: EvaluationTraceFrame,
+  expression: ExprNode
+): CompletedEvaluationTraceFrame | undefined {
+  return [...frame.children].reverse().find(child => child.expression === expression);
+}
+
+function tracedPropertyKey(
+  property: ObjectPropertyNode,
+  stateKey: boolean,
+  frame: EvaluationTraceFrame
+): string | null {
+  if (property.key.kind === "Identifier") {
+    if (stateKey && frame.context.stateKeyAliases?.has(property.key.text)) {
+      return scalarText(frame.context.variables.get(property.key.text)) ?? property.key.text;
+    }
+    return property.key.text;
+  }
+  if (property.key.kind === "StringLiteral") {
+    return property.key.value;
+  }
+  if (property.key.kind === "NumberLiteral") {
+    return property.key.raw;
+  }
+  const child = childForExpression(frame, property.key.expression);
+  const value = child?.result.value;
+  return stateKey ? scalarText(value) : value === undefined ? null : String(value);
+}
+
+function tracedObjectKeyIssues(
+  properties: readonly ObjectPropertyNode[],
+  stateKey: boolean,
+  frame: EvaluationTraceFrame
+): EvaluationValueIssue[] {
+  const issues: EvaluationValueIssue[] = [];
+  const seen = new Set<string>();
+  for (const property of properties) {
+    const key = tracedPropertyKey(property, stateKey, frame);
+    if (key === null) {
+      issues.push({
+        generatedPath: "",
+        kind: "invalidObjectKey",
+        sourceRange: property.key.range
+      });
+      continue;
+    }
+    const generatedPath = appendGeneratedPath("", key);
+    if (seen.has(key)) {
+      issues.push({
+        generatedPath,
+        kind: "duplicateObjectKey",
+        sourceRange: property.key.range
+      });
+    }
+    seen.add(key);
+  }
+  return issues;
+}
+
+function mostSpecificPathEntry<T extends { generatedPath: string }>(
+  entries: readonly T[],
+  generatedPath: string
+): T | undefined {
+  return entries
+    .filter(item => item.generatedPath === generatedPath || (
+      item.generatedPath === "" || generatedPath.startsWith(`${item.generatedPath}/`)
+    ))
+    .sort((left, right) => right.generatedPath.length - left.generatedPath.length)[0];
+}
+
+function deduplicatePathEntries<T extends { generatedPath: string }>(entries: readonly T[]): T[] {
+  const byPath = new Map<string, T>();
+  for (const entry of entries) {
+    byPath.set(entry.generatedPath, entry);
+  }
+  return [...byPath.values()];
+}
+
+function deduplicateValueIssues(issues: readonly EvaluationValueIssue[]): EvaluationValueIssue[] {
+  const byIdentity = new Map<string, EvaluationValueIssue>();
+  for (const issue of issues) {
+    byIdentity.set(JSON.stringify([
+      issue.generatedPath,
+      issue.kind,
+      issue.sourceFile ?? "",
+      issue.sourceRange.start,
+      issue.sourceRange.end
+    ]), issue);
+  }
+  return [...byIdentity.values()];
 }
 
 const builtinValues = new Map<string, JsonValue>([
@@ -273,7 +883,7 @@ function mergeEvaluationOrigins(
     && origin.sourceRange.start === first.sourceRange.start
     && origin.sourceRange.end === first.sourceRange.end
   )) {
-    return first;
+    return { sourceFile: first.sourceFile, sourceRange: first.sourceRange };
   }
   if (origins.every(origin => origin.sourceFile === first.sourceFile)) {
     return {
@@ -287,7 +897,34 @@ function mergeEvaluationOrigins(
   return undefined;
 }
 
+/** Evaluates an expression once and returns its selected-path provenance. */
+export function evaluateExpressionResult(
+  expression: ExprNode,
+  context: EvaluationContext
+): EvaluationResult {
+  const session = new EvaluationTraceSession();
+  const tracedContext = { ...context, evaluationTrace: session };
+  const value = evaluateExpression(expression, tracedContext);
+  return session.result() ?? directEvaluationResult(expression, value);
+}
+
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
+  const frame = context.evaluationTrace?.enter(expression, context);
+  try {
+    const value = evaluateExpressionCore(expression, context);
+    if (frame) {
+      context.evaluationTrace!.leave(frame, value);
+    }
+    return value;
+  } catch (error) {
+    if (frame) {
+      context.evaluationTrace!.abort(frame);
+    }
+    throw error;
+  }
+}
+
+function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext): EvaluationValue {
   if (expression.kind === "StringLiteral") {
     return expression.value;
   }
@@ -360,7 +997,8 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
     const args = expression.args.map(arg => ({
       name: arg.name?.text,
       value: evaluateExpression(arg.value, context),
-      range: arg.value.range
+      range: arg.value.range,
+      result: context.evaluationTrace?.latestChildResult(arg.value)
     }));
     const calleeValue = evaluateExpression(expression.callee, context);
     if (isLambdaValue(calleeValue)) {
@@ -636,9 +1274,16 @@ function evaluateBinaryExpression(operator: string, left: EvaluationValue, right
   return undefined;
 }
 
+interface EvaluationCallArgument {
+  name?: string;
+  value: EvaluationValue;
+  range: TextRange;
+  result?: EvaluationResult;
+}
+
 function evaluateCallExpression(
   callee: ExprNode,
-  args: Array<{ name?: string; value: EvaluationValue; range: TextRange }>,
+  args: EvaluationCallArgument[],
   context: EvaluationContext,
   range: TextRange
 ): EvaluationValue {
@@ -709,7 +1354,7 @@ function evaluateCallExpression(
 function evaluateLambdaCall(
   lambda: LambdaValue,
   argCount: number,
-  args: Array<{ name?: string; value: EvaluationValue; range: TextRange }>,
+  args: EvaluationCallArgument[],
   callContext: EvaluationContext,
   range: TextRange
 ): EvaluationValue {
@@ -736,12 +1381,25 @@ function evaluateLambdaCall(
 
   const positional = args.filter(arg => !arg.name);
   const values: Record<string, EvaluationValue> = {};
+  const bindings = new Map<string, EvaluationCallArgument | undefined>();
   lambda.parameters.forEach((parameter, index) => {
-    values[parameter] = args.find(arg => arg.name === parameter)?.value
-      ?? positional[index]?.value;
+    const arg = args.find(item => item.name === parameter) ?? positional[index];
+    values[parameter] = arg?.value;
+    bindings.set(parameter, arg);
   });
 
   const bodyContext = childEvaluationContext(lambda.context, values, { onError });
+  bodyContext.evaluationTrace = callContext.evaluationTrace;
+  for (const [parameter, arg] of bindings) {
+    if (arg?.result) {
+      bindEvaluationResult(
+        bodyContext,
+        parameter,
+        { ...arg.result, value: arg.value },
+        callContext.sourceFile
+      );
+    }
+  }
   // Defense in depth: even if the purity scan misses a pattern, the body
   // cannot reach filesystem loaders.
   bodyContext.baseDocumentLoader = undefined;
@@ -755,10 +1413,15 @@ function isLambdaValue(value: EvaluationValue): value is LambdaValue {
 }
 
 function captureEvaluationContext(context: EvaluationContext): EvaluationContext {
+  const captured = { ...context };
+  delete captured.evaluationTrace;
   return {
-    ...context,
+    ...captured,
     variables: new Map(context.variables),
-    stateKeyAliases: context.stateKeyAliases ? new Set(context.stateKeyAliases) : undefined
+    stateKeyAliases: context.stateKeyAliases ? new Set(context.stateKeyAliases) : undefined,
+    valueOrigins: context.valueOrigins ? new Map(context.valueOrigins) : undefined,
+    valuePathOrigins: context.valuePathOrigins ? new Map(context.valuePathOrigins) : undefined,
+    valueIssues: context.valueIssues ? new Map(context.valueIssues) : undefined
   };
 }
 

@@ -4,7 +4,7 @@ template stairsBlockstate(id: ResourceId, base = null, inner = null, outer = nul
   let baseModel = base ? base : `${resource_namespace(id)}:block/${resource_path(id)}`
   let innerModel = inner ? inner : `${resource_namespace(id)}:block/${resource_path(id)}_inner`
   let outerModel = outer ? outer : `${resource_namespace(id)}:block/${resource_path(id)}_outer`
-  blockstate id {
+  blockstate variants id {
     use stairs(base: baseModel, inner: innerModel, outer: outerModel, uvlock: uvlock)
   }
 }
@@ -12,7 +12,7 @@ template stairsBlockstate(id: ResourceId, base = null, inner = null, outer = nul
 template slabBlockstate(id: ResourceId, double: ModelId, bottom = null, top = null) {
   let bottomModel = bottom ? bottom : `${resource_namespace(id)}:block/${resource_path(id)}`
   let topModel = top ? top : `${resource_namespace(id)}:block/${resource_path(id)}_top`
-  blockstate id {
+  blockstate variants id {
     use slab(bottom: bottomModel, top: topModel, double: double)
   }
 }

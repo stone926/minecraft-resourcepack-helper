@@ -17,6 +17,9 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "font"));
     assert.ok(topLevel.some(candidate => candidate.label === "waypoint_style"));
     assert.ok(topLevel.some(candidate => candidate.label === "post_effect"));
+    assert.ok(topLevel.some(candidate => candidate.label === "blockstate variants"));
+    assert.ok(topLevel.some(candidate => candidate.label === "blockstate multipart"));
+    assert.strictEqual(topLevel.some(candidate => candidate.label === "blockstate"), false);
     assert.ok(topLevel.some(candidate => candidate.label === "json"));
     assert.ok(topLevel.some(candidate => candidate.label === "lang"));
     assert.ok(topLevel.some(candidate => candidate.label === "sounds"));
@@ -62,14 +65,14 @@ describe("RSGL completion data", () => {
     assert.ok(variants.has("use"));
     assert.ok(variants.has("for"));
     assert.ok(variants.has("variant entry"));
-    assert.strictEqual(variants.has("random"), false);
+    assert.ok(variants.has("random"));
     assert.strictEqual(variants.has("element"), false);
     assert.strictEqual(variants.has("multipart"), false);
 
     const multipart = labelsAtEnd("template parts() -> multipart {\n  ");
     assert.ok(multipart.has("apply"));
     assert.ok(multipart.has("when"));
-    assert.strictEqual(multipart.has("random"), false);
+    assert.ok(multipart.has("random"));
   });
 
   it("retains explicit template completion dialects inside nested control flow", () => {

@@ -48,10 +48,8 @@ describe("RSGL expression evaluation and loops", () => {
   it("expands product loops and template string interpolation", () => {
     const result = compileSourceWithUncheckedExterns([
       "for state in product({ facing: [north, east], powered: [false, true] }) {",
-      "  blockstate `lamp_${state.facing}_${state.powered}` {",
-      "    variants {",
-      "      {} -> { model: `minecraft:block/lamp_${state.facing}` }",
-      "    }",
+      "  blockstate variants `lamp_${state.facing}_${state.powered}` {",
+      "    {}: { model: `minecraft:block/lamp_${state.facing}` }",
       "  }",
       "}"
     ]);
@@ -112,17 +110,15 @@ describe("RSGL expression evaluation and loops", () => {
       "    }",
       "  }",
       "}",
-      "blockstate orient {",
-      "  variants {",
-      "    for dir in HORIZONTAL {",
-      "      [facing=dir] -> {",
+      "blockstate variants orient {",
+      "  for dir in HORIZONTAL {",
+      "    { facing: dir }: {",
       "        model: match dir {",
       "          north | south -> minecraft:block/line",
       "          _ -> minecraft:block/turn",
       "        }",
       "        y: yaw(dir)",
       "        uvlock: dir != north",
-      "      }",
       "    }",
       "  }",
       "}"

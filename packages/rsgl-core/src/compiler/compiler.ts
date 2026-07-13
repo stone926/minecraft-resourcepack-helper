@@ -11,7 +11,11 @@ import {
 } from "../parser";
 import { compileAtlasSpecialStatement } from "./atlasSugar";
 import { BlockstateCompileOptions, compileBlockstateResource } from "./blockstateCompiler";
-import { bindRsglProgram } from "../semantic";
+import {
+  bindRsglProgram,
+  type RsglBlockstateApplyFact,
+  type RsglBlockstateApplySiteNode
+} from "../semantic";
 import {
   classifyResolvedTemplateOutputMetadata,
   type ResolvedTemplateOutputClassification
@@ -30,8 +34,9 @@ import {
   EvaluationContext,
   EvaluationValue,
   RawGlobLoader,
-  bindEvaluationValue,
+  bindEvaluationResult,
   evaluateExpression,
+  evaluateExpressionResult,
   expressionEvaluationOrigin,
   hasEvaluationValueBinding
 } from "./evaluate";
@@ -114,6 +119,7 @@ interface RsglCompilerOptions {
   targetPackFormat?: RsglTargetPackFormat;
   maxEvaluationItems?: number;
   stdlibRoot?: string;
+  blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
 }
 
 export class RsglCompiler {
@@ -300,23 +306,21 @@ export class RsglCompiler {
 
   private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
-      bindEvaluationValue(
+      bindEvaluationResult(
         context,
         statement.name.text,
-        evaluateExpression(statement.value, context),
-        expressionEvaluationOrigin(statement.value, context)
+        evaluateExpressionResult(statement.value, context)
       );
     }
   }
 
   private compileTableDecl(statement: TableDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
-      bindEvaluationValue(
-        context,
-        statement.name.text,
-        normalizeJsonValue(evaluateExpression(statement.body, context)),
-        expressionEvaluationOrigin(statement.body, context)
-      );
+      const result = evaluateExpressionResult(statement.body, context);
+      bindEvaluationResult(context, statement.name.text, {
+        ...result,
+        value: normalizeJsonValue(result.value)
+      });
     }
   }
 
@@ -431,6 +435,15 @@ export class RsglCompiler {
       variables: new Map<string, EvaluationValue>(
         externalValues.map(item => [item.name, item.value])
       ),
+      valueOrigins: new Map(externalValues.flatMap(item =>
+        item.origin ? [[item.name, item.origin] as const] : []
+      )),
+      valuePathOrigins: new Map(externalValues.flatMap(item =>
+        item.pathOrigins ? [[item.name, item.pathOrigins] as const] : []
+      )),
+      valueIssues: new Map(externalValues.flatMap(item =>
+        item.valueIssues ? [[item.name, item.valueIssues] as const] : []
+      )),
       valueBindingNames: new Set([
         ...this.moduleValueBindingNames,
         ...externalValues.map(item => item.name)
@@ -479,6 +492,14 @@ export class RsglCompiler {
     context: RsglCompileContext,
     options: ResourceBodyCompileOptions = {}
   ): Record<string, JsonValue> {
+    if (body.kind !== "ResourceBody") {
+      this.error(
+        "rsgl.invalidResourceBody",
+        "A blockstate root body cannot be compiled by the generic resource-body compiler.",
+        body.range
+      );
+      return {};
+    }
     return resourceBodyToObject(body, context, {
       ...options,
       onError: (code, message, range) => this.error(code, message, range)
@@ -506,6 +527,14 @@ export class RsglCompiler {
     context: RsglCompileContext,
     options: ResourceBodyCompileOptions = {}
   ): { content: Record<string, JsonValue>; mappings: ResourceBodyMapping[] } {
+    if (body.kind !== "ResourceBody") {
+      this.error(
+        "rsgl.invalidResourceBody",
+        "A blockstate root body cannot be compiled by the generic resource-body compiler.",
+        body.range
+      );
+      return { content: {}, mappings: [] };
+    }
     const mappings: ResourceBodyMapping[] = [];
     const content = resourceBodyToObject(body, context, {
       ...options,
@@ -616,9 +645,10 @@ export class RsglCompiler {
         this.createTemplateExpansion(statement.expression, context, definition),
       resolveTemplateDispatch: (definition, callerContext) =>
         this.resolveTemplateDispatch(definition, callerContext),
-      onError: (code, message, range) => this.error(code, message, range),
+      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
-      sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context)
+      sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context),
+      getBlockstateApplyFact: node => this.options.blockstateApplyFacts?.get(node)
     };
   }
 

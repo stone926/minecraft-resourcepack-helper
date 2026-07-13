@@ -17,7 +17,25 @@ export function validateBlockstateUnit(
     rangeForGeneratedPath: path => sourceRangeForGeneratedPath(unit, path),
     schema: unit.id ? options.blockstateSchema?.(unit.id) : undefined
   });
+  if (content && "variants" in content && "multipart" in content) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.blockstateModeConflict",
+      "A blockstate root cannot contain both 'variants' and 'multipart'.",
+      "error",
+      sourceRangeForGeneratedPath(unit, "")
+    );
+  }
   const variants = asObject(content?.variants);
+  if (content && "variants" in content && !variants) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidBlockstateVariantsRoot",
+      "Blockstate root field 'variants' must be an object.",
+      "error",
+      sourceRangeForGeneratedPath(unit, "/variants")
+    );
+  }
   if (variants) {
     for (const [key, value] of Object.entries(variants)) {
       const generatedPath = blockstateVariantPath(key);
@@ -28,10 +46,29 @@ export function validateBlockstateUnit(
   }
 
   const multipart = Array.isArray(content?.multipart) ? content.multipart : [];
+  if (content && "multipart" in content && !Array.isArray(content.multipart)) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidBlockstateMultipartRoot",
+      "Blockstate root field 'multipart' must be an array.",
+      "error",
+      sourceRangeForGeneratedPath(unit, "/multipart")
+    );
+  }
   for (const [index, entry] of multipart.entries()) {
     const multipartEntry = asObject(entry);
     const generatedPath = blockstateMultipartPath(index);
     const range = sourceRangeForGeneratedPath(unit, generatedPath);
+    if (!multipartEntry) {
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.invalidBlockstateMultipartEntry",
+        "A blockstate multipart entry must be an object containing 'apply'.",
+        "error",
+        range
+      );
+      continue;
+    }
     validateBlockstateWhen(multipartEntry?.when, diagnostics, range);
     validateBlockstateModelProps(
       multipartEntry?.apply,
@@ -89,21 +126,53 @@ function validateBlockstateModelProps(
   generatedPath: string
 ): void {
   if (Array.isArray(value)) {
-    for (const [index, item] of value.entries()) {
-      validateBlockstateModelProps(
-        item,
-        unit,
-        options,
+    if (value.length === 0) {
+      pushDiagnosticAtRange(
         diagnostics,
-        range,
-        appendGeneratedPath(generatedPath, String(index))
+        "rsgl.emptyBlockstateModelList",
+        "A blockstate model list must contain at least one model object.",
+        "error",
+        sourceRangeForGeneratedPath(unit, generatedPath)
       );
+      return;
+    }
+    for (const [index, item] of value.entries()) {
+      const itemPath = appendGeneratedPath(generatedPath, String(index));
+      if (Array.isArray(item)) {
+        pushDiagnosticAtRange(
+          diagnostics,
+          "rsgl.nestedBlockstateModelList",
+          "Blockstate model lists must be flat.",
+          "error",
+          sourceRangeForGeneratedPath(unit, itemPath)
+        );
+      } else {
+        validateBlockstateModelObject(item, unit, options, diagnostics, range, itemPath);
+      }
     }
     return;
   }
 
+  validateBlockstateModelObject(value, unit, options, diagnostics, range, generatedPath);
+}
+
+function validateBlockstateModelObject(
+  value: JsonValue | undefined,
+  unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
+  diagnostics: RsglCompileDiagnostic[],
+  range: ValidationRange,
+  generatedPath: string
+): void {
   const model = asObject(value);
   if (!model) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.missingBlockstateModel",
+      "A blockstate model value must be an object containing a valid 'model' field.",
+      "error",
+      sourceRangeForGeneratedPath(unit, generatedPath)
+    );
     return;
   }
   if (typeof model.model === "string") {
@@ -116,18 +185,49 @@ function validateBlockstateModelProps(
       diagnostics,
       sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
     );
+  } else {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.missingBlockstateModel",
+      "A blockstate model object must contain a valid ModelId in its 'model' field.",
+      "error",
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
+    );
   }
   for (const axis of ["x", "y", "z"]) {
-    validateBlockstateRotation(axis, model[axis], diagnostics, range);
+    validateBlockstateRotation(
+      axis,
+      model[axis],
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, axis))
+    );
   }
   if ("z" in model && options.targetPackFormat && options.targetPackFormat.major < 75) {
-    pushDiagnosticAtRange(diagnostics, "rsgl.unsupportedBlockstateZRotation", "Blockstate z rotation requires pack format 75.0 or newer.", "error", range);
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.unsupportedBlockstateZRotation",
+      "Blockstate z rotation requires pack format 75.0 or newer.",
+      "error",
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "z"))
+    );
   }
   if ("uvlock" in model && typeof model.uvlock !== "boolean") {
-    pushDiagnosticAtRange(diagnostics, "rsgl.invalidBlockstateUvlock", "Blockstate model uvlock must be a boolean.", "error", range);
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidBlockstateUvlock",
+      "Blockstate model uvlock must be a boolean.",
+      "error",
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "uvlock"))
+    );
   }
   if ("weight" in model && (!Number.isInteger(model.weight) || Number(model.weight) <= 0)) {
-    pushDiagnosticAtRange(diagnostics, "rsgl.invalidRandomWeight", "Random model weight must be a positive integer.", "error", range);
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidRandomWeight",
+      "Random model weight must be a positive integer.",
+      "error",
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "weight"))
+    );
   }
 }
 

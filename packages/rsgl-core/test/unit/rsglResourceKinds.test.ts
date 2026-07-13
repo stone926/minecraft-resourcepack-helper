@@ -191,6 +191,9 @@ function sourceForDescriptor(keyword: string): string {
   if (keyword === "model") {
     return "model block descriptor_contract {}";
   }
+  if (keyword === "blockstate") {
+    return "blockstate variants minecraft:descriptor_contract {}";
+  }
   if (keyword === "pack") {
     return "pack {}";
   }

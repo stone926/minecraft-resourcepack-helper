@@ -2,13 +2,11 @@ import * as assert from "node:assert";
 import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL blockstate bodies and fragments", () => {
-  it("expands for statements inside blockstate variants", () => {
+  it("expands for statements inside canonical blockstate variants", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate lamp {",
-      "  variants {",
-      "    for state in product({ facing: [north, east], powered: [false, true] }) {",
-      "      [facing=state.facing powered=state.powered] -> { model: `minecraft:block/lamp_${state.facing}` }",
-      "    }",
+      "blockstate variants lamp {",
+      "  for state in product({ facing: [north, east], powered: [false, true] }) {",
+      "    { facing: state.facing, powered: state.powered }: { model: `minecraft:block/lamp_${state.facing}` }",
       "  }",
       "}"
     ]);
@@ -35,28 +33,30 @@ describe("RSGL blockstate bodies and fragments", () => {
       "",
       "/variants",
       "/variants/facing=east,powered=false",
+      "/variants/facing=east,powered=false/model",
       "/variants/facing=east,powered=true",
+      "/variants/facing=east,powered=true/model",
       "/variants/facing=north,powered=false",
-      "/variants/facing=north,powered=true"
+      "/variants/facing=north,powered=false/model",
+      "/variants/facing=north,powered=true",
+      "/variants/facing=north,powered=true/model"
     ].sort());
     assert.deepStrictEqual(result.units[0].sourceMap.mappings
-      .filter(mapping => mapping.generatedPath.startsWith("/variants/facing="))
+      .filter(mapping => /^\/variants\/[^/]+$/.test(mapping.generatedPath))
       .map(mapping => mapping.reason), ["loop", "loop", "loop", "loop"]);
   });
 
-  it("expands for and if statements inside blockstate multipart sections", () => {
+  it("expands for and if statements inside canonical blockstate multipart roots", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate oak_fence {",
-      "  multipart {",
-      "    apply { model: minecraft:block/oak_fence_post }",
-      "    for side in [north, east] {",
-      "      when { [side]: true } apply { model: `minecraft:block/oak_fence_side_${side}` }",
-      "    }",
-      "    if false {",
-      "      apply { model: minecraft:block/unused }",
-      "    } else {",
-      "      when { west: true } apply { model: minecraft:block/oak_fence_side_west }",
-      "    }",
+      "blockstate multipart oak_fence {",
+      "  apply { model: minecraft:block/oak_fence_post }",
+      "  for side in [north, east] {",
+      "    when { [side]: true } apply { model: `minecraft:block/oak_fence_side_${side}` }",
+      "  }",
+      "  if false {",
+      "    apply { model: minecraft:block/unused }",
+      "  } else {",
+      "    when { west: true } apply { model: minecraft:block/oak_fence_side_west }",
       "  }",
       "}"
     ]);
@@ -95,14 +95,25 @@ describe("RSGL blockstate bodies and fragments", () => {
         }
       ]
     });
-    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath), [
+    assert.deepStrictEqual(result.units[0].sourceMap.mappings.map(mapping => mapping.generatedPath).sort(), [
       "",
       "/multipart",
       "/multipart/0",
+      "/multipart/0/apply",
+      "/multipart/0/apply/model",
       "/multipart/1",
+      "/multipart/1/apply",
+      "/multipart/1/apply/model",
+      "/multipart/1/when",
       "/multipart/2",
-      "/multipart/3"
-    ]);
+      "/multipart/2/apply",
+      "/multipart/2/apply/model",
+      "/multipart/2/when",
+      "/multipart/3",
+      "/multipart/3/apply",
+      "/multipart/3/apply/model",
+      "/multipart/3/when"
+    ].sort());
     assert.deepStrictEqual(result.units[0].sourceMap.mappings
       .filter(mapping => mapping.generatedPath === "/multipart/1" || mapping.generatedPath === "/multipart/2")
       .map(mapping => mapping.reason), ["loop", "loop"]);
@@ -111,10 +122,10 @@ describe("RSGL blockstate bodies and fragments", () => {
   it("expands stdlib blockstate fragments from imported templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stairs, slab } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
-      "blockstate acacia_stairs {",
+      "blockstate variants acacia_stairs {",
       "  use stairs(base: minecraft:block/acacia_stairs, inner: minecraft:block/acacia_stairs_inner, outer: minecraft:block/acacia_stairs_outer)",
       "}",
-      "blockstate acacia_slab {",
+      "blockstate variants acacia_slab {",
       "  use slab(bottom: minecraft:block/acacia_slab, top: minecraft:block/acacia_slab_top, double: minecraft:block/acacia_planks)",
       "}"
     ]);
@@ -143,15 +154,13 @@ describe("RSGL blockstate bodies and fragments", () => {
     });
   });
 
-  it("lowers random apply sugar inside explicit blockstate variants", () => {
+  it("lowers canonical random apply values inside blockstate variants", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate stone {",
-      "  variants {",
-      "    {} -> random [",
-      "      @minecraft:block/stone weight=3,",
-      "      @minecraft:block/stone_mirrored y=180",
-      "    ]",
-      "  }",
+      "blockstate variants stone {",
+      "  {}: random [",
+      "    minecraft:block/stone weight=3,",
+      "    minecraft:block/stone_mirrored y=180",
+      "  ]",
       "}"
     ]);
 
@@ -171,7 +180,7 @@ describe("RSGL blockstate bodies and fragments", () => {
     const result = compileSourceWithUncheckedExterns([
       "template lampFacing(modelId: ModelId, states: Json = HORIZONTAL) -> variants {",
       "    for facing in states {",
-      "      { facing: facing } -> { model: modelId, y: yaw(facing) }",
+      "      { facing: facing }: { model: modelId, y: yaw(facing) }",
       "    }",
       "}",
       "template connectedPane(post: ModelId, side: ModelId) -> multipart {",
@@ -180,12 +189,10 @@ describe("RSGL blockstate bodies and fragments", () => {
       "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
       "    }",
       "}",
-      "blockstate lamp {",
-      "  variants {",
-      "    use lampFacing(minecraft:block/lamp)",
-      "  }",
+      "blockstate variants lamp {",
+      "  use lampFacing(minecraft:block/lamp)",
       "}",
-      "blockstate pane {",
+      "blockstate multipart pane {",
       "  use connectedPane(minecraft:block/pane_post, minecraft:block/pane_side)",
       "}"
     ]);
@@ -214,10 +221,10 @@ describe("RSGL blockstate bodies and fragments", () => {
     const result = compileSourceWithUncheckedExterns([
       "let suffix = \"lamp\"",
       "template keyed(property: String, prop1: String, modelId: ModelId) -> variants {",
-      "    [property=full prop1=false] ->",
-      "      @modelId y=yaw(east)",
+      "    { [property]: full, [prop1]: false }:",
+      "      modelId y=yaw(east)",
       "}",
-      "blockstate example {",
+      "blockstate variants example {",
       "  use keyed(\"tilt\", \"powered\", `minecraft:block/${suffix}`)",
       "}"
     ]);
@@ -236,14 +243,12 @@ describe("RSGL blockstate bodies and fragments", () => {
   it("parses newline blockstate values and comma-separated random apply entries", () => {
     const result = compileSourceWithUncheckedExterns([
       "let block = \"powder_snow\"",
-      "blockstate snow {",
-      "  variants {",
-      "    {} ->",
-      "      random [",
-      "        @`minecraft:block/${block}`, @`minecraft:block/${block}` y=90,",
-      "        @`minecraft:block/${block}` y=180, @`minecraft:block/${block}` y=270",
-      "      ]",
-      "  }",
+      "blockstate variants snow {",
+      "  {}:",
+      "    random [",
+      "      `minecraft:block/${block}`, `minecraft:block/${block}` y=90,",
+      "      `minecraft:block/${block}` y=180, `minecraft:block/${block}` y=270",
+      "    ]",
       "}"
     ]);
 
@@ -263,11 +268,9 @@ describe("RSGL blockstate bodies and fragments", () => {
 
   it("evaluates local let declarations inside multipart sections", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate sensor {",
-      "  multipart {",
-      "    let poweredStates = \"1|2|3\"",
-      "    when { power: poweredStates } apply @minecraft:block/sensor_powered",
-      "  }",
+      "blockstate multipart sensor {",
+      "  let poweredStates = \"1|2|3\"",
+      "  when { power: poweredStates } apply minecraft:block/sensor_powered",
       "}"
     ]);
 
@@ -282,26 +285,22 @@ describe("RSGL blockstate bodies and fragments", () => {
     });
   });
 
-  it("reports incompatible blockstate template use in section contexts", () => {
+  it("reports incompatible blockstate template use in canonical root contexts", () => {
     const result = compileSourceWithUncheckedExterns([
       "import { stairs } from \"rsgl:conventions/blockstate_fragments.rsgl\"",
-      "blockstate broken {",
-      "  multipart {",
-      "    use stairs(base: minecraft:block/stairs, inner: minecraft:block/stairs_inner, outer: minecraft:block/stairs_outer)",
-      "  }",
+      "blockstate multipart broken {",
+      "  use stairs(base: minecraft:block/stairs, inner: minecraft:block/stairs_inner, outer: minecraft:block/stairs_outer)",
       "}"
     ]);
 
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateOutputDialectMismatch"));
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.blockstateModeConflict"));
     assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"), false);
   });
 
   it("reports removed randomVariants function calls", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate broken {",
-      "  variants {",
-      "    {} -> randomVariants({ bad: true })",
-      "  }",
+      "blockstate variants broken {",
+      "  {}: randomVariants({ bad: true })",
       "}"
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
@@ -311,7 +310,7 @@ describe("RSGL blockstate bodies and fragments", () => {
 
   it("reports undefined symbols for removed hardcoded blockstate fragments", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate broken {",
+      "blockstate variants broken {",
       "  use horizontalFacing(model: minecraft:block/furnace, state: [north])",
       "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal)",
       "}",
@@ -319,5 +318,27 @@ describe("RSGL blockstate bodies and fragments", () => {
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.strictEqual(codes.filter(code => code === "rsgl.undefinedSymbol").length, 2);
+  });
+
+  it("retains isolated legacy blockstate syntax during the deprecation window", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "blockstate legacy_lamp {",
+      "  variants {",
+      "    [facing=north] -> @minecraft:block/lamp",
+      "  }",
+      "}"
+    ]);
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.blockstateModeRequired"));
+    assert.ok(codes.includes("rsgl.legacyBlockstateWrapper"));
+    assert.ok(codes.includes("rsgl.legacyStateKeySugar"));
+    assert.ok(codes.includes("rsgl.legacyBlockstateEntryArrow"));
+    assert.ok(codes.includes("rsgl.legacyModelApplySugar"));
+    assert.deepStrictEqual(result.units[0]?.content, {
+      variants: {
+        ["facing=north"]: { model: "minecraft:block/lamp" }
+      }
+    });
   });
 });

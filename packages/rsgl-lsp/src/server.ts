@@ -21,6 +21,7 @@ import {
 } from "../../rsgl-shared/src";
 import {
   completionItemsForDocument as completionItemsForDocumentCore,
+  computeDocumentCodeActions,
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
   dependencyPathsForDocument,
@@ -31,6 +32,7 @@ import {
   identifierAtOffset,
   normalizeFileName,
   projectSemanticConfigurationFingerprint,
+  rsglBlockstateLegacyFixAllKind,
   toValidationSettings,
   type RsglValidationSettings
 } from "./serverCore";
@@ -55,6 +57,9 @@ connection.onInitialize(params => {
       },
       hoverProvider: true,
       documentFormattingProvider: true,
+      codeActionProvider: {
+        codeActionKinds: ["quickfix", rsglBlockstateLegacyFixAllKind]
+      },
       semanticTokensProvider: {
         legend: {
           tokenTypes: [...rsglSemanticTokenTypes],
@@ -164,6 +169,20 @@ connection.onDocumentFormatting(params => {
       },
       newText: formatted
     }];
+});
+
+connection.onCodeAction(params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return [];
+  }
+  return computeDocumentCodeActions(
+    document,
+    fileNameFromUri(document.uri),
+    document.uri,
+    params.context,
+    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+  );
 });
 
 documents.listen(connection);

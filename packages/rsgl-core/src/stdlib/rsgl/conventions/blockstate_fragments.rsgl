@@ -1,7 +1,7 @@
 template slab(bottom: ModelId, top: ModelId, double: ModelId) -> variants {
-    [type="bottom"] -> @bottom
-    [type="top"] -> @top
-    [type="double"] -> @double
+    { type: "bottom" }: bottom
+    { type: "top" }: top
+    { type: "double" }: double
 }
 
 template stairs(base: ModelId, inner: ModelId, outer: ModelId, uvlock: Boolean = false) -> variants {
@@ -57,6 +57,6 @@ template stairs(base: ModelId, inner: ModelId, outer: ModelId, uvlock: Boolean =
       }
       let x = half == top ? 180 : 0
       let y = stairsYaw[`${half}_${shape}_${facing}`]
-      [facing=facing, half=half, shape=shape] -> @entryModel x=x y=y uvlock=(uvlock || x != 0 || y != 0)
+      { facing: facing, half: half, shape: shape }: entryModel x=x y=y uvlock=(uvlock || x != 0 || y != 0)
     }
 }

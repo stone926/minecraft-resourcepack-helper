@@ -24,10 +24,8 @@ describe("RSGL semantic model", () => {
       "  parent minecraft:block/cube_all",
       "  textures { all: id }",
       "}",
-      "blockstate acacia_stairs {",
-      "  variants {",
-      "    {} -> @minecraft:block/acacia_stairs",
-      "  }",
+      "blockstate variants acacia_stairs {",
+      "  {}: minecraft:block/acacia_stairs",
       "}"
     ].join("\n"));
 

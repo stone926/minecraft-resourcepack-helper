@@ -174,19 +174,28 @@ class ResolvedTemplateUseValidator {
     if (!dispatch.compatible) {
       const context = normalizeTemplateCallerContext(callerContext);
       const output = templateOutputMetadataFingerprint(metadata);
-      this.push(dispatch.failure === "bodyContextRequired"
-        ? fileDiagnostic(
+      if (dispatch.failure === "bodyContextRequired") {
+        this.push(fileDiagnostic(
           site.fileName,
           "rsgl.templateOutputDialectRequired",
           `Template '${symbol!.name}' has an ambiguous implicit body and cannot be used in ${context}; add -> model, -> variants, or -> multipart, or make it a complete-resource template.`,
           expression.range
-        )
-        : fileDiagnostic(
+        ));
+      } else if (dispatch.failure === "blockstateModeConflict") {
+        this.push(fileDiagnostic(
+          site.fileName,
+          "rsgl.blockstateModeConflict",
+          `Template '${symbol!.name}' produces ${output}, which conflicts with the blockstate mode required by ${context}.`,
+          expression.range
+        ));
+      } else {
+        this.push(fileDiagnostic(
           site.fileName,
           "rsgl.templateOutputDialectMismatch",
           `Template '${symbol!.name}' produces ${output}, which is incompatible with ${context}.`,
           expression.range
         ));
+      }
       return;
     }
     if (dispatch.compatibilityWarning) {

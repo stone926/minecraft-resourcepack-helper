@@ -4,6 +4,7 @@ import {
 } from "./resourceKinds";
 import { rsglModelGeometryCompletionDescriptors } from "./modelGeometrySyntax";
 import { getRsglCompletionContext } from "./completionContext";
+import { getBlockstateEntryCompletions } from "./blockstateCompletionData";
 
 export interface RsglCompletionCandidate {
   label: string;
@@ -69,13 +70,13 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
   },
   {
     label: "template -> variants",
-    insertText: "template ${1:name}(${2:model}: ModelId) -> variants {\n  ${3:{}} -> { model: ${2:model} }\n}",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> variants {\n  ${3:{}}: ${2:model}\n}",
     detail: "Reusable blockstate variants template",
     kind: "snippet"
   },
   {
     label: "template -> multipart",
-    insertText: "template ${1:name}(${2:model}: ModelId) -> multipart {\n  apply { model: ${2:model} }\n}",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> multipart {\n  apply ${2:model}\n}",
     detail: "Reusable blockstate multipart template",
     kind: "snippet"
   },
@@ -152,9 +153,6 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
     ...descriptor,
     kind: "snippet" as const
   })),
-  { label: "variants", insertText: "variants {\n  ${1:{}} -> { model: ${2:minecraft:block/stone} }\n}", detail: "Blockstate variants section", kind: "snippet" },
-  { label: "multipart", insertText: "multipart {\n  apply { model: ${1:minecraft:block/stone} }\n}", detail: "Blockstate multipart section", kind: "snippet" },
-  { label: "variant entry", insertText: "${1:{}} -> { model: ${2:minecraft:block/stone} }", detail: "Blockstate variant entry", kind: "snippet" },
   { label: "range", insertText: "range property ${1:minecraft:time} source ${2:daytime} wobble ${3:true} {\n  frames ${4:0..31} model ${5:minecraft:item/clock_00}\n  fallback ${6:minecraft:item/clock_00}\n}", detail: "Item range_dispatch model", kind: "snippet" },
   { label: "select", insertText: "select property ${1:minecraft:potion_contents} component ${2:minecraft:potion_contents} {\n  case ${3:\"minecraft:healing\"} -> ${4:minecraft:item/potion_healing}\n  fallback ${5:minecraft:item/potion}\n}", detail: "Item select model", kind: "snippet" },
   { label: "condition", insertText: "condition property ${1:minecraft:using_item} {\n  on_true ${2:minecraft:item/bow_pulling}\n  on_false ${3:minecraft:item/bow}\n}", detail: "Item condition model", kind: "snippet" },
@@ -162,21 +160,37 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "special", insertText: "special base ${1:minecraft:item/shield} model { type: ${2:minecraft:shield} }", detail: "Item special model", kind: "snippet" },
   { label: "empty", insertText: "empty", detail: "Item empty model", kind: "snippet" },
   { label: "selected_item", insertText: "selected_item", detail: "Bundle selected item model", kind: "snippet" },
+  { label: "let", insertText: "let ${1:name} = ${2:value}", detail: "Local constant", kind: "snippet" },
   { label: "use", insertText: "use ${1:templateName}(${2})", detail: "Template call", kind: "snippet" },
   { label: "for", insertText: "for ${1:item} in ${2:items} {\n  ${3}\n}", detail: "Finite expansion loop", kind: "snippet" },
   { label: "for multidim", insertText: "for ${1:a} in ${2:items}, ${3:b} in ${4:variants} {\n  ${5}\n}", detail: "Multidimensional finite expansion loop", kind: "snippet" },
   { label: "if", insertText: "if ${1:condition} {\n  ${2}\n}", detail: "Static conditional block", kind: "snippet" },
-  { label: "when", insertText: "when { ${1:facing}: ${2:north} } apply { model: ${3:minecraft:block/stone} }", detail: "Multipart condition", kind: "snippet" },
-  { label: "apply", insertText: "apply { model: ${1:minecraft:block/stone} }", detail: "Multipart model apply", kind: "snippet" },
-  { label: "random", insertText: "random [\n  { model: ${1:minecraft:block/stone}, weight: ${2:1} }\n]", detail: "Random variant model list", kind: "snippet" },
   { label: "base", insertText: "base \"${1:./resource.json}\"", detail: "Initialize this resource from a JSON document", kind: "snippet" },
   { label: "merge", insertText: "merge {\n  ${1:key}: ${2:value}\n}", detail: "Shallow-merge a JSON fragment", kind: "snippet" },
   { label: "merge deep", insertText: "merge deep {\n  ${1:key}: ${2:value}\n}", detail: "Recursively merge objects and append arrays", kind: "snippet" },
   { label: "merge strict", insertText: "merge strict {\n  ${1:key}: ${2:value}\n}", detail: "Merge only fields that already exist", kind: "snippet" },
   { label: "merge upsert", insertText: "merge upsert {\n  ${1:key}: ${2:value}\n}", detail: "Recursively update or create fields", kind: "snippet" },
-  { label: "merge append", insertText: "merge append {\n  ${1:key}: [${2:value}]\n}", detail: "Recursively merge objects and append compatible arrays", kind: "snippet" },
-  { label: "@block", insertText: "@block/${1:model} ${2:y=90} ${3:uvlock}", detail: "Model apply sugar", kind: "snippet" }
+  { label: "merge append", insertText: "merge append {\n  ${1:key}: [${2:value}]\n}", detail: "Recursively merge objects and append compatible arrays", kind: "snippet" }
 ];
+
+const blockstateRootOnlyCompletions: readonly RsglCompletionCandidate[] = [
+  {
+    label: "custom",
+    insertText: "${1:key}: ${2:value}",
+    detail: "Custom blockstate root field",
+    kind: "property"
+  }
+];
+
+const blockstateControlLabels = new Set(["let", "use", "for", "for multidim", "if"]);
+const blockstateRootOperationLabels = new Set([
+  "base",
+  "merge",
+  "merge deep",
+  "merge strict",
+  "merge upsert",
+  "merge append"
+]);
 
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   { label: "seq", insertText: "seq(${1:i} => \"minecraft:block/name_\" + ${1:i}, ${1:i}: ${2:0..3})", detail: "Compile-time string sequence", kind: "function" },
@@ -207,6 +221,28 @@ export function getRsglCompletionCandidates(text: string, offset: number): RsglC
   if (!context.insideBlock) {
     return [...topLevelRsglCompletions, ...builtinRsglCompletions];
   }
+  const blockstate = context.blockstate
+    ?? (context.templateOutputDialect === "variants" || context.templateOutputDialect === "multipart"
+      ? { mode: context.templateOutputDialect, scope: "entryTemplate" as const }
+      : undefined);
+  if (blockstate) {
+    const controls = blockRsglCompletions.filter(candidate => blockstateControlLabels.has(candidate.label));
+    const rootOperations = blockstate.scope === "entryTemplate"
+      ? []
+      : [
+          ...blockRsglCompletions.filter(candidate =>
+            blockstateRootOperationLabels.has(candidate.label)
+            && (candidate.label !== "base" || context.allowBase)
+          ),
+          ...blockstateRootOnlyCompletions
+        ];
+    return [
+      ...getBlockstateEntryCompletions(blockstate.mode),
+      ...controls,
+      ...rootOperations,
+      ...builtinRsglCompletions
+    ];
+  }
   const blockCandidates = blockRsglCompletions.filter(candidate =>
     (candidate.label !== "base" || context.allowBase)
     && (candidate.label !== "extern var" || context.allowExternVar)
@@ -222,19 +258,10 @@ function completionMatchesTemplateDialect(
   if (!dialect) {
     return true;
   }
-  const shared = new Set(["use", "for", "for multidim", "if"]);
-  if (shared.has(candidate.label)) {
+  if (blockstateControlLabels.has(candidate.label)) {
     return true;
   }
-  if (dialect === "variants") {
-    return candidate.label === "variant entry";
-  }
-  if (dialect === "multipart") {
-    return candidate.label === "when" || candidate.label === "apply";
-  }
   return !new Set([
-    "variants",
-    "multipart",
     "range",
     "select",
     "condition",
@@ -242,10 +269,6 @@ function completionMatchesTemplateDialect(
     "special",
     "empty",
     "selected_item",
-    "when",
-    "apply",
-    "random",
-    "@block",
     "base"
   ]).has(candidate.label);
 }
