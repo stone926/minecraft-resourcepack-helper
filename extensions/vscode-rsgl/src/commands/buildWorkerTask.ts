@@ -2,7 +2,6 @@ import {
   compileRsglDirectory,
   emitRsglFiles
 } from "../../../../packages/rsgl-core/src/compiler";
-import { loadRsglProjectConfigForSource } from "../../../../packages/rsgl-core/src/rsglConfig";
 import {
   prepareRsglResourcePackBuild,
   prepareRsglResourcePackDirectoryBuild,
@@ -16,6 +15,7 @@ import type {
   RsglAnyWorkerRequest,
   RsglAnyWorkerResponse,
   RsglWorkerBuildContext,
+  RsglWorkerCompileConfiguration,
   RsglWorkerCompileDirectoryContext,
   RsglWorkerValidationConfiguration
 } from "./buildWorkerProtocol";
@@ -91,7 +91,7 @@ function compactBuildPreviewResult(result: RsglBuildPreviewResult): RsglBuildPre
 }
 
 function createBuildOptions(
-  context: RsglWorkerBuildContext & RsglWorkerValidationConfiguration,
+  context: RsglWorkerBuildContext & RsglWorkerValidationConfiguration & RsglWorkerCompileConfiguration,
   isCancellationRequested: () => boolean
 ): RsglBuildOptions {
   return {
@@ -104,18 +104,21 @@ function createBuildOptions(
 }
 
 function createValidationOptions(
-  context: (RsglWorkerBuildContext | RsglWorkerCompileDirectoryContext) & RsglWorkerValidationConfiguration
+  context: (RsglWorkerBuildContext | RsglWorkerCompileDirectoryContext)
+    & RsglWorkerValidationConfiguration
+    & RsglWorkerCompileConfiguration
 ) {
-  const projectConfig = loadRsglProjectConfigForSource(context.validationAnchor)?.config;
   return {
+    namespace: context.namespace,
+    defaultNamespace: context.defaultNamespace,
+    projectTarget: context.projectTarget,
+    maxEvaluationItems: context.maxEvaluationItems,
     ...createRsglWorkspaceValidationOptions({
       sourceFileName: context.validationAnchor,
-      defaultAssetsPath: context.defaultAssetsPath === undefined
-        ? projectConfig?.defaultAssetsPath
-        : context.defaultAssetsPath,
-      resourcePackRoots: context.resourcePackRoots ?? projectConfig?.resourcePackRoots
+      defaultAssetsPath: context.defaultAssetsPath,
+      resourcePackRoots: context.resourcePackRoots
     }),
-    globalExterns: context.globalExterns ?? projectConfig?.extern,
-    checkExternExistence: context.checkExternExistence ?? projectConfig?.checkExternExistence
+    globalExterns: context.globalExterns,
+    checkExternExistence: context.checkExternExistence
   };
 }

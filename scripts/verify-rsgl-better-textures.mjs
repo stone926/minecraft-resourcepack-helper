@@ -51,6 +51,7 @@ if (!existsSync(sourceRoot)) {
 const sourceFiles = core.loadRsglSourceFilesFromDirectory(sourceRoot);
 const projectSourceFiles = sourceFiles.filter(sourceFile => isFileWithinRoot(fixtureRoot, sourceFile.fileName));
 const result = core.compileRsglDirectory(sourceRoot, {
+  ...core.projectCompileOptionsFromRsglConfig(config),
   globalExterns: config.extern,
   checkExternExistence: config.checkExternExistence,
   ...core.createRsglWorkspaceValidationOptions({

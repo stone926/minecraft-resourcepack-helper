@@ -51,6 +51,12 @@
         "path": "./syntaxes/rsgl.tmLanguage.json"
       }
     ],
+    "jsonValidation": [
+      {
+        "fileMatch": "**/rsgl.config.json",
+        "url": "./schemas/rsgl-config.schema.json"
+      }
+    ],
     "commands": [
       {
         "command": "rsgl.build",

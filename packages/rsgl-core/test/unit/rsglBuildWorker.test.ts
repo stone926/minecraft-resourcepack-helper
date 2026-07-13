@@ -72,6 +72,61 @@ describe("RSGL build worker client", () => {
     }
   });
 
+  it("uses the serialized project namespace and target snapshot in the worker", async () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-worker-config-路径-");
+    const sourceRoot = path.join(root, "source files");
+
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "main.rsgl"), [
+        "model block rotated {}",
+        "blockstate rotated {",
+        "  variants {",
+        "    {} -> { model: block/rotated, z: 90 }",
+        "  }",
+        "}"
+      ].join("\n"));
+
+      const modern = await runRsglWorkerTask({
+        kind: "compileDirectory",
+        payload: {
+          sourceRoot,
+          validationAnchor: sourceRoot,
+          namespace: "worker_ns",
+          defaultNamespace: "project_ns",
+          projectTarget: { edition: "java", packFormat: { major: 75, minor: 0 } },
+          maxEvaluationItems: 4321
+        }
+      });
+      assert.strictEqual(modern.type, "success");
+      if (modern.type === "success") {
+        assert.strictEqual(modern.result.success, true);
+        assert.ok(modern.result.emittedFiles.some(file =>
+          file.outputPath.replaceAll("\\", "/") === "assets/worker_ns/models/block/rotated.json"
+        ));
+      }
+
+      const legacy = await runRsglWorkerTask({
+        kind: "compileDirectory",
+        payload: {
+          sourceRoot,
+          validationAnchor: sourceRoot,
+          defaultNamespace: "worker_ns",
+          projectTarget: { edition: "java", packFormat: { major: 74, minor: 0 } }
+        }
+      });
+      assert.strictEqual(legacy.type, "success");
+      if (legacy.type === "success") {
+        assert.strictEqual(legacy.result.success, false);
+        assert.ok(legacy.result.diagnostics.some(diagnostic =>
+          diagnostic.code === "rsgl.unsupportedBlockstateZRotation"
+        ));
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not create or invoke the worker in the caller's synchronous stack", async () => {
     const transport = new FakeWorkerTransport();
     let created = false;

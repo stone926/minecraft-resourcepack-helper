@@ -1,7 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isValidMinecraftNamespace } from "../../mc-assets/src";
 import { parseExternResourcePattern, type RsglGlobalExternConfigEntry } from "./externDeclarations";
 import { isExternResourceKind, rsglExternResourceKinds } from "./resourceKinds";
+import type { RsglCompileConfigurationOptions } from "./compiler/compileConfiguration";
+import {
+  isRsglMinecraftVersionText,
+  normalizeRsglProjectTarget,
+  rsglTargetPackFormatForMinecraftVersion,
+  type RsglTargetConfig
+} from "./compiler/targetConfig";
 
 /** Validated contents of rsgl.config.json. */
 export interface RsglProjectConfig {
@@ -13,7 +21,16 @@ export interface RsglProjectConfig {
   resourcePackRoots?: string[];
   extern?: RsglGlobalExternConfigEntry[];
   checkExternExistence?: boolean;
+  namespace?: string;
+  target?: RsglTargetConfig;
+  maxEvaluationItems?: number;
 }
+
+/** Internal compile options contributed by a validated public project config. */
+export type RsglProjectCompileOptions = Pick<
+  RsglCompileConfigurationOptions,
+  "defaultNamespace" | "projectTarget" | "maxEvaluationItems"
+>;
 
 export interface LoadedRsglProjectConfig {
   fileName: string;
@@ -21,6 +38,28 @@ export interface LoadedRsglProjectConfig {
 }
 
 export type RsglProjectConfigAnchorKind = "file" | "directory";
+
+/** Structured validation failure for one public project-config field. */
+export class RsglProjectConfigError extends Error {
+  public override readonly name = "RsglProjectConfigError";
+  public relativeFieldPath: string | undefined;
+
+  public constructor(
+    public readonly fieldPath: string,
+    message: string
+  ) {
+    super(`Invalid ${fieldPath}: ${message}`);
+  }
+
+  /** Records a filesystem-independent field path for diagnostic classification. */
+  public attachConfigPath(configPath: string): void {
+    this.relativeFieldPath = this.fieldPath === configPath
+      ? ""
+      : this.fieldPath.startsWith(`${configPath}.`)
+        ? this.fieldPath.slice(configPath.length + 1)
+        : undefined;
+  }
+}
 
 const configProperties = new Set([
   "root",
@@ -30,13 +69,28 @@ const configProperties = new Set([
   "defaultAssetsPath",
   "resourcePackRoots",
   "extern",
-  "checkExternExistence"
+  "checkExternExistence",
+  "namespace",
+  "target",
+  "maxEvaluationItems"
 ]);
 
 const externEntryProperties = new Set(["source", "kind", "patterns", "checkExistence"]);
+const targetProperties = new Set(["edition", "format", "mc"]);
 
 /** Validates and normalizes the parsed contents of rsgl.config.json. */
 export function parseRsglProjectConfig(value: unknown, configPath = "rsgl.config.json"): RsglProjectConfig {
+  try {
+    return parseRsglProjectConfigValue(value, configPath);
+  } catch (error) {
+    if (error instanceof RsglProjectConfigError) {
+      error.attachConfigPath(configPath);
+    }
+    throw error;
+  }
+}
+
+function parseRsglProjectConfigValue(value: unknown, configPath: string): RsglProjectConfig {
   const config = requireObject(value, configPath);
   rejectUnknownProperties(config, configProperties, configPath);
   return {
@@ -47,8 +101,31 @@ export function parseRsglProjectConfig(value: unknown, configPath = "rsgl.config
     defaultAssetsPath: optionalNullableString(config.defaultAssetsPath, `${configPath}.defaultAssetsPath`),
     resourcePackRoots: optionalStringArray(config.resourcePackRoots, `${configPath}.resourcePackRoots`),
     extern: parseExternEntries(config.extern, `${configPath}.extern`),
-    checkExternExistence: optionalBoolean(config.checkExternExistence, `${configPath}.checkExternExistence`)
+    checkExternExistence: optionalBoolean(config.checkExternExistence, `${configPath}.checkExternExistence`),
+    namespace: optionalNamespace(config.namespace, `${configPath}.namespace`),
+    target: parseTargetConfig(config.target, `${configPath}.target`),
+    maxEvaluationItems: optionalPositiveSafeInteger(
+      config.maxEvaluationItems,
+      `${configPath}.maxEvaluationItems`
+    )
   };
+}
+
+/** Explicitly maps public config keys to their differently named compiler counterparts. */
+export function projectCompileOptionsFromRsglConfig(
+  config: RsglProjectConfig
+): RsglProjectCompileOptions {
+  const options: RsglProjectCompileOptions = {};
+  if (config.namespace !== undefined) {
+    options.defaultNamespace = config.namespace;
+  }
+  if (config.target !== undefined) {
+    options.projectTarget = normalizeRsglProjectTarget(config.target);
+  }
+  if (config.maxEvaluationItems !== undefined) {
+    options.maxEvaluationItems = config.maxEvaluationItems;
+  }
+  return options;
 }
 
 export function readRsglProjectConfig(fileName: string): RsglProjectConfig {
@@ -131,6 +208,54 @@ function parseExternEntries(value: unknown, fieldPath: string): RsglGlobalExtern
   return value.map((entry, index) => parseExternEntry(entry, `${fieldPath}[${index}]`));
 }
 
+function parseTargetConfig(value: unknown, fieldPath: string): RsglTargetConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const target = requireObject(value, fieldPath);
+  rejectUnknownProperties(target, targetProperties, fieldPath);
+  if (target.edition !== "java") {
+    throw invalidConfig(`${fieldPath}.edition`, "expected 'java'.");
+  }
+
+  const hasFormat = Object.prototype.hasOwnProperty.call(target, "format");
+  const hasMinecraftVersion = Object.prototype.hasOwnProperty.call(target, "mc");
+  if (hasFormat === hasMinecraftVersion) {
+    throw invalidConfig(fieldPath, "expected exactly one of 'format' or 'mc'.");
+  }
+
+  if (hasFormat) {
+    return {
+      edition: "java",
+      format: parseTargetFormat(target.format, `${fieldPath}.format`)
+    };
+  }
+
+  if (typeof target.mc !== "string") {
+    throw invalidConfig(`${fieldPath}.mc`, "expected a Minecraft version string.");
+  }
+  if (!isRsglMinecraftVersionText(target.mc)) {
+    throw invalidConfig(`${fieldPath}.mc`, "expected a version like '1.21.4'.");
+  }
+  if (!rsglTargetPackFormatForMinecraftVersion(target.mc)) {
+    throw invalidConfig(`${fieldPath}.mc`, `unknown Minecraft version '${target.mc}'.`);
+  }
+  return { edition: "java", mc: target.mc };
+}
+
+function parseTargetFormat(value: unknown, fieldPath: string): number | [number, number] {
+  if (typeof value === "number") {
+    return requirePositiveSafeInteger(value, fieldPath);
+  }
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw invalidConfig(fieldPath, "expected a positive integer or [major, minor] pair.");
+  }
+  return [
+    requirePositiveSafeInteger(value[0], `${fieldPath}[0]`),
+    requireNonNegativeSafeInteger(value[1], `${fieldPath}[1]`)
+  ];
+}
+
 function parseExternEntry(value: unknown, fieldPath: string): RsglGlobalExternConfigEntry {
   const entry = requireObject(value, fieldPath);
   rejectUnknownProperties(entry, externEntryProperties, fieldPath);
@@ -198,6 +323,17 @@ function optionalString(value: unknown, fieldPath: string): string | undefined {
   return value;
 }
 
+function optionalNamespace(value: unknown, fieldPath: string): string | undefined {
+  const namespace = optionalString(value, fieldPath);
+  if (namespace !== undefined && !isValidMinecraftNamespace(namespace)) {
+    throw invalidConfig(
+      fieldPath,
+      "expected a valid lowercase Minecraft namespace using letters, digits, '_', '-', or '.'."
+    );
+  }
+  return namespace;
+}
+
 function optionalNullableString(value: unknown, fieldPath: string): string | null | undefined {
   return value === null ? null : optionalString(value, fieldPath);
 }
@@ -208,6 +344,24 @@ function optionalBoolean(value: unknown, fieldPath: string): boolean | undefined
   }
   if (typeof value !== "boolean") {
     throw invalidConfig(fieldPath, "expected a boolean.");
+  }
+  return value;
+}
+
+function optionalPositiveSafeInteger(value: unknown, fieldPath: string): number | undefined {
+  return value === undefined ? undefined : requirePositiveSafeInteger(value, fieldPath);
+}
+
+function requirePositiveSafeInteger(value: unknown, fieldPath: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw invalidConfig(fieldPath, "expected a positive safe integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeSafeInteger(value: unknown, fieldPath: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw invalidConfig(fieldPath, "expected a non-negative safe integer.");
   }
   return value;
 }
@@ -227,8 +381,8 @@ function optionalStringArray(value: unknown, fieldPath: string): string[] | unde
   });
 }
 
-function invalidConfig(fieldPath: string, message: string): Error {
-  return new Error(`Invalid ${fieldPath}: ${message}`);
+function invalidConfig(fieldPath: string, message: string): RsglProjectConfigError {
+  return new RsglProjectConfigError(fieldPath, message);
 }
 
 function* projectConfigCandidates(

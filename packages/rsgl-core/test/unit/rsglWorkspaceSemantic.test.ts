@@ -1,6 +1,8 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { resolveRsglCompileConfiguration } from "../../src/compiler";
+import { semanticProgramMatchesFiles } from "../../src/compiler/compilerHelpers";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 import { createTempDir } from "./helpers/fs";
 
@@ -26,7 +28,63 @@ describe("RSGL workspace semantic cache", () => {
 
       assert.strictEqual(second.program, first.program);
       assert.strictEqual(second.files[0], first.files[0]);
+      assert.strictEqual(
+        first.program.semanticConfigurationFingerprint,
+        resolveRsglCompileConfiguration().semanticFingerprint
+      );
       assert.deepStrictEqual(second.program.diagnostics.map(diagnostic => diagnostic.code), []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rebinds only the program when semantic configuration fingerprints change", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-");
+    try {
+      const mainFile = path.join(root, "main.rsgl");
+      fs.writeFileSync(mainFile, "model block stone { parent minecraft:block/cube_all }");
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const initial = cache.loadProgramFromEntry(mainFile);
+      const configurations = [
+        resolveRsglCompileConfiguration({ defaultNamespace: "example" }),
+        resolveRsglCompileConfiguration({
+          projectTarget: {
+            edition: "java",
+            packFormat: { major: 50, minor: 0 }
+          }
+        }),
+        resolveRsglCompileConfiguration({ maxEvaluationItems: 500 })
+      ];
+      let previous = initial;
+
+      for (const configuration of configurations) {
+        const options = {
+          semanticConfigurationFingerprint: configuration.semanticFingerprint
+        };
+        const rebound = cache.loadProgramFromEntry(mainFile, options);
+        const reused = cache.loadProgramFromEntry(mainFile, options);
+
+        assert.notStrictEqual(rebound.program, previous.program);
+        assert.strictEqual(
+          rebound.files[0],
+          initial.files[0],
+          "configuration changes must reuse parsed source files"
+        );
+        assert.strictEqual(rebound.program.semanticConfigurationFingerprint, configuration.semanticFingerprint);
+        assert.strictEqual(reused.program, rebound.program);
+        assert.strictEqual(semanticProgramMatchesFiles(
+          rebound.program,
+          [...rebound.program.files],
+          configuration.semanticFingerprint
+        ), true);
+        assert.strictEqual(semanticProgramMatchesFiles(
+          rebound.program,
+          [...rebound.program.files],
+          previous.program.semanticConfigurationFingerprint
+        ), false);
+        previous = rebound;
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -96,6 +154,19 @@ describe("RSGL workspace semantic cache", () => {
       assert.strictEqual(second.program, first.program);
       assert.strictEqual(second.files[0], first.files[0]);
       assert.deepStrictEqual(second.files.map(file => path.normalize(file.fileName)), [path.normalize(firstFile)]);
+
+      const configuredFingerprint = resolveRsglCompileConfiguration({
+        defaultNamespace: "example"
+      }).semanticFingerprint;
+      const configured = cache.loadProgramFromDirectory(sourceRoot, {
+        semanticConfigurationFingerprint: configuredFingerprint
+      });
+      const configuredAgain = cache.loadProgramFromDirectory(sourceRoot, {
+        semanticConfigurationFingerprint: configuredFingerprint
+      });
+      assert.notStrictEqual(configured.program, first.program);
+      assert.strictEqual(configured.files[0], first.files[0]);
+      assert.strictEqual(configuredAgain.program, configured.program);
 
       fs.writeFileSync(secondFile, "model block granite { parent minecraft:block/cube_all }");
       cache.invalidatePath(secondFile);

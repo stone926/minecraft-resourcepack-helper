@@ -29,6 +29,7 @@ import {
   fileNameFromUri,
   handleSemanticWatchedFileBatch,
   normalizeFileName,
+  projectSemanticConfigurationFingerprint,
   toValidationSettings,
   type RsglValidationSettings
 } from "./serverCore";
@@ -141,7 +142,7 @@ connection.languages.semanticTokens.on(params => {
   }
   return {
     data: computeDocumentSemanticTokens(document, fileNameFromUri(document.uri), {
-      loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName)
+      loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
     })
   };
 });
@@ -172,7 +173,8 @@ function validateDocument(document: TextDocument): void {
   let compileDependencies: readonly CompileDependency[] = [];
   let projectConfigWatchPaths: readonly string[] = [];
   const diagnostics = computeDocumentDiagnostics(document, fileName, {
-    loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName),
+    loadProgramFromEntry: (entryFileName, fingerprint) =>
+      loadSemanticProgram(entryFileName, fingerprint),
     onDependencies: dependencies => {
       compileDependencies = dependencies;
     },
@@ -206,8 +208,26 @@ function invalidateDocument(document: TextDocument): void {
 
 function completionItemsForDocument(document: TextDocument, offset: number): CompletionItem[] {
   return completionItemsForDocumentCore(document, fileNameFromUri(document.uri), offset, {
-    loadProgramFromEntry: entryFileName => semanticCache.loadProgramFromEntry(entryFileName)
+    loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
   });
+}
+
+function loadSemanticProgram(
+  entryFileName: string,
+  semanticConfigurationFingerprint?: string
+) {
+  let fingerprint = semanticConfigurationFingerprint;
+  if (!fingerprint) {
+    try {
+      fingerprint = projectSemanticConfigurationFingerprint(entryFileName);
+    } catch {
+      // Diagnostics report malformed project config; language features keep
+      // using the default semantic identity instead of failing outright.
+    }
+  }
+  return semanticCache.loadProgramFromEntry(entryFileName, fingerprint
+    ? { semanticConfigurationFingerprint: fingerprint }
+    : {});
 }
 
 function publishDependencyPaths(): void {

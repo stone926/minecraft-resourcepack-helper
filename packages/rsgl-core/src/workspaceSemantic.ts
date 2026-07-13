@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { normalizePathKey } from "../../mc-assets/src";
+import { resolveRsglCompileConfiguration } from "./compiler/compileConfiguration";
 import {
   bindRsglProgram,
   RsglProgram,
@@ -20,12 +21,18 @@ export interface RsglWorkspaceSemanticProgram {
   program: RsglProgram;
 }
 
+export interface RsglWorkspaceSemanticLoadOptions {
+  semanticConfigurationFingerprint?: string;
+}
+
 interface RsglCachedSemanticProgram {
   signature: string;
   dependencyKeys: Set<string>;
   rootDirectoryKey?: string;
   result: RsglWorkspaceSemanticProgram;
 }
+
+const defaultSemanticConfigurationFingerprint = resolveRsglCompileConfiguration().semanticFingerprint;
 
 export class RsglWorkspaceSemanticCache {
   private readonly sourceFileIds = new WeakMap<RsglSourceFile, number>();
@@ -63,20 +70,30 @@ export class RsglWorkspaceSemanticCache {
     this.invalidatePrograms();
   }
 
-  public loadProgramFromEntry(entryFileName: string): RsglWorkspaceSemanticProgram {
+  public loadProgramFromEntry(
+    entryFileName: string,
+    options: RsglWorkspaceSemanticLoadOptions = {}
+  ): RsglWorkspaceSemanticProgram {
     const normalizedEntryFileName = normalizeFileName(path.resolve(entryFileName));
     const files = this.sourceCache.loadProgramFromEntry(normalizedEntryFileName);
     return this.loadProgram("entry", normalizedEntryFileName, files, {
-      entryFileName: normalizedEntryFileName
+      entryFileName: normalizedEntryFileName,
+      semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
+        ?? defaultSemanticConfigurationFingerprint
     });
   }
 
-  public loadProgramFromDirectory(rootDirectory: string): RsglWorkspaceSemanticProgram {
+  public loadProgramFromDirectory(
+    rootDirectory: string,
+    options: RsglWorkspaceSemanticLoadOptions = {}
+  ): RsglWorkspaceSemanticProgram {
     const normalizedRootDirectory = normalizeFileName(path.resolve(rootDirectory));
     const files = this.sourceCache.loadProgramFromDirectory(normalizedRootDirectory);
     return this.loadProgram("directory", normalizedRootDirectory, files, {
       rootDirectory: normalizedRootDirectory,
-      rootDirectoryKey: normalizePathKey(normalizedRootDirectory)
+      rootDirectoryKey: normalizePathKey(normalizedRootDirectory),
+      semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
+        ?? defaultSemanticConfigurationFingerprint
     });
   }
 
@@ -88,10 +105,15 @@ export class RsglWorkspaceSemanticCache {
     sourceKind: RsglWorkspaceSemanticProgram["sourceKind"],
     sourceName: string,
     files: RsglSourceFile[],
-    options: { entryFileName?: string; rootDirectory?: string; rootDirectoryKey?: string }
+    options: {
+      entryFileName?: string;
+      rootDirectory?: string;
+      rootDirectoryKey?: string;
+      semanticConfigurationFingerprint: string;
+    }
   ): RsglWorkspaceSemanticProgram {
     const programKey = `${sourceKind}:${normalizePathKey(sourceName)}`;
-    const signature = this.createProgramSignature(files);
+    const signature = this.createProgramSignature(files, options.semanticConfigurationFingerprint);
     const cached = this.programs.get(programKey);
     if (cached?.signature === signature) {
       return cached.result;
@@ -103,7 +125,9 @@ export class RsglWorkspaceSemanticCache {
       entryFileName: options.entryFileName,
       rootDirectory: options.rootDirectory,
       files,
-      program: bindRsglProgram(files)
+      program: bindRsglProgram(files, {
+        semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
+      })
     };
     this.programs.set(programKey, {
       signature,
@@ -114,10 +138,14 @@ export class RsglWorkspaceSemanticCache {
     return result;
   }
 
-  private createProgramSignature(files: RsglSourceFile[]): string {
-    return files
-      .map(file => `${normalizePathKey(file.fileName)}@${this.sourceFileId(file)}`)
-      .join("|");
+  private createProgramSignature(
+    files: RsglSourceFile[],
+    semanticConfigurationFingerprint: string
+  ): string {
+    return [
+      `config:${semanticConfigurationFingerprint.length}:${semanticConfigurationFingerprint}`,
+      ...files.map(file => `${normalizePathKey(file.fileName)}@${this.sourceFileId(file)}`)
+    ].join("|");
   }
 
   private sourceFileId(file: RsglSourceFile): number {

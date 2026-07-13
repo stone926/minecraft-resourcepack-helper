@@ -17,6 +17,7 @@ import {
   moduleSyntaxDiagnostics,
   normalizeFileName,
   selectProgramModels,
+  selectProgramTargetModels,
   semanticProgramMatchesFiles,
   withTargetPackFormat
 } from "./compilerHelpers";
@@ -25,6 +26,11 @@ import {
   createFileBaseDocumentLoader
 } from "./base/loader";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
+import {
+  effectiveNamespace,
+  resolveRsglCompileConfiguration,
+  type RsglCompileConfigurationOptions
+} from "./compileConfiguration";
 import { createRsglStdlibPreludeTemplates, RsglCompiler } from "./compiler";
 import {
   createProgramCompileEnvironments,
@@ -42,17 +48,15 @@ import {
   RsglResourceValidationOptions
 } from "./validation";
 
-export interface RsglCompileOptions extends RsglResourceValidationOptions {
+export interface RsglCompileOptions extends RsglResourceValidationOptions, RsglCompileConfigurationOptions {
   baseDocumentLoader?: BaseDocumentLoader;
   fileName?: string;
-  namespace?: string;
   stdlibRoot?: string;
 }
 
-export interface RsglProgramCompileOptions extends RsglResourceValidationOptions {
+export interface RsglProgramCompileOptions extends RsglResourceValidationOptions, RsglCompileConfigurationOptions {
   baseDocumentLoader?: BaseDocumentLoader;
   entryFileName?: string;
-  namespace?: string;
   semanticProgram?: RsglProgram;
   stdlibRoot?: string;
 }
@@ -66,6 +70,7 @@ export interface RsglFileCompileOptions extends Omit<RsglProgramCompileOptions, 
 export interface RsglDirectoryCompileOptions extends Omit<RsglProgramCompileOptions, "entryFileName">, RsglFileLoadOptions { }
 
 export function compileRsglModule(module: RsglModule, options: RsglCompileOptions = {}): RsglCompileResult {
+  const configuration = resolveRsglCompileConfiguration(options);
   const syntaxDiagnostics = moduleSyntaxDiagnostics(module, options.fileName);
   if (hasErrors(syntaxDiagnostics)) {
     return { units: [], diagnostics: syntaxDiagnostics, dependencies: [] };
@@ -77,13 +82,16 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   }
 
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
-  const namespace = options.namespace ?? semanticModel.namespace ?? "minecraft";
+  const namespace = effectiveNamespace(semanticModel.namespace, configuration);
   const loaderDiagnostics: RsglCompileDiagnostic[] = [];
   const baseDocumentLoader = createCachedBaseDocumentLoader(
     options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: fileName })
   );
   const globLoader = createCompileGlobLoader(options.fileName ?? "<anonymous>", loaderDiagnostics);
-  const target = resolveTargetPackFormat([{ module, namespace }]);
+  const target = resolveTargetPackFormat(
+    [{ module, namespace, fileName: options.fileName }],
+    configuration.projectTarget
+  );
   const environment = createStandaloneCompileEnvironment(
     semanticModel,
     namespace,
@@ -92,10 +100,12 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const compiler = new RsglCompiler(module, {
     fileName: options.fileName ?? "<anonymous>",
     namespace,
+    stdlibTemplates: createRsglStdlibPreludeTemplates(options.stdlibRoot, configuration),
     environment,
     baseDocumentLoader,
     globLoader,
     targetPackFormat: target.targetPackFormat,
+    maxEvaluationItems: configuration.maxEvaluationItems,
     stdlibRoot: options.stdlibRoot
   });
   const result = compiler.compile();
@@ -156,15 +166,23 @@ export function loadRsglSourceFilesFromDirectory(rootDirectory: string, options:
 }
 
 export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgramCompileOptions = {}): RsglCompileResult {
+  const configuration = resolveRsglCompileConfiguration(options);
   const sourceFiles = includeRsglStdlibSourceFiles(files, { stdlibRoot: options.stdlibRoot });
   const syntaxDiagnostics = sourceFiles.flatMap(file => moduleSyntaxDiagnostics(file.module, file.fileName));
   if (hasErrors(syntaxDiagnostics)) {
     return { units: [], diagnostics: syntaxDiagnostics, dependencies: [] };
   }
 
-  const program = semanticProgramMatchesFiles(options.semanticProgram, sourceFiles)
+  const program = semanticProgramMatchesFiles(
+    options.semanticProgram,
+    sourceFiles,
+    configuration.semanticFingerprint
+  )
     ? options.semanticProgram
-    : bindRsglProgram(sourceFiles, { stdlibRoot: options.stdlibRoot });
+    : bindRsglProgram(sourceFiles, {
+      stdlibRoot: options.stdlibRoot,
+      semanticConfigurationFingerprint: configuration.semanticFingerprint
+    });
   const units: ResourceUnit[] = [];
   const dependencies: CompileDependency[] = [];
   const diagnostics: RsglCompileDiagnostic[] = [
@@ -174,15 +192,17 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: options.entryFileName })
   );
   const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
-  const environments = createProgramCompileEnvironments(program, options.namespace, { baseDocumentLoader, globLoader });
+  const environments = createProgramCompileEnvironments(program, configuration, { baseDocumentLoader, globLoader });
   const externs = collectExternDeclarations(sourceFiles, options.globalExterns, options.externDeclarations);
   diagnostics.push(...externs.diagnostics);
-  const stdlibTemplates = createRsglStdlibPreludeTemplates(options.stdlibRoot);
+  const stdlibTemplates = createRsglStdlibPreludeTemplates(options.stdlibRoot, configuration);
   const selectedModels = selectProgramModels(program, options.entryFileName);
-  const target = resolveTargetPackFormat(selectedModels.map(model => ({
+  const targetModels = selectProgramTargetModels(program, options.entryFileName);
+  const target = resolveTargetPackFormat(targetModels.map(model => ({
     module: model.module,
-    namespace: options.namespace ?? model.namespace ?? "minecraft"
-  })));
+    namespace: effectiveNamespace(model.namespace, configuration),
+    fileName: model.fileName
+  })), configuration.projectTarget);
 
   if (options.entryFileName && selectedModels.length === 0) {
     diagnostics.push({
@@ -195,7 +215,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   }
 
   for (const model of selectedModels) {
-    const namespace = options.namespace ?? model.namespace ?? "minecraft";
+    const namespace = effectiveNamespace(model.namespace, configuration);
     const environment = environments.get(normalizeFileName(model.fileName))
       ?? createStandaloneCompileEnvironment(model, namespace);
     const compiler = new RsglCompiler(model.module, {
@@ -208,6 +228,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       baseDocumentLoader,
       globLoader,
       targetPackFormat: target.targetPackFormat,
+      maxEvaluationItems: configuration.maxEvaluationItems,
       stdlibRoot: options.stdlibRoot
     });
     const result = compiler.compile();

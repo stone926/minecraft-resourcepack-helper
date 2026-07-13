@@ -14,9 +14,17 @@ import {
   type RsglWritePlanOptions
 } from "./compiler";
 import type { RsglProgram, RsglSourceFile } from "./semantic";
-import type { RsglProgramCompileOptions, RsglResourceValidationOptions } from "./compiler";
+import type {
+  RsglCompileConfigurationOptions,
+  RsglProgramCompileOptions,
+  RsglResourceValidationOptions
+} from "./compiler";
 
-export interface RsglBuildOptions extends RsglResourceValidationOptions, RsglEmitOptions, RsglWritePlanOptions {
+export interface RsglBuildOptions extends
+  RsglResourceValidationOptions,
+  RsglCompileConfigurationOptions,
+  RsglEmitOptions,
+  RsglWritePlanOptions {
   outputRoot: string;
 }
 
@@ -52,7 +60,7 @@ export function prepareRsglResourcePackDirectoryBuild(rootDirectory: string, opt
   return prepareCompiledRsglBuild(compileRsglDirectory(rootDirectory, options), options);
 }
 
-export interface RsglProgramBuildOptions extends RsglBuildOptions, Pick<RsglProgramCompileOptions, "entryFileName" | "namespace"> {
+export interface RsglProgramBuildOptions extends RsglBuildOptions, Pick<RsglProgramCompileOptions, "entryFileName"> {
   sourceRoot?: string;
   semanticProgram?: RsglProgram;
 }

@@ -8,6 +8,7 @@ import type {
   RsglEmittedFile
 } from "../../../../packages/rsgl-core/src/compiler";
 import type { RsglGlobalExternConfigEntry } from "../../../../packages/rsgl-core/src/externDeclarations";
+import type { RsglCompileConfigurationOptions } from "../../../../packages/rsgl-core/src/compiler/compileConfiguration";
 
 export interface RsglWorkerValidationConfiguration {
   defaultAssetsPath?: string | null;
@@ -15,6 +16,9 @@ export interface RsglWorkerValidationConfiguration {
   globalExterns?: RsglGlobalExternConfigEntry[];
   checkExternExistence?: boolean;
 }
+
+/** Serializable compile configuration snapshot captured once per worker request. */
+export type RsglWorkerCompileConfiguration = RsglCompileConfigurationOptions;
 
 export interface RsglWorkerBuildContext {
   source: {
@@ -43,15 +47,15 @@ export interface RsglWorkerCompileResult {
 
 export interface RsglWorkerTaskMap {
   prepareBuild: {
-    payload: RsglWorkerBuildContext & RsglWorkerValidationConfiguration;
+    payload: RsglWorkerBuildContext & RsglWorkerValidationConfiguration & RsglWorkerCompileConfiguration;
     result: RsglPreparedBuildResult;
   };
   previewBuild: {
-    payload: RsglWorkerBuildContext & RsglWorkerValidationConfiguration;
+    payload: RsglWorkerBuildContext & RsglWorkerValidationConfiguration & RsglWorkerCompileConfiguration;
     result: RsglBuildPreviewResult;
   };
   compileDirectory: {
-    payload: RsglWorkerCompileDirectoryContext & RsglWorkerValidationConfiguration;
+    payload: RsglWorkerCompileDirectoryContext & RsglWorkerValidationConfiguration & RsglWorkerCompileConfiguration;
     result: RsglWorkerCompileResult;
   };
 }

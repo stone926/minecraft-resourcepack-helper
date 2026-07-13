@@ -5,6 +5,7 @@ import {
   compileRsglFile,
   emitRsglFiles,
   loadRsglProjectConfigForSource,
+  projectCompileOptionsFromRsglConfig,
   type CompileDependency,
   type RsglGlobalExternConfigEntry,
   type RsglCompileDiagnostic,
@@ -31,20 +32,19 @@ export interface RsglApi {
   createWatcher(workspace: vscode.Uri, options?: RsglApiWatchOptions): vscode.Disposable;
 }
 
-export interface RsglApiCompileOptions {
-  sourceMaps?: boolean;
-  manifest?: boolean;
+export interface RsglApiCheckOptions {
+  /** Hard namespace override; takes precedence over file and project declarations. */
+  namespace?: string;
+  maxEvaluationItems?: number;
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
   globalExterns?: RsglGlobalExternConfigEntry[];
   checkExternExistence?: boolean;
 }
 
-export interface RsglApiCheckOptions {
-  defaultAssetsPath?: string | null;
-  resourcePackRoots?: string[];
-  globalExterns?: RsglGlobalExternConfigEntry[];
-  checkExternExistence?: boolean;
+export interface RsglApiCompileOptions extends RsglApiCheckOptions {
+  sourceMaps?: boolean;
+  manifest?: boolean;
 }
 
 export interface RsglApiWatchOptions extends RsglApiCompileOptions {
@@ -104,7 +104,24 @@ function apiValidationOptions(
   sourceFileName: string,
   options: RsglApiCheckOptions
 ) {
+  const configuration = apiWorkerConfiguration(sourceFileName, options);
+  const { defaultAssetsPath, resourcePackRoots, ...compileOptions } = configuration;
+  return {
+    ...compileOptions,
+    ...createRsglWorkspaceValidationOptions({
+      sourceFileName,
+      defaultAssetsPath,
+      resourcePackRoots
+    })
+  };
+}
+
+function apiWorkerConfiguration(
+  sourceFileName: string,
+  options: RsglApiCheckOptions
+) {
   const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
+  const projectCompileOptions = projectCompileOptionsFromRsglConfig(projectConfig ?? {});
   const validationConfiguration = mergeRsglValidationConfiguration(options, {
     defaultAssetsPath: projectConfig?.defaultAssetsPath,
     resourcePackRoots: projectConfig?.resourcePackRoots,
@@ -112,11 +129,11 @@ function apiValidationOptions(
     checkExternExistence: projectConfig?.checkExternExistence
   });
   return {
-    ...createRsglWorkspaceValidationOptions({
-      sourceFileName,
-      defaultAssetsPath: validationConfiguration.defaultAssetsPath,
-      resourcePackRoots: validationConfiguration.resourcePackRoots
-    }),
+    ...projectCompileOptions,
+    ...(options.namespace === undefined ? {} : { namespace: options.namespace }),
+    maxEvaluationItems: options.maxEvaluationItems ?? projectCompileOptions.maxEvaluationItems,
+    defaultAssetsPath: validationConfiguration.defaultAssetsPath,
+    resourcePackRoots: validationConfiguration.resourcePackRoots,
     globalExterns: validationConfiguration.globalExterns,
     checkExternExistence: validationConfiguration.checkExternExistence
   };
@@ -167,6 +184,13 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
     }
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
+      let workerConfiguration: ReturnType<typeof apiWorkerConfiguration>;
+      try {
+        workerConfiguration = apiWorkerConfiguration(workspace.fsPath, options);
+      } catch (error) {
+        console.error("RSGL watcher configuration failed", error);
+        return;
+      }
       const cancellation = new vscode.CancellationTokenSource();
       activeCancellation = cancellation;
       invalidatedDuringBuild.clear();
@@ -178,10 +202,7 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
           validationAnchor: workspace.fsPath,
           sourceMaps: options.sourceMaps,
           manifest: options.manifest,
-          defaultAssetsPath: options.defaultAssetsPath,
-          resourcePackRoots: options.resourcePackRoots,
-          globalExterns: options.globalExterns,
-          checkExternExistence: options.checkExternExistence
+          ...workerConfiguration
         }
       }, cancellation.token).then(outcome => {
         if (

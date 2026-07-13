@@ -30,6 +30,10 @@ import {
   expressionEvaluationOrigin
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
+import {
+  resolveRsglCompileConfiguration,
+  type ResolvedRsglCompileConfiguration
+} from "./compileConfiguration";
 import { compileItemSpecialStatement } from "./itemFragments";
 import {
   JsonValue,
@@ -95,6 +99,7 @@ interface RsglCompilerOptions {
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
   targetPackFormat?: RsglTargetPackFormat;
+  maxEvaluationItems?: number;
   stdlibRoot?: string;
 }
 
@@ -608,14 +613,20 @@ function normalizeDependencyIdentity(fileName: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-export function createRsglStdlibPreludeTemplates(stdlibRoot?: string): RsglTemplateDefinition[] {
+export function createRsglStdlibPreludeTemplates(
+  stdlibRoot?: string,
+  configuration: ResolvedRsglCompileConfiguration = resolveRsglCompileConfiguration()
+): RsglTemplateDefinition[] {
   const files = createRsglStdlibPreludeSourceFiles({ stdlibRoot });
   if (files.length === 0) {
     return [];
   }
 
   const program = bindRsglProgram(files, { stdlibRoot });
-  const environments = createProgramCompileEnvironments(program, undefined);
+  const environments = createProgramCompileEnvironments(
+    program,
+    configuration
+  );
   return program.models.flatMap(model =>
     Array.from(environments.get(normalizeFileName(model.fileName))?.exportedTemplates.values() ?? [])
   );

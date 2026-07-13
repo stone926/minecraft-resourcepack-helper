@@ -16,8 +16,12 @@ import {
   getRsglCompletionItems,
   loadRsglProjectConfigForSource,
   parseRsgl,
+  projectCompileOptionsFromRsglConfig,
+  resolveRsglCompileConfiguration,
+  RsglProjectConfigError,
   semanticModelForFile as coreSemanticModelForFile,
   type CompileDependency,
+  type RsglCompileConfigurationOptions,
   type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglResourceValidationOptions,
@@ -42,7 +46,10 @@ export interface RsglLspDocument {
 
 /** Injected collaborators for the document validation pipeline. */
 export interface RsglDocumentValidationDeps {
-  loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
+  loadProgramFromEntry(
+    fileName: string,
+    semanticConfigurationFingerprint?: string
+  ): RsglWorkspaceSemanticProgram;
   onDependencies?: (dependencies: readonly CompileDependency[]) => void;
   onProjectConfigWatchPaths?: (paths: readonly string[]) => void;
   settings: RsglValidationSettings;
@@ -74,18 +81,19 @@ export function computeDocumentDiagnostics(
 ): Diagnostic[] {
   const currentFileName = normalizeFileName(path.resolve(fileName));
   deps.onProjectConfigWatchPaths?.(getRsglProjectConfigWatchPaths(fileName, "file"));
-  let validationOptions: RsglResourceValidationOptions;
+  let validationOptions: RsglResourceValidationOptions & RsglCompileConfigurationOptions;
   try {
     validationOptions = workspaceValidationOptionsFor(fileName, deps.settings);
   } catch (error) {
     return [toLspDiagnostic(document, {
-      code: "rsgl.invalidExternConfiguration",
+      code: projectConfigurationDiagnosticCode(error),
       message: error instanceof Error ? error.message : String(error),
       severity: "error",
       range: { start: 0, end: 1 }
     })];
   }
-  const semanticProgram = deps.loadProgramFromEntry(fileName);
+  const semanticConfigurationFingerprint = resolveRsglCompileConfiguration(validationOptions).semanticFingerprint;
+  const semanticProgram = deps.loadProgramFromEntry(fileName, semanticConfigurationFingerprint);
   if (semanticProgram.files.length > 0) {
     const result = compileRsglProgram(semanticProgram.files, {
       entryFileName: fileName,
@@ -189,10 +197,13 @@ export function handleSemanticWatchedFileBatch(
 export function workspaceValidationOptionsFor(
   sourceFileName: string,
   settings: RsglValidationSettings
-): ReturnType<typeof createRsglWorkspaceValidationOptions> & RsglResourceValidationOptions {
+): ReturnType<typeof createRsglWorkspaceValidationOptions>
+  & RsglResourceValidationOptions
+  & RsglCompileConfigurationOptions {
   const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
   const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
   return {
+    ...projectCompileOptionsFromRsglConfig(projectConfig ?? {}),
     ...createRsglWorkspaceValidationOptions({
       sourceFileName,
       defaultAssetsPath: projectDefaultAssetsPath === undefined
@@ -203,6 +214,34 @@ export function workspaceValidationOptionsFor(
     globalExterns: projectConfig?.extern,
     checkExternExistence: projectConfig?.checkExternExistence
   };
+}
+
+/** Returns the stable semantic identity of the nearest validated project config. */
+export function projectSemanticConfigurationFingerprint(sourceFileName: string): string {
+  const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
+  return resolveRsglCompileConfiguration(
+    projectCompileOptionsFromRsglConfig(projectConfig ?? {})
+  ).semanticFingerprint;
+}
+
+function projectConfigurationDiagnosticCode(error: unknown): string {
+  const topLevelProperty = error instanceof RsglProjectConfigError
+    ? topLevelConfigProperty(error.relativeFieldPath)
+    : undefined;
+  if (topLevelProperty === "namespace" || topLevelProperty === "target" || topLevelProperty === "maxEvaluationItems") {
+    return "rsgl.invalidProjectConfiguration";
+  }
+  return "rsgl.invalidExternConfiguration";
+}
+
+function topLevelConfigProperty(fieldPath: string | undefined): string | undefined {
+  if (!fieldPath) {
+    return undefined;
+  }
+  const separators = [fieldPath.indexOf("."), fieldPath.indexOf("[")]
+    .filter(index => index >= 0);
+  const end = separators.length > 0 ? Math.min(...separators) : fieldPath.length;
+  return fieldPath.slice(0, end);
 }
 
 /** Merges syntactic completion candidates with workspace symbols, deduplicated by label. */

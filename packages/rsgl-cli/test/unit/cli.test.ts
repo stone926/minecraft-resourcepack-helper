@@ -148,6 +148,25 @@ describe("RSGL CLI", () => {
     assert.strictEqual(captured.stderr(), "");
   });
 
+  it("initializes a public project config without exposing internal compiler keys", () => {
+    const root = createTempRoot();
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(root);
+      const captured = captureIo();
+
+      assert.strictEqual(runRsglCli(["init"], captured.io), 0);
+      const config = JSON.parse(fs.readFileSync(path.join(root, "rsgl.config.json"), "utf8"));
+      assert.strictEqual(config.namespace, "minecraft");
+      assert.strictEqual(config.maxEvaluationItems, 100000);
+      assert.strictEqual("defaultNamespace" in config, false);
+      assert.strictEqual("projectTarget" in config, false);
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("builds a directory of RSGL sources and writes the emitted files", () => {
     const root = createTempRoot();
     const sourceRoot = path.join(root, "src");
@@ -279,6 +298,32 @@ describe("RSGL CLI", () => {
       const context = createCliContext({ command: "check" });
 
       assert.strictEqual(context.options.checkExternExistence, false);
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("maps public namespace, target, and evaluation budget to compiler options", () => {
+    const root = createTempRoot();
+    const previousCwd = process.cwd();
+    try {
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        namespace: "project_ns",
+        target: { edition: "java", mc: "1.21.11" },
+        maxEvaluationItems: 54321
+      }));
+      process.chdir(root);
+
+      const context = createCliContext({ command: "check" });
+
+      assert.strictEqual(context.options.namespace, undefined, "project namespace must not become a hard override");
+      assert.strictEqual(context.options.defaultNamespace, "project_ns");
+      assert.deepStrictEqual(context.options.projectTarget, {
+        edition: "java",
+        packFormat: { major: 75, minor: 0 }
+      });
+      assert.strictEqual(context.options.maxEvaluationItems, 54321);
     } finally {
       process.chdir(previousCwd);
       fs.rmSync(root, { recursive: true, force: true });
@@ -423,7 +468,10 @@ describe("RSGL CLI", () => {
       }
       fs.writeFileSync(outerConfig, JSON.stringify({
         root: "outer source",
-        outDir: "outer output"
+        outDir: "outer output",
+        namespace: "outer_ns",
+        target: { edition: "java", format: [75, 0] },
+        maxEvaluationItems: 1000
       }));
       process.chdir(workspaceRoot);
 
@@ -432,11 +480,17 @@ describe("RSGL CLI", () => {
       assert.strictEqual(fake.builds.length, 1);
       assert.strictEqual(fake.builds[0].root, outerSourceRoot);
       assert.strictEqual(session.currentContext().configFileName, outerConfig);
+      assert.strictEqual(fake.builds[0].options.defaultNamespace, "outer_ns");
+      assert.strictEqual(fake.builds[0].options.projectTarget?.packFormat.major, 75);
+      assert.strictEqual(fake.builds[0].options.maxEvaluationItems, 1000);
       assert.deepStrictEqual(activeSourceWatchDirectories(fake), [outerSourceRoot]);
 
       fs.writeFileSync(nearConfig, JSON.stringify({
         root: "near source",
-        outDir: "near output"
+        outDir: "near output",
+        namespace: "near_ns",
+        target: { edition: "java", format: [74, 0] },
+        maxEvaluationItems: 2000
       }));
       fake.triggerConfig(nearConfig);
       fake.flushTimers();
@@ -444,12 +498,18 @@ describe("RSGL CLI", () => {
       assert.strictEqual(fake.builds.length, 2);
       assert.strictEqual(fake.builds[1].root, nearSourceRoot);
       assert.strictEqual(fake.builds[1].options.outputRoot, path.join(workspaceRoot, "near output"));
+      assert.strictEqual(fake.builds[1].options.defaultNamespace, "near_ns");
+      assert.strictEqual(fake.builds[1].options.projectTarget?.packFormat.major, 74);
+      assert.strictEqual(fake.builds[1].options.maxEvaluationItems, 2000);
       assert.strictEqual(session.currentContext().configFileName, nearConfig);
       assert.deepStrictEqual(activeSourceWatchDirectories(fake), [nearSourceRoot]);
 
       fs.writeFileSync(nearConfig, JSON.stringify({
         root: "edited source",
-        outDir: "edited output"
+        outDir: "edited output",
+        namespace: "edited_ns",
+        target: { edition: "java", format: [75, 0] },
+        maxEvaluationItems: 3000
       }));
       fake.triggerConfig(nearConfig);
       fake.flushTimers();
@@ -457,6 +517,9 @@ describe("RSGL CLI", () => {
       assert.strictEqual(fake.builds.length, 3);
       assert.strictEqual(fake.builds[2].root, editedSourceRoot);
       assert.strictEqual(fake.builds[2].options.outputRoot, path.join(workspaceRoot, "edited output"));
+      assert.strictEqual(fake.builds[2].options.defaultNamespace, "edited_ns");
+      assert.strictEqual(fake.builds[2].options.projectTarget?.packFormat.major, 75);
+      assert.strictEqual(fake.builds[2].options.maxEvaluationItems, 3000);
       assert.deepStrictEqual(activeSourceWatchDirectories(fake), [editedSourceRoot]);
 
       const editedSourceWatcher = fake.directoryWatchers.find(watcher => !watcher.closed);
@@ -473,6 +536,7 @@ describe("RSGL CLI", () => {
 
       assert.strictEqual(fake.builds.length, 5);
       assert.strictEqual(fake.builds[4].root, outerSourceRoot);
+      assert.strictEqual(fake.builds[4].options.defaultNamespace, "outer_ns");
       assert.strictEqual(session.currentContext().configFileName, outerConfig);
       assert.deepStrictEqual(activeSourceWatchDirectories(fake), [outerSourceRoot]);
     } finally {

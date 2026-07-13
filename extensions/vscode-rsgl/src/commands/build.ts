@@ -3,7 +3,10 @@ import type {
   RsglBuildPreviewResult,
   RsglBuildResult
 } from "../../../../packages/rsgl-core/src/build";
-import { loadRsglProjectConfigForSource } from "../../../../packages/rsgl-core/src/rsglConfig";
+import {
+  loadRsglProjectConfigForSource,
+  projectCompileOptionsFromRsglConfig
+} from "../../../../packages/rsgl-core/src/rsglConfig";
 import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "../configuration";
 import { applyRsglEmittedFiles } from "./asyncBuildWriter";
 import {
@@ -24,6 +27,7 @@ import {
 import { runRsglWorkerTask } from "./buildWorkerClient";
 import type {
   RsglWorkerBuildContext,
+  RsglWorkerCompileConfiguration,
   RsglWorkerValidationConfiguration
 } from "./buildWorkerProtocol";
 
@@ -190,13 +194,14 @@ async function prepareBuildPreview(
 
 function createWorkerBuildPayload(
   context: RsglFileBuildContext
-): RsglWorkerBuildContext & RsglWorkerValidationConfiguration {
+): RsglWorkerBuildContext & RsglWorkerValidationConfiguration & RsglWorkerCompileConfiguration {
   const validationAnchor = isDirectoryBuildContext(context)
     ? context.sourceRoot
     : context.sourceFileName;
   const projectConfig = loadRsglProjectConfigForSource(validationAnchor)?.config;
   const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
   return {
+    ...projectCompileOptionsFromRsglConfig(projectConfig ?? {}),
     source: {
       kind: isDirectoryBuildContext(context) ? "directory" : "file",
       path: isDirectoryBuildContext(context) ? context.sourceRoot : context.sourceFileName

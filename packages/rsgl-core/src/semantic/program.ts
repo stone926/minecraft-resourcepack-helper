@@ -42,7 +42,14 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   ];
   const diagnostics = fileDiagnostics.map(toDiagnostic);
 
-  return { files: sourceFiles, models, importGraph, diagnostics, fileDiagnostics };
+  return {
+    files: sourceFiles,
+    models,
+    importGraph,
+    diagnostics,
+    fileDiagnostics,
+    semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
+  };
 }
 
 function resolveProgramImports(

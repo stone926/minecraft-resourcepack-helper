@@ -11,6 +11,26 @@ export type {
   RsglCompileSnapshotResource,
   RsglCompileSnapshotSourceAlias
 } from "./compileSnapshot";
+export {
+  DEFAULT_MAX_EVALUATION_ITEMS,
+  createRsglSemanticConfigurationFingerprint,
+  effectiveNamespace,
+  resolveRsglCompileConfiguration
+} from "./compileConfiguration";
+export type {
+  ResolvedRsglCompileConfiguration,
+  RsglCompileConfigurationOptions
+} from "./compileConfiguration";
+export {
+  isRsglMinecraftVersionText,
+  normalizeRsglProjectTarget,
+  rsglTargetPackFormatForMinecraftVersion
+} from "./targetConfig";
+export type {
+  RsglNormalizedProjectTarget,
+  RsglTargetConfig,
+  RsglTargetPackFormat
+} from "./targetConfig";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
 export { canonicalizeAndValidateResourceUnits, validateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";

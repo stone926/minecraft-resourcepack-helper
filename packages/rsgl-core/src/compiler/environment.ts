@@ -17,6 +17,10 @@ import {
   evaluateExpression
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
+import {
+  effectiveNamespace,
+  type ResolvedRsglCompileConfiguration
+} from "./compileConfiguration";
 import { normalizeJsonValue } from "./compilerHelpers";
 
 export interface RsglModuleCompileEnvironment {
@@ -64,7 +68,7 @@ export function createStandaloneCompileEnvironment(
 
 export function createProgramCompileEnvironments(
   program: RsglProgram,
-  namespaceOverride: string | undefined,
+  configuration: Pick<ResolvedRsglCompileConfiguration, "namespaceOverride" | "defaultNamespace">,
   options: RsglCompileEnvironmentOptions = {}
 ): Map<string, RsglModuleCompileEnvironment> {
   const modelsByFile = new Map(program.models.map(model => [normalizeFileName(model.fileName), model]));
@@ -78,7 +82,10 @@ export function createProgramCompileEnvironments(
       return cached;
     }
 
-    const environment = createEmptyCompileEnvironment(model, namespaceOverride ?? model.namespace ?? "minecraft");
+    const environment = createEmptyCompileEnvironment(
+      model,
+      effectiveNamespace(model.namespace, configuration)
+    );
     environments.set(fileName, environment);
 
     collectImportedEnvironmentBindings(environment, model, program, modelsByFile, createEnvironment);

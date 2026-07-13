@@ -365,6 +365,79 @@ describe("RSGL LSP server core", () => {
     }
   });
 
+  it("maps project namespace, target, and evaluation budget into LSP compile options", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-compile-config-"));
+    const sourceFile = path.join(root, "src", "main.rsgl");
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(sourceFile, "model block sample {}");
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        namespace: "project_ns",
+        target: { edition: "java", format: [75, 0] },
+        maxEvaluationItems: 45678
+      }));
+
+      const options = workspaceValidationOptionsFor(sourceFile, emptySettings);
+
+      assert.strictEqual(options.namespace, undefined);
+      assert.strictEqual(options.defaultNamespace, "project_ns");
+      assert.deepStrictEqual(options.projectTarget, {
+        edition: "java",
+        packFormat: { major: 75, minor: 0 }
+      });
+      assert.strictEqual(options.maxEvaluationItems, 45678);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rebinds the semantic program when project compile configuration changes", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-cache-"));
+    const sourceFile = path.join(root, "src", "main.rsgl");
+    const configFile = path.join(root, "rsgl.config.json");
+    const text = [
+      "model block rotated {}",
+      "blockstate rotated {",
+      "  variants {",
+      "    {} -> { model: project_ns:block/rotated, z: 90 }",
+      "  }",
+      "}"
+    ].join("\n");
+    const cache = RsglWorkspaceSemanticCache.create();
+    const programs: ReturnType<typeof cache.loadProgramFromEntry>[] = [];
+    const diagnostics = () => computeDocumentDiagnostics(documentOf(text), sourceFile, {
+      loadProgramFromEntry: (entryFileName, fingerprint) => {
+        const program = cache.loadProgramFromEntry(entryFileName, {
+          semanticConfigurationFingerprint: fingerprint
+        });
+        programs.push(program);
+        return program;
+      },
+      settings: emptySettings
+    });
+
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(sourceFile, text);
+      fs.writeFileSync(configFile, JSON.stringify({
+        namespace: "project_ns",
+        target: { edition: "java", format: [75, 0] }
+      }));
+
+      assert.strictEqual(diagnostics().some(item => item.code === "rsgl.unsupportedBlockstateZRotation"), false);
+      fs.writeFileSync(configFile, JSON.stringify({
+        namespace: "project_ns",
+        target: { edition: "java", format: [74, 0] }
+      }));
+      assert.strictEqual(diagnostics().some(item => item.code === "rsgl.unsupportedBlockstateZRotation"), true);
+
+      assert.notStrictEqual(programs[0], programs[1]);
+      assert.strictEqual(programs[0].files[0], programs[1].files[0], "config edits should reuse parsed source files");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps VS Code build payload precedence aligned with project config semantics", () => {
     const buildSource = fs.readFileSync(path.join(
       process.cwd(),
@@ -386,8 +459,9 @@ describe("RSGL LSP server core", () => {
     assert.ok(buildSource.includes("validationAnchor,"));
   });
 
-  it("returns rsgl.invalidExternConfiguration for an invalid project config", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-invalid-"));
+  it("preserves rsgl.invalidExternConfiguration for invalid legacy config fields", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-invalid-"));
+    const root = path.join(tempRoot, "project.target.data");
     const sourceFile = path.join(root, "src", "main.rsgl");
     const text = "model block valid {}";
 
@@ -416,6 +490,29 @@ describe("RSGL LSP server core", () => {
         normalizeDependencyPath(path.join(root, "src", "rsgl.config.json")),
         normalizeDependencyPath(path.join(root, "rsgl.config.json"))
       ]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("returns rsgl.invalidProjectConfiguration for invalid project compile fields", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-new-config-invalid-"));
+    const sourceFile = path.join(root, "src", "main.rsgl");
+    const text = "model block valid {}";
+
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        namespace: "Invalid Namespace"
+      }));
+      fs.writeFileSync(sourceFile, text);
+
+      const diagnostics = diagnosticsForFile(sourceFile, text);
+
+      assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), [
+        "rsgl.invalidProjectConfiguration"
+      ]);
+      assert.ok(diagnostics[0].message.includes(".namespace"));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

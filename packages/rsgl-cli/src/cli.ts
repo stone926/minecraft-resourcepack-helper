@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+  DEFAULT_MAX_EVALUATION_ITEMS,
   buildRsglResourcePackDirectory,
   formatRsglBuildPreview,
   getRsglProjectConfigWatchPaths,
   loadRsglProjectConfigForSource,
+  projectCompileOptionsFromRsglConfig,
   previewRsglResourcePackDirectoryBuild,
   type CompileDependency,
   type RsglBuildOptions,
@@ -420,6 +422,8 @@ function initConfig(io: RsglCliIo): number {
   fs.writeFileSync(configFileName, `${JSON.stringify({
     root: "src",
     outDir: ".generated",
+    namespace: "minecraft",
+    maxEvaluationItems: DEFAULT_MAX_EVALUATION_ITEMS,
     emitSourceMap: true,
     manifest: true
   }, null, 2)}\n`);
@@ -445,6 +449,7 @@ function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: stri
       outputRoot,
       sourceMaps: config.emitSourceMap ?? true,
       manifest: config.manifest ?? true,
+      ...projectCompileOptionsFromRsglConfig(config),
       globalExterns: config.extern,
       checkExternExistence: config.checkExternExistence,
       ...createRsglWorkspaceValidationOptions({

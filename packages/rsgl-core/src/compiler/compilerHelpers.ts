@@ -420,8 +420,44 @@ export function isItemModelStatement(statement: ResourceStatementNode): statemen
     || statement.kind === "ItemSpecialStmt";
 }
 
-export function semanticProgramMatchesFiles(program: RsglProgram | undefined, files: RsglSourceFile[]): program is RsglProgram {
+export function semanticProgramMatchesFiles(
+  program: RsglProgram | undefined,
+  files: RsglSourceFile[],
+  expectedSemanticConfigurationFingerprint?: string
+): program is RsglProgram {
   return program !== undefined
+    && program.semanticConfigurationFingerprint === expectedSemanticConfigurationFingerprint
     && program.files.length === files.length
     && program.files.every((file, index) => file === files[index]);
+}
+
+/** Selects the entry module and its transitive imports for project target resolution. */
+export function selectProgramTargetModels(
+  program: RsglProgram,
+  entryFileName: string | undefined
+): RsglSemanticModel[] {
+  if (!entryFileName) {
+    return program.models;
+  }
+
+  const outgoing = new Map<string, string[]>();
+  for (const edge of program.importGraph.edges) {
+    const from = normalizeFileName(edge.from);
+    const targets = outgoing.get(from) ?? [];
+    targets.push(normalizeFileName(edge.to));
+    outgoing.set(from, targets);
+  }
+
+  const reachable = new Set<string>();
+  const pending = [normalizeFileName(entryFileName)];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (reachable.has(current)) {
+      continue;
+    }
+    reachable.add(current);
+    pending.push(...(outgoing.get(current) ?? []));
+  }
+
+  return program.models.filter(model => reachable.has(normalizeFileName(model.fileName)));
 }

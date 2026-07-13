@@ -118,6 +118,113 @@ describe("RSGL extension manifest contract", () => {
     ));
   });
 
+  it("registers a strict schema for every public project configuration field", () => {
+    const rsglPackageRoot = path.join(process.cwd(), "extensions", "vscode-rsgl");
+    const packageJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, "package.json"), "utf8")) as {
+      contributes?: {
+        jsonValidation?: Array<{ fileMatch?: string; url?: string }>;
+      };
+    };
+    const registration = packageJson.contributes?.jsonValidation?.find(entry =>
+      entry.fileMatch === "**/rsgl.config.json"
+    );
+    assert.ok(registration?.url);
+
+    const schemaPath = path.resolve(rsglPackageRoot, registration.url);
+    const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as {
+      additionalProperties?: boolean;
+      properties?: Record<string, {
+        pattern?: string;
+        minimum?: number;
+        default?: number;
+        $ref?: string;
+      }>;
+      definitions?: {
+        target?: {
+          additionalProperties?: boolean;
+          required?: string[];
+          properties?: {
+            edition?: { const?: string };
+            format?: {
+              oneOf?: Array<{
+                type?: string;
+                minimum?: number;
+                minItems?: number;
+                maxItems?: number;
+                items?: Array<{ minimum?: number }>;
+              }>;
+            };
+            mc?: { pattern?: string };
+          };
+          oneOf?: Array<{ required?: string[] }>;
+        };
+        externEntry?: {
+          additionalProperties?: boolean;
+          required?: string[];
+          properties?: {
+            kind?: { enum?: string[] };
+          };
+        };
+      };
+    };
+
+    assert.strictEqual(schema.additionalProperties, false);
+    assert.deepStrictEqual(Object.keys(schema.properties ?? {}).sort(), [
+      "checkExternExistence",
+      "defaultAssetsPath",
+      "emitSourceMap",
+      "extern",
+      "manifest",
+      "maxEvaluationItems",
+      "namespace",
+      "outDir",
+      "resourcePackRoots",
+      "root",
+      "target"
+    ]);
+
+    const namespace = schema.properties?.namespace;
+    assert.ok(namespace?.pattern);
+    const namespacePattern = new RegExp(namespace.pattern);
+    assert.strictEqual(namespacePattern.test("example.pack-1"), true);
+    assert.strictEqual(namespacePattern.test("Example"), false);
+    assert.strictEqual(namespacePattern.test(".."), false);
+
+    assert.strictEqual(schema.properties?.maxEvaluationItems?.minimum, 1);
+    assert.strictEqual(schema.properties?.maxEvaluationItems?.default, 100000);
+    assert.strictEqual(schema.properties?.target?.$ref, "#/definitions/target");
+
+    const target = schema.definitions?.target;
+    assert.strictEqual(target?.additionalProperties, false);
+    assert.deepStrictEqual(target?.required, ["edition"]);
+    assert.strictEqual(target?.properties?.edition?.const, "java");
+    assert.deepStrictEqual(target?.oneOf?.map(option => option.required), [["format"], ["mc"]]);
+    assert.ok(target?.properties?.mc?.pattern);
+    assert.strictEqual(new RegExp(target!.properties!.mc!.pattern!).test("1.21.4"), true);
+
+    const formatOptions = target?.properties?.format?.oneOf;
+    assert.strictEqual(formatOptions?.[0]?.minimum, 1);
+    assert.strictEqual(formatOptions?.[1]?.minItems, 2);
+    assert.strictEqual(formatOptions?.[1]?.maxItems, 2);
+    assert.deepStrictEqual(formatOptions?.[1]?.items?.map(item => item.minimum), [1, 0]);
+
+    const externEntry = schema.definitions?.externEntry;
+    assert.strictEqual(externEntry?.additionalProperties, false);
+    assert.deepStrictEqual(externEntry?.required, ["source", "kind", "patterns"]);
+    assert.deepStrictEqual(externEntry?.properties?.kind?.enum, [
+      "model",
+      "blockstate",
+      "item",
+      "font",
+      "texture",
+      "texture_directory",
+      "sound",
+      "font_file",
+      "shader_vertex",
+      "shader_fragment"
+    ]);
+  });
+
   it("exposes an honest synchronous extension API contract", () => {
     const apiSource = fs.readFileSync(
       path.join(process.cwd(), "extensions", "vscode-rsgl", "src", "api.ts"),

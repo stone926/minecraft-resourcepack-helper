@@ -143,6 +143,7 @@ export interface RsglProgram {
   importGraph: RsglImportGraph;
   diagnostics: RsglDiagnostic[];
   fileDiagnostics: RsglFileDiagnostic[];
+  semanticConfigurationFingerprint?: string;
 }
 
 export interface RsglFileDiagnostic extends RsglDiagnostic {
@@ -156,6 +157,7 @@ export interface RsglModuleResolver {
 export interface RsglBindOptions {
   fileName?: string;
   resolver?: RsglModuleResolver;
+  semanticConfigurationFingerprint?: string;
   /** Overrides the directory the bundled RSGL stdlib is discovered from (test seam). */
   stdlibRoot?: string;
 }
