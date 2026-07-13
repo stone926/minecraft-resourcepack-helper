@@ -13,6 +13,11 @@ import type {
   RsglResourceValidationOptions,
   ValidationRange
 } from "./validationTypes";
+import {
+  canonicalizeResourceReference,
+  type RsglResourceReferenceConsumer,
+  type RsglResourceReferenceConsumerContext
+} from "./resourceReferenceConsumers";
 
 const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
 
@@ -30,26 +35,44 @@ const resourceDiagnosticPresentation = {
 } satisfies Record<RsglResourceExistenceKind, { code: string; label: string }>;
 
 export function checkResourceExists(
-  kind: RsglResourceExistenceKind,
-  id: string,
+  consumer: RsglResourceReferenceConsumer,
+  rawValue: string,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit> | undefined,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   range: ValidationRange = unitRange(unit),
-  externScopeFile?: string
+  externScopeFile?: string,
+  defaultNamespace: string = unit.id?.namespace ?? "minecraft",
+  consumerContext: RsglResourceReferenceConsumerContext = {}
 ): RsglCheckedResourceReference {
-  if ((kind === "model" && generatedModels?.has(id)) || options.generatedResourceIds?.get(kind)?.has(id)) {
-    return { available: true, external: false };
+  const sourceFile = sourceFileForValidationRange(unit, range);
+  const reference = canonicalizeResourceReference(consumer, rawValue, defaultNamespace, consumerContext);
+  if (reference.kind === "invalid") {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidResourceReference",
+      `${resourceLabel(reference.targetKind)} reference '${rawValue}' is not a valid resource location.`,
+      "error",
+      range,
+      sourceFile
+    );
+    return { available: false, external: false };
   }
-  if (kind === "model" && isVirtualBuiltinModelId(id)) {
+  if (reference.kind === "textureVariable") {
     return { available: true, external: false };
   }
 
-  const sourceFile = sourceFileForValidationRange(unit, range);
+  const { id, lookupId, targetKind: kind } = reference;
+  if (options.generatedResourceIds?.get(kind)?.has(lookupId)) {
+    return { available: true, external: false, canonicalId: id, lookupId };
+  }
+  if (kind === "model" && isVirtualBuiltinModelId(lookupId)) {
+    return { available: true, external: false, canonicalId: id, lookupId };
+  }
+
   const declaration = resolveExternDeclaration(
     kind,
-    id,
+    lookupId,
     externScopeFile ?? sourceFile,
     sourceFile,
     options,
@@ -57,7 +80,7 @@ export function checkResourceExists(
     range
   );
   if (!declaration) {
-    return { available: false, external: true };
+    return { available: false, external: true, canonicalId: id, lookupId };
   }
 
   const skipExistenceCheck = declaration.skipExistenceCheck
@@ -65,30 +88,30 @@ export function checkResourceExists(
     || (declaration.checkExistence === undefined && options.checkExternExistence === false);
   const resolvedPath = skipExistenceCheck
     ? null
-    : options.externResourcePath?.(declaration.source, kind, id);
+    : options.externResourcePath?.(declaration.source, kind, lookupId);
   const exists = skipExistenceCheck
     ? true
     : resolvedPath !== undefined
       ? resolvedPath !== null
       : options.externResourceExists
-        ? options.externResourceExists(declaration.source, kind, id)
-        : (options.resourceExists?.(kind, id) ?? false);
+        ? options.externResourceExists(declaration.source, kind, lookupId)
+        : (options.resourceExists?.(kind, lookupId) ?? false);
   options.onExternResourceUsed?.({
     source: declaration.source,
     resourceKind: declaration.resourceKind,
     targetKind: kind,
-    id,
+    id: lookupId,
     skipExistenceCheck,
     sourceFile,
     range,
     ...(resolvedPath ? { resolvedPath } : {})
   });
   if (exists) {
-    return { available: true, external: true, source: declaration.source };
+    return { available: true, external: true, canonicalId: id, lookupId, source: declaration.source };
   }
 
-  pushResourceDiagnostic(diagnostics, kind, `not found: ${id}`, "warning", range, sourceFile);
-  return { available: false, external: true, source: declaration.source };
+  pushResourceDiagnostic(diagnostics, kind, `not found: ${lookupId}`, "warning", range, sourceFile);
+  return { available: false, external: true, canonicalId: id, lookupId, source: declaration.source };
 }
 
 /**
@@ -97,19 +120,37 @@ export function checkResourceExists(
  * for manifests and dependency watching.
  */
 export function checkInheritedExternalResourceExists(
-  kind: RsglResourceExistenceKind,
-  id: string,
+  consumer: RsglResourceReferenceConsumer,
+  rawValue: string,
   source: ExternResourceSource,
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   range: ValidationRange,
-  fallbackExists: boolean
+  fallbackExists: boolean,
+  defaultNamespace: string = unit.id?.namespace ?? "minecraft",
+  consumerContext: RsglResourceReferenceConsumerContext = {}
 ): boolean {
-  if (options.generatedResourceIds?.get(kind)?.has(id)) {
+  const sourceFile = sourceFileForValidationRange(unit, range);
+  const reference = canonicalizeResourceReference(consumer, rawValue, defaultNamespace, consumerContext);
+  if (reference.kind === "invalid") {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.invalidResourceReference",
+      `${resourceLabel(reference.targetKind)} reference '${rawValue}' is not a valid resource location.`,
+      "error",
+      range,
+      sourceFile
+    );
+    return false;
+  }
+  if (reference.kind === "textureVariable") {
     return true;
   }
-  const sourceFile = sourceFileForValidationRange(unit, range);
+  const { lookupId: id, targetKind: kind } = reference;
+  if (options.generatedResourceIds?.get(kind)?.has(id) || (kind === "model" && isVirtualBuiltinModelId(id))) {
+    return true;
+  }
   const skipExistenceCheck = options.checkExternExistence === false;
   const resolvedPath = skipExistenceCheck
     ? null

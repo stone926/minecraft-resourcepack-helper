@@ -38,8 +38,8 @@ import { createExternalResource } from "./templates";
 import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
 import {
   type RsglExternalResourceUsage,
-  RsglResourceValidationOptions,
-  validateResourceUnits
+  canonicalizeAndValidateResourceUnits,
+  RsglResourceValidationOptions
 } from "./validation";
 
 export interface RsglCompileOptions extends RsglResourceValidationOptions {
@@ -278,7 +278,7 @@ function finishCompilation(
       }
     }
   }, targetPackFormat);
-  const validationDiagnostics = validateResourceUnits(merged.units, validationOptions);
+  const validationDiagnostics = canonicalizeAndValidateResourceUnits(merged.units, validationOptions);
   return {
     units: [...merged.units, ...externalUnits.values()],
     dependencies: dedupeCompileDependencies([...dependencies, ...externalDependencies]),

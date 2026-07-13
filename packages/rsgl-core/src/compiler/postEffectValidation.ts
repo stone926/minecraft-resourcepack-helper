@@ -1,6 +1,5 @@
-import { minecraftResourceIdInFolder, qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { checkResourceExists as checkDeclaredResourceExists } from "./resourceReferenceValidation";
+import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   requireArray,
@@ -167,14 +166,17 @@ function validateShaderField(
   generatedPath: string
 ): void {
   const shader = stringField(pass, field, "rsgl.invalidPostEffectPassField", "Post effect pass", unit, diagnostics);
-  if (shader) {
-    checkResourceExists(
+  if (shader !== null) {
+    checkJsonResourceReference(
+      pass,
+      field,
       kind,
-      qualifyMinecraftResourceId(shader, namespace),
       unit,
       options,
       diagnostics,
-      appendGeneratedPath(generatedPath, field)
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, field)),
+      undefined,
+      namespace
     );
   }
 }
@@ -243,14 +245,17 @@ function validateInput(
   }
 
   const location = stringField(input, "location", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
-  if (location) {
-    checkResourceExists(
-      "texture",
-      minecraftResourceIdInFolder(location, namespace, "effect"),
+  if (location !== null) {
+    checkJsonResourceReference(
+      input,
+      "location",
+      "postEffectTexture",
       unit,
       options,
       diagnostics,
-      appendGeneratedPath(generatedPath, "location")
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "location")),
+      undefined,
+      namespace
     );
   }
   validatePositiveIntegerField(input, "width", "rsgl.invalidPostEffectInputField", "Post effect input", unit, diagnostics);
@@ -376,23 +381,4 @@ function validatePositiveIntegerField(
     code,
     message: `${label} '${field}' must be a positive integer.`
   });
-}
-
-function checkResourceExists(
-  kind: "shaderVertex" | "shaderFragment" | "texture",
-  id: string,
-  unit: ResourceUnit,
-  options: PostEffectValidationOptions,
-  diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
-): void {
-  checkDeclaredResourceExists(
-    kind,
-    id,
-    unit,
-    undefined,
-    options,
-    diagnostics,
-    sourceRangeForGeneratedPath(unit, generatedPath)
-  );
 }

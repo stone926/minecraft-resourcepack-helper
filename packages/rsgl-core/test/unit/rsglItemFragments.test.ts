@@ -190,7 +190,7 @@ describe("RSGL item model fragments", () => {
       model: {
         type: "minecraft:special",
         base: "minecraft:item/chest",
-        model: { type: "minecraft:chest", texture: "christmas" }
+        model: { type: "minecraft:chest", texture: "minecraft:christmas" }
       }
     });
     assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("hidden.json"))?.content, {

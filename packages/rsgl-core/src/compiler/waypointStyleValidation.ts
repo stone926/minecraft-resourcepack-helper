@@ -1,6 +1,5 @@
-import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { requireArray, requireNumberInRange, requireObject } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
@@ -10,7 +9,6 @@ export type WaypointStyleValidationOptions = RsglResourceValidationOptions;
 
 const minDistance = 0;
 const maxDistance = 60000000;
-const spriteTextureFolder = "gui/sprites/hud/locator_bar_dot";
 
 export function validateWaypointStyleMetadata(
   unit: ResourceUnit,
@@ -28,12 +26,11 @@ export function validateWaypointStyleMetadata(
   validateDistanceField(content, "near_distance", unit, diagnostics);
   validateDistanceField(content, "far_distance", unit, diagnostics);
   validateDistanceOrder(content, unit, diagnostics);
-  validateSprites(content.sprites, unit.id?.namespace ?? "minecraft", unit, options, diagnostics);
+  validateSprites(content.sprites, unit, options, diagnostics);
 }
 
 function validateSprites(
   value: JsonValue | undefined,
-  namespace: string,
   unit: ResourceUnit,
   options: WaypointStyleValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
@@ -54,16 +51,18 @@ function validateSprites(
   }
 
   for (const [spriteIndex, sprite] of sprites.entries()) {
-    if (typeof sprite !== "string" || sprite.length === 0) {
+    if (typeof sprite !== "string") {
       pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointSprite", "Waypoint style sprites must be non-empty strings.");
       continue;
     }
-    checkTextureExists(
-      minecraftResourceIdInFolder(sprite, namespace, spriteTextureFolder),
+    checkJsonResourceReference(
+      sprites,
+      spriteIndex,
+      "waypointSpriteTexture",
       unit,
       options,
       diagnostics,
-      appendGeneratedPath("/sprites", String(spriteIndex))
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath("/sprites", String(spriteIndex)))
     );
   }
 }
@@ -97,22 +96,4 @@ function validateDistanceOrder(
   if (far <= near) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidWaypointDistanceRange", "Waypoint style 'far_distance' should be greater than 'near_distance'.");
   }
-}
-
-function checkTextureExists(
-  id: string,
-  unit: ResourceUnit,
-  options: WaypointStyleValidationOptions,
-  diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
-): void {
-  checkResourceExists(
-    "texture",
-    id,
-    unit,
-    undefined,
-    options,
-    diagnostics,
-    sourceRangeForGeneratedPath(unit, generatedPath)
-  );
 }

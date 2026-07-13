@@ -194,7 +194,12 @@ describe("RSGL extern declarations", () => {
     );
     assert.deepStrictEqual(
       result.dependencies.map(dependency => dependency.reason),
-      ["extern", "extern", "extern"]
+      ["extern", "extern", "extern", "extern"]
+    );
+    assert.strictEqual(
+      result.dependencies.filter(dependency => dependency.path.includes("external_texture")).length,
+      2,
+      "the inherited definition and local texture-variable use retain separate source origins"
     );
   });
 

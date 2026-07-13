@@ -1,11 +1,7 @@
-import {
-  minecraftResourceIdInFolder,
-  qualifyMinecraftResourceId,
-  tryParseMinecraftResourceId
-} from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
+import { getItemSpecialTextureConsumer } from "./resourceReferenceConsumers";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   requireArray,
@@ -73,7 +69,6 @@ const itemTintRequiredFields = new Map<string, string[]>([
 export function validateItemSpecial(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
@@ -81,7 +76,15 @@ export function validateItemSpecial(
   const basePath = appendGeneratedPath(generatedPath, "base");
   const specialModelPath = appendGeneratedPath(generatedPath, "model");
   if (typeof model.base === "string") {
-    checkResourceExists("model", model.base, unit, generatedModels, options, diagnostics, sourceRangeForGeneratedPath(unit, basePath));
+    checkJsonResourceReference(
+      model,
+      "base",
+      "model",
+      unit,
+      options,
+      diagnostics,
+      sourceRangeForGeneratedPath(unit, basePath)
+    );
   } else {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSpecialBase", "Item special model must define a base model id.", "error", basePath);
   }
@@ -97,14 +100,14 @@ export function validateItemSpecial(
 
   validateSpecialModelShape(specialModel, unit, diagnostics, specialModelPath);
   const texture = typeof specialModel.texture === "string" ? specialModel.texture : null;
-  if (texture) {
-    const target = itemSpecialTextureId(stripMinecraftPrefix(specialModel.type), texture, unit.id?.namespace ?? "minecraft");
-    if (target) {
-      checkResourceExists(
+  if (texture !== null) {
+    const consumer = getItemSpecialTextureConsumer(stripMinecraftPrefix(specialModel.type));
+    if (consumer) {
+      checkJsonResourceReference(
+        specialModel,
         "texture",
-        target,
+        consumer,
         unit,
-        generatedModels,
         options,
         diagnostics,
         sourceRangeForGeneratedPath(unit, appendGeneratedPath(specialModelPath, "texture"))
@@ -274,21 +277,4 @@ function isColorValue(value: JsonValue | undefined): boolean {
   return Array.isArray(value)
     && value.length === 3
     && value.every(item => typeof item === "number" && Number.isFinite(item) && item >= 0 && item <= 1);
-}
-
-function itemSpecialTextureId(type: string | null, texture: string, defaultNamespace: string): string | null {
-  if (type === "chest") {
-    return minecraftResourceIdInFolder(texture, defaultNamespace, "entity/chest");
-  }
-  if (type === "shulker_box") {
-    return minecraftResourceIdInFolder(texture, defaultNamespace, "entity/shulker");
-  }
-  if (type === "head") {
-    return minecraftResourceIdInFolder(texture, defaultNamespace, "entity");
-  }
-  if (type === "copper_golem_statue") {
-    const id = tryParseMinecraftResourceId(texture, defaultNamespace);
-    return id ? `${id.namespace}:${id.path.replace(/^textures\//, "").replace(/\.png$/, "")}` : qualifyMinecraftResourceId(texture, defaultNamespace);
-  }
-  return null;
 }

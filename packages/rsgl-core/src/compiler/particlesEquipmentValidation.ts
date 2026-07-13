@@ -1,26 +1,24 @@
 import { ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import { sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
-import { minecraftResourceIdInFolder } from "../../../mc-assets/src";
 
 export function validateParticlesUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const namespace = unit.id?.namespace ?? "minecraft";
   const content = asObject(unit.content);
   const textures = Array.isArray(content?.textures) ? content.textures : [];
   for (const [index, texture] of textures.entries()) {
     if (typeof texture === "string") {
-      checkResourceExists(
-        "texture",
-        minecraftResourceIdInFolder(texture, namespace, "particle"),
+      checkJsonResourceReference(
+        textures,
+        index,
+        "particleTexture",
         unit,
-        undefined,
         options,
         diagnostics,
         sourceRangeForGeneratedPath(unit, appendGeneratedPath("/textures", String(index)))
@@ -34,7 +32,6 @@ export function validateEquipmentUnit(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const namespace = unit.id?.namespace ?? "minecraft";
   const content = asObject(unit.content);
   const layers = asObject(content?.layers);
   if (!layers) {
@@ -46,20 +43,24 @@ export function validateEquipmentUnit(
       continue;
     }
     for (const [index, layerEntry] of layerEntries.entries()) {
-      const texture = asObject(layerEntry)?.texture;
+      const layerObject = asObject(layerEntry);
+      const texture = layerObject?.texture;
       if (typeof texture === "string") {
         const texturePath = appendGeneratedPath(
           appendGeneratedPath(appendGeneratedPath("/layers", layerName), String(index)),
           "texture"
         );
-        checkResourceExists(
+        checkJsonResourceReference(
+          layerObject!,
           "texture",
-          minecraftResourceIdInFolder(texture, namespace, `entity/equipment/${layerName}`),
+          "equipmentTexture",
           unit,
-          undefined,
           options,
           diagnostics,
-          sourceRangeForGeneratedPath(unit, texturePath)
+          sourceRangeForGeneratedPath(unit, texturePath),
+          undefined,
+          unit.id?.namespace ?? "minecraft",
+          { equipmentLayer: layerName }
         );
       }
     }

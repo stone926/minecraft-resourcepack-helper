@@ -1,6 +1,8 @@
-import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import {
+  canonicalizeJsonResourceReference,
+  checkJsonResourceReference
+} from "./jsonResourceReferenceValidation";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   asObject,
@@ -26,7 +28,6 @@ const providerRequiredFields = new Map<string, string[]>([
 
 export function validateFontMetadata(
   unit: ResourceUnit,
-  generatedFonts: Set<string>,
   options: FontValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
@@ -42,12 +43,9 @@ export function validateFontMetadata(
     return;
   }
 
-  const namespace = unit.id?.namespace ?? "minecraft";
   for (const [providerIndex, provider] of providers.entries()) {
     validateFontProvider(
       provider,
-      namespace,
-      generatedFonts,
       unit,
       options,
       diagnostics,
@@ -58,8 +56,6 @@ export function validateFontMetadata(
 
 function validateFontProvider(
   value: JsonValue,
-  namespace: string,
-  generatedFonts: Set<string>,
   unit: ResourceUnit,
   options: FontValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
@@ -86,14 +82,12 @@ function validateFontProvider(
     }
   }
 
-  validateFontProviderFields(provider, type, namespace, generatedFonts, unit, options, diagnostics, generatedPath);
+  validateFontProviderFields(provider, type, unit, options, diagnostics, generatedPath);
 }
 
 function validateFontProviderFields(
   provider: Record<string, JsonValue>,
   type: string,
-  namespace: string,
-  generatedFonts: Set<string>,
   unit: ResourceUnit,
   options: FontValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
@@ -110,55 +104,55 @@ function validateFontProviderFields(
     validateStringField(provider, "file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateStringArrayField(provider, "chars", "rsgl.invalidFontProviderField", unit, diagnostics);
     if (typeof provider.file === "string") {
-      checkFontResourceExists(
+      checkJsonResourceReference(
+        provider,
+        "file",
         "texture",
-        qualifyMinecraftResourceId(provider.file, namespace),
         unit,
-        generatedFonts,
         options,
         diagnostics,
-        appendGeneratedPath(generatedPath, "file")
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "file"))
       );
     }
   } else if (type === "reference") {
     validateStringField(provider, "id", "rsgl.invalidFontProviderField", unit, diagnostics);
     if (typeof provider.id === "string") {
-      checkFontResourceExists(
+      checkJsonResourceReference(
+        provider,
+        "id",
         "font",
-        qualifyMinecraftResourceId(provider.id, namespace),
         unit,
-        generatedFonts,
         options,
         diagnostics,
-        appendGeneratedPath(generatedPath, "id")
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "id"))
       );
     }
   } else if (type === "ttf") {
     validateStringField(provider, "file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateSkip(provider.skip, unit, diagnostics);
     if (typeof provider.file === "string") {
-      checkFontResourceExists(
+      checkJsonResourceReference(
+        provider,
+        "file",
         "fontFile",
-        qualifyMinecraftResourceId(provider.file, namespace),
         unit,
-        generatedFonts,
         options,
         diagnostics,
-        appendGeneratedPath(generatedPath, "file")
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "file"))
       );
     }
   } else if (type === "unihex") {
     validateStringField(provider, "hex_file", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateSizeOverrides(provider["size_overrides"], unit, diagnostics);
     if (typeof provider["hex_file"] === "string") {
-      checkFontResourceExists(
+      checkJsonResourceReference(
+        provider,
+        "hex_file",
         "fontFile",
-        qualifyMinecraftResourceId(provider["hex_file"], namespace),
         unit,
-        generatedFonts,
         options,
         diagnostics,
-        appendGeneratedPath(generatedPath, "hex_file")
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "hex_file"))
       );
     }
   } else if (type === "space") {
@@ -166,6 +160,27 @@ function validateFontProviderFields(
   } else if (type === "legacy_unicode") {
     validateStringField(provider, "template", "rsgl.invalidFontProviderField", unit, diagnostics);
     validateStringField(provider, "sizes", "rsgl.invalidFontProviderField", unit, diagnostics);
+    if (typeof provider.template === "string") {
+      canonicalizeJsonResourceReference(
+        provider,
+        "template",
+        "fontLegacyUnicodeTemplate",
+        unit,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "template"))
+      );
+    }
+    if (typeof provider.sizes === "string") {
+      checkJsonResourceReference(
+        provider,
+        "sizes",
+        "fontFile",
+        unit,
+        options,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "sizes"))
+      );
+    }
   }
 }
 
@@ -292,27 +307,4 @@ function validateIntegerInRange(
   if (!Number.isInteger(value) || Number(value) < min || Number(value) > max) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderField", `Field '${field}' must be an integer between ${min} and ${max}.`);
   }
-}
-
-function checkFontResourceExists(
-  kind: "font" | "fontFile" | "texture",
-  id: string,
-  unit: ResourceUnit,
-  generatedFonts: Set<string>,
-  options: FontValidationOptions,
-  diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
-): void {
-  if (kind === "font" && generatedFonts.has(id)) {
-    return;
-  }
-  checkResourceExists(
-    kind,
-    id,
-    unit,
-    undefined,
-    options,
-    diagnostics,
-    sourceRangeForGeneratedPath(unit, generatedPath)
-  );
 }

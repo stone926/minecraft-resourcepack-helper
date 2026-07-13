@@ -1,17 +1,18 @@
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import {
+  canonicalizeJsonResourceReference,
+  checkJsonResourceReference
+} from "./jsonResourceReferenceValidation";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject, stripMinecraftPrefix } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
-import { qualifyMinecraftResourceId } from "../../../mc-assets/src";
 
 export function validateAtlasUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  const namespace = unit.id?.namespace ?? "minecraft";
   const content = asObject(unit.content);
   const sources = Array.isArray(content?.sources) ? content.sources : [];
   for (const [index, source] of sources.entries()) {
@@ -22,26 +23,56 @@ export function validateAtlasUnit(
     }
     const sourceType = stripMinecraftPrefix(sourceObject.type);
     if (sourceType === "directory" && typeof sourceObject.source === "string") {
-      checkResourceExists(
+      checkJsonResourceReference(
+        sourceObject,
+        "source",
         "textureDirectory",
-        qualifyMinecraftResourceId(sourceObject.source, namespace),
         unit,
-        undefined,
         options,
         diagnostics,
         sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "source"))
       );
     }
     if ((sourceType === "single" || sourceType === "unstitch") && typeof sourceObject.resource === "string") {
-      checkResourceExists(
+      checkJsonResourceReference(
+        sourceObject,
+        "resource",
         "texture",
-        qualifyMinecraftResourceId(sourceObject.resource, namespace),
         unit,
-        undefined,
         options,
         diagnostics,
         sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "resource"))
       );
+    }
+    if (sourceType === "single" && typeof sourceObject.sprite === "string") {
+      canonicalizeJsonResourceReference(
+        sourceObject,
+        "sprite",
+        "texture",
+        unit,
+        diagnostics,
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "sprite"))
+      );
+    }
+    if (sourceType === "unstitch" && Array.isArray(sourceObject.regions)) {
+      for (const [regionIndex, regionValue] of sourceObject.regions.entries()) {
+        const region = asObject(regionValue);
+        if (typeof region?.sprite !== "string") {
+          continue;
+        }
+        const spritePath = appendGeneratedPath(
+          appendGeneratedPath(appendGeneratedPath(sourcePath, "regions"), String(regionIndex)),
+          "sprite"
+        );
+        canonicalizeJsonResourceReference(
+          region,
+          "sprite",
+          "texture",
+          unit,
+          diagnostics,
+          sourceRangeForGeneratedPath(unit, spritePath)
+        );
+      }
     }
     if (sourceType === "filter") {
       validateAtlasFilterPattern(sourceObject, unit, diagnostics, sourcePath);
@@ -50,11 +81,11 @@ export function validateAtlasUnit(
       const textures = Array.isArray(sourceObject.textures) ? sourceObject.textures : [];
       for (const [textureIndex, texture] of textures.entries()) {
         if (typeof texture === "string") {
-          checkResourceExists(
+          checkJsonResourceReference(
+            textures,
+            textureIndex,
             "texture",
-            qualifyMinecraftResourceId(texture, namespace),
             unit,
-            undefined,
             options,
             diagnostics,
             sourceRangeForGeneratedPath(unit, appendGeneratedPath(appendGeneratedPath(sourcePath, "textures"), String(textureIndex)))
@@ -62,23 +93,24 @@ export function validateAtlasUnit(
         }
       }
       if (typeof sourceObject.palette_key === "string") {
-        checkResourceExists(
+        checkJsonResourceReference(
+          sourceObject,
+          "palette_key",
           "texture",
-          qualifyMinecraftResourceId(sourceObject.palette_key, namespace),
           unit,
-          undefined,
           options,
           diagnostics,
           sourceRangeForGeneratedPath(unit, appendGeneratedPath(sourcePath, "palette_key"))
         );
       }
-      for (const [key, texture] of Object.entries(asObject(sourceObject.permutations) ?? {})) {
+      const permutations = asObject(sourceObject.permutations) ?? {};
+      for (const [key, texture] of Object.entries(permutations)) {
         if (typeof texture === "string") {
-          checkResourceExists(
+          checkJsonResourceReference(
+            permutations,
+            key,
             "texture",
-            qualifyMinecraftResourceId(texture, namespace),
             unit,
-            undefined,
             options,
             diagnostics,
             sourceRangeForGeneratedPath(unit, appendGeneratedPath(appendGeneratedPath(sourcePath, "permutations"), key))

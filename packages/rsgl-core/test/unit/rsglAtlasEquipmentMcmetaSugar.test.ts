@@ -32,8 +32,8 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     const atlas = result.units.find(unit => unit.kind === "atlas");
     assert.deepStrictEqual(atlas?.content, {
       sources: [
-        { type: "minecraft:directory", source: "block", prefix: "block/" },
-        { type: "minecraft:directory", source: "potions", prefix: "potions/" },
+        { type: "minecraft:directory", source: "minecraft:block", prefix: "block/" },
+        { type: "minecraft:directory", source: "minecraft:potions", prefix: "potions/" },
         {
           type: "minecraft:filter",
           pattern: {
@@ -83,7 +83,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     const atlas = result.units.find(unit => unit.kind === "atlas");
     assert.deepStrictEqual(atlas?.content, {
       sources: [
-        { type: "minecraft:directory", source: "trims/items", prefix: "trims/items/" },
+        { type: "minecraft:directory", source: "minecraft:trims/items", prefix: "trims/items/" },
         {
           type: "minecraft:paletted_permutations",
           textures: [

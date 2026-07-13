@@ -117,8 +117,8 @@ describe("RSGL JSON resources and generic fragments", () => {
     ]);
     assert.deepStrictEqual(result.units.find(unit => unit.kind === "atlas")?.content, {
       sources: [
-        { type: "minecraft:directory", source: "block", prefix: "block/" },
-        { type: "minecraft:directory", source: "item", prefix: "item/" }
+        { type: "minecraft:directory", source: "minecraft:block", prefix: "block/" },
+        { type: "minecraft:directory", source: "minecraft:item", prefix: "item/" }
       ]
     });
     const atlasMappingPaths = result.units.find(unit => unit.kind === "atlas")?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];

@@ -229,8 +229,8 @@ function validateModelElementFace(
   if (!faceObject) {
     return;
   }
-  if ("texture" in faceObject && (typeof faceObject.texture !== "string" || !faceObject.texture.startsWith("#"))) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidModelFaceTexture", "Model element face texture must reference a texture variable starting with '#'.");
+  if ("texture" in faceObject && typeof faceObject.texture !== "string") {
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidModelFaceTexture", "Model element face texture must be a texture resource or variable string.");
   }
   if ("rotation" in faceObject && !isValidFaceRotation(faceObject.rotation)) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidModelFaceRotation", "Model element face rotation must be one of 0, 90, 180, or 270.");

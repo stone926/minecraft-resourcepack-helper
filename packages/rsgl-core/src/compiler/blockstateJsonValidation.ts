@@ -4,12 +4,11 @@ import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 import { pushDiagnosticAtRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import type { RsglResourceValidationOptions, ValidationRange } from "./validationTypes";
 
 export function validateBlockstateUnit(
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
@@ -24,7 +23,7 @@ export function validateBlockstateUnit(
       const generatedPath = blockstateVariantPath(key);
       const range = sourceRangeForGeneratedPath(unit, generatedPath);
       validateBlockstateVariantKey(key, diagnostics, range);
-      validateBlockstateModelProps(value, unit, generatedModels, options, diagnostics, range, generatedPath);
+      validateBlockstateModelProps(value, unit, options, diagnostics, range, generatedPath);
     }
   }
 
@@ -37,7 +36,6 @@ export function validateBlockstateUnit(
     validateBlockstateModelProps(
       multipartEntry?.apply,
       unit,
-      generatedModels,
       options,
       diagnostics,
       range,
@@ -85,7 +83,6 @@ function validateBlockstateVariantKey(
 function validateBlockstateModelProps(
   value: JsonValue | undefined,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   range: ValidationRange,
@@ -96,7 +93,6 @@ function validateBlockstateModelProps(
       validateBlockstateModelProps(
         item,
         unit,
-        generatedModels,
         options,
         diagnostics,
         range,
@@ -111,11 +107,11 @@ function validateBlockstateModelProps(
     return;
   }
   if (typeof model.model === "string") {
-    checkResourceExists(
+    checkJsonResourceReference(
+      model,
       "model",
-      model.model,
+      "model",
       unit,
-      generatedModels,
       options,
       diagnostics,
       sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))

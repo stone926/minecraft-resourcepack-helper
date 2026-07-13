@@ -64,7 +64,7 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
 
     const expectedSounds = {
       ["block.example.break"]: {
-        sounds: ["block/example_break"]
+        sounds: ["minecraft:block/example_break"]
       }
     };
     const sounds = result.units.find(unit => unit.kind === "sounds");

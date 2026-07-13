@@ -1,6 +1,9 @@
-import { qualifyMinecraftResourceId, tryParseMinecraftResourceId } from "../../../mc-assets/src";
+import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import {
+  canonicalizeJsonResourceReference,
+  checkJsonResourceReference
+} from "./jsonResourceReferenceValidation";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   asObject,
@@ -127,9 +130,10 @@ function validateSoundEvent(
   }
 
   const soundsPath = appendGeneratedPath(generatedPath, "sounds");
-  for (const [soundIndex, sound] of sounds.entries()) {
+  for (const [soundIndex] of sounds.entries()) {
     validateSoundEntry(
-      sound,
+      sounds,
+      soundIndex,
       namespace,
       localEvents,
       unit,
@@ -141,7 +145,8 @@ function validateSoundEvent(
 }
 
 function validateSoundEntry(
-  value: JsonValue,
+  sounds: JsonValue[],
+  soundIndex: number,
   namespace: string,
   localEvents: Set<string>,
   unit: ResourceUnit,
@@ -149,8 +154,9 @@ function validateSoundEntry(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
+  const value = sounds[soundIndex];
   if (typeof value === "string") {
-    validateSoundFileReference(value, unit, options, diagnostics, generatedPath);
+    validateSoundFileReference(sounds, soundIndex, value, unit, options, diagnostics, generatedPath);
     return;
   }
 
@@ -194,9 +200,11 @@ function validateSoundEntry(
   }
 
   if (sound.type === "event") {
-    validateSoundEventReference(sound.name, namespace, localEvents, unit, diagnostics);
+    validateSoundEventReference(sound, namespace, localEvents, unit, diagnostics, generatedPath);
   } else {
     validateSoundFileReference(
+      sound,
+      "name",
       sound.name,
       unit,
       options,
@@ -207,6 +215,8 @@ function validateSoundEntry(
 }
 
 function validateSoundFileReference(
+  owner: Record<string, JsonValue> | JsonValue[],
+  key: string | number,
   value: string,
   unit: ResourceUnit,
   options: LangSoundsValidationOptions,
@@ -220,12 +230,11 @@ function validateSoundFileReference(
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidSoundReference", "Sound file references should omit the .ogg extension.", "warning");
   }
 
-  const soundId = qualifyMinecraftResourceId(value, unit.id?.namespace ?? "minecraft");
-  const checked = checkResourceExists(
+  const checked = checkJsonResourceReference(
+    owner,
+    key,
     "sound",
-    soundId,
     unit,
-    undefined,
     options,
     diagnostics,
     sourceRangeForGeneratedPath(unit, generatedPath)
@@ -233,7 +242,7 @@ function validateSoundFileReference(
   if (!checked.available) {
     return;
   }
-  validateSoundMetadata(soundId, unit, options, diagnostics, checked.source);
+  validateSoundMetadata(checked.canonicalId!, unit, options, diagnostics, checked.source);
 }
 
 function validateSoundMetadata(
@@ -272,13 +281,24 @@ function validateSoundMetadata(
 }
 
 function validateSoundEventReference(
-  value: string,
+  sound: Record<string, JsonValue>,
   namespace: string,
   localEvents: Set<string>,
   unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string
 ): void {
-  const id = tryParseMinecraftResourceId(value, namespace);
+  const value = sound.name as string;
+  const canonicalId = canonicalizeJsonResourceReference(
+    sound,
+    "name",
+    "sound",
+    unit,
+    diagnostics,
+    sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "name")),
+    namespace
+  );
+  const id = canonicalId ? tryParseMinecraftResourceId(canonicalId, namespace) : null;
   if (!id) {
     return;
   }

@@ -68,7 +68,7 @@ describe("RSGL model validation", () => {
 
     assert.ok(invalidCodes.includes("rsgl.invalidModelElementVector"));
     assert.ok(invalidCodes.includes("rsgl.modelElementCoordinateOutOfRange"));
-    assert.ok(invalidCodes.includes("rsgl.invalidModelFaceTexture"));
+    assert.strictEqual(invalidCodes.includes("rsgl.invalidModelFaceTexture"), false);
     assert.ok(invalidCodes.includes("rsgl.invalidModelFaceRotation"));
     assert.ok(invalidCodes.includes("rsgl.invalidModelDisplayContext"));
     assert.ok(invalidCodes.includes("rsgl.invalidModelDisplayTransform"));

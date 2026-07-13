@@ -8,7 +8,7 @@ import {
 import { validateItemSpecial, validateItemTints } from "./itemSpecialValidation";
 import { validateItemTransformation } from "./itemTransformValidation";
 import { appendGeneratedPath } from "./sourcePaths";
-import { checkResourceExists } from "./resourceReferenceValidation";
+import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import { pushUnitDiagnostic, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import {
   asObject,
@@ -33,7 +33,6 @@ const itemModelTypes = new Set([
 export function validateItemModelDefinition(
   value: JsonValue | undefined,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath = ""
@@ -47,12 +46,12 @@ export function validateItemModelDefinition(
   validateItemTints(model, unit, diagnostics, generatedPath);
   const type = stripMinecraftPrefix(model.type);
   if (type === "model") {
-    validateModelReference(model, unit, generatedModels, options, diagnostics, generatedPath);
+    validateModelReference(model, unit, options, diagnostics, generatedPath);
     return;
   }
 
   if (type === "composite") {
-    validateItemComposite(model, unit, generatedModels, options, diagnostics, generatedPath);
+    validateItemComposite(model, unit, options, diagnostics, generatedPath);
     return;
   }
 
@@ -60,7 +59,6 @@ export function validateItemModelDefinition(
     validateItemModelDefinition(
       nestedValue,
       unit,
-      generatedModels,
       options,
       diagnostics,
       nestedPath
@@ -83,7 +81,7 @@ export function validateItemModelDefinition(
   }
 
   if (type === "special") {
-    validateItemSpecial(model, unit, generatedModels, options, diagnostics, generatedPath);
+    validateItemSpecial(model, unit, options, diagnostics, generatedPath);
     return;
   }
 
@@ -99,7 +97,7 @@ export function validateItemModelDefinition(
     "error",
     appendGeneratedPath(generatedPath, "type")
   );
-  validateNestedItemModels(model, unit, generatedModels, options, diagnostics, generatedPath);
+  validateNestedItemModels(model, unit, options, diagnostics, generatedPath);
 }
 
 export function validateItemTopLevelFields(
@@ -128,18 +126,17 @@ export function validateItemTopLevelFields(
 function validateModelReference(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
   const modelPath = appendGeneratedPath(generatedPath, "model");
   if (typeof model.model === "string") {
-    checkResourceExists(
+    checkJsonResourceReference(
+      model,
       "model",
-      model.model,
+      "model",
       unit,
-      generatedModels,
       options,
       diagnostics,
       sourceRangeForGeneratedPath(unit, modelPath)
@@ -152,7 +149,6 @@ function validateModelReference(
 function validateItemComposite(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
@@ -182,7 +178,6 @@ function validateItemComposite(
     validateItemModelDefinition(
       child,
       unit,
-      generatedModels,
       options,
       diagnostics,
       childPath
@@ -193,7 +188,6 @@ function validateItemComposite(
 function validateNestedItemModels(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
@@ -208,7 +202,6 @@ function validateNestedItemModels(
       validateItemModelDefinition(
         nested,
         unit,
-        generatedModels,
         options,
         diagnostics,
         appendGeneratedPath(modelsPath, String(index))
@@ -219,7 +212,6 @@ function validateNestedItemModels(
     validateItemModelDefinition(
       model.fallback,
       unit,
-      generatedModels,
       options,
       diagnostics,
       appendGeneratedPath(generatedPath, "fallback")

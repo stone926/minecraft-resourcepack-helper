@@ -6,7 +6,8 @@ import { validateFontMetadata } from "./fontValidation";
 import { validateItemModelDefinition, validateItemTopLevelFields } from "./itemDefinitionValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
 import { validateMcmetaMetadata } from "./mcmetaValidation";
-import { createModelResolver, validateModelUnit } from "./modelReferenceValidation";
+import { validateModelUnit } from "./modelReferenceValidation";
+import { createModelResolver } from "./modelDocuments";
 import { validatePackMetadata } from "./packMetadataValidation";
 import { validateEquipmentUnit, validateParticlesUnit } from "./particlesEquipmentValidation";
 import { validatePostEffectMetadata } from "./postEffectValidation";
@@ -27,8 +28,6 @@ export type {
 } from "./validationTypes";
 
 interface ResourceValidationContext {
-  generatedModels: Map<string, ResourceUnit>;
-  generatedFonts: Set<string>;
   modelResolver: ReturnType<typeof createModelResolver>;
 }
 
@@ -41,24 +40,28 @@ type ResourceValidator = (
 
 const resourceValidators = {
   model: (unit, context, options, diagnostics) =>
-    validateModelUnit(unit, context.generatedModels, context.modelResolver, options, diagnostics),
-  item: (unit, context, options, diagnostics) =>
-    validateItemUnit(unit, context.generatedModels, options, diagnostics),
-  blockstate: (unit, context, options, diagnostics) =>
-    validateBlockstateUnit(unit, context.generatedModels, options, diagnostics),
+    validateModelUnit(unit, context.modelResolver, options, diagnostics),
+  item: (unit, _context, options, diagnostics) =>
+    validateItemUnit(unit, options, diagnostics),
+  blockstate: (unit, _context, options, diagnostics) =>
+    validateBlockstateUnit(unit, options, diagnostics),
   sounds: (unit, _context, options, diagnostics) => validateSoundsUnit(unit, options, diagnostics),
   lang: (unit, _context, _options, diagnostics) => validateLangUnit(unit, diagnostics),
   atlas: (unit, _context, options, diagnostics) => validateAtlasUnit(unit, options, diagnostics),
   mcmeta: (unit, _context, options, diagnostics) => validateMcmetaUnit(unit, options, diagnostics),
   particles: (unit, _context, options, diagnostics) => validateParticlesUnit(unit, options, diagnostics),
   equipment: (unit, _context, options, diagnostics) => validateEquipmentUnit(unit, options, diagnostics),
-  font: (unit, context, options, diagnostics) => validateFontUnit(unit, context.generatedFonts, options, diagnostics),
+  font: (unit, _context, options, diagnostics) => validateFontUnit(unit, options, diagnostics),
   waypointStyle: (unit, _context, options, diagnostics) => validateWaypointStyleUnit(unit, options, diagnostics),
   postEffect: (unit, _context, options, diagnostics) => validatePostEffectUnit(unit, options, diagnostics),
   pack: (unit, _context, options, diagnostics) => validatePackUnit(unit, options, diagnostics)
 } satisfies Record<Exclude<RsglResourceValidationHandler, "none">, ResourceValidator>;
 
-export function validateResourceUnits(
+/**
+ * Canonicalizes every schema-known resource reference in place, then validates
+ * the resulting units. Compile output intentionally uses the mutated content.
+ */
+export function canonicalizeAndValidateResourceUnits(
   units: ResourceUnit[],
   options: RsglResourceValidationOptions = {}
 ): RsglCompileDiagnostic[] {
@@ -68,17 +71,12 @@ export function validateResourceUnits(
       .filter(unit => unit.kind === "model" && unit.id && !isExternalResourceUnit(unit))
       .map(unit => [`${unit.id!.namespace}:${unit.id!.path}`, unit])
   );
-  const generatedFonts = new Set(
-    units
-      .filter(unit => unit.kind === "font" && unit.id && !isExternalResourceUnit(unit))
-      .map(unit => `${unit.id!.namespace}:${unit.id!.path}`)
-  );
   const validationOptions = {
     ...options,
     generatedResourceIds: createGeneratedResourceIndex(units)
   };
   const modelResolver = createModelResolver(generatedModels, validationOptions);
-  const validationContext: ResourceValidationContext = { generatedModels, generatedFonts, modelResolver };
+  const validationContext: ResourceValidationContext = { modelResolver };
 
   for (const unit of units) {
     const diagnosticStart = diagnostics.length;
@@ -96,15 +94,22 @@ export function validateResourceUnits(
   return diagnostics;
 }
 
+/** Compatibility facade; validation of known reference sinks is canonicalizing. */
+export function validateResourceUnits(
+  units: ResourceUnit[],
+  options: RsglResourceValidationOptions = {}
+): RsglCompileDiagnostic[] {
+  return canonicalizeAndValidateResourceUnits(units, options);
+}
+
 function validateItemUnit(
   unit: ResourceUnit,
-  generatedModels: Map<string, ResourceUnit>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
   validateItemTopLevelFields(content, unit, diagnostics, "");
-  validateItemModelDefinition(content?.model, unit, generatedModels, options, diagnostics, "/model");
+  validateItemModelDefinition(content?.model, unit, options, diagnostics, "/model");
 }
 
 function validateSoundsUnit(
@@ -133,7 +138,6 @@ function validateMcmetaUnit(
       "texture",
       textureId,
       unit,
-      undefined,
       options,
       diagnostics,
       sourceRangeForGeneratedPath(unit, "/@resource-id")
@@ -147,11 +151,10 @@ function validateMcmetaUnit(
 
 function validateFontUnit(
   unit: ResourceUnit,
-  generatedFonts: Set<string>,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
-  validateFontMetadata(unit, generatedFonts, options, diagnostics);
+  validateFontMetadata(unit, options, diagnostics);
 }
 
 function validateWaypointStyleUnit(

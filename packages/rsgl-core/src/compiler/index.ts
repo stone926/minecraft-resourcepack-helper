@@ -12,7 +12,7 @@ export type {
   RsglCompileSnapshotSourceAlias
 } from "./compileSnapshot";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
-export { validateResourceUnits } from "./validation";
+export { canonicalizeAndValidateResourceUnits, validateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";
 export type { RsglBlockstateSchema } from "./blockstateStateValidation";
 export {

@@ -47,6 +47,10 @@ export interface RsglExternalResourceUsage {
 export interface RsglCheckedResourceReference {
   available: boolean;
   external: boolean;
+  /** Canonical namespace:path written to a known Minecraft JSON sink. */
+  canonicalId?: string;
+  /** Canonical physical target used by generated/extern/disk resolution. */
+  lookupId?: string;
   source?: ExternResourceSource;
 }
 
