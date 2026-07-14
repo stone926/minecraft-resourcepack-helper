@@ -176,7 +176,7 @@ function validateModelElementRotation(
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidModelElementRescale", "Model element rotation rescale must be a boolean.");
   }
   if (("axis" in rotation) !== ("angle" in rotation)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.incompleteModelElementRotation", "Legacy model element rotation must define axis and angle together.");
+    pushUnitDiagnostic(diagnostics, unit, "rsgl.incompleteModelElementRotation", "Axis-angle model element rotation must define axis and angle together.");
   }
 }
 

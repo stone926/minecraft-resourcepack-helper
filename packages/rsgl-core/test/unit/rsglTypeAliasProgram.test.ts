@@ -83,12 +83,12 @@ describe("RSGL program type aliases", () => {
     assert.strictEqual(main.scope.symbols.get("value")?.type.kind, "Number");
   });
 
-  it("preserves aliases through a non-ASCII re-export chain and implicit exports", () => {
+  it("preserves aliases through a non-ASCII re-export chain and explicit exports", () => {
     const root = path.resolve("C:/rsgl-tests/资源 包/reexports");
     const sourceFile = path.join(root, "原始.rsgl");
     const barrelFile = path.join(root, "barrel.rsgl");
     const localBarrelFile = path.join(root, "local-barrel.rsgl");
-    const implicitFile = path.join(root, "implicit.rsgl");
+    const directFile = path.join(root, "direct.rsgl");
     const mainFile = path.join(root, "入口.rsgl");
     const program = bind([
       source(sourceFile, [
@@ -100,12 +100,15 @@ describe("RSGL program type aliases", () => {
         "import { Forwarded } from \"./barrel.rsgl\"",
         "export { Forwarded as LocalForward }"
       ]),
-      source(implicitFile, "type Implicit = { enabled: Boolean }"),
+      source(directFile, [
+        "type Direct = { enabled: Boolean }",
+        "export { Direct }"
+      ]),
       source(mainFile, [
         "import { LocalForward } from \"./local-barrel.rsgl\"",
-        "import { Implicit } from \"./implicit.rsgl\"",
+        "import { Direct } from \"./direct.rsgl\"",
         "let first: LocalForward = { id: \"ok\" }",
-        "let second: Implicit = { enabled: true }"
+        "let second: Direct = { enabled: true }"
       ])
     ]);
 
@@ -114,7 +117,7 @@ describe("RSGL program type aliases", () => {
     assert.strictEqual(forwarded?.node, model(program, sourceFile).scope.typeAliases.get("Original")?.node);
     assert.strictEqual(model(program, localBarrelFile).scope.symbols.has("Forwarded"), false);
     assert.strictEqual(model(program, mainFile).scope.symbols.has("LocalForward"), false);
-    assert.ok(program.typeAliasExportMaps?.get(path.normalize(implicitFile))?.has("Implicit"));
+    assert.ok(program.typeAliasExportMaps?.get(path.normalize(directFile))?.has("Direct"));
   });
 
   it("reports type-alias re-export and cross-module alias cycles deterministically", () => {

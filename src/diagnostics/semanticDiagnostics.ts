@@ -14,8 +14,6 @@ import {
   type SemanticDiagnosticsHost
 } from "./semanticDiagnosticsCore";
 
-export { isSemanticDiagnosticsDocument } from "./semanticDiagnosticsCore";
-
 const packImageResourceHost: PackImageResourceHost = {
   pathExists: fileName => workspaceResourceCache.getPathExists(fileName),
   readDirectoryEntries: directory => workspaceResourceCache.getDirectoryEntriesSync(directory),

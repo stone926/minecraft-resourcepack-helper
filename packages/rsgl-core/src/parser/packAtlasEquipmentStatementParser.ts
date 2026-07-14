@@ -196,7 +196,7 @@ function parseEquipmentLayerStmt(host: ResourceStatementParserHost): EquipmentLa
       dyeable = parseEquipmentBooleanClause(host);
     } else if (host.matchText("color")) {
       color = host.parseExpression({ stopTexts: [...equipmentLayerClauseKeywords, "}"] });
-    } else if (host.current().text === "use_player_texture" || host.current().text === "usePlayerTexture") {
+    } else if (host.current().text === "use_player_texture") {
       usePlayerTexture = parseEquipmentBooleanClause(host);
     } else {
       host.addDiagnosticAtCurrent("rsgl.expectedEquipmentLayerClause", "Expected 'texture', 'dyeable', 'color', or 'use_player_texture' in equipment layer.");

@@ -1,9 +1,7 @@
 import {
   ExprNode,
   ExternDeclNode,
-  ForStmtNode,
   IdentifierNode,
-  LegacyBlockstateRootBodyNode,
   ResourceDeclNode,
   RsglDiagnostic,
   RsglModule,
@@ -16,7 +14,6 @@ import {
   getExternResourceKind,
   getRsglResourceKindDescriptor
 } from "../resourceKinds";
-import { inferStaticBlockstateMode } from "../blockstateModeEvidence";
 import { walkRsglExpression } from "../parser/astTraversal";
 import { createBuiltinSymbols } from "./builtins";
 import { diagnostic } from "./diagnostics";
@@ -34,11 +31,10 @@ import {
   checkObject,
   checkResourceIdExpression,
   checkTemplateUseExpression,
-  RsglExpressionCheckContext,
   validateResourceLocationLike
 } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
-import { applyLegacyBlockstateMode, resolveLegacyBlockstateMode } from "./blockstateModeInference";
 import { createChildScope, createScope, lookup } from "./scopes";
 import { createModuleNamespaceType } from "./moduleNamespace";
 import {
@@ -48,11 +44,6 @@ import {
 } from "./typeAliases";
 import { scopeForTruthyCondition } from "./typeNarrowing";
 import {
-  inferResolvedTemplateOutputMetadata,
-  resolveProgramTemplateOutputMetadata,
-  templateOutputClassificationForName
-} from "./templateOutputResolution";
-import {
   anyType,
   identifierName,
   jsonType,
@@ -61,7 +52,6 @@ import {
   RsglBindOptions,
   RsglExportRecord,
   RsglImportRecord,
-  RsglLegacyBlockstateRootRecord,
   RsglOutputResourcePreview,
   RsglReferenceRecord,
   RsglScope,
@@ -78,7 +68,10 @@ import {
   typeFromAnnotation
 } from "./types";
 import type { RsglTemplateCallerContext } from "../templateOutput";
-import { templateOutputBodyCallerContext } from "../templateOutput";
+import {
+  templateOutputBodyCallerContext,
+  templateOutputMetadataForDeclaration
+} from "../templateOutput";
 import { validateResolvedTemplateUses } from "./templateUseValidation";
 import { validateTemplateRecursion } from "./templateRecursion";
 
@@ -106,7 +99,6 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly resolvedExpectedTypes = new Map<ExprNode, RsglType>();
   private readonly resolvedExpressionTypes = new Map<ExprNode, RsglType>();
   private readonly templateUses: RsglTemplateUseRecord[] = [];
-  private readonly legacyBlockstateRoots: RsglLegacyBlockstateRootRecord[] = [];
   private readonly contextualTextureSinks: RsglContextualTextureSinkRecord[] = [];
   private readonly blockstateApplyFacts = new Map<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>();
   private readonly blockstateApplyRecords: RsglBlockstateApplyRecord[] = [];
@@ -166,7 +158,6 @@ class RsglBinder implements RsglExpressionCheckContext {
     predeclareTypeAliases(this.module.statements, this.globalScope, this.diagnostics);
     resolveTypeAliases(this.globalScope, this.diagnostics);
     this.predeclareTopLevel(this.module.statements, this.globalScope);
-    this.resolveLocalTemplateOutputs();
     this.checkTopLevelStatements(this.module.statements, this.globalScope, resourcesCallerContext);
     applyLambdaValueDiagnostics(this.diagnostics, this.module.statements, this.globalScope);
     this.diagnostics.push(...exportedLambdaAnnotationDiagnostics(this.module.statements, this.globalScope));
@@ -186,7 +177,6 @@ class RsglBinder implements RsglExpressionCheckContext {
       resolvedExpressionTypes: this.resolvedExpressionTypes,
       importCallScopes: this.importCallScopes,
       templateUses: this.templateUses,
-      legacyBlockstateRoots: this.legacyBlockstateRoots,
       contextualTextureSinks: this.contextualTextureSinks,
       blockstateApplyFacts: this.blockstateApplyFacts,
       blockstateApplyRecords: this.blockstateApplyRecords,
@@ -325,7 +315,9 @@ class RsglBinder implements RsglExpressionCheckContext {
     const metadata = statement.name
       ? lookup(parentScope, statement.name.text)?.signature?.templateOutput
       : undefined;
-    const callerContext = metadata ? templateOutputBodyCallerContext(metadata) : undefined;
+    const callerContext = templateOutputBodyCallerContext(
+      metadata ?? templateOutputMetadataForDeclaration(statement)
+    );
     const previousTemplate = this.enclosingTemplate;
     this.enclosingTemplate = statement;
     this.bodyChecker.checkBody(statement.body, scope, callerContext);
@@ -375,12 +367,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       this.checkModelImpl(statement.impl, scope);
     }
     const bodyScope = createChildScope(scope, "block");
-    const templateUseStart = this.templateUses.length;
-    const legacyMode = statement.resourceKind === "blockstate"
-      && statement.blockstateSyntax !== "modeHeader"
-      ? inferLegacyBlockstateMode(statement.body)
-      : undefined;
-    const callerContext = resourceDeclarationCallerContext(statement, legacyMode?.mode);
+    const callerContext = resourceDeclarationCallerContext(statement);
     if (statement.resourceKind === "blockstate") {
       this.bodyChecker.checkBody(statement.body, bodyScope, callerContext);
     } else {
@@ -390,25 +377,6 @@ class RsglBinder implements RsglExpressionCheckContext {
         statement.resourceKind,
         callerContext
       );
-    }
-    if (statement.resourceKind === "blockstate" && statement.blockstateSyntax !== "modeHeader") {
-      const record: RsglLegacyBlockstateRootRecord = {
-        range: statement.body.range,
-        directModes: legacyMode?.modes ?? [],
-        uses: this.templateUses.slice(templateUseStart).filter(use =>
-          use.callerContext?.kind === "blockstateRoot"
-        )
-      };
-      const resolvedMode = resolveLegacyBlockstateMode(record);
-      applyLegacyBlockstateMode(record, resolvedMode);
-      this.legacyBlockstateRoots.push(record);
-      if (resolvedMode.conflict) {
-        this.diagnostics.push(diagnostic(
-          "rsgl.blockstateModeConflict",
-          "A legacy blockstate body contains both variants and multipart evidence; select one mode in the declaration header.",
-          statement.body.range
-        ));
-      }
     }
   }
 
@@ -422,38 +390,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   }
 
   private checkModelImplParent(expression: ExprNode, scope: RsglScope): void {
-    if (
-      expression.kind === "ResourceLocationExpr"
-      || (
-        expression.kind === "StringLiteral"
-        && (expression.value.includes(":") || expression.value.includes("/"))
-      )
-    ) {
-      // Already path-shaped text does not need the legacy subtype folder and
-      // can safely participate in the normal ModelId fact pipeline.
-      const actualType = checkExpressionForExpectedType(this, expression, scope, modelIdType);
-      checkAssignable(this, modelIdType, actualType, expression);
-      return;
-    }
-    const symbol = expression.kind === "IdentifierExpr"
-      ? lookup(scope, expression.name.text)
-      : undefined;
-    if (
-      expression.kind === "StringLiteral"
-      || expression.kind === "TemplateStringExpr"
-      || (expression.kind === "IdentifierExpr" && (!symbol || symbol.kind === "builtin"))
-    ) {
-      // Model impl text is a legacy subtype-relative shorthand. Keep it
-      // unbranded so modelImpl can still expand `cube_all` to
-      // `minecraft:block/cube_all`; explicitly typed ModelId values remain
-      // branded and bypass that compatibility rule.
-      checkResourceIdExpression(this, expression, scope);
-      return;
-    }
-    const actualType = checkExpression(this, expression, scope);
-    if (isLegacyModelImplParentType(actualType)) {
-      return;
-    }
+    const actualType = checkExpressionForExpectedType(this, expression, scope, modelIdType);
     checkAssignable(this, modelIdType, actualType, expression);
   }
 
@@ -463,31 +400,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       checkAssignable(this, textureRefType, actualType, expression);
       return;
     }
-    if (
-      expression.kind === "ResourceLocationExpr"
-      || (
-        expression.kind === "StringLiteral"
-        && (expression.value.includes(":") || expression.value.includes("/"))
-      )
-    ) {
-      const actualType = checkExpressionForExpectedType(this, expression, scope, textureRefType);
-      checkAssignable(this, textureRefType, actualType, expression);
-      return;
-    }
-    if (
-      expression.kind === "StringLiteral"
-      || expression.kind === "TemplateStringExpr"
-      || (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text))
-    ) {
-      // As with the parent shorthand, raw text keeps its subtype-relative
-      // spelling until modelImpl knows whether `block/` or `item/` applies.
-      checkResourceIdExpression(this, expression, scope);
-      return;
-    }
-    const actualType = checkExpression(this, expression, scope);
-    if (isLegacyModelImplTextureType(actualType)) {
-      return;
-    }
+    const actualType = checkExpressionForExpectedType(this, expression, scope, textureRefType);
     checkAssignable(this, textureRefType, actualType, expression);
   }
 
@@ -604,9 +517,7 @@ class RsglBinder implements RsglExpressionCheckContext {
             node: parameter
           })),
         returnType: jsonType,
-        templateOutput: inferResolvedTemplateOutputMetadata(statement, calleeName =>
-          templateOutputClassificationForName(scope, calleeName)
-        )
+        templateOutput: templateOutputMetadataForDeclaration(statement)
       }
     });
   }
@@ -636,126 +547,20 @@ class RsglBinder implements RsglExpressionCheckContext {
     }
   }
 
-  private resolveLocalTemplateOutputs(): void {
-    const model: RsglSemanticModel = {
-      fileName: this.fileName,
-      module: this.module,
-      scope: this.globalScope,
-      symbols: this.symbols,
-      imports: this.imports,
-      exports: this.exports,
-      references: this.references,
-      outputResources: this.outputResources,
-      diagnostics: this.diagnostics,
-      resolvedExpectedTypes: this.resolvedExpectedTypes,
-      resolvedExpressionTypes: this.resolvedExpressionTypes
-    };
-    resolveProgramTemplateOutputMetadata([model]);
-  }
-}
-
-function isLegacyModelImplParentType(type: RsglType): boolean {
-  if (
-    type.kind === "String"
-    || type.kind === "ModelId"
-    || type.kind === "Any"
-    || type.kind === "Unknown"
-  ) {
-    return true;
-  }
-  return type.kind === "Union"
-    && (type.options?.length ?? 0) > 0
-    && (type.options ?? []).every(isLegacyModelImplParentType);
-}
-
-function isLegacyModelImplTextureType(type: RsglType): boolean {
-  if (
-    type.kind === "String"
-    || type.kind === "TextureId"
-    || type.kind === "TextureVariable"
-    || type.kind === "TextureRef"
-    || type.kind === "Any"
-    || type.kind === "Unknown"
-  ) {
-    return true;
-  }
-  return type.kind === "Union"
-    && (type.options?.length ?? 0) > 0
-    && (type.options ?? []).every(isLegacyModelImplTextureType);
 }
 
 const resourcesCallerContext: RsglTemplateCallerContext = { kind: "resources" };
 
-function resourceDeclarationCallerContext(
-  statement: ResourceDeclNode,
-  inferredLegacyMode: "variants" | "multipart" | undefined = undefined
-): RsglTemplateCallerContext {
+function resourceDeclarationCallerContext(statement: ResourceDeclNode): RsglTemplateCallerContext {
   if (statement.resourceKind !== "blockstate") {
     return { kind: "resourceBody", resourceKind: statement.resourceKind };
   }
   return {
     kind: "blockstateRoot",
-    mode: statement.blockstateSyntax === "modeHeader"
-      ? statement.mode
-      : inferredLegacyMode ?? "neutral",
+    mode: statement.mode,
     allowRootMerge: true,
     allowBase: true
   };
-}
-
-interface LegacyBlockstateModeEvidence {
-  modes: readonly ("variants" | "multipart")[];
-  mode?: "variants" | "multipart";
-}
-
-function inferLegacyBlockstateMode(body: LegacyBlockstateRootBodyNode): LegacyBlockstateModeEvidence {
-  const modes = new Set<"variants" | "multipart">();
-  collectLegacyBlockstateModeEvidence(body, modes);
-  const values = Array.from(modes);
-  return {
-    modes: values,
-    mode: values.length === 1 ? values[0] : undefined
-  };
-}
-
-function collectLegacyBlockstateModeEvidence(
-  body: LegacyBlockstateRootBodyNode | ForStmtNode["body"],
-  modes: Set<"variants" | "multipart">
-): void {
-  if (!("statements" in body) || !Array.isArray(body.statements)) {
-    return;
-  }
-  if (body.kind === "VariantBody" || body.kind === "BlockstateVariantsRootBody") {
-    modes.add("variants");
-  } else if (body.kind === "MultipartBody" || body.kind === "BlockstateMultipartRootBody") {
-    modes.add("multipart");
-  }
-  for (const statement of body.statements) {
-    if (statement.kind === "VariantsSection"
-      || statement.kind === "VariantEntry"
-      || statement.kind === "BlockstateVariantEntry") {
-      modes.add("variants");
-    } else if (statement.kind === "MultipartSection"
-      || statement.kind === "MultipartEntry"
-      || statement.kind === "BlockstateMultipartEntry") {
-      modes.add("multipart");
-    } else if (statement.kind === "MergeStmt") {
-      const evidence = inferStaticBlockstateMode(statement.value);
-      if (evidence === "variants" || evidence === "conflict") {
-        modes.add("variants");
-      }
-      if (evidence === "multipart" || evidence === "conflict") {
-        modes.add("multipart");
-      }
-    } else if (statement.kind === "ForStmt") {
-      collectLegacyBlockstateModeEvidence(statement.body, modes);
-    } else if (statement.kind === "IfStmt") {
-      collectLegacyBlockstateModeEvidence(statement.thenBody, modes);
-      if (statement.elseBody) {
-        collectLegacyBlockstateModeEvidence(statement.elseBody, modes);
-      }
-    }
-  }
 }
 
 function expressionToStaticText(expression: ExprNode): string | undefined {

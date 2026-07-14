@@ -49,18 +49,14 @@ describe("RSGL template expansion", () => {
       "model block valid {",
       "  parent minecraft:block/cube_all",
       "}",
-      "blockstate minecraft:legacy {",
-      "  variants {",
-      "    `age=${age}` {",
-      "      @minecraft:block/crop",
-      "    }",
-      "  }",
+      "blockstate variants minecraft:invalid {",
+      "  { age: 0 }:",
       "}"
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.deepStrictEqual(generatedResourceUnits(result), []);
-    assert.ok(codes.includes("rsgl.expectedToken"));
+    assert.ok(codes.includes("rsgl.expectedBlockstateApplyValue"));
     assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
   });
 
@@ -113,7 +109,7 @@ describe("RSGL template expansion", () => {
 
   it("reports invalid template call arguments during compilation", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId) -> model {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}",

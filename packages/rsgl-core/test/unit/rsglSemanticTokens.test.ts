@@ -179,7 +179,7 @@ describe("RSGL semantic tokens", () => {
     const modelKey = offsetOf(contextualSource, "model: model");
     const memberName = offsetOf(contextualSource, ".model") + 1;
     const namedArgument = offsetOf(contextualSource, "pad: 2");
-    const sugarProperty = offsetOf(contextualSource, "y=90");
+    const modelProperty = offsetOf(contextualSource, "y=90");
     const uvlockProperty = offsetOf(contextualSource, "uvlock");
     const weightProperty = offsetOf(contextualSource, "weight=2");
     const commentedKey = offsetOf(contextualSource, "extern /* multi");
@@ -188,7 +188,7 @@ describe("RSGL semantic tokens", () => {
     expectToken(contextualTokens, modelKey, "property", 0, "model".length);
     expectToken(contextualTokens, memberName, "property", 0, "model".length);
     expectToken(contextualTokens, namedArgument, "property", 0, "pad".length);
-    expectToken(contextualTokens, sugarProperty, "property", 0, "y".length);
+    expectToken(contextualTokens, modelProperty, "property", 0, "y".length);
     expectToken(contextualTokens, uvlockProperty, "property", 0, "uvlock".length);
     expectToken(contextualTokens, weightProperty, "property", 0, "weight".length);
     expectToken(contextualTokens, commentedKey, "property", 0, "extern".length);
@@ -248,7 +248,8 @@ describe("RSGL semantic tokens", () => {
           "    parent minecraft:block/cube_all",
           "    textures { all: texture }",
           "  }",
-          "}"
+          "}",
+          "export { cube }"
         ].join("\n"))
       }
     ]);
@@ -266,7 +267,7 @@ describe("RSGL semantic tokens", () => {
     const mainText = [
       "import { slab } from \"./templates.rsgl\"",
       "let model = `minecraft:block/custom_slab`",
-      "blockstate custom_slab {",
+      "blockstate variants custom_slab {",
       "  use slab(",
       "    bottom: model,",
       "    top: `${model}_top`,",
@@ -283,7 +284,8 @@ describe("RSGL semantic tokens", () => {
           "  { type: \"bottom\" }: bottom",
           "  { type: \"top\" }: top",
           "  { type: \"double\" }: double",
-          "}"
+          "}",
+          "export { slab }"
         ].join("\n"))
       }
     ]);

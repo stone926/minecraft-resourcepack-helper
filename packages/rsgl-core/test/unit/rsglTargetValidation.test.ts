@@ -8,10 +8,8 @@ describe("RSGL target validation", () => {
   it("uses RSGL target declarations for version-gated validation", () => {
     const result = compileSource([
       "target java format [74, 0]",
-      "blockstate rotated {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/rotated, z: 90 }",
-      "  }",
+      "blockstate variants rotated {",
+      "  {}: { model: minecraft:block/rotated, z: 90 }",
       "}",
       "overlay \"future\" format [90, 0]..[91, 0] {",
       "  model block rotated { parent minecraft:block/cube_all }",
@@ -26,18 +24,14 @@ describe("RSGL target validation", () => {
   it("resolves RSGL Minecraft version targets to pack formats", () => {
     const modern = compileSource([
       "target java mc \"1.21.11\"",
-      "blockstate rotated {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/rotated, z: 90 }",
-      "  }",
+      "blockstate variants rotated {",
+      "  {}: { model: minecraft:block/rotated, z: 90 }",
       "}"
     ]);
     const older = compileSource([
       "target java mc \"1.21.10\"",
-      "blockstate rotated {",
-      "  variants {",
-      "    {} -> { model: minecraft:block/rotated, z: 90 }",
-      "  }",
+      "blockstate variants rotated {",
+      "  {}: { model: minecraft:block/rotated, z: 90 }",
       "}"
     ]);
 

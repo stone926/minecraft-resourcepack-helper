@@ -5,11 +5,10 @@ import {
   getPackImageResourceIssues,
   getTextResourceIssues,
   javaStringHashCode,
-  readPngMetadata,
   type PackImageResourceHost
 } from "../../diagnostics/nonJsonResourceChecks";
 import type { LocalizedMessage } from "../../i18n/messages";
-import { readOggMetadata } from "../../../packages/mc-assets/src";
+import { readOggMetadata, readPngMetadata } from "../../../packages/mc-assets/src";
 import { createOggVorbisBytes, createPngBytes, createTempDirectory } from "./helpers/tempPack";
 
 describe("non-JSON resource checks", () => {

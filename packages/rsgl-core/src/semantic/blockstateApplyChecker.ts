@@ -17,9 +17,9 @@ import { diagnostic } from "./diagnostics";
 import {
   checkExpression,
   checkExpressionForExpectedType,
-  resolveListSpreadElementType,
-  type RsglExpressionCheckContext
+  resolveListSpreadElementType
 } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { objectSpreadTypes } from "./objectSpreadTypes";
 import { combineRsglTypes } from "./typeNormalization";
 import { formatType, isAssignable } from "./typeRelations";

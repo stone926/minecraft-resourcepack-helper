@@ -20,8 +20,6 @@ import type { RsglResourceValidationOptions } from "./validationTypes";
 import type { ExternResourceSource } from "../externDeclarations";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export type LangSoundsValidationOptions = RsglResourceValidationOptions;
-
 export function validateLangMetadata(unit: ResourceUnit, diagnostics: RsglCompileDiagnostic[]): void {
   const content = asObject(unit.content);
   if (!content) {
@@ -47,7 +45,7 @@ export function validateLangMetadata(unit: ResourceUnit, diagnostics: RsglCompil
 
 export function validateSoundsMetadata(
   unit: ResourceUnit,
-  options: LangSoundsValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const namespace = unit.id?.namespace ?? "minecraft";
@@ -103,7 +101,7 @@ function validateSoundEvent(
   namespace: string,
   localEvents: Set<string>,
   unit: ResourceUnit,
-  options: LangSoundsValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -150,7 +148,7 @@ function validateSoundEntry(
   namespace: string,
   localEvents: Set<string>,
   unit: ResourceUnit,
-  options: LangSoundsValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -219,7 +217,7 @@ function validateSoundFileReference(
   key: string | number,
   value: string,
   unit: ResourceUnit,
-  options: LangSoundsValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -248,7 +246,7 @@ function validateSoundFileReference(
 function validateSoundMetadata(
   soundId: string,
   unit: ResourceUnit,
-  options: LangSoundsValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   source: ExternResourceSource | undefined
 ): void {

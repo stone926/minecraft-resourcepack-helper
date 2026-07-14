@@ -12,14 +12,12 @@ import {
   RsglNode,
   RsglToken,
   StringLiteralNode,
-  StateKeySugarNode,
   TextRange,
   UseDeclNode
 } from "./types";
 import type {
   BlockstateRootParseContext,
   BodyParseContext,
-  LegacyBlockstateRootParseContext,
   ResourceBodyParseContext
 } from "./bodyParseContext";
 
@@ -48,10 +46,7 @@ export interface ResourceStatementParserHost {
   parseIdentifier(message: string): IdentifierNode | null;
   parseStringLiteral(): StringLiteralNode;
   parseObjectExpression(): ObjectExprNode;
-  parseLegacyStateKeySugar(): StateKeySugarNode;
-  parseBlockstateRootCommonStatement(
-    context: BlockstateRootParseContext | LegacyBlockstateRootParseContext
-  ): BlockstateRootCommonStatementNode;
+  parseBlockstateRootCommonStatement(context: BlockstateRootParseContext): BlockstateRootCommonStatementNode;
   parseLetDecl(): LetDeclNode;
   parseUseDecl(): UseDeclNode;
   parseForStmt(context: BodyParseContext): ForStmtNode;

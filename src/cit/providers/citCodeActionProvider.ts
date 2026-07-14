@@ -3,7 +3,8 @@ import * as vscode from "vscode";
 import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import { citResourceTypeFor } from "../citAssetResolver";
-import { getCitPathCandidates, type CitResourceType } from "../citPaths";
+import type { CitResourceType } from "../citKeyResolution";
+import { getCitPathCandidates } from "../citPaths";
 import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
 import { getResourceReferences, type ResourceReference } from "../../utils/resourceReferences";
 

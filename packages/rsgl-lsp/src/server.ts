@@ -22,7 +22,6 @@ import {
 } from "../../rsgl-shared/src";
 import {
   completionItemsForDocument as completionItemsForDocumentCore,
-  computeDocumentCodeActions,
   computeDocumentDiagnostics,
   computeDocumentHover,
   computeDocumentSignatureHelp,
@@ -38,7 +37,6 @@ import {
   projectSemanticConfigurationFingerprint,
   prepareRenameForDocument,
   renameEditsForDocument,
-  rsglBlockstateLegacyFixAllKind,
   toLspDefinitionLocation,
   toLspWorkspaceEdit,
   toValidationSettings,
@@ -71,9 +69,6 @@ connection.onInitialize(params => {
       definitionProvider: true,
       renameProvider: { prepareProvider: true },
       documentFormattingProvider: true,
-      codeActionProvider: {
-        codeActionKinds: ["quickfix", rsglBlockstateLegacyFixAllKind]
-      },
       semanticTokensProvider: {
         legend: {
           tokenTypes: [...rsglSemanticTokenTypes],
@@ -231,20 +226,6 @@ connection.onDocumentFormatting(params => {
     return [];
   }
   return formattingEditsForDocument(document, params.options.tabSize);
-});
-
-connection.onCodeAction(params => {
-  const document = documents.get(params.textDocument.uri);
-  if (!document) {
-    return [];
-  }
-  return computeDocumentCodeActions(
-    document,
-    fileNameFromUri(document.uri),
-    document.uri,
-    params.context,
-    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
-  );
 });
 
 documents.listen(connection);

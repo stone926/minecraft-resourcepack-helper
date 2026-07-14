@@ -11,14 +11,12 @@ import {
 } from "./helpers/compile";
 
 describe("RSGL template output dialects", () => {
-  it("freezes public and legacy output metadata on template signatures", () => {
+  it("freezes declaration-driven output metadata on template signatures", () => {
     const model = bindRsglModule(parseRsgl([
       "template resources() { model block stone {} }",
       "template modelBody() -> model { parent minecraft:block/cube_all }",
-      "template variantEntries() -> variants { [lit=true] -> { model: minecraft:block/lamp } }",
-      "template multipartEntries() -> multipart { apply { model: minecraft:block/post } }",
-      "template legacyRoot() { variants { {} -> { model: minecraft:block/stone } } }",
-      "template ambiguous() { custom true }"
+      "template variantEntries() -> variants { { lit: true }: minecraft:block/lamp }",
+      "template multipartEntries() -> multipart { apply minecraft:block/post }"
     ].join("\n")));
 
     assert.deepStrictEqual(templateMetadata(model, "resources"), {
@@ -37,153 +35,6 @@ describe("RSGL template output dialects", () => {
       outputSource: "explicitArrow",
       outputDialect: "multipart"
     });
-    assert.deepStrictEqual(templateMetadata(model, "legacyRoot"), {
-      outputSource: "legacyInferredBody",
-      legacyOutputDialect: {
-        kind: "blockstateRoot",
-        mode: "variants",
-        allowRootMerge: true,
-        allowBase: false
-      }
-    });
-    assert.deepStrictEqual(templateMetadata(model, "ambiguous"), {
-      outputSource: "legacyContextualAdapter",
-      bodyNodeKind: "ResourceBody"
-    });
-  });
-
-  it("keeps node-aware mcmeta and nested pack evidence exact", () => {
-    const model = bindRsglModule(parseRsgl([
-      "template textureMetadata() { texture { blur: true } }",
-      "template packFilter() {",
-      "  filter {",
-      "    block namespace \"minecraft\" path \"textures/block/stone.*\"",
-      "  }",
-      "}"
-    ].join("\n")));
-
-    assert.deepStrictEqual(templateMetadata(model, "textureMetadata"), {
-      outputSource: "legacyInferredBody",
-      legacyOutputDialect: { kind: "resourceBody", resourceKind: "mcmeta" }
-    });
-    assert.deepStrictEqual(templateMetadata(model, "packFilter"), {
-      outputSource: "legacyInferredBody",
-      legacyOutputDialect: { kind: "resourceBody", resourceKind: "pack" }
-    });
-  });
-
-  it("joins compatible blockstate capabilities and rejects conflicting definitions", () => {
-    const model = bindRsglModule(parseRsgl([
-      "template entries() -> variants { [lit=true] -> { model: minecraft:block/lamp } }",
-      "template parts() -> multipart { apply { model: minecraft:block/post } }",
-      "template rooted() { variants { [lit=false] -> { model: minecraft:block/lamp } } }",
-      "template joinedByUse() { use entries()\nuse rooted() }",
-      "template joinedByCustom() { custom true\nuse entries() }",
-      "template joinedByMerge() { merge deep { custom: true }\nuse entries() }",
-      "template joinedInControl() { if true { merge deep { custom: true } }\nuse entries() }",
-      "template conflicting() { use entries()\nuse parts() }"
-    ].join("\n")));
-
-    const variantsRoot = {
-      outputSource: "legacyInferredBody",
-      legacyOutputDialect: {
-        kind: "blockstateRoot",
-        mode: "variants",
-        allowRootMerge: true,
-        allowBase: false
-      }
-    };
-    assert.deepStrictEqual(templateMetadata(model, "joinedByUse"), variantsRoot);
-    assert.deepStrictEqual(templateMetadata(model, "joinedByCustom"), variantsRoot);
-    assert.deepStrictEqual(templateMetadata(model, "joinedByMerge"), variantsRoot);
-    assert.deepStrictEqual(templateMetadata(model, "joinedInControl"), variantsRoot);
-    assert.ok(model.diagnostics.some(item =>
-      item.code === "rsgl.conflictingResolvedTemplateOutputDialects"
-      && item.message.includes("conflicting")
-    ));
-    const conflict = model.scope.symbols.get("conflicting")?.signature?.templateOutputConflict;
-    assert.ok(conflict);
-    assert.ok(Object.isFrozen(conflict));
-    assert.ok(Object.isFrozen(conflict.evidence));
-  });
-
-  it("propagates conflict carriers independently of recursive declaration order", () => {
-    const bindOrder = (first: "a" | "b") => {
-      const definitions = {
-        a: "template a() { use modelPart()\nuse b() }",
-        b: "template b() { use statePart()\nuse a() }"
-      };
-      const second = first === "a" ? "b" : "a";
-      return bindRsglModule(parseRsgl([
-        "template modelPart() -> model { texture layer0 minecraft:block/stone }",
-        "template statePart() -> variants { [lit=true] -> { model: minecraft:block/lamp } }",
-        definitions[first],
-        definitions[second]
-      ].join("\n")));
-    };
-
-    for (const model of [bindOrder("a"), bindOrder("b")]) {
-      assert.ok(model.scope.symbols.get("a")?.signature?.templateOutputConflict);
-      assert.ok(model.scope.symbols.get("b")?.signature?.templateOutputConflict);
-    }
-  });
-
-  it("distinguishes contextual bodies from invalid mixed output definitions", () => {
-    const contextualInEntries = bindRsglModule(parseRsgl([
-      "template fields() { custom true }",
-      "blockstate lamp { variants { use fields() } }"
-    ].join("\n")));
-    assert.ok(contextualInEntries.diagnostics.some(item =>
-      item.code === "rsgl.templateOutputDialectRequired"
-    ));
-
-    const resourceBodyUsesResources = bindRsglModule(parseRsgl([
-      "template factory() { model block generated {} }",
-      "template invalidBody() { custom true\nuse factory() }"
-    ].join("\n")));
-    assert.ok(resourceBodyUsesResources.diagnostics.some(item =>
-      item.code === "rsgl.conflictingResolvedTemplateOutputDialects"
-      && item.message.includes("invalidBody")
-    ));
-
-    const completeResources = bindRsglModule(parseRsgl([
-      "template modelPart() -> model { texture layer0 minecraft:block/stone }",
-      "template tableFactory() { table values { key: true } }",
-      "template factory() {",
-      "  model block generated {}",
-      "  use modelPart()",
-      "}"
-    ].join("\n")));
-    assert.deepStrictEqual(templateMetadata(completeResources, "factory"), {
-      outputSource: "noArrowResources",
-      outputDialect: "resources"
-    });
-    assert.deepStrictEqual(templateMetadata(completeResources, "tableFactory"), {
-      outputSource: "noArrowResources",
-      outputDialect: "resources"
-    });
-    assert.ok(completeResources.diagnostics.some(item =>
-      item.code === "rsgl.templateOutputDialectMismatch"
-      && item.message.includes("modelPart")
-    ));
-  });
-
-  it("preserves parser dialect conflicts when program linking rebuilds semantic conflicts", () => {
-    const fileName = path.resolve("pack", "mixed-syntax.rsgl");
-    const program = bindRsglProgram([{
-      fileName,
-      module: parseRsgl([
-        "template mixedBody() {",
-        "  texture all minecraft:block/stone",
-        "  layer humanoid",
-        "}"
-      ].join("\n"))
-    }]);
-
-    assert.ok(program.fileDiagnostics.some(item =>
-      item.fileName === fileName
-      && item.code === "rsgl.conflictingLegacyTemplateBodyDialects"
-    ));
   });
 
   it("compiles explicit model templates with nested model-dialect control flow", () => {
@@ -210,7 +61,7 @@ describe("RSGL template output dialects", () => {
     assert.strictEqual(definitionMapping?.expansionStack[0]?.sourceFile, "<anonymous>");
   });
 
-  it("compiles public variants and multipart templates without legacy wrappers", () => {
+  it("compiles public variants and multipart templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "template stateSequence(model: ModelId) -> variants {",
       "  for powered in [false, true] { { powered: powered }: { model: model } }",
@@ -244,7 +95,7 @@ describe("RSGL template output dialects", () => {
       ].join("\n"))
     }]);
 
-    assert.ok(program.diagnostics.some(item => item.code === "rsgl.blockstateModeConflict"));
+    assert.ok(program.diagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"));
   });
 
   it("preserves explicit metadata through import aliases and re-exports", () => {
@@ -290,23 +141,7 @@ describe("RSGL template output dialects", () => {
     assert.strictEqual(mapping?.expansionStack.at(-1)?.sourceFile, mainFile);
   });
 
-  it("isolates legacy contextual dispatch and rejects it without a body context", () => {
-    const bodyUse = compileSourceWithUncheckedExterns([
-      "template fields(value: Json) { custom value }",
-      "json \"assets/minecraft/custom/example.json\" { use fields(true) }"
-    ]);
-    assert.ok(bodyUse.diagnostics.some(item => item.code === "rsgl.implicitTemplateOutputDialect"));
-    assert.deepStrictEqual(generatedResourceUnits(bodyUse)[0].content, { custom: true });
-
-    const topLevelUse = compileSourceWithUncheckedExterns([
-      "template ambiguous() { let value = true }",
-      "use ambiguous()"
-    ]);
-    assert.ok(topLevelUse.diagnostics.some(item => item.code === "rsgl.templateOutputDialectRequired"));
-    assert.deepStrictEqual(generatedResourceUnits(topLevelUse), []);
-  });
-
-  it("diagnoses recursive output adapters before compilation", () => {
+  it("diagnoses recursive templates before compilation", () => {
     const result = compileSourceWithUncheckedExterns([
       "template a() { use b() }",
       "template b() { use a() }",
@@ -317,11 +152,11 @@ describe("RSGL template output dialects", () => {
     assert.deepStrictEqual(generatedResourceUnits(result), []);
 
     const resourceBodyCycle = compileSourceWithUncheckedExterns([
-      "template first() {",
+      "template first() -> model {",
       "  custom true",
       "  use second()",
       "}",
-      "template second() {",
+      "template second() -> model {",
       "  custom false",
       "  use first()",
       "}",
@@ -487,163 +322,6 @@ describe("RSGL template output dialects", () => {
     assert.ok(helperUse.diagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"));
   });
 
-  it("enforces legacy blockstate producer capabilities as a subset of the caller", () => {
-    const rootInsideEntries = bindRsglModule(parseRsgl([
-      "template root() {",
-      "  variants { [lit=true] -> { model: minecraft:block/lamp } }",
-      "}",
-      "blockstate lamp { variants { use root() } }"
-    ].join("\n")));
-    assert.ok(rootInsideEntries.diagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"));
-
-    const entriesInsideRoot = bindRsglModule(parseRsgl([
-      "template entries() -> variants { [lit=true] -> { model: minecraft:block/lamp } }",
-      "template legacy() { use entries() }",
-      "blockstate lamp { use legacy() }"
-    ].join("\n")));
-    assert.ok(!entriesInsideRoot.diagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"));
-    assert.ok(entriesInsideRoot.diagnostics.some(item => item.code === "rsgl.implicitTemplateOutputDialect"));
-  });
-
-  it("propagates concrete callers through contextual adapters", () => {
-    const conflictingDefinition = bindRsglModule(parseRsgl([
-      "template modelPart() -> model { texture layer0 minecraft:block/stone }",
-      "template variantPart() -> variants { [lit=true] -> { model: minecraft:block/lamp } }",
-      "template outer() {",
-      "  custom true",
-      "  use modelPart()",
-      "  use variantPart()",
-      "}",
-      "model block lamp { use outer() }"
-    ].join("\n")));
-    assert.ok(conflictingDefinition.diagnostics.some(item =>
-      item.code === "rsgl.conflictingResolvedTemplateOutputDialects"
-      && item.message.includes("outer")
-    ));
-    assert.ok(!conflictingDefinition.diagnostics.some(item =>
-      item.code === "rsgl.templateOutputDialectMismatch"
-      && item.message.includes("variantPart")
-    ));
-
-    const nestedAdapters = bindRsglModule(parseRsgl([
-      "template inner() { inner true }",
-      "template outer() { use inner() }",
-      "json \"assets/minecraft/custom/example.json\" { use outer() }"
-    ].join("\n")));
-    const compatibilityWarnings = nestedAdapters.diagnostics.filter(item =>
-      item.code === "rsgl.implicitTemplateOutputDialect"
-    );
-    assert.strictEqual(compatibilityWarnings.length, 2);
-    assert.ok(!nestedAdapters.diagnostics.some(item => item.code === "rsgl.templateOutputDialectRequired"));
-  });
-
-  it("reclassifies reversed imported evidence without provisional-context cascades", () => {
-    const mainFile = path.resolve("pack", "main.rsgl");
-    const adapterFile = path.resolve("pack", "adapter.rsgl");
-    const partsFile = path.resolve("pack", "parts.rsgl");
-    const program = bindRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import { adapter as importedAdapter } from \"./adapter.rsgl\"",
-          "model block lamp { use importedAdapter() }"
-        ].join("\n"))
-      },
-      {
-        fileName: adapterFile,
-        module: parseRsgl([
-          "import { modelPart as importedModel } from \"./parts.rsgl\"",
-          "export { top as adapter }",
-          "template top() { use middle() }",
-          "template middle() { use outer() }",
-          "template outer() {",
-          "  special base minecraft:item/shield model { type: minecraft:shield }",
-          "  use importedModel()",
-          "}"
-        ].join("\n"))
-      },
-      {
-        fileName: partsFile,
-        module: parseRsgl([
-          "export { modelPart }",
-          "template modelPart() -> model { texture layer0 minecraft:block/stone }"
-        ].join("\n"))
-      }
-    ]);
-
-    const conflict = program.fileDiagnostics.find(item =>
-      item.code === "rsgl.conflictingResolvedTemplateOutputDialects"
-      && item.message.includes("outer")
-    );
-    assert.strictEqual(conflict?.fileName, adapterFile);
-    const importedAdapter = program.models[0].scope.symbols.get("importedAdapter");
-    assert.deepStrictEqual(importedAdapter?.signature?.templateOutput, {
-      outputSource: "legacyContextualAdapter",
-      bodyNodeKind: "Block"
-    });
-    assert.ok(importedAdapter?.signature?.templateOutputConflict);
-    assert.ok(!program.fileDiagnostics.some(item =>
-      item.code === "rsgl.templateOutputDialectMismatch"
-      && item.message.includes("importedModel")
-    ));
-  });
-
-  it("defers contextual texture sinks until their concrete caller is known", () => {
-    const model = bindRsglModule(parseRsgl([
-      "template layer(tex: TextureRef) { textures { layer0: tex } }",
-      "model block inherited {",
-      "  extern var #side",
-      "  use layer(\"#side\")",
-      "}"
-    ].join("\n")));
-    assert.ok(!model.diagnostics.some(item => item.code === "rsgl.textureVariableInvalidContext"));
-
-    const json = bindRsglModule(parseRsgl([
-      "template layer(tex: TextureRef) { textures { layer0: tex } }",
-      "json \"assets/minecraft/custom/example.json\" { use layer(\"#side\") }"
-    ].join("\n")));
-    assert.ok(json.diagnostics.some(item => item.code === "rsgl.textureVariableInvalidContext"));
-  });
-
-  it("freezes use and contextual sink scopes at their source positions", () => {
-    const mainFile = path.resolve("pack", "main.rsgl");
-    const definitionsFile = path.resolve("pack", "definitions.rsgl");
-    const program = bindRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import { modelPart as fragment, side } from \"./definitions.rsgl\"",
-          "model block stable_use {",
-          "  use fragment()",
-          "  let fragment = value => value",
-          "}",
-          "template fields() {",
-          "  textures { layer0: side }",
-          "  let side: String = \"late shadow\"",
-          "}",
-          "json \"assets/minecraft/custom/value.json\" { use fields() }"
-        ].join("\n"))
-      },
-      {
-        fileName: definitionsFile,
-        module: parseRsgl([
-          "export { modelPart, side }",
-          "template modelPart() -> model { texture layer0 minecraft:block/stone }",
-          "let side: TextureVariable = \"#side\""
-        ].join("\n"))
-      }
-    ]);
-
-    assert.ok(!program.fileDiagnostics.some(item =>
-      item.code === "rsgl.functionValueCannotUse"
-      && item.fileName === mainFile
-    ));
-    assert.ok(program.fileDiagnostics.some(item =>
-      item.code === "rsgl.textureVariableInvalidContext"
-      && item.fileName === mainFile
-    ));
-  });
-
   it("retains non-call use diagnostics in linked programs", () => {
     const fileName = path.resolve("pack", "function-use.rsgl");
     const program = bindRsglProgram([{
@@ -676,7 +354,7 @@ describe("RSGL template output dialects", () => {
         fileName: definitionsFile,
         module: parseRsgl([
           "export { states }",
-          "template states() -> variants { {} -> { model: minecraft:block/lamp } }"
+          "template states() -> variants { {}: minecraft:block/lamp }"
         ].join("\n"))
       }
     ]);
@@ -689,39 +367,6 @@ describe("RSGL template output dialects", () => {
     assert.ok(!program.fileDiagnostics.some(item => item.code === "rsgl.missingImportedSymbol"));
   });
 
-  it("links bare import-all through export-all barrels to a fixed point", () => {
-    const mainFile = path.resolve("pack", "main.rsgl");
-    const barrelFile = path.resolve("pack", "barrel.rsgl");
-    const middleFile = path.resolve("pack", "middle.rsgl");
-    const definitionsFile = path.resolve("pack", "definitions.rsgl");
-    const program = bindRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import { states } from \"./barrel.rsgl\"",
-          "blockstate lamp { use states() }"
-        ].join("\n"))
-      },
-      {
-        fileName: barrelFile,
-        module: parseRsgl("export * from \"./middle.rsgl\"")
-      },
-      {
-        fileName: middleFile,
-        module: parseRsgl("import \"./definitions.rsgl\"")
-      },
-      {
-        fileName: definitionsFile,
-        module: parseRsgl("template states() -> variants { {} -> { model: minecraft:block/lamp } }")
-      }
-    ]);
-
-    assert.deepStrictEqual(program.models[0].scope.symbols.get("states")?.signature?.templateOutput, {
-      outputSource: "explicitArrow",
-      outputDialect: "variants"
-    });
-    assert.ok(!program.fileDiagnostics.some(item => item.code === "rsgl.missingImportedSymbol"));
-  });
 });
 
 function templateMetadata(model: RsglSemanticModel, name: string) {

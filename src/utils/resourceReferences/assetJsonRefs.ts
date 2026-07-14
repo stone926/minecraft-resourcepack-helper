@@ -1,5 +1,5 @@
-import { arrayElements, JsonDocumentNode, memberName, objectMembers, stringValue } from "../jsonAst";
-import { getObjectString, pushReference } from "./shared";
+import { arrayElements, getObjectString, JsonDocumentNode, memberName, objectMembers, stringValue } from "../jsonAst";
+import { pushReference } from "./shared";
 import { ResourceReference } from "./types";
 
 export function getParticleReferences(ast: JsonDocumentNode): ResourceReference[] {

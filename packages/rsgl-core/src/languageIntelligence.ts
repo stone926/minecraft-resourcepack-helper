@@ -23,8 +23,7 @@ import {
 } from "./semantic/types";
 import {
   formatTemplateOutputMetadata,
-  ResolvedTemplateOutputMetadata,
-  RsglTemplateCallerContext
+  ResolvedTemplateOutputMetadata
 } from "./templateOutput";
 
 /** A protocol-neutral hover payload over a resolved semantic symbol. */
@@ -101,8 +100,7 @@ export function getRsglHoverInfo(
   const member = getRsglMemberAccessInfo(program, fileName, sourceText, offset);
   if (member) {
     if (member.category && member.symbol) {
-      const callerContext = templateCallerContextAtOffset(model, offset);
-      const callable = callablePresentation(member.symbol, member.name, callerContext);
+      const callable = callablePresentation(member.symbol, member.name);
       if (callable) {
         return {
           range: member.range,
@@ -130,8 +128,7 @@ export function getRsglHoverInfo(
       label: `type ${occurrence.name} = ${formatType(occurrence.alias.type ?? { kind: "Unknown" })}`
     };
   }
-  const callerContext = templateCallerContextAtOffset(model, offset);
-  const callable = callablePresentation(occurrence.symbol, occurrence.name, callerContext);
+  const callable = callablePresentation(occurrence.symbol, occurrence.name);
   if (callable) {
     const prefix = isTemplateSymbol(occurrence.symbol) ? "template " : "";
     return {
@@ -184,8 +181,7 @@ export function getRsglSignatureHelpInfo(
   if (!symbol) {
     return undefined;
   }
-  const callerContext = templateCallerContextAtOffset(model, offset);
-  const signature = callablePresentation(symbol, displayName ?? symbol.name, callerContext);
+  const signature = callablePresentation(symbol, displayName ?? symbol.name);
   if (!signature) {
     return undefined;
   }
@@ -239,8 +235,7 @@ export function getRsglDefinitionLocation(
 /** Formats a symbol's callable signature when parameter information is known. */
 export function callablePresentation(
   symbol: RsglSymbol,
-  displayName = symbol.name,
-  callerContext?: RsglTemplateCallerContext
+  displayName = symbol.name
 ): RsglSignatureInfo | undefined {
   const signature = resolvedCallableSignature(symbol);
   if (!signature) {
@@ -258,7 +253,7 @@ export function callablePresentation(
     label,
     parameters,
     returnType: signature.returnType,
-    detail: templateOutputDetail(signature.templateOutput, callerContext)
+    detail: templateOutputDetail(signature.templateOutput)
   };
 }
 
@@ -474,39 +469,10 @@ function activeParameterIndex(
   return Math.max(0, Math.min(ordinal, signature.parameters.length - 1));
 }
 
-function templateCallerContextAtOffset(
-  model: RsglSemanticModel,
-  offset: number
-): RsglTemplateCallerContext | undefined {
-  return model.templateUses
-    ?.filter(record => record.callerContext && touchesRange(record.expression.range, offset))
-    .sort((left, right) => rangeLength(left.expression.range) - rangeLength(right.expression.range))[0]
-    ?.callerContext;
-}
-
 function templateOutputDetail(
-  metadata: ResolvedTemplateOutputMetadata | undefined,
-  callerContext: RsglTemplateCallerContext | undefined
+  metadata: ResolvedTemplateOutputMetadata | undefined
 ): string | undefined {
-  if (!metadata) {
-    return undefined;
-  }
-  if (metadata.outputSource !== "legacyContextualAdapter") {
-    return formatTemplateOutputMetadata(metadata);
-  }
-  return callerContext
-    ? `legacy contextual compatibility (resolved at use: ${formatCallerDialect(callerContext)})`
-    : "legacy contextual compatibility (resolved at use)";
-}
-
-function formatCallerDialect(context: RsglTemplateCallerContext): string {
-  if (context.kind === "resources") {
-    return "resources";
-  }
-  if (context.kind === "resourceBody") {
-    return context.resourceKind;
-  }
-  return context.mode === "neutral" ? `${context.kind} (neutral)` : context.mode;
+  return metadata ? formatTemplateOutputMetadata(metadata) : undefined;
 }
 
 function isTemplateSymbol(symbol: RsglSymbol): boolean {

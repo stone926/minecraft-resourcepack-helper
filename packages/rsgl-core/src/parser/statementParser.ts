@@ -1,12 +1,10 @@
-import { ExpressionParser, unquoteString } from "./expressionParser";
+import { ExpressionParser } from "./expressionParser";
+import { unquoteString } from "./typeParser";
 import {
   parseBlockstateMultipartRootBody,
   parseBlockstateVariantsRootBody,
-  parseLegacyBlockstateRootBody,
   parseMultipartBody,
-  parseMultipartSection,
-  parseVariantBody,
-  parseVariantsSection
+  parseVariantBody
 } from "./blockstateStatementParser";
 import { tryParseItemModelStatement } from "./itemModelStatementParser";
 import { tryParseModelGeometryStatement } from "./modelGeometryStatementParser";
@@ -16,7 +14,6 @@ import { resourceBodySectionKeywords } from "./statementKeywords";
 import {
   type BlockstateRootParseContext,
   type BodyParseContext,
-  type LegacyBlockstateRootParseContext,
   nestedControlFlowBodyParseContext,
   sectionResourceBodyParseContext,
   type ResourceBodyParseContext
@@ -35,7 +32,6 @@ import {
   IdentifierNode,
   IfStmtNode,
   LetDeclNode,
-  LegacyBlockstateRootBodyNode,
   MergeStmtNode,
   MergeMode,
   MergeModifierNode,
@@ -92,12 +88,9 @@ export abstract class StatementParser extends ExpressionParser {
       dimensions.push(this.parseForDimension(this.current()));
     }
     const body = this.parseBodyForContext(nestedControlFlowBodyParseContext(context));
-    const first = dimensions[0];
     return {
       kind: "ForStmt",
       keyword: start.text,
-      bindings: first.bindings,
-      iterable: first.iterable,
       dimensions,
       body,
       ...this.nodeRanges(start, this.previousOr(start))
@@ -186,8 +179,7 @@ export abstract class StatementParser extends ExpressionParser {
     | VariantBodyNode
     | MultipartBodyNode
     | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode
-    | LegacyBlockstateRootBodyNode {
+    | BlockstateMultipartRootBodyNode {
     if (context.kind === "resource") {
       return this.parseResourceBody(context);
     }
@@ -201,9 +193,6 @@ export abstract class StatementParser extends ExpressionParser {
         ? parseBlockstateVariantsRootBody(this.resourceStatementParserHost(), context)
         : parseBlockstateMultipartRootBody(this.resourceStatementParserHost(), context);
     }
-    if (context.kind === "legacyBlockstateRoot") {
-      return parseLegacyBlockstateRootBody(this.resourceStatementParserHost(), context);
-    }
     return this.parseBlock();
   }
 
@@ -214,21 +203,10 @@ export abstract class StatementParser extends ExpressionParser {
     }
 
     const statements: ResourceStatementNode[] = [];
-    const seenBlockstateSections = new Set<string>();
     let seenBase = false;
     while (!this.isAtEnd() && this.current().text !== "}") {
       const mark = this.mark();
-      let statement: ResourceStatementNode;
-      const blockstateSection = context.dialect === "blockstate" && !this.isExplicitPropertyStart();
-      if (blockstateSection && this.current().text === "variants") {
-        this.noteBlockstateSection(seenBlockstateSections, "variants");
-        statement = parseVariantsSection(this.resourceStatementParserHost());
-      } else if (blockstateSection && this.current().text === "multipart") {
-        this.noteBlockstateSection(seenBlockstateSections, "multipart");
-        statement = parseMultipartSection(this.resourceStatementParserHost());
-      } else {
-        statement = this.parseResourceStatement(context);
-      }
+      const statement = this.parseResourceStatement(context);
       if (statement.kind === "BaseStmt") {
         if (!context.allowBase) {
           this.addDiagnostic(
@@ -282,17 +260,6 @@ export abstract class StatementParser extends ExpressionParser {
     if (!explicitPropertyStart && token.text === "if") {
       return this.parseIfStmt(context);
     }
-    if (
-      !explicitPropertyStart
-      && (
-        token.text === "raw_json"
-        || token.text === "raw_json_file"
-        || token.text === "override"
-        || isExplicitMergeMode(token.text)
-      )
-    ) {
-      return this.parseRemovedMergeStmt();
-    }
     if (token.text === "base" && !explicitPropertyStart) {
       return this.parseBaseStmt();
     }
@@ -327,7 +294,7 @@ export abstract class StatementParser extends ExpressionParser {
   }
 
   private parseBlockstateRootCommonStatement(
-    context: BlockstateRootParseContext | LegacyBlockstateRootParseContext
+    context: BlockstateRootParseContext
   ): BlockstateRootCommonStatementNode {
     const token = this.current();
     const explicitPropertyStart = this.isExplicitPropertyStart();
@@ -542,26 +509,6 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private parseRemovedMergeStmt(): ResourceStatementNode {
-    const start = this.advance();
-    if (start.text === "override") {
-      this.matchText("create");
-    }
-    if (!this.isAtEnd() && this.current().text !== "}" && !this.isStatementBoundary(this.current())) {
-      this.parseExpression({ stopTexts: [] });
-    }
-    this.addDiagnostic(
-      "rsgl.removedMergeSyntax",
-      removedMergeSyntaxMessage(start.text),
-      tokenRange(start)
-    );
-    return {
-      kind: "UnknownStmt",
-      keyword: start.text,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
   private resourceStatementParserHost(): ResourceStatementParserHost {
     return this.resourceStatementParserHostValue ??= {
       current: () => this.current(),
@@ -583,7 +530,6 @@ export abstract class StatementParser extends ExpressionParser {
       parseIdentifier: message => this.parseIdentifier(message),
       parseStringLiteral: () => this.parseStringLiteral(),
       parseObjectExpression: () => this.parseObjectExpression(),
-      parseLegacyStateKeySugar: () => this.parseStateKeySugar(),
       parseBlockstateRootCommonStatement: context => this.parseBlockstateRootCommonStatement(context),
       parseLetDecl: () => this.parseLetDecl(),
       parseUseDecl: () => this.parseUseDecl(),
@@ -598,18 +544,6 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  private noteBlockstateSection(seen: Set<string>, section: "variants" | "multipart"): void {
-    seen.add(section);
-    if (seen.has("variants") && seen.has("multipart")) {
-      this.addDiagnostic(
-        "rsgl.blockstateSectionConflict",
-        "A blockstate body should use either variants or multipart, not both.",
-        tokenRange(this.current()),
-        "warning"
-      );
-    }
-  }
-
   private isLineBoundaryOr(...texts: string[]): boolean {
     return this.isAtEnd() || texts.includes(this.current().text) || this.isStatementBoundary(this.current());
   }
@@ -617,17 +551,4 @@ export abstract class StatementParser extends ExpressionParser {
 
 function isExplicitMergeMode(text: string): text is Exclude<MergeMode, "shallow"> {
   return text === "deep" || text === "strict" || text === "upsert" || text === "append";
-}
-
-function removedMergeSyntaxMessage(keyword: string): string {
-  if (keyword === "override") {
-    return "The override statement has been removed. Use 'merge strict' or 'merge upsert'.";
-  }
-  if (isExplicitMergeMode(keyword)) {
-    return `The '${keyword}' merge modifier requires a preceding 'merge' keyword.`;
-  }
-  if (keyword === "raw_json_file") {
-    return "The raw_json_file statement has been removed. Use a base statement for a base JSON document.";
-  }
-  return "The raw_json statement has been removed. Use a merge statement.";
 }

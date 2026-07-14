@@ -84,60 +84,21 @@ describe("RSGL blockstate semantics", () => {
     assert.strictEqual(closed?.[1].unknownFields, "reject");
   });
 
-  it("reports concrete opposite template modes as blockstate mode conflicts", () => {
+  it("reports concrete opposite template modes as template output mismatches", () => {
     const model = bindRsglModule(parseRsgl([
       "template variantsPart() -> variants { {}: minecraft:block/variant }",
       "template multipartPart() -> multipart { apply minecraft:block/part }",
       "blockstate variants good { use variantsPart() }",
       "blockstate variants wrong_variants { use multipartPart() }",
-      "blockstate multipart wrong_multipart { use variantsPart() }",
-      "blockstate legacy_conflict { use variantsPart()\nuse multipartPart() }"
+      "blockstate multipart wrong_multipart { use variantsPart() }"
     ].join("\n")));
-    const conflicts = model.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.blockstateModeConflict"
-    );
-
-    assert.strictEqual(conflicts.length, 3);
-    assert.ok(!model.diagnostics.some(diagnostic =>
+    const mismatches = model.diagnostics.filter(diagnostic =>
       diagnostic.code === "rsgl.templateOutputDialectMismatch"
-      && (diagnostic.message.includes("variantsPart") || diagnostic.message.includes("multipartPart"))
-    ));
-    assert.strictEqual(
-      model.legacyBlockstateRoots?.[0]?.uses[0]?.callerContext?.kind === "blockstateRoot"
-        ? model.legacyBlockstateRoots[0].uses[0].callerContext.mode
-        : undefined,
-      "neutral"
-    );
-  });
-
-  it("reports one precise conflict for an opposite legacy wrapper in a concrete mode", () => {
-    const source = [
-      "blockstate variants wrong_wrapper {",
-      "  multipart { apply minecraft:block/part }",
-      "}"
-    ].join("\n");
-    const model = bindRsglModule(parseRsgl(source));
-    const conflicts = model.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.blockstateModeConflict"
     );
 
-    assert.strictEqual(conflicts.length, 1);
-    assert.strictEqual(
-      source.slice(conflicts[0].range.start, conflicts[0].range.end),
-      "multipart"
-    );
-  });
-
-  it("infers wrapper-less legacy mode from a unique static root merge", () => {
-    const source = [
-      "blockstate inferred_merge {",
-      "  merge upsert { variants: {} }",
-      "}"
-    ].join("\n");
-    const model = bindRsglModule(parseRsgl(source));
-    const record = model.legacyBlockstateRoots?.[0];
-
-    assert.deepStrictEqual(record?.directModes, ["variants"]);
+    assert.strictEqual(mismatches.length, 2);
+    assert.ok(mismatches.some(diagnostic => diagnostic.message.includes("variantsPart")));
+    assert.ok(mismatches.some(diagnostic => diagnostic.message.includes("multipartPart")));
   });
 
   it("stores compact source-position scopes for post-link blockstate rechecks", () => {
@@ -167,7 +128,7 @@ describe("RSGL blockstate semantics", () => {
       "  let linkedClosed: Json = { model: minecraft:block/local, local_future: true }",
       "  {}: linkedClosed",
       "}",
-      "blockstate inferred { use linkedVariants() }"
+      "blockstate variants inferred { use linkedVariants() }"
     ].join("\n");
     const program = bindRsglProgram([
       { fileName: mainFile, module: parseRsgl(mainSource) },
@@ -194,9 +155,12 @@ describe("RSGL blockstate semantics", () => {
     );
     assert.strictEqual(policies.filter(policy => policy === "preserveExplicitJson").length, 2);
     assert.strictEqual(policies.filter(policy => policy === "reject").length, 1);
+    const linkedUse = mainModel?.templateUses?.find(record =>
+      mainSource.slice(record.expression.range.start, record.expression.range.end).startsWith("linkedVariants")
+    );
     assert.strictEqual(
-      mainModel?.legacyBlockstateRoots?.[0]?.uses[0]?.callerContext?.kind === "blockstateRoot"
-        ? mainModel.legacyBlockstateRoots[0].uses[0].callerContext.mode
+      linkedUse?.callerContext?.kind === "blockstateRoot"
+        ? linkedUse.callerContext.mode
         : undefined,
       "variants"
     );

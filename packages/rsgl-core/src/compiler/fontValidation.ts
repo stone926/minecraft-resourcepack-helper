@@ -15,8 +15,6 @@ import {
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export type FontValidationOptions = RsglResourceValidationOptions;
-
 const providerRequiredFields = new Map<string, string[]>([
   ["bitmap", ["file", "chars", "ascent"]],
   ["space", ["advances"]],
@@ -28,7 +26,7 @@ const providerRequiredFields = new Map<string, string[]>([
 
 export function validateFontMetadata(
   unit: ResourceUnit,
-  options: FontValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
@@ -57,7 +55,7 @@ export function validateFontMetadata(
 function validateFontProvider(
   value: JsonValue,
   unit: ResourceUnit,
-  options: FontValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -89,7 +87,7 @@ function validateFontProviderFields(
   provider: Record<string, JsonValue>,
   type: string,
   unit: ResourceUnit,
-  options: FontValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {

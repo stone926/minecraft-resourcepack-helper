@@ -34,7 +34,7 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
   // Completion is a hot LSP path. Parse the prefix once, then derive each
   // independent context facet from the same immutable syntax tree.
   const module = parseRsgl(prefix);
-  const bodyOwner = bodyOwnerAt(module, prefix, openBrace);
+  const bodyOwner = bodyOwnerAt(module, openBrace);
   const templateOutputDialect = templateDialectInStatementsAt(module.statements, openBrace);
 
   return {
@@ -54,7 +54,6 @@ interface CompletionBodyOwner {
 
 function bodyOwnerAt(
   module: RsglModule,
-  source: string,
   openBrace: number
 ): CompletionBodyOwner {
   const owner: CompletionBodyOwner = { resourceKind: null };
@@ -62,7 +61,7 @@ function bodyOwnerAt(
     enterStatement(statement) {
       if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
         owner.resourceKind = statement.resourceKind;
-        if (statement.resourceKind === "blockstate" && statement.blockstateSyntax === "modeHeader") {
+        if (statement.resourceKind === "blockstate") {
           owner.blockstate = {
             mode: statement.mode,
             scope: "concreteRoot"
@@ -85,16 +84,6 @@ function bodyOwnerAt(
         }
         if (statement.elseBody?.range.start === openBrace) {
           owner.blockstate = blockstateContextForBody(statement.elseBody.kind, "nestedRoot");
-          return "skipChildren";
-        }
-      }
-      if (statement.kind === "VariantsSection" || statement.kind === "MultipartSection") {
-        const sectionOpenBrace = source.indexOf("{", statement.range.start);
-        if (sectionOpenBrace === openBrace) {
-          owner.blockstate = {
-            mode: statement.kind === "VariantsSection" ? "variants" : "multipart",
-            scope: "entryTemplate"
-          };
           return "skipChildren";
         }
       }

@@ -5,7 +5,6 @@ import {
   ExprNode,
   ForStmtNode,
   IdentifierNode,
-  LegacyBlockstateRootBodyNode,
   MultipartBodyNode,
   ResourceBodyNode,
   ResourceStatementNode,
@@ -27,9 +26,9 @@ import {
   resolveListSpreadElementType,
   checkStringEnumLikeExpression,
   checkTemplateUseExpression,
-  RsglExpressionCheckContext,
   validateResourceLocationLike
 } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { createChildScope, lookup } from "./scopes";
 import {
   expectedTypeForResourceReferenceSink,
@@ -61,8 +60,7 @@ type CheckableBody =
   | VariantBodyNode
   | MultipartBodyNode
   | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode
-  | LegacyBlockstateRootBodyNode;
+  | BlockstateMultipartRootBodyNode;
 
 export type RsglBlockStatementChecker = (
   statements: TopLevelStatementNode[],
@@ -126,12 +124,17 @@ export class RsglResourceBodyChecker {
         this.blockstateBodyChecker.checkMultipartStatements(body.statements, scope);
         break;
       case "BlockstateVariantsRootBody":
-      case "BlockstateMultipartRootBody":
-      case "LegacyBlockstateRootBody":
         this.blockstateBodyChecker.checkRootBody(
           body,
           scope,
-          blockstateRootContext(callerContext)
+          blockstateRootContext(callerContext, "variants")
+        );
+        break;
+      case "BlockstateMultipartRootBody":
+        this.blockstateBodyChecker.checkRootBody(
+          body,
+          scope,
+          blockstateRootContext(callerContext, "multipart")
         );
         break;
       default:
@@ -158,14 +161,7 @@ export class RsglResourceBodyChecker {
   ): void {
     const loopScope = createChildScope(scope, "loop");
     const seen = new Set<string>();
-    const forDimensions = statement.dimensions.length ? statement.dimensions : [{
-      kind: "ForDimension" as const,
-      bindings: statement.bindings,
-      iterable: statement.iterable,
-      range: statement.range,
-      fullRange: statement.fullRange
-    }];
-    for (const dimension of forDimensions) {
+    for (const dimension of statement.dimensions) {
       const iterableType = this.checkForIterableExpression(dimension.iterable, loopScope);
       const bindingResult = resolveLoopBindingTypes(
         iterableType,
@@ -240,18 +236,10 @@ export class RsglResourceBodyChecker {
           this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.name.text, callerContext);
         }
         break;
-      case "VariantsSection":
-        this.blockstateBodyChecker.checkVariantStatements(statement.entries, scope);
-        break;
-      case "MultipartSection":
-        this.blockstateBodyChecker.checkMultipartStatements(statement.entries, scope);
-        break;
       case "BlockstateVariantEntry":
-      case "VariantEntry":
         this.blockstateBodyChecker.checkVariantStatements([statement], scope);
         break;
       case "BlockstateMultipartEntry":
-      case "MultipartEntry":
         this.blockstateBodyChecker.checkMultipartStatements([statement], scope);
         break;
       case "UseDecl":
@@ -487,13 +475,14 @@ export class RsglResourceBodyChecker {
 }
 
 function blockstateRootContext(
-  callerContext: RsglTemplateCallerContext | undefined
+  callerContext: RsglTemplateCallerContext | undefined,
+  mode: "variants" | "multipart"
 ): Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }> {
   return callerContext?.kind === "blockstateRoot"
     ? callerContext
     : {
         kind: "blockstateRoot",
-        mode: "neutral",
+        mode,
         allowRootMerge: true,
         allowBase: false
       };

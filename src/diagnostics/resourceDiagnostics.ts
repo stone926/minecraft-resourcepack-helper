@@ -9,7 +9,8 @@ import {
   DiagnosticsRefreshGate,
   type DiagnosticsRefresh
 } from "./diagnosticsRefreshGate";
-import { getSemanticResourceDiagnostics, isSemanticDiagnosticsDocument } from "./semanticDiagnostics";
+import { getSemanticResourceDiagnostics } from "./semanticDiagnostics";
+import { isSemanticDiagnosticsDocument } from "./semanticDiagnosticsCore";
 
 const resolveResourcePath = createResourceReferencePathResolver();
 const refreshGates = new WeakMap<vscode.DiagnosticCollection, DiagnosticsRefreshGate>();

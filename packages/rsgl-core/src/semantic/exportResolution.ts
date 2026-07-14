@@ -81,17 +81,6 @@ function buildExportMaps(
     maps.set(fileName, exports);
     routes.set(fileName, exportRoutes);
 
-    if (model.exports.length === 0) {
-      for (const symbol of model.symbols) {
-        if (moduleExportMemberCategory(symbol)) {
-          exports.set(symbol.name, symbol);
-          exportRoutes.set(symbol.name, [fileName]);
-          owners.set(symbol.name, { range: symbol.range ?? symbol.node?.range ?? model.module.range });
-        }
-      }
-      continue;
-    }
-
     for (const record of model.exports) {
       if (!record.source) {
         if (record.exportAll) {

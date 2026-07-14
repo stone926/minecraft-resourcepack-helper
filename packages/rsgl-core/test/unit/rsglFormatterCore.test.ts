@@ -162,22 +162,4 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
-  it("indents legacy blockstate syntax without migrating its tokens", () => {
-    const formatted = formatRsglText([
-      "blockstate stairs {",
-      "variants {",
-      "[facing=north] -> @minecraft:block/stairs x=90",
-      "}",
-      "}"
-    ].join("\n"));
-
-    assert.strictEqual(formatted, [
-      "blockstate stairs {",
-      "  variants {",
-      "    [facing=north] -> @minecraft:block/stairs x=90",
-      "  }",
-      "}"
-    ].join("\n"));
-    assert.strictEqual(formatRsglText(formatted), formatted);
-  });
 });

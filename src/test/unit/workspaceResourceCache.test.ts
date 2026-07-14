@@ -5,7 +5,7 @@ import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
 import { createOggVorbisBytes, createPngBytes, createTempDirectory } from "./helpers/tempPack";
 
 describe("workspace resource cache", () => {
-  it("keeps the compatibility facade free of cache storage details", () => {
+  it("keeps the coordination facade free of cache storage details", () => {
     const servicesRoot = path.join(process.cwd(), "src", "services");
     const facade = fs.readFileSync(path.join(servicesRoot, "workspaceResourceCache.ts"), "utf8");
     const componentFiles = [

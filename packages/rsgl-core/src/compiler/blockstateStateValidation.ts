@@ -4,8 +4,6 @@ import { pushDiagnosticAtRange, unitRange } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
 import type { RsglBlockstateSchema } from "./validationTypes";
 
-export type { RsglBlockstateSchema } from "./validationTypes";
-
 interface StateDomain {
   values: Set<string>;
 }

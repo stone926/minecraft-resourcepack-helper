@@ -118,17 +118,6 @@ function offsetExpressionRanges<T extends ExprNode>(expression: T, offset: numbe
       arm.patterns.forEach(pattern => offsetExpressionRanges(pattern, offset));
       offsetExpressionRanges(arm.value, offset);
     }
-  } else if (expression.kind === "StateKeySugar") {
-    expression.entries.forEach(entry => offsetObjectPropertyRange(entry, offset));
-  } else if (expression.kind === "ModelApplySugar") {
-    offsetExpressionRanges(expression.model, offset);
-    for (const property of expression.properties) {
-      offsetNodeRange(property, offset);
-      offsetNodeRange(property.name, offset);
-      offsetExpressionRanges(property.value, offset);
-    }
-  } else if (expression.kind === "RandomApply") {
-    expression.entries.forEach(entry => offsetExpressionRanges(entry, offset));
   }
   return expression;
 }

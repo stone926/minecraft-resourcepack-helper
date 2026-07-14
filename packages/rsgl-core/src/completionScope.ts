@@ -2,7 +2,6 @@ import type {
   BlockNode,
   BlockstateMultipartRootBodyNode,
   BlockstateVariantsRootBodyNode,
-  LegacyBlockstateRootBodyNode,
   MultipartBodyNode,
   ResourceBodyNode,
   RsglNode,
@@ -19,8 +18,7 @@ type RsglBody =
   | VariantBodyNode
   | MultipartBodyNode
   | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode
-  | LegacyBlockstateRootBodyNode;
+  | BlockstateMultipartRootBodyNode;
 
 interface LexicalOwner {
   /** The source region in which the binding can be referenced. */
@@ -77,7 +75,7 @@ function visibilityIndex(model: RsglSemanticModel): VisibilityIndex {
 
   const owners = new Map<RsglNode, LexicalOwner>();
   for (const statement of model.module.statements) {
-    indexNestedScopes(statement, undefined, owners);
+    indexNestedScopes(statement, owners);
   }
 
   // Lambda scopes can occur in any expression position. The AST walker keeps
@@ -117,13 +115,12 @@ function indexBody(body: RsglBody, owners: Map<RsglNode, LexicalOwner>): void {
       // its containing body.
       owners.set(statement, region);
     }
-    indexNestedScopes(statement, region, owners);
+    indexNestedScopes(statement, owners);
   }
 }
 
 function indexNestedScopes(
   statement: RsglStatement,
-  currentRegion: LexicalOwner | undefined,
   owners: Map<RsglNode, LexicalOwner>
 ): void {
   switch (statement.kind) {
@@ -148,12 +145,6 @@ function indexNestedScopes(
           owners.set(binding, owner);
         }
       }
-      // Recovery ASTs may retain only the compatibility fields.
-      if (statement.dimensions.length === 0) {
-        for (const binding of statement.bindings) {
-          owners.set(binding, owner);
-        }
-      }
       indexBody(statement.body, owners);
       break;
     }
@@ -172,19 +163,6 @@ function indexNestedScopes(
     case "AtlasPalettedPermutationsStmt":
     case "ModelTransformStmt":
       indexBody(statement.body, owners);
-      break;
-    case "VariantsSection":
-    case "MultipartSection":
-      // Legacy wrappers are checked in the surrounding semantic scope.
-      for (const entry of statement.entries) {
-        if (entry.kind === "LetDecl" && currentRegion) {
-          owners.set(entry, {
-            range: currentRegion.range,
-            visibleAfter: entry.range.end
-          });
-        }
-        indexNestedScopes(entry, currentRegion, owners);
-      }
       break;
     case "ItemRangeStmt":
       if (statement.frames) {

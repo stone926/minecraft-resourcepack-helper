@@ -17,19 +17,13 @@ export class RsglTemplateDispatchCache {
     definition: RsglTemplateDefinition,
     callerContext: RsglTemplateCallerContext
   ): TemplateOutputDispatch {
-    if (definition.outputConflict) {
-      return invalidDefinitionDispatch;
-    }
     const metadata = resolvedTemplateOutputMetadata(definition);
     if (!metadata) {
       throw new Error(`Template '${definition.name}' has no resolved output metadata.`);
     }
-    const bodyNodeKind = metadata.outputSource === "legacyContextualAdapter"
-      ? metadata.bodyNodeKind
-      : definition.node.body.kind;
     const key = [
       definition.definitionFingerprint,
-      bodyNodeKind,
+      definition.node.body.kind,
       normalizeTemplateCallerContext(callerContext)
     ].join("\0");
     const cached = this.entries.get(key);
@@ -54,9 +48,3 @@ export class RsglTemplateDispatchCache {
     return this.entries.size;
   }
 }
-
-const invalidDefinitionDispatch: TemplateOutputDispatch = Object.freeze({
-  compatible: false,
-  compatibilityWarning: false,
-  failure: "invalidDefinition"
-});

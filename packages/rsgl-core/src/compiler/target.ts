@@ -7,8 +7,6 @@ import {
   type RsglTargetPackFormat
 } from "./targetConfig";
 
-export type { RsglTargetPackFormat } from "./targetConfig";
-
 export interface RsglTargetSource {
   module: RsglModule;
   namespace: string;

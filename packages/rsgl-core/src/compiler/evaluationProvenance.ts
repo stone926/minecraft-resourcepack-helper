@@ -19,7 +19,6 @@ import { joinGeneratedPath } from "./sourcePaths";
  */
 export function evaluatedPathOrigins(
   result: Pick<EvaluationResult, "pathOrigins">,
-  _sourceFile: string | undefined,
   generatedPath = ""
 ): EvaluationPathOrigin[] {
   return result.pathOrigins.map(origin => ({
@@ -30,16 +29,14 @@ export function evaluatedPathOrigins(
 
 /** Returns the most specific root provenance from the same evaluator run. */
 export function evaluatedRootOrigin(
-  result: Pick<EvaluationResult, "origin" | "pathOrigins">,
-  _sourceFile?: string
+  result: Pick<EvaluationResult, "origin" | "pathOrigins">
 ): EvaluationOrigin | undefined {
-  return evaluatedOriginAtPath(result, _sourceFile, "") ?? result.origin;
+  return evaluatedOriginAtPath(result, "") ?? result.origin;
 }
 
 /** Returns the most specific provenance for one path from the same run. */
 export function evaluatedOriginAtPath(
   result: Pick<EvaluationResult, "pathOrigins">,
-  _sourceFile: string | undefined,
   generatedPath: string
 ): EvaluationOrigin | undefined {
   return originForEvaluationPath(result.pathOrigins, generatedPath);

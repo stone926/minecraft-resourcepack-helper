@@ -7,12 +7,7 @@ import type {
   BlockstateVariantsRootStatementNode,
   ExprNode,
   ForStmtNode,
-  LegacyBlockstateRootBodyNode,
-  LegacyBlockstateRootStatementNode,
-  MultipartEntryNode,
   MultipartSectionStatementNode,
-  RsglNode,
-  VariantEntryNode,
   VariantSectionStatementNode
 } from "../parser";
 import type { RsglTemplateCallerContext } from "../templateOutput";
@@ -27,22 +22,20 @@ import { applyLambdaValueDiagnostics } from "./lambdaAnalysis";
 import {
   checkExpression,
   checkLocalLetDecl,
-  checkTemplateUseExpression,
-  type RsglExpressionCheckContext
+  checkTemplateUseExpression
 } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { createChildScope } from "./scopes";
 import { scopeForTruthyCondition } from "./typeNarrowing";
 import type { RsglScope } from "./types";
 
 type CheckableBlockstateRootBody =
   | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode
-  | LegacyBlockstateRootBodyNode;
+  | BlockstateMultipartRootBodyNode;
 
 type CheckableBlockstateRootStatement =
   | BlockstateVariantsRootStatementNode
-  | BlockstateMultipartRootStatementNode
-  | LegacyBlockstateRootStatementNode;
+  | BlockstateMultipartRootStatementNode;
 
 export interface RsglBlockstateBodyCheckerHost {
   context: RsglExpressionCheckContext;
@@ -93,9 +86,6 @@ export class RsglBlockstateBodyChecker {
           this.checkSelector(statement.selector, statement.selectorSyntax, scope);
           this.checkApplyValue(statement.value, scope);
           break;
-        case "VariantEntry":
-          this.checkLegacyVariantEntry(statement, scope);
-          break;
         case "LetDecl":
           checkLocalLetDecl(this.host.context, statement, scope);
           break;
@@ -126,9 +116,6 @@ export class RsglBlockstateBodyChecker {
         case "BlockstateMultipartEntry":
           this.checkCanonicalMultipartEntry(statement, scope);
           break;
-        case "MultipartEntry":
-          this.checkLegacyMultipartEntry(statement, scope);
-          break;
         case "LetDecl":
           checkLocalLetDecl(this.host.context, statement, scope);
           break;
@@ -157,29 +144,11 @@ export class RsglBlockstateBodyChecker {
   ): void {
     switch (statement.kind) {
       case "BlockstateVariantEntry":
-        this.checkDirectEntryMode("variants", callerContext, statement);
         this.checkSelector(statement.selector, statement.selectorSyntax, scope);
         this.checkApplyValue(statement.value, scope);
         break;
-      case "VariantEntry":
-        this.checkDirectEntryMode("variants", callerContext, statement);
-        this.checkLegacyVariantEntry(statement, scope);
-        break;
       case "BlockstateMultipartEntry":
-        this.checkDirectEntryMode("multipart", callerContext, statement);
         this.checkCanonicalMultipartEntry(statement, scope);
-        break;
-      case "MultipartEntry":
-        this.checkDirectEntryMode("multipart", callerContext, statement);
-        this.checkLegacyMultipartEntry(statement, scope);
-        break;
-      case "VariantsSection":
-        this.checkDirectEntryMode("variants", callerContext, statement);
-        this.checkVariantStatements(statement.entries, scope);
-        break;
-      case "MultipartSection":
-        this.checkDirectEntryMode("multipart", callerContext, statement);
-        this.checkMultipartStatements(statement.entries, scope);
         break;
       case "LetDecl":
         checkLocalLetDecl(this.host.context, statement, scope);
@@ -216,22 +185,6 @@ export class RsglBlockstateBodyChecker {
       this.checkCondition(statement.when, scope);
     }
     this.checkApplyValue(statement.apply, scope);
-  }
-
-  private checkLegacyVariantEntry(statement: VariantEntryNode, scope: RsglScope): void {
-    if (statement.state.kind === "ObjectExpr") {
-      this.checkSelector(statement.state, "inlineObject", scope);
-    } else {
-      checkExpression(this.host.context, statement.state, scope);
-    }
-    checkExpression(this.host.context, statement.value, scope);
-  }
-
-  private checkLegacyMultipartEntry(statement: MultipartEntryNode, scope: RsglScope): void {
-    if (statement.when) {
-      this.checkCondition(statement.when, scope);
-    }
-    checkExpression(this.host.context, statement.apply, scope);
   }
 
   private checkApplyValue(value: BlockstateApplyValueNode, scope: RsglScope): void {
@@ -291,20 +244,6 @@ export class RsglBlockstateBodyChecker {
     }
   }
 
-  private checkDirectEntryMode(
-    producedMode: "variants" | "multipart",
-    callerContext: Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }>,
-    node: RsglNode
-  ): void {
-    if (callerContext.mode !== "neutral" && callerContext.mode !== producedMode) {
-      this.host.context.diagnostics.push(diagnostic(
-        "rsgl.blockstateModeConflict",
-        `A ${callerContext.mode} blockstate cannot contain ${producedMode} entries.`,
-        blockstateModeEvidenceRange(node)
-      ));
-    }
-  }
-
   private checkStaticModeEvidence(
     expression: ExprNode,
     callerContext: Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }>
@@ -313,16 +252,6 @@ export class RsglBlockstateBodyChecker {
       return;
     }
     const fields = staticBlockstateRootFields(expression);
-    if (callerContext.mode === "neutral") {
-      if (fields.has("variants") && fields.has("multipart")) {
-        this.host.context.diagnostics.push(diagnostic(
-          "rsgl.blockstateModeConflict",
-          "A blockstate root merge cannot contain both variants and multipart.",
-          expression.range
-        ));
-      }
-      return;
-    }
     const opposite = callerContext.mode === "variants" ? "multipart" : "variants";
     const oppositeField = fields.get(opposite);
     if (oppositeField) {
@@ -339,9 +268,6 @@ export class RsglBlockstateBodyChecker {
     range: { start: number; end: number },
     callerContext: Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }>
   ): void {
-    if (callerContext.mode === "neutral") {
-      return;
-    }
     const opposite = callerContext.mode === "variants" ? "multipart" : "variants";
     if (name === opposite) {
       this.host.context.diagnostics.push(diagnostic(
@@ -351,14 +277,6 @@ export class RsglBlockstateBodyChecker {
       ));
     }
   }
-}
-
-function blockstateModeEvidenceRange(node: RsglNode): { start: number; end: number } {
-  if (node.kind === "VariantsSection" || node.kind === "MultipartSection") {
-    const keyword = node.kind === "VariantsSection" ? "variants" : "multipart";
-    return { start: node.range.start, end: node.range.start + keyword.length };
-  }
-  return node.range;
 }
 
 const variantsEntriesCallerContext: RsglTemplateCallerContext = {

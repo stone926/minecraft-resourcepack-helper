@@ -109,7 +109,7 @@ export function evaluateJsonExpressionWithResult(
   options: JsonValueSinkOptions = {},
   generatedPath = ""
 ): EvaluatedJsonExpression | undefined {
-  const host = genericJsonLoweringHost(context, options);
+  const host = createJsonValueLoweringHost(context, options);
   host.generatedPathPrefix = generatedPath;
   let evaluationFailed = false;
   const onError = options.onError ?? context.onError;
@@ -178,7 +178,8 @@ export function lowerJsonEvaluationResult(
   );
 }
 
-function genericJsonLoweringHost(
+/** Creates the shared lowering boundary used by every JSON-emitting domain. */
+export function createJsonValueLoweringHost(
   context: EvaluationContext,
   options: JsonValueSinkOptions
 ): JsonValueLoweringHost {

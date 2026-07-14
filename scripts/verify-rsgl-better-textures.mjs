@@ -9,14 +9,6 @@ const repositoryRoot = path.resolve(scriptDirectory, "..");
 const defaultFixtureRoot = path.join(repositoryRoot, "docs", "better_textures_rsgl");
 const expectedResourceCount = 729;
 const expectedSourceFileCount = 32;
-const expectedLegacySurfaceCounts = {
-  blockstateDeclarations: 28,
-  variantsWrappers: 0,
-  multipartWrappers: 0,
-  templateDeterminedBlockstates: 0,
-  stateKeySugar: 0,
-  modelApplySugar: 0
-};
 const allowedErrorCodes = new Set(["rsgl.undeclaredExternalResource"]);
 const allowedWarningCodes = new Set(["rsgl.unresolvedTextureVariable"]);
 
@@ -35,10 +27,6 @@ requireFile(configFile, [
 
 const core = await loadCommonJsModule(
   path.join(repositoryRoot, "out", "packages", "rsgl-core", "src", "index.js"),
-  "Run `npm run compile` before invoking this script directly."
-);
-const traversal = await loadCommonJsModule(
-  path.join(repositoryRoot, "out", "packages", "rsgl-core", "src", "parser", "astTraversal.js"),
   "Run `npm run compile` before invoking this script directly."
 );
 
@@ -62,11 +50,10 @@ const result = core.compileRsglDirectory(sourceRoot, {
 });
 const snapshot = core.createRsglCompileSnapshot(result, { sourceRoot: fixtureRoot });
 const actual = {
-  version: 1,
+  version: 2,
   fixture: "better_textures_rsgl",
   sourceFileCount: projectSourceFiles.length,
   resourceCount: snapshot.resources.length,
-  legacySurface: collectLegacySurface(projectSourceFiles, traversal.walkRsglModule, fixtureRoot),
   resourceBodyConsumers: core.rsglResourceKindDescriptors.map(descriptor => ({
     resourceKind: descriptor.keyword,
     astShape: descriptor.ast.shape,
@@ -79,24 +66,16 @@ const actual = {
 if (actual.sourceFileCount !== expectedSourceFileCount) {
   fail(
     `Better Textures contains ${actual.sourceFileCount} project source files; expected ${expectedSourceFileCount}. `
-    + "Refusing to update or accept the migration baseline."
+    + "Refusing to update or accept the integration baseline."
   );
 }
 if (actual.resourceCount !== expectedResourceCount) {
   fail(
     `Better Textures generated ${actual.resourceCount} internal resources; expected ${expectedResourceCount}. `
-    + "Refusing to update or accept the migration baseline."
+    + "Refusing to update or accept the integration baseline."
   );
 }
 validateIntegrationDiagnostics(snapshot.diagnostics);
-if (JSON.stringify(actual.legacySurface.counts) !== JSON.stringify(expectedLegacySurfaceCounts)) {
-  fail([
-    "Better Textures legacy syntax census changed unexpectedly.",
-    `expected: ${JSON.stringify(expectedLegacySurfaceCounts)}`,
-    `actual:   ${JSON.stringify(actual.legacySurface.counts)}`,
-    "Update the tracked census only as part of the reviewed syntax migration."
-  ].join("\n"));
-}
 
 if (options.update) {
   mkdirSync(path.dirname(baselineFile), { recursive: true });
@@ -120,68 +99,12 @@ if (actualText !== expectedText) {
   fail([
     `Better Textures RSGL baseline mismatch at ${baselineFile}.`,
     difference,
-    "Refresh with --update only after reviewing an intentional migration/output change."
+    "Refresh with --update only after reviewing an intentional compiler or output change."
   ].join("\n"));
 }
 
 console.log(`Better Textures RSGL baseline verified: ${baselineFile}`);
 printSummary(actual);
-
-function collectLegacySurface(sourceFiles, walkRsglModule, sourceRoot) {
-  const counts = {
-    blockstateDeclarations: 0,
-    variantsWrappers: 0,
-    multipartWrappers: 0,
-    templateDeterminedBlockstates: 0,
-    stateKeySugar: 0,
-    modelApplySugar: 0
-  };
-  const templates = [];
-
-  for (const sourceFile of sourceFiles) {
-    walkRsglModule(sourceFile.module, {
-      enterStatement(statement) {
-        if (statement.kind === "ResourceDecl" && statement.resourceKind === "blockstate") {
-          counts.blockstateDeclarations++;
-          const directKinds = statement.body.statements.map(child => child.kind);
-          const isLegacyDeclaration = statement.blockstateSyntax !== "modeHeader";
-          counts.variantsWrappers += directKinds.filter(kind => kind === "VariantsSection").length;
-          counts.multipartWrappers += directKinds.filter(kind => kind === "MultipartSection").length;
-          if (
-            isLegacyDeclaration
-            && !directKinds.includes("VariantsSection")
-            && !directKinds.includes("MultipartSection")
-            && directKinds.includes("UseDecl")
-          ) {
-            counts.templateDeterminedBlockstates++;
-          }
-        }
-        if (statement.kind === "TemplateDecl") {
-          templates.push({
-            sourceFile: portableRelativePath(sourceRoot, sourceFile.fileName),
-            name: statement.name?.text ?? "<missing>",
-            bodyNodeKind: statement.body.kind,
-            directStatementKinds: statement.body.statements.map(child => child.kind)
-          });
-        }
-      },
-      enterExpression(expression) {
-        if (expression.kind === "StateKeySugar") {
-          counts.stateKeySugar++;
-        } else if (expression.kind === "ModelApplySugar") {
-          counts.modelApplySugar++;
-        }
-      }
-    });
-  }
-
-  return {
-    counts,
-    templates: templates.sort((left, right) =>
-      compareOrdinal(left.sourceFile, right.sourceFile) || compareOrdinal(left.name, right.name)
-    )
-  };
-}
 
 function validateIntegrationDiagnostics(diagnostics) {
   const unexpected = diagnostics.filter(diagnostic =>
@@ -245,23 +168,12 @@ function parseJsonFile(fileName) {
   }
 }
 
-function portableRelativePath(root, fileName) {
-  if (fileName.startsWith("<")) {
-    return fileName.replaceAll("\\", "/");
-  }
-  return path.relative(root, fileName).replaceAll("\\", "/");
-}
-
 function isFileWithinRoot(root, fileName) {
   if (fileName.startsWith("<")) {
     return false;
   }
   const relative = path.relative(root, fileName);
   return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-}
-
-function compareOrdinal(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function firstDifference(expected, actual) {

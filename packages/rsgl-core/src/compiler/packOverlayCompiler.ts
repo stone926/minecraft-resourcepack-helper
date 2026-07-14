@@ -9,17 +9,17 @@ import {
   ResourceStatementNode
 } from "../parser";
 import {
-  isJsonObject,
   packContentFromBody,
   packFormatMetadata,
   packSourceMappings,
   prefixOverlayUnit,
   staticText
 } from "./compilerHelpers";
+import { isJsonObject } from "./jsonValues";
 import { EvaluationContext, EvaluationValue, evaluateExpression } from "./evaluate";
 import { JsonValue, ResourceUnit, RsglMapping, RsglSourceMap } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
-import { RsglTargetPackFormat } from "./target";
+import type { RsglTargetPackFormat } from "./targetConfig";
 import { RsglCompileContext } from "./templateExpansion";
 
 export interface RsglOverlayEntry {

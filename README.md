@@ -105,7 +105,7 @@ The view has cached workspace indexes and can be refreshed manually with **McRes
 
 ## RSGL
 
-RSGL support is split into a separate VS Code extension: `stone926.rsgl`. Minecraft Resourcepack Helper depends on it, so users who install the main extension receive RSGL automatically without legacy command bridges.
+RSGL support is split into a separate VS Code extension: `stone926.rsgl`. Minecraft Resourcepack Helper depends on it, so users who install the main extension receive RSGL automatically.
 
 The RSGL extension owns:
 
@@ -114,7 +114,7 @@ The RSGL extension owns:
 - Settings under the `rsgl.*` namespace, including output directory, Minecraft target version, vanilla assets fallback, lower-priority packs, source maps, and generated JSON validation.
 - The bundled RSGL language server plus shared compiler/core packages.
 
-The current language surface includes explicit `model` / `variants` / `multipart` template dialects, canonical blockstates with migration tooling, structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
+The current language surface accepts canonical syntax only, including explicit `model` / `variants` / `multipart` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
 
 ## Configuration
 
@@ -148,7 +148,7 @@ Example:
 
 The model preview commands are also available from model JSON editor menus. Resource graph model nodes provide an inline preview action. The CIT commands are accessible from the command palette; "generate CIT for current item" also appears in the editor context menu for item textures and models.
 
-RSGL commands are provided by the companion RSGL extension and use the `RSGL:` command prefix rather than legacy `McResHelper` command IDs.
+RSGL commands are provided by the companion RSGL extension and use the `RSGL:` command prefix.
 
 ## Scaffolding
 

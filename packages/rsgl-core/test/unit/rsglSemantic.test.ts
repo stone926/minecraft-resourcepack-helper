@@ -16,7 +16,7 @@ describe("RSGL semantic model", () => {
       "    textures { all: texture }",
       "  }",
       "}",
-      "template cubeFields(parentModel: ModelId, texture: TextureId) {",
+      "template cubeFields(parentModel: ModelId, texture: TextureId) -> model {",
       "  parent parentModel",
       "  textures { all: texture }",
       "}",
@@ -132,16 +132,6 @@ describe("RSGL semantic model", () => {
     assert.deepStrictEqual(model.outputResources, []);
   });
 
-  it("rejects legacy seq generator template patterns", () => {
-    const model = bindRsglModule(parseRsgl([
-      "let brace = seq(\"minecraft:particle/spark_{i}\", i: 0..2)",
-      "let template = seq(`minecraft:particle/spark_${i}`, i: 0..2)"
-    ].join("\n")));
-    const codes = model.diagnostics.map(diagnostic => diagnostic.code);
-
-    assert.strictEqual(codes.filter(code => code === "rsgl.invalidSeqPattern").length, 2);
-  });
-
   it("reports template string interpolation diagnostics at embedded expression ranges", () => {
     const source = "let label = `minecraft:block/${missing.value}`";
     const model = bindRsglModule(parseRsgl(source));
@@ -193,15 +183,11 @@ describe("RSGL semantic model", () => {
     assert.ok(diagnostics[1].message.includes("waiting"));
   });
 
-  // `use stairs(...)` at top level is intentionally unimported: stairs is a
-  // stdlib blockstate fragment, not a builtin, so the bare name must resolve
-  // to nothing callable. Pins the removed-use-builtin diagnostic behavior.
-  it("checks builtin helper signatures and removed use callables", () => {
+  it("checks builtin helper signatures", () => {
     const module = parseRsgl([
       "equipment minecraft:bad_equipment {",
       "  use equipmentLayers(texture: minecraft:iron)",
-      "}",
-      "use stairs(id: acacia_stairs)"
+      "}"
     ].join("\n"));
 
     const model = bindRsglModule(module);
@@ -209,9 +195,6 @@ describe("RSGL semantic model", () => {
 
     assert.ok(codes.includes("rsgl.missingArgument"));
     assert.strictEqual(codes.filter(code => code === "rsgl.missingArgument").length, 1);
-    assert.ok(codes.includes("rsgl.notCallable"));
-    assert.strictEqual(model.scope.symbols.has("raw_json"), false);
-    assert.strictEqual(model.scope.symbols.has("raw_json_file"), false);
   });
 
   it("checks lambda arity and purity diagnostics", () => {
@@ -368,7 +351,8 @@ describe("RSGL semantic model", () => {
         module: parseRsgl([
           "template cube(id: ResourceId) {",
           "  model block id { parent minecraft:block/cube_all }",
-          "}"
+          "}",
+          "export { cube }"
         ].join("\n"))
       }
     ]);
@@ -455,10 +439,11 @@ describe("RSGL semantic model", () => {
       {
         fileName: fragmentsFile,
         module: parseRsgl([
-          "template cubeFields(parentModel: ModelId, texture: TextureId) {",
+          "template cubeFields(parentModel: ModelId, texture: TextureId) -> model {",
           "  parent parentModel",
           "  textures { all: texture }",
-          "}"
+          "}",
+          "export { cubeFields }"
         ].join("\n"))
       }
     ]);
@@ -480,21 +465,18 @@ describe("RSGL semantic model", () => {
         fileName: mainFile,
         module: parseRsgl([
           "import { lampFacing } from \"./fragments.rsgl\"",
-          "blockstate lamp {",
-          "  variants {",
-          "    use lampFacing()",
-          "  }",
+          "blockstate variants lamp {",
+          "  use lampFacing()",
           "}"
         ].join("\n"))
       },
       {
         fileName: fragmentsFile,
         module: parseRsgl([
-          "template lampFacing(modelId: ModelId) {",
-          "  variants {",
-          "    { facing: north } -> { model: modelId }",
-          "  }",
-          "}"
+          "template lampFacing(modelId: ModelId) -> variants {",
+          "  { facing: north }: { model: modelId }",
+          "}",
+          "export { lampFacing }"
         ].join("\n"))
       }
     ]);
@@ -565,7 +547,8 @@ describe("RSGL semantic model", () => {
         module: parseRsgl([
           "template cube(id: ResourceId) {",
           "  model block id { parent minecraft:block/cube_all }",
-          "}"
+          "}",
+          "export { cube }"
         ].join("\n"))
       }
     ]);
@@ -596,7 +579,8 @@ describe("RSGL semantic model", () => {
         module: parseRsgl([
           "template cube(id: TextureId, texture: TextureId = id) {",
           "  model block id { parent minecraft:block/cube_all }",
-          "}"
+          "}",
+          "export { cube }"
         ].join("\n"))
       }
     ]);
@@ -620,7 +604,7 @@ describe("RSGL semantic model", () => {
       },
       {
         fileName: templatesFile,
-        module: parseRsgl("template supply(id: ResourceId) { let value = id }")
+        module: parseRsgl("template supply(id: ResourceId) { let value = id }\nexport { supply }")
       }
     ]);
 
@@ -648,7 +632,10 @@ describe("RSGL semantic model", () => {
       },
       {
         fileName: templatesFile,
-        module: parseRsgl("template geometryValue(required: Number) { let value = required }")
+        module: parseRsgl([
+          "template geometryValue(required: Number) { let value = required }",
+          "export { geometryValue }"
+        ].join("\n"))
       }
     ]);
 

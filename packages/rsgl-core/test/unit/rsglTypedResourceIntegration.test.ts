@@ -191,7 +191,8 @@ describe("RSGL typed resource integration", () => {
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
       "rsgl.resourceIdKindMismatch",
-      "rsgl.invalidConstructedResourceId"
+      "rsgl.invalidConstructedResourceId",
+      "rsgl.invalidModelImplArgument"
     ]);
     assert.strictEqual(resolverCalls, 0);
     assert.deepStrictEqual(unitByPath(result, "assets/demo/good.json").content, { value: "ok" });

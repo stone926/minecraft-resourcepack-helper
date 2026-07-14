@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { isSamePath } from '../../packages/mc-assets/src';
+import type { CachedTextureVariableDefinition } from '../services/modelParentChain';
 import { workspaceResourceCache } from '../services/workspaceResourceCache';
 import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from '../utils/jsonAst';
 import { isInArea } from '../utils/locationChecker';
-import { resolveTextureVariableDefinition, type CachedTextureVariableDefinition } from '../utils/modelTexture';
+import { createTextureVariableDefinitionResolver } from '../utils/modelTexture';
 import { getResourceConfiguration } from '../utils/resourceConfiguration';
 
 export default (document: vscode.TextDocument, position: vscode.Position) => {
@@ -14,12 +15,17 @@ export default (document: vscode.TextDocument, position: vscode.Position) => {
 
   const line = position.line + 1;
   const character = position.character + 1;
+  const textureVariableResolver = createTextureVariableDefinitionResolver(
+    ast,
+    document,
+    getResourceConfiguration
+  );
 
   for (const textureReference of getTextureVariableReferences(ast.body)) {
     if (isInArea(line, character, textureReference.loc)) {
       const texture = stringValue(textureReference);
       const definition = texture
-        ? resolveTextureVariableDefinition(ast, document, texture, getResourceConfiguration)
+        ? textureVariableResolver.resolve(texture)
         : null;
       return definition ? toLocation(document, definition) : null;
     }

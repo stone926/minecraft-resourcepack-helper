@@ -2,9 +2,9 @@ import * as path from "node:path";
 import { packRootFromAssetsPath, startsWithPathSegment } from "../../packages/mc-assets/src";
 import {
   getCitAutoDiscoveryPathCandidates,
-  getCitPathCandidates,
-  type CitResourceType
+  getCitPathCandidates
 } from "./citPaths";
+import type { CitResourceType } from "./citKeyResolution";
 
 export type CitAssetResolutionType = CitResourceType | "auto";
 

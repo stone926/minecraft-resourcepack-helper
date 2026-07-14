@@ -1,5 +1,5 @@
 import type {
-  ResourceDeclNode,
+  BlockstateResourceDeclNode,
   TextRange,
   UseDeclNode
 } from "../parser";
@@ -15,10 +15,9 @@ import {
   BlockstateOperationExecutor,
   type BlockstateOperationExecutorHost
 } from "./blockstateOperationExecutor";
-import type { BlockstateJsonValueLoweringHost } from "./blockstateJsonValueLowerer";
+import type { JsonValueSinkOptions } from "./jsonValueLowerer";
 import {
-  canonicalBlockstateOperationProgram,
-  legacyBlockstateOperationProgram
+  canonicalBlockstateOperationProgram
 } from "./blockstateOperations";
 import type { RsglTemplateDefinition } from "./environment";
 import type { ResourceUnit, RsglMapping } from "./ir";
@@ -26,7 +25,8 @@ import { staticText } from "./compilerHelpers";
 import { parseResourceId, resourceOutputPath } from "./resourceIds";
 import type { RsglCompileContext, TemplateExpansion } from "./templateExpansion";
 
-export interface BlockstateCompileOptions extends BlockstateJsonValueLoweringHost {
+export interface BlockstateCompileOptions extends JsonValueSinkOptions {
+  onError: NonNullable<JsonValueSinkOptions["onError"]>;
   resolveTemplate: (
     statement: UseDeclNode,
     context: RsglCompileContext
@@ -57,19 +57,10 @@ export interface BlockstateCompileOptions extends BlockstateJsonValueLoweringHos
 }
 
 export function compileBlockstateResource(
-  statement: ResourceDeclNode,
+  statement: BlockstateResourceDeclNode,
   context: RsglCompileContext,
   options: BlockstateCompileOptions
 ): ResourceUnit | null {
-  if (statement.resourceKind !== "blockstate") {
-    options.onError(
-      "rsgl.invalidBlockstateDeclaration",
-      "The blockstate compiler received a non-blockstate resource declaration.",
-      statement.range
-    );
-    return null;
-  }
-
   const idValue = staticText(statement.id, context);
   const id = idValue ? parseResourceId(idValue, context.namespace) : null;
   if (!id) {
@@ -81,25 +72,12 @@ export function compileBlockstateResource(
     return null;
   }
 
-  const executor = new BlockstateOperationExecutor(executorHost(options, context.sourceFile));
-  const canonical = statement.blockstateSyntax === "modeHeader";
-  const program = canonical
-    ? canonicalBlockstateOperationProgram(statement.body)
-    : legacyBlockstateOperationProgram(statement.body);
-  const inferredLegacyMode = !canonical
-    && (program.mode === "variants" || program.mode === "multipart")
-    ? program.mode
-    : undefined;
-  const finalizeOrigin = canonical
-    ? { sourceRange: statement.modeNode.range, context }
-    : undefined;
+  const executor = new BlockstateOperationExecutor(executorHost(options));
+  const program = canonicalBlockstateOperationProgram(statement.body);
+  const finalizeOrigin = { sourceRange: statement.modeNode.range, context };
   const body = executor.executeRoot(program, context, {
-    ...(canonical
-      ? { declaredMode: statement.mode }
-      : inferredLegacyMode
-        ? { declaredMode: inferredLegacyMode }
-        : {}),
-    ...(finalizeOrigin ? { finalizeOrigin } : {}),
+    declaredMode: statement.mode,
+    finalizeOrigin,
     finalizeSelectedMode: true
   });
   const outputPath = resourceOutputPath("blockstate", id);
@@ -113,10 +91,7 @@ export function compileBlockstateResource(
   };
 }
 
-function executorHost(
-  options: BlockstateCompileOptions,
-  defaultSourceFile?: string
-): BlockstateOperationExecutorHost {
+function executorHost(options: BlockstateCompileOptions): BlockstateOperationExecutorHost {
   return {
     resolveTemplate: options.resolveTemplate,
     expandUse: options.expandUse,
@@ -127,9 +102,6 @@ function executorHost(
       : {}),
     ...(options.onResourceValueObservation
       ? { onResourceValueObservation: options.onResourceValueObservation }
-      : {}),
-    ...((options.sourceFile ?? defaultSourceFile)
-      ? { sourceFile: options.sourceFile ?? defaultSourceFile }
       : {}),
     sourceMapping: options.sourceMapping,
     ...(options.getBlockstateApplyFact

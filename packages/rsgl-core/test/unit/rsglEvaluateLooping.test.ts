@@ -74,7 +74,7 @@ describe("RSGL expression evaluation and loops", () => {
   it("expands multidimensional for loops in stable cartesian order", () => {
     const result = compileSourceWithUncheckedExterns([
       "for base in [stone, dirt], variant in [smooth, cut] {",
-      "  model block `${base}_${variant}` impl cube_all(all: `minecraft:block/${base}_${variant}`) {",
+      "  model block `${base}_${variant}` impl minecraft:block/cube_all(all: `minecraft:block/${base}_${variant}`) {",
       "  }",
       "}"
     ]);
@@ -107,7 +107,7 @@ describe("RSGL expression evaluation and loops", () => {
   it("reports duplicate bindings in multidimensional for loops", () => {
     const result = compileSourceWithUncheckedExterns([
       "for item in [stone], item in [dirt] {",
-      "  model block item impl cube_all(all: minecraft:block/stone) {}",
+      "  model block item impl minecraft:block/cube_all(all: minecraft:block/stone) {}",
       "}"
     ]);
 

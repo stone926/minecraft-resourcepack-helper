@@ -1,5 +1,6 @@
 import type { ExternResourceSource, RsglExternDeclaration, RsglGlobalExternConfigEntry } from "../externDeclarations";
-import type { ExternalResourceKind, JsonValue, ResourceId, RsglCompileDiagnostic } from "./ir";
+import type { ExternResourceKind } from "../resourceKinds";
+import type { JsonValue, ResourceId, RsglCompileDiagnostic } from "./ir";
 
 export interface RsglBlockstateSchema {
   properties: Record<string, readonly string[]>;
@@ -35,7 +36,7 @@ export type ValidationRange = RsglCompileDiagnostic["range"];
 
 export interface RsglExternalResourceUsage {
   source: ExternResourceSource;
-  resourceKind: ExternalResourceKind;
+  resourceKind: ExternResourceKind;
   targetKind: RsglResourceExistenceKind;
   id: string;
   skipExistenceCheck: boolean;

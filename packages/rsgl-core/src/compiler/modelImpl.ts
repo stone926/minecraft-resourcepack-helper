@@ -5,7 +5,7 @@ import {
   ResourceDeclNode,
   TextRange
 } from "../parser";
-import { isJsonObject } from "./compilerHelpers";
+import { isJsonObject } from "./jsonValues";
 import {
   EvaluationContext,
   type EvaluationOrigin,
@@ -168,7 +168,7 @@ function modelImplData(
       ? parentValue
       : normalizeModelParent(parentValue, subtype, context.namespace),
     parentRange: parentExpression.range,
-    parentOrigin: evaluatedRootOrigin(parentResult, context.sourceFile),
+    parentOrigin: evaluatedRootOrigin(parentResult),
     implRange: expression.range,
     textures: modelImplTextures(call, subtype, context, onError)
   };
@@ -221,7 +221,7 @@ function modelImplTextureValue(
   const evaluatedValue = result.value;
   const withOrigin = (value: string): EvaluatedModelImplTexture => ({
     value,
-    origin: evaluatedRootOrigin(result, context.sourceFile)
+    origin: evaluatedRootOrigin(result)
   });
   if (isEvaluatedTextureVariable(evaluatedValue)) {
     return withOrigin(evaluatedValue.value);

@@ -12,3 +12,5 @@ template rangeFrames(id: ResourceId, property: ResourceId, values: List<Number> 
     }
   }
 }
+
+export { simpleModelItem, rangeFrames }

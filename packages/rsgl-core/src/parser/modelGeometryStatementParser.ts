@@ -1,15 +1,13 @@
 import {
   getRsglModelGeometryStatementDescriptor,
   getRsglModelTransformAxis,
-  type RsglModelElementStatementDescriptor
-} from "../modelGeometrySyntax";
-import { modelTransformBodyParseContext } from "./bodyParseContext";
-import {
   modelElementBodyClauseKeywords,
   modelElementHeaderClauseKeywords,
   modelFaceIntroducerKeywords,
   modelFaceTargets,
-} from "./statementKeywords";
+  type RsglModelElementStatementDescriptor
+} from "../modelGeometrySyntax";
+import { modelTransformBodyParseContext } from "./bodyParseContext";
 import { ResourceStatementParserHost } from "./statementParserHost";
 import {
   ModelElementStmtNode,

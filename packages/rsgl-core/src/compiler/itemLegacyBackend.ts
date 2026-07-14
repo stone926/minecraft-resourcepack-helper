@@ -10,7 +10,7 @@ import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { isJsonObject } from "./jsonValues";
 import { resourceOutputPath } from "./resourceIds";
 import { appendGeneratedPath } from "./sourcePaths";
-import { RsglTargetPackFormat } from "./target";
+import type { RsglTargetPackFormat } from "./targetConfig";
 import { sourceFileForValidationRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { stripMinecraftPrefix } from "./validationPrimitives";
 

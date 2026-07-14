@@ -16,7 +16,7 @@ import { ModelIssueCollector } from "../model/ModelIssues";
 import { collectModelJsonLocations } from "../model/ModelJsonLocations";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
-import { getModelFileCandidates, modelResourceIdFromFileName, resolveModelFileName } from "./ResourceDependencyResolver";
+import { ResourceDependencyResolver, modelResourceIdFromFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
 import { TextOffsetMap } from "../../utils/textOffsets";
 import { maxModelParentDepth, ModelParentTraversal } from "../../services/modelParentTraversal";
@@ -35,6 +35,7 @@ export interface RawModelDocumentCache {
 
 export class ParentChainResolver {
   private readonly missingDependencies = new Map<string, ResolvedDependency>();
+  private readonly resources: ResourceDependencyResolver;
 
   constructor(
     private readonly fileSystem: ModelPreviewFileSystem,
@@ -42,7 +43,9 @@ export class ParentChainResolver {
     private readonly issues: ModelIssueCollector,
     private readonly cancellationToken?: ModelPreviewCancellationToken,
     private readonly rawModelCache?: RawModelDocumentCache
-  ) { }
+  ) {
+    this.resources = new ResourceDependencyResolver(fileSystem, configuration);
+  }
 
   async resolve(entryFileName: string): Promise<ResolvedModel | null> {
     throwIfCancellationRequested(this.cancellationToken);
@@ -71,9 +74,9 @@ export class ParentChainResolver {
         break;
       }
 
-      const parentFile = resolveModelFileName(parent, fileName, this.fileSystem, this.configuration);
+      const parentFile = this.resources.resolveModelFileName(parent, fileName);
       if (!parentFile) {
-        for (const candidate of getModelFileCandidates(parent, fileName, this.fileSystem, this.configuration)) {
+        for (const candidate of this.resources.getModelFileCandidates(parent, fileName)) {
           this.missingDependencies.set(normalizePathKey(candidate), { fileName: candidate, kind: "model" });
         }
         this.issues.warning(lm("Parent model not found: {0}", parent), fileName, document.data?.parentRange);

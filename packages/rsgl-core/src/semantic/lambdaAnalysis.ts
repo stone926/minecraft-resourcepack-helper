@@ -139,7 +139,7 @@ function analyzeLambdaValues(
   };
 }
 
-/** Warns only for explicitly named local exports; implicit export-all stays quiet. */
+/** Requires complete annotations when a local lambda becomes part of the module API. */
 export function exportedLambdaAnnotationDiagnostics(
   statements: readonly TopLevelStatementNode[],
   scope: RsglScope
@@ -168,9 +168,8 @@ export function exportedLambdaAnnotationDiagnostics(
 }
 
 /**
- * Validates explicit named re-exports after the program linker has resolved
- * aliases to their originating value declaration. An implicit export-all is
- * intentionally excluded so existing module behavior remains warning-free.
+ * Validates named re-exports after the program linker has resolved aliases to
+ * their originating value declaration.
  */
 export function exportedLambdaReexportAnnotationDiagnostics(
   models: readonly RsglSemanticModel[],
@@ -181,6 +180,21 @@ export function exportedLambdaReexportAnnotationDiagnostics(
     const exports = exportMaps.get(normalizeExportMapKey(model.fileName));
     for (const record of model.exports) {
       if (record.exportAll) {
+        const targetExports = record.resolvedFileName
+          ? exportMaps.get(normalizeExportMapKey(record.resolvedFileName))
+          : undefined;
+        for (const [exportedName, symbol] of targetExports ?? []) {
+          if (!symbol.node || !isLambdaLet(symbol.node) || symbol.node.typeAnnotation) {
+            continue;
+          }
+          diagnostics.push(fileDiagnostic(
+            model.fileName,
+            "rsgl.exportedLambdaNeedsTypeAnnotation",
+            `Re-exported lambda value '${exportedName}' needs a complete Function type annotation.`,
+            record.node.range,
+            "warning"
+          ));
+        }
         continue;
       }
       for (const specifier of record.specifiers) {

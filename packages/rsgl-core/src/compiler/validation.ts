@@ -105,14 +105,6 @@ export function canonicalizeAndValidateResourceUnits(
   return diagnostics;
 }
 
-/** Compatibility facade; validation of known reference sinks is canonicalizing. */
-export function validateResourceUnits(
-  units: ResourceUnit[],
-  options: RsglResourceValidationOptions = {}
-): RsglCompileDiagnostic[] {
-  return canonicalizeAndValidateResourceUnits(units, options);
-}
-
 function validateItemUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,

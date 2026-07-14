@@ -25,14 +25,16 @@ import {
 import type { JsonValue } from "./ir";
 import { cloneJsonValue, isJsonObject } from "./jsonValues";
 import {
-  type BlockstateJsonValueLoweringHost,
-  lowerSerializableBlockstateJsonValue
-} from "./blockstateJsonValueLowerer";
+  createJsonValueLoweringHost,
+  type JsonValueSinkOptions,
+  lowerJsonEvaluationResult
+} from "./jsonValueLowerer";
 import { parseResourceId, resourceIdToString } from "./resourceIds";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 import type { RsglCompileContext } from "./templateExpansion";
 
-export interface BlockstateApplyLoweringHost extends BlockstateJsonValueLoweringHost {
+export interface BlockstateApplyLoweringHost extends JsonValueSinkOptions {
+  onError: NonNullable<JsonValueSinkOptions["onError"]>;
   getApplyFact?: (node: RsglBlockstateApplySiteNode) => RsglBlockstateApplyFact | undefined;
 }
 
@@ -104,40 +106,6 @@ function lowerBlockstateApplyCore(
   return lowerApplyExpression(value, context, host, true, value);
 }
 
-/** Compatibility path for legacy arbitrary expression values. */
-export function lowerLegacyBlockstateApply(
-  expression: ExprNode,
-  context: RsglCompileContext,
-  host: BlockstateApplyLoweringHost
-): LoweredBlockstateApply | undefined {
-  return captureApplyResourceValues(host, loweringHost =>
-    lowerLegacyBlockstateApplyCore(expression, context, loweringHost)
-  );
-}
-
-function lowerLegacyBlockstateApplyCore(
-  expression: ExprNode,
-  context: RsglCompileContext,
-  host: BlockstateApplyLoweringHost
-): LoweredBlockstateApplyCore | undefined {
-  const result = evaluateBlockstateExpressionResult(expression, context);
-  if (!result) {
-    return undefined;
-  }
-  const value = lowerSerializableBlockstateJsonValue(
-    result,
-    expression.range,
-    withSourceFile(host, context.sourceFile)
-  );
-  if (value === undefined) {
-    return undefined;
-  }
-  return {
-    value: cloneJsonValue(value),
-    mappings: collectValueMappings(value, expression.range, result)
-  };
-}
-
 function lowerRandomItem(
   item: BlockstateRandomItemNode,
   context: RsglCompileContext,
@@ -158,11 +126,11 @@ function lowerApplyExpression(
   if (!headResult) {
     return undefined;
   }
-  const loweringHost = withSourceFile(host, context.sourceFile);
-  const serialHead = lowerSerializableBlockstateJsonValue(
+  const serialHead = lowerBlockstateJsonValue(
     headResult,
     expression.head.range,
-    loweringHost,
+    context,
+    host,
     expression.properties.length > 0 || isEvaluatedResourceId(headResult.value)
       ? "/model"
       : ""
@@ -417,10 +385,11 @@ function applyModelProperties(
       return false;
     }
     const location = evaluationLocation(result, "", property.value.range);
-    const value = lowerSerializableBlockstateJsonValue(
+    const value = lowerBlockstateJsonValue(
       result,
       location.range,
-      withSourceFile(host, context.sourceFile),
+      context,
+      host,
       appendGeneratedPath("", name)
     );
     if (value === undefined) {
@@ -626,13 +595,16 @@ function withResourceValuePathPrefix(
   };
 }
 
-function withSourceFile(
+function lowerBlockstateJsonValue(
+  result: EvaluationResult,
+  fallbackRange: TextRange,
+  context: RsglCompileContext,
   host: BlockstateApplyLoweringHost,
-  sourceFile: string | undefined
-): BlockstateApplyLoweringHost {
-  return sourceFile && sourceFile !== host.sourceFile
-    ? { ...host, sourceFile }
-    : host;
+  generatedPathPrefix = ""
+): JsonValue | undefined {
+  const loweringHost = createJsonValueLoweringHost(context, host);
+  loweringHost.generatedPathPrefix = generatedPathPrefix;
+  return lowerJsonEvaluationResult(result, fallbackRange, loweringHost);
 }
 
 const knownModelFields = new Set(["x", "y", "z", "uvlock", "weight"]);

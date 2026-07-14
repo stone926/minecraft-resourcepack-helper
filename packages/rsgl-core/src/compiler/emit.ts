@@ -1,6 +1,6 @@
 import { BinaryCopyRef, isExternalResourceUnit, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
 import { createJsonObject, setJsonObjectProperty } from "./jsonObjectProperties";
-import { isJsonObject as isObject } from "./jsonValues";
+import { isJsonObject } from "./jsonValues";
 import { getRsglResourceKindDescriptor } from "../resourceKinds";
 
 const objectFieldOrder: Record<string, string[]> = {
@@ -107,7 +107,7 @@ export function orderJsonValue(value: JsonValue, resourceKind: ResourceKind): Js
   ];
   const result = createJsonObject();
   for (const key of orderedKeys) {
-    const childKind = key === "model" && resourceKind === "item" && isObject(value[key]) ? "itemModel" : resourceKind;
+    const childKind = key === "model" && resourceKind === "item" && isJsonObject(value[key]) ? "itemModel" : resourceKind;
     setJsonObjectProperty(
       result,
       key,
@@ -137,11 +137,11 @@ function getFieldOrder(value: Record<string, unknown>, resourceKind: ResourceKin
 }
 
 function isTextContent(value: unknown): value is { kind: "text"; text: string } {
-  return isObject(value) && value.kind === "text" && typeof value.text === "string";
+  return isJsonObject(value) && value.kind === "text" && typeof value.text === "string";
 }
 
 function isBinaryCopyRef(value: unknown): value is BinaryCopyRef {
-  return isObject(value) && value.kind === "copy" && typeof value.sourcePath === "string";
+  return isJsonObject(value) && value.kind === "copy" && typeof value.sourcePath === "string";
 }
 
 function sourceMapStringify(sourceMap: RsglSourceMap, indent: number): string {

@@ -16,3 +16,5 @@ template slabBlockstate(id: ResourceId, double: ModelId, bottom = null, top = nu
     use slab(bottom: bottomModel, top: topModel, double: double)
   }
 }
+
+export { stairsBlockstate, slabBlockstate }

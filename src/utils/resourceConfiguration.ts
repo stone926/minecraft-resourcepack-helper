@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { ResourceConfiguration } from "../services/workspaceResourceCache";
+import type { ResourceConfiguration } from "../services/resourceCacheTypes";
 import { resourceConfigurationKeys } from "./resourceConfigurationKeys";
 
 export function getResourceConfiguration(): ResourceConfiguration {

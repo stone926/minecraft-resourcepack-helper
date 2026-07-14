@@ -97,14 +97,6 @@ function computeExportMaps(
   const result = new Map<string, Map<string, RsglTypeAliasSymbol>>();
   for (const module of modules) {
     const exported = new Map<string, RsglTypeAliasSymbol>();
-    if (module.exports.length === 0) {
-      for (const [name, alias] of module.scope.typeAliases) {
-        exported.set(name, alias);
-      }
-      result.set(module.fileName, exported);
-      continue;
-    }
-
     for (const declaration of module.exports) {
       if (!declaration.source) {
         for (const specifier of declaration.specifiers) {

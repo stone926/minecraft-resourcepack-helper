@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { validateResourceUnits } from "../../src/compiler";
+import { canonicalizeAndValidateResourceUnits } from "../../src/compiler";
 import { compileSource } from "./helpers/compile";
 import { minimalItemUnit } from "./helpers/fixtures";
 
@@ -152,7 +152,7 @@ describe("RSGL item definition validation", () => {
     const invalidCompositeChildDiagnostic = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidItemCompositeModel");
     assert.deepStrictEqual(invalidCompositeChildDiagnostic?.range, invalidCompositeChildRange);
 
-    const emptyCompositeDiagnostics = validateResourceUnits([minimalItemUnit({
+    const emptyCompositeDiagnostics = canonicalizeAndValidateResourceUnits([minimalItemUnit({
       model: { type: "minecraft:composite", models: [] }
     })]);
     assert.ok(emptyCompositeDiagnostics.some(diagnostic => diagnostic.code === "rsgl.emptyItemCompositeModels"));

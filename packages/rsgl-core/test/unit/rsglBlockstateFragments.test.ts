@@ -293,52 +293,8 @@ describe("RSGL blockstate bodies and fragments", () => {
       "}"
     ]);
 
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.blockstateModeConflict"));
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.templateOutputDialectMismatch"));
     assert.strictEqual(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.incompatibleBlockstateFragment"), false);
   });
 
-  it("reports removed randomVariants function calls", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "blockstate variants broken {",
-      "  {}: randomVariants({ bad: true })",
-      "}"
-    ]);
-    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-
-    assert.ok(codes.includes("rsgl.undefinedSymbol"));
-  });
-
-  it("reports undefined symbols for removed hardcoded blockstate fragments", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "blockstate variants broken {",
-      "  use horizontalFacing(model: minecraft:block/furnace, state: [north])",
-      "  use axisRotated(vertical: minecraft:block/oak_log, horizontal: minecraft:block/oak_log_horizontal)",
-      "}",
-    ]);
-    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-
-    assert.strictEqual(codes.filter(code => code === "rsgl.undefinedSymbol").length, 2);
-  });
-
-  it("retains isolated legacy blockstate syntax during the deprecation window", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "blockstate legacy_lamp {",
-      "  variants {",
-      "    [facing=north] -> @minecraft:block/lamp",
-      "  }",
-      "}"
-    ]);
-    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-
-    assert.ok(codes.includes("rsgl.blockstateModeRequired"));
-    assert.ok(codes.includes("rsgl.legacyBlockstateWrapper"));
-    assert.ok(codes.includes("rsgl.legacyStateKeySugar"));
-    assert.ok(codes.includes("rsgl.legacyBlockstateEntryArrow"));
-    assert.ok(codes.includes("rsgl.legacyModelApplySugar"));
-    assert.deepStrictEqual(result.units[0]?.content, {
-      variants: {
-        ["facing=north"]: { model: "minecraft:block/lamp" }
-      }
-    });
-  });
 });

@@ -15,7 +15,8 @@ import {
   rsglResourceIdConstructors,
   typeKindForResourceValueKind
 } from "../resourceIdSemantics";
-import { isJsonObject, normalizeJsonValue } from "./compilerHelpers";
+import { normalizeJsonValue } from "./compilerHelpers";
+import { isJsonObject } from "./jsonValues";
 import {
   contextualResourceKinds,
   contextualizeEvaluatedValue
@@ -40,7 +41,6 @@ import {
 } from "./evaluationItemBudget";
 import {
   createJsonObject,
-  jsonObjectEntries,
   jsonObjectKeys,
   setJsonObjectProperty
 } from "./jsonObjectProperties";
@@ -157,7 +157,6 @@ export interface EvaluationContext {
   valuePathOrigins?: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
   /** Runtime value-shape issues retained across lexical bindings. */
   valueIssues?: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
-  stateKeyAliases?: ReadonlySet<string>;
   sourceFile?: string;
   mappingReason?: RsglMapping["reason"];
   expansionStack?: ExpansionFrame[];
@@ -426,8 +425,8 @@ function buildEvaluationResult(
     );
   }
 
-  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
-    if (expression.kind === "ObjectExpr" && frame.collectionTrace) {
+  if (expression.kind === "ObjectExpr") {
+    if (frame.collectionTrace) {
       return tracedCollectionEvaluationResult(
         frame,
         value,
@@ -435,21 +434,18 @@ function buildEvaluationResult(
         frame.collectionTrace,
         tracedObjectKeyIssues(
           expression.properties.filter(isObjectPropertyNode),
-          false,
           frame
         )
       );
     }
-    const properties = expression.kind === "ObjectExpr"
-      ? expression.properties.filter(isObjectPropertyNode)
-      : expression.entries;
+    const properties = expression.properties.filter(isObjectPropertyNode);
     const children: EvaluationResult[] = [];
     for (const property of properties) {
       const valueChild = childForExpression(frame, property.value);
       if (!valueChild) {
         continue;
       }
-      const key = tracedPropertyKey(property, expression.kind === "StateKeySugar", frame);
+      const key = tracedPropertyKey(property, frame);
       if (key !== null) {
         children.push(rebaseEvaluationResult(valueChild.result, appendGeneratedPath("", key)));
       }
@@ -458,36 +454,7 @@ function buildEvaluationResult(
       value,
       expression.range,
       children,
-      tracedObjectKeyIssues(properties, expression.kind === "StateKeySugar", frame)
-    );
-  }
-
-  if (expression.kind === "ModelApplySugar") {
-    const children: EvaluationResult[] = [];
-    const model = childForExpression(frame, expression.model);
-    if (model) {
-      children.push(rebaseEvaluationResult(model.result, "/model"));
-    }
-    for (const property of expression.properties) {
-      const child = childForExpression(frame, property.value);
-      if (child) {
-        children.push(rebaseEvaluationResult(
-          child.result,
-          appendGeneratedPath("", property.name.text)
-        ));
-      }
-    }
-    return structuralEvaluationResult(value, expression.range, children);
-  }
-
-  if (expression.kind === "RandomApply") {
-    return structuralEvaluationResult(
-      value,
-      expression.range,
-      expression.entries.flatMap((entry, index) => {
-        const child = childForExpression(frame, entry);
-        return child ? [rebaseEvaluationResult(child.result, appendGeneratedPath("", String(index)))] : [];
-      })
+      tracedObjectKeyIssues(properties, frame)
     );
   }
 
@@ -806,13 +773,9 @@ function childForExpression(
 
 function tracedPropertyKey(
   property: ObjectPropertyNode,
-  stateKey: boolean,
   frame: EvaluationTraceFrame
 ): string | null {
   if (property.key.kind === "Identifier") {
-    if (stateKey && frame.context.stateKeyAliases?.has(property.key.text)) {
-      return scalarText(frame.context.variables.get(property.key.text)) ?? property.key.text;
-    }
     return property.key.text;
   }
   if (property.key.kind === "StringLiteral") {
@@ -828,13 +791,12 @@ function tracedPropertyKey(
 
 function tracedObjectKeyIssues(
   properties: readonly ObjectPropertyNode[],
-  stateKey: boolean,
   frame: EvaluationTraceFrame
 ): EvaluationValueIssue[] {
   const issues: EvaluationValueIssue[] = [];
   const seen = new Set<string>();
   for (const property of properties) {
-    const key = tracedPropertyKey(property, stateKey, frame);
+    const key = tracedPropertyKey(property, frame);
     if (key === null) {
       issues.push({
         generatedPath: "",
@@ -923,187 +885,6 @@ const horizontalYaw: Record<string, number> = {
 interface SeqGenerator {
   name: string;
   iterable: ExprNode;
-}
-
-export function expressionEvaluationOrigin(
-  expression: ExprNode,
-  context: EvaluationContext
-): EvaluationOrigin | undefined {
-  if (expression.kind === "IdentifierExpr") {
-    return context.valueOrigins?.get(expression.name.text);
-  }
-  if (expression.kind === "TemplateStringExpr") {
-    return mergeEvaluationOrigins(expression.parts.flatMap(part =>
-      part.kind === "expression" ? [expressionEvaluationOrigin(part.expression, context)] : []
-    ));
-  }
-  if (expression.kind === "ListExpr") {
-    return mergeEvaluationOrigins(expression.elements.map(element =>
-      expressionEvaluationOrigin(
-        element.kind === "ListSpread" ? element.expression : element,
-        context
-      )
-    ));
-  }
-  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
-    const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
-    return mergeEvaluationOrigins(properties.flatMap(property => {
-      if (property.kind === "ObjectSpread") {
-        return [expressionEvaluationOrigin(property.expression, context)];
-      }
-      return [
-        property.key.kind === "DynamicKey" ? expressionEvaluationOrigin(property.key.expression, context) : undefined,
-        expressionEvaluationOrigin(property.value, context)
-      ];
-    }));
-  }
-  if (expression.kind === "ModelApplySugar") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.model, context),
-      ...expression.properties.map(property => expressionEvaluationOrigin(property.value, context))
-    ]);
-  }
-  if (expression.kind === "RandomApply") {
-    return mergeEvaluationOrigins(expression.entries.map(entry => expressionEvaluationOrigin(entry, context)));
-  }
-  if (expression.kind === "RangeExpr") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.startExpr, context),
-      expressionEvaluationOrigin(expression.endExpr, context)
-    ]);
-  }
-  if (expression.kind === "MemberExpr") {
-    if (expression.object.kind === "IdentifierExpr") {
-      const namespaceValue = context.variables.get(expression.object.name.text);
-      if (isModuleNamespaceValue(namespaceValue)) {
-        const member = namespaceValue.resolveValue(expression.property.text);
-        return member?.origin
-          ?? originForEvaluationPath(member?.pathOrigins ?? [], "");
-      }
-    }
-    return expressionEvaluationOrigin(expression.object, context);
-  }
-  if (expression.kind === "IndexExpr") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.object, context),
-      expressionEvaluationOrigin(expression.index, context)
-    ]);
-  }
-  if (expression.kind === "UnaryExpr") {
-    return expressionEvaluationOrigin(expression.operand, context);
-  }
-  if (expression.kind === "BinaryExpr") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.left, context),
-      expressionEvaluationOrigin(expression.right, context)
-    ]);
-  }
-  if (expression.kind === "ConditionalExpr") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.condition, context),
-      expressionEvaluationOrigin(expression.whenTrue, context),
-      expressionEvaluationOrigin(expression.whenFalse, context)
-    ]);
-  }
-  if (expression.kind === "CallExpr") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.callee, context),
-      ...expression.args.map(arg => expressionEvaluationOrigin(arg.value, context))
-    ]);
-  }
-  if (expression.kind === "MatchExpr") {
-    return mergeEvaluationOrigins([
-      expressionEvaluationOrigin(expression.expression, context),
-      ...expression.arms.flatMap(arm => [
-        ...arm.patterns.map(pattern => expressionEvaluationOrigin(pattern, context)),
-        expressionEvaluationOrigin(arm.value, context)
-      ])
-    ]);
-  }
-  return undefined;
-}
-
-/**
- * Tracks template-argument origins at the JSON paths produced by an expression.
- * Literal siblings deliberately receive no origin so they retain definition-file
- * extern scope even when another field is supplied by the caller.
- */
-export function expressionEvaluationPathOrigins(
-  expression: ExprNode,
-  context: EvaluationContext,
-  generatedPath: string
-): EvaluationPathOrigin[] {
-  if (expression.kind === "ListExpr") {
-    // The legacy AST walker cannot know spread offsets without evaluating the
-    // operand. Keep its conservative origin behavior; evaluateExpressionResult
-    // owns exact same-evaluation spread and collection-builtin provenance.
-    return expression.elements.flatMap((element, index) => {
-      const value = element.kind === "ListSpread" ? element.expression : element;
-      return expressionEvaluationPathOrigins(
-        value,
-        context,
-        appendGeneratedPath(generatedPath, String(index))
-      );
-    });
-  }
-  if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
-    const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
-    return properties.flatMap(property => {
-      if (property.kind === "ObjectSpread") {
-        const origin = expressionEvaluationOrigin(property.expression, context);
-        return origin ? [{ generatedPath, ...origin }] : [];
-      }
-      const key = expression.kind === "ObjectExpr"
-        ? propertyKeyToString(property, context)
-        : stateKeyToString(property, context);
-      return key === null
-        ? []
-        : expressionEvaluationPathOrigins(
-          property.value,
-          context,
-          appendGeneratedPath(generatedPath, key)
-        );
-    });
-  }
-  if (expression.kind === "ModelApplySugar") {
-    return [
-      ...expressionEvaluationPathOrigins(
-        expression.model,
-        context,
-        appendGeneratedPath(generatedPath, "model")
-      ),
-      ...expression.properties.flatMap(property =>
-        expressionEvaluationPathOrigins(
-          property.value,
-          context,
-          appendGeneratedPath(generatedPath, property.name.text)
-        )
-      )
-    ];
-  }
-  if (expression.kind === "RandomApply") {
-    return expression.entries.flatMap((entry, index) =>
-      expressionEvaluationPathOrigins(entry, context, appendGeneratedPath(generatedPath, String(index)))
-    );
-  }
-  if (expression.kind === "ConditionalExpr") {
-    const selected = truthy(evaluateExpression(expression.condition, context))
-      ? expression.whenTrue
-      : expression.whenFalse;
-    return expressionEvaluationPathOrigins(selected, context, generatedPath);
-  }
-  if (expression.kind === "MatchExpr") {
-    const matchedValue = normalizeJsonValue(evaluateExpression(expression.expression, context));
-    const selected = expression.arms.find(arm =>
-      arm.patterns.some(pattern => matchesPattern(pattern, matchedValue, context))
-    );
-    return selected
-      ? expressionEvaluationPathOrigins(selected.value, context, generatedPath)
-      : [];
-  }
-
-  const origin = expressionEvaluationOrigin(expression, context);
-  return origin ? [{ generatedPath, ...origin }] : [];
 }
 
 function mergeEvaluationOrigins(
@@ -1200,25 +981,6 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
   }
   if (expression.kind === "ObjectExpr") {
     return evaluateObjectEntries(expression.properties, context);
-  }
-  if (expression.kind === "StateKeySugar") {
-    return evaluateStateKeyProperties(expression.entries, context);
-  }
-  if (expression.kind === "ModelApplySugar") {
-    const model = normalizeModelApplyValue(evaluateExpression(expression.model, context), context.namespace);
-    const result = createJsonObject();
-    setJsonObjectProperty(result, "model", model);
-    for (const property of expression.properties) {
-      setJsonObjectProperty(
-        result,
-        property.name.text,
-        normalizeJsonValue(evaluateExpression(property.value, context))
-      );
-    }
-    return omitBlockstateModelDefaults(result);
-  }
-  if (expression.kind === "RandomApply") {
-    return expression.entries.map(entry => normalizeJsonValue(evaluateExpression(entry, context)));
   }
   if (expression.kind === "RangeExpr") {
     const start = Number(evaluateExpression(expression.startExpr, context));
@@ -1362,10 +1124,8 @@ function evaluateResourceLocationExpression(
   const expectedType = context.resolvedExpectedTypes?.get(expression);
   const contextualKinds = expectedType ? contextualResourceKinds(expectedType) : [];
   if (contextualKinds.length === 0) {
-    // Compatibility boundary: legacy resource-reference consumers still own
-    // contextual canonicalization when semantic analysis did not publish an
-    // explicit typed fact. Do not turn those values into generic brands that
-    // a concrete model/texture sink must correctly reject.
+    // Untyped resource locations remain canonical strings until a concrete JSON
+    // sink applies its own resource-reference semantics.
     return expression.value.includes(":")
       ? expression.value
       : `${context.namespace}:${expression.value}`;
@@ -1740,21 +1500,6 @@ function isObjectPropertyNode(entry: ObjectEntryNode): entry is ObjectPropertyNo
   return entry.kind === "ObjectProperty";
 }
 
-function evaluateStateKeyProperties(properties: ObjectPropertyNode[], context: EvaluationContext): Record<string, JsonValue> {
-  const result = createJsonObject();
-  for (const property of properties) {
-    const key = stateKeyToString(property, context);
-    if (key !== null) {
-      setJsonObjectProperty(
-        result,
-        key,
-        normalizeJsonValue(evaluateExpression(property.value, context))
-      );
-    }
-  }
-  return result;
-}
-
 function propertyKeyToString(property: ObjectPropertyNode, context: EvaluationContext): string | null {
   if (property.key.kind === "Identifier") {
     return property.key.text;
@@ -1767,32 +1512,6 @@ function propertyKeyToString(property: ObjectPropertyNode, context: EvaluationCo
   }
   const value = evaluateExpression(property.key.expression, context);
   return scalarText(value);
-}
-
-function stateKeyToString(property: ObjectPropertyNode, context: EvaluationContext): string | null {
-  if (property.key.kind === "Identifier") {
-    if (context.stateKeyAliases?.has(property.key.text)) {
-      const value = context.variables.get(property.key.text);
-      return scalarText(value) ?? property.key.text;
-    }
-    return property.key.text;
-  }
-  if (property.key.kind === "StringLiteral") {
-    return property.key.value;
-  }
-  if (property.key.kind === "NumberLiteral") {
-    return property.key.raw;
-  }
-  const value = evaluateExpression(property.key.expression, context);
-  return scalarText(value);
-}
-
-function normalizeModelApplyValue(value: EvaluationValue, namespace: string): JsonValue {
-  const text = scalarText(value);
-  if (text === null) {
-    return normalizeJsonValue(value);
-  }
-  return text.includes(":") ? text : `${namespace}:${text}`;
 }
 
 function scalarText(value: EvaluationValue): string | null {
@@ -2196,7 +1915,6 @@ function captureEvaluationContext(context: EvaluationContext): EvaluationContext
   return {
     ...captured,
     variables: new Map(context.variables),
-    stateKeyAliases: context.stateKeyAliases ? new Set(context.stateKeyAliases) : undefined,
     valueOrigins: context.valueOrigins ? new Map(context.valueOrigins) : undefined,
     valuePathOrigins: context.valuePathOrigins ? new Map(context.valuePathOrigins) : undefined,
     valueIssues: context.valueIssues ? new Map(context.valueIssues) : undefined
@@ -2295,23 +2013,6 @@ function jsonEquals(left: JsonValue, right: JsonValue): boolean {
 
 function truthy(value: EvaluationValue): boolean {
   return Boolean(value);
-}
-
-function omitBlockstateModelDefaults(model: Record<string, JsonValue>): Record<string, JsonValue> {
-  const result = createJsonObject();
-  for (const [key, value] of jsonObjectEntries(model)) {
-    if ((key === "x" || key === "y" || key === "z") && value === 0) {
-      continue;
-    }
-    if (key === "uvlock" && value === false) {
-      continue;
-    }
-    if (key === "weight" && value === 1) {
-      continue;
-    }
-    setJsonObjectProperty(result, key, value);
-  }
-  return result;
 }
 
 function hasOwnEvaluationProperty(value: EvaluationValue, key: string): boolean {

@@ -10,7 +10,7 @@ import {
   affectsResourceResolutionConfiguration,
   resourceConfigurationKeys
 } from "../utils/resourceConfigurationKeys";
-import { isResourceGraphDocumentPath } from "../utils/resourceGraph";
+import { isResourceGraphDocumentPath } from "../utils/resourceGraphSearch";
 import { getResourceWatcherPatterns } from "../resources/resourceSurfaceRegistry";
 import type { ResourceDiagnosticsController } from "./registerResourceDiagnostics";
 import type { ResourceGraphController } from "./registerResourceGraph";

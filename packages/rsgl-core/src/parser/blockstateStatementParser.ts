@@ -1,10 +1,9 @@
-import { parseBlockstateApplyValue, parseLegacyBlockstateApplyValue } from "./blockstateApplyParser";
+import { parseBlockstateApplyValue } from "./blockstateApplyParser";
 import { parseBlockstateVariantEntry } from "./blockstateSelectorParser";
 import {
   multipartBodyParseContext,
   variantsBodyParseContext,
-  type BlockstateRootParseContext,
-  type LegacyBlockstateRootParseContext
+  type BlockstateRootParseContext
 } from "./bodyParseContext";
 import type { ResourceStatementParserHost } from "./statementParserHost";
 import type {
@@ -13,14 +12,10 @@ import type {
   BlockstateMultipartRootStatementNode,
   BlockstateVariantsRootBodyNode,
   BlockstateVariantsRootStatementNode,
-  LegacyBlockstateRootBodyNode,
-  LegacyBlockstateRootStatementNode,
   MultipartBodyNode,
-  MultipartEntryNode,
-  MultipartSectionNode,
   MultipartSectionStatementNode,
+  UnknownStmtNode,
   VariantBodyNode,
-  VariantsSectionNode,
   VariantSectionStatementNode
 } from "./types";
 
@@ -50,7 +45,7 @@ export function parseMultipartBody(host: ResourceStatementParserHost): Multipart
   const statements: MultipartSectionStatementNode[] = [];
   while (!host.isAtEnd() && host.current().text !== "}") {
     const mark = host.mark();
-    statements.push(parseMultipartEntryStatement(host, false));
+    statements.push(parseMultipartEntryStatement(host));
     host.consumeOptionalSeparator();
     host.ensureProgress(mark, "Unable to parse multipart statement; skipping token.");
   }
@@ -112,87 +107,10 @@ export function parseBlockstateMultipartRootBody(
   };
 }
 
-export function parseLegacyBlockstateRootBody(
-  host: ResourceStatementParserHost,
-  context: LegacyBlockstateRootParseContext
-): LegacyBlockstateRootBodyNode {
-  const start = host.current();
-  if (!host.matchText("{")) {
-    host.addDiagnosticAtCurrent("rsgl.expectedBlockstateRootBody", "Expected blockstate body.");
-    return { kind: "LegacyBlockstateRootBody", statements: [], ...host.nodeRanges(start, start) };
-  }
-  const statements: LegacyBlockstateRootStatementNode[] = [];
-  let seenBase = false;
-  while (!host.isAtEnd() && host.current().text !== "}") {
-    const mark = host.mark();
-    const statement = parseLegacyRootStatement(host, context);
-    seenBase = validateRootBase(host, statement, statements.length, seenBase, context.allowBase);
-    statements.push(statement);
-    host.consumeOptionalSeparator();
-    host.ensureProgress(mark, "Unable to parse legacy blockstate root statement; skipping token.");
-  }
-  host.expectText("}", "Expected '}' after blockstate body.");
-  return {
-    kind: "LegacyBlockstateRootBody",
-    statements,
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
-/** Legacy nested variants wrapper retained as an ordered root operation. */
-export function parseVariantsSection(host: ResourceStatementParserHost): VariantsSectionNode {
-  const start = host.advance();
-  addLegacyWrapperDiagnostic(host, start, "variants");
-  const entries: VariantSectionStatementNode[] = [];
-  host.expectText("{", "Expected variants body.");
-  while (!host.isAtEnd() && host.current().text !== "}") {
-    const mark = host.mark();
-    entries.push(parseVariantEntryStatement(host));
-    host.consumeOptionalSeparator();
-    host.ensureProgress(mark, "Unable to parse variant entry; skipping token.");
-  }
-  host.expectText("}", "Expected '}' after variants.");
-  return {
-    kind: "VariantsSection",
-    keyword: start.text,
-    syntax: "legacyWrapper",
-    entries,
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
-/** Legacy nested multipart wrapper retained as an ordered root operation. */
-export function parseMultipartSection(host: ResourceStatementParserHost): MultipartSectionNode {
-  const start = host.advance();
-  addLegacyWrapperDiagnostic(host, start, "multipart");
-  const entries: MultipartSectionStatementNode[] = [];
-  host.expectText("{", "Expected multipart body.");
-  while (!host.isAtEnd() && host.current().text !== "}") {
-    const mark = host.mark();
-    entries.push(parseMultipartEntryStatement(host, true));
-    host.consumeOptionalSeparator();
-    host.ensureProgress(mark, "Unable to parse multipart entry; skipping token.");
-  }
-  host.expectText("}", "Expected '}' after multipart.");
-  return {
-    kind: "MultipartSection",
-    keyword: start.text,
-    syntax: "legacyWrapper",
-    entries,
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
 function parseVariantsRootStatement(
   host: ResourceStatementParserHost,
   context: BlockstateRootParseContext
 ): BlockstateVariantsRootStatementNode {
-  if (isLegacyWrapperStart(host, "variants")) {
-    return parseVariantsSection(host);
-  }
-  if (isLegacyWrapperStart(host, "multipart")) {
-    return parseMultipartSection(host);
-  }
   return isRootCommonStatementStart(host)
     ? host.parseBlockstateRootCommonStatement(context)
     : parseBlockstateVariantEntry(host);
@@ -202,34 +120,9 @@ function parseMultipartRootStatement(
   host: ResourceStatementParserHost,
   context: BlockstateRootParseContext
 ): BlockstateMultipartRootStatementNode {
-  if (isLegacyWrapperStart(host, "multipart")) {
-    return parseMultipartSection(host);
-  }
-  if (isLegacyWrapperStart(host, "variants")) {
-    return parseVariantsSection(host);
-  }
   return isRootCommonStatementStart(host)
     ? host.parseBlockstateRootCommonStatement(context)
-    : parseMultipartEntryStatement(host, false);
-}
-
-function parseLegacyRootStatement(
-  host: ResourceStatementParserHost,
-  context: LegacyBlockstateRootParseContext
-): LegacyBlockstateRootStatementNode {
-  if (isLegacyWrapperStart(host, "variants")) {
-    return parseVariantsSection(host);
-  }
-  if (isLegacyWrapperStart(host, "multipart")) {
-    return parseMultipartSection(host);
-  }
-  if (host.current().text === "{" || host.current().text === "(" || host.current().text === "[") {
-    return parseBlockstateVariantEntry(host);
-  }
-  if (host.current().text === "apply" || host.current().text === "when") {
-    return parseMultipartEntryStatement(host, false);
-  }
-  return host.parseBlockstateRootCommonStatement(context);
+    : parseMultipartEntryStatement(host);
 }
 
 function parseVariantEntryStatement(host: ResourceStatementParserHost): VariantSectionStatementNode {
@@ -247,10 +140,7 @@ function parseVariantEntryStatement(host: ResourceStatementParserHost): VariantS
   }
 }
 
-function parseMultipartEntryStatement(
-  host: ResourceStatementParserHost,
-  legacyContainer: boolean
-): MultipartSectionStatementNode {
+function parseMultipartEntryStatement(host: ResourceStatementParserHost): MultipartSectionStatementNode {
   switch (host.current().text) {
     case "let":
       return host.parseLetDecl();
@@ -261,13 +151,13 @@ function parseMultipartEntryStatement(
     case "if":
       return host.parseIfStmt(multipartBodyParseContext);
     default:
-      return legacyContainer ? parseLegacyMultipartEntry(host) : parseCanonicalMultipartEntry(host);
+      return parseCanonicalMultipartEntry(host);
   }
 }
 
 function parseCanonicalMultipartEntry(
   host: ResourceStatementParserHost
-): BlockstateMultipartEntryNode | MultipartEntryNode {
+): BlockstateMultipartEntryNode | UnknownStmtNode {
   const start = host.current();
   let when;
   if (host.matchText("when")) {
@@ -275,29 +165,14 @@ function parseCanonicalMultipartEntry(
   }
   const hasApply = host.expectText("apply", "Expected 'apply' in multipart entry.");
   if (!hasApply) {
-    const missing = host.missingExprAt(host.current());
+    if (host.current().text === "{") {
+      host.consumeBalancedBlock("Expected '}' after malformed multipart entry.");
+    } else {
+      host.recoverToLineEnd();
+    }
     return {
-      kind: "BlockstateMultipartEntry",
-      keyword: "multipartEntry",
-      when,
-      apply: {
-        kind: "BlockstateApplyExpr",
-        head: missing,
-        properties: [],
-        range: missing.range,
-        fullRange: missing.fullRange
-      },
-      ...host.nodeRanges(start, host.previousOr(start))
-    };
-  }
-  const parsed = parseBlockstateApplyValue(host);
-  if (parsed.syntax === "legacy") {
-    return {
-      kind: "MultipartEntry",
-      keyword: "multipartEntry",
-      syntax: "legacy",
-      when,
-      apply: parsed.value,
+      kind: "UnknownStmt",
+      keyword: start.text,
       ...host.nodeRanges(start, host.previousOr(start))
     };
   }
@@ -305,27 +180,7 @@ function parseCanonicalMultipartEntry(
     kind: "BlockstateMultipartEntry",
     keyword: "multipartEntry",
     when,
-    apply: parsed.value,
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
-function parseLegacyMultipartEntry(host: ResourceStatementParserHost): MultipartEntryNode {
-  const start = host.current();
-  let when;
-  if (host.matchText("when")) {
-    when = host.parseExpression({ stopTexts: ["apply"] });
-  }
-  const hasApply = host.expectText("apply", "Expected 'apply' in multipart entry.");
-  const apply = hasApply
-    ? parseLegacyBlockstateApplyValue(host)
-    : host.missingExprAt(host.current());
-  return {
-    kind: "MultipartEntry",
-    keyword: "multipartEntry",
-    syntax: "legacy",
-    when,
-    apply,
+    apply: parseBlockstateApplyValue(host),
     ...host.nodeRanges(start, host.previousOr(start))
   };
 }
@@ -340,33 +195,13 @@ function isRootCommonStatementStart(host: ResourceStatementParserHost): boolean 
     || text === "merge"
     || host.peekText(1) === ":"
     || host.peekText(1) === "="
-    || (text !== "{" && text !== "(" && text !== "[" && text !== "apply" && text !== "when");
-}
-
-function isLegacyWrapperStart(
-  host: ResourceStatementParserHost,
-  mode: "variants" | "multipart"
-): boolean {
-  return host.current().text === mode
-    && host.peekText(1) === "{";
-}
-
-function addLegacyWrapperDiagnostic(
-  host: ResourceStatementParserHost,
-  token: ReturnType<ResourceStatementParserHost["current"]>,
-  mode: "variants" | "multipart"
-): void {
-  host.addDiagnostic(
-    "rsgl.legacyBlockstateWrapper",
-    `The nested '${mode}' blockstate wrapper is deprecated. Move '${mode}' to the blockstate declaration header.`,
-    { start: token.offset, end: token.offset + token.length },
-    "warning"
-  );
+    || (text !== "{" && text !== "(" && text !== "[" && text !== "apply" && text !== "when"
+      && text !== "variants" && text !== "multipart");
 }
 
 function validateRootBase(
   host: ResourceStatementParserHost,
-  statement: LegacyBlockstateRootStatementNode,
+  statement: BlockstateVariantsRootStatementNode | BlockstateMultipartRootStatementNode,
   statementCount: number,
   seenBase: boolean,
   allowBase: boolean

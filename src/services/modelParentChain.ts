@@ -4,7 +4,8 @@ import {
   objectMembers,
   stringValue
 } from "../utils/jsonAst";
-import type { ResourceConfiguration, ResourceResolveRequest } from "./resourceCacheTypes";
+import type { ResourceFileRequest } from "../../packages/mc-assets/src";
+import type { ResourceConfiguration } from "./resourceCacheTypes";
 import { ModelParentTraversal } from "./modelParentTraversal";
 
 export interface CachedModelDocument {
@@ -20,7 +21,7 @@ export interface CachedTextureVariableDefinition {
 }
 
 export interface ModelParentChainHost {
-  resolveResourcePath(request: ResourceResolveRequest): string | null;
+  resolveResourcePath(request: ResourceFileRequest): string | null;
   getJsonFileAst(fileName: string): JsonDocumentNode | null;
 }
 
@@ -98,7 +99,7 @@ export function collectModelTextureVariableDefinitions(chain: CachedModelDocumen
   return definitions;
 }
 
-export function findParentModel(ast: JsonDocumentNode): string | null {
+function findParentModel(ast: JsonDocumentNode): string | null {
   const parent = objectMembers(ast.body).find(member => memberName(member) === "parent");
   return stringValue(parent?.value) ?? null;
 }

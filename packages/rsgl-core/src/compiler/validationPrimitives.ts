@@ -196,8 +196,6 @@ export function isNonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 0;
 }
 
-export { isJsonObject as isObject } from "./jsonValues";
-
 function reportIssue(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[],

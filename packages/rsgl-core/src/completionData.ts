@@ -106,13 +106,13 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
   },
   {
     label: "model block impl",
-    insertText: "model block ${1:stone} impl cube_all(all: minecraft:block/${1:stone}) {\n  ${2}\n}",
+    insertText: "model block ${1:stone} impl minecraft:block/cube_all(all: minecraft:block/${1:stone}) {\n  ${2}\n}",
     detail: "Declare a block model using a vanilla parent",
     kind: "snippet"
   },
   {
     label: "model item impl",
-    insertText: "model item ${1:diamond} impl generated(layer0: minecraft:item/${1:diamond}) {\n  ${2}\n}",
+    insertText: "model item ${1:diamond} impl minecraft:item/generated(layer0: minecraft:item/${1:diamond}) {\n  ${2}\n}",
     detail: "Declare an item model using a vanilla parent",
     kind: "snippet"
   },

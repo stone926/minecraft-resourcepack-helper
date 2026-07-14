@@ -8,11 +8,9 @@ import { bindRsglModule } from "./binder";
 import { fileDiagnostic, toDiagnostic, withFileName } from "./diagnostics";
 import { createRsglExportMaps } from "./exportResolution";
 import { validateResolvedImportCalls } from "./importValidation";
-import { resolveProgramTemplateOutputMetadata } from "./templateOutputResolution";
 import { validateResolvedProgramTemplateUses } from "./templateUseValidation";
 import { validateTemplateRecursion } from "./templateRecursion";
 import { validateResolvedProgramBlockstateSemantics } from "./blockstateSemanticValidation";
-import { resolveLinkedLegacyBlockstateCallerContexts } from "./blockstateCallerContextResolution";
 import { exportedLambdaReexportAnnotationDiagnostics } from "./lambdaAnalysis";
 import { createRsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 import { createModuleNamespaceType } from "./moduleNamespace";
@@ -73,7 +71,6 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
     // Seed from a complete named/bare-import link so re-exported templates are
     // categorized by final metadata rather than provisional Any.
     linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
-    resolveProgramTemplateOutputMetadata(models);
     let namespaces = moduleNamespaceTypesByFile(models, importGraph);
     const namespaceCycleStabilizer = new RsglModuleNamespaceCycleStabilizer(models, importGraph);
     const maximumPasses = Math.max(4, sourceFiles.length * 4 + importGraph.edges.length * 2);
@@ -88,7 +85,6 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
       }));
       importGraph = buildImportGraph(sourceFiles, models, resolver);
       linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
-      resolveProgramTemplateOutputMetadata(models);
       const next = namespaceCycleStabilizer.stabilize(
         pass + 1,
         namespaces,
@@ -102,11 +98,9 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
     namespaceInferenceDiagnostics = namespaceCycleStabilizer.diagnostics();
   }
   const linkedSymbols = linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
-  resolveProgramTemplateOutputMetadata(models);
   for (const model of models) {
     model.diagnostics = model.diagnostics.filter(diagnostic => !templateOutputDiagnosticCodes.has(diagnostic.code));
   }
-  const blockstateCallerDiagnostics = resolveLinkedLegacyBlockstateCallerContexts(models);
   const templateUseDiagnostics = validateResolvedProgramTemplateUses(models);
   const templateRecursionDiagnostics = validateTemplateRecursion(models);
   const blockstateDiagnostics = validateResolvedProgramBlockstateSemantics(models);
@@ -121,7 +115,6 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
     ...linkedSymbols.importDiagnostics,
     ...namespaceInferenceDiagnostics,
     ...exportedLambdaReexportAnnotationDiagnostics(models, linkedSymbols.exportMaps),
-    ...blockstateCallerDiagnostics,
     ...templateUseDiagnostics,
     ...templateRecursionDiagnostics,
     ...blockstateDiagnostics,
@@ -148,11 +141,8 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
 }
 
 const templateOutputDiagnosticCodes = new Set([
-  "rsgl.conflictingResolvedTemplateOutputDialects",
-  "rsgl.implicitTemplateOutputDialect",
   "rsgl.templateRecursion",
-  "rsgl.templateOutputDialectMismatch",
-  "rsgl.templateOutputDialectRequired"
+  "rsgl.templateOutputDialectMismatch"
 ]);
 
 interface LinkedProgramSymbols {
@@ -419,8 +409,7 @@ function moduleNamespaceTypeFingerprint(type: RsglType): string {
             signature.valueFunction ? "valueFunction" : "callable",
             signature.templateOutput
               ? templateOutputMetadataFingerprint(signature.templateOutput)
-              : "value",
-            signature.templateOutputConflict?.evidence.join(",") ?? ""
+              : "value"
           ].join("->")
         : "";
       return [

@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
+import { modelSourceForFile } from "../services/modelParentChain";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from "../utils/jsonAst";
-import { createTextureVariableDefinitionResolver, modelSourceForFile } from "../utils/modelTexture";
+import { createTextureVariableDefinitionResolver } from "../utils/modelTexture";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 
 let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");

@@ -105,7 +105,7 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 
 ## RSGL
 
-RSGL 支持已经拆分到独立 VS Code 扩展：`stone926.rsgl`。Minecraft 资源包助手依赖该扩展，用户安装主扩展时会自动获得 RSGL 能力，不再通过旧的 `McResHelper` 命令桥接。
+RSGL 支持已经拆分到独立 VS Code 扩展：`stone926.rsgl`。Minecraft 资源包助手依赖该扩展，用户安装主扩展时会自动获得 RSGL 能力。
 
 RSGL 扩展负责：
 
@@ -114,7 +114,7 @@ RSGL 扩展负责：
 - `rsgl.*` 命名空间下的设置，包括输出目录、Minecraft 目标版本、原版资源回退、低优先级资源包、source map 和生成 JSON 校验。
 - 内置 RSGL 语言服务器以及共享 compiler/core 包。
 
-当前语言能力包括显式 `model` / `variants` / `multipart` 模板方言、带迁移工具的 canonical blockstate、结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。可编译示例、项目配置和 CLI 用法见 [RSGL 配套扩展指南](extensions/vscode-rsgl/README.md)。
+当前语言仅接受 canonical 语法，包括显式 `model` / `variants` / `multipart` 模板方言和 canonical blockstate；同时支持结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。可编译示例、项目配置和 CLI 用法见 [RSGL 配套扩展指南](extensions/vscode-rsgl/README.md)。
 
 ## 配置项
 

@@ -18,7 +18,7 @@ import { ModelPreviewService } from "../modelPreview/service/ModelPreviewService
 import { triggerResourceCompletionCommand } from "../providers/resourceCompletionProvider";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
-import { getResourceGraphNodeUri } from "../views/resourceGraphTree";
+import { getResourceGraphNodeUri } from "../views/resourceGraphTreeItem";
 
 export function registerCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(

@@ -4,8 +4,6 @@ import { TextDecoder } from "node:util";
 import { lm, type LocalizedMessage } from "../i18n/messages";
 import type { PngMetadata } from "../../packages/mc-assets/src";
 
-export { readPngMetadata, type PngMetadata } from "../../packages/mc-assets/src";
-
 export type NonJsonIssueSeverity = "warning" | "information";
 
 export interface FileResourceIssue {

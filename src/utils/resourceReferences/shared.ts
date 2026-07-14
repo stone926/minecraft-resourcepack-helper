@@ -1,7 +1,5 @@
-import { getObjectMemberValue, getObjectString, JsonAstNode, stringValue } from "../jsonAst";
+import { getObjectString, JsonAstNode, stringValue } from "../jsonAst";
 import { ResourceReference, ResourceReferenceKind, ResourceReferenceRelationship } from "./types";
-
-export { getObjectMemberValue, getObjectString };
 
 export function pushReference(
   references: ResourceReference[],

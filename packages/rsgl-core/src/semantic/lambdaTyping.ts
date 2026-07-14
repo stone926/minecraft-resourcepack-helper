@@ -13,7 +13,7 @@ import {
   type RsglSignature,
   type RsglType
 } from "./types";
-import type { RsglExpressionCheckContext } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 
 export type LambdaBodyChecker = (
   expression: ExprNode,

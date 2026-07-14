@@ -8,27 +8,6 @@ import { expectNoDiagnostics, withUncheckedExterns } from "./helpers/compile";
 import { createTempDir, withTempDir } from "./helpers/fs";
 
 describe("RSGL stdlib discovery", () => {
-  it("does not bundle vanilla blockstate templates in the RSGL stdlib", () => {
-    const mainFile = path.resolve("pack", "main.rsgl");
-    const result = compileRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import { slab as bundledSlab } from \"rsgl:blockstates/slab.rsgl\"",
-          "blockstate acacia_slab {",
-          "  use bundledSlab(",
-          "    bottom: minecraft:block/acacia_slab,",
-          "    top: minecraft:block/acacia_slab_top,",
-          "    double: minecraft:block/acacia_planks",
-          "  )",
-          "}"
-        ].join("\n"))
-      }
-    ], { entryFileName: mainFile });
-
-    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.missingImport"));
-  });
-
   it("discovers bundled stdlib files from disk without a TypeScript list", () => {
     withTempDir(stdlibRoot => {
       fs.writeFileSync(path.join(stdlibRoot, "__dynamic_test.rsgl"), [
@@ -82,21 +61,19 @@ describe("RSGL stdlib discovery", () => {
   it("does not load project rsgl-std modules for rsgl imports", () => {
     const root = createTempDir();
     const mainFile = path.join(root, "main.rsgl");
-    const projectStdlibFile = path.join(root, "rsgl-std", "blockstates", "slab.rsgl");
+    const projectStdlibFile = path.join(root, "rsgl-std", "project-only", "template.rsgl");
     fs.mkdirSync(path.dirname(projectStdlibFile), { recursive: true });
     fs.writeFileSync(mainFile, [
-      "import { slab as projectSlab } from \"rsgl:blockstates/slab.rsgl\"",
-      "blockstate custom_slab {",
-      "  use projectSlab(bottom: minecraft:block/custom_bottom, top: minecraft:block/custom_top, double: minecraft:block/custom_double)",
+      "import { projectOnly } from \"rsgl:project-only/template.rsgl\"",
+      "blockstate variants custom_state {",
+      "  use projectOnly(model: minecraft:block/custom)",
       "}"
     ].join("\n"));
     fs.writeFileSync(projectStdlibFile, [
-      "template slab(bottom: ModelId, top: ModelId, double: ModelId) {",
-      "  variants {",
-      "    [custom=\"override\"] -> @double",
-      "  }",
+      "template projectOnly(model: ModelId) -> variants {",
+      "  { custom: \"project\" }: model",
       "}",
-      "export { slab }"
+      "export { projectOnly }"
     ].join("\n"));
 
     const loadedFiles = loadRsglSourceFilesFromFile(mainFile);

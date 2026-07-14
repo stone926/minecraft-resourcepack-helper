@@ -26,3 +26,6 @@ template generatedItem(id: ResourceId, layer0: TextureId) {
     model `${resource_namespace(id)}:item/${resource_path(id)}`
   }
 }
+
+
+export { generatedItemModel, cubeAllModel, simpleItem, itemModelDefinition, generatedItem }

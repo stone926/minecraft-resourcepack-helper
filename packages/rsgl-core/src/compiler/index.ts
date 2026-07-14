@@ -32,9 +32,9 @@ export type {
   RsglTargetPackFormat
 } from "./targetConfig";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
-export { canonicalizeAndValidateResourceUnits, validateResourceUnits } from "./validation";
+export { canonicalizeAndValidateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";
-export type { RsglBlockstateSchema } from "./blockstateStateValidation";
+export type { RsglBlockstateSchema } from "./validationTypes";
 export {
   createCachedBaseDocumentLoader,
   createFileBaseDocumentLoader,
@@ -60,7 +60,6 @@ export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOpt
 export type {
   ExpansionFrame,
   BinaryCopyRef,
-  ExternalResourceKind,
   ExternalResourceRef,
   JsonValue,
   MergePolicy,

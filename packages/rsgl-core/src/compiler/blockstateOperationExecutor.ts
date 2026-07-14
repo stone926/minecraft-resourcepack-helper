@@ -3,10 +3,8 @@ import type {
   BlockstateMultipartEntryNode,
   BlockstateVariantEntryNode,
   MergeMode,
-  MultipartEntryNode,
   PropertyStmtNode,
-  TextRange,
-  VariantEntryNode
+  TextRange
 } from "../parser";
 import type {
   RsglTemplateCallerContext,
@@ -17,8 +15,7 @@ import {
   type BlockstateApplyLoweringHost,
   type BlockstateLoweredMapping,
   type LoweredBlockstateApply,
-  lowerBlockstateApply,
-  lowerLegacyBlockstateApply
+  lowerBlockstateApply
 } from "./blockstateApplyLowerer";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import {
@@ -27,7 +24,6 @@ import {
   type MergeResult
 } from "./fragmentMerge";
 import {
-  BlockstateContentMerger,
   BlockstateRootMerger,
   type BlockstateBodyContent,
   type BlockstateContentMergeHost,
@@ -61,14 +57,13 @@ import {
 import type { RsglTemplateDefinition } from "./environment";
 import type { JsonValue, RsglMapping } from "./ir";
 import { isJsonObject } from "./jsonValues";
-import { lowerSerializableBlockstateJsonValue } from "./blockstateJsonValueLowerer";
+import {
+  createJsonValueLoweringHost,
+  lowerJsonEvaluationResult
+} from "./jsonValueLowerer";
 import { forEachLoopContext } from "./looping";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
-import {
-  type RsglCompileContext,
-  type TemplateExpansion,
-  templateResourceBody
-} from "./templateExpansion";
+import type { RsglCompileContext, TemplateExpansion } from "./templateExpansion";
 
 export interface BlockstateOperationExecutorHost
   extends BlockstateContentMergeHost, BlockstateApplyLoweringHost {
@@ -88,22 +83,18 @@ export interface BlockstateOperationExecutorHost
 }
 
 export interface BlockstateRootExecutionOptions {
-  /** Canonical declarations start selected; legacy declarations select lazily from runtime evidence. */
-  declaredMode?: BlockstateMode;
-  /** Canonical header origin overrides any mode-producing operation origin. */
+  declaredMode: BlockstateMode;
   finalizeOrigin?: BlockstateRootFinalizeOrigin;
   /** Selected fields are completed once, after the entire concrete root program. */
   finalizeSelectedMode: boolean;
 }
 
 export interface BlockstateRootExecutionResult extends BlockstateBodyContent {
-  readonly mode?: BlockstateMode;
+  readonly mode: BlockstateMode;
 }
 
 interface ExecutionRoot {
-  readonly neutral: BlockstateBodyContent;
-  state?: BlockstateRootState;
-  modeOrigin?: BlockstateRootFinalizeOrigin;
+  readonly state: BlockstateRootState;
 }
 
 interface ExecutionFrame {
@@ -115,12 +106,10 @@ interface ExecutionFrame {
 /** Executes every nested operation against one lazily mode-selected root state. */
 export class BlockstateOperationExecutor {
   private readonly rootMerger: BlockstateRootMerger;
-  private readonly contentMerger: BlockstateContentMerger;
   private activeResourceValueObservations?: RsglResourceValueObservation[];
 
   public constructor(private readonly host: BlockstateOperationExecutorHost) {
     this.rootMerger = new BlockstateRootMerger(host);
-    this.contentMerger = new BlockstateContentMerger(host);
   }
 
   public executeRoot(
@@ -132,28 +121,26 @@ export class BlockstateOperationExecutor {
     const observations: RsglResourceValueObservation[] = [];
     this.activeResourceValueObservations = observations;
     try {
-      const root: ExecutionRoot = { neutral: { content: {}, mappings: [] } };
-      if (options.declaredMode) {
-        this.selectMode(root, options.declaredMode, options.finalizeOrigin ?? {
-          sourceRange: program.range,
-          context
-        });
-      }
+      const root: ExecutionRoot = {
+        state: this.rootMerger.createState(options.declaredMode)
+      };
       this.executeProgram(root, program, context, {
         scope: program.scope,
         concreteRoot: true,
         allowBase: true
       });
 
-      if (root.state && options.finalizeSelectedMode) {
-        this.rootMerger.finalize(root.state, options.finalizeOrigin ?? root.modeOrigin);
+      if (options.finalizeSelectedMode) {
+        this.rootMerger.finalize(root.state, options.finalizeOrigin ?? {
+          sourceRange: program.range,
+          context
+        });
       }
-      const body = root.state ?? root.neutral;
-      this.flushResourceValueObservations(observations, body.mappings);
+      this.flushResourceValueObservations(observations, root.state.mappings);
       return {
-        content: body.content,
-        mappings: body.mappings,
-        ...(root.state ? { mode: root.state.mode } : {})
+        content: root.state.content,
+        mappings: root.state.mappings,
+        mode: root.state.mode
       };
     } finally {
       this.activeResourceValueObservations = previousObservations;
@@ -213,19 +200,6 @@ export class BlockstateOperationExecutor {
       this.executeMultipartEntry(root, operation.statement, context);
       return;
     }
-    if (operation.kind === "Entries") {
-      if (this.selectMode(root, operation.mode, {
-        sourceRange: operation.statement.range,
-        context
-      })) {
-        this.executeProgram(root, operation.body, context, {
-          scope: "entries",
-          concreteRoot: false,
-          allowBase: false
-        });
-      }
-      return;
-    }
     if (operation.kind === "For") {
       forEachLoopContext(
         operation.statement,
@@ -281,21 +255,8 @@ export class BlockstateOperationExecutor {
     })) {
       return;
     }
-    const mode = dispatchedMode ?? root.state?.mode;
-    if (!mode) {
-      this.host.onError(
-        "rsgl.invalidTemplateContext",
-        `Template '${definition.name}' does not determine a blockstate mode in this legacy context.`,
-        operation.statement.range
-      );
-      return;
-    }
-
     const templateBody = definition.node.body;
-    const body = templateBody.kind === "VariantBody" || templateBody.kind === "MultipartBody"
-      ? templateBody
-      : templateResourceBody(templateBody);
-    if (!body) {
+    if (templateBody.kind !== "VariantBody" && templateBody.kind !== "MultipartBody") {
       this.host.onError(
         "rsgl.invalidTemplateContext",
         `Template '${definition.name}' emits resources and cannot be used inside a blockstate body.`,
@@ -304,7 +265,7 @@ export class BlockstateOperationExecutor {
       return;
     }
     const scope = blockstateScopeFromDispatch(dispatch, frame.scope);
-    const program = templateBlockstateOperationProgram(body, mode, scope);
+    const program = templateBlockstateOperationProgram(templateBody);
     this.executeProgram(root, program, expansion.context, {
       scope,
       concreteRoot: false,
@@ -340,18 +301,12 @@ export class BlockstateOperationExecutor {
     })) {
       return;
     }
-    if (root.state) {
-      this.rootMerger.initializeBase(
-        root.state,
-        base.content,
-        operation.statement.range,
-        base.mappings
-      );
-      return;
-    }
-    root.neutral.content = base.content;
-    root.neutral.mappings.length = 0;
-    root.neutral.mappings.push(...base.mappings);
+    this.rootMerger.initializeBase(
+      root.state,
+      base.content,
+      operation.statement.range,
+      base.mappings
+    );
   }
 
   private executeRootMerge(
@@ -361,10 +316,14 @@ export class BlockstateOperationExecutor {
   ): void {
     const result = evaluateExpressionResult(operation.statement.value, context);
     const observations: RsglResourceValueObservation[] = [];
-    const value = lowerSerializableBlockstateJsonValue(
+    const loweringHost = createJsonValueLoweringHost(
+      context,
+      this.resourceValueCaptureHost(observations)
+    );
+    const value = lowerJsonEvaluationResult(
       result,
       operation.statement.value.range,
-      this.resourceValueCaptureHost(context, observations)
+      loweringHost
     );
     if (value === undefined) {
       return;
@@ -405,11 +364,15 @@ export class BlockstateOperationExecutor {
     const result = evaluateExpressionResult(statement.value, context);
     const path = appendGeneratedPath("", statement.name.text);
     const observations: RsglResourceValueObservation[] = [];
-    const value = lowerSerializableBlockstateJsonValue(
+    const loweringHost = createJsonValueLoweringHost(
+      context,
+      this.resourceValueCaptureHost(observations)
+    );
+    loweringHost.generatedPathPrefix = path;
+    const value = lowerJsonEvaluationResult(
       result,
       statement.value.range,
-      this.resourceValueCaptureHost(context, observations),
-      path
+      loweringHost
     );
     if (value === undefined) {
       return;
@@ -449,12 +412,10 @@ export class BlockstateOperationExecutor {
 
   private executeVariantEntry(
     root: ExecutionRoot,
-    statement: BlockstateVariantEntryNode | VariantEntryNode,
+    statement: BlockstateVariantEntryNode,
     context: RsglCompileContext
   ): void {
-    const selectorExpression = statement.kind === "BlockstateVariantEntry"
-      ? statement.selector
-      : statement.state;
+    const selectorExpression = statement.selector;
     const selector = lowerBlockstateSelector(selectorExpression, context, this.host);
     if (!selector || !this.selectMode(root, "variants", {
       sourceRange: selectorExpression.range,
@@ -462,10 +423,8 @@ export class BlockstateOperationExecutor {
     })) {
       return;
     }
-    const lowered = statement.kind === "BlockstateVariantEntry"
-      ? lowerBlockstateApply(statement.value, context, this.host)
-      : lowerLegacyBlockstateApply(statement.value, context, this.host);
-    if (!lowered || !root.state) {
+    const lowered = lowerBlockstateApply(statement.value, context, this.host);
+    if (!lowered) {
       return;
     }
     const entryPath = blockstateVariantPath(selector.key);
@@ -495,7 +454,7 @@ export class BlockstateOperationExecutor {
 
   private executeMultipartEntry(
     root: ExecutionRoot,
-    statement: BlockstateMultipartEntryNode | MultipartEntryNode,
+    statement: BlockstateMultipartEntryNode,
     context: RsglCompileContext
   ): void {
     if (!this.selectMode(root, "multipart", {
@@ -504,10 +463,8 @@ export class BlockstateOperationExecutor {
     })) {
       return;
     }
-    const apply = statement.kind === "BlockstateMultipartEntry"
-      ? lowerBlockstateApply(statement.apply, context, this.host)
-      : lowerLegacyBlockstateApply(statement.apply, context, this.host);
-    if (!apply || !root.state) {
+    const apply = lowerBlockstateApply(statement.apply, context, this.host);
+    if (!apply) {
       return;
     }
     const value: Record<string, JsonValue> = { apply: apply.value };
@@ -550,12 +507,10 @@ export class BlockstateOperationExecutor {
   }
 
   private resourceValueCaptureHost(
-    context: RsglCompileContext,
     observations: RsglResourceValueObservation[]
   ): BlockstateApplyLoweringHost {
     return {
       ...this.host,
-      sourceFile: context.sourceFile,
       onResourceValueObservation: observation => observations.push(observation)
     };
   }
@@ -616,27 +571,13 @@ export class BlockstateOperationExecutor {
   ): MergeResult | undefined {
     const evidence = blockstateRootModeEvidence(content);
     if (evidence === "both") {
-      if (root.state) {
-        return this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
-      } else {
-        this.reportUnselectedModeConflict(sourceRange);
-      }
+      this.reportUnselectedModeConflict(sourceRange);
       return undefined;
     }
     if (evidence !== "none" && !this.selectMode(root, evidence, { sourceRange, context })) {
       return undefined;
     }
-    if (root.state) {
-      return this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
-    }
-    return this.contentMerger.applyWithResult(
-      root.neutral,
-      content,
-      mode,
-      sourceRange,
-      context,
-      mappings
-    );
+    return this.rootMerger.mergeRoot(root.state, content, mode, sourceRange, context, mappings);
   }
 
   private selectMode(
@@ -644,30 +585,22 @@ export class BlockstateOperationExecutor {
     mode: BlockstateMode,
     origin: BlockstateRootFinalizeOrigin
   ): boolean {
-    if (root.state) {
-      if (root.state.mode === mode) {
-        return true;
-      }
-      this.host.onError(
-        "rsgl.blockstateModeConflict",
-        `A '${root.state.mode}' blockstate root cannot receive '${mode}' content.`,
-        origin.sourceRange
-      );
-      return false;
+    if (root.state.mode === mode) {
+      return true;
     }
-    const state = this.rootMerger.createState(mode);
-    state.content = root.neutral.content;
-    state.mappings.push(...root.neutral.mappings);
-    root.state = state;
-    root.modeOrigin = origin;
-    return true;
+    this.host.onError(
+      "rsgl.blockstateModeConflict",
+      `A '${root.state.mode}' blockstate root cannot receive '${mode}' content.`,
+      origin.sourceRange
+    );
+    return false;
   }
 
   private templateCallerContext(
     root: ExecutionRoot,
     frame: ExecutionFrame
   ): RsglTemplateCallerContext {
-    if (frame.scope === "entries" && root.state) {
+    if (frame.scope === "entries") {
       return {
         kind: "blockstateEntries",
         mode: root.state.mode,
@@ -677,7 +610,7 @@ export class BlockstateOperationExecutor {
     }
     return {
       kind: "blockstateRoot",
-      mode: root.state?.mode ?? "neutral",
+      mode: root.state.mode,
       allowRootMerge: true,
       allowBase: false
     };
@@ -694,15 +627,7 @@ export class BlockstateOperationExecutor {
 
 function blockstateModeFromDispatch(dispatch: TemplateOutputDispatch): BlockstateMode | undefined {
   const selected = dispatch.selectedDialect;
-  if (selected === "variants" || selected === "multipart") {
-    return selected;
-  }
-  if (selected && typeof selected === "object" && (
-    selected.kind === "blockstateRoot" || selected.kind === "blockstateEntries"
-  )) {
-    return selected.mode === "neutral" ? undefined : selected.mode;
-  }
-  return undefined;
+  return selected === "variants" || selected === "multipart" ? selected : undefined;
 }
 
 function blockstateScopeFromDispatch(
@@ -710,13 +635,7 @@ function blockstateScopeFromDispatch(
   fallback: BlockstateProgramScope
 ): BlockstateProgramScope {
   const selected = dispatch.selectedDialect;
-  return selected && typeof selected === "object" && selected.kind === "blockstateRoot"
-    ? "root"
-    : selected === "variants"
-      || selected === "multipart"
-      || (selected && typeof selected === "object" && selected.kind === "blockstateEntries")
-      ? "entries"
-      : fallback;
+  return selected === "variants" || selected === "multipart" ? "entries" : fallback;
 }
 
 function evaluationMappingsForValue(

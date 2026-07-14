@@ -107,67 +107,6 @@ export class ResourceDependencyResolver {
   }
 }
 
-export function resolveModelFileName(
-  resourcePath: string,
-  sourceFileName: string,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): ResolvedResourceFile | null {
-  return new ResourceDependencyResolver(fileSystem, configuration).resolveModelFileName(resourcePath, sourceFileName);
-}
-
-export function resolveTextureFileName(
-  resourcePath: string,
-  sourceFileName: string,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): ResolvedResourceFile | null {
-  return new ResourceDependencyResolver(fileSystem, configuration).resolveTextureFileName(resourcePath, sourceFileName);
-}
-
-export function getModelFileCandidates(
-  resourcePath: string,
-  sourceFileName: string,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): string[] {
-  return new ResourceDependencyResolver(fileSystem, configuration).getModelFileCandidates(resourcePath, sourceFileName);
-}
-
-export function getTextureFileCandidates(
-  resourcePath: string,
-  sourceFileName: string,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): string[] {
-  return new ResourceDependencyResolver(fileSystem, configuration).getTextureFileCandidates(resourcePath, sourceFileName);
-}
-
-export function resolveResourceFileName(
-  resourcePath: string,
-  sourceFileName: string,
-  target: string,
-  source: string,
-  extension: string | null,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): ResolvedResourceFile | null {
-  const resolver = new ResourceDependencyResolver(fileSystem, configuration);
-  return resolver.resolveResourceFileName(resourcePath, sourceFileName, target, source, extension);
-}
-
-export function getResourceFileCandidates(
-  resourcePath: string,
-  sourceFileName: string,
-  target: string,
-  source: string,
-  extension: string | null,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): string[] {
-  return new ResourceDependencyResolver(fileSystem, configuration).getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension);
-}
-
 function getResourceFileCandidatesUncached(
   resourcePath: string,
   sourceFileName: string,

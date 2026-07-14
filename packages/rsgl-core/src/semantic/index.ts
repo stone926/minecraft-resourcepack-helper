@@ -28,18 +28,8 @@ export {
   objectPropertyType,
   typeFromAnnotation
 } from "./types";
-export {
-  classifyResolvedTemplateOutputMetadata,
-  inferResolvedTemplateOutputMetadata,
-  resolveModelTemplateOutputMetadata,
-  resolveProgramTemplateOutputMetadata
-} from "./templateOutputResolution";
 export type { RsglExportMapResult } from "./exportResolution";
 export type { RsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
-export type {
-  ResolvedTemplateOutputClassification,
-  ResolvedTemplateOutputConflict
-} from "./templateOutputResolution";
 export type {
   RsglBindOptions,
   RsglBuiltinEffect,
@@ -52,7 +42,6 @@ export type {
   RsglGenericParameter,
   RsglImportGraph,
   RsglImportRecord,
-  RsglLegacyBlockstateRootRecord,
   RsglOutputResourcePreview,
   RsglObjectProperty,
   RsglModuleNamespaceMember,

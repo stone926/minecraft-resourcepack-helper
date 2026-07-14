@@ -1,9 +1,10 @@
 import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
-import { isCitGlobalPropertiesFileName, isCitPropertiesFileName } from "./citPaths";
+import { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
+import { isCitPropertiesFileName } from "./citPaths";
 import { getCitPropertiesParseResult, type CitPropertyEntry } from "./citPropertiesParser";
-import { getCitType, getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
-import { normalizeCitKey, resolveCitKey } from "./citKeyResolution";
+import { getEffectiveSpec, type CitLanguageDocument } from "./citLanguage";
+import { normalizeCitKey, resolveCitKey, resolveCitType } from "./citKeyResolution";
 import { citSpecService } from "./citSpecService";
 import { citResourceIdService, type CitResourceIds } from "./citResourceIdService";
 import type { AstLocation } from "../utils/locationChecker";
@@ -43,7 +44,7 @@ export function getCitDiagnostics(
   );
   const seenSingletonKeys = new Map<string, CitPropertyEntry>();
   const globalFile = isCitGlobalPropertiesFileName(document.fileName);
-  const citType = getCitType(entries);
+  const citType = resolveCitType(entries);
 
   for (const entry of entries) {
     if (entry.hasSyntaxError) {

@@ -4,7 +4,6 @@ import {
   getCitDocumentNamespace,
   getCitDocumentSource,
   getCitPathCandidates,
-  getCitResourceType,
   isCitModelFileName,
   isCitPropertiesFileName
 } from "../../cit/citPaths";
@@ -12,18 +11,6 @@ import {
 describe("CIT Resewn path utilities", () => {
   const packRoot = path.join("workspace", "pack");
   const documentFileName = path.join(packRoot, "assets", "minecraft", "citresewn", "cit", "swords", "diamond.properties");
-
-  it("detects texture and model keys without matching unrelated keys", () => {
-    assert.strictEqual(getCitResourceType("texture"), "textures");
-    assert.strictEqual(getCitResourceType("tile"), "textures");
-    assert.strictEqual(getCitResourceType("texture.layer0"), "textures");
-    assert.strictEqual(getCitResourceType("citresewn:texture"), "textures");
-    assert.strictEqual(getCitResourceType("model"), "models");
-    assert.strictEqual(getCitResourceType("model.bow_standby"), "models");
-    assert.strictEqual(getCitResourceType("citresewn:type"), null);
-    assert.strictEqual(getCitResourceType("metadata"), null);
-    assert.strictEqual(getCitResourceType("temperature"), null);
-  });
 
   it("resolves local and default-namespace texture candidates", () => {
     assert.deepStrictEqual(

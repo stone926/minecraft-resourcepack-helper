@@ -1,5 +1,5 @@
 import { isValidMinecraftNamespace } from "../../../mc-assets/src";
-import { ExprNode, ResourceDeclNode } from "../parser";
+import { BlockstateResourceDeclNode, ExprNode, ResourceDeclNode } from "../parser";
 import {
   getRsglResourceKindDescriptor,
   isRsglGenericJsonResourceKind,
@@ -34,7 +34,10 @@ type SourceRange = { start: number; end: number };
 
 export interface ResourceDeclarationCompilerHost {
   fileName: string;
-  compileBlockstate: (statement: ResourceDeclNode, context: RsglCompileContext) => ResourceUnit | null;
+  compileBlockstate: (
+    statement: BlockstateResourceDeclNode,
+    context: RsglCompileContext
+  ) => ResourceUnit | null;
   compilePack: (statement: ResourceDeclNode, context: RsglCompileContext) => ResourceUnit | null;
   compileBody: (
     body: ResourceDeclNode["body"],
@@ -70,7 +73,7 @@ type ResourceCompileHandler = (
 
 const resourceCompileHandlers = {
   model: compileModel,
-  blockstate: (statement, context, host) => host.compileBlockstate(statement, context),
+  blockstate: compileBlockstate,
   item: compileItem,
   genericJson: compileGenericJsonResource,
   mcmeta: compileMcmeta,
@@ -81,6 +84,17 @@ const resourceCompileHandlers = {
   text: compileTextResource,
   copy: compileCopyResource
 } satisfies Record<RsglResourceCompileHandler, ResourceCompileHandler>;
+
+function compileBlockstate(
+  statement: ResourceDeclNode,
+  context: RsglCompileContext,
+  host: ResourceDeclarationCompilerHost
+): ResourceUnit | null {
+  if (statement.resourceKind !== "blockstate") {
+    throw new Error("Blockstate compiler received a non-blockstate declaration.");
+  }
+  return host.compileBlockstate(statement, context);
+}
 
 export function compileResourceDeclaration(
   statement: ResourceDeclNode,
@@ -371,7 +385,6 @@ function compileMcmeta(
     }
     const validationOrigin = evaluatedOriginAtPath(
       targetEvaluation.result,
-      context.sourceFile,
       targetValue.selectedPath
     );
     const resourceIdMappings: RsglMapping[] = statement.id && validationOrigin

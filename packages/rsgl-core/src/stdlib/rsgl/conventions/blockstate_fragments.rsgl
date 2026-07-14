@@ -60,3 +60,5 @@ template stairs(base: ModelId, inner: ModelId, outer: ModelId, uvlock: Boolean =
       { facing: facing, half: half, shape: shape }: entryModel x=x y=y uvlock=(uvlock || x != 0 || y != 0)
     }
 }
+
+export { slab, stairs }

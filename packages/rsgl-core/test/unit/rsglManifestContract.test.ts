@@ -273,7 +273,6 @@ describe("RSGL extension manifest contract", () => {
     const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
     const clientSource = fs.readFileSync(path.join(extensionRoot, "client.ts"), "utf8");
     const apiSource = fs.readFileSync(path.join(extensionRoot, "api.ts"), "utf8");
-    const fallbackSource = fs.readFileSync(path.join(extensionRoot, "languageFeatures.ts"), "utf8");
     const sharedSource = fs.readFileSync(
       path.join(process.cwd(), "packages", "rsgl-shared", "src", "index.ts"),
       "utf8"
@@ -289,6 +288,5 @@ describe("RSGL extension manifest contract", () => {
     assert.match(apiSource, /dependencyPaths\.has\(dependencyPath\)/);
     assert.match(clientSource, /synchronize:\s*\{/);
     assert.match(apiSource, /const scheduleCompile/);
-    assert.strictEqual(fallbackSource.includes("createFileSystemWatcher"), false);
   });
 });

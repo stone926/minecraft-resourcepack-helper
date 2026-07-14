@@ -260,7 +260,7 @@ describe("RSGL module namespace semantics", () => {
       { fileName: adapterFile, module: parseRsgl([
         "import * as leaf from \"./leaf.rsgl\"",
         "let scale: (Number) -> Number = value => value * 2",
-        "template wrapper() { use leaf.part() }",
+        "template wrapper() -> model { use leaf.part() }",
         "export { scale, wrapper }"
       ].join("\n")) },
       { fileName: leafFile, module: parseRsgl([
@@ -271,12 +271,12 @@ describe("RSGL module namespace semantics", () => {
 
     const adapter = program.models.find(model => model.fileName === adapterFile)!;
     const wrapper = adapter.scope.symbols.get("wrapper")!;
-    assert.strictEqual(wrapper.signature?.templateOutput?.outputSource, "legacyInferredBody");
+    assert.strictEqual(wrapper.signature?.templateOutput?.outputSource, "explicitArrow");
     assert.strictEqual(program.fileDiagnostics.filter(item =>
       item.fileName === mainFile && item.code === "rsgl.lambdaArgumentTypeMismatch"
     ).length, 1);
     assert.strictEqual(program.fileDiagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"), false);
-    assert.strictEqual(program.fileDiagnostics.some(item => item.code === "rsgl.implicitTemplateOutputDialect"), true);
+    assert.strictEqual(program.fileDiagnostics.some(item => item.code === "rsgl.templateOutputDialectMismatch"), false);
   });
 
   it("finds recursive template edges through qualified namespace calls", () => {

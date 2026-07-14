@@ -6,6 +6,7 @@ import {
   resolveResourceFile,
   uniqueValues,
   type PackMetadata,
+  type ResourceFileRequest,
   type ResourceLocation
 } from "../../packages/mc-assets/src";
 import { DependencyIndex } from "./dependencyIndex";
@@ -13,8 +14,7 @@ import { LruCache } from "./lruCache";
 import { ResourceCacheMetrics } from "./resourceCacheMetrics";
 import type {
   CacheEntry,
-  ResourceCacheGenerationState,
-  ResourceResolveRequest
+  ResourceCacheGenerationState
 } from "./resourceCacheTypes";
 
 export interface ResourceResolutionCacheHost {
@@ -42,7 +42,7 @@ export class ResourceResolutionCache {
     private readonly metrics: ResourceCacheMetrics
   ) {}
 
-  getResourceRootCandidates(request: ResourceResolveRequest, resourcePath: string, namespace: string): string[] {
+  getResourceRootCandidates(request: ResourceFileRequest, resourcePath: string, namespace: string): string[] {
     const key = [
       normalizePathKey(request.sourceFileName),
       request.source,
@@ -80,7 +80,7 @@ export class ResourceResolutionCache {
     return candidates;
   }
 
-  resolveResourcePath(request: ResourceResolveRequest): string | null {
+  resolveResourcePath(request: ResourceFileRequest): string | null {
     const location = this.getResourceLocation(request.resourcePath, request.targetFileExtension);
     if (!location.isValid) {
       return null;
@@ -181,7 +181,7 @@ export class ResourceResolutionCache {
     }
   }
 
-  private getResourceRootDependencyFiles(request: ResourceResolveRequest): string[] {
+  private getResourceRootDependencyFiles(request: ResourceFileRequest): string[] {
     return uniqueValues([
       request.sourceFileName,
       ...getAncestorPackMetadataCandidates(request.sourceFileName),

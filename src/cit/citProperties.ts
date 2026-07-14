@@ -1,5 +1,5 @@
-import { getCitDocumentSource, getCitResourceType } from "./citPaths";
-import { resolveCitType } from "./citKeyResolution";
+import { getCitDocumentSource } from "./citPaths";
+import { resolveCitResourceType, resolveCitType } from "./citKeyResolution";
 import { getCitPropertiesEntries, type CitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
 import type { CitType } from "./citSpecTypes";
 import type { ResourceReference } from "../utils/resourceReferences";
@@ -31,7 +31,7 @@ function getCitPropertyReference(
   source: string,
   citType: CitType
 ): ResourceReference | null {
-  const resourceType = getCitResourceType(entry.key, citType);
+  const resourceType = resolveCitResourceType(entry.key, citType);
   if (!resourceType) {
     return null;
   }
@@ -66,7 +66,7 @@ function getCitAutoDiscoveryReference(
   source: string,
   citType: CitType
 ): ResourceReference | null {
-  if (citType !== "item" || entries.some(entry => getCitResourceType(entry.key, citType))) {
+  if (citType !== "item" || entries.some(entry => resolveCitResourceType(entry.key, citType))) {
     return null;
   }
 

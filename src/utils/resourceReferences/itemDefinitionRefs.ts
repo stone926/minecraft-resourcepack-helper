@@ -1,5 +1,5 @@
-import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers } from "../jsonAst";
-import { getMinecraftType, getObjectMemberValue, pushReference } from "./shared";
+import { arrayElements, getObjectMemberValue, JsonAstNode, JsonDocumentNode, memberName, objectMembers } from "../jsonAst";
+import { getMinecraftType, pushReference } from "./shared";
 import { ResourceReference } from "./types";
 
 export function getItemDefinitionReferences(ast: JsonDocumentNode): ResourceReference[] {

@@ -3,3 +3,5 @@ template stateSequence(key: String, values: List<Json> | Range, model: (Json) ->
       { [key]: value }: { model: model(value) }
     }
 }
+
+export { stateSequence }

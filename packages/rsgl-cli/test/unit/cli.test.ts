@@ -12,7 +12,7 @@ import {
   type RsglCliWatchRuntime,
   type RsglCliIo
 } from "../../src/cli";
-import { parseRsglCliConfig } from "../../src/config";
+import { parseRsglProjectConfig } from "../../../rsgl-core/src/rsglConfig";
 
 interface CapturedIo {
   io: RsglCliIo;
@@ -152,8 +152,6 @@ describe("RSGL CLI", () => {
     assert.ok(output.includes("(build only)"));
     assert.ok(output.includes("--watch"));
     assert.ok(output.includes("equivalent to watch"));
-    assert.ok(output.includes("--write"));
-    assert.ok(output.includes("(migrate only)"));
     assert.strictEqual(captured.stderr(), "");
   });
 
@@ -419,7 +417,7 @@ describe("RSGL CLI", () => {
     ];
 
     for (const [config, expectedMessage] of invalidConfigs) {
-      assert.throws(() => parseRsglCliConfig(config), expectedMessage);
+      assert.throws(() => parseRsglProjectConfig(config), expectedMessage);
     }
   });
 

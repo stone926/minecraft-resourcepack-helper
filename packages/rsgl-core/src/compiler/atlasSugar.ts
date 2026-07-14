@@ -15,8 +15,6 @@ import { appendGeneratedPath } from "./sourcePaths";
 
 const paletteKeyField = "palette_key";
 
-export type RsglAtlasSugarOptions = JsonValueSinkOptions;
-
 export type AtlasBodyCompiler = (
   body: ResourceBodyNode,
   context: EvaluationContext
@@ -26,7 +24,7 @@ export function compileAtlasSpecialStatement(
   statement: ResourceStatementNode,
   context: EvaluationContext,
   compileBody: AtlasBodyCompiler,
-  options: RsglAtlasSugarOptions = {}
+  options: JsonValueSinkOptions = {}
 ): ResourceBodySpecialResult | undefined {
   if (statement.kind === "AtlasDirectoryStmt") {
     return compileAtlasDirectoryStatement(statement, context, options);
@@ -43,7 +41,7 @@ export function compileAtlasSpecialStatement(
 function compileAtlasDirectoryStatement(
   statement: AtlasDirectoryStmtNode,
   context: EvaluationContext,
-  options: RsglAtlasSugarOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment | undefined {
   const evaluatedSource = statement.source
     ? staticText(statement.source, context, options, "/sources/0/source")
@@ -71,7 +69,6 @@ function compileAtlasDirectoryStatement(
     mappings: statement.source
       ? evaluatedPathOrigins(
         evaluatedSource.result,
-        context.sourceFile,
         "/sources/0/source"
       ).map(origin => ({
         generatedPath: origin.generatedPath,
@@ -87,7 +84,7 @@ function compileAtlasDirectoryStatement(
 function compileAtlasFilterStatement(
   statement: AtlasFilterStmtNode,
   context: EvaluationContext,
-  options: RsglAtlasSugarOptions
+  options: JsonValueSinkOptions
 ): Record<string, JsonValue> | undefined {
   const evaluatedNamespace = statement.namespace
     ? staticText(statement.namespace, context, options, "/sources/0/pattern/namespace")
@@ -114,7 +111,7 @@ function compileAtlasPalettedPermutationsStatement(
   statement: AtlasPalettedPermutationsStmtNode,
   context: EvaluationContext,
   compileBody: AtlasBodyCompiler,
-  options: RsglAtlasSugarOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment | undefined {
   const body = compileBody(statement.body, context);
   const textures = atlasTextureList(body.content.textures);
@@ -184,7 +181,7 @@ function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> | n
 function staticText(
   expression: ExprNode,
   context: EvaluationContext,
-  options: RsglAtlasSugarOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): { value: string; result: EvaluationResult } | null {
   const evaluated = evaluateJsonExpressionWithResult(expression, context, options, generatedPath);

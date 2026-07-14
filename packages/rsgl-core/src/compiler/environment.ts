@@ -35,12 +35,11 @@ import {
   type ResolvedRsglCompileConfiguration
 } from "./compileConfiguration";
 import { normalizeJsonValue } from "./compilerHelpers";
-import type {
-  ResolvedTemplateOutputConflict,
-  ResolvedTemplateOutputMetadata
+import type { ResolvedTemplateOutputMetadata } from "../templateOutput";
+import {
+  templateOutputMetadataFingerprint,
+  templateOutputMetadataForDeclaration
 } from "../templateOutput";
-import { templateOutputMetadataFingerprint } from "../templateOutput";
-import { inferResolvedTemplateOutputMetadata } from "../semantic/templateOutputResolution";
 import { EvaluationItemBudget } from "./evaluationItemBudget";
 import { ModuleNamespaceValue, isModuleNamespaceValue } from "./moduleNamespaceValue";
 
@@ -73,8 +72,6 @@ export interface RsglTemplateDefinition {
   name: string;
   node: TemplateDeclNode;
   outputMetadata: ResolvedTemplateOutputMetadata;
-  /** Frozen semantic/link failure that must stop dispatch before evaluation. */
-  outputConflict?: ResolvedTemplateOutputConflict;
   /** Immutable-input fingerprint used only for dispatch-plan caching. */
   definitionFingerprint: string;
   definitionTargetFingerprint: string;
@@ -188,10 +185,9 @@ export function createTemplateDefinition(
   namespace: string,
   values: Map<string, EvaluationValue>,
   templates: Map<string, RsglTemplateDefinition>,
-  outputMetadata: ResolvedTemplateOutputMetadata = inferResolvedTemplateOutputMetadata(node),
+  outputMetadata: ResolvedTemplateOutputMetadata = templateOutputMetadataForDeclaration(node),
   definitionTargetFingerprint = "unresolved-target",
   definitionFingerprintContext = "unresolved-target",
-  outputConflict?: ResolvedTemplateOutputConflict,
   semantic?: {
     signature?: RsglSignature;
     resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
@@ -201,7 +197,6 @@ export function createTemplateDefinition(
     name,
     node,
     outputMetadata,
-    outputConflict,
     definitionFingerprint: "",
     definitionTargetFingerprint,
     fileName,
@@ -546,7 +541,7 @@ function collectLocalEnvironmentTemplates(
     if (statement.kind === "TemplateDecl" && statement.name) {
       const signature = model.scope.symbols.get(statement.name.text)?.signature;
       const outputMetadata = signature?.templateOutput
-        ?? inferResolvedTemplateOutputMetadata(statement);
+        ?? templateOutputMetadataForDeclaration(statement);
       const definition = createTemplateDefinition(
         statement.name.text,
         statement,
@@ -557,7 +552,6 @@ function collectLocalEnvironmentTemplates(
         outputMetadata,
         JSON.stringify(model.module.statements.filter(statement => statement.kind === "TargetDecl")),
         "unresolved-target",
-        signature?.templateOutputConflict,
         {
           ...(signature ? { signature } : {}),
           resolvedExpectedTypes: model.resolvedExpectedTypes
@@ -709,7 +703,6 @@ function calculateTemplateDefinitionFingerprint(
       targetContext,
       definitionTarget: definition.definitionTargetFingerprint,
       outputMetadata: templateOutputMetadataFingerprint(definition.outputMetadata),
-      outputConflict: definition.outputConflict?.evidence ?? null,
       outputSyntax: definition.node.outputSyntax,
       declaredOutputDialect: definition.node.declaredOutputDialect,
       parameters: definition.node.parameters,

@@ -24,7 +24,8 @@ describe("RSGL import semantics", () => {
           "    parent minecraft:block/cube_all",
           "    textures { all: texture }",
           "  }",
-          "}"
+          "}",
+          "export { cube }"
         ].join("\n"))
       }
     ], withUncheckedExterns({ entryFileName: mainFile }));
@@ -349,7 +350,8 @@ describe("RSGL import semantics", () => {
           "}",
           "template woodCube(id: ResourceId) {",
           "  use cube(id)",
-          "}"
+          "}",
+          "export { woodCube }"
         ].join("\n"))
       },
       {
@@ -358,7 +360,8 @@ describe("RSGL import semantics", () => {
           "namespace textures",
           "table woods {",
           "  acacia: texture_id(block/acacia_planks)",
-          "}"
+          "}",
+          "export { woods }"
         ].join("\n"))
       }
     ], withUncheckedExterns({ entryFileName: mainFile }));
@@ -460,7 +463,8 @@ describe("RSGL import semantics", () => {
           "let defaultParent: ModelId = minecraft:block/cube_all",
           "table woods {",
           "  acacia: texture_id(block/acacia_planks)",
-          "}"
+          "}",
+          "export { defaultParent, woods }"
         ].join("\n"))
       }
     ], withUncheckedExterns({ entryFileName: mainFile }));

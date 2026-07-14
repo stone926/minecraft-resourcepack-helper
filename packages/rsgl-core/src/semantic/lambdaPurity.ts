@@ -96,18 +96,6 @@ function collectLambdaImpureCalls(
   } else if (expression.kind === "RangeExpr") {
     collectLambdaImpureCalls(expression.startExpr, calls, resolveEffect);
     collectLambdaImpureCalls(expression.endExpr, calls, resolveEffect);
-  } else if (expression.kind === "StateKeySugar") {
-    expression.entries.forEach(entry => {
-      if (entry.key.kind === "DynamicKey") {
-        collectLambdaImpureCalls(entry.key.expression, calls, resolveEffect);
-      }
-      collectLambdaImpureCalls(entry.value, calls, resolveEffect);
-    });
-  } else if (expression.kind === "ModelApplySugar") {
-    collectLambdaImpureCalls(expression.model, calls, resolveEffect);
-    expression.properties.forEach(property => collectLambdaImpureCalls(property.value, calls, resolveEffect));
-  } else if (expression.kind === "RandomApply") {
-    expression.entries.forEach(entry => collectLambdaImpureCalls(entry, calls, resolveEffect));
   } else if (expression.kind === "ForInExpr") {
     collectLambdaImpureCalls(expression.iterable, calls, resolveEffect);
   }

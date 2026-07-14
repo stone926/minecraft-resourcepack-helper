@@ -62,16 +62,12 @@ describe("RSGL TextMate grammar", () => {
     expectNoScope(tokenization, source, "Missing", "support.type.rsgl");
   });
 
-  it("highlights base and merge vocabulary without retaining removed syntax", () => {
-    const grammarText = readGrammarText();
-    const grammar = JSON.parse(grammarText) as RsglGrammar;
+  it("highlights base and merge vocabulary", () => {
+    const grammar = readGrammar();
     const controlKeywords = matchRegex(namedPattern(grammar, "keywords", "keyword.control.rsgl"));
 
     for (const keyword of ["base", "merge", "deep", "strict", "upsert", "append"]) {
       assert.match(keyword, controlKeywords, `Expected '${keyword}' to use keyword.control.rsgl.`);
-    }
-    for (const removed of ["raw_json", "raw_json_file", "override"]) {
-      assert.strictEqual(grammarText.includes(removed), false, `Removed syntax '${removed}' remains in the grammar.`);
     }
   });
 
@@ -119,7 +115,7 @@ describe("RSGL TextMate grammar", () => {
     assert.doesNotMatch(grammarText, /\bfn\b/);
   });
 
-  it("highlights blockstate header modes and scopes legacy syntax as deprecated", () => {
+  it("highlights canonical blockstate header modes", () => {
     const grammar = readGrammar();
     const source = [
       "blockstate variants stairs {",
@@ -127,11 +123,6 @@ describe("RSGL TextMate grammar", () => {
       "}",
       "blockstate multipart wall {",
       "  apply minecraft:block/wall",
-      "}",
-      "blockstate stairs {",
-      "  variants {",
-      "    [facing=north] -> @minecraft:block/stairs",
-      "  }",
       "}"
     ].join("\n");
     const tokenization = tokenizeGrammar(grammar, source);
@@ -140,45 +131,10 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "blockstate", "storage.type.rsgl", 1);
     expectScope(tokenization, source, "variants", "storage.modifier.blockstate-mode.rsgl", 0);
     expectScope(tokenization, source, "multipart", "storage.modifier.blockstate-mode.rsgl", 0);
-    expectNoScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 0);
-    expectScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 1);
-    expectScope(tokenization, source, "[facing=north]", "invalid.deprecated.blockstate-selector.rsgl");
-    expectScope(tokenization, source, "->", "invalid.deprecated.blockstate-arrow.rsgl");
-    expectScope(tokenization, source, "@", "invalid.deprecated.blockstate-model-apply.rsgl");
-  });
-
-  it("limits legacy wrapper scopes to blockstate declaration bodies", () => {
-    const grammar = readGrammar();
-    const source = [
-      "model block presentation {",
-      "  variants {",
-      "    model: minecraft:block/stone",
-      "  }",
-      "  multipart {",
-      "    model: minecraft:block/stone",
-      "  }",
-      "}",
-      "json metadata {",
-      "  variants {",
-      "    enabled: true",
-      "  }",
-      "  multipart {",
-      "    enabled: true",
-      "  }",
-      "}",
-      "blockstate stone {",
-      "  variants {",
-      "    [facing=north] -> @minecraft:block/stone",
-      "  }",
-      "}"
-    ].join("\n");
-    const tokenization = tokenizeGrammar(grammar, source);
-
-    expectNoScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 0);
-    expectNoScope(tokenization, source, "multipart", "invalid.deprecated.blockstate-wrapper.rsgl", 0);
-    expectNoScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 1);
-    expectNoScope(tokenization, source, "multipart", "invalid.deprecated.blockstate-wrapper.rsgl", 1);
-    expectScope(tokenization, source, "variants", "invalid.deprecated.blockstate-wrapper.rsgl", 2);
+    const declaration = repositoryPatterns(grammar, "blockstateDeclarations")[0];
+    assert.ok(declaration.begin);
+    const headerPattern = new RegExp(declaration.begin);
+    assert.strictEqual(headerPattern.test("blockstate variants stairs {"), true);
   });
 
   it("keeps valid, commented, and malformed extern patterns out of block-comment leakage", () => {

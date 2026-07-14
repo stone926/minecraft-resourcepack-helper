@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 import type { ResourceUnit } from "../../src/compiler";
 import { lowerItemUnitsForTarget } from "../../src/compiler/itemLegacyBackend";
 import { mergeResourceUnits } from "../../src/compiler/merge";
-import { validateResourceUnits } from "../../src/compiler/validation";
+import { canonicalizeAndValidateResourceUnits } from "../../src/compiler/validation";
 import {
   compileSource,
   compileSourceWithUncheckedExterns,
@@ -55,7 +55,7 @@ describe("RSGL resource-value metadata backends", () => {
 
     assert.deepStrictEqual(result.units[0].content, { event: "ok" });
     assert.strictEqual(result.units[0].validation?.resourceValueObservations, undefined);
-    assert.ok(!validateResourceUnits(result.units).some(diagnostic =>
+    assert.ok(!canonicalizeAndValidateResourceUnits(result.units).some(diagnostic =>
       diagnostic.code === "rsgl.textureVariableInvalidContext"
     ));
   });

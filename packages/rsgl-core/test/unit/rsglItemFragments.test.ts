@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL item model fragments", () => {
   it("lowers stdlib range frames with lambda model mapping", () => {
@@ -87,20 +87,20 @@ describe("RSGL item model fragments", () => {
     });
   });
 
-  it("lowers item statements inside user templates", () => {
+  it("lowers items emitted by user templates", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template compassModel(frames: Json = 0..1) {",
-      "  range property minecraft:compass target spawn {",
-      "    frames frames model `minecraft:item/compass_${pad(index, 2)}`",
-      "    fallback minecraft:item/compass_00",
+      "template compassItem(frames: Json = 0..1) {",
+      "  item compass {",
+      "    range property minecraft:compass target spawn {",
+      "      frames frames model `minecraft:item/compass_${pad(index, 2)}`",
+      "      fallback minecraft:item/compass_00",
+      "    }",
       "  }",
       "}",
-      "item compass {",
-      "  use compassModel()",
-      "}"
+      "use compassItem()"
     ]);
 
-    expectOnlyLegacyTemplateWarnings(result);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, {
       model: {
         type: "minecraft:range_dispatch",

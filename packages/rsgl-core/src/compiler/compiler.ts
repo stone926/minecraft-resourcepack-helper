@@ -18,10 +18,6 @@ import {
   type RsglType
 } from "../semantic";
 import {
-  classifyResolvedTemplateOutputMetadata,
-  type ResolvedTemplateOutputClassification
-} from "../semantic/templateOutputResolution";
-import {
   RsglExternalValueDefinition,
   RsglModuleCompileEnvironment,
   RsglTemplateDefinition,
@@ -68,11 +64,10 @@ import {
 } from "./packOverlayCompiler";
 import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult, resourceBodyToObject } from "./resourceBody";
 import { compileResourceDeclaration, ResourceDeclarationCompilerHost } from "./resourceCompiler";
-import { RsglTargetPackFormat } from "./target";
+import type { RsglTargetPackFormat } from "./targetConfig";
 import {
   createTemplateExpansion,
   resolveTemplateDefinition,
-  templateResourceBody,
   RsglCompileContext,
   TemplateExpansion,
   TemplateExpansionOptions
@@ -88,7 +83,11 @@ import {
   isRsglGenericJsonResourceKind,
   type RsglResourceKind
 } from "../resourceKinds";
-import type { RsglTemplateCallerContext, TemplateOutputDispatch } from "../templateOutput";
+import {
+  templateOutputMetadataForDeclaration,
+  type RsglTemplateCallerContext,
+  type TemplateOutputDispatch
+} from "../templateOutput";
 import { RsglTemplateDispatchCache } from "./templateDispatchCache";
 import type { JsonValueSinkOptions } from "./jsonValueLowerer";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
@@ -181,13 +180,6 @@ export class RsglCompiler {
     for (const statement of this.module.statements) {
       if (statement.kind === "TemplateDecl" && statement.name) {
         const environmentTemplate = this.options.environment?.allTemplates.get(statement.name.text);
-        const classification = environmentTemplate
-          ? undefined
-          : classifyResolvedTemplateOutputMetadata(
-            statement,
-            name => templateDefinitionClassification(this.templates.get(name))
-              ?? (this.moduleValueBindingNames.has(name) ? null : undefined)
-          );
         const template = environmentTemplate
           ?? createTemplateDefinition(
             statement.name.text,
@@ -196,10 +188,9 @@ export class RsglCompiler {
             this.options.namespace,
             new Map(),
             this.templates,
-            classification!.metadata,
+            templateOutputMetadataForDeclaration(statement),
             definitionTargetFingerprint,
             definitionFingerprintContext,
-            classification!.kind === "conflict" ? classification!.conflict : undefined,
             {
               ...(resolvedExpectedTypes ? { resolvedExpectedTypes } : {})
             }
@@ -468,8 +459,7 @@ export class RsglCompiler {
     if (!expansion) {
       return { content: {}, mappings: [] };
     }
-    const resourceBody = templateResourceBody(definition.node.body);
-    if (!resourceBody) {
+    if (definition.node.body.kind !== "ResourceBody") {
       this.error(
         "rsgl.invalidTemplateContext",
         `Template '${definition.name}' emits resources and cannot be used inside a resource body.`,
@@ -478,7 +468,7 @@ export class RsglCompiler {
       return undefined;
     }
     const body = this.resourceBodyToObjectWithRawMappings(
-      resourceBody,
+      definition.node.body,
       expansion.context,
       { ...this.resourceBodyFragmentOptions(kind), allowBase: false }
     );
@@ -889,21 +879,6 @@ export class RsglCompiler {
   private error(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
     this.diagnostics.push({ code, message, range, severity: "error", ...(fileName ? { fileName } : {}) });
   }
-}
-
-function templateDefinitionClassification(
-  definition: RsglTemplateDefinition | undefined
-): ResolvedTemplateOutputClassification | undefined {
-  if (!definition) {
-    return undefined;
-  }
-  return definition.outputConflict
-    ? {
-        kind: "conflict",
-        metadata: definition.outputMetadata,
-        conflict: definition.outputConflict
-      }
-    : { kind: "resolved", metadata: definition.outputMetadata };
 }
 
 function compileDependencyKey(dependency: CompileDependency): string {

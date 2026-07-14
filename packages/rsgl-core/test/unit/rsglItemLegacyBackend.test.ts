@@ -2,13 +2,13 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import { compileRsglProgram } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
+import { compileSource, compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL legacy item model backend", () => {
   it("lowers item mappings to legacy item model files for older targets", () => {
     const result = compileSourceWithUncheckedExterns([
       "target java mc \"1.21.8\"",
-      "model item diamond impl generated(layer0: minecraft:item/diamond) {}",
+      "model item diamond impl minecraft:item/generated(layer0: minecraft:item/diamond) {}",
       "item acacia_stairs {",
       "  model block/acacia_stairs",
       "}",
@@ -144,7 +144,7 @@ describe("RSGL legacy item model backend", () => {
           "import { dispatch } from \"./templates.rsgl\"",
           "target java format 64",
           "extern! custom model minecraft:item/caller_model",
-          "item wand { use dispatch(minecraft:item/caller_model) }"
+          "use dispatch(minecraft:item/caller_model)"
         ].join("\n"))
       },
       {
@@ -152,9 +152,11 @@ describe("RSGL legacy item model backend", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:item/library_model",
           "template dispatch(callerModel: ModelId) {",
-          "  range property minecraft:custom_model_data {",
-          "    frames [1] model callerModel",
-          "    fallback minecraft:item/library_model",
+          "  item wand {",
+          "    range property minecraft:custom_model_data {",
+          "      frames [1] model callerModel",
+          "      fallback minecraft:item/library_model",
+          "    }",
           "  }",
           "}",
           "export { dispatch }"
@@ -162,7 +164,7 @@ describe("RSGL legacy item model backend", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectOnlyLegacyTemplateWarnings(result);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(
       result.units
         .filter(unit => unit.external?.resourceKind === "model")

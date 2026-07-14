@@ -21,7 +21,7 @@ import {
   selectEvaluationValueIssues
 } from "./evaluate";
 import { evaluatedPathOrigins } from "./evaluationProvenance";
-import { isJsonObject } from "./compilerHelpers";
+import { isJsonObject } from "./jsonValues";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { JsonValue } from "./ir";
 import {
@@ -31,8 +31,6 @@ import {
 } from "./jsonValueLowerer";
 import type { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
-
-export type RsglItemFragmentOptions = JsonValueSinkOptions;
 
 interface ItemModelSinkMapping {
   readonly result: EvaluationResult;
@@ -50,7 +48,7 @@ export function compileItemSpecialStatement(
     | ItemSelectedItemStmtNode
     | ItemSpecialStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions = {}
+  options: JsonValueSinkOptions = {}
 ): ResourceBodyFragment | undefined {
   let model: JsonValue | undefined;
   const modelSinkMappings: ItemModelSinkMapping[] = [];
@@ -82,7 +80,7 @@ function itemFragmentValidationMappings(
   modelSinkMappings: readonly ItemModelSinkMapping[]
 ): ResourceBodyMapping[] {
   return modelSinkMappings.flatMap(item =>
-    evaluatedPathOrigins(item.result, context.sourceFile, item.generatedPath).map(origin => ({
+    evaluatedPathOrigins(item.result, item.generatedPath).map(origin => ({
       generatedPath: origin.generatedPath,
       sourceRange: item.sourceRange,
       context,
@@ -95,7 +93,7 @@ function itemFragmentValidationMappings(
 function compileItemRangeStatement(
   statement: ItemRangeStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const property = expressionString(statement.property, context, "property", options, "/model/property");
@@ -197,7 +195,7 @@ function compileItemRangeStatement(
 function compileItemSelectStatement(
   statement: ItemSelectStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const property = expressionString(statement.property, context, "property", options, "/model/property");
@@ -273,7 +271,7 @@ function compileItemSelectStatement(
 function compileItemConditionStatement(
   statement: ItemConditionStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const property = expressionString(statement.property, context, "property", options, "/model/property");
@@ -326,7 +324,7 @@ function compileItemConditionStatement(
 function compileItemCompositeStatement(
   statement: ItemCompositeStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const models: JsonValue[] = [];
@@ -374,7 +372,7 @@ function compileItemCompositeStatement(
 function compileItemSpecialStatementNode(
   statement: ItemSpecialStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const evaluatedBase = expressionStringWithResult(
@@ -447,7 +445,7 @@ function normalizeItemModelDefinition(value: JsonValue, namespace: string): Json
 function evaluateJsonExpressionWithResourceValues(
   expression: ExprNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): {
   value: JsonValue | undefined;
@@ -468,7 +466,7 @@ function evaluateJsonExpressionWithResourceValues(
 }
 
 function commitItemModelResourceValues(
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   observations: readonly RsglResourceValueObservation[],
   modelPath: string,
   scalarModel: boolean
@@ -489,7 +487,7 @@ function copyStatementOptions(
   statementOptions: ItemRangeStmtNode["options"] | ItemConditionStmtNode["options"],
   context: EvaluationContext,
   names: string[],
-  options: RsglItemFragmentOptions
+  options: JsonValueSinkOptions
 ): void {
   for (const option of statementOptions) {
     if (!names.includes(option.name.text)) {
@@ -515,7 +513,7 @@ function expressionString(
   expression: ExprNode,
   context: EvaluationContext,
   name: string,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): string | null {
   return expressionStringWithResult(expression, context, name, options, generatedPath)?.value ?? null;
@@ -525,7 +523,7 @@ function expressionStringWithResult(
   expression: ExprNode,
   context: EvaluationContext,
   name: string,
-  options: RsglItemFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): { value: string; result: EvaluationResult } | null {
   const evaluated = evaluateJsonExpressionWithResult(expression, context, options, generatedPath);

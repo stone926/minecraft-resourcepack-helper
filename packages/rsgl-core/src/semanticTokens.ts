@@ -8,7 +8,6 @@ import type {
   PropertyStmtNode,
   ResourceDeclNode,
   RsglNode,
-  SugarPropertyNode,
   TextRange
 } from "./parser";
 import { walkRsglModule } from "./parser/astTraversal";
@@ -163,8 +162,6 @@ function propertyIdentifiers(node: RsglNode): readonly IdentifierNode[] {
     }
     case "MemberExpr":
       return [(node as MemberExprNode).property];
-    case "SugarProperty":
-      return [(node as SugarPropertyNode).name];
     case "BlockstateModelProperty":
       return [(node as BlockstateModelPropertyNode).name];
     case "PropertyStmt":

@@ -1,7 +1,5 @@
 import type { RsglResourceKind } from "../resourceKinds";
 import type { ExternResourceSource } from "../externDeclarations";
-export type { ExternResourceKind } from "../resourceKinds";
-export type { ExternResourceSource } from "../externDeclarations";
 
 export type RsglTokenKind =
   | "identifier"
@@ -242,36 +240,6 @@ export interface ForInExprNode extends RsglNode {
   iterable: ExprNode;
 }
 
-/**
- * Compatibility-only selector syntax for legacy `[key=value]` blockstate
- * entries. Canonical blockstate selectors use ObjectExpr + DynamicKeyNode.
- *
- * Kept in ExprNode during the migration window so existing semantic/compiler
- * adapters can continue to consume old source without parser AST rewriting.
- */
-export interface StateKeySugarNode extends RsglNode {
-  kind: "StateKeySugar";
-  entries: ObjectPropertyNode[];
-}
-
-/** Compatibility-only `@model` blockstate apply syntax. */
-export interface ModelApplySugarNode extends RsglNode {
-  kind: "ModelApplySugar";
-  model: ExprNode;
-  properties: SugarPropertyNode[];
-}
-
-export interface SugarPropertyNode extends RsglNode {
-  kind: "SugarProperty";
-  name: IdentifierNode;
-  value: ExprNode;
-}
-
-export interface RandomApplyNode extends RsglNode {
-  kind: "RandomApply";
-  entries: ExprNode[];
-}
-
 export type ExprNode =
   | IdentifierExprNode
   | StringLiteralNode
@@ -292,9 +260,6 @@ export type ExprNode =
   | LambdaExprNode
   | MatchExprNode
   | ForInExprNode
-  | StateKeySugarNode
-  | ModelApplySugarNode
-  | RandomApplyNode
   | MissingExprNode;
 
 export type TypeNode =
@@ -386,16 +351,6 @@ export interface BlockstateVariantsRootBodyNode extends RsglNode {
 export interface BlockstateMultipartRootBodyNode extends RsglNode {
   kind: "BlockstateMultipartRootBody";
   statements: BlockstateMultipartRootStatementNode[];
-}
-
-/**
- * Recovery/compatibility body for blockstate declarations without a valid
- * mode header. It may represent legacy wrappers or otherwise ambiguous root
- * statements, but is never a canonical blockstate root.
- */
-export interface LegacyBlockstateRootBodyNode extends RsglNode {
-  kind: "LegacyBlockstateRootBody";
-  statements: LegacyBlockstateRootStatementNode[];
 }
 
 export interface TargetDeclNode extends StatementNodeBase {
@@ -495,8 +450,6 @@ export interface TemplateDeclNode extends StatementNodeBase {
   body: TemplateBodyNode;
 }
 
-export type ResourceKind = RsglResourceKind;
-
 interface ResourceDeclNodeBase extends StatementNodeBase {
   kind: "ResourceDecl";
   subtype?: IdentifierNode;
@@ -505,13 +458,12 @@ interface ResourceDeclNodeBase extends StatementNodeBase {
 }
 
 export interface NonBlockstateResourceDeclNode extends ResourceDeclNodeBase {
-  resourceKind: Exclude<ResourceKind, "blockstate">;
+  resourceKind: Exclude<RsglResourceKind, "blockstate">;
   body: ResourceBodyNode;
 }
 
 export interface BlockstateVariantsResourceDeclNode extends ResourceDeclNodeBase {
   resourceKind: "blockstate";
-  blockstateSyntax: "modeHeader";
   mode: "variants";
   modeNode: IdentifierNode;
   id: ExprNode;
@@ -520,7 +472,6 @@ export interface BlockstateVariantsResourceDeclNode extends ResourceDeclNodeBase
 
 export interface BlockstateMultipartResourceDeclNode extends ResourceDeclNodeBase {
   resourceKind: "blockstate";
-  blockstateSyntax: "modeHeader";
   mode: "multipart";
   modeNode: IdentifierNode;
   id: ExprNode;
@@ -531,19 +482,9 @@ export type BlockstateResourceDeclNode =
   | BlockstateVariantsResourceDeclNode
   | BlockstateMultipartResourceDeclNode;
 
-export interface LegacyBlockstateResourceDeclNode extends ResourceDeclNodeBase {
-  resourceKind: "blockstate";
-  blockstateSyntax: "legacyMissingMode" | "invalidMode";
-  mode: null;
-  modeNode?: IdentifierNode;
-  id: ExprNode;
-  body: LegacyBlockstateRootBodyNode;
-}
-
 export type ResourceDeclNode =
   | NonBlockstateResourceDeclNode
-  | BlockstateResourceDeclNode
-  | LegacyBlockstateResourceDeclNode;
+  | BlockstateResourceDeclNode;
 
 export interface ForDimensionNode extends RsglNode {
   kind: "ForDimension";
@@ -558,8 +499,6 @@ export interface UseDeclNode extends StatementNodeBase {
 
 export interface ForStmtNode extends StatementNodeBase {
   kind: "ForStmt";
-  bindings: IdentifierNode[];
-  iterable: ExprNode;
   dimensions: ForDimensionNode[];
   body:
     | BlockNode
@@ -567,8 +506,7 @@ export interface ForStmtNode extends StatementNodeBase {
     | VariantBodyNode
     | MultipartBodyNode
     | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode
-    | LegacyBlockstateRootBodyNode;
+    | BlockstateMultipartRootBodyNode;
 }
 
 export interface IfStmtNode extends StatementNodeBase {
@@ -580,16 +518,14 @@ export interface IfStmtNode extends StatementNodeBase {
     | VariantBodyNode
     | MultipartBodyNode
     | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode
-    | LegacyBlockstateRootBodyNode;
+    | BlockstateMultipartRootBodyNode;
   elseBody?:
     | BlockNode
     | ResourceBodyNode
     | VariantBodyNode
     | MultipartBodyNode
     | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode
-    | LegacyBlockstateRootBodyNode;
+    | BlockstateMultipartRootBodyNode;
 }
 
 export interface UnknownStmtNode extends StatementNodeBase {
@@ -601,8 +537,6 @@ export type ResourceStatementNode =
   | ExternVarStmtNode
   | PropertyStmtNode
   | SectionStmtNode
-  | VariantsSectionNode
-  | MultipartSectionNode
   | ItemRangeStmtNode
   | ItemSelectStmtNode
   | ItemConditionStmtNode
@@ -610,9 +544,7 @@ export type ResourceStatementNode =
   | ItemEmptyStmtNode
   | ItemSelectedItemStmtNode
   | ItemSpecialStmtNode
-  | VariantEntryNode
   | BlockstateVariantEntryNode
-  | MultipartEntryNode
   | BlockstateMultipartEntryNode
   | UseDeclNode
   | ForStmtNode
@@ -650,21 +582,6 @@ export interface SectionStmtNode extends StatementNodeBase {
   value?: ExprNode;
 }
 
-export interface VariantsSectionNode extends StatementNodeBase {
-  kind: "VariantsSection";
-  /** Legacy nested wrapper retained only for compatibility/migration. */
-  syntax: "legacyWrapper";
-  entries: VariantSectionStatementNode[];
-}
-
-export interface VariantEntryNode extends StatementNodeBase {
-  kind: "VariantEntry";
-  /** Legacy selector/arrow entry retained only for compatibility/migration. */
-  syntax: "legacy";
-  state: ExprNode;
-  value: ExprNode;
-}
-
 export interface BlockstateVariantEntryNode extends StatementNodeBase {
   kind: "BlockstateVariantEntry";
   selector: ExprNode;
@@ -674,27 +591,11 @@ export interface BlockstateVariantEntryNode extends StatementNodeBase {
 
 export type VariantSectionStatementNode =
   | BlockstateVariantEntryNode
-  | VariantEntryNode
   | LetDeclNode
   | UseDeclNode
   | ForStmtNode
   | IfStmtNode
   | UnknownStmtNode;
-
-export interface MultipartSectionNode extends StatementNodeBase {
-  kind: "MultipartSection";
-  /** Legacy nested wrapper retained only for compatibility/migration. */
-  syntax: "legacyWrapper";
-  entries: MultipartSectionStatementNode[];
-}
-
-export interface MultipartEntryNode extends StatementNodeBase {
-  kind: "MultipartEntry";
-  /** Legacy wrapper entry retained only for compatibility/migration. */
-  syntax: "legacy";
-  when?: ExprNode;
-  apply: ExprNode;
-}
 
 export interface BlockstateMultipartEntryNode extends StatementNodeBase {
   kind: "BlockstateMultipartEntry";
@@ -704,7 +605,6 @@ export interface BlockstateMultipartEntryNode extends StatementNodeBase {
 
 export type MultipartSectionStatementNode =
   | BlockstateMultipartEntryNode
-  | MultipartEntryNode
   | LetDeclNode
   | UseDeclNode
   | ForStmtNode
@@ -910,26 +810,15 @@ export type BlockstateRootCommonStatementNode =
   | BaseStmtNode
   | MergeStmtNode
   | PropertyStmtNode
-  | UnknownStmtNode
-  | VariantsSectionNode
-  | MultipartSectionNode;
+  | UnknownStmtNode;
 
 export type BlockstateVariantsRootStatementNode =
   | BlockstateRootCommonStatementNode
-  | BlockstateVariantEntryNode
-  | VariantEntryNode;
+  | BlockstateVariantEntryNode;
 
 export type BlockstateMultipartRootStatementNode =
   | BlockstateRootCommonStatementNode
-  | BlockstateMultipartEntryNode
-  | MultipartEntryNode;
-
-export type LegacyBlockstateRootStatementNode =
-  | BlockstateRootCommonStatementNode
-  | BlockstateVariantEntryNode
-  | VariantEntryNode
-  | BlockstateMultipartEntryNode
-  | MultipartEntryNode;
+  | BlockstateMultipartEntryNode;
 
 export interface LexResult {
   tokens: RsglToken[];

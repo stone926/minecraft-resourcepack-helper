@@ -16,11 +16,10 @@ describe("RSGL blockstate parser", () => {
     const variantsSource = "blockstate variants variants {}";
     const variants = parseSingleBlockstate(variantsSource);
     assert.deepStrictEqual(variants.module.diagnostics, []);
-    assert.strictEqual(variants.resource.blockstateSyntax, "modeHeader");
     assert.strictEqual(variants.resource.mode, "variants");
-    assert.strictEqual(variants.resource.modeNode?.text, "variants");
+    assert.strictEqual(variants.resource.modeNode.text, "variants");
     assert.strictEqual(
-      variantsSource.slice(variants.resource.modeNode?.range.start, variants.resource.modeNode?.range.end),
+      variantsSource.slice(variants.resource.modeNode.range.start, variants.resource.modeNode.range.end),
       "variants"
     );
     assert.strictEqual(variants.resource.id.kind, "IdentifierExpr");
@@ -28,32 +27,27 @@ describe("RSGL blockstate parser", () => {
 
     const multipart = parseSingleBlockstate("blockstate multipart multipart {}");
     assert.deepStrictEqual(multipart.module.diagnostics, []);
-    assert.strictEqual(multipart.resource.blockstateSyntax, "modeHeader");
     assert.strictEqual(multipart.resource.mode, "multipart");
-    assert.strictEqual(multipart.resource.modeNode?.text, "multipart");
+    assert.strictEqual(multipart.resource.modeNode.text, "multipart");
     assert.strictEqual(multipart.resource.body.kind, "BlockstateMultipartRootBody");
   });
 
-  it("preserves missing and unknown mode declarations as legacy recovery AST", () => {
-    const missing = parseSingleBlockstate("blockstate stairs {}");
-    assert.deepStrictEqual(missing.module.diagnostics.map(diagnostic => diagnostic.code), [
+  it("rejects missing and unknown modes without producing resource declarations", () => {
+    const missing = parseRsgl("blockstate stairs {}");
+    assert.deepStrictEqual(missing.diagnostics.map(diagnostic => diagnostic.code), [
       "rsgl.blockstateModeRequired"
     ]);
-    assert.strictEqual(missing.resource.blockstateSyntax, "legacyMissingMode");
-    assert.strictEqual(missing.resource.mode, null);
-    assert.strictEqual(missing.resource.body.kind, "LegacyBlockstateRootBody");
+    assert.strictEqual(missing.diagnostics[0].severity, "error");
+    assert.strictEqual(missing.statements[0]?.kind, "UnknownStmt");
 
-    const unknown = parseSingleBlockstate("blockstate variant stairs {}");
-    assert.deepStrictEqual(unknown.module.diagnostics.map(diagnostic => diagnostic.code), [
+    const unknown = parseRsgl("blockstate variant stairs {}");
+    assert.deepStrictEqual(unknown.diagnostics.map(diagnostic => diagnostic.code), [
       "rsgl.unknownBlockstateMode"
     ]);
-    assert.strictEqual(unknown.resource.blockstateSyntax, "invalidMode");
-    assert.strictEqual(unknown.resource.mode, null);
-    assert.strictEqual(unknown.resource.modeNode?.text, "variant");
-    assert.strictEqual(unknown.resource.body.kind, "LegacyBlockstateRootBody");
+    assert.strictEqual(unknown.statements[0]?.kind, "UnknownStmt");
   });
 
-  it("keeps expression-shaped legacy resource ids intact while retaining unknown-mode recovery", () => {
+  it("rejects mode-less declarations regardless of resource-id expression shape", () => {
     const cases = [
       "blockstate type == \"nest\" ? \"bee_nest\" : \"beehive\" {}",
       "blockstate entry.id {}",
@@ -61,16 +55,16 @@ describe("RSGL blockstate parser", () => {
       "blockstate build_id(type) {}"
     ];
     for (const source of cases) {
-      const parsed = parseSingleBlockstate(source);
-      assert.strictEqual(parsed.resource.blockstateSyntax, "legacyMissingMode", source);
-      assert.deepStrictEqual(parsed.module.diagnostics.map(diagnostic => diagnostic.code), [
+      const parsed = parseRsgl(source);
+      assert.strictEqual(parsed.statements[0]?.kind, "UnknownStmt", source);
+      assert.deepStrictEqual(parsed.diagnostics.map(diagnostic => diagnostic.code), [
         "rsgl.blockstateModeRequired"
       ], source);
     }
 
-    const unknown = parseSingleBlockstate("blockstate typo resource_id {}");
-    assert.strictEqual(unknown.resource.blockstateSyntax, "invalidMode");
-    assert.deepStrictEqual(unknown.module.diagnostics.map(diagnostic => diagnostic.code), [
+    const unknown = parseRsgl("blockstate typo resource_id {}");
+    assert.strictEqual(unknown.statements[0]?.kind, "UnknownStmt");
+    assert.deepStrictEqual(unknown.diagnostics.map(diagnostic => diagnostic.code), [
       "rsgl.unknownBlockstateMode"
     ]);
   });
@@ -196,58 +190,6 @@ describe("RSGL blockstate parser", () => {
     assert.strictEqual(second.kind === "BlockstateMultipartEntry" ? second.apply.kind : "", "BlockstateRandomValue");
   });
 
-  it("keeps each legacy blockstate form explicit with only directed diagnostics", () => {
-    const { module, resource } = parseSingleBlockstate([
-      "blockstate stairs {",
-      "  variants {",
-      "    [facing=north] -> @minecraft:block/stairs x=90",
-      "  }",
-      "}"
-    ].join("\n"));
-
-    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.blockstateModeRequired",
-      "rsgl.legacyBlockstateWrapper",
-      "rsgl.legacyStateKeySugar",
-      "rsgl.legacyBlockstateEntryArrow",
-      "rsgl.legacyModelApplySugar"
-    ]);
-    assert.strictEqual(resource.body.kind, "LegacyBlockstateRootBody");
-    const wrapper = resource.body.statements[0];
-    assert.strictEqual(wrapper.kind, "VariantsSection");
-    if (wrapper.kind === "VariantsSection") {
-      assert.strictEqual(wrapper.syntax, "legacyWrapper");
-      const entry = wrapper.entries[0];
-      assert.strictEqual(entry.kind, "VariantEntry");
-      if (entry.kind === "VariantEntry") {
-        assert.strictEqual(entry.syntax, "legacy");
-        assert.strictEqual(entry.state.kind, "StateKeySugar");
-        assert.strictEqual(entry.value.kind, "ModelApplySugar");
-      }
-    }
-  });
-
-  it("does not generate blockstate sugar from the global expression grammar", () => {
-    const modules = [
-      parseRsgl("let value = [foo=bar]"),
-      parseRsgl("let value = @model"),
-      parseRsgl("let value = random [a, b]")
-    ];
-    const expressionKinds: string[] = [];
-    for (const module of modules) {
-      walkRsglModule(module, {
-        enterExpression(expression) {
-          expressionKinds.push(expression.kind);
-        }
-      });
-    }
-
-    assert.ok(expressionKinds.includes("ListExpr"));
-    assert.strictEqual(expressionKinds.includes("StateKeySugar"), false);
-    assert.strictEqual(expressionKinds.includes("ModelApplySugar"), false);
-    assert.strictEqual(expressionKinds.includes("RandomApply"), false);
-  });
-
   it("rejects nested random values with a directed blockstate diagnostic", () => {
     const { module, resource } = parseSingleBlockstate([
       "blockstate variants nested_random {",
@@ -297,7 +239,11 @@ describe("RSGL blockstate parser", () => {
         "model block next {}"
       ].join("\n"));
 
-      assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedBlockstateId"));
+      assert.ok(module.diagnostics.some(diagnostic =>
+        diagnostic.code === (header === "blockstate variants"
+          ? "rsgl.expectedBlockstateId"
+          : "rsgl.blockstateModeRequired")
+      ));
       assert.strictEqual(module.statements.length, 2);
       assert.strictEqual(module.statements[1].kind, "ResourceDecl");
       if (module.statements[1].kind === "ResourceDecl") {
@@ -315,7 +261,7 @@ describe("RSGL blockstate parser", () => {
     ].join("\n"));
     assert.strictEqual(variants.resource.body.kind, "BlockstateVariantsRootBody");
     assert.deepStrictEqual(variants.resource.body.statements.map(statement => statement.kind), [
-      "BlockstateVariantEntry",
+      "UnknownStmt",
       "BlockstateVariantEntry"
     ]);
 
@@ -343,7 +289,7 @@ describe("RSGL blockstate parser", () => {
       diagnostic.code === "rsgl.expectedToken"
     ));
     assert.deepStrictEqual(missingColon.resource.body.statements.map(statement => statement.kind), [
-      "BlockstateVariantEntry",
+      "UnknownStmt",
       "BlockstateVariantEntry"
     ]);
 

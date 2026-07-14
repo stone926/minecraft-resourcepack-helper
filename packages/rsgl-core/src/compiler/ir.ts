@@ -16,11 +16,9 @@ export interface BinaryCopyRef {
   sourcePath: string;
 }
 
-export type ExternalResourceKind = ExternResourceKind;
-
 export interface ExternalResourceRef {
   kind: "external";
-  resourceKind: ExternalResourceKind;
+  resourceKind: ExternResourceKind;
   id: string;
   source: ExternResourceSource;
   skipExistenceCheck: boolean;
@@ -33,7 +31,7 @@ export interface ResourceId {
   path: string;
 }
 
-export type ResourceKind = RsglResourceKind | ExternalResourceKind;
+export type ResourceKind = RsglResourceKind | ExternResourceKind;
 
 export interface ResourceUnit {
   id?: ResourceId;

@@ -1,8 +1,5 @@
 import {
-  createMirrorTransform,
   createQuarterTurnTransform,
-  createTranslationTransform,
-  type ModelAxis,
   type ModelFaceDirection,
   type ModelVec3
 } from "../../../mc-assets/src";
@@ -50,19 +47,10 @@ interface FaceEntry {
   fields: Map<string, FaceField>;
 }
 
-interface PendingElement {
-  element: CompilerModelGeometryElement;
-  mirrorAxes: ModelAxis[];
-  mirrorRange?: TextRange;
-  translate?: ModelVec3;
-  translateRange?: TextRange;
-}
-
 const faceDirections: readonly ModelFaceDirection[] = ["down", "up", "north", "south", "west", "east"];
 const faceDirectionSet = new Set<string>(faceDirections);
 const elementFields = new Set(["rotation", "shade", "light_emission"]);
 const faceFields = new Set(["texture", "uv", "cullface", "rotation", "tintindex"]);
-const transformFields = new Set(["mirror", "translate"]);
 
 export function compileModelGeometryStatement(
   statement: ResourceStatementNode,
@@ -82,11 +70,7 @@ export function compileModelGeometryStatement(
   if (!compiled) {
     return undefined;
   }
-  const elements = expandLegacyElement(compiled, statement, context, options);
-  if (!elements) {
-    return undefined;
-  }
-  return elementFragment(elements, statement.range, context);
+  return elementFragment(compiled, statement.range, context);
 }
 
 function compileModelTextureStatement(
@@ -117,7 +101,7 @@ function compileModelTextureStatement(
         appendGeneratedPath("/textures", key),
         statement.value.range,
         context,
-        evaluatedRootOrigin(evaluated.result, context.sourceFile)
+        evaluatedRootOrigin(evaluated.result)
       )
     ]
   };
@@ -231,7 +215,7 @@ function compileElement(
   statement: ModelElementStmtNode,
   context: EvaluationContext,
   options: ModelGeometryDslOptions
-): PendingElement | undefined {
+): CompilerModelGeometryElement | undefined {
   const from = vector3(statement.from, "Model element from", statement.range, context, options, "/elements/0/from");
   const to = vector3(statement.to, "Model element to", statement.range, context, options, "/elements/0/to");
   if (!from || !to) {
@@ -250,10 +234,8 @@ function compileElement(
       mapping("/to", statement.to?.range ?? statement.range, context)
     ]
   };
-  const pending: PendingElement = { element, mirrorAxes: [] };
-
   for (const property of statement.properties) {
-    applyElementProperty(pending, faces, property, context, options);
+    applyElementProperty(element, faces, property, context, options);
   }
   for (const face of statement.faces) {
     applyFaceClause(faces, face, context, options);
@@ -274,11 +256,11 @@ function compileElement(
       }
     }
   }
-  return pending;
+  return element;
 }
 
 function applyElementProperty(
-  pending: PendingElement,
+  element: CompilerModelGeometryElement,
   faces: Map<ModelFaceDirection, FaceEntry>,
   property: ModelGeometryPropertyNode,
   context: EvaluationContext,
@@ -288,8 +270,8 @@ function applyElementProperty(
   if (elementFields.has(name)) {
     const value = evaluateJsonExpression(property.value, context, options, appendGeneratedPath("/elements/0", name));
     if (value !== undefined) {
-      setJsonObjectProperty(pending.element.content, name, value);
-      pending.element.mappings.push(mapping(appendGeneratedPath("", name), property.value.range, context));
+      setJsonObjectProperty(element.content, name, value);
+      element.mappings.push(mapping(appendGeneratedPath("", name), property.value.range, context));
     }
     return;
   }
@@ -307,31 +289,12 @@ function applyElementProperty(
     }
     return;
   }
-  if (name === "translate") {
-    pending.translate = vector3(
-      property.value,
-      "Model element translate",
-      property.range,
-      context,
-      options,
-      "/elements/0/@translate"
-    ) ?? undefined;
-    pending.translateRange = property.range;
-    return;
-  }
-  if (name === "mirror") {
-    pending.mirrorAxes.push(...mirrorAxes(property.value, context, options, "/elements/0/@mirror"));
-    pending.mirrorRange = property.range;
-    return;
-  }
-  if (!transformFields.has(name)) {
-    options.onError?.(
-      "rsgl.unknownModelElementProperty",
-      `Unknown model element property '${name}'.`,
-      property.name.range,
-      context.sourceFile
-    );
-  }
+  options.onError?.(
+    "rsgl.unknownModelElementProperty",
+    `Unknown model element property '${name}'.`,
+    property.name.range,
+    context.sourceFile
+  );
 }
 
 function applyFaceClause(
@@ -380,64 +343,17 @@ function applyFaceClause(
   }
 }
 
-function expandLegacyElement(
-  pending: PendingElement,
-  statement: ModelElementStmtNode,
-  context: EvaluationContext,
-  options: ModelGeometryDslOptions
-): CompilerModelGeometryElement[] | undefined {
-  let translated = pending.element;
-  if (pending.translate) {
-    const result = transformCompilerModelElement(
-      translated,
-      createTranslationTransform(pending.translate),
-      transformOptions(pending.translateRange ?? statement.range, context, options)
-    );
-    if (!result) {
-      context.onEvaluationFailure?.();
-      return undefined;
-    }
-    translated = result;
-  }
-
-  const axes = uniqueAxes(pending.mirrorAxes);
-  if (axes.length === 0) {
-    return [translated];
-  }
-  const combinations = mirrorAxisCombinations(axes);
-  if (!consumeGeometryExpansion(context, combinations.length, pending.mirrorRange ?? statement.range, options)) {
-    return undefined;
-  }
-  const elements: CompilerModelGeometryElement[] = [];
-  for (const combination of combinations) {
-    if (combination.length === 0) {
-      elements.push(translated);
-      continue;
-    }
-    const transformed = transformCompilerModelElement(
-      translated,
-      createMirrorTransform(combination),
-      transformOptions(pending.mirrorRange ?? statement.range, context, options)
-    );
-    if (!transformed) {
-      context.onEvaluationFailure?.();
-      return undefined;
-    }
-    elements.push(transformed);
-  }
-  return elements;
-}
-
 function elementFragment(
-  elements: readonly CompilerModelGeometryElement[],
+  element: CompilerModelGeometryElement,
   sourceRange: TextRange,
   context: EvaluationContext
 ): ResourceBodyFragment {
-  const mappings: ResourceBodyMapping[] = [mapping("/elements", sourceRange, context)];
-  elements.forEach((element, index) => mappings.push(...prefixElementMappings(element.mappings, index)));
   return {
-    content: { elements: elements.map(element => element.content) },
-    mappings
+    content: { elements: [element.content] },
+    mappings: [
+      mapping("/elements", sourceRange, context),
+      ...prefixElementMappings(element.mappings, 0)
+    ]
   };
 }
 
@@ -518,7 +434,7 @@ function faceField(
     : {
         value: evaluated.value,
         range: property.value.range,
-        validationOrigin: evaluatedRootOrigin(evaluated.result, context.sourceFile)
+        validationOrigin: evaluatedRootOrigin(evaluated.result)
       };
 }
 
@@ -549,45 +465,6 @@ function facesToJson(faces: ReadonlyMap<ModelFaceDirection, FaceEntry>): Record<
       setJsonObjectProperty(face, name, field.value);
     }
     setJsonObjectProperty(result, direction, face);
-  }
-  return result;
-}
-
-function mirrorAxisCombinations(axes: readonly ModelAxis[]): ModelAxis[][] {
-  return axes.reduce<ModelAxis[][]>(
-    (combinations, axis) => [...combinations, ...combinations.map(combination => [...combination, axis])],
-    [[]]
-  );
-}
-
-function uniqueAxes(axes: readonly ModelAxis[]): ModelAxis[] {
-  return axes.filter((axis, index) => axes.indexOf(axis) === index);
-}
-
-function mirrorAxes(
-  value: ExprNode,
-  context: EvaluationContext,
-  options: ModelGeometryDslOptions,
-  generatedPath: string
-): ModelAxis[] {
-  const evaluated = evaluateJsonExpression(value, context, options, generatedPath);
-  if (evaluated === undefined) {
-    return [];
-  }
-  const values = Array.isArray(evaluated) ? evaluated : [evaluated];
-  const result: ModelAxis[] = [];
-  for (const item of values) {
-    if (item === "x" || item === "y" || item === "z") {
-      result.push(item);
-    } else {
-      options.onError?.(
-        "rsgl.invalidModelElementMirror",
-        "Model element mirror must be 'x', 'y', 'z', or a list of axes.",
-        value.range,
-        context.sourceFile
-      );
-      return [];
-    }
   }
   return result;
 }

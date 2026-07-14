@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import type { ExprNode, ResourceDeclNode, TextRange } from "../../src/parser";
+import type { ExprNode, TextRange } from "../../src/parser";
 import { parseRsgl } from "../../src/parser";
 import {
   compileBlockstateResource,
@@ -24,10 +24,11 @@ import type {
 } from "../../src/compiler/ir";
 import { checkJsonResourceReference } from "../../src/compiler/jsonResourceReferenceValidation";
 import {
+  createJsonValueLoweringHost,
   evaluateJsonExpression,
-  type JsonRuntimeValueAdapter
+  type JsonRuntimeValueAdapter,
+  lowerJsonEvaluationResult
 } from "../../src/compiler/jsonValueLowerer";
-import { lowerSerializableBlockstateJsonValue } from "../../src/compiler/blockstateJsonValueLowerer";
 import {
   beginResourceValueValidation,
   completeResourceValueValidation
@@ -134,22 +135,23 @@ describe("RSGL resource-value JSON adapter", () => {
     assert.ok(diagnostics[0].message.includes("Malformed compiler resource value"));
   });
 
-  it("installs the resource adapter in the blockstate compatibility sink alongside custom adapters", () => {
+  it("installs the resource adapter in the shared lowering sink alongside custom adapters", () => {
     const model = requiredResourceId("block/stone", "model", "demo");
     const customValue = { kind: "custom", value: 7 };
     const parsed = parsedExpression("{ model: modelValue, custom: customValue }");
     const context = evaluationContext({ modelValue: model, customValue });
     const observations: RsglResourceValueObservation[] = [];
     const customPaths: string[] = [];
-    const value = lowerSerializableBlockstateJsonValue(
+    const loweringHost = createJsonValueLoweringHost(context, {
+      onError: () => assert.fail("Expected the value to be serializable."),
+      onResourceValueObservation: observation => observations.push(observation),
+      jsonValueAdapters: [customAdapter(customValue, customPaths)]
+    });
+    loweringHost.generatedPathPrefix = "/entry";
+    const value = lowerJsonEvaluationResult(
       evaluateExpressionResult(parsed.expression, context),
       parsed.expression.range,
-      {
-        onError: () => assert.fail("Expected the value to be serializable."),
-        onResourceValueObservation: observation => observations.push(observation),
-        jsonValueAdapters: [customAdapter(customValue, customPaths)]
-      },
-      "/entry"
+      loweringHost
     );
 
     assert.deepStrictEqual(value, { model: "demo:block/stone", custom: 7 });
@@ -372,7 +374,7 @@ function compileDirectBlockstate(
 ): ResourceUnit {
   const module = parseRsgl(source);
   const statement = module.statements[0];
-  assert.ok(statement?.kind === "ResourceDecl");
+  assert.ok(statement?.kind === "ResourceDecl" && statement.resourceKind === "blockstate");
   const context: RsglCompileContext = {
     namespace: "demo",
     variables: new Map(Object.entries(values)),
@@ -395,7 +397,7 @@ function compileDirectBlockstate(
       directMapping(generatedPath, sourceRange, mappingContext)
   };
   const unit = compileBlockstateResource(
-    statement as ResourceDeclNode,
+    statement,
     context,
     options
   );

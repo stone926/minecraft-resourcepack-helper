@@ -16,10 +16,9 @@ import type { RsglMapping } from "../../src/compiler/ir";
 import type { RsglCompileContext } from "../../src/compiler/templateExpansion";
 import {
   parseRsgl,
-  type ResourceDeclNode,
+  type BlockstateResourceDeclNode,
   type TemplateDeclNode
 } from "../../src/parser";
-import { bindRsglModule } from "../../src/semantic";
 import type { RsglTemplateCallerContext } from "../../src/templateOutput";
 import {
   generatedResourceUnits,
@@ -114,15 +113,15 @@ describe("RSGL compiler template dispatch guards", () => {
 
   it("closes blockstate root base capability inside nested control flow", () => {
     const module = parseRsgl([
-      "template fragment() { custom true }",
-      "blockstate test {",
+      "template fragment() -> variants { { nested: true }: minecraft:block/stone }",
+      "blockstate variants test {",
       "  for value in [0] {",
       "    use fragment()",
       "  }",
       "}"
     ].join("\n"));
     const templateNode = module.statements[0] as TemplateDeclNode;
-    const resourceNode = module.statements[1] as ResourceDeclNode;
+    const resourceNode = module.statements[1] as BlockstateResourceDeclNode;
     const templates = new Map();
     const definition = createTemplateDefinition(
       "fragment",
@@ -131,7 +130,7 @@ describe("RSGL compiler template dispatch guards", () => {
       "minecraft",
       new Map(),
       templates,
-      { outputSource: "legacyContextualAdapter", bodyNodeKind: "ResourceBody" }
+      { outputSource: "explicitArrow", outputDialect: "variants" }
     );
     templates.set("fragment", definition);
     const callerContexts: RsglTemplateCallerContext[] = [];
@@ -159,8 +158,7 @@ describe("RSGL compiler template dispatch guards", () => {
         callerContexts.push(callerContext);
         return {
           compatible: true,
-          selectedDialect: callerContext.kind === "resources" ? undefined : callerContext,
-          compatibilityWarning: true
+          selectedDialect: "variants"
         };
       },
       onError: () => { },
@@ -232,11 +230,6 @@ describe("RSGL compiler template dispatch guards", () => {
     const afterTargetChange = refreshTemplateDefinitionFingerprint(parent, "project-config");
     assert.notStrictEqual(afterTargetChange, beforeTargetChange);
 
-    const beforeConflict = parent.definitionFingerprint;
-    leaf.outputConflict = { evidence: ["resourceBody:model", "blockstateEntries:variants"] };
-    const afterConflict = refreshTemplateDefinitionFingerprint(parent, "project-config");
-    assert.notStrictEqual(afterConflict, beforeConflict);
-
     const beforeCallers = parent.definitionFingerprint;
     for (const namespace of ["caller_a", "caller_b"]) {
       new RsglCompiler(parseRsgl(""), {
@@ -255,8 +248,8 @@ describe("RSGL compiler template dispatch guards", () => {
       "template modelOnly(value: Json = glob(\"default/*.png\")) -> model { texture all minecraft:block/stone }",
       "use modelOnly(glob(\"top/*.png\"))",
       "json \"assets/minecraft/custom/value.json\" { use modelOnly() }",
-      "blockstate test {",
-      "  variants { use modelOnly(glob(\"blockstate/*.png\")) }",
+      "blockstate variants test {",
+      "  use modelOnly(glob(\"blockstate/*.png\"))",
       "}"
     ].join("\n")), {
       fileName: "main.rsgl",
@@ -274,139 +267,4 @@ describe("RSGL compiler template dispatch guards", () => {
     assert.deepStrictEqual(result.dependencies, []);
   });
 
-  it("rejects conflicting template definitions before evaluating any use context", () => {
-    const loaderCalls: string[] = [];
-    const compiler = new RsglCompiler(parseRsgl([
-      "template modelPart() -> model { leaked true }",
-      "template states() -> variants { [other=true] -> { model: minecraft:block/stone } }",
-      "template mixed(value: Json = glob(\"default/*.png\")) {",
-      "  use modelPart()",
-      "  use states()",
-      "}",
-      "use mixed(glob(\"top/*.png\"))",
-      "model block retained {",
-      "  marker true",
-      "  use mixed()",
-      "}",
-      "blockstate retained {",
-      "  variants { [base=true] -> { model: minecraft:block/stone } }",
-      "  use mixed(glob(\"blockstate/*.png\"))",
-      "}"
-    ].join("\n")), {
-      fileName: "main.rsgl",
-      namespace: "minecraft",
-      stdlibTemplates: [],
-      globLoader: pattern => {
-        loaderCalls.push(pattern);
-        return [];
-      }
-    });
-
-    const result = compiler.compile();
-
-    assert.deepStrictEqual(loaderCalls, []);
-    assert.deepStrictEqual(result.dependencies, []);
-    assert.deepStrictEqual(result.units.map(unit => unit.content), [
-      { marker: true },
-      {
-        variants: {
-          "base=true": { model: "minecraft:block/stone" }
-        }
-      }
-    ]);
-  });
-
-  it("does not classify, validate, or compile shadowed resource-body helpers as builtins", () => {
-    const cases = [
-      {
-        source: [
-          "template wrapper(atlasDirectory: Function) { use atlasDirectory(\"block\") }",
-          "atlas test { use wrapper(value => value) }"
-        ].join("\n"),
-        templateName: "wrapper"
-      },
-      {
-        source: [
-          "atlas test {",
-          "  let atlasDirectory = value => value",
-          "  use atlasDirectory(\"block\")",
-          "}"
-        ].join("\n")
-      },
-      {
-        source: [
-          "template wrapper() {",
-          "  use atlasDirectory(\"block\")",
-          "  let atlasDirectory = value => value",
-          "}",
-          "atlas test { use wrapper() }"
-        ].join("\n"),
-        templateName: "wrapper"
-      }
-    ];
-
-    for (const testCase of cases) {
-      const module = parseRsgl(testCase.source);
-      const model = bindRsglModule(module);
-      assert.ok(model.diagnostics.some(diagnostic => diagnostic.code === "rsgl.functionValueCannotUse"));
-      if (testCase.templateName) {
-        assert.strictEqual(
-          model.scope.symbols.get(testCase.templateName)?.signature?.templateOutput?.outputSource,
-          "legacyContextualAdapter"
-        );
-      }
-
-      const result = new RsglCompiler(module, {
-        fileName: "main.rsgl",
-        namespace: "minecraft",
-        stdlibTemplates: []
-      }).compile();
-      assert.deepStrictEqual(result.units.map(unit => unit.content), [{}]);
-    }
-  });
-
-  it("preserves linked conflict carriers through re-exports without evaluating defaults", () => {
-    const mainFile = path.resolve("template-conflict", "main.rsgl");
-    const barrelFile = path.resolve("template-conflict", "barrel.rsgl");
-    const definitionsFile = path.resolve("template-conflict", "definitions.rsgl");
-    const result = compileRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "namespace caller",
-          "import { mixed as linked } from \"./barrel.rsgl\"",
-          "model block retained {",
-          "  marker true",
-          "  use linked()",
-          "}"
-        ].join("\n"))
-      },
-      {
-        fileName: barrelFile,
-        module: parseRsgl("export { mixed } from \"./definitions.rsgl\"")
-      },
-      {
-        fileName: definitionsFile,
-        module: parseRsgl([
-          "export { mixed }",
-          "template modelPart() -> model { leaked true }",
-          "template states() -> variants { [other=true] -> { model: minecraft:block/stone } }",
-          "template mixed(value: Json = glob(\"\")) {",
-          "  use modelPart()",
-          "  use states()",
-          "}"
-        ].join("\n"))
-      }
-    ], withUncheckedExterns({ entryFileName: mainFile }));
-
-    assert.ok(result.diagnostics.some(diagnostic =>
-      diagnostic.code === "rsgl.conflictingResolvedTemplateOutputDialects"
-      && diagnostic.fileName === definitionsFile
-    ));
-    assert.ok(!result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.globInvalidPattern"));
-    assert.deepStrictEqual(
-      unitByPath(result, "assets/caller/models/block/retained.json").content,
-      { marker: true }
-    );
-  });
 });

@@ -1,12 +1,7 @@
 import {
   BlockNode,
   ExprNode,
-  ForStmtNode,
-  ParameterNode,
-  ResourceBodyNode,
-  ResourceStatementNode,
-  TemplateBodyNode,
-  TopLevelStatementNode
+  ParameterNode
 } from "../parser";
 import { bindRsglArguments, RsglCallableParameter } from "../arguments";
 import { RsglTemplateDefinition } from "./environment";
@@ -140,7 +135,6 @@ export function createTemplateExpansion(
     ...(templateBaseContext.valueIssues ?? []),
     ...binding.valueIssues
   ]);
-  templateContext.stateKeyAliases = callableStateKeyAliases(templateBaseContext, parameters);
   if (template.node.body.kind === "Block") {
     templateContext.valueBindingNames = new Set([
       ...(templateContext.valueBindingNames ?? []),
@@ -197,13 +191,6 @@ function templateCalleeDisplayName(expression: ExprNode): string | undefined {
   }
   const objectName = templateCalleeDisplayName(expression.object);
   return objectName ? `${objectName}.${expression.property.text}` : undefined;
-}
-
-export function templateResourceBody(body: TemplateBodyNode): ResourceBodyNode | null {
-  if (body.kind === "ResourceBody") {
-    return body;
-  }
-  return body.kind === "Block" ? blockAsResourceBody(body) : null;
 }
 
 interface BoundCallableValues {
@@ -412,63 +399,4 @@ function templateDefinitionIdentity(template: RsglTemplateDefinition): string {
     template.node.range.start,
     template.node.range.end
   ]);
-}
-
-function callableStateKeyAliases(
-  context: RsglCompileContext,
-  parameters: TemplateCallParameter[]
-): ReadonlySet<string> {
-  return new Set([
-    ...(context.stateKeyAliases ?? []),
-    ...parameters.map(parameter => parameter.name)
-  ]);
-}
-
-function blockAsResourceBody(block: BlockNode): ResourceBodyNode | null {
-  const statements: ResourceStatementNode[] = [];
-  for (const statement of block.statements) {
-    const converted = topLevelAsResourceStatement(statement);
-    if (!converted) {
-      return null;
-    }
-    statements.push(converted);
-  }
-  return {
-    kind: "ResourceBody",
-    statements,
-    range: block.range,
-    fullRange: block.fullRange
-  };
-}
-
-function topLevelAsResourceStatement(statement: TopLevelStatementNode): ResourceStatementNode | null {
-  if (statement.kind === "LetDecl" || statement.kind === "UseDecl" || statement.kind === "UnknownStmt") {
-    return statement;
-  }
-  if (statement.kind === "ForStmt") {
-    const body = bodyAsResourceBody(statement.body);
-    return body ? { ...statement, body } : null;
-  }
-  if (statement.kind === "IfStmt") {
-    const thenBody = bodyAsResourceBody(statement.thenBody);
-    if (!thenBody) {
-      return null;
-    }
-    if (!statement.elseBody) {
-      return { ...statement, thenBody };
-    }
-    const elseBody = bodyAsResourceBody(statement.elseBody);
-    return elseBody ? { ...statement, thenBody, elseBody } : null;
-  }
-  return null;
-}
-
-function bodyAsResourceBody(body: ForStmtNode["body"]): ResourceBodyNode | null {
-  if (body.kind === "ResourceBody") {
-    return body;
-  }
-  if (body.kind === "Block") {
-    return blockAsResourceBody(body);
-  }
-  return null;
 }

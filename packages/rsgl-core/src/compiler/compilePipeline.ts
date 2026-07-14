@@ -46,7 +46,8 @@ import { EvaluationItemBudget } from "./evaluationItemBudget";
 import { lowerItemUnitsForTarget } from "./itemLegacyBackend";
 import { mergeResourceUnits } from "./merge";
 import { createExternalResource } from "./templates";
-import { resolveTargetPackFormat, RsglTargetPackFormat } from "./target";
+import { resolveTargetPackFormat } from "./target";
+import type { RsglTargetPackFormat } from "./targetConfig";
 import {
   type RsglExternalResourceUsage,
   canonicalizeAndValidateResourceUnits,

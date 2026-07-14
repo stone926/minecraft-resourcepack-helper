@@ -19,7 +19,8 @@ describe("RSGL workspace semantic cache", () => {
       fs.writeFileSync(templatesFile, [
         "template cube(id: ResourceId) {",
         "  model block id { parent minecraft:block/cube_all }",
-        "}"
+        "}",
+        "export { cube }"
       ].join("\n"));
 
       const cache = RsglWorkspaceSemanticCache.create();
@@ -98,7 +99,8 @@ describe("RSGL workspace semantic cache", () => {
       let templateText = [
         "template cube(id: ResourceId) {",
         "  model block id { parent minecraft:block/cube_all }",
-        "}"
+        "}",
+        "export { cube }"
       ].join("\n");
       let templateVersion = 1;
       fs.writeFileSync(mainFile, [
@@ -125,7 +127,8 @@ describe("RSGL workspace semantic cache", () => {
         "    parent minecraft:block/cube_all",
         "    textures { all: texture }",
         "  }",
-        "}"
+        "}",
+        "export { cube }"
       ].join("\n");
       templateVersion++;
       cache.invalidatePath(templatesFile);

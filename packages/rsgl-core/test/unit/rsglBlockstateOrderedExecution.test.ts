@@ -290,7 +290,7 @@ describe("RSGL ordered blockstate root execution", () => {
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.ok(codes.includes("rsgl.invalidBlockstateVariantsRoot"));
-    assert.ok(codes.includes("rsgl.unserializableBlockstateJsonValue"));
+    assert.ok(codes.includes("rsgl.missingValueNotSerializable"));
     assert.deepStrictEqual(unitByPath(result, "blockstates/invalid_shape.json").content, {
       variants: {}
     });
@@ -314,32 +314,6 @@ describe("RSGL ordered blockstate root execution", () => {
     expectNoDiagnostics(result);
     assert.ok(enabledMappings.some(mapping =>
       source.slice(mapping.sourceRange.start, mapping.sourceRange.end) === "true"
-    ));
-  });
-
-  it("preselects a unique legacy mode so root use before its wrapper remains ordered", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "template rootMetadata(enabled: Boolean) {",
-      "  merge deep { custom: { enabled: enabled, source: \"template\" } }",
-      "}",
-      "blockstate legacy_ordered {",
-      "  use rootMetadata(true)",
-      "  merge deep { custom: { label: \"direct\" } }",
-      "  variants {",
-      "    {} -> @minecraft:block/stone",
-      "  }",
-      "}"
-    ]);
-
-    assert.ok(result.diagnostics.some(diagnostic =>
-      diagnostic.code === "rsgl.implicitTemplateOutputDialect"
-    ));
-    assert.deepStrictEqual(unitByPath(result, "blockstates/legacy_ordered.json").content, {
-      custom: { enabled: true, source: "template", label: "direct" },
-      variants: { "": { model: "minecraft:block/stone" } }
-    });
-    assert.ok(unitByPath(result, "blockstates/legacy_ordered.json").sourceMap.mappings.some(mapping =>
-      mapping.generatedPath === "/custom/enabled" && mapping.reason === "template"
     ));
   });
 

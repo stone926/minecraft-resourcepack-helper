@@ -75,9 +75,6 @@ describe("RSGL blockstate completion", () => {
     ]);
     assert.ok(blockstateCandidates[0]?.insertText?.startsWith("blockstate variants ${1:id} {"));
     assert.ok(blockstateCandidates[1]?.insertText?.startsWith("blockstate multipart ${1:id} {"));
-    for (const candidate of blockstateCandidates) {
-      assert.doesNotMatch(candidate.insertText ?? "", /(?:->|@|\bvariants\s*\{|\bmultipart\s*\{)/);
-    }
   });
 
   it("offers mode entries plus root operations in concrete blockstates", () => {
@@ -89,8 +86,6 @@ describe("RSGL blockstate completion", () => {
     assert.strictEqual(variants.has("when"), false);
     assert.strictEqual(variants.has("variants"), false);
     assert.strictEqual(variants.has("multipart"), false);
-    assert.strictEqual(variants.has("@block"), false);
-
     const multipart = syntaxLabelsAtEnd("blockstate multipart wall {\n  ");
     for (const expected of ["when", "apply", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
       assert.ok(multipart.has(expected), `Expected multipart root completion '${expected}'.`);
@@ -148,46 +143,6 @@ describe("RSGL blockstate completion", () => {
       assert.strictEqual(labels.has("custom"), false);
       assert.strictEqual(labels.has("element"), false);
     }
-  });
-
-  it("treats legacy wrapper bodies as mode-specific entry contexts", () => {
-    const variantsSource = [
-      "blockstate stone {",
-      "  variants {",
-      "    "
-    ].join("\n");
-    assert.deepStrictEqual(
-      getRsglCompletionContext(variantsSource, variantsSource.length).blockstate,
-      { mode: "variants", scope: "entryTemplate" }
-    );
-    const variants = syntaxLabelsAtEnd(variantsSource);
-    assert.ok(variants.has("variant entry"));
-    assert.ok(variants.has("random"));
-    assert.strictEqual(variants.has("apply"), false);
-    assert.strictEqual(variants.has("when"), false);
-    assert.strictEqual(variants.has("parent"), false);
-    assert.strictEqual(variants.has("base"), false);
-    assert.strictEqual(variants.has("merge"), false);
-    assert.strictEqual(variants.has("custom"), false);
-
-    const multipartSource = [
-      "blockstate wall {",
-      "  multipart {",
-      "    "
-    ].join("\n");
-    assert.deepStrictEqual(
-      getRsglCompletionContext(multipartSource, multipartSource.length).blockstate,
-      { mode: "multipart", scope: "entryTemplate" }
-    );
-    const multipart = syntaxLabelsAtEnd(multipartSource);
-    assert.ok(multipart.has("apply"));
-    assert.ok(multipart.has("when"));
-    assert.ok(multipart.has("random"));
-    assert.strictEqual(multipart.has("variant entry"), false);
-    assert.strictEqual(multipart.has("parent"), false);
-    assert.strictEqual(multipart.has("base"), false);
-    assert.strictEqual(multipart.has("merge"), false);
-    assert.strictEqual(multipart.has("custom"), false);
   });
 
   it("emits only canonical variant, apply, and random snippets", () => {

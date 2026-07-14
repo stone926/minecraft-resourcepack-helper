@@ -19,15 +19,12 @@ import {
   ObjectPropertyNode,
   ResourceBodyNode,
   RsglNode,
-  RsglToken,
-  StateKeySugarNode
+  RsglToken
 } from "./types";
 
 interface ExpressionOptions {
   stopTexts?: readonly string[];
 }
-
-export { unquoteString } from "./typeParser";
 
 export class ExpressionParser extends TypeParser {
   protected parseExpression(options: ExpressionOptions = {}, minPrecedence = 0): ExprNode {
@@ -446,36 +443,6 @@ export class ExpressionParser extends TypeParser {
     };
   }
 
-  protected parseStateKeySugar(): StateKeySugarNode {
-    const start = this.current();
-    const entries: ObjectPropertyNode[] = [];
-    this.expectText("[", "Expected state key sugar.");
-    while (!this.isAtEnd() && this.current().text !== "]") {
-      const mark = this.mark();
-      const keyStart = this.current();
-      const key = this.parsePropertyKey();
-      if (!key) {
-        break;
-      }
-      this.expectText("=", "Expected '=' in state key sugar.");
-      const value = this.parseExpression({ stopTexts: [",", "]"] });
-      entries.push({
-        kind: "ObjectProperty",
-        key,
-        value,
-        ...this.nodeRanges(keyStart, this.previousOr(keyStart))
-      });
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse state key entry; skipping token.");
-    }
-    this.expectText("]", "Expected ']' after state key sugar.");
-    return {
-      kind: "StateKeySugar",
-      entries,
-      ...this.nodeRanges(start, this.previousOr(start))
-    };
-  }
-
   private parseMatchExpression(): ExprNode {
     const start = this.advance();
     const expression = this.parseExpression({ stopTexts: ["{"] });
@@ -562,14 +529,6 @@ export class ExpressionParser extends TypeParser {
       return true;
     }
     return stopTexts.length === 0 && this.isStatementBoundary(this.current());
-  }
-
-  protected looksLikeStateKeySugar(): boolean {
-    if (this.current().text !== "[") {
-      return false;
-    }
-    return (this.peekKind(1) === "identifier" || this.peekKind(1) === "keyword" || this.peekKind(1) === "string") &&
-      this.peekText(2) === "=";
   }
 
   protected recoverToLineEnd(): void {

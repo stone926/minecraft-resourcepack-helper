@@ -71,7 +71,7 @@ describe("RSGL module namespace runtime", () => {
     );
   });
 
-  it("dispatches every public template dialect and exact legacy metadata through a namespace", () => {
+  it("dispatches every explicit template dialect through a namespace", () => {
     const root = path.resolve("module-namespace-template-dialects");
     const mainFile = path.join(root, "main.rsgl");
     const libraryFile = path.join(root, "library.rsgl");
@@ -79,7 +79,6 @@ describe("RSGL module namespace runtime", () => {
       sourceFile(mainFile, [
         "import * as common from \"./library.rsgl\"",
         "model block namespace_model { use common.modelPart() }",
-        "model block namespace_legacy { use common.legacyModelPart() }",
         "blockstate variants namespace_variants { use common.variantsPart() }",
         "blockstate multipart namespace_multipart { use common.multipartPart() }"
       ].join("\n")),
@@ -87,25 +86,14 @@ describe("RSGL module namespace runtime", () => {
         "template modelPart() -> model { parent minecraft:block/cube_all }",
         "template variantsPart() -> variants { {}: minecraft:block/stone }",
         "template multipartPart() -> multipart { apply minecraft:block/post }",
-        "template legacyModelPart() { parent minecraft:block/cube }",
-        "export { modelPart, variantsPart, multipartPart, legacyModelPart }"
+        "export { modelPart, variantsPart, multipartPart }"
       ].join("\n"))
     ], withUncheckedExterns({ entryFileName: mainFile }));
 
-    assert.deepStrictEqual(
-      result.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
-      []
-    );
-    assert.strictEqual(result.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.implicitTemplateOutputDialect"
-    ).length, 1);
+    assert.deepStrictEqual(result.diagnostics, []);
     assert.deepStrictEqual(
       unitByPath(result, "models/block/namespace_model.json").content,
       { parent: "minecraft:block/cube_all" }
-    );
-    assert.deepStrictEqual(
-      unitByPath(result, "models/block/namespace_legacy.json").content,
-      { parent: "minecraft:block/cube" }
     );
     assert.deepStrictEqual(
       unitByPath(result, "blockstates/namespace_variants.json").content,
@@ -172,13 +160,13 @@ describe("RSGL module namespace runtime", () => {
     assert.deepStrictEqual(result.units, []);
   });
 
-  it("does not implicitly re-export a namespace alias as a value", () => {
-    const root = path.resolve("module-namespace-implicit-export");
+  it("keeps namespace imports private unless explicitly exported", () => {
+    const root = path.resolve("module-namespace-private-import");
     const middleFile = path.join(root, "middle.rsgl");
     const libraryFile = path.join(root, "library.rsgl");
     const files = [
       sourceFile(middleFile, "import * as common from \"./library.rsgl\""),
-      sourceFile(libraryFile, "let VALUE = 1")
+      sourceFile(libraryFile, "let VALUE = 1\nexport { VALUE }")
     ];
     const program = bindRsglProgram(files);
     const environments = createProgramCompileEnvironments(

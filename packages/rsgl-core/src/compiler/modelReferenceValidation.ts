@@ -11,7 +11,8 @@ import {
   pushDiagnosticAtRange,
   sourceRangeForGeneratedPath
 } from "./validationDiagnostics";
-import { asObject, isObject } from "./validationPrimitives";
+import { asObject } from "./validationPrimitives";
+import { isJsonObject } from "./jsonValues";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { canonicalizeResourceReference } from "./resourceReferenceConsumers";
 import type { RsglExternalModelDocument } from "./externalModelReferences";
@@ -62,7 +63,7 @@ export function validateModelUnit(
           diagnostics,
           texturePath
         );
-      } else if (isObject(value) && typeof value.sprite === "string") {
+      } else if (isJsonObject(value) && typeof value.sprite === "string") {
         checkJsonResourceReference(
           value,
           "sprite",

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { rsglCommands } from "../../../packages/rsgl-shared/src";
-import { registerRsglLanguageFeatures } from "./languageFeatures";
+import { startRsglLanguageServer } from "./client";
 import { createRsglApi, type RsglApi } from "./api";
 import {
   buildActiveRsglResourcePack,
@@ -12,7 +12,7 @@ import {
 } from "./commands/build";
 
 export function activate(context: vscode.ExtensionContext): RsglApi {
-  registerRsglLanguageFeatures(context);
+  startRsglLanguageServer(context);
   registerRsglCommands(context);
   return createRsglApi(context);
 }

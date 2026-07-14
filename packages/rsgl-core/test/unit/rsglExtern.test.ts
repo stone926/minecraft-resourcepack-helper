@@ -8,7 +8,7 @@ import {
   type RsglCompileResult
 } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
-import { compileSource, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
+import { compileSource, expectNoDiagnostics } from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL extern declarations", () => {
@@ -477,7 +477,7 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "import { mixedItemModels } from \"./merge-templates.rsgl\"",
           "extern! custom model minecraft:item/caller_model",
-          "item mixed { use mixedItemModels(minecraft:item/caller_model) }"
+          "use mixedItemModels(minecraft:item/caller_model)"
         ].join("\n"))
       },
       {
@@ -485,13 +485,15 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:item/library_model",
           "template mixedItemModels(callerModel: ModelId) {",
-          "  merge {",
-          "    model: {",
-          "      type: minecraft:composite,",
-          "      models: [",
-          "        { type: minecraft:model, model: minecraft:item/library_model },",
-          "        { type: minecraft:model, model: callerModel }",
-          "      ]",
+          "  item mixed {",
+          "    merge {",
+          "      model: {",
+          "        type: minecraft:composite,",
+          "        models: [",
+          "          { type: minecraft:model, model: minecraft:item/library_model },",
+          "          { type: minecraft:model, model: callerModel }",
+          "        ]",
+          "      }",
           "    }",
           "  }",
           "}",
@@ -500,7 +502,7 @@ describe("RSGL extern declarations", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectOnlyLegacyTemplateWarnings(result);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(
       externalUnits(result)
         .map(unit => [unit.external!.id, unit.external!.source])
@@ -521,7 +523,7 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "import { layeredItem } from \"./item-templates.rsgl\"",
           "extern! custom model minecraft:item/caller_layer",
-          "item layered { use layeredItem(minecraft:item/caller_layer) }"
+          "use layeredItem(minecraft:item/caller_layer)"
         ].join("\n"))
       },
       {
@@ -529,9 +531,11 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:item/library_layer",
           "template layeredItem(callerModel: ModelId) {",
-          "  composite {",
-          "    model minecraft:item/library_layer",
-          "    model callerModel",
+          "  item layered {",
+          "    composite {",
+          "      model minecraft:item/library_layer",
+          "      model callerModel",
+          "    }",
           "  }",
           "}",
           "export { layeredItem }"
@@ -539,7 +543,7 @@ describe("RSGL extern declarations", () => {
       }
     ], { entryFileName: mainFile });
 
-    expectOnlyLegacyTemplateWarnings(result);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(
       externalUnits(result)
         .map(unit => [unit.external!.id, unit.external!.source])
@@ -702,16 +706,16 @@ describe("RSGL extern declarations", () => {
       {
         fileName: mainFile,
         module: parseRsgl([
-          "import { fontFields, soundFields, waypointFields, postFields } from \"./generic-scope-templates.rsgl\"",
+          "import { fontResource, soundsResource, waypointResource, postResource } from \"./generic-scope-templates.rsgl\"",
           "extern! custom font_file minecraft:font/caller.ttf",
           "extern! custom sound minecraft:caller/sound",
           "extern! custom texture minecraft:gui/sprites/hud/locator_bar_dot/caller_sprite, minecraft:effect/caller_mask",
           "extern! custom shader_vertex minecraft:caller/vertex",
           "extern! custom shader_fragment minecraft:caller/fragment",
-          "font scoped_font { use fontFields(minecraft:font/caller.ttf) }",
-          "sounds minecraft { use soundFields(minecraft:caller/sound) }",
-          "waypoint_style scoped_waypoint { use waypointFields(minecraft:caller_sprite) }",
-          "post_effect scoped_post { use postFields(minecraft:caller/vertex, minecraft:caller/fragment, minecraft:caller_mask) }"
+          "use fontResource(minecraft:font/caller.ttf)",
+          "use soundsResource(minecraft:caller/sound)",
+          "use waypointResource(minecraft:caller_sprite)",
+          "use postResource(minecraft:caller/vertex, minecraft:caller/fragment, minecraft:caller_mask)"
         ].join("\n"))
       },
       {
@@ -722,27 +726,35 @@ describe("RSGL extern declarations", () => {
           "extern! vanilla texture minecraft:gui/sprites/hud/locator_bar_dot/library_sprite, minecraft:effect/library_mask",
           "extern! vanilla shader_vertex minecraft:library/vertex",
           "extern! vanilla shader_fragment minecraft:library/fragment",
-          "template fontFields(file: ResourceId) {",
-          "  providers [{ type: ttf, file: minecraft:font/library.ttf }, { type: ttf, file: file }]",
+          "template fontResource(file: ResourceId) {",
+          "  font scoped_font {",
+          "    providers [{ type: ttf, file: minecraft:font/library.ttf }, { type: ttf, file: file }]",
+          "  }",
           "}",
-          "template soundFields(sound: ResourceId) {",
-          "  \"scope.event\" { sounds: [minecraft:library/sound, sound] }",
+          "template soundsResource(sound: ResourceId) {",
+          "  sounds minecraft {",
+          "    \"scope.event\" { sounds: [minecraft:library/sound, sound] }",
+          "  }",
           "}",
-          "template waypointFields(sprite: TextureId) {",
-          "  sprites [minecraft:library_sprite, sprite]",
+          "template waypointResource(sprite: TextureId) {",
+          "  waypoint_style scoped_waypoint {",
+          "    sprites [minecraft:library_sprite, sprite]",
+          "  }",
           "}",
-          "template postFields(vertex: ResourceId, fragment: ResourceId, mask: TextureId) {",
-          "  passes [",
-          "    { vertex_shader: minecraft:library/vertex, fragment_shader: minecraft:library/fragment, inputs: [{ sampler_name: \"Fixed\", location: minecraft:library_mask }] },",
-          "    { vertex_shader: vertex, fragment_shader: fragment, inputs: [{ sampler_name: \"Caller\", location: mask }] }",
-          "  ]",
+          "template postResource(vertex: ResourceId, fragment: ResourceId, mask: TextureId) {",
+          "  post_effect scoped_post {",
+          "    passes [",
+          "      { vertex_shader: minecraft:library/vertex, fragment_shader: minecraft:library/fragment, inputs: [{ sampler_name: \"Fixed\", location: minecraft:library_mask }] },",
+          "      { vertex_shader: vertex, fragment_shader: fragment, inputs: [{ sampler_name: \"Caller\", location: mask }] }",
+          "    ]",
+          "  }",
           "}",
-          "export { fontFields, soundFields, waypointFields, postFields }"
+          "export { fontResource, soundsResource, waypointResource, postResource }"
         ].join("\n"))
       }
     ], { entryFileName: mainFile });
 
-    expectOnlyLegacyTemplateWarnings(result, 4);
+    expectNoDiagnostics(result);
     const resources = externalUnits(result).map(unit => unit.external!);
     assert.strictEqual(resources.length, 12);
     assert.ok(resources

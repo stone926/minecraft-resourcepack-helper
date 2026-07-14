@@ -1,21 +1,10 @@
 import * as path from "node:path";
 import { parseAssetsPath, startsWithPathSegment, uniqueValues } from "../../packages/mc-assets/src";
-import {
-  resolveCitResourceType,
-  type CitResourceType
-} from "./citKeyResolution";
-import type { CitType } from "./citSpecTypes";
-
-export { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
-export type { CitResourceType } from "./citKeyResolution";
+import type { CitResourceType } from "./citKeyResolution";
 
 export interface CitDocumentInfo {
   namespace: string;
   source: string;
-}
-
-export function getCitResourceType(key: string, citType: CitType = "item"): CitResourceType | null {
-  return resolveCitResourceType(key, citType);
 }
 
 export function isCitPropertiesFileName(fileName: string): boolean {

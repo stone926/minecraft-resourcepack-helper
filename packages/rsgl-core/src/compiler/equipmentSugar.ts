@@ -11,8 +11,6 @@ import {
 import { ResourceBodyFragment } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export type EquipmentSugarOptions = JsonValueSinkOptions;
-
 export interface EquipmentBodySugarResult {
   content: Record<string, JsonValue>;
   compactLayers: boolean;
@@ -21,7 +19,7 @@ export interface EquipmentBodySugarResult {
 export function compileEquipmentLayerStatement(
   statement: EquipmentLayerStmtNode,
   context: EvaluationContext,
-  options: EquipmentSugarOptions = {}
+  options: JsonValueSinkOptions = {}
 ): ResourceBodyFragment | undefined {
   const layer = evaluateJsonExpression(statement.layer, context, options, "/layers");
   if (layer === undefined) {
@@ -108,7 +106,7 @@ export function compileEquipmentLayerStatement(
       entry,
       context,
       evaluatedTexture
-        ? evaluatedRootOrigin(evaluatedTexture.result, context.sourceFile)
+        ? evaluatedRootOrigin(evaluatedTexture.result)
         : undefined
     )
   };
@@ -118,7 +116,7 @@ export function lowerEquipmentBodySugar(
   content: Record<string, JsonValue>,
   context: EvaluationContext,
   range: TextRange,
-  options: EquipmentSugarOptions = {}
+  options: JsonValueSinkOptions = {}
 ): EquipmentBodySugarResult {
   const layers = compactLayerNames(content.layers);
   if (!layers) {
@@ -141,7 +139,7 @@ export function lowerEquipmentBodySugar(
       color: content.color,
       usePlayerTexture: typeof content.use_player_texture === "boolean"
         ? content.use_player_texture
-        : typeof content.usePlayerTexture === "boolean" ? content.usePlayerTexture : undefined,
+        : undefined,
       colorRange: range
     },
     options
@@ -160,7 +158,6 @@ export function lowerEquipmentBodySugar(
   delete result.dyeable;
   delete result.color;
   delete result.use_player_texture;
-  delete result.usePlayerTexture;
   result.layers = layerMap;
   return { content: result, compactLayers: true };
 }
@@ -174,7 +171,7 @@ function createEquipmentLayerEntry(
     usePlayerTexture?: boolean;
     colorRange?: TextRange;
   },
-  options: EquipmentSugarOptions
+  options: JsonValueSinkOptions
 ): Record<string, JsonValue> | undefined {
   const entry: Record<string, JsonValue> = {
     texture: normalizeResourceId(texture, context.namespace)

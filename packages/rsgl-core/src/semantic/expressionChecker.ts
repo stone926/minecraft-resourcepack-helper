@@ -44,8 +44,6 @@ import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   identifierName,
   inferLiteralType,
-  jsonType,
-  modelIdType,
   neverType,
   numberType,
   resourceIdType,
@@ -58,8 +56,6 @@ import {
   typeFromAnnotation,
   unknownType
 } from "./types";
-
-export type { RsglExpressionCheckContext } from "./expressionCheckContext";
 
 const callCheckHost: RsglCallCheckHost = {
   checkExpression,
@@ -110,29 +106,6 @@ function checkExpressionCore(context: RsglExpressionCheckContext, expression: Ex
   }
   if (expression.kind === "ObjectExpr") {
     return checkObject(context, expression, scope);
-  }
-  if (expression.kind === "StateKeySugar") {
-    for (const entry of expression.entries) {
-      if (entry.key.kind === "DynamicKey") {
-        checkExpression(context, entry.key.expression, scope);
-      }
-      checkStateKeyValueExpression(context, entry.value, scope);
-    }
-    return jsonType;
-  }
-  if (expression.kind === "ModelApplySugar") {
-    const modelType = checkExpressionForExpectedType(context, expression.model, scope, modelIdType);
-    checkAssignable(context, modelIdType, modelType, expression.model);
-    for (const property of expression.properties) {
-      checkExpression(context, property.value, scope);
-    }
-    return jsonType;
-  }
-  if (expression.kind === "RandomApply") {
-    for (const entry of expression.entries) {
-      checkExpression(context, entry, scope);
-    }
-    return jsonType;
   }
   if (expression.kind === "CallExpr") {
     return checkCallExpression(context, expression, scope, callCheckHost);
@@ -922,13 +895,6 @@ export function validateResourceLocationLike(context: RsglExpressionCheckContext
   if (expression.kind === "ResourceLocationExpr") {
     validateResourceLocationValue(context, expression.value, expression.range);
   }
-}
-
-function checkStateKeyValueExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
-  if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
-    return stringType;
-  }
-  return checkExpression(context, expression, scope);
 }
 
 function validateResourceLocationValue(

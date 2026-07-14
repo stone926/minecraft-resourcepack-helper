@@ -9,8 +9,7 @@ export type BodyParseContext =
   | { kind: "topLevel" }
   | ResourceBodyParseContext
   | BlockstateEntriesParseContext
-  | BlockstateRootParseContext
-  | LegacyBlockstateRootParseContext;
+  | BlockstateRootParseContext;
 
 export interface BlockstateEntriesParseContext {
   kind: "blockstateEntries";
@@ -20,11 +19,6 @@ export interface BlockstateEntriesParseContext {
 export interface BlockstateRootParseContext {
   kind: "blockstateRoot";
   mode: BlockstateMode;
-  allowBase: boolean;
-}
-
-export interface LegacyBlockstateRootParseContext {
-  kind: "legacyBlockstateRoot";
   allowBase: boolean;
 }
 
@@ -63,11 +57,6 @@ export const multipartBodyParseContext: BlockstateEntriesParseContext = Object.f
   kind: "blockstateEntries",
   mode: "multipart"
 });
-export const legacyBlockstateRootParseContext: LegacyBlockstateRootParseContext = Object.freeze({
-  kind: "legacyBlockstateRoot",
-  allowBase: true
-});
-
 export function blockstateRootParseContext(mode: BlockstateMode): BlockstateRootParseContext {
   return {
     kind: "blockstateRoot",
@@ -153,12 +142,6 @@ export function nestedControlFlowBodyParseContext(context: BodyParseContext): Bo
       };
   }
   if (context.kind === "blockstateRoot") {
-    return {
-      ...context,
-      allowBase: false
-    };
-  }
-  if (context.kind === "legacyBlockstateRoot") {
     return {
       ...context,
       allowBase: false

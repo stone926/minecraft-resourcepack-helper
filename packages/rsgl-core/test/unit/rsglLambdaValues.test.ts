@@ -150,7 +150,7 @@ describe("RSGL Function-typed let values", () => {
     assert.strictEqual(diagnostics.length, 1);
   });
 
-  it("keeps local unannotated lambdas callable for compatibility", () => {
+  it("infers local unannotated lambdas as callable values", () => {
     const result = compileSourceWithUncheckedExterns([
       "model block local_lambda {",
       "  let identity = value => value",
@@ -476,8 +476,8 @@ describe("RSGL let-lambda capture, recursion, and purity rules", () => {
 describe("RSGL let-lambda module APIs", () => {
   it("warns for an unannotated lambda in an explicit local named export", () => {
     const model = bindRsglModule(parseRsgl([
-      "let legacy = value => value",
-      "export { legacy }"
+      "let callback = value => value",
+      "export { callback }"
     ].join("\n")), { fileName: path.resolve("pack", "local-export.rsgl") });
     const diagnostics = model.diagnostics.filter(diagnostic =>
       diagnostic.code === "rsgl.exportedLambdaNeedsTypeAnnotation"
@@ -488,40 +488,41 @@ describe("RSGL let-lambda module APIs", () => {
   });
 
   it("warns at an explicit named re-export of an unannotated lambda", () => {
-    const libraryFile = path.resolve("pack", "legacy-library.rsgl");
-    const barrelFile = path.resolve("pack", "legacy-barrel.rsgl");
+    const libraryFile = path.resolve("pack", "untyped-library.rsgl");
+    const barrelFile = path.resolve("pack", "untyped-barrel.rsgl");
     const program = bindRsglProgram([
       {
         fileName: libraryFile,
-        module: parseRsgl("let legacy = value => value")
+        module: parseRsgl("let callback = value => value\nexport { callback }")
       },
       {
         fileName: barrelFile,
-        module: parseRsgl("export { legacy as exposed } from \"./legacy-library.rsgl\"")
+        module: parseRsgl("export { callback as exposed } from \"./untyped-library.rsgl\"")
       }
     ]);
     const diagnostics = program.fileDiagnostics.filter(diagnostic =>
       diagnostic.code === "rsgl.exportedLambdaNeedsTypeAnnotation"
     );
 
-    assert.strictEqual(diagnostics.length, 1);
-    assert.strictEqual(diagnostics[0].fileName, barrelFile);
-    assert.strictEqual(diagnostics[0].severity, "warning");
+    assert.strictEqual(diagnostics.length, 2);
+    assert.ok(diagnostics.some(diagnostic => diagnostic.fileName === libraryFile));
+    assert.ok(diagnostics.some(diagnostic => diagnostic.fileName === barrelFile));
+    assert.ok(diagnostics.every(diagnostic => diagnostic.severity === "warning"));
   });
 
   it("warns for the equivalent import-then-local-export form", () => {
-    const libraryFile = path.resolve("pack", "legacy-import-library.rsgl");
-    const barrelFile = path.resolve("pack", "legacy-import-barrel.rsgl");
+    const libraryFile = path.resolve("pack", "untyped-import-library.rsgl");
+    const barrelFile = path.resolve("pack", "untyped-import-barrel.rsgl");
     const program = bindRsglProgram([
       {
         fileName: libraryFile,
-        module: parseRsgl("let legacy = value => value")
+        module: parseRsgl("let callback = value => value\nexport { callback }")
       },
       {
         fileName: barrelFile,
         module: parseRsgl([
-          "import { legacy } from \"./legacy-import-library.rsgl\"",
-          "export { legacy }"
+          "import { callback } from \"./untyped-import-library.rsgl\"",
+          "export { callback }"
         ].join("\n"))
       }
     ]);
@@ -529,13 +530,14 @@ describe("RSGL let-lambda module APIs", () => {
       diagnostic.code === "rsgl.exportedLambdaNeedsTypeAnnotation"
     );
 
-    assert.strictEqual(diagnostics.length, 1);
-    assert.strictEqual(diagnostics[0].fileName, barrelFile);
-    assert.strictEqual(diagnostics[0].severity, "warning");
+    assert.strictEqual(diagnostics.length, 2);
+    assert.ok(diagnostics.some(diagnostic => diagnostic.fileName === libraryFile));
+    assert.ok(diagnostics.some(diagnostic => diagnostic.fileName === barrelFile));
+    assert.ok(diagnostics.every(diagnostic => diagnostic.severity === "warning"));
   });
 
-  it("keeps the existing implicit export-all behavior warning-free", () => {
-    const model = bindRsglModule(parseRsgl("let legacy = value => value"));
+  it("does not require annotations for module-private lambdas", () => {
+    const model = bindRsglModule(parseRsgl("let callback = value => value"));
 
     assert.strictEqual(
       model.diagnostics.some(diagnostic =>

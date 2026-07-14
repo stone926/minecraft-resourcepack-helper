@@ -73,13 +73,7 @@ export function forEachLoopContext(
   onError: (code: string, message: string, range: TextRange) => void,
   visit: (context: EvaluationContext) => void
 ): void {
-  const dimensions = statement.dimensions.length ? statement.dimensions : [{
-    kind: "ForDimension" as const,
-    bindings: statement.bindings,
-    iterable: statement.iterable,
-    range: statement.range,
-    fullRange: statement.fullRange
-  }];
+  const dimensions = statement.dimensions;
 
   const walk = (
     index: number,

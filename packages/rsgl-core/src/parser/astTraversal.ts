@@ -4,7 +4,6 @@ import {
   BlockstateMultipartRootBodyNode,
   BlockstateVariantsRootBodyNode,
   ExprNode,
-  LegacyBlockstateRootBodyNode,
   MultipartBodyNode,
   ObjectPropertyNode,
   ResourceBodyNode,
@@ -31,8 +30,7 @@ type RsglBody =
   | VariantBodyNode
   | MultipartBodyNode
   | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode
-  | LegacyBlockstateRootBodyNode;
+  | BlockstateMultipartRootBodyNode;
 
 /**
  * Walks every statement and expression in deterministic structural order.
@@ -127,11 +125,7 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       walkExpression(statement.expression, visitor);
       break;
     case "ForStmt":
-      if (statement.dimensions.length > 0) {
-        statement.dimensions.forEach(dimension => walkExpression(dimension.iterable, visitor));
-      } else {
-        walkExpression(statement.iterable, visitor);
-      }
+      statement.dimensions.forEach(dimension => walkExpression(dimension.iterable, visitor));
       walkBody(statement.body, visitor);
       break;
     case "IfStmt":
@@ -152,23 +146,9 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
         walkBody(statement.body, visitor);
       }
       break;
-    case "VariantsSection":
-    case "MultipartSection":
-      statement.entries.forEach(entry => walkStatement(entry, visitor));
-      break;
-    case "VariantEntry":
-      walkExpression(statement.state, visitor);
-      walkExpression(statement.value, visitor);
-      break;
     case "BlockstateVariantEntry":
       walkExpression(statement.selector, visitor);
       walkBlockstateApplyValue(statement.value, visitor);
-      break;
-    case "MultipartEntry":
-      if (statement.when) {
-        walkExpression(statement.when, visitor);
-      }
-      walkExpression(statement.apply, visitor);
       break;
     case "BlockstateMultipartEntry":
       if (statement.when) {
@@ -347,9 +327,6 @@ function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {
         }
       });
       break;
-    case "StateKeySugar":
-      expression.entries.forEach(property => walkObjectProperty(property, visitor));
-      break;
     case "RangeExpr":
       walkExpression(expression.startExpr, visitor);
       walkExpression(expression.endExpr, visitor);
@@ -389,13 +366,6 @@ function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {
       break;
     case "ForInExpr":
       walkExpression(expression.iterable, visitor);
-      break;
-    case "ModelApplySugar":
-      walkExpression(expression.model, visitor);
-      expression.properties.forEach(property => walkExpression(property.value, visitor));
-      break;
-    case "RandomApply":
-      expression.entries.forEach(entry => walkExpression(entry, visitor));
       break;
     default:
       assertNever(expression);

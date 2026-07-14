@@ -143,14 +143,21 @@ describe("RSGL canonical blockstate compiler", () => {
       "}"
     ].join("\n");
     const result = compileSourceWithUncheckedExterns(source.split("\n"));
+    const expected = new Map([
+      ["(x) => x", "rsgl.functionValueNotSerializable"],
+      ["{}.missing", "rsgl.missingValueNotSerializable"],
+      ["unknown()", "rsgl.missingValueNotSerializable"],
+      ["1 / 0", "rsgl.unserializableJsonValue"]
+    ]);
     const diagnostics = result.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.unserializableBlockstateJsonValue"
+      expected.has(source.slice(diagnostic.range.start, diagnostic.range.end))
     );
 
     assert.strictEqual(diagnostics.length, 4);
-    assert.deepStrictEqual(new Set(diagnostics.map(diagnostic =>
-      source.slice(diagnostic.range.start, diagnostic.range.end)
-    )), new Set(["(x) => x", "{}.missing", "unknown()", "1 / 0"]));
+    diagnostics.forEach(diagnostic => assert.strictEqual(
+      diagnostic.code,
+      expected.get(source.slice(diagnostic.range.start, diagnostic.range.end))
+    ));
     assert.deepStrictEqual(result.units[0].content, { variants: {} });
   });
 
@@ -163,7 +170,7 @@ describe("RSGL canonical blockstate compiler", () => {
     ].join("\n");
     const result = compileSourceWithUncheckedExterns(source.split("\n"));
     const diagnostic = result.diagnostics.find(item =>
-      item.code === "rsgl.unserializableBlockstateJsonValue"
+      item.code === "rsgl.missingValueNotSerializable"
     );
 
     assert.ok(diagnostic);
@@ -185,7 +192,7 @@ describe("RSGL canonical blockstate compiler", () => {
     ].join("\n");
     const result = compileSourceWithUncheckedExterns(source.split("\n"));
     const diagnostics = result.diagnostics.filter(item =>
-      item.code === "rsgl.unserializableBlockstateJsonValue"
+      item.code === "rsgl.unserializableJsonValue"
     );
 
     assert.strictEqual(diagnostics.length, 2);
@@ -231,7 +238,7 @@ describe("RSGL canonical blockstate compiler", () => {
     }).compile();
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.unserializableBlockstateJsonValue"
+      "rsgl.unserializableJsonValue"
     ]);
     assert.deepStrictEqual(result.units[0].content, { variants: {} });
   });
@@ -265,7 +272,7 @@ describe("RSGL canonical blockstate compiler", () => {
       { fileName: definitionsFile, module: parseRsgl(definitionsSource) }
     ], withUncheckedExterns({ entryFileName: mainFile }));
     const expected = new Map([
-      ["rsgl.unserializableBlockstateJsonValue", "unknown()"],
+      ["rsgl.missingValueNotSerializable", "unknown()"],
       ["rsgl.invalidBlockstateRotation", "45"],
       ["rsgl.invalidBlockstateUvlock", "\"yes\""],
       ["rsgl.invalidRandomWeight", "0"]
@@ -307,7 +314,7 @@ describe("RSGL canonical blockstate compiler", () => {
     ], withUncheckedExterns({ entryFileName: mainFile }));
 
     for (const [code, text] of [
-      ["rsgl.unserializableBlockstateJsonValue", "unknown()"],
+      ["rsgl.missingValueNotSerializable", "unknown()"],
       ["rsgl.invalidBlockstateRotation", "45"]
     ] as const) {
       const diagnostic = result.diagnostics.find(item => item.code === code);
@@ -536,7 +543,8 @@ describe("RSGL canonical blockstate compiler", () => {
       "let imported = {",
       "  item: { model: minecraft:block/imported, x: 90 },",
       "  choices: [{ model: minecraft:block/imported_list, uvlock: true }]",
-      "}"
+      "}",
+      "export { imported }"
     ].join("\n");
     const result = compileRsglProgram([
       {
@@ -578,7 +586,7 @@ describe("RSGL canonical blockstate compiler", () => {
 
   it("attributes canonical stdlib model references to caller extern scope", () => {
     const fixture = path.resolve(
-      "packages/rsgl-core/test/fixtures/abstraction-migration/canonical/stdlib-blockstate-conventions.rsgl"
+      "packages/rsgl-core/test/fixtures/stdlib-blockstate-conventions.rsgl"
     );
     const result = compileRsglFile(fixture);
 

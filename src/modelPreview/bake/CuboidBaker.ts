@@ -1,11 +1,14 @@
 import type { PreviewBounds, PreviewDirection, PreviewMaterial, PreviewMesh, PreviewRange, PreviewVec3 } from "../ir/PreviewDocument";
-import { getCanonicalFaceVertices } from "../../../packages/mc-assets/src";
+import {
+  getCanonicalFaceVertices,
+  getDefaultUv,
+  getFaceUvs
+} from "../../../packages/mc-assets/src";
 import { lm } from "../../i18n/messages";
 import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { fileUriString } from "../paths";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
-import { getDefaultUv, getFaceUvs } from "./DefaultUv";
 
 const directions: PreviewDirection[] = ["down", "up", "north", "south", "west", "east"];
 const directionVectors: Record<PreviewDirection, PreviewVec3> = {

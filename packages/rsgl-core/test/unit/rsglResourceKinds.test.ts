@@ -3,7 +3,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { minecraftResourceTarget } from "../../../mc-assets/src";
 import { topLevelRsglCompletions } from "../../src/completionData";
-import { compileRsglModule, emitRsglFiles, validateResourceUnits } from "../../src/compiler";
+import {
+  canonicalizeAndValidateResourceUnits,
+  compileRsglModule,
+  emitRsglFiles
+} from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
 import { resourceKeywords } from "../../src/parser/keywords";
 import {
@@ -133,7 +137,7 @@ describe("RSGL resource kind descriptors", () => {
       const result = compileRsglModule(module, { fileName });
       const unit = result.units.find(candidate => candidate.kind === descriptor.keyword);
       assert.ok(unit, `Compile handler '${descriptor.compile.handler}' did not emit '${descriptor.keyword}'.`);
-      assert.doesNotThrow(() => validateResourceUnits(result.units));
+      assert.doesNotThrow(() => canonicalizeAndValidateResourceUnits(result.units));
       const emitted = emitRsglFiles([unit!]).find(file => file.kind === "resource");
       assert.ok(emitted, `Emit metadata did not produce a resource file for '${descriptor.keyword}'.`);
       assert.strictEqual("copyFrom" in emitted!, descriptor.emit.contentKind === "binaryCopy");

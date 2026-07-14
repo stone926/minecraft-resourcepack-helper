@@ -8,13 +8,6 @@ interface ResourcePathDocument {
   fileName: string;
 }
 
-export type ResourcePathResolver = (
-  resourcePath: string,
-  document: ResourcePathDocument,
-  target: string,
-  source: string,
-  targetFileExtension: string | null
-) => Uri | null;
 export type ResourceReferencePathResolver = (
   reference: ResourceReference,
   document: ResourcePathDocument
@@ -28,17 +21,6 @@ export interface ResourcePathResolutionHost {
 
 interface ResourcePathResolverOptions {
   cache?: ResourcePathResolutionHost;
-}
-
-export function createResourcePathResolver(cache: ResourcePathResolutionHost = workspaceResourceCache): ResourcePathResolver {
-  return (resourcePath, document, target, source, targetFileExtension) => generateRedirectPath(
-    resourcePath,
-    document,
-    target,
-    source,
-    targetFileExtension,
-    { cache }
-  );
 }
 
 export function createResourceReferencePathResolver(cache: ResourcePathResolutionHost = workspaceResourceCache): ResourceReferencePathResolver {
@@ -67,23 +49,12 @@ export function generateReferenceRedirectPath(
     return resolvedPath ? Uri.file(resolvedPath) : null;
   }
 
-  return generateRedirectPath(reference.value, document, reference.target, reference.source, reference.extension, options);
-}
-
-export function generateRedirectPath(
-  resourcePath: string,
-  document: ResourcePathDocument,
-  target: string,
-  source: string,
-  targetFileExtension: string | null,
-  options: ResourcePathResolverOptions = {}
-): Uri | null {
   const resolvedPath = resolveRedirectFilePath(
-    resourcePath,
+    reference.value,
     document,
-    target,
-    source,
-    targetFileExtension,
+    reference.target,
+    reference.source,
+    reference.extension,
     options
   );
   return resolvedPath ? Uri.file(resolvedPath) : null;

@@ -88,8 +88,6 @@ export const rsglModelGeometryKeywordDescriptors = [
   { keyword: "rotation", roles: ["elementHeaderClause", "elementBodyClause"] },
   { keyword: "shade", roles: ["elementHeaderClause", "elementBodyClause"] },
   { keyword: "light_emission", roles: ["elementHeaderClause", "elementBodyClause"] },
-  { keyword: "mirror", roles: ["elementHeaderClause", "elementBodyClause"] },
-  { keyword: "translate", roles: ["elementHeaderClause", "elementBodyClause"] },
   { keyword: "texture", roles: ["elementHeaderClause", "elementBodyClause"] },
   { keyword: "uv", roles: ["elementHeaderClause", "elementBodyClause"] },
   { keyword: "cullface", roles: ["elementHeaderClause", "elementBodyClause"] },

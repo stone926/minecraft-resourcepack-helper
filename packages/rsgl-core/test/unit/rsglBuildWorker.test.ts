@@ -80,10 +80,8 @@ describe("RSGL build worker client", () => {
       fs.mkdirSync(sourceRoot, { recursive: true });
       fs.writeFileSync(path.join(sourceRoot, "main.rsgl"), [
         "model block rotated {}",
-        "blockstate rotated {",
-        "  variants {",
-        "    {} -> { model: block/rotated, z: 90 }",
-        "  }",
+        "blockstate variants rotated {",
+        "  {}: { model: block/rotated, z: 90 }",
         "}"
       ].join("\n"));
 
@@ -106,7 +104,7 @@ describe("RSGL build worker client", () => {
         ));
       }
 
-      const legacy = await runRsglWorkerTask({
+      const olderTarget = await runRsglWorkerTask({
         kind: "compileDirectory",
         payload: {
           sourceRoot,
@@ -115,10 +113,10 @@ describe("RSGL build worker client", () => {
           projectTarget: { edition: "java", packFormat: { major: 74, minor: 0 } }
         }
       });
-      assert.strictEqual(legacy.type, "success");
-      if (legacy.type === "success") {
-        assert.strictEqual(legacy.result.success, false);
-        assert.ok(legacy.result.diagnostics.some(diagnostic =>
+      assert.strictEqual(olderTarget.type, "success");
+      if (olderTarget.type === "success") {
+        assert.strictEqual(olderTarget.result.success, false);
+        assert.ok(olderTarget.result.diagnostics.some(diagnostic =>
           diagnostic.code === "rsgl.unsupportedBlockstateZRotation"
         ));
       }

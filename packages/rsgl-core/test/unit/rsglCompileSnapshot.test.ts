@@ -5,7 +5,7 @@ import { compileSourceWithUncheckedExterns } from "./helpers/compile";
 
 describe("RSGL compile snapshots", () => {
   it("normalizes internal resources and source-map semantics without character offsets", () => {
-    const sourceRoot = path.resolve("fixtures", "migration");
+    const sourceRoot = path.resolve("fixtures", "snapshot");
     const fileName = path.join(sourceRoot, "nested", "main.rsgl");
     const result = compileSourceWithUncheckedExterns([
       "template cube(id: ResourceId) {",
@@ -44,7 +44,7 @@ describe("RSGL compile snapshots", () => {
   });
 
   it("keeps diagnostic identity portable without embedding path-bearing messages", () => {
-    const sourceRoot = path.resolve("fixtures", "migration");
+    const sourceRoot = path.resolve("fixtures", "snapshot");
     const sharedRoot = path.resolve("fixtures", "shared sources");
     const result: RsglCompileResult = {
       units: [],

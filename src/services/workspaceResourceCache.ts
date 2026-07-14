@@ -3,6 +3,7 @@ import type {
   OggMetadata,
   PackMetadata,
   PngMetadata,
+  ResourceFileRequest,
   ResourceLocation
 } from "../../packages/mc-assets/src";
 import type { JsonDocumentNode } from "../utils/jsonAst";
@@ -19,21 +20,12 @@ import type {
   CacheStatsSnapshot,
   CacheTextDocument,
   ResourceCacheGenerationState,
-  ResourceConfiguration,
-  ResourceResolveRequest
+  ResourceConfiguration
 } from "./resourceCacheTypes";
 import { ResourceResolutionCache } from "./resourceResolutionCache";
 
-export type {
-  CacheStatsSnapshot,
-  CacheTextDocument,
-  ResourceConfiguration,
-  ResourceResolveRequest
-} from "./resourceCacheTypes";
-export type { CachedModelDocument, CachedTextureVariableDefinition } from "./modelParentChain";
-
 /**
- * Compatibility facade for workspace resource caches.
+ * Coordination facade for workspace resource caches.
  *
  * Storage and invalidation details live in focused cache components; consumers
  * keep one stable host while configuration and filesystem generations are
@@ -121,14 +113,14 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   }
 
   getResourceRootCandidates(
-    request: ResourceResolveRequest,
+    request: ResourceFileRequest,
     resourcePath: string,
     namespace: string
   ): string[] {
     return this.resourceResolution.getResourceRootCandidates(request, resourcePath, namespace);
   }
 
-  resolveResourcePath(request: ResourceResolveRequest): string | null {
+  resolveResourcePath(request: ResourceFileRequest): string | null {
     return this.resourceResolution.resolveResourcePath(request);
   }
 

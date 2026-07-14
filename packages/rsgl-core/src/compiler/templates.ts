@@ -1,10 +1,11 @@
 import type { ExternResourceSource } from "../externDeclarations";
-import { ExternalResourceKind, ResourceUnit } from "./ir";
+import type { ExternResourceKind } from "../resourceKinds";
+import { ResourceUnit } from "./ir";
 import { getExternResourceTargetKind } from "../resourceKinds";
 import { parseResourceId, resourceTargetOutputPath } from "./resourceIds";
 
 export function createExternalResource(
-  resourceKind: ExternalResourceKind,
+  resourceKind: ExternResourceKind,
   idValue: string,
   source: ExternResourceSource,
   skipExistenceCheck: boolean,

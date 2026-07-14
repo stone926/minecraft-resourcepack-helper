@@ -63,7 +63,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     const result = compileSourceWithUncheckedExterns([
       "model block ruby impl minecraft:block/cube_all(all: minecraft:block/ruby) {",
       "}",
-      "model item diamond impl generated(layer0: minecraft:item/diamond) {",
+      "model item diamond impl minecraft:item/generated(layer0: minecraft:item/diamond) {",
       "}",
       "item diamond {",
       "  model minecraft:item/diamond",
@@ -84,28 +84,6 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
         type: "minecraft:model",
         model: "minecraft:item/diamond"
       }
-    });
-  });
-
-  it("preserves subtype-relative model impl shorthands and texture variables", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "namespace demo",
-      "model block legacy impl cube_all(all: stone, side: \"stone\", particle: \"#side\") {}",
-      "model item legacy_item impl generated(layer0: \"base\") {}"
-    ]);
-
-    expectNoDiagnostics(result);
-    assert.deepStrictEqual(unitByPath(result, "models/block/legacy.json").content, {
-      parent: "minecraft:block/cube_all",
-      textures: {
-        all: "demo:block/stone",
-        side: "demo:block/stone",
-        particle: "#side"
-      }
-    });
-    assert.deepStrictEqual(unitByPath(result, "models/item/legacy_item.json").content, {
-      parent: "minecraft:item/generated",
-      textures: { layer0: "demo:item/base" }
     });
   });
 
@@ -189,25 +167,6 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
       "assets/minecraft/models/block/ruby.json",
       "assets/minecraft/models/item/diamond.json"
     ]);
-  });
-
-  // These `use` targets are intentionally undefined: the helpers were removed
-  // when hardcoded use builtins migrated to stdlib convention templates. The
-  // test pins the diagnostics users get when stale sources still reference them.
-  it("diagnoses removed top-level hardcoded use helpers", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "use externalModel(id: minecraft:block/stone)",
-      "use cubeAll(id: ruby)",
-      "use itemGenerated(id: diamond, texture: minecraft:item/diamond)",
-      "use blockFamily(base: acacia, texture: minecraft:block/acacia_planks)",
-      "use stairs(id: ruby_stairs)"
-    ]);
-    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
-
-    assert.ok(codes.includes("rsgl.undefinedSymbol"));
-    assert.ok(codes.includes("rsgl.notCallable"));
-    assert.ok(codes.includes("rsgl.unknownTemplate"));
-    assert.deepStrictEqual(generatedResourceUnits(result), []);
   });
 
   it("separates full blockstate templates from blockstate fragments", () => {
@@ -391,7 +350,10 @@ describe("RSGL lambda arguments to imported templates", () => {
     const libFile = path.resolve("lib.rsgl");
     const mainFile = path.resolve("main.rsgl");
     const result = compileRsglProgram([
-      { fileName: libFile, module: parseRsgl("let double = (a) => a") },
+      {
+        fileName: libFile,
+        module: parseRsgl("let double: (Number) -> Number = a => a\nexport { double }")
+      },
       {
         fileName: mainFile,
         module: parseRsgl([
@@ -410,7 +372,13 @@ describe("RSGL lambda arguments to imported templates", () => {
     const libFile = path.resolve("lib.rsgl");
     const mainFile = path.resolve("main.rsgl");
     const result = compileRsglProgram([
-      { fileName: libFile, module: parseRsgl("let mapName = (fn) => fn(\"stone\")") },
+      {
+        fileName: libFile,
+        module: parseRsgl([
+          "let mapName: ((String) -> String) -> String = fn => fn(\"stone\")",
+          "export { mapName }"
+        ].join("\n"))
+      },
       {
         fileName: mainFile,
         module: parseRsgl([

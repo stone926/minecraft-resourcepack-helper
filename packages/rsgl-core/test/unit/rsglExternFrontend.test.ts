@@ -212,10 +212,7 @@ describe("RSGL extern language frontend", () => {
     );
   });
 
-  it("rejects legacy declarations, separated bang modifiers, and invalid glob namespaces", () => {
-    const legacy = parseRsgl("extern model(id: minecraft:block/stone)");
-    assert.ok(legacy.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidExternSource"));
-
+  it("rejects separated bang modifiers and invalid glob namespaces", () => {
     const separatedBang = parseRsgl("extern ! custom model minecraft:block/stone");
     assert.ok(separatedBang.diagnostics.some(diagnostic => diagnostic.code === "rsgl.externBangMustBeAdjacent"));
 

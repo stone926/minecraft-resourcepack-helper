@@ -11,8 +11,6 @@ import {
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export type PostEffectValidationOptions = RsglResourceValidationOptions;
-
 const builtinTargets = new Set([
   "main",
   "minecraft:main",
@@ -32,7 +30,7 @@ const uniformTypes = new Set(["float", "int", "ivec3", "vec2", "vec3", "vec4", "
 
 export function validatePostEffectMetadata(
   unit: ResourceUnit,
-  options: PostEffectValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = requireObject(unit.content, unit, diagnostics, {
@@ -100,7 +98,7 @@ function validatePasses(
   declaredTargets: Set<string>,
   namespace: string,
   unit: ResourceUnit,
-  options: PostEffectValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   if (value === undefined) {
@@ -132,7 +130,7 @@ function validatePass(
   declaredTargets: Set<string>,
   namespace: string,
   unit: ResourceUnit,
-  options: PostEffectValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -161,7 +159,7 @@ function validateShaderField(
   kind: "shaderVertex" | "shaderFragment",
   namespace: string,
   unit: ResourceUnit,
-  options: PostEffectValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -187,7 +185,7 @@ function validateInputs(
   declaredTargets: Set<string>,
   namespace: string,
   unit: ResourceUnit,
-  options: PostEffectValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -223,7 +221,7 @@ function validateInput(
   declaredTargets: Set<string>,
   namespace: string,
   unit: ResourceUnit,
-  options: PostEffectValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {

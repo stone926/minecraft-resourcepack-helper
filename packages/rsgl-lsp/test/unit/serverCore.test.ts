@@ -148,6 +148,7 @@ describe("RSGL LSP server core", () => {
         "    textures { all: texture }",
         "  }",
         "}",
+        "export { cube }",
         "use missingTemplate()"
       ].join("\n");
       fs.writeFileSync(entryFile, entryText);
@@ -468,7 +469,7 @@ describe("RSGL LSP server core", () => {
     assert.ok(buildSource.includes("validationAnchor,"));
   });
 
-  it("preserves rsgl.invalidExternConfiguration for invalid legacy config fields", () => {
+  it("reports invalid extern configuration with its dedicated diagnostic code", () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-invalid-"));
     const root = path.join(tempRoot, "project.target.data");
     const sourceFile = path.join(root, "src", "main.rsgl");

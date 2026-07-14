@@ -20,15 +20,6 @@ import {
 } from "./resourceReferences";
 import { ResourceGraphReferenceIndex } from "./resourceGraphReferenceIndex";
 
-export {
-  type AssetResource,
-  getAssetResource,
-  isModelDocumentPath,
-  isResourceGraphDocumentPath,
-  isResourceJsonDocumentPath,
-  resourceUriKey
-} from "./resourceGraphSearch";
-
 export interface ResourceGraphDocument extends ResourceReferenceDocument {
   uri: vscode.Uri;
 }

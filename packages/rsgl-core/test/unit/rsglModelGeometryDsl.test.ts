@@ -12,7 +12,7 @@ describe("RSGL model geometry DSL", () => {
     const result = compileSourceWithUncheckedExterns([
       "model block fence_gate_post {",
       "  texture wood minecraft:block/oak_planks",
-      "  box \"left post\" from [0, 2, 7] to [2, 13, 9] mirror x {",
+      "  box \"left post\" from [0, 2, 7] to [2, 13, 9] {",
       "    all texture \"#wood\"",
       "    west cullface west uv [0, 0, 2, 11]",
       "    shade false",
@@ -39,19 +39,6 @@ describe("RSGL model geometry DSL", () => {
             west: { texture: "#wood", cullface: "west", uv: [0, 0, 2, 11] },
             east: { texture: "#wood" }
           }
-        },
-        {
-          from: [14, 2, 7],
-          to: [16, 13, 9],
-          shade: false,
-          faces: {
-            down: { texture: "#wood" },
-            up: { texture: "#wood" },
-            north: { texture: "#wood" },
-            south: { texture: "#wood" },
-            west: { texture: "#wood" },
-            east: { texture: "#wood", cullface: "east", uv: [14, 0, 16, 11] }
-          }
         }
       ]
     });
@@ -59,7 +46,6 @@ describe("RSGL model geometry DSL", () => {
     assert.ok(mappingPaths.includes("/textures/wood"));
     assert.ok(mappingPaths.includes("/elements/0/from"));
     assert.ok(mappingPaths.includes("/elements/0/faces/west/cullface"));
-    assert.ok(mappingPaths.includes("/elements/1/faces/east/cullface"));
   });
 
   it("maps an indexed collection texture to the selected element source", () => {
@@ -84,103 +70,6 @@ describe("RSGL model geometry DSL", () => {
       source.slice(origin.sourceRange.start, origin.sourceRange.end),
       "\"minecraft:block/second\""
     );
-  });
-
-  it("keeps legacy inline order fixed as Mirror(Translate(element))", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "model block order_a {",
-      "  element from [0, 0, 0] mirror x translate [2, 0, 0] to [2, 2, 2]",
-      "}",
-      "model block order_b {",
-      "  element translate [2, 0, 0] to [2, 2, 2] from [0, 0, 0] mirror x",
-      "}"
-    ]);
-
-    expectNoDiagnostics(result);
-    const first = unitByPath(result, "models/block/order_a.json").content;
-    const second = unitByPath(result, "models/block/order_b.json").content;
-    assert.deepStrictEqual(first, second);
-    assert.deepStrictEqual(first, {
-      elements: [
-        { from: [2, 0, 0], to: [4, 2, 2] },
-        { from: [12, 0, 0], to: [14, 2, 2] }
-      ]
-    });
-  });
-
-  it("uses one k-axis mirror matrix for element rotation conjugation", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "model block mirror_determinant {",
-      "  element from [1, 2, 3] to [4, 5, 6] mirror [x, z] {",
-      "    rotation { origin: [8, 8, 8], axis: \"y\", angle: 22.5, rescale: true }",
-      "  }",
-      "}"
-    ]);
-
-    expectNoDiagnostics(result);
-    const content = unitByPath(result, "models/block/mirror_determinant.json").content as {
-      elements: Array<{ rotation: { axis: string; angle: number } }>;
-    };
-    assert.deepStrictEqual(
-      content.elements.map(element => [element.rotation.axis, element.rotation.angle]),
-      [["y", 22.5], ["y", -22.5], ["y", -22.5], ["y", 22.5]]
-    );
-  });
-
-  it("matches the scaffolding asymmetric UV mirror golden", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "model block scaffolding_panel {",
-      "  texture side minecraft:block/stone",
-      "  element from [0, 0, 0] to [2, 16, 2] mirror z {",
-      "    north texture \"#side\" uv [14, 0, 16, 16]",
-      "  }",
-      "}"
-    ]);
-
-    expectNoDiagnostics(result);
-    assert.deepStrictEqual(unitByPath(result, "models/block/scaffolding_panel.json").content, {
-      textures: { side: "minecraft:block/stone" },
-      elements: [
-        {
-          from: [0, 0, 0],
-          to: [2, 16, 2],
-          faces: { north: { texture: "#side", uv: [14, 0, 16, 16] } }
-        },
-        {
-          from: [0, 0, 14],
-          to: [2, 16, 16],
-          faces: { south: { texture: "#side", uv: [0, 0, 2, 16] } }
-        }
-      ]
-    });
-  });
-
-  it("keeps omitted UV implicit when a tangential mirror remains target-default", () => {
-    const result = compileSourceWithUncheckedExterns([
-      "model block omitted_uv {",
-      "  texture all minecraft:block/stone",
-      "  element from [1, 2, 3] to [4, 5, 6] mirror x {",
-      "    north texture \"#all\"",
-      "  }",
-      "}"
-    ]);
-
-    expectNoDiagnostics(result);
-    assert.deepStrictEqual(unitByPath(result, "models/block/omitted_uv.json").content, {
-      textures: { all: "minecraft:block/stone" },
-      elements: [
-        {
-          from: [1, 2, 3],
-          to: [4, 5, 6],
-          faces: { north: { texture: "#all" } }
-        },
-        {
-          from: [12, 2, 3],
-          to: [15, 5, 6],
-          faces: { north: { texture: "#all" } }
-        }
-      ]
-    });
   });
 
   it("rotates an asymmetric panel through 0/90/180/270 with texture-following UVs", () => {
@@ -349,14 +238,24 @@ describe("RSGL model geometry DSL", () => {
   });
 
   it("accounts for actual and cumulative geometry expansion before allocating output", () => {
-    const exactMirrorBudget = compileSourceWithUncheckedExterns([
+    const exactTransformBudget = compileSourceWithUncheckedExterns([
       "model block exact_budget {",
-      "  element from [0, 0, 0] to [1, 1, 1] mirror [x, z]",
+      "  transform rotate_y(90) around [8, 8, 8] {",
+      "    element from [0, 0, 0] to [1, 1, 1]",
+      "    element from [1, 0, 0] to [2, 1, 1]",
+      "    element from [2, 0, 0] to [3, 1, 1]",
+      "    element from [3, 0, 0] to [4, 1, 1]",
+      "  }",
       "}"
     ], { maxEvaluationItems: 4 });
-    const mirrorOverflow = compileSourceWithUncheckedExterns([
-      "model block mirror_overflow {",
-      "  element from [0, 0, 0] to [1, 1, 1] mirror [x, z]",
+    const transformOverflow = compileSourceWithUncheckedExterns([
+      "model block transform_overflow {",
+      "  transform rotate_y(90) around [8, 8, 8] {",
+      "    element from [0, 0, 0] to [1, 1, 1]",
+      "    element from [1, 0, 0] to [2, 1, 1]",
+      "    element from [2, 0, 0] to [3, 1, 1]",
+      "    element from [3, 0, 0] to [4, 1, 1]",
+      "  }",
       "}"
     ], { maxEvaluationItems: 3 });
     const cumulativeOverflow = compileSourceWithUncheckedExterns([
@@ -369,19 +268,19 @@ describe("RSGL model geometry DSL", () => {
       "}"
     ], { maxEvaluationItems: 1 });
 
-    expectNoDiagnostics(exactMirrorBudget);
-    const exactContent = unitByPath(exactMirrorBudget, "models/block/exact_budget.json").content as {
+    expectNoDiagnostics(exactTransformBudget);
+    const exactContent = unitByPath(exactTransformBudget, "models/block/exact_budget.json").content as {
       elements: unknown[];
     };
     assert.strictEqual(exactContent.elements.length, 4);
-    for (const result of [mirrorOverflow, cumulativeOverflow]) {
+    for (const result of [transformOverflow, cumulativeOverflow]) {
       const diagnostic = result.diagnostics.find(candidate =>
         candidate.code === "rsgl.geometryTransformExpansionLimit"
       );
       assert.ok(diagnostic);
       assert.strictEqual(result.units.some(unit => unit.kind === "model"), false);
     }
-    assert.ok(mirrorOverflow.diagnostics.some(diagnostic => diagnostic.message.includes("requested 4")));
+    assert.ok(transformOverflow.diagnostics.some(diagnostic => diagnostic.message.includes("requested 4")));
     assert.ok(cumulativeOverflow.diagnostics.some(diagnostic => diagnostic.message.includes("consumed 1")));
   });
 
@@ -410,7 +309,9 @@ describe("RSGL model geometry DSL", () => {
     ]);
     const outOfBounds = compileSourceWithUncheckedExterns([
       "model block outside {",
-      "  element from [0, 0, 0] to [16, 16, 16] translate [40, 0, 0]",
+      "  transform rotate_y(90) around [40, 0, 0] {",
+      "    element from [0, 0, 0] to [16, 16, 16]",
+      "  }",
       "}"
     ]);
     assert.deepStrictEqual(

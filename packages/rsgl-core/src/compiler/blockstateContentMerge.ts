@@ -1,10 +1,6 @@
-import type { RsglBlockstateFragment } from "./blockstateFragments";
 import {
   blockstateMultipartPath,
-  blockstateVariantPath,
-  isMultipartEntryPath,
-  isVariantEntryPath,
-  offsetMultipartMappings
+  blockstateVariantPath
 } from "./compilerHelpers";
 import {
   blockstateFragmentMergePolicy,
@@ -109,7 +105,7 @@ export class BlockstateRootMerger {
       return undefined;
     }
 
-    const mergeResult = this.contentMerger.applyWithResult(
+    const mergeResult = this.contentMerger.apply(
       state,
       content,
       mode,
@@ -319,18 +315,6 @@ export class BlockstateContentMerger {
     mode: FragmentMergeMode,
     sourceRange: BlockstateSourceRange,
     context: RsglCompileContext,
-    mappings?: RsglMapping[]
-  ): void {
-    this.applyWithResult(result, content, mode, sourceRange, context, mappings);
-  }
-
-  /** Compatibility seam for the legacy compiler and the ordered root merger. */
-  public applyWithResult(
-    result: BlockstateBodyContent,
-    content: Record<string, JsonValue>,
-    mode: FragmentMergeMode,
-    sourceRange: BlockstateSourceRange,
-    context: RsglCompileContext,
     mappings?: readonly RsglMapping[]
   ): MergeResult {
     const mergeResult = fragmentMergeEngine.apply(
@@ -361,50 +345,6 @@ export class BlockstateContentMerger {
 
     result.mappings.push(...this.objectMappingsDeep(mergeResult, sourceRange, context));
     return mergeResult;
-  }
-
-  public fragmentVariantMappings(
-    fragment: RsglBlockstateFragment,
-    sourceRange: BlockstateSourceRange,
-    context: RsglCompileContext,
-    includeSection = false
-  ): RsglMapping[] {
-    if (fragment.mappings?.length) {
-      return fragment.mappings.filter(mapping => isVariantEntryPath(mapping.generatedPath));
-    }
-    const variants = fragment.content.variants;
-    if (!isJsonObject(variants)) {
-      return [];
-    }
-    const mappings = includeSection ? [this.host.sourceMapping("/variants", sourceRange, context)] : [];
-    for (const key of Object.keys(variants)) {
-      mappings.push(this.host.sourceMapping(blockstateVariantPath(key), sourceRange, context));
-    }
-    return mappings;
-  }
-
-  public fragmentMultipartMappings(
-    fragment: RsglBlockstateFragment,
-    sourceRange: BlockstateSourceRange,
-    context: RsglCompileContext,
-    offset: number,
-    includeSection = false
-  ): RsglMapping[] {
-    if (fragment.mappings?.length) {
-      return offsetMultipartMappings(
-        fragment.mappings.filter(mapping => isMultipartEntryPath(mapping.generatedPath)),
-        offset
-      );
-    }
-    const multipart = fragment.content.multipart;
-    if (!Array.isArray(multipart)) {
-      return [];
-    }
-    const mappings = includeSection ? [this.host.sourceMapping("/multipart", sourceRange, context)] : [];
-    multipart.forEach((_, index) => {
-      mappings.push(this.host.sourceMapping(blockstateMultipartPath(offset + index), sourceRange, context));
-    });
-    return mappings;
   }
 
   private objectMappingsDeep(

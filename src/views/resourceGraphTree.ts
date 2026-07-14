@@ -5,8 +5,6 @@ import {
   type ResourceGraphTreeDocument
 } from "./resourceGraphTreeModel";
 
-export { getResourceGraphNodeUri } from "./resourceGraphTreeItem";
-
 export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<ResourceGraphTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ResourceGraphTreeItem | undefined | null | void>();
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;

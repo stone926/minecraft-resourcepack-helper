@@ -5,14 +5,12 @@ import { requireArray, requireNumberInRange, requireObject } from "./validationP
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export type WaypointStyleValidationOptions = RsglResourceValidationOptions;
-
 const minDistance = 0;
 const maxDistance = 60000000;
 
 export function validateWaypointStyleMetadata(
   unit: ResourceUnit,
-  options: WaypointStyleValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = requireObject(unit.content, unit, diagnostics, {
@@ -32,7 +30,7 @@ export function validateWaypointStyleMetadata(
 function validateSprites(
   value: JsonValue | undefined,
   unit: ResourceUnit,
-  options: WaypointStyleValidationOptions,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   if (value === undefined) {

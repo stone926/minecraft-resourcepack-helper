@@ -6,7 +6,7 @@ import {
 } from "../../src/compiler/evaluationItemBudget";
 import { textureSequence } from "../../src/compiler/jsonResourceFragments";
 import { parseRsgl } from "../../src/parser";
-import { compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
+import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL JSON resources and generic fragments", () => {
   it("emits arbitrary pack-relative JSON resources", () => {
@@ -64,11 +64,8 @@ describe("RSGL JSON resources and generic fragments", () => {
       "extern custom font_file minecraft:**",
       "extern custom shader_vertex minecraft:**",
       "extern custom shader_fragment minecraft:**",
-      "template atlasSource(source: String, prefix: String) {",
-      "  use atlasDirectory(source: source, prefix: prefix)",
-      "}",
       "atlas minecraft:blocks {",
-      "  use atlasSource(\"block\", \"block/\")",
+      "  use atlasDirectory(source: \"block\", prefix: \"block/\")",
       "  use atlasDirectory(source: \"item\", prefix: \"item/\")",
       "}",
       "particles explosion {",
@@ -109,7 +106,7 @@ describe("RSGL JSON resources and generic fragments", () => {
       }
     });
 
-    expectOnlyLegacyTemplateWarnings(result);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units.filter(unit => !unit.external).map(unit => unit.outputPath).sort(), [
       "assets/minecraft/atlases/blocks.json",
       "assets/minecraft/equipment/iron.json",

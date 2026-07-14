@@ -2,7 +2,7 @@ import {
   isResourceKeyword,
   isTopLevelKeyword
 } from "./keywords";
-import { parseExternResourcePattern } from "../externDeclarations";
+import { parseExternResourcePattern, type ExternResourceSource } from "../externDeclarations";
 import { lexRsgl } from "./lexer";
 import { tokenRange } from "./parserContext";
 import { StatementParser } from "./statementParser";
@@ -10,14 +10,11 @@ import {
   BlockNode,
   ExternDeclNode,
   ExternPatternNode,
-  ExternResourceSource,
   ExportSpecifierNode,
   ExprNode,
   IdentifierNode,
   ImportSpecifierNode,
   ParameterNode,
-  ResourceDeclNode,
-  ResourceKind,
   RsglModule,
   RsglToken,
   StringLiteralNode,
@@ -26,18 +23,16 @@ import {
   TypeAliasDeclNode,
   TopLevelStatementNode
 } from "./types";
-import { getRsglResourceKindDescriptor } from "../resourceKinds";
+import { getRsglResourceKindDescriptor, type RsglResourceKind } from "../resourceKinds";
 import { binaryPrecedence } from "./statementKeywords";
 import {
   concreteResourceBodyParseContext,
   blockstateRootParseContext,
-  legacyBlockstateRootParseContext,
   multipartBodyParseContext,
   templateResourceBodyParseContext,
   topLevelBodyParseContext,
   variantsBodyParseContext
 } from "./bodyParseContext";
-import { legacyTemplateBodyParsePlan } from "./resourceBodyDialectRegistry";
 
 export function parseRsgl(text: string): RsglModule {
   const lexResult = lexRsgl(text);
@@ -610,17 +605,6 @@ class RsglParser extends StatementParser {
       }
       return this.parseBlock();
     }
-    const parsePlan = legacyTemplateBodyParsePlan(this.tokens, this.mark());
-    if (parsePlan.kind === "resourceBody") {
-      if (parsePlan.detectedDialects.length > 1) {
-        this.addDiagnostic(
-          "rsgl.conflictingLegacyTemplateBodyDialects",
-          `Legacy template body mixes incompatible dialects: ${parsePlan.detectedDialects.join(", ")}. Add an explicit public output dialect or split the template.`,
-          tokenRange(this.current())
-        );
-      }
-      return this.parseResourceBody(templateResourceBodyParseContext(parsePlan.dialect));
-    }
     return this.parseBlock();
   }
 
@@ -647,9 +631,9 @@ class RsglParser extends StatementParser {
     return parameters;
   }
 
-  private parseResourceDecl(): ResourceDeclNode {
+  private parseResourceDecl(): TopLevelStatementNode {
     const start = this.advance();
-    const resourceKind = start.text as ResourceKind;
+    const resourceKind = start.text as RsglResourceKind;
     if (resourceKind === "blockstate") {
       return this.parseBlockstateResourceDecl(start);
     }
@@ -683,7 +667,7 @@ class RsglParser extends StatementParser {
     };
   }
 
-  private parseBlockstateResourceDecl(start: RsglToken): ResourceDeclNode {
+  private parseBlockstateResourceDecl(start: RsglToken): TopLevelStatementNode {
     if (this.current().text === "variants" || this.current().text === "multipart") {
       const modeToken = this.advance();
       const mode = modeToken.text as "variants" | "multipart";
@@ -698,7 +682,6 @@ class RsglParser extends StatementParser {
           kind: "ResourceDecl",
           keyword: start.text,
           resourceKind: "blockstate",
-          blockstateSyntax: "modeHeader",
           mode,
           modeNode,
           id,
@@ -713,7 +696,6 @@ class RsglParser extends StatementParser {
         kind: "ResourceDecl",
         keyword: start.text,
         resourceKind: "blockstate",
-        blockstateSyntax: "modeHeader",
         mode,
         modeNode,
         id,
@@ -722,12 +704,8 @@ class RsglParser extends StatementParser {
       };
     }
 
-    let blockstateSyntax: "legacyMissingMode" | "invalidMode" = "legacyMissingMode";
-    let modeNode: IdentifierNode | undefined;
     if (!this.isStatementBoundary(this.current()) && this.looksLikeUnknownBlockstateMode()) {
       const token = this.advance();
-      modeNode = this.syntheticIdentifier(token, token.text);
-      blockstateSyntax = "invalidMode";
       this.addDiagnostic(
         "rsgl.unknownBlockstateMode",
         `Unknown blockstate mode '${token.text}'. Expected 'variants' or 'multipart'.`,
@@ -737,24 +715,22 @@ class RsglParser extends StatementParser {
       this.addDiagnostic(
         "rsgl.blockstateModeRequired",
         "Blockstate declarations must specify 'variants' or 'multipart' before the resource id.",
-        tokenRange(this.current()),
-        "warning"
+        tokenRange(this.current())
       );
     }
-    const id = this.parseBlockstateResourceId();
-    const body = this.parseBodyForContext(legacyBlockstateRootParseContext);
-    if (body.kind !== "LegacyBlockstateRootBody") {
-      throw new Error("Parser invariant: a legacy blockstate header must produce a legacy root body.");
+    while (
+      !this.isAtEnd()
+      && this.current().text !== "{"
+      && !(this.isStatementBoundary(this.current()) && isTopLevelKeyword(this.current().text))
+    ) {
+      this.advance();
+    }
+    if (this.current().text === "{") {
+      this.consumeBalancedBlock("Expected '}' after invalid blockstate declaration.");
     }
     return {
-      kind: "ResourceDecl",
+      kind: "UnknownStmt",
       keyword: start.text,
-      resourceKind: "blockstate",
-      blockstateSyntax,
-      mode: null,
-      modeNode,
-      id,
-      body,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }

@@ -1,42 +1,17 @@
-import { parseBlockstateApplyValue, parseLegacyBlockstateApplyValue } from "./blockstateApplyParser";
+import { parseBlockstateApplyValue } from "./blockstateApplyParser";
 import type { ResourceStatementParserHost } from "./statementParserHost";
-import type {
-  BlockstateVariantEntryNode,
-  StateKeySugarNode,
-  VariantEntryNode
-} from "./types";
+import type { BlockstateVariantEntryNode, UnknownStmtNode } from "./types";
 
-export type ParsedVariantEntry = BlockstateVariantEntryNode | VariantEntryNode;
+export type ParsedVariantEntry = BlockstateVariantEntryNode | UnknownStmtNode;
 
 export function parseBlockstateVariantEntry(host: ResourceStatementParserHost): ParsedVariantEntry {
   const start = host.current();
-  if (start.text === "[") {
-    const state = host.parseLegacyStateKeySugar() as StateKeySugarNode;
-    host.addDiagnostic(
-      "rsgl.legacyStateKeySugar",
-      "The '[key=value]' blockstate selector syntax is deprecated. Use an object selector and computed keys where needed.",
-      state.range,
-      "warning"
-    );
-    if (host.matchText("->")) {
-      addLegacyArrowDiagnostic(host, host.previousOr(start));
-    } else {
-      host.expectText(":", "Expected ':' after blockstate selector.");
-    }
-    return legacyVariantEntry(host, start, state);
-  }
-
   const selectorSyntax = start.text === "{"
     ? "inlineObject" as const
     : start.text === "("
       ? "parenthesizedExpression" as const
       : undefined;
-  const selector = host.parseExpression({ stopTexts: [":", "->"] });
-
-  if (host.matchText("->")) {
-    addLegacyArrowDiagnostic(host, host.previousOr(start));
-    return legacyVariantEntry(host, start, selector);
-  }
+  const selector = host.parseExpression({ stopTexts: [":"] });
 
   if (!selectorSyntax) {
     host.addDiagnostic(
@@ -44,57 +19,44 @@ export function parseBlockstateVariantEntry(host: ResourceStatementParserHost): 
       "Blockstate variant selectors must be an inline object or a parenthesized expression.",
       selector.range
     );
+    consumeRejectedEntryTail(host);
+    return unknownVariantEntry(host, start);
   }
-  host.expectText(":", "Expected ':' after blockstate selector.");
 
-  if (!selectorSyntax) {
-    return legacyVariantEntry(host, start, selector);
-  }
-  const parsedValue = parseBlockstateApplyValue(host);
-  if (parsedValue.syntax === "legacy") {
-    return {
-      kind: "VariantEntry",
-      keyword: "variant",
-      syntax: "legacy",
-      state: selector,
-      value: parsedValue.value,
-      ...host.nodeRanges(start, host.previousOr(start))
-    };
+  if (!host.expectText(":", "Expected ':' after blockstate selector.")) {
+    consumeRejectedEntryTail(host);
+    return unknownVariantEntry(host, start);
   }
   return {
     kind: "BlockstateVariantEntry",
     keyword: "variant",
     selector,
     selectorSyntax,
-    value: parsedValue.value,
+    value: parseBlockstateApplyValue(host),
     ...host.nodeRanges(start, host.previousOr(start))
   };
 }
 
-function legacyVariantEntry(
+function consumeRejectedEntryTail(host: ResourceStatementParserHost): void {
+  if (host.isLineBoundaryOr("}")) {
+    return;
+  }
+  if (host.current().text === "{") {
+    host.consumeBalancedBlock("Expected '}' after malformed blockstate entry.");
+    return;
+  }
+  while (!host.isAtEnd() && !host.isLineBoundaryOr("}")) {
+    host.advance();
+  }
+}
+
+function unknownVariantEntry(
   host: ResourceStatementParserHost,
-  start: ReturnType<ResourceStatementParserHost["current"]>,
-  state: VariantEntryNode["state"]
-): VariantEntryNode {
-  const value = parseLegacyBlockstateApplyValue(host);
+  start: ReturnType<ResourceStatementParserHost["current"]>
+): UnknownStmtNode {
   return {
-    kind: "VariantEntry",
+    kind: "UnknownStmt",
     keyword: "variant",
-    syntax: "legacy",
-    state,
-    value,
     ...host.nodeRanges(start, host.previousOr(start))
   };
-}
-
-function addLegacyArrowDiagnostic(
-  host: ResourceStatementParserHost,
-  arrow: ReturnType<ResourceStatementParserHost["current"]>
-): void {
-  host.addDiagnostic(
-    "rsgl.legacyBlockstateEntryArrow",
-    "The '->' blockstate entry separator is deprecated. Use ':'.",
-    { start: arrow.offset, end: arrow.offset + arrow.length },
-    "warning"
-  );
 }

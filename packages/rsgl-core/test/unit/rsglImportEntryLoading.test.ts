@@ -19,7 +19,8 @@ describe("RSGL import entry loading", () => {
         "let defaultParent: ModelId = minecraft:block/cube_all",
         "table woods {",
         "  acacia: texture_id(block/acacia_planks)",
-        "}"
+        "}",
+        "export { defaultParent, woods }"
       ].join("\n"));
       fs.writeFileSync(templatesFile, [
         "template cube(id: TextureId, texture: TextureId = id) {",
@@ -27,7 +28,8 @@ describe("RSGL import entry loading", () => {
         "    parent minecraft:block/cube_all",
         "    textures { all: texture }",
         "  }",
-        "}"
+        "}",
+        "export { cube }"
       ].join("\n"));
       fs.writeFileSync(mainFile, [
         "import { cube } from \"./templates.rsgl\"",

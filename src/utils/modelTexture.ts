@@ -1,13 +1,10 @@
-import { modelSourceForFile } from "../services/modelParentChain";
 import {
-  workspaceResourceCache,
-  type CachedTextureVariableDefinition,
-  type ResourceConfiguration
-} from "../services/workspaceResourceCache";
+  modelSourceForFile,
+  type CachedTextureVariableDefinition
+} from "../services/modelParentChain";
+import type { ResourceConfiguration } from "../services/resourceCacheTypes";
+import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { JsonDocumentNode } from "./jsonAst";
-
-export { modelSourceForFile };
-export type { CachedTextureVariableDefinition };
 
 interface ModelDocument {
   fileName: string;
@@ -51,14 +48,4 @@ export function createTextureVariableDefinitionResolver(
   source = modelSourceForFile(document.fileName)
 ): TextureVariableDefinitionResolver {
   return new TextureVariableDefinitionResolver(ast, document, configuration, source);
-}
-
-export function resolveTextureVariableDefinition(
-  ast: JsonDocumentNode,
-  document: ModelDocument,
-  textureReference: string,
-  configuration: () => ResourceConfiguration,
-  source = modelSourceForFile(document.fileName)
-): CachedTextureVariableDefinition | null {
-  return createTextureVariableDefinitionResolver(ast, document, configuration, source).resolve(textureReference);
 }

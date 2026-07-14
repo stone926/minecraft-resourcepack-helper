@@ -167,7 +167,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "}",
       "equipment minecraft:leather {",
       "  layer humanoid texture minecraft:leather dyeable color 0xA06500",
-      "  layer humanoid texture minecraft:leather_overlay",
+      "  layer humanoid texture minecraft:leather_overlay use_player_texture",
       "  layer humanoid_leggings texture minecraft:leather_leggings dyeable color 0xA06500",
       "  layer humanoid_leggings texture minecraft:leather_leggings_overlay",
       "}"
@@ -197,7 +197,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       layers: {
         humanoid: [
           { texture: "minecraft:leather", dyeable: { ["color_when_undyed"]: 10511616 } },
-          { texture: "minecraft:leather_overlay" }
+          { texture: "minecraft:leather_overlay", use_player_texture: true }
         ],
         ["humanoid_leggings"]: [
           { texture: "minecraft:leather_leggings", dyeable: { ["color_when_undyed"]: 10511616 } },
@@ -208,6 +208,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     const leatherMappingPaths = leather?.sourceMap.mappings.map(mapping => mapping.generatedPath) ?? [];
     assert.ok(leatherMappingPaths.includes("/layers/humanoid/0/texture"));
     assert.ok(leatherMappingPaths.includes("/layers/humanoid/1/texture"));
+    assert.ok(leatherMappingPaths.includes("/layers/humanoid/1/use_player_texture"));
     assert.ok(leatherMappingPaths.includes("/layers/humanoid_leggings/0/texture"));
     assert.ok(leatherMappingPaths.includes("/layers/humanoid_leggings/1/texture"));
     assert.ok(checkedResources.includes("texture:minecraft:entity/equipment/horse_body/iron"));

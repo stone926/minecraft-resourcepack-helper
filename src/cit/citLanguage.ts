@@ -1,5 +1,5 @@
-import { isCitGlobalPropertiesFileName } from "./citPaths";
 import { uniqueValues } from "../../packages/mc-assets/src";
+import { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
 import { resolveCitKey, resolveCitType } from "./citKeyResolution";
 import {
   findCitPropertyEntryAtPosition,
@@ -15,7 +15,7 @@ import {
   type CitPropertyEntry
 } from "./citPropertiesParser";
 import { citSpecService } from "./citSpecService";
-import type { CitResourceKind, CitType, ResolvedCitSpec, ResolvedCitSpecKey } from "./citSpecTypes";
+import type { CitResourceKind, ResolvedCitSpec, ResolvedCitSpecKey } from "./citSpecTypes";
 
 export type CitLanguageDocument = CitPropertiesDocument;
 
@@ -133,16 +133,12 @@ export function getCitHoverInfo(
   };
 }
 
-export function getCitType(entries: CitPropertyEntry[]): CitType {
-  return resolveCitType(entries);
-}
-
 export function getEffectiveSpec(fileName: string, entries: CitPropertyEntry[], locale?: string): ResolvedCitSpec {
   if (isCitGlobalPropertiesFileName(fileName)) {
     return citSpecService.getGlobalSpec(locale);
   }
 
-  return citSpecService.getCitSpec(getCitType(entries), locale);
+  return citSpecService.getCitSpec(resolveCitType(entries), locale);
 }
 
 function getLineCompletionContext(

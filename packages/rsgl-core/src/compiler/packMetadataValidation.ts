@@ -342,7 +342,7 @@ function validateOverlayRange(
     pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format range does not include the compile target pack format.", "warning", generatedPath);
   } else if (!hasValidRange && legacyFormats && legacyFormats.min <= legacyFormats.max) {
     if (target.major >= modernPackFormatBoundary || target.major < legacyFormats.min || target.major > legacyFormats.max) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay legacy formats do not include the compile target pack format.", "warning", generatedPath);
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format declarations do not include the compile target pack format.", "warning", generatedPath);
     }
   }
 }

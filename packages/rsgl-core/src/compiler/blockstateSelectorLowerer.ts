@@ -6,14 +6,17 @@ import {
   originForEvaluationPath
 } from "./evaluate";
 import {
-  type BlockstateJsonValueLoweringHost,
-  lowerSerializableBlockstateJsonValue
-} from "./blockstateJsonValueLowerer";
+  createJsonValueLoweringHost,
+  type JsonValueSinkOptions,
+  lowerJsonEvaluationResult
+} from "./jsonValueLowerer";
 import { cloneJsonObject, isJsonObject } from "./jsonValues";
 import type { JsonValue } from "./ir";
 import type { RsglCompileContext } from "./templateExpansion";
 
-export type BlockstateSelectorLoweringHost = BlockstateJsonValueLoweringHost;
+export interface BlockstateSelectorLoweringHost extends JsonValueSinkOptions {
+  onError: NonNullable<JsonValueSinkOptions["onError"]>;
+}
 
 export interface LoweredBlockstateSelector {
   readonly key: string;
@@ -49,10 +52,10 @@ export function lowerBlockstateSelector(
     );
     return undefined;
   }
-  const value = lowerSerializableBlockstateJsonValue(
+  const value = lowerJsonEvaluationResult(
     result,
     expression.range,
-    { ...host, sourceFile: context.sourceFile }
+    createJsonValueLoweringHost(context, host)
   );
   if (value === undefined) {
     return undefined;
@@ -105,10 +108,10 @@ export function lowerBlockstateCondition(
     );
     return undefined;
   }
-  const value = lowerSerializableBlockstateJsonValue(
+  const value = lowerJsonEvaluationResult(
     result,
     expression.range,
-    { ...host, sourceFile: context.sourceFile }
+    createJsonValueLoweringHost(context, host)
   );
   if (value === undefined) {
     return undefined;

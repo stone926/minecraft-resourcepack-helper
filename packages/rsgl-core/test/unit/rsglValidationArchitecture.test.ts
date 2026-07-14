@@ -55,33 +55,7 @@ describe("RSGL validation architecture", () => {
     const directPushOffenders = concernFiles.filter(fileName =>
       /diagnostics\.push\s*\(/.test(fs.readFileSync(path.join(compilerDirectory, fileName), "utf8"))
     );
-    const legacyImports = fs.readdirSync(compilerDirectory)
-      .filter(fileName => fileName.endsWith(".ts"))
-      .filter(fileName => /validationShared/.test(fs.readFileSync(path.join(compilerDirectory, fileName), "utf8")));
-
     assert.deepStrictEqual(duplicateOffenders, []);
     assert.deepStrictEqual(directPushOffenders, []);
-    assert.deepStrictEqual(legacyImports, []);
-    assert.strictEqual(fs.existsSync(path.join(compilerDirectory, "validationShared.ts")), false);
-  });
-
-  it("keeps compiler sinks off evaluator-replaying provenance APIs", () => {
-    const compilerDirectory = path.join(process.cwd(), "packages", "rsgl-core", "src", "compiler");
-    const sinkFiles = [
-      "compiler.ts",
-      "resourceCompiler.ts",
-      "atlasSugar.ts",
-      "itemFragments.ts",
-      "equipmentSugar.ts",
-      "jsonResourceFragments.ts",
-      "modelGeometryDsl.ts",
-      "modelImpl.ts"
-    ];
-    const legacyOriginApi = /\bexpressionEvaluation(?:Origin|PathOrigins)\b/;
-    const offenders = sinkFiles.filter(fileName =>
-      legacyOriginApi.test(fs.readFileSync(path.join(compilerDirectory, fileName), "utf8"))
-    );
-
-    assert.deepStrictEqual(offenders, []);
   });
 });

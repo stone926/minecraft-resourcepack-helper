@@ -25,12 +25,9 @@ import {
 } from "./jsonObjectProperties";
 import { cloneJsonObject, isJsonObject } from "./jsonValues";
 import { evaluationScalarText } from "./evaluatedResourceValues";
-
-export { isJsonObject } from "./jsonValues";
 import { parseResourceId } from "./resourceIds";
-import type { ResourceBodyFragment } from "./resourceBody";
 import type { RsglResourceValidationOptions } from "./validation";
-import type { RsglTargetPackFormat } from "./target";
+import type { RsglTargetPackFormat } from "./targetConfig";
 
 export function normalizeJsonValue(value: unknown): JsonValue {
   if (value === undefined || isLambdaLikeValue(value)) {
@@ -114,8 +111,7 @@ const compactEquipmentSugarFields = new Set([
   "/texture",
   "/dyeable",
   "/color",
-  "/use_player_texture",
-  "/usePlayerTexture"
+  "/use_player_texture"
 ]);
 
 export function compactEquipmentSourceMappings(
@@ -310,46 +306,12 @@ export function prefixOverlayUnit(unit: ResourceUnit, directory: string): Resour
   };
 }
 
-export function createResourceBodyFragment(content: Record<string, JsonValue> | undefined): ResourceBodyFragment | undefined {
-  return content ? { content } : undefined;
-}
-
 export function blockstateVariantPath(key: string): string {
   return appendGeneratedPath("/variants", key);
 }
 
 export function blockstateMultipartPath(index: number): string {
   return appendGeneratedPath("/multipart", String(index));
-}
-
-export function currentMultipartLength(content: Record<string, JsonValue>): number {
-  return Array.isArray(content.multipart) ? content.multipart.length : 0;
-}
-
-export function offsetMultipartMappings(mappings: RsglMapping[], offset: number): RsglMapping[] {
-  if (offset === 0) {
-    return mappings;
-  }
-  return mappings.map(mapping => ({
-    ...mapping,
-    generatedPath: offsetMultipartPath(mapping.generatedPath, offset)
-  }));
-}
-
-function offsetMultipartPath(pathValue: string, offset: number): string {
-  const match = /^\/multipart\/(\d+)(\/.*)?$/.exec(pathValue);
-  if (!match) {
-    return pathValue;
-  }
-  return `/multipart/${Number(match[1]) + offset}${match[2] ?? ""}`;
-}
-
-export function isVariantEntryPath(pathValue: string): boolean {
-  return pathValue.startsWith("/variants/");
-}
-
-export function isMultipartEntryPath(pathValue: string): boolean {
-  return /^\/multipart\/\d+(?:\/|$)/.test(pathValue);
 }
 
 export function selectProgramModels(program: RsglProgram, entryFileName: string | undefined): RsglSemanticModel[] {

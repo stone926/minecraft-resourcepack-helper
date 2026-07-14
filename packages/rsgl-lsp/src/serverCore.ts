@@ -1,13 +1,10 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  CodeActionKind,
   CompletionItemKind,
   DiagnosticSeverity,
   InsertTextFormat,
   MarkupKind,
-  type CodeAction,
-  type CodeActionContext,
   type CompletionItem,
   type Diagnostic,
   type Hover,
@@ -19,7 +16,6 @@ import {
   type WorkspaceEdit
 } from "vscode-languageserver/node";
 import {
-  applyTextEdits,
   compileRsglModule,
   compileRsglProgram,
   formatRsglText,
@@ -32,31 +28,22 @@ import {
   getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
   loadRsglProjectConfigForSource,
-  migrateLegacyBlockstateProgram,
   parseRsgl,
   prepareRsglDocumentRename,
   projectCompileOptionsFromRsglConfig,
   resolveRsglCompileConfiguration,
   RsglProjectConfigError,
-  semanticModelForFile as coreSemanticModelForFile,
   type CompileDependency,
   type RsglCompileConfigurationOptions,
   type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglDefinitionLocation,
-  type MigrationIssue,
   type RsglResourceValidationOptions,
-  type RsglMigrationProgramFile,
-  type RsglModule,
   type RsglRenameEdit,
-  type RsglSemanticModel,
   type RsglSemanticToken,
   type RsglSymbol,
-  type TextEdit as RsglTextEdit,
-  type TextRange,
   type RsglWorkspaceSemanticProgram
 } from "../../rsgl-core/src";
-import { walkRsglModule } from "../../rsgl-core/src/parser/astTraversal";
 import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
 
 /** Validation settings pushed by the client via initializationOptions or didChangeConfiguration. */
@@ -89,212 +76,6 @@ export interface RsglDocumentCompletionDeps {
 
 /** Injected collaborators shared by hover, signature help, and definition lookup. */
 export type RsglDocumentLanguageIntelligenceDeps = RsglDocumentCompletionDeps;
-
-/** Custom fix-all kind advertised by the RSGL language server. */
-export const rsglBlockstateLegacyFixAllKind = "source.fixAll.rsgl.blockstateLegacy";
-
-const legacyBlockstateDiagnosticCodes = new Set([
-  "rsgl.blockstateModeRequired",
-  "rsgl.legacyBlockstateWrapper",
-  "rsgl.legacyStateKeySugar",
-  "rsgl.legacyBlockstateEntryArrow",
-  "rsgl.legacyModelApplySugar"
-]);
-
-export interface RsglCodeActionDocument extends RsglLspDocument {
-  offsetAt(position: Position): number;
-}
-
-export interface RsglDocumentCodeActionDeps {
-  loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
-}
-
-/**
- * Computes conservative legacy-blockstate actions. The linked program is
- * rebound by the core migration coordinator, while protocol conversion stays
- * here. Manual issues never synthesize edits.
- */
-export function computeDocumentCodeActions(
-  document: RsglCodeActionDocument,
-  fileName: string,
-  documentUri: string,
-  context: CodeActionContext,
-  deps: RsglDocumentCodeActionDeps
-): CodeAction[] {
-  const acceptsQuickFix = acceptsCodeActionKind(context.only, CodeActionKind.QuickFix);
-  const acceptsFixAll = acceptsCodeActionKind(context.only, rsglBlockstateLegacyFixAllKind);
-  if (!acceptsQuickFix && !acceptsFixAll) {
-    return [];
-  }
-  try {
-    const semanticProgram = deps.loadProgramFromEntry(fileName);
-    const currentFileName = normalizeFileName(path.resolve(fileName));
-    const currentText = document.getText();
-    const currentModule = parseRsgl(currentText);
-    const files: RsglMigrationProgramFile[] = semanticProgram.files.length > 0
-      ? semanticProgram.files.map(file => sameFileName(file.fileName, currentFileName)
-        ? { fileName: currentFileName, module: currentModule, sourceText: currentText }
-        : file)
-      : [{ fileName: currentFileName, module: currentModule, sourceText: currentText }];
-    const migration = migrateLegacyBlockstateProgram(files, {
-      semanticConfigurationFingerprint: semanticProgram.program.semanticConfigurationFingerprint
-    });
-    const fileResult = migration.files.find(file => sameFileName(file.fileName, currentFileName));
-    if (!fileResult || fileResult.edits.length === 0) {
-      return [];
-    }
-
-    // This also verifies bounds and non-overlap before exposing WorkspaceEdit.
-    applyTextEdits(currentText, fileResult.edits);
-    const actions: CodeAction[] = [];
-    if (acceptsQuickFix) {
-      const hasCrossFileMigrationEdits = migration.files.some(file =>
-        !sameFileName(file.fileName, currentFileName) && file.edits.length > 0
-      );
-      actions.push(...quickFixesForLegacyDiagnostics(
-        document,
-        documentUri,
-        currentModule,
-        context.diagnostics,
-        fileResult.edits,
-        fileResult.issues,
-        hasCrossFileMigrationEdits
-      ));
-    }
-    if (acceptsFixAll) {
-      actions.push({
-        title: fileResult.issues.length > 0
-          ? "Migrate safely inferable legacy blockstate syntax in this file"
-          : "Migrate all legacy blockstate syntax in this file",
-        kind: rsglBlockstateLegacyFixAllKind,
-        edit: workspaceEditFor(document, documentUri, fileResult.edits)
-      });
-    }
-    return actions;
-  } catch {
-    return [];
-  }
-}
-
-function quickFixesForLegacyDiagnostics(
-  document: RsglCodeActionDocument,
-  documentUri: string,
-  module: RsglModule,
-  diagnostics: readonly Diagnostic[],
-  edits: readonly RsglTextEdit[],
-  issues: readonly MigrationIssue[],
-  hasCrossFileMigrationEdits: boolean
-): CodeAction[] {
-  const resourceRanges = legacyBlockstateResourceRanges(module);
-  // Migration edits are an atomic source transformation. Without explicit edit
-  // dependency groups, a resource-local action cannot safely select one side
-  // of a template-definition/call-site or cross-file transaction. The fix-all
-  // action still exposes the complete current-file edit set.
-  if (hasCrossFileMigrationEdits || edits.some(edit =>
-    !resourceRanges.some(range => containsTextRange(range, edit.range))
-  )) {
-    return [];
-  }
-  const byResource = new Map<string, { range: TextRange; diagnostics: Diagnostic[] }>();
-  for (const diagnostic of diagnostics) {
-    if (!legacyBlockstateDiagnosticCodes.has(String(diagnostic.code ?? ""))) {
-      continue;
-    }
-    const diagnosticRange = offsetRange(document, diagnostic.range);
-    const resourceRange = resourceRanges
-      .filter(range => containsTextRange(range, diagnosticRange))
-      .sort((left, right) => rangeLength(left) - rangeLength(right))[0];
-    if (!resourceRange) {
-      continue;
-    }
-    const key = `${resourceRange.start}:${resourceRange.end}`;
-    const group = byResource.get(key) ?? { range: resourceRange, diagnostics: [] };
-    group.diagnostics.push(diagnostic);
-    byResource.set(key, group);
-  }
-
-  const actions: CodeAction[] = [];
-  for (const group of byResource.values()) {
-    if (issues.some(issue => rangesIntersect(group.range, issue.range))) {
-      continue;
-    }
-    const resourceEdits = edits.filter(edit => containsTextRange(group.range, edit.range));
-    if (resourceEdits.length === 0) {
-      continue;
-    }
-    try {
-      applyTextEdits(document.getText(), resourceEdits);
-    } catch {
-      continue;
-    }
-    actions.push({
-      title: "Migrate this legacy blockstate declaration",
-      kind: CodeActionKind.QuickFix,
-      diagnostics: group.diagnostics,
-      isPreferred: true,
-      edit: workspaceEditFor(document, documentUri, resourceEdits)
-    });
-  }
-  return actions;
-}
-
-function legacyBlockstateResourceRanges(module: RsglModule): TextRange[] {
-  const ranges: TextRange[] = [];
-  walkRsglModule(module, {
-    enterStatement(statement) {
-      if (statement.kind === "ResourceDecl"
-        && statement.resourceKind === "blockstate") {
-        ranges.push(statement.range);
-      }
-    }
-  });
-  return ranges;
-}
-
-function workspaceEditFor(
-  document: RsglLspDocument,
-  documentUri: string,
-  edits: readonly RsglTextEdit[]
-): NonNullable<CodeAction["edit"]> {
-  return {
-    changes: {
-      [documentUri]: edits.map(edit => ({
-        range: {
-          start: document.positionAt(edit.range.start),
-          end: document.positionAt(edit.range.end)
-        },
-        newText: edit.newText
-      }))
-    }
-  };
-}
-
-function acceptsCodeActionKind(
-  only: readonly string[] | undefined,
-  candidate: string
-): boolean {
-  return !only || only.length === 0 || only.some(requested =>
-    candidate === requested || candidate.startsWith(`${requested}.`)
-  );
-}
-
-function offsetRange(document: RsglCodeActionDocument, range: Range): TextRange {
-  const start = clampOffset(document, document.offsetAt(range.start));
-  const end = clampOffset(document, document.offsetAt(range.end));
-  return { start: Math.min(start, end), end: Math.max(start, end) };
-}
-
-function containsTextRange(container: TextRange, child: TextRange): boolean {
-  return container.start <= child.start && child.end <= container.end;
-}
-
-function rangesIntersect(left: TextRange, right: TextRange): boolean {
-  return left.start <= right.end && right.start <= left.end;
-}
-
-function rangeLength(range: TextRange): number {
-  return range.end - range.start;
-}
 
 /** Normalizes an untyped settings payload into safe validation settings. */
 export function toValidationSettings(value: unknown): RsglValidationSettings {
@@ -698,14 +479,6 @@ export async function toLspWorkspaceEdit(
   } catch {
     return null;
   }
-}
-
-/** Finds the semantic model belonging to the given file within a bound workspace program. */
-export function semanticModelForFile(
-  semanticProgram: RsglWorkspaceSemanticProgram,
-  fileName: string
-): RsglSemanticModel | undefined {
-  return coreSemanticModelForFile(semanticProgram, fileName);
 }
 
 /** Injected collaborators for semantic token computation. */

@@ -1,5 +1,3 @@
-import type { ResourceFileRequest } from "../../packages/mc-assets/src";
-
 export interface CacheTextDocument {
   fileName: string;
   languageId?: string;
@@ -11,8 +9,6 @@ export interface CacheTextDocument {
   };
   getText(): string;
 }
-
-export type ResourceResolveRequest = ResourceFileRequest;
 
 export interface ResourceConfiguration {
   defaultAssetsPath?: string | null;

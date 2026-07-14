@@ -6,9 +6,9 @@ import { mergeResolvedExpectedTypeFact } from "./expectedTypeFacts";
 import {
   checkAssignable,
   checkExpression,
-  checkExpressionForExpectedType,
-  RsglExpressionCheckContext
+  checkExpressionForExpectedType
 } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { scopeWithLinkedGlobalFallback } from "./linkedScope";
 import { resolveCallableSymbolInScope } from "./moduleNamespace";
 import { formatType, isAssignable } from "./typeRelations";

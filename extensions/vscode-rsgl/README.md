@@ -1,12 +1,12 @@
 # RSGL - Resourcepack Generation Language
 
-Standalone VS Code extension for editing, validating, migrating, and building Minecraft Java Edition resource packs from `.rsgl` source files.
+Standalone VS Code extension for editing, validating, and building Minecraft Java Edition resource packs from `.rsgl` source files.
 
 ## Features
 
 - Language registration and syntax highlighting for `.rsgl` files.
-- Completion, diagnostics, hover, signature help, navigation, rename, semantic highlighting, quick fixes, and formatting powered by the bundled RSGL language server.
-- VS Code build and preview commands for a single file, a source directory, or configured workspace roots, plus CLI check, migration, and watch workflows.
+- Completion, diagnostics, hover, signature help, navigation, rename, semantic highlighting, and formatting powered by the bundled RSGL language server.
+- VS Code build and preview commands for a single file, a source directory, or configured workspace roots, plus CLI check and watch workflows.
 - Explicit template output dialects, canonical blockstate syntax, structural types, typed resource IDs, compile-time collections, namespace imports, and exact model-geometry transforms.
 
 This extension can be installed directly, and is also installed automatically when Minecraft Resourcepack Helper is installed.
@@ -94,7 +94,7 @@ blockstate multipart lamp {
 }
 ```
 
-Canonical blockstates put the mode directly after `blockstate`. Variant selectors use `{ property: value }: model`, while multipart entries use `apply` and `when { ... } apply`. Legacy `variants { ... }` / `multipart { ... }` wrappers, `[state=value] -> ...`, and `@model` sugar remain isolated compatibility paths that emit migration diagnostics; they should not be used in new source.
+RSGL accepts canonical blockstates only: put the mode directly after `blockstate`, write variant selectors as `{ property: value }: model`, and write multipart entries with `apply` or `when { ... } apply`.
 
 ## Types, functions, IDs, and collections
 
@@ -144,7 +144,7 @@ model block oak_cube {
 }
 ```
 
-Named imports and bare side-effect imports are also supported. Default imports are not supported; use a named or namespace import instead.
+Named imports and bare side-effect imports are also supported. Only explicitly exported names are importable. Default imports are not supported; use a named or namespace import instead.
 
 ## Model geometry transforms
 
@@ -180,18 +180,7 @@ Place `rsgl.config.json` in a project directory or one of its ancestors. The ext
 
 Command-line `--out` overrides `outDir` for build, check, and watch operations without changing the config file.
 
-## Migration and CLI
-
-The language server diagnoses legacy blockstate and inferred root-template syntax. It offers conservative quick fixes for unambiguous blockstate rewrites; the CLI coordinates linked-program migration, including affected root templates. Review each diagnostic when migration requires a manual choice.
-
-The CLI previews migration by default and writes only when explicitly requested:
-
-```bash
-rsgl migrate src
-rsgl migrate src --write
-```
-
-`--write` applies the accepted migration atomically. Keep the project under version control and review the resulting diff before building.
+## CLI
 
 The complete command surface is:
 
@@ -199,8 +188,7 @@ The complete command surface is:
 rsgl init
 rsgl build [root|file] [--out <dir>] [--preview] [--watch]
 rsgl check [root|file] [--out <dir>]
-rsgl migrate [root|file] [--write]
 rsgl watch [root|file] [--out <dir>]
 ```
 
-`--preview` is build-only, `--watch` is a build shortcut equivalent to the `watch` command, and `--write` is migration-only.
+`--preview` is build-only, and `--watch` is a build shortcut equivalent to the `watch` command.

@@ -19,9 +19,6 @@
       "include": "#blockstateDeclarations"
     },
     {
-      "include": "#legacyBlockstateSyntax"
-    },
-    {
       "include": "#strings"
     },
     {
@@ -92,7 +89,7 @@
     "blockstateDeclarations": {
       "patterns": [
         {
-          "begin": "\\b(blockstate)([ \\t]+)(?:(variants|multipart)([ \\t]+))?[^\\r\\n{]+?[ \\t]*(\\{)",
+          "begin": "\\b(blockstate)([ \\t]+)(variants|multipart)([ \\t]+)[^\\r\\n{]+?[ \\t]*(\\{)",
           "beginCaptures": {
             "1": {
               "name": "storage.type.rsgl"
@@ -117,9 +114,6 @@
         },
         {
           "include": "#strings"
-        },
-        {
-          "include": "#legacyBlockstateWrappers"
         },
         {
           "match": "(?<=\\{)([ \\t]*)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*[:=](?!=))",
@@ -147,49 +141,6 @@
               "include": "#blockstateBody"
             }
           ]
-        }
-      ]
-    },
-    "legacyBlockstateWrappers": {
-      "patterns": [
-        {
-          "match": "(^[ \\t]*)(variants|multipart)\\b(?=[ \\t]*\\{)",
-          "captures": {
-            "2": {
-              "name": "invalid.deprecated.blockstate-wrapper.rsgl"
-            }
-          }
-        }
-      ]
-    },
-    "legacyBlockstateSyntax": {
-      "patterns": [
-        {
-          "match": "(^[ \\t]*)(\\[[^\\]\\r\\n]*=[^\\]\\r\\n]*\\])([ \\t]*)(->)",
-          "captures": {
-            "2": {
-              "name": "invalid.deprecated.blockstate-selector.rsgl"
-            },
-            "4": {
-              "name": "invalid.deprecated.blockstate-arrow.rsgl"
-            }
-          }
-        },
-        {
-          "match": "(^[ \\t]*)(\\[[^\\]\\r\\n]*=[^\\]\\r\\n]*\\])(?=[ \\t]*:)",
-          "captures": {
-            "2": {
-              "name": "invalid.deprecated.blockstate-selector.rsgl"
-            }
-          }
-        },
-        {
-          "match": "(^[ \\t]*)(\\{[^\\r\\n]*\\}|\\([^\\r\\n]*\\))([ \\t]*)(->)",
-          "captures": {
-            "4": {
-              "name": "invalid.deprecated.blockstate-arrow.rsgl"
-            }
-          }
         }
       ]
     },
@@ -592,7 +543,7 @@
         },
         {
           "name": "variable.other.property.rsgl",
-          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|model|x|y|z|uvlock|weight|texture|generate|double|box|element|from|to|face|all|down|up|north|south|west|east|uv|rotation|origin|axis|angle|rescale|cullface|shade|tintindex|light_emission|mirror|translate)\\b"
+          "match": "\\b(?:parent|textures|elements|variants|multipart|animation|sources|filter|raw|property|frames|source|target|wobble|scale|component|predicate|value|ignore_default|keybind|on_true|on_false|model|x|y|z|uvlock|weight|texture|generate|double|box|element|from|to|face|all|down|up|north|south|west|east|uv|rotation|origin|axis|angle|rescale|cullface|shade|tintindex|light_emission)\\b"
         }
       ]
     },
@@ -601,10 +552,6 @@
         {
           "name": "keyword.operator.rsgl",
           "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.\\.|\\.\\.|[=?:+\\-*/%<>!#]"
-        },
-        {
-          "name": "invalid.deprecated.blockstate-model-apply.rsgl",
-          "match": "@"
         }
       ]
     }

@@ -16,7 +16,6 @@ import {
 } from "../parser";
 import type { ExternResourceKind } from "../resourceKinds";
 import type {
-  ResolvedTemplateOutputConflict,
   ResolvedTemplateOutputMetadata,
   RsglTemplateCallerContext
 } from "../templateOutput";
@@ -81,7 +80,7 @@ export interface RsglType {
   parameters?: RsglType[];
   returnType?: RsglType;
   options?: RsglType[];
-  /** Internal provenance used by contextual compatibility escapes. */
+  /** Internal provenance used by explicit contextual Json escapes. */
   explicitAnnotation?: true;
   /** Internal union arm accepted only when static checking proves explicit Json. */
   contextualEscapeOnly?: true;
@@ -146,7 +145,6 @@ export interface RsglSignature {
   /** Stable named signature produced by a let-bound lambda value. */
   valueFunction?: true;
   templateOutput?: ResolvedTemplateOutputMetadata;
-  templateOutputConflict?: ResolvedTemplateOutputConflict;
 }
 
 export interface RsglGenericParameter {
@@ -156,17 +154,9 @@ export interface RsglGenericParameter {
 
 export interface RsglTemplateUseRecord {
   expression: ExprNode;
-  /** Undefined only inside a legacy contextual template whose caller chooses the body dialect. */
   callerContext?: RsglTemplateCallerContext;
   scope: RsglScope;
   enclosingTemplate?: TemplateDeclNode;
-}
-
-export interface RsglLegacyBlockstateRootRecord {
-  range: TextRange;
-  directModes: readonly ("variants" | "multipart")[];
-  /** Only wrapper-less root uses participate in declaration-mode inference. */
-  uses: readonly RsglTemplateUseRecord[];
 }
 
 export interface RsglContextualTextureSinkRecord {
@@ -286,8 +276,6 @@ export interface RsglSemanticModel {
    */
   importCallScopes?: ReadonlyMap<ExprNode, RsglScope>;
   templateUses?: readonly RsglTemplateUseRecord[];
-  /** Legacy declaration roots retained for exact post-link mode inference. */
-  legacyBlockstateRoots?: readonly RsglLegacyBlockstateRootRecord[];
   contextualTextureSinks?: readonly RsglContextualTextureSinkRecord[];
   /** Final semantic policy consumed by blockstate runtime lowering. */
   blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;

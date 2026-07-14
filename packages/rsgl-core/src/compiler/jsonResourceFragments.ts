@@ -38,8 +38,6 @@ import { appendGeneratedPath } from "./sourcePaths";
 
 export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
 
-export type RsglJsonResourceFragmentOptions = JsonValueSinkOptions;
-
 interface EvaluatedFragmentArg<T> {
   arg: ArgumentNode;
   value: T;
@@ -55,7 +53,7 @@ export function compileJsonResourceUseFragment(
   kind: JsonResourceFragmentKind,
   statement: UseDeclNode,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions = {}
+  options: JsonValueSinkOptions = {}
 ): ResourceBodyFragment | undefined {
   const call = jsonResourceFragmentCall(statement.expression);
   if (!call) {
@@ -84,7 +82,7 @@ export function compileJsonResourceUseFragment(
 function compileAtlasDirectory(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment | undefined {
   const source = stringArg(call, "source", 0, context, options, "/sources/0/source");
   if (!source) {
@@ -108,7 +106,7 @@ function compileAtlasDirectory(
       appendGeneratedPath(sourcePath, "source"),
       source.arg.value.range,
       context,
-      evaluatedRootOrigin(source.result, context.sourceFile)
+      evaluatedRootOrigin(source.result)
     )
   ];
   if (prefix) {
@@ -120,7 +118,7 @@ function compileAtlasDirectory(
 function compileParticlesSeq(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment | undefined {
   const arg = requiredArg(call, "pattern", 0, options);
   if (!arg) {
@@ -154,7 +152,7 @@ function compileParticlesSeq(
   }
   const { textures } = sequence;
   const texturesPath = "/textures";
-  const rootOrigin = evaluatedRootOrigin(evaluated.result, context.sourceFile);
+  const rootOrigin = evaluatedRootOrigin(evaluated.result);
   const mappings: ResourceBodyMapping[] = [
     {
       generatedPath: texturesPath,
@@ -168,7 +166,6 @@ function compileParticlesSeq(
       context,
       validationOrigin: evaluatedOriginAtPath(
         evaluated.result,
-        context.sourceFile,
         textureSequenceSourcePath(sequence, index)
       ) ?? rootOrigin
     }))
@@ -179,7 +176,7 @@ function compileParticlesSeq(
 function compileMcmetaAnimation(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment {
   const animation: Record<string, JsonValue> = {};
   const mappings: ResourceBodyMapping[] = [
@@ -197,7 +194,7 @@ function compileMcmetaAnimation(
 function compileNineSliceGui(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment | undefined {
   const width = numberArg(call, "width", 0, context, options, "/gui/scaling/width");
   const height = numberArg(call, "height", 1, context, options, "/gui/scaling/height");
@@ -245,7 +242,7 @@ function compileNineSliceGui(
 function compileEquipmentLayers(
   call: CallExprNode & { callee: IdentifierExprNode },
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): ResourceBodyFragment | undefined {
   const textureArg = requiredArg(call, "texture", 0, options);
   const layersArg = requiredArg(call, "layers", 1, options);
@@ -295,7 +292,7 @@ function compileEquipmentLayers(
   };
   const colorArg = findArg(call, "color");
   const dyeableArg = findArg(call, "dyeable");
-  const usePlayerTextureArg = findArg(call, "use_player_texture") ?? findArg(call, "usePlayerTexture");
+  const usePlayerTextureArg = findArg(call, "use_player_texture");
   const color = colorArg
     ? evaluateJsonExpression(
       colorArg.value,
@@ -405,7 +402,7 @@ function equipmentLayersMappings(
         appendGeneratedPath(entryPath, "texture"),
         args.texture.arg.value.range,
         context,
-        evaluatedRootOrigin(args.texture.result, context.sourceFile)
+        evaluatedRootOrigin(args.texture.result)
       )
     );
     if (isJsonObject(layerEntry.dyeable)) {
@@ -437,7 +434,7 @@ export function textureSequence(
   context: EvaluationContext,
   padWidth: number | null,
   range: TextRange,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): TextureSequenceResult | null | undefined {
   if (typeof value !== "string" && !Array.isArray(value)) {
     return null;
@@ -488,7 +485,7 @@ export function textureSequence(
 
 function reportParticlesSeqLimit(
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions,
+  options: JsonValueSinkOptions,
   range: TextRange,
   budget: EvaluationItemBudget,
   requested: number
@@ -532,7 +529,7 @@ function stringArg(
   name: string,
   positionalIndex: number,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): EvaluatedFragmentArg<string> | null {
   const arg = requiredArg(call, name, positionalIndex, options);
@@ -556,7 +553,7 @@ function optionalStringArg(
   name: string,
   positionalIndex: number,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): EvaluatedFragmentArg<string> | null {
   const arg = findArg(call, name, positionalIndex);
@@ -580,7 +577,7 @@ function numberArg(
   name: string,
   positionalIndex: number,
   context: EvaluationContext,
-  options: RsglJsonResourceFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): EvaluatedFragmentArg<number> | null {
   const arg = requiredArg(call, name, positionalIndex, options);
@@ -603,7 +600,7 @@ function requiredArg(
   call: CallExprNode,
   name: string,
   positionalIndex: number,
-  options: RsglJsonResourceFragmentOptions
+  options: JsonValueSinkOptions
 ): ArgumentNode | null {
   const arg = findArg(call, name, positionalIndex);
   if (!arg) {
@@ -623,7 +620,7 @@ function copyOptionalArg(
   call: CallExprNode,
   context: EvaluationContext,
   positionalIndex: number,
-  options: RsglJsonResourceFragmentOptions,
+  options: JsonValueSinkOptions,
   generatedPath: string
 ): ArgumentNode | undefined {
   const arg = findArg(call, name, positionalIndex);

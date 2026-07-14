@@ -18,7 +18,7 @@ export interface RsglCompileSnapshotOptions {
   sourceRoot?: string;
   /** Maps additional source roots (for example shared imports) onto stable snapshot prefixes. */
   sourceFileAliases?: readonly RsglCompileSnapshotSourceAlias[];
-  /** External dependency marker units are excluded from migration baselines by default. */
+  /** External dependency marker units are excluded from regression snapshots by default. */
   includeExternalUnits?: boolean;
 }
 
@@ -59,10 +59,9 @@ export interface RsglCompileSnapshotDiagnostic {
 }
 
 /**
- * Projects a compiler result onto migration-stable behavior. Character ranges
- * are intentionally omitted because canonical source migrations move tokens;
- * dedicated tests remain responsible for checking that new ranges land on the
- * correct token category.
+ * Projects a compiler result onto stable regression behavior. Character ranges
+ * are intentionally omitted because harmless source edits move tokens; dedicated
+ * tests remain responsible for checking that ranges land on the correct token.
  */
 export function createRsglCompileSnapshot(
   result: RsglCompileResult,

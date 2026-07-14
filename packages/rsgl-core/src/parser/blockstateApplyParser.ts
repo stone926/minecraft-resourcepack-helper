@@ -4,23 +4,15 @@ import type {
   BlockstateApplyValueNode,
   BlockstateModelPropertyNode,
   BlockstateRandomItemNode,
-  BlockstateRandomValueNode,
-  ExprNode,
-  ModelApplySugarNode,
-  RandomApplyNode,
-  SugarPropertyNode
+  BlockstateRandomValueNode
 } from "./types";
 
 const applyTerminators = [",", "]", "}"] as const;
 
-export type ParsedBlockstateApplyValue =
-  | { syntax: "canonical"; value: BlockstateApplyValueNode }
-  | { syntax: "legacy"; value: ExprNode };
-
 /** Parses the canonical, non-expression blockstate apply domain. */
 export function parseBlockstateApplyValue(
   host: ResourceStatementParserHost
-): ParsedBlockstateApplyValue {
+): BlockstateApplyValueNode {
   if (host.current().text === "}" || (
     host.isLineBoundaryOr() && looksLikeOuterBlockstateStatement(host)
   )) {
@@ -28,50 +20,23 @@ export function parseBlockstateApplyValue(
       "rsgl.expectedBlockstateApplyValue",
       "Expected a blockstate model value after the selector."
     );
-    return { syntax: "canonical", value: missingCanonicalApplyValue(host) };
-  }
-  if (host.current().text === "@") {
-    return {
-      syntax: "legacy",
-      value: parseLegacyModelApply(host)
-    };
+    return missingCanonicalApplyValue(host);
   }
   if (host.current().text === "random" && host.peekText(1) === "[") {
-    return {
-      syntax: "canonical",
-      value: parseBlockstateRandomValue(host)
-    };
+    return parseBlockstateRandomValue(host);
   }
-  return {
-    syntax: "canonical",
-    value: parseBlockstateApplyExpression(host)
-  };
-}
-
-/** Parses an old wrapper/arrow apply value without routing through ExprNode's public grammar. */
-export function parseLegacyBlockstateApplyValue(host: ResourceStatementParserHost): ExprNode {
-  if (host.current().text === "}" || (
-    host.isLineBoundaryOr() && looksLikeOuterBlockstateStatement(host)
-  )) {
-    host.addDiagnosticAtCurrent(
-      "rsgl.expectedBlockstateApplyValue",
-      "Expected a blockstate model value after the selector."
-    );
-    return host.missingExprAt(host.current());
-  }
-  if (host.current().text === "@") {
-    return parseLegacyModelApply(host);
-  }
-  if (host.current().text === "random" && host.peekText(1) === "[") {
-    return parseLegacyRandomApply(host);
-  }
-  return host.parseExpression({ stopTexts: ["}"] });
+  return parseBlockstateApplyExpression(host);
 }
 
 function parseBlockstateApplyExpression(host: ResourceStatementParserHost): BlockstateApplyExprNode {
   const start = host.current();
   const head = host.parseExpression({ stopTexts: applyTerminators });
-  const properties = parseCanonicalProperties(host);
+  if (head.kind === "MissingExpr") {
+    while (!host.isAtEnd() && !host.isLineBoundaryOr(...applyTerminators)) {
+      host.advance();
+    }
+  }
+  const properties = head.kind === "MissingExpr" ? [] : parseCanonicalProperties(host);
   return {
     kind: "BlockstateApplyExpr",
     head,
@@ -130,17 +95,13 @@ function parseBlockstateRandomItem(host: ResourceStatementParserHost): Blockstat
       ...host.nodeRanges(start, host.previousOr(start))
     };
   }
-  if (start.text === "@") {
-    const legacy = parseLegacyModelApply(host);
-    return {
-      kind: "BlockstateRandomItem",
-      head: legacy.model,
-      properties: legacy.properties.map(toCanonicalProperty),
-      ...host.nodeRanges(start, host.previousOr(start))
-    };
-  }
   const head = host.parseExpression({ stopTexts: applyTerminators });
-  const properties = parseCanonicalProperties(host);
+  if (head.kind === "MissingExpr") {
+    while (!host.isAtEnd() && !host.isLineBoundaryOr(...applyTerminators)) {
+      host.advance();
+    }
+  }
+  const properties = head.kind === "MissingExpr" ? [] : parseCanonicalProperties(host);
   return {
     kind: "BlockstateRandomItem",
     head,
@@ -179,86 +140,6 @@ function parseCanonicalProperties(host: ResourceStatementParserHost): Blockstate
     });
   }
   return properties;
-}
-
-function parseLegacyModelApply(host: ResourceStatementParserHost): ModelApplySugarNode {
-  const start = host.advance();
-  host.addDiagnostic(
-    "rsgl.legacyModelApplySugar",
-    "The '@model' blockstate apply syntax is deprecated. Remove '@' and use a blockstate apply expression.",
-    { start: start.offset, end: start.offset + start.length },
-    "warning"
-  );
-  const model = host.parseExpression({ stopTexts: applyTerminators });
-  const properties: SugarPropertyNode[] = [];
-  while (!host.isLineBoundaryOr(...applyTerminators)) {
-    const propertyStart = host.current();
-    const name = host.parseIdentifier("Expected model apply property.");
-    if (!name) {
-      break;
-    }
-    const value = host.matchText("=")
-      ? host.parseExpression({ stopTexts: applyTerminators })
-      : host.booleanLiteral(propertyStart, true);
-    properties.push({
-      kind: "SugarProperty",
-      name,
-      value,
-      ...host.nodeRanges(propertyStart, host.previousOr(propertyStart))
-    });
-  }
-  return {
-    kind: "ModelApplySugar",
-    model,
-    properties,
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
-function parseLegacyRandomApply(host: ResourceStatementParserHost): RandomApplyNode {
-  const start = host.advance();
-  const entries: ExprNode[] = [];
-  if (!host.matchText("[")) {
-    host.addDiagnosticAtCurrent("rsgl.expectedRandomList", "Expected '[' after random.");
-  }
-  while (!host.isAtEnd() && host.current().text !== "]") {
-    const mark = host.mark();
-    entries.push(host.current().text === "@"
-      ? parseLegacyModelApply(host)
-      : host.parseExpression({ stopTexts: [",", "]"] }));
-    const comma = host.matchText(",");
-    if (!comma) {
-      if (host.current().text === "]" || host.current().text === "}") {
-        break;
-      }
-      if (host.isLineBoundaryOr() && looksLikeOuterBlockstateStatement(host)) {
-        break;
-      }
-      if (!host.isLineBoundaryOr()) {
-        host.addDiagnosticAtCurrent(
-          "rsgl.expectedBlockstateRandomSeparator",
-          "Expected ',' or a line break between legacy random items."
-        );
-      }
-    }
-    host.ensureProgress(mark, "Unable to parse legacy random item; skipping token.");
-  }
-  host.expectText("]", "Expected ']' after random model list.");
-  return {
-    kind: "RandomApply",
-    entries,
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
-function toCanonicalProperty(property: SugarPropertyNode): BlockstateModelPropertyNode {
-  return {
-    kind: "BlockstateModelProperty",
-    name: property.name,
-    value: property.value,
-    range: property.range,
-    fullRange: property.fullRange
-  };
 }
 
 function missingCanonicalApplyValue(host: ResourceStatementParserHost): BlockstateApplyExprNode {

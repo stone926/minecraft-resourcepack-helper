@@ -8,9 +8,9 @@ import { mergeObjectTypeAlternatives } from "./collectionRecordTypes";
 import { diagnostic } from "./diagnostics";
 import {
   checkExpression,
-  resolveListSpreadElementType,
-  type RsglExpressionCheckContext
+  resolveListSpreadElementType
 } from "./expressionChecker";
+import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { objectSpreadTypes } from "./objectSpreadTypes";
 import { lookup } from "./scopes";
 import { combineRsglTypes } from "./typeNormalization";

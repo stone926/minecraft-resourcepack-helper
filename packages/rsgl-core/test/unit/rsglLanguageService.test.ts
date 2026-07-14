@@ -42,7 +42,8 @@ describe("RSGL language service", () => {
         "    parent minecraft:block/cube_all",
         "    textures { all: texture }",
         "  }",
-        "}"
+        "}",
+        "export { cube }"
       ].join("\n"));
 
       const cache = RsglWorkspaceSemanticCache.create();

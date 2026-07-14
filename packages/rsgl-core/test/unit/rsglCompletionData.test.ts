@@ -41,8 +41,6 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "template -> variants"));
     assert.ok(topLevel.some(candidate => candidate.label === "template -> multipart"));
     assert.strictEqual(topLevel.some(candidate => candidate.label === "template"), false);
-    assert.strictEqual(topLevel.some(candidate => candidate.label === "fragment" || candidate.label === "fn"), false);
-    assert.strictEqual(topLevel.some(candidate => candidate.label === "cubeAll"), false);
     for (const label of [
       "map",
       "filter",
@@ -69,8 +67,6 @@ describe("RSGL completion data", () => {
     assert.ok(inBlock.some(candidate => candidate.label === "merge strict"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge upsert"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge append"));
-    assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json"), false);
-    assert.strictEqual(inBlock.some(candidate => candidate.label === "raw_json_file"), false);
     assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
   });
 
