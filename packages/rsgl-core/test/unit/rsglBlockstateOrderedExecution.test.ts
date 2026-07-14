@@ -294,9 +294,9 @@ describe("RSGL ordered blockstate root execution", () => {
     assert.deepStrictEqual(unitByPath(result, "blockstates/invalid_shape.json").content, {
       variants: {}
     });
-    assert.deepStrictEqual(unitByPath(result, "blockstates/invalid_value.json").content, {
-      variants: {}
-    });
+    assert.strictEqual(result.units.some(unit =>
+      unit.outputPath.endsWith("blockstates/invalid_value.json")
+    ), false);
   });
 
   it("retains expression-path ranges for nested root merge mappings", () => {

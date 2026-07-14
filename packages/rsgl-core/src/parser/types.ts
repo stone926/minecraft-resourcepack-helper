@@ -134,18 +134,32 @@ export type TemplateStringPart =
 
 export interface ListExprNode extends RsglNode {
   kind: "ListExpr";
-  elements: ExprNode[];
+  elements: ListElementNode[];
+}
+
+export type ListElementNode = ExprNode | ListSpreadNode;
+
+export interface ListSpreadNode extends RsglNode {
+  kind: "ListSpread";
+  expression: ExprNode;
 }
 
 export interface ObjectExprNode extends RsglNode {
   kind: "ObjectExpr";
-  properties: ObjectPropertyNode[];
+  properties: ObjectEntryNode[];
 }
+
+export type ObjectEntryNode = ObjectPropertyNode | ObjectSpreadNode;
 
 export interface ObjectPropertyNode extends RsglNode {
   kind: "ObjectProperty";
   key: IdentifierNode | StringLiteralNode | NumberLiteralNode | DynamicKeyNode;
   value: ExprNode;
+}
+
+export interface ObjectSpreadNode extends RsglNode {
+  kind: "ObjectSpread";
+  expression: ExprNode;
 }
 
 export interface DynamicKeyNode extends RsglNode {

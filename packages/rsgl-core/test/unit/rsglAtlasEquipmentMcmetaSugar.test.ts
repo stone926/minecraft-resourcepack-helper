@@ -53,6 +53,20 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     assert.ok(checkedResources.includes("textureDirectory:minecraft:potions"));
   });
 
+  it("does not replay atlas directory source expressions for provenance", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "atlas minecraft:blocks {",
+      "  directory source (join(map([1, 2], value => \"x\"), \"\") == \"xx\" ? \"a\" : \"b\")",
+      "}"
+    ], { maxEvaluationItems: 2 });
+
+    expectNoDiagnostics(result);
+    const atlas = result.units.find(unit => unit.kind === "atlas");
+    assert.deepStrictEqual(atlas?.content, {
+      sources: [{ type: "minecraft:directory", source: "minecraft:a" }]
+    });
+  });
+
   it("lowers atlas paletted permutations sugar statements", () => {
     const source = [
       "extern custom texture_directory minecraft:trims/items",
@@ -388,5 +402,32 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("keeps the selected collection element as the mcmeta target origin", () => {
+    const fileName = path.resolve("pack", "rsgl", "mapped-mcmeta-target.rsgl");
+    const lines = [
+      "let targets = [\"assets/minecraft/textures/block/first.png\", \"assets/minecraft/textures/block/second.png\"]",
+      "mcmeta map(targets, target => target)[1] {",
+      "  animation { frametime 2 }",
+      "}"
+    ];
+    const source = lines.join("\n");
+    const result = compileSourceWithUncheckedExterns(lines, {
+      fileName,
+      maxEvaluationItems: 2
+    });
+
+    expectNoDiagnostics(result);
+    const unit = result.units.find(candidate => candidate.outputPath.endsWith("second.png.mcmeta"));
+    const origin = unit?.validation?.referenceOrigins?.find(candidate =>
+      candidate.generatedPath === "/@resource-id"
+    );
+    assert.ok(origin, "Expected an exact mcmeta resource-id origin");
+    assert.strictEqual(origin.sourceFile, fileName);
+    assert.strictEqual(
+      source.slice(origin.sourceRange.start, origin.sourceRange.end),
+      "\"assets/minecraft/textures/block/second.png\""
+    );
   });
 });

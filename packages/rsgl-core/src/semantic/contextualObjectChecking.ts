@@ -7,8 +7,13 @@ import {
   TextRange
 } from "../parser";
 import { diagnostic } from "./diagnostics";
+import {
+  mergeObjectTypeAlternatives,
+  optionalObjectProjection
+} from "./collectionRecordTypes";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { lookup } from "./scopes";
+import { objectSpreadTypes } from "./objectSpreadTypes";
 import { finiteObjectKeysFromType, staticIndexKey } from "./structuralTypes";
 import { combineRsglTypes, rsglTypeKey } from "./typeNormalization";
 import { isAssignable } from "./typeRelations";
@@ -59,17 +64,57 @@ export interface ContextualObjectCheckHost {
   ): void;
 }
 
+export interface ContextualObjectCheckOptions {
+  /** Retain actual provided fields while still applying expected field types. */
+  preserveInferredShape?: boolean;
+}
+
 export function checkContextualObject(
   context: RsglExpressionCheckContext,
   expression: ObjectExprNode,
   scope: RsglScope,
   host: ContextualObjectCheckHost,
-  expectedType?: RsglType
+  expectedType?: RsglType,
+  options: ContextualObjectCheckOptions = {}
 ): RsglType {
-  const properties = new Map<string, ReturnType<typeof objectProperty>>();
-  const computedPropertyTypes: RsglType[] = [];
   const providedNames = new Set<string>();
+  let inferredAlternatives: RsglType[] = [{
+    kind: "Object",
+    properties: new Map(),
+    open: false
+  }];
   for (const property of expression.properties) {
+    if (property.kind === "ObjectSpread") {
+      const expectedProjection = expectedType ? optionalObjectProjection(expectedType) : undefined;
+      const diagnosticStart = context.diagnostics.length;
+      const checkedType = expectedProjection
+        ? host.checkExpressionForExpectedType(
+          context,
+          property.expression,
+          scope,
+          expectedProjection
+        )
+        : host.checkExpression(context, property.expression, scope);
+      const shapeType = spreadSourceShape(property.expression, checkedType, scope);
+      const spreadTypes = objectSpreadTypes(context, shapeType, property);
+      if (!spreadTypes) {
+        continue;
+      }
+      if (
+        expectedProjection
+        && !isDynamicObjectType(shapeType)
+        && context.diagnostics.length === diagnosticStart
+      ) {
+        host.checkAssignable(context, expectedProjection, shapeType, property.expression);
+      }
+      addGuaranteedSpreadNames(providedNames, property.expression, spreadTypes);
+      reportSpreadExcessFields(context, expectedType, spreadTypes, property.range);
+      inferredAlternatives = mergeObjectTypeAlternatives({
+        context,
+        range: expression.range
+      }, inferredAlternatives, spreadTypes);
+      continue;
+    }
     const key = objectKeyName(property);
     const expectedProperty = key ? expectedType?.properties?.get(key) : undefined;
     let computedKeys: string[] | undefined;
@@ -82,21 +127,28 @@ export function checkContextualObject(
     }
     const expectedValueType = expectedProperty?.type
       ?? (key ? expectedType?.indexType : expectedComputedValueType(expectedType, computedKeys));
+    const diagnosticStart = context.diagnostics.length;
     const valueType = expectedValueType
       ? host.checkExpressionForExpectedType(context, property.value, scope, expectedValueType)
       : host.checkExpression(context, property.value, scope);
-    if (expectedValueType) {
+    if (expectedValueType && context.diagnostics.length === diagnosticStart) {
       host.checkAssignable(context, expectedValueType, valueType, property.value);
     }
     if (key) {
       providedNames.add(key);
-      properties.set(key, objectProperty(valueType, false, property.key.range));
       if (expectedType && !expectedProperty && !expectedType.open && !expectedType.indexType) {
         reportExcessRecordField(context, expectedType, key, property.key.range);
       }
+      inferredAlternatives = mergeObjectTypeAlternatives({
+        context,
+        range: expression.range
+      }, inferredAlternatives, [{
+        kind: "Object",
+        properties: new Map([[key, objectProperty(valueType, false, property.key.range)]]),
+        open: false
+      }]);
     }
     if (property.key.kind === "DynamicKey") {
-      computedPropertyTypes.push(valueType);
       if (expectedType && !expectedType.open && !expectedType.indexType) {
         if (!computedKeys?.length) {
           context.diagnostics.push(diagnostic(
@@ -124,6 +176,15 @@ export function checkContextualObject(
       ) {
         providedNames.add(computedKeys[0]);
       }
+      inferredAlternatives = mergeObjectTypeAlternatives({
+        context,
+        range: expression.range
+      }, inferredAlternatives, [{
+        kind: "Object",
+        properties: new Map(),
+        indexType: valueType,
+        open: true
+      }]);
     }
   }
   if (expectedType) {
@@ -136,22 +197,15 @@ export function checkContextualObject(
         ));
       }
     }
-    return expectedType;
+    if (!options.preserveInferredShape) {
+      return expectedType;
+    }
   }
-  return {
-    kind: "Object",
-    properties,
-    open: computedPropertyTypes.length > 0,
-    ...(computedPropertyTypes.length > 0
-      ? {
-          indexType: combineRsglTypes(
-            computedPropertyTypes,
-            false,
-            inferredUnionBudgetOptions(context.diagnostics, expression.range)
-          )
-        }
-      : {})
-  };
+  return combineRsglTypes(
+    inferredAlternatives,
+    false,
+    inferredUnionBudgetOptions(context.diagnostics, expression.range)
+  );
 }
 
 export function objectKeyName(property: ObjectPropertyNode): string | null {
@@ -243,6 +297,10 @@ function scoreContextualObjectArm(
   let excess = 0;
   let literalMatches = 0;
   for (const property of expression.properties) {
+    if (property.kind === "ObjectSpread") {
+      addStaticallyGuaranteedSpreadNames(guaranteedNames, property.expression, scope);
+      continue;
+    }
     const keys = contextualPropertyKeys(property, scope);
     if (keys?.length === 1) {
       guaranteedNames.add(keys[0]);
@@ -292,7 +350,7 @@ function contextualExpectationsEquivalent(
   scope: RsglScope
 ): boolean {
   const keys = Array.from(new Set(expression.properties.flatMap(property =>
-    contextualPropertyKeys(property, scope) ?? []
+    property.kind === "ObjectSpread" ? [] : contextualPropertyKeys(property, scope) ?? []
   )));
   return keys.every(key => {
     const expectedKeys = scores.map(score => {
@@ -320,6 +378,93 @@ function contextualPropertyKeys(property: ObjectPropertyNode, scope: RsglScope):
   }
   const symbol = lookup(scope, property.key.expression.name.text);
   return symbol ? finiteObjectKeysFromType(symbol.type) : undefined;
+}
+
+function spreadSourceShape(
+  expression: ExprNode,
+  checkedType: RsglType,
+  scope: RsglScope
+): RsglType {
+  if (expression.kind === "IdentifierExpr") {
+    return lookup(scope, expression.name.text)?.type ?? checkedType;
+  }
+  return checkedType;
+}
+
+function isDynamicObjectType(type: RsglType): boolean {
+  return type.kind === "Unknown" || type.kind === "Any";
+}
+
+function addGuaranteedSpreadNames(
+  names: Set<string>,
+  expression: ExprNode,
+  types: readonly RsglType[]
+): void {
+  if (expression.kind === "ObjectExpr") {
+    for (const property of expression.properties) {
+      if (property.kind !== "ObjectSpread") {
+        const name = objectKeyName(property);
+        if (name !== null) {
+          names.add(name);
+        }
+      }
+    }
+  }
+  const requiredByEveryArm = Array.from(types[0]?.properties ?? [])
+    .filter(([name, property]) =>
+      !property.optional
+      && types.every(type => type.properties?.get(name)?.optional === false)
+    )
+    .map(([name]) => name);
+  requiredByEveryArm.forEach(name => names.add(name));
+}
+
+function addStaticallyGuaranteedSpreadNames(
+  names: Set<string>,
+  expression: ExprNode,
+  scope: RsglScope
+): void {
+  if (expression.kind === "ObjectExpr") {
+    for (const property of expression.properties) {
+      if (property.kind !== "ObjectSpread") {
+        const name = objectKeyName(property);
+        if (name !== null) {
+          names.add(name);
+        }
+      }
+    }
+    return;
+  }
+  const type = expression.kind === "IdentifierExpr"
+    ? lookup(scope, expression.name.text)?.type
+    : undefined;
+  if (type?.kind === "Object") {
+    for (const [name, property] of type.properties ?? []) {
+      if (!property.optional) {
+        names.add(name);
+      }
+    }
+  }
+}
+
+function reportSpreadExcessFields(
+  context: DiagnosticSink,
+  expectedType: RsglType | undefined,
+  spreadTypes: readonly RsglType[],
+  range: TextRange
+): void {
+  if (!expectedType || expectedType.open || expectedType.indexType) {
+    return;
+  }
+  const reported = new Set<string>();
+  for (const spreadType of spreadTypes) {
+    for (const name of spreadType.properties?.keys() ?? []) {
+      if (!expectedType.properties?.has(name) && !reported.has(name)) {
+        reported.add(name);
+        reportExcessRecordField(context, expectedType, name, range);
+      }
+    }
+  }
 }
 
 function contextualDiscriminatorValueType(expression: ExprNode, scope: RsglScope): RsglType {

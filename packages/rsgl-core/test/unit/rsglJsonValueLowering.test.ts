@@ -2,6 +2,8 @@ import * as assert from "node:assert";
 import type { ExprNode } from "../../src/parser";
 import { parseRsgl } from "../../src/parser";
 import type { EvaluationContext, EvaluationValue } from "../../src/compiler/evaluate";
+import { stableJsonStringify } from "../../src/compiler/emit";
+import type { JsonValue } from "../../src/compiler/ir";
 import { evaluateJsonExpression } from "../../src/compiler/jsonValueLowerer";
 import { compileSource, expectNoDiagnostics } from "./helpers/compile";
 
@@ -164,6 +166,23 @@ describe("RSGL JSON value lowering", () => {
 
     expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, { kind: "lambda", value: 1 });
+  });
+
+  it("preserves prototype-named own properties through lowering and fragment merge", () => {
+    const result = compileSource([
+      "json \"assets/example/prototype-key.json\" {",
+      "  merge mergeObjects({ \"__proto__\": { polluted: true } }, { safe: true })",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    const content = result.units[0].content as Record<string, unknown>;
+    assert.strictEqual(Object.hasOwn(content, "__proto__"), true);
+    assert.deepStrictEqual(content["__proto__"], { polluted: true });
+    assert.ok(JSON.stringify(content).includes('"__proto__":{"polluted":true}'));
+    assert.ok(stableJsonStringify(result.units[0].content as JsonValue, result.units[0].kind)
+      .includes('"__proto__": {'));
+    assert.strictEqual(({} as { polluted?: boolean }).polluted, undefined);
   });
 
   it("rejects a dedicated module namespace runtime value at its nested path", () => {

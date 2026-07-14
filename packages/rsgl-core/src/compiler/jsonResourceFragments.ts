@@ -9,14 +9,31 @@ import {
 import type { RsglGenericJsonResourceKind } from "../resourceKinds";
 import {
   EvaluationContext,
-  evaluateExpression,
-  expressionEvaluationOrigin
+  type EvaluationOrigin,
+  type EvaluationResult,
+  evaluateExpression
 } from "./evaluate";
+import {
+  evaluatedOriginAtPath,
+  evaluatedRootOrigin
+} from "./evaluationProvenance";
 import { JsonValue } from "./ir";
-import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
+import {
+  evaluateJsonExpression,
+  evaluateJsonExpressionWithResult,
+  type JsonValueSinkOptions
+} from "./jsonValueLowerer";
 import { isJsonObject } from "./jsonValues";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
-import { expandSequencePattern, sequencePadWidth } from "./sequences";
+import {
+  EvaluationItemBudget,
+  MAX_EVALUATION_ITEMS_PER_ALLOCATION
+} from "./evaluationItemBudget";
+import {
+  expandSequencePattern,
+  sequencePadWidth,
+  sequencePatternExpansionCount
+} from "./sequences";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
@@ -26,6 +43,12 @@ export type RsglJsonResourceFragmentOptions = JsonValueSinkOptions;
 interface EvaluatedFragmentArg<T> {
   arg: ArgumentNode;
   value: T;
+  result: EvaluationResult;
+}
+
+export interface TextureSequenceResult {
+  textures: string[];
+  sourceSpans: Array<{ end: number; path: string }>;
 }
 
 export function compileJsonResourceUseFragment(
@@ -85,7 +108,7 @@ function compileAtlasDirectory(
       appendGeneratedPath(sourcePath, "source"),
       source.arg.value.range,
       context,
-      source.arg.value
+      evaluatedRootOrigin(source.result, context.sourceFile)
     )
   ];
   if (prefix) {
@@ -104,8 +127,8 @@ function compileParticlesSeq(
     return undefined;
   }
 
-  const value = evaluateJsonExpression(arg.value, context, options, "/textures");
-  if (value === undefined) {
+  const evaluated = evaluateJsonExpressionWithResult(arg.value, context, options, "/textures");
+  if (!evaluated) {
     return undefined;
   }
   const padArg = findArg(call, "pad");
@@ -115,24 +138,39 @@ function compileParticlesSeq(
     return undefined;
   }
 
-  const textures = textureSequence(value, context.namespace, padWidth);
-  if (!textures) {
+  const sequence = textureSequence(
+    evaluated.value,
+    context,
+    padWidth,
+    arg.value.range,
+    options
+  );
+  if (sequence === undefined) {
+    return undefined;
+  }
+  if (sequence === null) {
     options.onError?.("rsgl.invalidParticlesSeqArgument", "particlesSeq pattern must evaluate to a texture id string or list of texture id strings.", arg.value.range);
     return undefined;
   }
+  const { textures } = sequence;
   const texturesPath = "/textures";
+  const rootOrigin = evaluatedRootOrigin(evaluated.result, context.sourceFile);
   const mappings: ResourceBodyMapping[] = [
     {
       generatedPath: texturesPath,
       sourceRange: arg.value.range,
       context,
-      validationOrigin: expressionEvaluationOrigin(arg.value, context)
+      validationOrigin: rootOrigin
     },
     ...textures.map((_, index) => ({
       generatedPath: appendGeneratedPath(texturesPath, String(index)),
       sourceRange: arg.value.range,
       context,
-      validationOrigin: expressionEvaluationOrigin(arg.value, context)
+      validationOrigin: evaluatedOriginAtPath(
+        evaluated.result,
+        context.sourceFile,
+        textureSequenceSourcePath(sequence, index)
+      ) ?? rootOrigin
     }))
   ];
   return jsonFragment({ textures }, mappings);
@@ -228,15 +266,16 @@ function compileEquipmentLayers(
   const firstEntryPath = layers.length > 0
     ? appendGeneratedPath(appendGeneratedPath("/layers", layers[0]), "0")
     : "/layers";
-  const textureValue = evaluateJsonExpression(
+  const evaluatedTexture = evaluateJsonExpressionWithResult(
     textureArg.value,
     context,
     options,
     appendGeneratedPath(firstEntryPath, "texture")
   );
-  if (textureValue === undefined) {
+  if (!evaluatedTexture) {
     return undefined;
   }
+  const textureValue = evaluatedTexture.value;
   if (typeof textureValue !== "string") {
     options.onError?.(
       "rsgl.invalidJsonResourceFragmentArgument",
@@ -245,7 +284,11 @@ function compileEquipmentLayers(
     );
     return undefined;
   }
-  const texture: EvaluatedFragmentArg<string> = { arg: textureArg, value: textureValue };
+  const texture: EvaluatedFragmentArg<string> = {
+    arg: textureArg,
+    value: textureValue,
+    result: evaluatedTexture.result
+  };
 
   const layerEntry: Record<string, JsonValue> = {
     texture: normalizeResourceId(texture.value, context.namespace)
@@ -301,7 +344,7 @@ function compileEquipmentLayers(
     layerMap[layer] = [{ ...layerEntry }];
   }
   const mappings = equipmentLayersMappings(layers, {
-    texture: texture.arg,
+    texture,
     layers: layersArg,
     dyeable: dyeableArg,
     color: colorArg,
@@ -321,11 +364,8 @@ function mapping(
   generatedPath: string,
   sourceRange: TextRange,
   context: EvaluationContext,
-  validationExpression?: ExprNode
+  validationOrigin?: EvaluationOrigin
 ): ResourceBodyMapping {
-  const validationOrigin = validationExpression
-    ? expressionEvaluationOrigin(validationExpression, context)
-    : undefined;
   return { generatedPath, sourceRange, context, validationOrigin };
 }
 
@@ -343,7 +383,7 @@ function addOptionalArgMapping(
 function equipmentLayersMappings(
   layers: string[],
   args: {
-    texture: ArgumentNode;
+    texture: EvaluatedFragmentArg<string>;
     layers: ArgumentNode;
     dyeable?: ArgumentNode;
     color?: ArgumentNode;
@@ -360,16 +400,16 @@ function equipmentLayersMappings(
     const entryPath = appendGeneratedPath(layerPath, "0");
     mappings.push(
       mapping(layerPath, args.layers.value.range, context),
-      mapping(entryPath, args.texture.value.range, context),
+      mapping(entryPath, args.texture.arg.value.range, context),
       mapping(
         appendGeneratedPath(entryPath, "texture"),
-        args.texture.value.range,
+        args.texture.arg.value.range,
         context,
-        args.texture.value
+        evaluatedRootOrigin(args.texture.result, context.sourceFile)
       )
     );
     if (isJsonObject(layerEntry.dyeable)) {
-      const dyeableRange = args.dyeable?.value.range ?? args.color?.value.range ?? args.texture.value.range;
+      const dyeableRange = args.dyeable?.value.range ?? args.color?.value.range ?? args.texture.arg.value.range;
       mappings.push(mapping(appendGeneratedPath(entryPath, "dyeable"), dyeableRange, context));
       if (Object.hasOwn(layerEntry.dyeable, "color_when_undyed") && args.color) {
         mappings.push(mapping(
@@ -392,14 +432,89 @@ function jsonResourceFragmentCall(expression: ExprNode): (CallExprNode & { calle
     : null;
 }
 
-function textureSequence(value: JsonValue, namespace: string, padWidth: number | null): string[] | null {
-  if (typeof value === "string") {
-    return expandSequencePattern(value, { pad: padWidth }).map(item => normalizeResourceId(item, namespace));
-  }
-  if (!Array.isArray(value) || !value.every(item => typeof item === "string")) {
+export function textureSequence(
+  value: JsonValue,
+  context: EvaluationContext,
+  padWidth: number | null,
+  range: TextRange,
+  options: RsglJsonResourceFragmentOptions
+): TextureSequenceResult | null | undefined {
+  if (typeof value !== "string" && !Array.isArray(value)) {
     return null;
   }
-  return value.flatMap(item => expandSequencePattern(item, { pad: padWidth }).map(entry => normalizeResourceId(entry, namespace)));
+  const sourceIsList = Array.isArray(value);
+  const values: readonly JsonValue[] = sourceIsList ? value : [value];
+  const patterns: string[] = [];
+  const sourceSpans: TextureSequenceResult["sourceSpans"] = [];
+  const budget = context.evaluationItemBudget ??= new EvaluationItemBudget();
+  let itemCount = 0;
+  for (let patternIndex = 0; patternIndex < values.length; patternIndex += 1) {
+    const pattern = values[patternIndex];
+    if (typeof pattern !== "string") {
+      return null;
+    }
+    const expansionCount = sequencePatternExpansionCount(pattern);
+    const nextCount = itemCount + expansionCount;
+    if (
+      !Number.isSafeInteger(nextCount)
+      || nextCount > budget.remaining
+      || nextCount > MAX_EVALUATION_ITEMS_PER_ALLOCATION
+    ) {
+      reportParticlesSeqLimit(context, options, range, budget, nextCount);
+      return undefined;
+    }
+    patterns.push(pattern);
+    itemCount = nextCount;
+    sourceSpans.push({
+      end: itemCount,
+      path: sourceIsList ? appendGeneratedPath("", String(patternIndex)) : ""
+    });
+  }
+  if (!budget.tryConsume(itemCount)) {
+    reportParticlesSeqLimit(context, options, range, budget, itemCount);
+    return undefined;
+  }
+
+  const textures = new Array<string>(itemCount);
+  let index = 0;
+  for (const pattern of patterns) {
+    for (const entry of expandSequencePattern(pattern, { pad: padWidth })) {
+      textures[index] = normalizeResourceId(entry, context.namespace);
+      index += 1;
+    }
+  }
+  return { textures, sourceSpans };
+}
+
+function reportParticlesSeqLimit(
+  context: EvaluationContext,
+  options: RsglJsonResourceFragmentOptions,
+  range: TextRange,
+  budget: EvaluationItemBudget,
+  requested: number
+): void {
+  context.onEvaluationFailure?.();
+  (options.onError ?? context.onError)?.(
+    "rsgl.collectionExpansionLimit",
+    `Collection operation 'particlesSeq' exceeds maxEvaluationItems=${budget.limit} `
+      + `(consumed ${budget.consumed}, requested ${Number.isSafeInteger(requested) ? requested : `more than ${budget.remaining}`}).`,
+    range,
+    context.sourceFile
+  );
+}
+
+function textureSequenceSourcePath(sequence: TextureSequenceResult, index: number): string {
+  let low = 0;
+  let high = sequence.sourceSpans.length - 1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (index < sequence.sourceSpans[middle].end) {
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return sequence.sourceSpans[low]?.path ?? "";
 }
 
 function stringList(value: JsonValue): string[] | null {
@@ -424,15 +539,16 @@ function stringArg(
   if (!arg) {
     return null;
   }
-  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
-  if (value === undefined) {
+  const evaluated = evaluateJsonExpressionWithResult(arg.value, context, options, generatedPath);
+  if (!evaluated) {
     return null;
   }
+  const { value } = evaluated;
   if (typeof value !== "string") {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a string.`, arg.value.range);
     return null;
   }
-  return { arg, value };
+  return { arg, value, result: evaluated.result };
 }
 
 function optionalStringArg(
@@ -447,15 +563,16 @@ function optionalStringArg(
   if (!arg) {
     return null;
   }
-  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
-  if (value === undefined) {
+  const evaluated = evaluateJsonExpressionWithResult(arg.value, context, options, generatedPath);
+  if (!evaluated) {
     return null;
   }
+  const { value } = evaluated;
   if (typeof value !== "string") {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a string.`, arg.value.range);
     return null;
   }
-  return { arg, value };
+  return { arg, value, result: evaluated.result };
 }
 
 function numberArg(
@@ -470,15 +587,16 @@ function numberArg(
   if (!arg) {
     return null;
   }
-  const value = evaluateJsonExpression(arg.value, context, options, generatedPath);
-  if (value === undefined) {
+  const evaluated = evaluateJsonExpressionWithResult(arg.value, context, options, generatedPath);
+  if (!evaluated) {
     return null;
   }
+  const { value } = evaluated;
   if (typeof value !== "number" || !Number.isFinite(value)) {
     options.onError?.("rsgl.invalidJsonResourceFragmentArgument", `Fragment argument '${name}' must evaluate to a finite number.`, arg.value.range);
     return null;
   }
-  return { arg, value };
+  return { arg, value, result: evaluated.result };
 }
 
 function requiredArg(

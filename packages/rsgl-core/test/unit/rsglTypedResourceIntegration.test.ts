@@ -80,6 +80,65 @@ describe("RSGL typed resource integration", () => {
     assertObservationSource(template, "/payload/textures/0", libraryFile, librarySource, "\"block/library_texture\"");
   });
 
+  it("preserves typed IDs and per-path origins through imported collection mappers", () => {
+    const root = path.resolve("collection origin 集成 with spaces");
+    const mainFile = path.join(root, "入口 pack.rsgl");
+    const libraryFile = path.join(root, "映射 helpers.rsgl");
+    const mainSource = [
+      "namespace caller",
+      "import { wrap } from \"./映射 helpers.rsgl\"",
+      "let originals: List<ModelId> = [\"block/one\", \"block/two\"]",
+      "let extra: List<ModelId> = [\"block/three\"]",
+      "let entries = concat(",
+      "  map(originals, wrap),",
+      "  flatMap(extra, value => [wrap(value), wrap(value)])",
+      ")",
+      "let spreadEntries = [...entries]",
+      "json \"assets/caller/collection-origins.json\" {",
+      "  entries spreadEntries",
+      "}"
+    ].join("\n");
+    const librarySource = [
+      "namespace library",
+      "type Entry = { model: ModelId; fixed: String }",
+      "let wrap: (ModelId) -> Entry = value => {",
+      "  model: value,",
+      "  fixed: \"library-fixed\",",
+      "}",
+      "export { wrap }"
+    ].join("\n");
+
+    const result = compileRsglProgram([
+      { fileName: mainFile, module: parseRsgl(mainSource) },
+      { fileName: libraryFile, module: parseRsgl(librarySource) }
+    ], withUncheckedExterns({ entryFileName: mainFile }));
+
+    expectNoDiagnostics(result);
+    const unit = unitByPath(result, "assets/caller/collection-origins.json");
+    assert.deepStrictEqual(unit.content, {
+      entries: [
+        { model: "caller:block/one", fixed: "library-fixed" },
+        { model: "caller:block/two", fixed: "library-fixed" },
+        { model: "caller:block/three", fixed: "library-fixed" },
+        { model: "caller:block/three", fixed: "library-fixed" }
+      ]
+    });
+
+    assertObservationSource(unit, "/entries/0/model", mainFile, mainSource, "\"block/one\"");
+    assertObservationSource(unit, "/entries/1/model", mainFile, mainSource, "\"block/two\"");
+    assertObservationSource(unit, "/entries/2/model", mainFile, mainSource, "\"block/three\"");
+    assertObservationSource(unit, "/entries/3/model", mainFile, mainSource, "\"block/three\"");
+
+    const fixedOrigin = unit.validation?.referenceOrigins?.find(origin =>
+      origin.generatedPath === "/entries/0/fixed"
+    );
+    assert.strictEqual(fixedOrigin?.sourceFile, libraryFile);
+    assert.strictEqual(
+      librarySource.slice(fixedOrigin?.sourceRange.start, fixedOrigin?.sourceRange.end),
+      "\"library-fixed\""
+    );
+  });
+
   it("rejects one invalid dynamic ID before resolution while emitting a valid neighbor", () => {
     const fileName = path.resolve("typed dynamic 空格", "main.rsgl");
     const source = [

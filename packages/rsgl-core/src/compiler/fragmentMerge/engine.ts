@@ -1,4 +1,10 @@
 import type { JsonValue } from "../ir";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  jsonObjectKeys,
+  setJsonObjectProperty
+} from "../jsonObjectProperties";
 import { cloneJsonValue } from "../jsonValues";
 import { appendGeneratedPath } from "../sourcePaths";
 import { valueMergeAction } from "./operations";
@@ -42,9 +48,9 @@ export class FragmentMergeEngine {
     diagnostics: FragmentMergeDiagnostic[],
     arrayOffsets: Map<string, number>
   ): Record<string, JsonValue> {
-    const applied: Record<string, JsonValue> = {};
-    for (const [key, incoming] of Object.entries(source)) {
-      const existing = target[key];
+    const applied = createJsonObject();
+    for (const [key, incoming] of jsonObjectEntries(source)) {
+      const existing = Object.hasOwn(target, key) ? target[key] : undefined;
       const keyPath = appendGeneratedPath(targetPath, key);
       const decision = policy.decide({
         mode,
@@ -65,18 +71,18 @@ export class FragmentMergeEngine {
       }
 
       if (mode === "shallow") {
-        target[key] = cloneJsonValue(incoming);
-        applied[key] = incoming;
+        setJsonObjectProperty(target, key, cloneJsonValue(incoming));
+        setJsonObjectProperty(applied, key, incoming);
         continue;
       }
 
       const action = valueMergeAction(mode, existing, incoming);
       if (action.kind === "assign") {
-        target[key] = action.value;
-        applied[key] = incoming;
+        setJsonObjectProperty(target, key, action.value);
+        setJsonObjectProperty(applied, key, incoming);
       } else if (action.kind === "concatenate") {
-        target[key] = action.value;
-        applied[key] = incoming;
+        setJsonObjectProperty(target, key, action.value);
+        setJsonObjectProperty(applied, key, incoming);
         arrayOffsets.set(keyPath, action.offset);
       } else if (action.kind === "recurse") {
         const nested = this.applyObject(
@@ -89,9 +95,13 @@ export class FragmentMergeEngine {
           diagnostics,
           arrayOffsets
         );
-        if (Object.keys(nested).length > 0 || (action.created && Object.keys(action.incoming).length === 0)) {
-          target[key] = action.target;
-          applied[key] = Object.keys(nested).length > 0 ? nested : {};
+        if (jsonObjectKeys(nested).length > 0 || (action.created && jsonObjectKeys(action.incoming).length === 0)) {
+          setJsonObjectProperty(target, key, action.target);
+          setJsonObjectProperty(
+            applied,
+            key,
+            jsonObjectKeys(nested).length > 0 ? nested : createJsonObject()
+          );
         }
       } else if (mode === "strict") {
         diagnostics.push({

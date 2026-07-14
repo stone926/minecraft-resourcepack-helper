@@ -10,27 +10,33 @@ import {
 } from "../parser";
 import {
   EvaluationContext,
+  type EvaluationResult,
   bindEvaluationValue,
   childEvaluationContext,
   evaluateExpressionResult,
-  expressionEvaluationPathOrigins,
   materializeEvaluationPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath,
   selectEvaluationPathOrigins,
   selectEvaluationValueIssues
 } from "./evaluate";
+import { evaluatedPathOrigins } from "./evaluationProvenance";
 import { isJsonObject } from "./compilerHelpers";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { JsonValue } from "./ir";
-import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
+import {
+  evaluateJsonExpression,
+  evaluateJsonExpressionWithResult,
+  type JsonValueSinkOptions
+} from "./jsonValueLowerer";
 import type { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export type RsglItemFragmentOptions = JsonValueSinkOptions;
 
 interface ItemModelSinkMapping {
-  readonly expression: ExprNode;
+  readonly result: EvaluationResult;
+  readonly sourceRange: ExprNode["range"];
   readonly generatedPath: string;
 }
 
@@ -49,11 +55,11 @@ export function compileItemSpecialStatement(
   let model: JsonValue | undefined;
   const modelSinkMappings: ItemModelSinkMapping[] = [];
   if (statement.kind === "ItemRangeStmt") {
-    model = compileItemRangeStatement(statement, context, options);
+    model = compileItemRangeStatement(statement, context, options, modelSinkMappings);
   } else if (statement.kind === "ItemSelectStmt") {
-    model = compileItemSelectStatement(statement, context, options);
+    model = compileItemSelectStatement(statement, context, options, modelSinkMappings);
   } else if (statement.kind === "ItemConditionStmt") {
-    model = compileItemConditionStatement(statement, context, options);
+    model = compileItemConditionStatement(statement, context, options, modelSinkMappings);
   } else if (statement.kind === "ItemCompositeStmt") {
     model = compileItemCompositeStatement(statement, context, options, modelSinkMappings);
   } else if (statement.kind === "ItemEmptyStmt") {
@@ -61,62 +67,36 @@ export function compileItemSpecialStatement(
   } else if (statement.kind === "ItemSelectedItemStmt") {
     model = { type: "minecraft:bundle/selected_item" };
   } else {
-    model = compileItemSpecialStatementNode(statement, context, options);
+    model = compileItemSpecialStatementNode(statement, context, options, modelSinkMappings);
   }
   return model === undefined
     ? undefined
     : {
       content: { model },
-      mappings: itemFragmentValidationMappings(statement, context, model, modelSinkMappings)
+      mappings: itemFragmentValidationMappings(context, modelSinkMappings)
     };
 }
 
 function itemFragmentValidationMappings(
-  statement: Parameters<typeof compileItemSpecialStatement>[0],
   context: EvaluationContext,
-  model: JsonValue,
   modelSinkMappings: readonly ItemModelSinkMapping[]
 ): ResourceBodyMapping[] {
-  const mappings: ResourceBodyMapping[] = [];
-  const add = (expression: ExprNode | undefined, generatedPath: string) => {
-    if (!expression) {
-      return;
-    }
-    mappings.push(...expressionEvaluationPathOrigins(expression, context, generatedPath).map(origin => ({
+  return modelSinkMappings.flatMap(item =>
+    evaluatedPathOrigins(item.result, context.sourceFile, item.generatedPath).map(origin => ({
       generatedPath: origin.generatedPath,
-      sourceRange: expression.range,
+      sourceRange: item.sourceRange,
       context,
       validationOrigin: origin,
       validationOnly: true
-    })));
-  };
-
-  if (statement.kind === "ItemRangeStmt") {
-    const entries = isJsonObject(model) && Array.isArray(model.entries) ? model.entries : [];
-    entries.forEach((_, index) => add(
-      statement.frames?.model,
-      `/model/entries/${index}/model`
-    ));
-    add(statement.fallback, "/model/fallback");
-  } else if (statement.kind === "ItemSelectStmt") {
-    statement.cases.forEach((item, index) => add(item.model, `/model/cases/${index}/model`));
-    add(statement.fallback, "/model/fallback");
-  } else if (statement.kind === "ItemConditionStmt") {
-    add(statement.onTrue, "/model/on_true");
-    add(statement.onFalse, "/model/on_false");
-  } else if (statement.kind === "ItemCompositeStmt") {
-    modelSinkMappings.forEach(item => add(item.expression, item.generatedPath));
-  } else if (statement.kind === "ItemSpecialStmt") {
-    add(statement.base, "/model/base");
-    add(statement.model, "/model/model");
-  }
-  return mappings;
+    }))
+  );
 }
 
 function compileItemRangeStatement(
   statement: ItemRangeStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions
+  options: RsglItemFragmentOptions,
+  modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const property = expressionString(statement.property, context, "property", options, "/model/property");
   if (!property || !statement.frames) {
@@ -163,20 +143,26 @@ function compileItemRangeStatement(
       selectedOrigins,
       selectEvaluationValueIssues(frameIssues, selectedPath)
     );
-    const frameModelValue = evaluateJsonExpression(
+    const modelPath = `/model/entries/${entries.length}/model`;
+    const evaluatedFrameModel = evaluateJsonExpressionWithResult(
       statement.frames.model,
       frameContext,
       options,
-      `/model/entries/${index}/model`
+      modelPath
     );
-    if (frameModelValue === undefined) {
+    if (!evaluatedFrameModel) {
       continue;
     }
-    const model = normalizeItemModelDefinition(frameModelValue, context.namespace);
+    const model = normalizeItemModelDefinition(evaluatedFrameModel.value, context.namespace);
     if (!model) {
       options.onError?.("rsgl.invalidItemModel", "Item range frame model must evaluate to a model id or item model object.", statement.frames.model.range);
       continue;
     }
+    modelSinkMappings.push({
+      result: evaluatedFrameModel.result,
+      sourceRange: statement.frames.model.range,
+      generatedPath: modelPath
+    });
     entries.push({ threshold: defaultThreshold(frame, index), model });
   }
 
@@ -187,16 +173,22 @@ function compileItemRangeStatement(
   };
   copyStatementOptions(result, statement.options, context, ["component", "source", "target", "wobble", "scale"], options);
 
-  const fallbackValue = statement.fallback
-    ? evaluateJsonExpression(statement.fallback, context, options, "/model/fallback")
-    : null;
-  if (fallbackValue === undefined) {
+  const evaluatedFallback = statement.fallback
+    ? evaluateJsonExpressionWithResult(statement.fallback, context, options, "/model/fallback")
+    : undefined;
+  if (statement.fallback && !evaluatedFallback) {
     return undefined;
   }
+  const fallbackValue = evaluatedFallback?.value ?? null;
   const fallback = fallbackValue === null
     ? null
     : normalizeItemModelDefinition(fallbackValue, context.namespace);
   if (fallback) {
+    modelSinkMappings.push({
+      result: evaluatedFallback!.result,
+      sourceRange: statement.fallback!.range,
+      generatedPath: "/model/fallback"
+    });
     result.fallback = fallback;
   }
   return result;
@@ -205,7 +197,8 @@ function compileItemRangeStatement(
 function compileItemSelectStatement(
   statement: ItemSelectStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions
+  options: RsglItemFragmentOptions,
+  modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const property = expressionString(statement.property, context, "property", options, "/model/property");
   if (!property) {
@@ -213,18 +206,18 @@ function compileItemSelectStatement(
   }
 
   const cases: JsonValue[] = [];
-  for (const [index, item] of statement.cases.entries()) {
-    const casePath = `/model/cases/${index}`;
-    const modelValue = evaluateJsonExpression(
+  for (const item of statement.cases) {
+    const casePath = `/model/cases/${cases.length}`;
+    const evaluatedModel = evaluateJsonExpressionWithResult(
       item.model,
       context,
       options,
       appendGeneratedPath(casePath, "model")
     );
-    if (modelValue === undefined) {
+    if (!evaluatedModel) {
       continue;
     }
-    const model = normalizeItemModelDefinition(modelValue, context.namespace);
+    const model = normalizeItemModelDefinition(evaluatedModel.value, context.namespace);
     if (!model) {
       options.onError?.("rsgl.invalidItemModel", "Item select case model must evaluate to a model id or item model object.", item.model.range);
       continue;
@@ -238,6 +231,11 @@ function compileItemSelectStatement(
     if (when === undefined) {
       continue;
     }
+    modelSinkMappings.push({
+      result: evaluatedModel.result,
+      sourceRange: item.model.range,
+      generatedPath: appendGeneratedPath(casePath, "model")
+    });
     cases.push({
       when,
       model
@@ -251,16 +249,22 @@ function compileItemSelectStatement(
   };
   copyStatementOptions(result, statement.options, context, ["component"], options);
 
-  const fallbackValue = statement.fallback
-    ? evaluateJsonExpression(statement.fallback, context, options, "/model/fallback")
-    : null;
-  if (fallbackValue === undefined) {
+  const evaluatedFallback = statement.fallback
+    ? evaluateJsonExpressionWithResult(statement.fallback, context, options, "/model/fallback")
+    : undefined;
+  if (statement.fallback && !evaluatedFallback) {
     return undefined;
   }
+  const fallbackValue = evaluatedFallback?.value ?? null;
   const fallback = fallbackValue === null
     ? null
     : normalizeItemModelDefinition(fallbackValue, context.namespace);
   if (fallback) {
+    modelSinkMappings.push({
+      result: evaluatedFallback!.result,
+      sourceRange: statement.fallback!.range,
+      generatedPath: "/model/fallback"
+    });
     result.fallback = fallback;
   }
   return result;
@@ -269,18 +273,21 @@ function compileItemSelectStatement(
 function compileItemConditionStatement(
   statement: ItemConditionStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions
+  options: RsglItemFragmentOptions,
+  modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
   const property = expressionString(statement.property, context, "property", options, "/model/property");
-  const onTrueValue = statement.onTrue
-    ? evaluateJsonExpression(statement.onTrue, context, options, "/model/on_true")
-    : null;
-  const onFalseValue = statement.onFalse
-    ? evaluateJsonExpression(statement.onFalse, context, options, "/model/on_false")
-    : null;
-  if (onTrueValue === undefined || onFalseValue === undefined) {
+  const evaluatedOnTrue = statement.onTrue
+    ? evaluateJsonExpressionWithResult(statement.onTrue, context, options, "/model/on_true")
+    : undefined;
+  const evaluatedOnFalse = statement.onFalse
+    ? evaluateJsonExpressionWithResult(statement.onFalse, context, options, "/model/on_false")
+    : undefined;
+  if ((statement.onTrue && !evaluatedOnTrue) || (statement.onFalse && !evaluatedOnFalse)) {
     return undefined;
   }
+  const onTrueValue = evaluatedOnTrue?.value ?? null;
+  const onFalseValue = evaluatedOnFalse?.value ?? null;
   const onTrue = onTrueValue === null ? null : normalizeItemModelDefinition(onTrueValue, context.namespace);
   const onFalse = onFalseValue === null ? null : normalizeItemModelDefinition(onFalseValue, context.namespace);
   if (!property || !onTrue || !onFalse) {
@@ -292,6 +299,19 @@ function compileItemConditionStatement(
     }
     return undefined;
   }
+
+  modelSinkMappings.push(
+    {
+      result: evaluatedOnTrue!.result,
+      sourceRange: statement.onTrue!.range,
+      generatedPath: "/model/on_true"
+    },
+    {
+      result: evaluatedOnFalse!.result,
+      sourceRange: statement.onFalse!.range,
+      generatedPath: "/model/on_false"
+    }
+  );
 
   const result: Record<string, JsonValue> = {
     type: "minecraft:condition",
@@ -335,7 +355,8 @@ function compileItemCompositeStatement(
       scalarModel
     );
     modelSinkMappings.push({
-      expression: item,
+      result: captured.result!,
+      sourceRange: item.range,
       generatedPath: scalarModel ? appendGeneratedPath(modelPath, "model") : modelPath
     });
     models.push(model);
@@ -353,19 +374,45 @@ function compileItemCompositeStatement(
 function compileItemSpecialStatementNode(
   statement: ItemSpecialStmtNode,
   context: EvaluationContext,
-  options: RsglItemFragmentOptions
+  options: RsglItemFragmentOptions,
+  modelSinkMappings: ItemModelSinkMapping[]
 ): JsonValue | undefined {
-  const base = expressionString(statement.base, context, "base", options, "/model/base");
-  const model = evaluateJsonExpression(statement.model, context, options, "/model/model");
-  if (model === undefined) {
+  const evaluatedBase = expressionStringWithResult(
+    statement.base,
+    context,
+    "base",
+    options,
+    "/model/base"
+  );
+  const evaluatedModel = evaluateJsonExpressionWithResult(
+    statement.model,
+    context,
+    options,
+    "/model/model"
+  );
+  if (!evaluatedModel) {
     return undefined;
   }
+  const model = evaluatedModel.value;
+  const base = evaluatedBase?.value ?? null;
   if (!base || !isJsonObject(model)) {
     if (!isJsonObject(model)) {
       options.onError?.("rsgl.invalidItemSpecialModel", "Item special model must evaluate to an object.", statement.model.range);
     }
     return undefined;
   }
+  modelSinkMappings.push(
+    {
+      result: evaluatedBase!.result,
+      sourceRange: statement.base.range,
+      generatedPath: "/model/base"
+    },
+    {
+      result: evaluatedModel.result,
+      sourceRange: statement.model.range,
+      generatedPath: "/model/model"
+    }
+  );
   return {
     type: "minecraft:special",
     base: normalizeModelId(base, context.namespace),
@@ -402,9 +449,13 @@ function evaluateJsonExpressionWithResourceValues(
   context: EvaluationContext,
   options: RsglItemFragmentOptions,
   generatedPath: string
-): { value: JsonValue | undefined; observations: RsglResourceValueObservation[] } {
+): {
+  value: JsonValue | undefined;
+  result: EvaluationResult | undefined;
+  observations: RsglResourceValueObservation[];
+} {
   const observations: RsglResourceValueObservation[] = [];
-  const value = evaluateJsonExpression(
+  const evaluated = evaluateJsonExpressionWithResult(
     expression,
     context,
     {
@@ -413,7 +464,7 @@ function evaluateJsonExpressionWithResourceValues(
     },
     generatedPath
   );
-  return { value, observations };
+  return { value: evaluated?.value, result: evaluated?.result, observations };
 }
 
 function commitItemModelResourceValues(
@@ -467,15 +518,26 @@ function expressionString(
   options: RsglItemFragmentOptions,
   generatedPath: string
 ): string | null {
-  const value = evaluateJsonExpression(expression, context, options, generatedPath);
-  if (value === undefined) {
+  return expressionStringWithResult(expression, context, name, options, generatedPath)?.value ?? null;
+}
+
+function expressionStringWithResult(
+  expression: ExprNode,
+  context: EvaluationContext,
+  name: string,
+  options: RsglItemFragmentOptions,
+  generatedPath: string
+): { value: string; result: EvaluationResult } | null {
+  const evaluated = evaluateJsonExpressionWithResult(expression, context, options, generatedPath);
+  if (!evaluated) {
     return null;
   }
+  const { value } = evaluated;
   if (typeof value !== "string") {
     options.onError?.("rsgl.invalidItemFragmentArgument", `Item argument '${name}' must evaluate to a string.`, expression.range);
     return null;
   }
-  return value;
+  return { value, result: evaluated.result };
 }
 
 function normalizeModelId(value: string, namespace: string): string {

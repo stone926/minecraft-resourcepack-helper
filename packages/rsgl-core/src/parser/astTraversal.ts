@@ -328,10 +328,19 @@ function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {
       });
       break;
     case "ListExpr":
-      expression.elements.forEach(element => walkExpression(element, visitor));
+      expression.elements.forEach(element => walkExpression(
+        element.kind === "ListSpread" ? element.expression : element,
+        visitor
+      ));
       break;
     case "ObjectExpr":
-      expression.properties.forEach(property => walkObjectProperty(property, visitor));
+      expression.properties.forEach(property => {
+        if (property.kind === "ObjectSpread") {
+          walkExpression(property.expression, visitor);
+        } else {
+          walkObjectProperty(property, visitor);
+        }
+      });
       break;
     case "StateKeySugar":
       expression.entries.forEach(property => walkObjectProperty(property, visitor));

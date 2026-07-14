@@ -17,6 +17,7 @@ import {
 } from "../semantic";
 import {
   EvaluationContext,
+  type EvaluationResult,
   type EvaluationOrigin,
   type EvaluationPathOrigin,
   type EvaluationValueIssue,
@@ -40,16 +41,20 @@ import type {
 } from "../templateOutput";
 import { templateOutputMetadataFingerprint } from "../templateOutput";
 import { inferResolvedTemplateOutputMetadata } from "../semantic/templateOutputResolution";
+import { EvaluationItemBudget } from "./evaluationItemBudget";
 
 export interface RsglModuleCompileEnvironment {
   fileName: string;
   namespace: string;
+  evaluationItemBudget: EvaluationItemBudget;
   resolvedExpectedTypes: ReadonlyMap<ExprNode, RsglType>;
   importedValues: Map<string, EvaluationValue>;
   importedValueOrigins: Map<string, EvaluationOrigin>;
   importedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
   importedValueIssues: Map<string, EvaluationValueIssue[]>;
   importedTemplates: Map<string, RsglTemplateDefinition>;
+  /** Exact direct top-level evaluations keyed by their declaration node. */
+  localEvaluationResults?: Map<LetDeclNode | TableDeclNode, EvaluationResult>;
   localValues: Map<string, EvaluationValue>;
   allValues: Map<string, EvaluationValue>;
   allValueOrigins: Map<string, EvaluationOrigin>;
@@ -94,6 +99,13 @@ export interface RsglExternalValueDefinition {
 }
 
 export interface RsglCompileEnvironmentOptions {
+  /** Shared by every module and evaluation child in one compile pipeline run. */
+  evaluationItemBudget?: EvaluationItemBudget;
+  /**
+   * Models whose import closures need runtime environments. Defaults to every
+   * model for callers that inspect a complete semantic program.
+   */
+  rootModels?: readonly RsglSemanticModel[];
   baseDocumentLoader?: BaseDocumentLoader;
   globLoader?: RawGlobLoader;
   onDependency?: (dependency: CompileDependency) => void;
@@ -110,7 +122,11 @@ export function createStandaloneCompileEnvironment(
   namespace: string,
   options: RsglCompileEnvironmentOptions = {}
 ): RsglModuleCompileEnvironment {
-  const environment = createEmptyCompileEnvironment(model, namespace);
+  const environment = createEmptyCompileEnvironment(
+    model,
+    namespace,
+    options.evaluationItemBudget ?? new EvaluationItemBudget()
+  );
   evaluateLocalEnvironmentValues(environment, model, options);
   collectLocalEnvironmentTemplates(environment, model);
   refreshEnvironmentTemplateFingerprints(
@@ -129,6 +145,7 @@ export function createProgramCompileEnvironments(
   const modelsByFile = new Map(program.models.map(model => [normalizeFileName(model.fileName), model]));
   const exportMaps = createRsglExportMaps(program.models, program.importGraph).maps;
   const environments = new Map<string, RsglModuleCompileEnvironment>();
+  const evaluationItemBudget = options.evaluationItemBudget ?? new EvaluationItemBudget();
 
   const createEnvironment = (model: RsglSemanticModel): RsglModuleCompileEnvironment => {
     const fileName = normalizeFileName(model.fileName);
@@ -139,7 +156,8 @@ export function createProgramCompileEnvironments(
 
     const environment = createEmptyCompileEnvironment(
       model,
-      effectiveNamespace(model.namespace, configuration)
+      effectiveNamespace(model.namespace, configuration),
+      evaluationItemBudget
     );
     environments.set(fileName, environment);
 
@@ -150,7 +168,7 @@ export function createProgramCompileEnvironments(
     return environment;
   };
 
-  for (const model of program.models) {
+  for (const model of options.rootModels ?? program.models) {
     createEnvironment(model);
   }
   const fingerprintContext = "semanticFingerprint" in configuration
@@ -226,16 +244,22 @@ export function mapToExternalValues(
   }));
 }
 
-function createEmptyCompileEnvironment(model: RsglSemanticModel, namespace: string): RsglModuleCompileEnvironment {
+function createEmptyCompileEnvironment(
+  model: RsglSemanticModel,
+  namespace: string,
+  evaluationItemBudget: EvaluationItemBudget
+): RsglModuleCompileEnvironment {
   return {
     fileName: model.fileName,
     namespace,
+    evaluationItemBudget,
     resolvedExpectedTypes: model.resolvedExpectedTypes,
     importedValues: new Map(),
     importedValueOrigins: new Map(),
     importedValuePathOrigins: new Map(),
     importedValueIssues: new Map(),
     importedTemplates: new Map(),
+    localEvaluationResults: new Map(),
     localValues: new Map(),
     allValues: new Map(),
     allValueOrigins: new Map(),
@@ -440,6 +464,7 @@ function evaluateLocalEnvironmentValues(
   const context: EvaluationContext = {
     namespace: environment.namespace,
     variables: new Map(environment.importedValues),
+    evaluationItemBudget: environment.evaluationItemBudget,
     resolvedExpectedTypes: environment.resolvedExpectedTypes,
     // Match semantic predeclaration: a later local value still shadows a
     // same-named builtin while earlier initializers are pre-evaluated. Without
@@ -469,13 +494,16 @@ function evaluateLocalEnvironmentValues(
   for (const statement of model.module.statements) {
     if (isLetDeclNode(statement) && statement.name) {
       const result = evaluateExpressionResult(statement.value, context);
+      environment.localEvaluationResults?.set(statement, result);
       recordLocalEnvironmentValue(environment, context, statement.name.text, result, model.fileName);
     } else if (isTableDeclNode(statement) && statement.name) {
       const result = evaluateExpressionResult(statement.body, context);
-      recordLocalEnvironmentValue(environment, context, statement.name.text, {
+      const normalizedResult = {
         ...result,
         value: normalizeJsonValue(result.value)
-      }, model.fileName);
+      };
+      environment.localEvaluationResults?.set(statement, normalizedResult);
+      recordLocalEnvironmentValue(environment, context, statement.name.text, normalizedResult, model.fileName);
     }
   }
 }

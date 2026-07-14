@@ -6,9 +6,10 @@ import {
   ResourceBodyNode,
   ResourceStatementNode
 } from "../parser";
-import { EvaluationContext, expressionEvaluationPathOrigins } from "./evaluate";
+import { EvaluationContext, type EvaluationResult } from "./evaluate";
+import { evaluatedPathOrigins } from "./evaluationProvenance";
 import { JsonValue } from "./ir";
-import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
+import { evaluateJsonExpressionWithResult, type JsonValueSinkOptions } from "./jsonValueLowerer";
 import { ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
@@ -44,31 +45,35 @@ function compileAtlasDirectoryStatement(
   context: EvaluationContext,
   options: RsglAtlasSugarOptions
 ): ResourceBodyFragment | undefined {
-  const source = statement.source
+  const evaluatedSource = statement.source
     ? staticText(statement.source, context, options, "/sources/0/source")
     : null;
-  const prefix = statement.prefix
+  const evaluatedPrefix = statement.prefix
     ? staticText(statement.prefix, context, options, "/sources/0/prefix")
     : null;
-  if (!source) {
+  if (!evaluatedSource?.value) {
     options.onError?.("rsgl.invalidAtlasDirectorySource", "Atlas directory source requires a static source string.", statement.range);
     return undefined;
   }
-  if (statement.prefix && prefix === null) {
+  if (statement.prefix && evaluatedPrefix === null) {
     options.onError?.("rsgl.invalidAtlasDirectoryPrefix", "Atlas directory prefix must be a static string.", statement.prefix.range);
     return undefined;
   }
   const entry: Record<string, JsonValue> = {
     type: "minecraft:directory",
-    source
+    source: evaluatedSource.value
   };
-  if (prefix !== null) {
-    entry.prefix = prefix;
+  if (evaluatedPrefix !== null) {
+    entry.prefix = evaluatedPrefix.value;
   }
   return {
     content: { sources: [entry] },
     mappings: statement.source
-      ? expressionEvaluationPathOrigins(statement.source, context, "/sources/0/source").map(origin => ({
+      ? evaluatedPathOrigins(
+        evaluatedSource.result,
+        context.sourceFile,
+        "/sources/0/source"
+      ).map(origin => ({
         generatedPath: origin.generatedPath,
         sourceRange: statement.source!.range,
         context,
@@ -84,13 +89,13 @@ function compileAtlasFilterStatement(
   context: EvaluationContext,
   options: RsglAtlasSugarOptions
 ): Record<string, JsonValue> | undefined {
-  const namespace = statement.namespace
+  const evaluatedNamespace = statement.namespace
     ? staticText(statement.namespace, context, options, "/sources/0/pattern/namespace")
     : null;
-  const path = statement.path
+  const evaluatedPath = statement.path
     ? staticText(statement.path, context, options, "/sources/0/pattern/path")
     : null;
-  if (!namespace || !path) {
+  if (!evaluatedNamespace?.value || !evaluatedPath?.value) {
     options.onError?.("rsgl.invalidAtlasFilter", "Atlas filter requires static namespace and path patterns.", statement.range);
     return undefined;
   }
@@ -98,8 +103,8 @@ function compileAtlasFilterStatement(
     sources: [{
       type: "minecraft:filter",
       pattern: {
-        namespace,
-        path
+        namespace: evaluatedNamespace.value,
+        path: evaluatedPath.value
       }
     }]
   };
@@ -181,10 +186,13 @@ function staticText(
   context: EvaluationContext,
   options: RsglAtlasSugarOptions,
   generatedPath: string
-): string | null {
-  const value = evaluateJsonExpression(expression, context, options, generatedPath);
-  if (value === undefined) {
+): { value: string; result: EvaluationResult } | null {
+  const evaluated = evaluateJsonExpressionWithResult(expression, context, options, generatedPath);
+  if (!evaluated) {
     return null;
   }
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : null;
+  const { value } = evaluated;
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? { value: String(value), result: evaluated.result }
+    : null;
 }

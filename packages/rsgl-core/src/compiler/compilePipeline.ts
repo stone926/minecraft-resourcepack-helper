@@ -42,6 +42,7 @@ import {
   mapToExternalValues
 } from "./environment";
 import { ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
+import { EvaluationItemBudget } from "./evaluationItemBudget";
 import { lowerItemUnitsForTarget } from "./itemLegacyBackend";
 import { mergeResourceUnits } from "./merge";
 import { createExternalResource } from "./templates";
@@ -87,6 +88,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
 
   const semanticModel = bindRsglModule(module, { fileName: options.fileName });
   const namespace = effectiveNamespace(semanticModel.namespace, configuration);
+  const evaluationItemBudget = new EvaluationItemBudget(configuration.maxEvaluationItems);
   const loaderDiagnostics: RsglCompileDiagnostic[] = [];
   const environmentDiagnostics: RsglCompileDiagnostic[] = [];
   const baseDocumentLoader = createCachedBaseDocumentLoader(
@@ -112,6 +114,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
           fileName: diagnosticFileName ?? fileName
         });
       },
+      evaluationItemBudget,
       definitionFingerprintContext: configuration.semanticFingerprint
     }
   );
@@ -124,6 +127,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     globLoader,
     targetPackFormat: target.targetPackFormat,
     maxEvaluationItems: configuration.maxEvaluationItems,
+    evaluationItemBudget,
     stdlibRoot: options.stdlibRoot,
     blockstateApplyFacts: semanticModel.blockstateApplyFacts,
     resolvedExpectedTypes: semanticModel.resolvedExpectedTypes
@@ -206,14 +210,19 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     });
   const units: ResourceUnit[] = [];
   const dependencies: CompileDependency[] = [];
+  const evaluationItemBudget = new EvaluationItemBudget(configuration.maxEvaluationItems);
   const diagnostics: RsglCompileDiagnostic[] = [
     ...program.fileDiagnostics.map(diagnostic => ({ ...diagnostic }))
   ];
+  const selectedModels = selectProgramModels(program, options.entryFileName);
+  const targetModels = selectProgramTargetModels(program, options.entryFileName);
   const baseDocumentLoader = createCachedBaseDocumentLoader(
     options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: options.entryFileName })
   );
   const globLoader = createCompileGlobLoader(options.entryFileName ?? "<anonymous>", diagnostics);
   const environments = createProgramCompileEnvironments(program, configuration, {
+    evaluationItemBudget,
+    rootModels: selectedModels,
     baseDocumentLoader,
     globLoader,
     onError: (code, message, range, fileName) => {
@@ -229,8 +238,6 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
   const externs = collectExternDeclarations(sourceFiles, options.globalExterns, options.externDeclarations);
   diagnostics.push(...externs.diagnostics);
   const stdlibTemplates = createRsglStdlibPreludeTemplates(options.stdlibRoot, configuration);
-  const selectedModels = selectProgramModels(program, options.entryFileName);
-  const targetModels = selectProgramTargetModels(program, options.entryFileName);
   const target = resolveTargetPackFormat(targetModels.map(model => ({
     module: model.module,
     namespace: effectiveNamespace(model.namespace, configuration),
@@ -258,6 +265,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     const namespace = effectiveNamespace(model.namespace, configuration);
     const environment = environments.get(normalizeFileName(model.fileName))
       ?? createStandaloneCompileEnvironment(model, namespace, {
+        evaluationItemBudget,
         onError: (code, message, range, fileName) => {
           diagnostics.push({
             code,
@@ -285,6 +293,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       globLoader,
       targetPackFormat: target.targetPackFormat,
       maxEvaluationItems: configuration.maxEvaluationItems,
+      evaluationItemBudget,
       stdlibRoot: options.stdlibRoot,
       blockstateApplyFacts,
       resolvedExpectedTypes: model.resolvedExpectedTypes
@@ -311,19 +320,31 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
 
 /**
  * The semantic checker and the compile-time evaluator intentionally guard the
- * same rules (lambda arity, purity); when both fire for one defect they
- * produce byte-identical diagnostics. Exact duplicates carry no information,
- * so the merged result keeps the first occurrence. A diagnostic without a
- * fileName matches one with any fileName (single-module semantic diagnostics
- * are unattributed while evaluator diagnostics name their file).
+ * same rules. Most guards produce byte-identical diagnostics; collection
+ * runtime guards sometimes use the enclosing lambda range while semantics use
+ * its body. For those known dual-owned rules, overlapping same-code reports
+ * still describe one defect. The merged result keeps the earlier semantic
+ * diagnostic. A diagnostic without fileName matches the single-module
+ * evaluator report for that file.
  */
 function dedupeCompileDiagnostics(diagnostics: RsglCompileDiagnostic[]): RsglCompileDiagnostic[] {
   const seen = new Map<string, RsglCompileDiagnostic[]>();
   const result: RsglCompileDiagnostic[] = [];
   for (const diagnostic of diagnostics) {
+    if (
+      overlappingDualGuardCodes.has(diagnostic.code)
+      && result.some(existing =>
+        existing.code === diagnostic.code
+        && existing.severity === diagnostic.severity
+        && compatibleDiagnosticFiles(existing, diagnostic)
+        && rangesOverlap(existing.range, diagnostic.range)
+      )
+    ) {
+      continue;
+    }
     const key = [diagnostic.code, diagnostic.severity, diagnostic.range.start, diagnostic.range.end, diagnostic.message].join("\0");
     const matches = seen.get(key);
-    if (matches?.some(existing => !existing.fileName || !diagnostic.fileName || existing.fileName === diagnostic.fileName)) {
+    if (matches?.some(existing => compatibleDiagnosticFiles(existing, diagnostic))) {
       continue;
     }
     seen.set(key, [...(matches ?? []), diagnostic]);
@@ -426,6 +447,28 @@ function dedupeCompileDependencies(dependencies: CompileDependency[]): CompileDe
     }
   }
   return result;
+}
+
+const overlappingDualGuardCodes = new Set([
+  "rsgl.invalidListSpread",
+  "rsgl.invalidObjectSpread",
+  "rsgl.mapperReturnTypeMismatch",
+  "rsgl.predicateMustReturnBoolean"
+]);
+
+function compatibleDiagnosticFiles(
+  left: RsglCompileDiagnostic,
+  right: RsglCompileDiagnostic
+): boolean {
+  return !left.fileName || !right.fileName || left.fileName === right.fileName;
+}
+
+function rangesOverlap(
+  left: RsglCompileDiagnostic["range"],
+  right: RsglCompileDiagnostic["range"]
+): boolean {
+  return left.start === right.start && left.end === right.end
+    || Math.max(left.start, right.start) < Math.min(left.end, right.end);
 }
 
 function normalizedDependencyPath(fileName: string): string {

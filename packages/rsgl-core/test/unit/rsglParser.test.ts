@@ -916,6 +916,76 @@ describe("RSGL parser", () => {
     assert.strictEqual(powered.value.whenFalse.kind, "ListExpr");
   });
 
+  it("parses list and object spreads in source order beside computed keys", () => {
+    const source = [
+      "let combined = [head, ...middle, tail]",
+      "let derived = { first: head, ...base, [key]: tail }"
+    ].join("\n");
+    const module = parseRsgl(source);
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const combined = module.statements[0];
+    assert.strictEqual(combined.kind, "LetDecl");
+    if (combined.kind !== "LetDecl" || combined.value.kind !== "ListExpr") {
+      throw new Error("Expected list expression.");
+    }
+    assert.deepStrictEqual(combined.value.elements.map(element => element.kind), [
+      "IdentifierExpr",
+      "ListSpread",
+      "IdentifierExpr"
+    ]);
+    const listSpread = combined.value.elements[1];
+    assert.strictEqual(listSpread.kind, "ListSpread");
+    if (listSpread.kind === "ListSpread") {
+      assert.strictEqual(listSpread.expression.kind, "IdentifierExpr");
+      assert.strictEqual(source.slice(listSpread.range.start, listSpread.range.end), "...middle");
+    }
+
+    const derived = module.statements[1];
+    assert.strictEqual(derived.kind, "LetDecl");
+    if (derived.kind !== "LetDecl" || derived.value.kind !== "ObjectExpr") {
+      throw new Error("Expected object expression.");
+    }
+    assert.deepStrictEqual(derived.value.properties.map(property => property.kind), [
+      "ObjectProperty",
+      "ObjectSpread",
+      "ObjectProperty"
+    ]);
+    const objectSpread = derived.value.properties[1];
+    assert.strictEqual(objectSpread.kind, "ObjectSpread");
+    if (objectSpread.kind === "ObjectSpread") {
+      assert.strictEqual(objectSpread.expression.kind, "IdentifierExpr");
+      assert.strictEqual(source.slice(objectSpread.range.start, objectSpread.range.end), "...base");
+    }
+    const computed = derived.value.properties[2];
+    assert.strictEqual(computed.kind, "ObjectProperty");
+    if (computed.kind === "ObjectProperty") {
+      assert.strictEqual(computed.key.kind, "DynamicKey");
+    }
+  });
+
+  it("rejects a user lambda rest marker once and keeps the parameter", () => {
+    const source = [
+      "let collect = (...rest) => rest",
+      "let after = 1"
+    ].join("\n");
+    const module = parseRsgl(source);
+
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => [
+      diagnostic.code,
+      source.slice(diagnostic.range.start, diagnostic.range.end)
+    ]), [["rsgl.userRestParameterNotSupported", "..."]]);
+    assert.strictEqual(module.statements.length, 2);
+    const collect = module.statements[0];
+    assert.strictEqual(collect.kind, "LetDecl");
+    if (collect.kind === "LetDecl" && collect.value.kind === "LambdaExpr") {
+      assert.deepStrictEqual(collect.value.parameters.map(parameter => parameter.text), ["rest"]);
+      assert.strictEqual(collect.value.body.kind, "IdentifierExpr");
+    } else {
+      throw new Error("Expected recovered lambda expression.");
+    }
+  });
+
   it("keeps state key and model apply sugar as expression AST nodes", () => {
     const module = parseRsgl([
       "blockstate minecraft:example {",

@@ -64,4 +64,24 @@ describe("RSGL validation architecture", () => {
     assert.deepStrictEqual(legacyImports, []);
     assert.strictEqual(fs.existsSync(path.join(compilerDirectory, "validationShared.ts")), false);
   });
+
+  it("keeps compiler sinks off evaluator-replaying provenance APIs", () => {
+    const compilerDirectory = path.join(process.cwd(), "packages", "rsgl-core", "src", "compiler");
+    const sinkFiles = [
+      "compiler.ts",
+      "resourceCompiler.ts",
+      "atlasSugar.ts",
+      "itemFragments.ts",
+      "equipmentSugar.ts",
+      "jsonResourceFragments.ts",
+      "modelGeometryDsl.ts",
+      "modelImpl.ts"
+    ];
+    const legacyOriginApi = /\bexpressionEvaluation(?:Origin|PathOrigins)\b/;
+    const offenders = sinkFiles.filter(fileName =>
+      legacyOriginApi.test(fs.readFileSync(path.join(compilerDirectory, fileName), "utf8"))
+    );
+
+    assert.deepStrictEqual(offenders, []);
+  });
 });

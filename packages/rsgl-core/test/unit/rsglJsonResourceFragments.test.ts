@@ -1,5 +1,10 @@
 import * as assert from "node:assert";
 import { compileRsglModule, stableJsonStringify, type JsonValue } from "../../src/compiler";
+import {
+  EvaluationItemBudget,
+  MAX_EVALUATION_ITEMS_PER_ALLOCATION
+} from "../../src/compiler/evaluationItemBudget";
+import { textureSequence } from "../../src/compiler/jsonResourceFragments";
 import { parseRsgl } from "../../src/parser";
 import { compileSourceWithUncheckedExterns, expectNoDiagnostics, expectOnlyLegacyTemplateWarnings } from "./helpers/compile";
 
@@ -217,6 +222,50 @@ describe("RSGL JSON resources and generic fragments", () => {
       && diagnostic.range.start === textureRange?.start
       && diagnostic.range.end === textureRange?.end
     ));
+  });
+
+  it("stops particlesSeq planning as soon as shared or allocation limits are exceeded", () => {
+    const cases = [
+      { limit: 2, firstPattern: "minecraft:particle/test_{0..2}" },
+      {
+        limit: MAX_EVALUATION_ITEMS_PER_ALLOCATION + 100,
+        firstPattern: `minecraft:particle/test_{0..${MAX_EVALUATION_ITEMS_PER_ALLOCATION}}`
+      }
+    ];
+
+    for (const testCase of cases) {
+      let accessedLaterPattern = false;
+      let evaluationFailures = 0;
+      const diagnostics: string[] = [];
+      const patterns = new Proxy([testCase.firstPattern, "minecraft:particle/never_read"], {
+        get(target, property, receiver) {
+          if (property === "1") {
+            accessedLaterPattern = true;
+          }
+          return Reflect.get(target, property, receiver);
+        }
+      });
+      const result = textureSequence(
+        patterns as JsonValue,
+        {
+          namespace: "minecraft",
+          variables: new Map(),
+          evaluationItemBudget: new EvaluationItemBudget(testCase.limit),
+          sourceFile: "particles-short-circuit.rsgl",
+          onEvaluationFailure: () => {
+            evaluationFailures += 1;
+          }
+        },
+        null,
+        { start: 4, end: 12 },
+        { onError: code => diagnostics.push(code) }
+      );
+
+      assert.strictEqual(result, undefined);
+      assert.strictEqual(accessedLaterPattern, false);
+      assert.strictEqual(evaluationFailures, 1);
+      assert.deepStrictEqual(diagnostics, ["rsgl.collectionExpansionLimit"]);
+    }
   });
 
   it("expands sequences with explicit padding control", () => {

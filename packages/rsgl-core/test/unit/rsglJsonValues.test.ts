@@ -17,6 +17,11 @@ describe("RSGL JSON value helpers", () => {
     }), false);
     assert.strictEqual(isJsonObject([]), false);
     assert.strictEqual(isJsonObject(null), false);
+    assert.strictEqual(isJsonObject(new Date()), false);
+    assert.strictEqual(isJsonObject(new (class JsonLookalike {
+      public value = 1;
+    })()), false);
+    assert.strictEqual(isJsonObject(Object.assign(Object.create(null), { value: 1 })), true);
   });
 
   it("keeps one object-classification implementation across the compiler", () => {

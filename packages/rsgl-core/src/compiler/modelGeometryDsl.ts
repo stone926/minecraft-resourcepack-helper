@@ -7,9 +7,14 @@ import {
   ResourceStatementNode,
   TextRange
 } from "../parser";
-import { EvaluationContext, expressionEvaluationOrigin } from "./evaluate";
+import { EvaluationContext } from "./evaluate";
+import { evaluatedRootOrigin } from "./evaluationProvenance";
 import { JsonValue } from "./ir";
-import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
+import {
+  evaluateJsonExpression,
+  evaluateJsonExpressionWithResult,
+  type JsonValueSinkOptions
+} from "./jsonValueLowerer";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
@@ -80,16 +85,16 @@ function compileModelTextureStatement(
   options: ModelGeometryDslOptions
 ): ResourceBodyFragment | undefined {
   const key = statement.key.text;
-  const origin = expressionEvaluationOrigin(statement.value, context);
-  const value = evaluateJsonExpression(
+  const evaluated = evaluateJsonExpressionWithResult(
     statement.value,
     context,
     options,
     appendGeneratedPath("/textures", key)
   );
-  if (value === undefined) {
+  if (!evaluated) {
     return undefined;
   }
+  const { value } = evaluated;
   return {
     content: {
       textures: {
@@ -102,7 +107,7 @@ function compileModelTextureStatement(
         appendGeneratedPath("/textures", key),
         statement.value.range,
         context,
-        origin
+        evaluatedRootOrigin(evaluated.result, context.sourceFile)
       )
     ]
   };

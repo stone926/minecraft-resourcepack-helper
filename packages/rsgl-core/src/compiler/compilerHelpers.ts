@@ -18,7 +18,12 @@ import { createFileGlobLoader } from "./fileGlob";
 import { appendGeneratedPath, prefixGeneratedPath } from "./sourcePaths";
 import type { RsglProgram, RsglSemanticModel, RsglSourceFile } from "../semantic";
 import type { JsonValue, ResourceUnit, RsglCompileDiagnostic, RsglMapping } from "./ir";
-import { isJsonObject } from "./jsonValues";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  setJsonObjectProperty
+} from "./jsonObjectProperties";
+import { cloneJsonObject, isJsonObject } from "./jsonValues";
 import { evaluationScalarText } from "./evaluatedResourceValues";
 
 export { isJsonObject } from "./jsonValues";
@@ -61,31 +66,33 @@ export const packMcmetaRootFields = new Set(["filter", "overlays"]);
 
 export function packContentFromBody(content: Record<string, JsonValue>, hasExplicitPackRoot: boolean): Record<string, JsonValue> {
   if (hasExplicitPackRoot) {
-    const result: Record<string, JsonValue> = { ...content };
-    const pack = isJsonObject(result.pack) ? { ...result.pack } : {};
+    const result = cloneJsonObject(content);
+    const pack = isJsonObject(result.pack) ? cloneJsonObject(result.pack) : createJsonObject();
     for (const key of packRootFields) {
       if (Object.hasOwn(result, key)) {
-        pack[key] = result[key];
+        setJsonObjectProperty(pack, key, result[key]);
         delete result[key];
       }
     }
-    result.pack = pack;
+    setJsonObjectProperty(result, "pack", pack);
     return result;
   }
 
-  const pack: Record<string, JsonValue> = {};
-  const result: Record<string, JsonValue> = {};
-  for (const [key, value] of Object.entries(content)) {
+  const pack = createJsonObject();
+  const result = createJsonObject();
+  for (const [key, value] of jsonObjectEntries(content)) {
     if (packMcmetaRootFields.has(key)) {
-      result[key] = value;
+      setJsonObjectProperty(result, key, value);
     } else {
-      pack[key] = value;
+      setJsonObjectProperty(pack, key, value);
     }
   }
-  return {
-    pack,
-    ...result
-  };
+  const contentWithPack = createJsonObject();
+  setJsonObjectProperty(contentWithPack, "pack", pack);
+  for (const [key, value] of jsonObjectEntries(result)) {
+    setJsonObjectProperty(contentWithPack, key, value);
+  }
+  return contentWithPack;
 }
 
 export function packSourceMappings(mappings: RsglMapping[], hasExplicitPackRoot: boolean): RsglMapping[] {

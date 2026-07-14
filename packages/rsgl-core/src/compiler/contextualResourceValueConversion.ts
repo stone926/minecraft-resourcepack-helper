@@ -12,6 +12,11 @@ import {
   isEvaluatedResourceId,
   isEvaluatedTextureVariable
 } from "./evaluatedResourceValues";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  setJsonObjectProperty
+} from "./jsonObjectProperties";
 
 export interface RsglContextualValueError {
   readonly code:
@@ -271,11 +276,13 @@ function convertObject(
   }
   state.ancestors.add(value);
   let converted = false;
-  const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
+  const result = createJsonObject<unknown>(
+    Object.getPrototypeOf(value) === null ? null : Object.prototype
+  );
+  for (const [key, item] of jsonObjectEntries(value)) {
     const itemType = expectedType.properties?.get(key)?.type ?? expectedType.indexType;
     if (!itemType) {
-      result[key] = item;
+      setJsonObjectProperty(result, key, item);
       continue;
     }
     const itemResult = convertForExpectedType(item, itemType, defaultNamespace, state, false);
@@ -284,7 +291,7 @@ function convertObject(
       return itemResult;
     }
     const next = itemResult.kind === "success" ? itemResult.value : item;
-    result[key] = next;
+    setJsonObjectProperty(result, key, next);
     converted ||= next !== item;
   }
   state.ancestors.delete(value);

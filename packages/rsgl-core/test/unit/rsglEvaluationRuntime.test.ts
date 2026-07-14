@@ -105,6 +105,27 @@ describe("RSGL runtime expression guards", () => {
     ]);
     assert.ok(staticResult.diagnostics[0].message.includes("static list bounds"));
   });
+
+  it("uses runtime bounds for lists whose spread changes the AST element count", () => {
+    const valid = compileSource([
+      "let values = [1, 2]",
+      "json \"assets/minecraft/spread-literal.json\" { selected [...[1, 2]][1] }",
+      "json \"assets/minecraft/spread-binding.json\" { selected [...values][1] }"
+    ]);
+    const invalid = compileSource([
+      "json \"assets/minecraft/spread-invalid.json\" { selected [...[1, 2]][2] }"
+    ]);
+
+    assert.deepStrictEqual(valid.diagnostics, []);
+    assert.deepStrictEqual(valid.units.map(unit => unit.content), [
+      { selected: 2 },
+      { selected: 2 }
+    ]);
+    assert.deepStrictEqual(invalid.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.indexOutOfBounds"
+    ]);
+    assert.ok(invalid.diagnostics[0].message.includes("runtime list bounds"));
+  });
 });
 
 function evaluate(source: string, context: EvaluationContext): EvaluationValue {

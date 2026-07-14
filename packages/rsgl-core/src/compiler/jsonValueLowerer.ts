@@ -8,6 +8,11 @@ import {
   rangeForEvaluationPath
 } from "./evaluate";
 import type { JsonValue } from "./ir";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  setJsonObjectProperty
+} from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
 import {
   resourceValueJsonAdapters,
@@ -85,6 +90,11 @@ export interface JsonValueLoweringHost {
   sourceFile?: string;
 }
 
+export interface EvaluatedJsonExpression {
+  value: JsonValue;
+  result: EvaluationResult;
+}
+
 /** Evaluates an expression exactly once, then lowers it at a real JSON sink. */
 export function evaluateJsonExpression(
   expression: ExprNode,
@@ -92,6 +102,19 @@ export function evaluateJsonExpression(
   options: JsonValueSinkOptions = {},
   generatedPath = ""
 ): JsonValue | undefined {
+  return evaluateJsonExpressionWithResult(expression, context, options, generatedPath)?.value;
+}
+
+/**
+ * Evaluates and lowers once while retaining the exact provenance trace for
+ * source-map consumers. Collection mappers are never replayed for origins.
+ */
+export function evaluateJsonExpressionWithResult(
+  expression: ExprNode,
+  context: EvaluationContext,
+  options: JsonValueSinkOptions = {},
+  generatedPath = ""
+): EvaluatedJsonExpression | undefined {
   const host = genericJsonLoweringHost(context, options);
   host.generatedPathPrefix = generatedPath;
   let evaluationFailed = false;
@@ -119,11 +142,12 @@ export function evaluateJsonExpression(
     options.onInvalidJsonValue?.();
     return undefined;
   }
-  return lowerJsonEvaluationResult(
+  const value = lowerJsonEvaluationResult(
     result,
     expression.range,
     host
   );
+  return value === undefined ? undefined : { value, result };
 }
 
 /**
@@ -341,8 +365,8 @@ function cloneSerializableValue(
     fail(host, { generatedPath, kind: "runtimeObject", range, sourceFile });
     return undefined;
   }
-  const cloned: Record<string, JsonValue> = {};
-  for (const [key, item] of Object.entries(value)) {
+  const cloned = createJsonObject(Object.getPrototypeOf(value) === null ? null : Object.prototype);
+  for (const [key, item] of jsonObjectEntries(value)) {
     const child = cloneSerializableValue(
       item,
       appendGeneratedPath(generatedPath, key),
@@ -355,7 +379,7 @@ function cloneSerializableValue(
       ancestors.delete(value);
       return undefined;
     }
-    cloned[key] = child;
+    setJsonObjectProperty(cloned, key, child);
   }
   ancestors.delete(value);
   return cloned;

@@ -98,6 +98,9 @@ export function finiteStringDomain(
 
   const values: string[] = [];
   for (const element of expression.elements) {
+    if (element.kind === "ListSpread") {
+      return null;
+    }
     const value = staticStringPatternValue(element, scope);
     if (value === null) {
       return null;

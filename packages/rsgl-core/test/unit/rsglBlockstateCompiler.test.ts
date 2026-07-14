@@ -168,7 +168,7 @@ describe("RSGL canonical blockstate compiler", () => {
 
     assert.ok(diagnostic);
     assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "[][0]");
-    assert.deepStrictEqual(result.units[0].content, { variants: {} });
+    assert.deepStrictEqual(result.units, []);
   });
 
   it("rejects lossy computed keys in explicit Json at the computed key", () => {
@@ -213,7 +213,7 @@ describe("RSGL canonical blockstate compiler", () => {
 
     assert.ok(diagnostic);
     assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "[[][0]]");
-    assert.deepStrictEqual(result.units[0].content, { variants: {} });
+    assert.deepStrictEqual(result.units, []);
   });
 
   it("rejects cyclic runtime values without recursing or leaking the object", () => {

@@ -21,6 +21,13 @@ export type LambdaBodyChecker = (
   expectedType?: RsglType
 ) => RsglType;
 
+export interface LambdaCheckOptions {
+  returnMismatchCode?: string;
+  returnMismatchMessage?: (expected: RsglType, actual: RsglType) => string;
+  /** Keep the checked body type so builtin generic inference can inspect it. */
+  preserveActualReturnType?: boolean;
+}
+
 /**
  * Checks a lambda with an optional contextual Function type. The returned
  * Function deliberately adopts the contextual shape after emitting dedicated
@@ -32,7 +39,8 @@ export function checkLambdaExpression(
   expression: LambdaExprNode,
   scope: RsglScope,
   expectedType: RsglType | undefined,
-  checkBody: LambdaBodyChecker
+  checkBody: LambdaBodyChecker,
+  options: LambdaCheckOptions = {}
 ): RsglType {
   const contextualFunction = expectedType?.kind === "Function" ? expectedType : undefined;
   const declaredParameters = contextualFunction?.parameters;
@@ -80,8 +88,9 @@ export function checkLambdaExpression(
     && context.diagnostics.length === bodyDiagnosticStart
   ) {
     context.diagnostics.push(diagnostic(
-      "rsgl.lambdaReturnTypeMismatch",
-      `Expected lambda return ${formatType(expectedReturnType)}, got ${formatType(actualReturnType)}.`,
+      options.returnMismatchCode ?? "rsgl.lambdaReturnTypeMismatch",
+      options.returnMismatchMessage?.(expectedReturnType, actualReturnType)
+        ?? `Expected lambda return ${formatType(expectedReturnType)}, got ${formatType(actualReturnType)}.`,
       expression.body.range
     ));
   }
@@ -97,7 +106,16 @@ export function checkLambdaExpression(
   }
 
   if (contextualFunction) {
-    return contextualFunction;
+    if (!contextualArityMatches && !options.preserveActualReturnType) {
+      return contextualFunction;
+    }
+    return {
+      ...contextualFunction,
+      parameters: contextualParameters ?? expression.parameters.map(() => anyType),
+      returnType: options.preserveActualReturnType
+        ? actualReturnType
+        : contextualFunction.returnType ?? actualReturnType
+    };
   }
   return {
     kind: "Function",

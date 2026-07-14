@@ -24,6 +24,7 @@ import {
   checkExpression,
   checkExpressionForExpectedType,
   checkLocalLetDecl,
+  resolveListSpreadElementType,
   checkStringEnumLikeExpression,
   checkTemplateUseExpression,
   RsglExpressionCheckContext,
@@ -415,7 +416,13 @@ export class RsglResourceBodyChecker {
     if (expression.kind !== "ListExpr") {
       return this.checkExpression(expression, scope);
     }
-    const elementTypes = expression.elements.map(element => this.checkForIterableListElement(element, scope));
+    const elementTypes = expression.elements.map(element => {
+      if (element.kind !== "ListSpread") {
+        return this.checkForIterableListElement(element, scope);
+      }
+      const spreadType = this.checkExpression(element.expression, scope);
+      return resolveListSpreadElementType(this.context, spreadType, element) ?? unknownType;
+    });
     return inferListType(
       elementTypes,
       inferredUnionBudgetOptions(this.context.diagnostics, expression.range)

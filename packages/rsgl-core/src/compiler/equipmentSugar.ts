@@ -1,8 +1,13 @@
 import { EquipmentLayerStmtNode, TextRange } from "../parser";
-import { EvaluationContext, expressionEvaluationOrigin } from "./evaluate";
+import { EvaluationContext, type EvaluationOrigin } from "./evaluate";
+import { evaluatedRootOrigin } from "./evaluationProvenance";
 import { JsonValue } from "./ir";
 import { isJsonObject } from "./jsonValues";
-import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
+import {
+  evaluateJsonExpression,
+  evaluateJsonExpressionWithResult,
+  type JsonValueSinkOptions
+} from "./jsonValueLowerer";
 import { ResourceBodyFragment } from "./resourceBody";
 import { appendGeneratedPath } from "./sourcePaths";
 
@@ -28,17 +33,18 @@ export function compileEquipmentLayerStatement(
   }
 
   const entryPath = appendGeneratedPath(appendGeneratedPath("/layers", layer), "0");
-  const texture = statement.texture
-    ? evaluateJsonExpression(
+  const evaluatedTexture = statement.texture
+    ? evaluateJsonExpressionWithResult(
       statement.texture,
       context,
       options,
       appendGeneratedPath(entryPath, "texture")
     )
     : undefined;
-  if (statement.texture && texture === undefined) {
+  if (statement.texture && !evaluatedTexture) {
     return undefined;
   }
+  const texture = evaluatedTexture?.value;
   if (typeof texture !== "string" || texture.length === 0) {
     options.onError?.("rsgl.invalidEquipmentLayerTexture", "Equipment layer statement requires a non-empty texture id.", statement.range);
     return undefined;
@@ -96,7 +102,15 @@ export function compileEquipmentLayerStatement(
   };
   return {
     content,
-    mappings: equipmentLayerMappings(statement, layer, entry, context)
+    mappings: equipmentLayerMappings(
+      statement,
+      layer,
+      entry,
+      context,
+      evaluatedTexture
+        ? evaluatedRootOrigin(evaluatedTexture.result, context.sourceFile)
+        : undefined
+    )
   };
 }
 
@@ -210,7 +224,8 @@ function equipmentLayerMappings(
   statement: EquipmentLayerStmtNode,
   layer: string,
   entry: Record<string, JsonValue>,
-  context: EvaluationContext
+  context: EvaluationContext,
+  textureOrigin?: EvaluationOrigin
 ): ResourceBodyFragment["mappings"] {
   const layerPath = appendGeneratedPath("/layers", layer);
   const entryPath = appendGeneratedPath(layerPath, "0");
@@ -231,7 +246,7 @@ function equipmentLayerMappings(
       generatedPath: appendGeneratedPath(entryPath, "texture"),
       sourceRange: statement.texture.range,
       context,
-      validationOrigin: expressionEvaluationOrigin(statement.texture, context)
+      validationOrigin: textureOrigin
     });
   }
   if (entry.dyeable !== undefined) {

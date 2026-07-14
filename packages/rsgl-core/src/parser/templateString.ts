@@ -67,9 +67,23 @@ function offsetExpressionRanges<T extends ExprNode>(expression: T, offset: numbe
       }
     }
   } else if (expression.kind === "ListExpr") {
-    expression.elements.forEach(element => offsetExpressionRanges(element, offset));
+    expression.elements.forEach(element => {
+      if (element.kind === "ListSpread") {
+        offsetNodeRange(element, offset);
+        offsetExpressionRanges(element.expression, offset);
+      } else {
+        offsetExpressionRanges(element, offset);
+      }
+    });
   } else if (expression.kind === "ObjectExpr") {
-    expression.properties.forEach(property => offsetObjectPropertyRange(property, offset));
+    expression.properties.forEach(property => {
+      if (property.kind === "ObjectSpread") {
+        offsetNodeRange(property, offset);
+        offsetExpressionRanges(property.expression, offset);
+      } else {
+        offsetObjectPropertyRange(property, offset);
+      }
+    });
   } else if (expression.kind === "RangeExpr") {
     offsetExpressionRanges(expression.startExpr, offset);
     offsetExpressionRanges(expression.endExpr, offset);

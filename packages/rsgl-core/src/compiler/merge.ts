@@ -1,4 +1,9 @@
 import { isExternalResourceUnit, JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  setJsonObjectProperty
+} from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
 import { uniqueValues } from "../../../mc-assets/src";
 
@@ -87,10 +92,10 @@ function mergeObjectUnits(
     return null;
   }
 
-  const content: Record<string, JsonValue> = {};
+  const content = createJsonObject();
   const seen = new Map<string, ResourceUnit>();
   for (const unit of units) {
-    for (const [key, value] of Object.entries(unit.content as Record<string, JsonValue>)) {
+    for (const [key, value] of jsonObjectEntries(unit.content as Record<string, JsonValue>)) {
       const existing = seen.get(key);
       if (existing && !isPackOverlayMerge(units[0].kind, key, content[key], value)) {
         diagnostics.push({
@@ -102,7 +107,11 @@ function mergeObjectUnits(
         });
       }
       seen.set(key, unit);
-      content[key] = mergeObjectField(units[0].kind, key, content[key], value);
+      setJsonObjectProperty(
+        content,
+        key,
+        mergeObjectField(units[0].kind, key, existing ? content[key] : undefined, value)
+      );
     }
   }
 

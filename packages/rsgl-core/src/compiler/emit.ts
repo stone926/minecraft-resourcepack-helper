@@ -1,4 +1,5 @@
 import { BinaryCopyRef, isExternalResourceUnit, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
+import { createJsonObject, setJsonObjectProperty } from "./jsonObjectProperties";
 import { isJsonObject as isObject } from "./jsonValues";
 import { getRsglResourceKindDescriptor } from "../resourceKinds";
 
@@ -104,10 +105,14 @@ export function orderJsonValue(value: JsonValue, resourceKind: ResourceKind): Js
     ...order.filter(key => keys.includes(key)),
     ...keys.filter(key => !order.includes(key)).sort()
   ];
-  const result: Record<string, JsonValue> = {};
+  const result = createJsonObject();
   for (const key of orderedKeys) {
     const childKind = key === "model" && resourceKind === "item" && isObject(value[key]) ? "itemModel" : resourceKind;
-    result[key] = orderJsonValue(value[key] as JsonValue, childKind as ResourceKind);
+    setJsonObjectProperty(
+      result,
+      key,
+      orderJsonValue(value[key] as JsonValue, childKind as ResourceKind)
+    );
   }
   return result;
 }

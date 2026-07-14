@@ -1,6 +1,12 @@
 import { hasLiteralValue, RsglObjectProperty, RsglType, unknownType } from "./types";
 
 export function isAssignable(expected: RsglType, actual: RsglType): boolean {
+  if (actual.kind === "Never") {
+    return true;
+  }
+  if (expected.kind === "Never") {
+    return false;
+  }
   if (expected.kind === "Unknown" || expected.kind === "Any" || actual.kind === "Unknown" || actual.kind === "Any") {
     return true;
   }
@@ -11,6 +17,9 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return (expected.options ?? []).some(option => isAssignable(option, actual));
   }
   if (expected.kind === actual.kind) {
+    if (expected.kind === "TypeParameter") {
+      return expected.typeParameterName === actual.typeParameterName;
+    }
     if (
       expected.kind === "Json"
       && expected.contextualEscapeOnly
@@ -79,6 +88,9 @@ export function formatType(type: RsglType): string {
   }
   if (type.kind === "Function" && type.parameters && type.returnType) {
     return `(${type.parameters.map(formatType).join(", ")}) -> ${formatType(type.returnType)}`;
+  }
+  if (type.kind === "TypeParameter") {
+    return type.typeParameterName ?? "?";
   }
   if (type.kind === "BlockstateModelObject") {
     return "blockstate model object";

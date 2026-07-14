@@ -134,7 +134,9 @@ describe("RSGL typed resource runtime values", () => {
       { "demo:block/key": true }
     );
     assert.strictEqual(evaluate("has(existing, \"namespace\")", context), false);
-    assert.deepStrictEqual(evaluate("product(existing)", context), []);
+    assert.strictEqual(evaluate("product(existing)", context), undefined);
+    assert.strictEqual(errors.at(-1), "rsgl.collectionExpected");
+    assert.strictEqual(failures, 4);
     assert.strictEqual(evaluate("existing.namespace", context), undefined);
     assert.strictEqual(isJsonObject(constructed), false);
   });

@@ -2,6 +2,7 @@ export { bindRsglModule } from "./binder";
 export { bindRsglProgram } from "./program";
 export { createRsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 export { createRsglExportMaps } from "./exportResolution";
+export { getBuiltinSignature } from "./builtins";
 export { formatType, isAssignable } from "./typeRelations";
 export {
   combineRsglTypes,
@@ -12,6 +13,7 @@ export {
 export {
   hasLiteralValue,
   missingType,
+  neverType,
   objectProperty,
   objectPropertyType,
   typeFromAnnotation
@@ -37,6 +39,7 @@ export type {
   RsglBlockstateApplySiteNode,
   RsglExportRecord,
   RsglFileDiagnostic,
+  RsglGenericParameter,
   RsglImportGraph,
   RsglImportRecord,
   RsglLegacyBlockstateRootRecord,

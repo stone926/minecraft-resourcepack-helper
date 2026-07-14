@@ -83,6 +83,7 @@ export function createTemplateExpansion(
   const templateBaseContext = createTemplateBaseContext(
     template,
     options,
+    context.evaluationItemBudget,
     context.onEvaluationFailure,
     context.onResourceValueFailure
   );
@@ -330,12 +331,14 @@ function normalizeCallableValue(
 function createTemplateBaseContext(
   template: RsglTemplateDefinition,
   options: TemplateExpansionOptions,
+  evaluationItemBudget: EvaluationContext["evaluationItemBudget"],
   onEvaluationFailure?: () => void,
   onResourceValueFailure?: () => void
 ): RsglCompileContext {
   return {
     namespace: template.namespace,
     variables: new Map(template.values),
+    evaluationItemBudget,
     resolvedExpectedTypes: template.resolvedExpectedTypes,
     valueOrigins: template.valueOrigins ? new Map(template.valueOrigins) : undefined,
     valuePathOrigins: template.valuePathOrigins ? new Map(template.valuePathOrigins) : undefined,

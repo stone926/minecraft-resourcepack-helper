@@ -9,9 +9,9 @@ import { isJsonObject } from "./compilerHelpers";
 import {
   EvaluationContext,
   type EvaluationOrigin,
-  evaluateExpression,
-  expressionEvaluationOrigin
+  evaluateExpressionResult
 } from "./evaluate";
+import { evaluatedRootOrigin } from "./evaluationProvenance";
 import {
   evaluationScalarText,
   isEvaluatedResourceId,
@@ -42,6 +42,11 @@ interface ModelImplData {
   parentOrigin?: EvaluationOrigin;
   implRange: TextRange;
   textures: Map<string, { value: string; range: TextRange; origin?: EvaluationOrigin }>;
+}
+
+interface EvaluatedModelImplTexture {
+  value: string;
+  origin?: EvaluationOrigin;
 }
 
 /**
@@ -125,7 +130,8 @@ function modelImplData(
 ): ModelImplData | null {
   const call = expression.kind === "CallExpr" ? expression : undefined;
   const parentExpression = call?.callee ?? expression;
-  const evaluatedParent = evaluateExpression(parentExpression, context);
+  const parentResult = evaluateExpressionResult(parentExpression, context);
+  const evaluatedParent = parentResult.value;
   if (isEvaluatedTextureVariable(evaluatedParent)) {
     context.onResourceValueFailure?.();
     onError(
@@ -162,7 +168,7 @@ function modelImplData(
       ? parentValue
       : normalizeModelParent(parentValue, subtype, context.namespace),
     parentRange: parentExpression.range,
-    parentOrigin: expressionEvaluationOrigin(parentExpression, context),
+    parentOrigin: evaluatedRootOrigin(parentResult, context.sourceFile),
     implRange: expression.range,
     textures: modelImplTextures(call, subtype, context, onError)
   };
@@ -183,22 +189,22 @@ function modelImplTextures(
     onError("rsgl.invalidModelImplArgument", "Model impl allows named texture arguments, or one positional texture argument.", call.range);
   }
   if (positional.length === 1) {
-    const value = modelImplTextureValue(positional[0], subtype, context, onError);
-    if (value) {
+    const evaluated = modelImplTextureValue(positional[0], subtype, context, onError);
+    if (evaluated) {
       textures.set(subtype === "item" ? "layer0" : "all", {
-        value,
+        value: evaluated.value,
         range: positional[0].value.range,
-        origin: expressionEvaluationOrigin(positional[0].value, context)
+        origin: evaluated.origin
       });
     }
   }
   for (const arg of call.args.filter(arg => arg.name)) {
-    const value = modelImplTextureValue(arg, subtype, context, onError);
-    if (value && arg.name) {
+    const evaluated = modelImplTextureValue(arg, subtype, context, onError);
+    if (evaluated && arg.name) {
       textures.set(arg.name.text, {
-        value,
+        value: evaluated.value,
         range: arg.value.range,
-        origin: expressionEvaluationOrigin(arg.value, context)
+        origin: evaluated.origin
       });
     }
   }
@@ -210,10 +216,15 @@ function modelImplTextureValue(
   subtype: string,
   context: EvaluationContext,
   onError: ModelImplOptions["onError"]
-): string | null {
-  const evaluatedValue = evaluateExpression(arg.value, context);
+): EvaluatedModelImplTexture | null {
+  const result = evaluateExpressionResult(arg.value, context);
+  const evaluatedValue = result.value;
+  const withOrigin = (value: string): EvaluatedModelImplTexture => ({
+    value,
+    origin: evaluatedRootOrigin(result, context.sourceFile)
+  });
   if (isEvaluatedTextureVariable(evaluatedValue)) {
-    return evaluatedValue.value;
+    return withOrigin(evaluatedValue.value);
   }
   if (isEvaluatedResourceId(evaluatedValue)) {
     if (evaluatedValue.resourceKind !== "texture") {
@@ -225,7 +236,8 @@ function modelImplTextureValue(
       );
       return null;
     }
-    return evaluationScalarText(evaluatedValue);
+    const value = evaluationScalarText(evaluatedValue);
+    return value === null ? null : withOrigin(value);
   }
   const value = evaluationScalarText(evaluatedValue);
   if (!value) {
@@ -233,9 +245,13 @@ function modelImplTextureValue(
     return null;
   }
   if (value.startsWith("#")) {
-    return value;
+    return withOrigin(value);
   }
-  return normalizeResourceValue(value, context.namespace, subtype === "item" ? "item" : "block");
+  return withOrigin(normalizeResourceValue(
+    value,
+    context.namespace,
+    subtype === "item" ? "item" : "block"
+  ));
 }
 
 function normalizeModelParent(value: string, subtype: string, namespace: string): string {

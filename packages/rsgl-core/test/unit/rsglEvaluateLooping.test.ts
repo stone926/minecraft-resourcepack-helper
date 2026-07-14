@@ -88,6 +88,22 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
   });
 
+  it("destructures compiler-created records in RSGL insertion order", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "model block ordered_record_binding {",
+      "  for first, second in [{ \"10\": \"ten\", \"2\": \"two\" }] {",
+      "    merge { first: first, second: second }",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
+      first: "ten",
+      second: "two"
+    });
+  });
+
   it("reports duplicate bindings in multidimensional for loops", () => {
     const result = compileSourceWithUncheckedExterns([
       "for item in [stone], item in [dirt] {",

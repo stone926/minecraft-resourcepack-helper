@@ -103,6 +103,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly outputResources: RsglOutputResourcePreview[] = [];
   private readonly importCallScopes = new Map<ExprNode, RsglScope>();
   private readonly resolvedExpectedTypes = new Map<ExprNode, RsglType>();
+  private readonly resolvedExpressionTypes = new Map<ExprNode, RsglType>();
   private readonly templateUses: RsglTemplateUseRecord[] = [];
   private readonly legacyBlockstateRoots: RsglLegacyBlockstateRootRecord[] = [];
   private readonly contextualTextureSinks: RsglContextualTextureSinkRecord[] = [];
@@ -181,6 +182,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       diagnostics: this.diagnostics,
       namespace: this.namespace,
       resolvedExpectedTypes: this.resolvedExpectedTypes,
+      resolvedExpressionTypes: this.resolvedExpressionTypes,
       importCallScopes: this.importCallScopes,
       templateUses: this.templateUses,
       legacyBlockstateRoots: this.legacyBlockstateRoots,
@@ -197,6 +199,10 @@ class RsglBinder implements RsglExpressionCheckContext {
 
   public recordResolvedExpectedType(expression: ExprNode, expectedType: RsglType): void {
     mergeResolvedExpectedTypeFact(this.resolvedExpectedTypes, expression, expectedType);
+  }
+
+  public recordResolvedExpressionType(expression: ExprNode, type: RsglType): void {
+    this.resolvedExpressionTypes.set(expression, type);
   }
 
   public isUndefinedSymbolDiagnosticSuppressed(name: string): boolean {
@@ -625,7 +631,8 @@ class RsglBinder implements RsglExpressionCheckContext {
       references: this.references,
       outputResources: this.outputResources,
       diagnostics: this.diagnostics,
-      resolvedExpectedTypes: this.resolvedExpectedTypes
+      resolvedExpectedTypes: this.resolvedExpectedTypes,
+      resolvedExpressionTypes: this.resolvedExpressionTypes
     };
     resolveProgramTemplateOutputMetadata([model]);
   }

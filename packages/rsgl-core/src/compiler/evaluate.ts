@@ -1,10 +1,13 @@
 import {
   ExprNode,
+  ListElementNode,
+  ObjectEntryNode,
   ObjectPropertyNode,
   TextRange
 } from "../parser";
+import { bindRsglArgumentSlots } from "../arguments";
 import { tryParseMinecraftResourceId } from "../../../mc-assets/src";
-import { builtinEffect } from "../semantic/builtins";
+import { builtinEffect, getBuiltinSignature } from "../semantic/builtins";
 import { findLambdaImpureCalls, LambdaImpureCall } from "../semantic/lambdaPurity";
 import type { RsglType } from "../semantic/types";
 import {
@@ -26,7 +29,27 @@ import {
 } from "./evaluatedResourceValues";
 import { ExpansionFrame, JsonValue, RsglMapping } from "./ir";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
-import { expandSequencePattern, formatSequenceNumber, sequencePadWidth } from "./sequences";
+import {
+  type CollectionEvaluationTrace,
+  type CollectionLambdaArgument,
+  evaluateCollectionBuiltin
+} from "./collectionBuiltins";
+import {
+  EvaluationItemBudget,
+  MAX_EVALUATION_ITEMS_PER_ALLOCATION
+} from "./evaluationItemBudget";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  jsonObjectKeys,
+  setJsonObjectProperty
+} from "./jsonObjectProperties";
+import {
+  expandSequencePattern,
+  formatSequenceNumber,
+  sequencePadWidth,
+  sequencePatternExpansionCount
+} from "./sequences";
 import { appendGeneratedPath } from "./sourcePaths";
 
 export interface LambdaValue {
@@ -44,7 +67,25 @@ export interface LambdaValue {
 }
 
 export type EvaluationValue = JsonValue | RsglEvaluatedResourceValue | LambdaValue | undefined;
-export type RawGlobLoader = (pattern: string, context: EvaluationContext, range: TextRange) => string[] | undefined;
+
+export interface RawGlobLoadLimits {
+  /** Maximum result items the current shared evaluation budget can accept. */
+  maxMatches: number;
+  /** Maximum filesystem entries a synchronous loader may inspect. */
+  maxVisitedEntries: number;
+}
+
+export interface RawGlobLimitExceeded {
+  kind: "limitExceeded";
+}
+
+export type RawGlobLoadResult = string[] | RawGlobLimitExceeded | undefined;
+export type RawGlobLoader = (
+  pattern: string,
+  context: EvaluationContext,
+  range: TextRange,
+  limits?: RawGlobLoadLimits
+) => RawGlobLoadResult;
 
 export interface EvaluationOrigin {
   sourceFile: string;
@@ -95,6 +136,8 @@ export interface EvaluationResult {
 export interface EvaluationContext {
   namespace: string;
   variables: Map<string, EvaluationValue>;
+  /** Shared collection-expansion accounting for the current compile run. */
+  evaluationItemBudget?: EvaluationItemBudget;
   /** Semantic contextual-type facts for AST nodes owned by this module. */
   resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
   /** Lexically bound value names, including predeclared bindings not evaluated yet. */
@@ -257,6 +300,7 @@ interface EvaluationTraceFrame {
   expression: ExprNode;
   context: EvaluationContext;
   children: CompletedEvaluationTraceFrame[];
+  collectionTrace?: CollectionEvaluationTrace;
 }
 
 interface CompletedEvaluationTraceFrame extends EvaluationTraceFrame {
@@ -303,6 +347,13 @@ class EvaluationTraceSession {
       .find(child => child.expression === expression)?.result;
   }
 
+  public recordCollectionTrace(trace: CollectionEvaluationTrace): void {
+    const frame = this.stack[this.stack.length - 1];
+    if (frame) {
+      frame.collectionTrace = trace;
+    }
+  }
+
   public result(): EvaluationResult | undefined {
     return this.rootResult;
   }
@@ -345,18 +396,44 @@ function buildEvaluationResult(
   }
 
   if (expression.kind === "ListExpr") {
+    if (frame.collectionTrace) {
+      return tracedCollectionEvaluationResult(
+        frame,
+        value,
+        expression.range,
+        frame.collectionTrace
+      );
+    }
     return structuralEvaluationResult(
       value,
       expression.range,
       expression.elements.flatMap((element, index) => {
-        const child = childForExpression(frame, element);
+        const child = childForExpression(
+          frame,
+          element.kind === "ListSpread" ? element.expression : element
+        );
         return child ? [rebaseEvaluationResult(child.result, appendGeneratedPath("", String(index)))] : [];
       })
     );
   }
 
   if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
-    const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
+    if (expression.kind === "ObjectExpr" && frame.collectionTrace) {
+      return tracedCollectionEvaluationResult(
+        frame,
+        value,
+        expression.range,
+        frame.collectionTrace,
+        tracedObjectKeyIssues(
+          expression.properties.filter(isObjectPropertyNode),
+          false,
+          frame
+        )
+      );
+    }
+    const properties = expression.kind === "ObjectExpr"
+      ? expression.properties.filter(isObjectPropertyNode)
+      : expression.entries;
     const children: EvaluationResult[] = [];
     for (const property of properties) {
       const valueChild = childForExpression(frame, property.value);
@@ -444,6 +521,14 @@ function buildEvaluationResult(
   }
 
   if (expression.kind === "CallExpr") {
+    if (frame.collectionTrace) {
+      return tracedCollectionEvaluationResult(
+        frame,
+        value,
+        expression.range,
+        frame.collectionTrace
+      );
+    }
     if (expression.callee.kind === "IdentifierExpr" && expression.callee.name.text === "seq") {
       const childOrigins = frame.children.flatMap(child =>
         materializeEvaluationPathOrigins(child.result, child.context.sourceFile)
@@ -552,6 +637,31 @@ function structuralEvaluationResult(
       ...additionalIssues
     ])
   );
+}
+
+function tracedCollectionEvaluationResult(
+  frame: EvaluationTraceFrame,
+  value: EvaluationValue,
+  range: TextRange,
+  trace: CollectionEvaluationTrace,
+  additionalIssues: readonly EvaluationValueIssue[] = []
+): EvaluationResult {
+  const children = trace.paths.map(path => {
+    const selected = path.source.selectedPath === undefined
+      ? path.source.result
+      : selectEvaluationResultPath(path.source.result, path.source.selectedPath);
+    const sourceFile = path.source.sourceFile;
+    const durable = evaluationResult(
+      selected.value,
+      sourceFile === frame.context.sourceFile ? selected.pathRanges : [],
+      materializeEvaluationPathOrigins(selected, sourceFile),
+      path.source.omitValueIssues
+        ? []
+        : materializeEvaluationValueIssues(selected, sourceFile)
+    );
+    return rebaseEvaluationResult(durable, path.outputPath);
+  });
+  return structuralEvaluationResult(value, range, children, additionalIssues);
 }
 
 function wrappedEvaluationResult(
@@ -805,14 +915,24 @@ export function expressionEvaluationOrigin(
     ));
   }
   if (expression.kind === "ListExpr") {
-    return mergeEvaluationOrigins(expression.elements.map(element => expressionEvaluationOrigin(element, context)));
+    return mergeEvaluationOrigins(expression.elements.map(element =>
+      expressionEvaluationOrigin(
+        element.kind === "ListSpread" ? element.expression : element,
+        context
+      )
+    ));
   }
   if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
     const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
-    return mergeEvaluationOrigins(properties.flatMap(property => [
-      property.key.kind === "DynamicKey" ? expressionEvaluationOrigin(property.key.expression, context) : undefined,
-      expressionEvaluationOrigin(property.value, context)
-    ]));
+    return mergeEvaluationOrigins(properties.flatMap(property => {
+      if (property.kind === "ObjectSpread") {
+        return [expressionEvaluationOrigin(property.expression, context)];
+      }
+      return [
+        property.key.kind === "DynamicKey" ? expressionEvaluationOrigin(property.key.expression, context) : undefined,
+        expressionEvaluationOrigin(property.value, context)
+      ];
+    }));
   }
   if (expression.kind === "ModelApplySugar") {
     return mergeEvaluationOrigins([
@@ -883,13 +1003,25 @@ export function expressionEvaluationPathOrigins(
   generatedPath: string
 ): EvaluationPathOrigin[] {
   if (expression.kind === "ListExpr") {
-    return expression.elements.flatMap((element, index) =>
-      expressionEvaluationPathOrigins(element, context, appendGeneratedPath(generatedPath, String(index)))
-    );
+    // The legacy AST walker cannot know spread offsets without evaluating the
+    // operand. Keep its conservative origin behavior; evaluateExpressionResult
+    // owns exact same-evaluation spread and collection-builtin provenance.
+    return expression.elements.flatMap((element, index) => {
+      const value = element.kind === "ListSpread" ? element.expression : element;
+      return expressionEvaluationPathOrigins(
+        value,
+        context,
+        appendGeneratedPath(generatedPath, String(index))
+      );
+    });
   }
   if (expression.kind === "ObjectExpr" || expression.kind === "StateKeySugar") {
     const properties = expression.kind === "ObjectExpr" ? expression.properties : expression.entries;
     return properties.flatMap(property => {
+      if (property.kind === "ObjectSpread") {
+        const origin = expressionEvaluationOrigin(property.expression, context);
+        return origin ? [{ generatedPath, ...origin }] : [];
+      }
       const key = expression.kind === "ObjectExpr"
         ? propertyKeyToString(property, context)
         : stateKeyToString(property, context);
@@ -982,6 +1114,7 @@ export function evaluateExpressionResult(
 }
 
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
+  evaluationItemBudget(context);
   const frame = context.evaluationTrace?.enter(expression, context);
   try {
     const value = contextualizeExpressionValue(
@@ -1032,19 +1165,24 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     }).join("");
   }
   if (expression.kind === "ListExpr") {
-    return expression.elements.map(element => normalizeJsonValue(evaluateExpression(element, context)));
+    return evaluateListExpression(expression.elements, context);
   }
   if (expression.kind === "ObjectExpr") {
-    return evaluateObjectProperties(expression.properties, context);
+    return evaluateObjectEntries(expression.properties, context);
   }
   if (expression.kind === "StateKeySugar") {
     return evaluateStateKeyProperties(expression.entries, context);
   }
   if (expression.kind === "ModelApplySugar") {
     const model = normalizeModelApplyValue(evaluateExpression(expression.model, context), context.namespace);
-    const result: Record<string, JsonValue> = { model };
+    const result = createJsonObject();
+    setJsonObjectProperty(result, "model", model);
     for (const property of expression.properties) {
-      result[property.name.text] = normalizeJsonValue(evaluateExpression(property.value, context));
+      setJsonObjectProperty(
+        result,
+        property.name.text,
+        normalizeJsonValue(evaluateExpression(property.value, context))
+      );
     }
     return omitBlockstateModelDefaults(result);
   }
@@ -1057,10 +1195,22 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     if (!Number.isFinite(start) || !Number.isFinite(end)) {
       return [];
     }
-    const values: number[] = [];
+    const distance = Math.abs(end - start);
+    const itemCount = Math.floor(distance) + 1;
+    if (!consumeEvaluationItems(
+      context,
+      Number.isSafeInteger(itemCount) ? itemCount : Number.POSITIVE_INFINITY,
+      expression.range,
+      "range"
+    )) {
+      return undefined;
+    }
     const step = start <= end ? 1 : -1;
-    for (let value = start; step > 0 ? value <= end : value >= end; value += step) {
-      values.push(value);
+    const values = new Array<number>(itemCount);
+    for (let index = 0; index < itemCount; index += 1) {
+      // Index-based construction always terminates even beyond Number's exact
+      // integer range, where repeatedly adding one can stop making progress.
+      values[index] = start + index * step;
     }
     return values;
   }
@@ -1075,7 +1225,8 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
       name: arg.name?.text,
       value: evaluateExpression(arg.value, context),
       range: arg.value.range,
-      result: context.evaluationTrace?.latestChildResult(arg.value)
+      result: context.evaluationTrace?.latestChildResult(arg.value),
+      sourceFile: context.sourceFile
     }));
     const calleeValue = evaluateExpression(expression.callee, context);
     if (isLambdaValue(calleeValue)) {
@@ -1243,9 +1394,19 @@ function evaluateSeqExpression(
     const patternValue = evaluateExpression(patternArg.value, context);
     if (isLambdaValue(patternValue)) {
       const value = evaluateLambdaCall(patternValue, 0, [], context);
-      return expandSequencePattern(scalarText(value) ?? "", { pad: padWidth });
+      return expandSequencePatternWithinBudget(
+        scalarText(value) ?? "",
+        padWidth,
+        context,
+        expression.range
+      );
     }
-    return expandSequencePattern(scalarText(patternValue) ?? "", { pad: padWidth });
+    return expandSequencePatternWithinBudget(
+      scalarText(patternValue) ?? "",
+      padWidth,
+      context,
+      expression.range
+    );
   }
   if (positionalGenerators.length !== positionalGeneratorArgs.length) {
     return [];
@@ -1267,11 +1428,16 @@ function evaluateSeqGeneratorPatterns(
   index: number,
   boundValues: EvaluationValue[],
   padWidth: number | null
-): string[] {
+): string[] | undefined {
   if (index >= generators.length) {
     const args = boundValues.map(value => ({ value, range: patternRange }));
     const value = evaluateLambdaCall(lambdaPattern, boundValues.length, args, context);
-    return expandSequencePattern(scalarText(value) ?? "", { pad: padWidth });
+    return expandSequencePatternWithinBudget(
+      scalarText(value) ?? "",
+      padWidth,
+      context,
+      patternRange
+    );
   }
 
   const generator = generators[index];
@@ -1285,7 +1451,7 @@ function evaluateSeqGeneratorPatterns(
     const name = generator.name;
     const bindingValue = sequenceBindingValue(value, padWidth);
     const child = childEvaluationContext(context, { [name]: bindingValue });
-    results.push(...evaluateSeqGeneratorPatterns(
+    const expanded = evaluateSeqGeneratorPatterns(
       lambdaPattern,
       patternRange,
       generators,
@@ -1293,9 +1459,28 @@ function evaluateSeqGeneratorPatterns(
       index + 1,
       [...boundValues, bindingValue],
       padWidth
-    ));
+    );
+    if (!expanded) {
+      return undefined;
+    }
+    for (const item of expanded) {
+      results.push(item);
+    }
   }
   return results;
+}
+
+function expandSequencePatternWithinBudget(
+  pattern: string,
+  pad: number | null,
+  context: EvaluationContext,
+  range: TextRange
+): string[] | undefined {
+  const itemCount = sequencePatternExpansionCount(pattern);
+  if (!consumeEvaluationItems(context, itemCount, range, "seq")) {
+    return undefined;
+  }
+  return expandSequencePattern(pattern, { pad });
 }
 
 function evaluateSeqLambdaPattern(pattern: ExprNode, context: EvaluationContext): LambdaValue | null {
@@ -1331,23 +1516,206 @@ export function childEvaluationContext(
   };
 }
 
-function evaluateObjectProperties(properties: ObjectPropertyNode[], context: EvaluationContext): Record<string, JsonValue> {
-  const result: Record<string, JsonValue> = {};
-  for (const property of properties) {
-    const key = propertyKeyToString(property, context);
-    if (key) {
-      result[key] = normalizeJsonValue(evaluateExpression(property.value, context));
+function evaluateListExpression(
+  elements: readonly ListElementNode[],
+  context: EvaluationContext
+): EvaluationValue {
+  const result: JsonValue[] = [];
+  const paths: CollectionEvaluationTrace["paths"] = [];
+  let requiresOwnershipTrace = false;
+  for (const element of elements) {
+    if (element.kind !== "ListSpread") {
+      const value = evaluateExpression(element, context);
+      const child = context.evaluationTrace?.latestChildResult(element);
+      const outputPath = appendGeneratedPath("", String(result.length));
+      result.push(normalizeJsonValue(value));
+      if (child) {
+        paths.push({
+          outputPath,
+          source: { result: child, sourceFile: context.sourceFile }
+        });
+      }
+      continue;
     }
+
+    requiresOwnershipTrace = true;
+    const spreadValue = evaluateExpression(element.expression, context);
+    const child = context.evaluationTrace?.latestChildResult(element.expression);
+    if (spreadValue === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(spreadValue)) {
+      reportInvalidSpread(
+        context,
+        "rsgl.invalidListSpread",
+        `List spread requires a List value, got ${runtimeEvaluationValueKind(spreadValue)}.`,
+        element.range
+      );
+      return undefined;
+    }
+    if (!consumeEvaluationItems(context, spreadValue.length, element.range, "list spread")) {
+      return undefined;
+    }
+    const offset = result.length;
+    for (let index = 0; index < spreadValue.length; index += 1) {
+      result.push(normalizeJsonValue(spreadValue[index]));
+      if (child) {
+        paths.push({
+          outputPath: appendGeneratedPath("", String(offset + index)),
+          source: {
+            result: child,
+            selectedPath: appendGeneratedPath("", String(index)),
+            sourceFile: context.sourceFile
+          }
+        });
+      }
+    }
+  }
+  if (requiresOwnershipTrace) {
+    context.evaluationTrace?.recordCollectionTrace({ paths });
   }
   return result;
 }
 
+function evaluateObjectEntries(
+  entries: readonly ObjectEntryNode[],
+  context: EvaluationContext
+): EvaluationValue {
+  const result = createJsonObject();
+  const pathOwners = new Map<string, CollectionEvaluationTrace["paths"][number]["source"]>();
+  let requiresOwnershipTrace = false;
+  for (const entry of entries) {
+    if (entry.kind === "ObjectSpread") {
+      requiresOwnershipTrace = true;
+      const spreadValue = evaluateExpression(entry.expression, context);
+      const child = context.evaluationTrace?.latestChildResult(entry.expression);
+      if (spreadValue === undefined) {
+        return undefined;
+      }
+      if (!isJsonObject(spreadValue)) {
+        reportInvalidSpread(
+          context,
+          "rsgl.invalidObjectSpread",
+          `Object spread requires an Object value, got ${runtimeEvaluationValueKind(spreadValue)}.`,
+          entry.range
+        );
+        return undefined;
+      }
+      const keys = jsonObjectKeys(spreadValue);
+      if (!consumeEvaluationItems(context, keys.length, entry.range, "object spread")) {
+        return undefined;
+      }
+      for (const key of keys) {
+        setJsonObjectProperty(result, key, normalizeJsonValue(spreadValue[key]));
+        if (child) {
+          pathOwners.set(key, {
+            result: child,
+            selectedPath: appendGeneratedPath("", key),
+            sourceFile: context.sourceFile
+          });
+        } else {
+          pathOwners.delete(key);
+        }
+      }
+      continue;
+    }
+
+    const key = propertyKeyToString(entry, context);
+    const value = evaluateExpression(entry.value, context);
+    const child = context.evaluationTrace?.latestChildResult(entry.value);
+    if (key !== null) {
+      requiresOwnershipTrace ||= pathOwners.has(key);
+      setJsonObjectProperty(result, key, normalizeJsonValue(value));
+      if (child) {
+        pathOwners.set(key, { result: child, sourceFile: context.sourceFile });
+      } else {
+        pathOwners.delete(key);
+      }
+    }
+  }
+  if (requiresOwnershipTrace) {
+    context.evaluationTrace?.recordCollectionTrace({
+      paths: Array.from(pathOwners, ([key, source]) => ({
+        outputPath: appendGeneratedPath("", key),
+        source
+      }))
+    });
+  }
+  return result;
+}
+
+function consumeEvaluationItems(
+  context: EvaluationContext,
+  count: number,
+  range: TextRange,
+  operation: string
+): boolean {
+  const budget = evaluationItemBudget(context);
+  if (budget.tryConsume(count)) {
+    return true;
+  }
+  context.onEvaluationFailure?.();
+  context.onError?.(
+    "rsgl.collectionExpansionLimit",
+    `Collection operation '${operation}' exceeds maxEvaluationItems=${budget.limit} `
+      + `(consumed ${budget.consumed}, requested ${Number.isSafeInteger(count) ? count : `more than ${budget.remaining}`}).`,
+    range,
+    context.sourceFile
+  );
+  return false;
+}
+
+function reportInvalidSpread(
+  context: EvaluationContext,
+  code: "rsgl.invalidListSpread" | "rsgl.invalidObjectSpread",
+  message: string,
+  range: TextRange
+): void {
+  context.onEvaluationFailure?.();
+  context.onError?.(code, message, range, context.sourceFile);
+}
+
+function evaluationItemBudget(context: EvaluationContext): EvaluationItemBudget {
+  context.evaluationItemBudget ??= new EvaluationItemBudget();
+  return context.evaluationItemBudget;
+}
+
+function runtimeEvaluationValueKind(value: EvaluationValue): string {
+  if (value === undefined) {
+    return "Undefined";
+  }
+  if (value === null) {
+    return "Null";
+  }
+  if (Array.isArray(value)) {
+    return "List";
+  }
+  switch (typeof value) {
+    case "boolean":
+      return "Boolean";
+    case "number":
+      return "Number";
+    case "string":
+      return "String";
+    default:
+      return "Object";
+  }
+}
+
+function isObjectPropertyNode(entry: ObjectEntryNode): entry is ObjectPropertyNode {
+  return entry.kind === "ObjectProperty";
+}
+
 function evaluateStateKeyProperties(properties: ObjectPropertyNode[], context: EvaluationContext): Record<string, JsonValue> {
-  const result: Record<string, JsonValue> = {};
+  const result = createJsonObject();
   for (const property of properties) {
     const key = stateKeyToString(property, context);
-    if (key) {
-      result[key] = normalizeJsonValue(evaluateExpression(property.value, context));
+    if (key !== null) {
+      setJsonObjectProperty(
+        result,
+        key,
+        normalizeJsonValue(evaluateExpression(property.value, context))
+      );
     }
   }
   return result;
@@ -1448,6 +1816,7 @@ interface EvaluationCallArgument {
   value: EvaluationValue;
   range: TextRange;
   result?: EvaluationResult;
+  sourceFile?: string;
 }
 
 function evaluateCallExpression(
@@ -1461,17 +1830,57 @@ function evaluateCallExpression(
     return undefined;
   }
 
+  const signature = getBuiltinSignature(callee.name.text);
+  if (signature) {
+    const binding = bindRsglArgumentSlots(
+      signature.parameters,
+      args,
+      arg => arg.name
+    );
+    if (binding.issues.length > 0) {
+      // Semantic checking emits the actionable binder diagnostic. Runtime uses
+      // the same slot result as a strict gate so malformed calls never execute.
+      context.onEvaluationFailure?.();
+      return undefined;
+    }
+    args = binding.assignments.map(assignment => assignment.arg);
+  }
+
   if (isRsglResourceIdConstructorName(callee.name.text)) {
     return evaluateResourceIdConstructor(callee.name.text, args, context);
   }
 
+  const collection = evaluateCollectionBuiltin(
+    callee.name.text,
+    args,
+    range,
+    collectionBuiltinHost(context)
+  );
+  if (collection.handled) {
+    if (collection.trace) {
+      context.evaluationTrace?.recordCollectionTrace(collection.trace);
+    }
+    return collection.value;
+  }
+
   if (callee.name.text === "glob") {
     const pattern = argumentValue(args, "pattern", 0);
-    return typeof pattern === "string" ? context.globLoader?.(pattern, context, range) ?? [] : [];
-  }
-  if (callee.name.text === "product") {
-    const source = normalizeJsonValue(argumentValue(args, "source", 0));
-    return isJsonObject(source) ? product(source) : [];
+    const budget = evaluationItemBudget(context);
+    const globLimit = Math.min(budget.remaining, MAX_EVALUATION_ITEMS_PER_ALLOCATION);
+    const loaded = typeof pattern === "string"
+      ? context.globLoader?.(pattern, context, range, {
+        maxMatches: globLimit,
+        maxVisitedEntries: globLimit
+      })
+      : undefined;
+    if (loaded && !Array.isArray(loaded)) {
+      consumeEvaluationItems(context, globLimit + 1, range, "glob");
+      return undefined;
+    }
+    const matches = loaded ?? [];
+    return consumeEvaluationItems(context, matches.length, range, "glob")
+      ? matches
+      : undefined;
   }
   if (callee.name.text === "pad") {
     const value = scalarText(argumentValue(args, "value", 0)) ?? "";
@@ -1480,7 +1889,7 @@ function evaluateCallExpression(
   }
   if (callee.name.text === "seq") {
     const pattern = scalarText(argumentValue(args, "pattern", 0)) ?? "";
-    return expandSequencePattern(pattern);
+    return expandSequencePatternWithinBudget(pattern, null, context, range);
   }
   if (callee.name.text === "yaw") {
     return horizontalYaw[scalarText(argumentValue(args, "direction", 0)) ?? ""] ?? 0;
@@ -1508,7 +1917,7 @@ function evaluateCallExpression(
   if (callee.name.text === "has") {
     const object = argumentValue(args, "object", 0);
     const key = argumentValue(args, "key", 1);
-    return isJsonObject(object) && typeof key === "string" && Object.hasOwn(object, key);
+    return typeof key === "string" && hasOwnEvaluationProperty(object, key);
   }
   if (callee.name.text === "replace") {
     const source = scalarText(argumentValue(args, "str", 0)) ?? "";
@@ -1531,6 +1940,36 @@ function evaluateCallExpression(
 
   context.onEvaluationFailure?.();
   return undefined;
+}
+
+function collectionBuiltinHost(context: EvaluationContext) {
+  return {
+    budget: evaluationItemBudget(context),
+    isLambda: isLambdaValue,
+    invokeLambda: (lambda: LambdaValue, argument: CollectionLambdaArgument) => {
+      const result = argument.result && argument.selectedPath !== undefined
+        ? selectEvaluationResultPath(argument.result, argument.selectedPath)
+        : argument.result;
+      const argumentRange = result
+        ? rangeForEvaluationPath(result.pathRanges, "") ?? argument.range
+        : argument.range;
+      const value = evaluateLambdaCall(lambda, 1, [{
+        value: argument.value,
+        range: argumentRange,
+        ...(result ? { result } : {}),
+        sourceFile: argument.sourceFile
+      }], context);
+      return {
+        value,
+        result: context.evaluationTrace?.latestChildResult(lambda.body),
+        sourceFile: lambda.context.sourceFile
+      };
+    },
+    reportError: (code: string, message: string, range: TextRange) => {
+      context.onError?.(code, message, range, context.sourceFile);
+    },
+    markFailure: () => context.onEvaluationFailure?.()
+  };
 }
 
 function evaluateResourceIdConstructor(
@@ -1591,7 +2030,11 @@ function reportRuntimeListIndexError(
   // A literal index into a literal list has an exact static length. The
   // semantic checker owns that diagnostic so compilation never reports the
   // same out-of-bounds access twice.
-  if (expression.object.kind === "ListExpr" && expression.index.kind === "NumberLiteral") {
+  if (
+    expression.object.kind === "ListExpr"
+    && expression.index.kind === "NumberLiteral"
+    && expression.object.elements.every(element => element.kind !== "ListSpread")
+  ) {
     return;
   }
   const message = !Number.isInteger(index) || index < 0
@@ -1657,6 +2100,8 @@ function evaluateLambdaCall(
   }
 
   const bodyContext = childEvaluationContext(lambda.context, values, { onError });
+  bodyContext.evaluationItemBudget = callContext.evaluationItemBudget
+    ?? lambda.context.evaluationItemBudget;
   bodyContext.evaluationTrace = callContext.evaluationTrace;
   bodyContext.onEvaluationFailure = callContext.onEvaluationFailure
     ?? lambda.context.onEvaluationFailure;
@@ -1750,24 +2195,6 @@ function matchesPattern(pattern: ExprNode, value: JsonValue, context: Evaluation
   return jsonEquals(normalizeJsonValue(evaluateExpression(pattern, context)), value);
 }
 
-function product(source: Record<string, JsonValue>): JsonValue[] {
-  const entries = Object.entries(source).map(([key, value]) => ({
-    key,
-    values: Array.isArray(value) ? value : [value]
-  }));
-  let results: Record<string, JsonValue>[] = [{}];
-  for (const entry of entries) {
-    const next: Record<string, JsonValue>[] = [];
-    for (const result of results) {
-      for (const value of entry.values) {
-        next.push({ ...result, [entry.key]: value });
-      }
-    }
-    results = next;
-  }
-  return results;
-}
-
 function compareValues(left: EvaluationValue, right: EvaluationValue): number {
   if (typeof left === "number" && typeof right === "number") {
     return left - right;
@@ -1837,8 +2264,8 @@ function truthy(value: EvaluationValue): boolean {
 }
 
 function omitBlockstateModelDefaults(model: Record<string, JsonValue>): Record<string, JsonValue> {
-  const result: Record<string, JsonValue> = {};
-  for (const [key, value] of Object.entries(model)) {
+  const result = createJsonObject();
+  for (const [key, value] of jsonObjectEntries(model)) {
     if ((key === "x" || key === "y" || key === "z") && value === 0) {
       continue;
     }
@@ -1848,7 +2275,18 @@ function omitBlockstateModelDefaults(model: Record<string, JsonValue>): Record<s
     if (key === "weight" && value === 1) {
       continue;
     }
-    result[key] = value;
+    setJsonObjectProperty(result, key, value);
   }
   return result;
+}
+
+function hasOwnEvaluationProperty(value: EvaluationValue, key: string): boolean {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && !isEvaluatedResourceValue(value)
+    && !isLambdaValue(value)
+    && Object.hasOwn(value, key)
+  );
 }

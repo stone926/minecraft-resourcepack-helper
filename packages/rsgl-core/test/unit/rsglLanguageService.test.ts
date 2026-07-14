@@ -189,6 +189,29 @@ describe("RSGL language service", () => {
       "function"
     );
   });
+
+  it("presents builtin rest parameters and keeps extra arguments on the rest slot", () => {
+    const text = "let combined = concat([1], [2], [3])";
+    const document = {
+      fileName: path.resolve("collection-rest-tooling.rsgl"),
+      getText: () => text
+    };
+    const fallbackWorkspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open document fallback.");
+      }
+    };
+
+    const signature = getRsglDocumentSignatureHelpInfo(
+      document,
+      text.lastIndexOf("[3]") + 1,
+      fallbackWorkspace
+    );
+
+    assert.ok(signature?.signatures[0].label.startsWith("concat(...sources: "));
+    assert.strictEqual(signature?.signatures[0].parameters[0].rest, true);
+    assert.strictEqual(signature?.activeParameter, 0);
+  });
 });
 
 function tokenAt<T extends { start: number }>(tokens: readonly T[], start: number): T {

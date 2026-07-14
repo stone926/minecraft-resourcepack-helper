@@ -172,7 +172,7 @@ describe("RSGL resource kind descriptors", () => {
 
     assert.match(
       compilerSource,
-      /compileResourceDeclaration\(\s*statement,\s*resourceContext,\s*this\.resourceDeclarationCompilerHost\(\)\s*\)/
+      /compileResourceDeclaration\(\s*statement,\s*resourceContext,\s*this\.resourceDeclarationCompilerHost\([^)]*\)\s*\)/
     );
     assert.strictEqual(compilerSource.includes("private compileModel("), false);
     assert.ok(resourceCompilerSource.includes("satisfies Record<RsglResourceCompileHandler, ResourceCompileHandler>"));

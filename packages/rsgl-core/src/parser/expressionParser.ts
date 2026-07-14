@@ -11,7 +11,10 @@ import {
   ExprNode,
   IdentifierNode,
   LambdaExprNode,
+  ListExprNode,
+  ListSpreadNode,
   MatchArmNode,
+  ObjectEntryNode,
   ObjectExprNode,
   ObjectPropertyNode,
   ResourceBodyNode,
@@ -243,6 +246,14 @@ export class ExpressionParser extends TypeParser {
     this.expectText("(", "Expected lambda parameter list.");
     while (!this.isAtEnd() && this.current().text !== ")") {
       const mark = this.mark();
+      if (this.current().text === "...") {
+        const rest = this.advance();
+        this.addDiagnostic(
+          "rsgl.userRestParameterNotSupported",
+          "User-defined lambda rest parameters are not supported; remove '...'.",
+          getNodeOrTokenRange(rest)
+        );
+      }
       const parameter = this.parseIdentifier("Expected lambda parameter.");
       if (parameter) {
         parameters.push(parameter);
@@ -334,11 +345,11 @@ export class ExpressionParser extends TypeParser {
 
   protected parseObjectExpression(): ObjectExprNode {
     const start = this.current();
-    const properties: ObjectPropertyNode[] = [];
+    const properties: ObjectEntryNode[] = [];
     this.expectText("{", "Expected object body.");
     while (!this.isAtEnd() && this.current().text !== "}") {
       const mark = this.mark();
-      const property = this.parseObjectProperty();
+      const property = this.parseObjectEntry();
       if (property) {
         properties.push(property);
       }
@@ -349,6 +360,19 @@ export class ExpressionParser extends TypeParser {
     return {
       kind: "ObjectExpr",
       properties,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseObjectEntry(): ObjectEntryNode | null {
+    if (this.current().text !== "...") {
+      return this.parseObjectProperty();
+    }
+    const start = this.advance();
+    const expression = this.parseExpression({ stopTexts: [",", "}"] });
+    return {
+      kind: "ObjectSpread",
+      expression,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
@@ -392,13 +416,15 @@ export class ExpressionParser extends TypeParser {
     return this.parseIdentifier("Expected object key.");
   }
 
-  private parseListExpression(): ExprNode {
+  private parseListExpression(): ListExprNode {
     const start = this.current();
-    const elements: ExprNode[] = [];
+    const elements: ListExprNode["elements"] = [];
     this.expectText("[", "Expected list body.");
     while (!this.isAtEnd() && this.current().text !== "]") {
       const mark = this.mark();
-      elements.push(this.parseExpression({ stopTexts: [",", "]"] }));
+      elements.push(this.current().text === "..."
+        ? this.parseListSpread()
+        : this.parseExpression({ stopTexts: [",", "]"] }));
       this.consumeOptionalSeparator();
       this.ensureProgress(mark, "Unable to parse list element; skipping token.");
     }
@@ -406,6 +432,16 @@ export class ExpressionParser extends TypeParser {
     return {
       kind: "ListExpr",
       elements,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseListSpread(): ListSpreadNode {
+    const start = this.advance();
+    const expression = this.parseExpression({ stopTexts: [",", "]"] });
+    return {
+      kind: "ListSpread",
+      expression,
       ...this.nodeRanges(start, this.previousOr(start))
     };
   }
@@ -558,7 +594,11 @@ export class ExpressionParser extends TypeParser {
         return this.tokens[index + 1]?.text === "=>";
       }
       if (expectParameter) {
-        if (token.kind !== "identifier" && token.kind !== "keyword") {
+        if (token.text === "...") {
+          index++;
+        }
+        const parameter = this.tokens[index];
+        if (parameter?.kind !== "identifier" && parameter?.kind !== "keyword") {
           return false;
         }
         expectParameter = false;

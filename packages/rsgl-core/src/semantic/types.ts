@@ -37,6 +37,8 @@ export type RsglBuiltinEffect = "pure" | "io";
 export type RsglTypeKind =
   | "Unknown"
   | "Any"
+  | "Never"
+  | "TypeParameter"
   | "String"
   | "Number"
   | "Boolean"
@@ -65,6 +67,8 @@ export interface RsglObjectProperty {
 
 export interface RsglType {
   kind: RsglTypeKind;
+  /** Internal generic placeholder used only by builtin signatures. */
+  typeParameterName?: string;
   /** Exact scalar value retained for discriminated records and literal unions. */
   literalValue?: string | number | boolean | null;
   elementType?: RsglType;
@@ -133,10 +137,17 @@ export type RsglBlockstateContextualExpressionRecord =
 export interface RsglSignature {
   parameters: RsglParameterSymbol[];
   returnType: RsglType;
+  /** Internal generic parameters instantiated by builtin-specific inference. */
+  typeParameters?: RsglGenericParameter[];
   /** Stable named signature produced by a let-bound lambda value. */
   valueFunction?: true;
   templateOutput?: ResolvedTemplateOutputMetadata;
   templateOutputConflict?: ResolvedTemplateOutputConflict;
+}
+
+export interface RsglGenericParameter {
+  name: string;
+  constraint?: "value" | "iterable" | "record";
 }
 
 export interface RsglTemplateUseRecord {
@@ -165,6 +176,8 @@ export interface RsglParameterSymbol {
   name: string;
   type: RsglType;
   optional: boolean;
+  /** Builtin-only positional rest parameter. User lambdas/templates never set this. */
+  rest?: true;
   node?: RsglNode;
 }
 
@@ -249,6 +262,8 @@ export interface RsglSemanticModel {
   namespace?: string;
   /** Final contextual types selected for expressions at typed boundaries. */
   resolvedExpectedTypes: ReadonlyMap<ExprNode, RsglType>;
+  /** Final expression types retained for completion, hover, and member queries. */
+  resolvedExpressionTypes?: ReadonlyMap<ExprNode, RsglType>;
   /**
    * Enclosing scope of each known import call and unresolved call that may be
    * linked by a bare import. Lets post-resolution validation use the captures
@@ -304,6 +319,8 @@ export interface RsglBindOptions {
 
 export const unknownType: RsglType = { kind: "Unknown" };
 export const anyType: RsglType = { kind: "Any" };
+/** Internal bottom type used by empty collection inference. */
+export const neverType: RsglType = { kind: "Never" };
 export const stringType: RsglType = { kind: "String" };
 export const numberType: RsglType = { kind: "Number" };
 export const booleanType: RsglType = { kind: "Boolean" };

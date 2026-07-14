@@ -1,23 +1,32 @@
 import type {
   ExprNode,
   ObjectExprNode,
-  ObjectPropertyNode
+  ObjectPropertyNode,
+  RsglNode
 } from "../parser";
+import { mergeObjectTypeAlternatives } from "./collectionRecordTypes";
 import { diagnostic } from "./diagnostics";
 import {
   checkExpression,
+  resolveListSpreadElementType,
   type RsglExpressionCheckContext
 } from "./expressionChecker";
+import { objectSpreadTypes } from "./objectSpreadTypes";
 import { lookup } from "./scopes";
 import { combineRsglTypes } from "./typeNormalization";
+import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   type RsglScope,
   type RsglType,
   objectProperty,
-  stringType
+  stringType,
+  unknownType
 } from "./types";
 
 export type BlockstateSelectorSyntax = "inlineObject" | "parenthesizedExpression";
+
+const conditionLogicalKind = 1;
+const conditionStateKind = 2;
 
 /**
  * Checks the state-object domain without changing ordinary ObjectExpr rules.
@@ -90,12 +99,25 @@ export function checkBlockstateCondition(
     ));
   }
 
-  const properties = new Map<string, ReturnType<typeof objectProperty>>();
+  let alternatives = [emptyObjectType()];
   const seenKeys = new Set<string>();
-  let hasLogicalProperty = false;
-  let hasStateProperty = false;
+  let possibleKinds = new Set([0]);
 
   for (const property of condition.properties) {
+    if (property.kind === "ObjectSpread") {
+      const spreadTypes = checkBlockstateObjectSpread(context, property.expression, scope, property);
+      if (spreadTypes) {
+        possibleKinds = combineConditionKinds(
+          possibleKinds,
+          spreadTypes.map(conditionKindForObjectType)
+        );
+        alternatives = mergeObjectTypeAlternatives({
+          context,
+          range: condition.range
+        }, alternatives, spreadTypes);
+      }
+      continue;
+    }
     const key = checkStatePropertyKey(context, property, scope);
     if (key !== undefined) {
       if (seenKeys.has(key)) {
@@ -109,12 +131,19 @@ export function checkBlockstateCondition(
     }
 
     if (key === "OR" || key === "AND") {
-      hasLogicalProperty = true;
-      properties.set(key, objectProperty(checkLogicalConditionValue(context, key, property.value, scope)));
+      possibleKinds = addConditionKind(possibleKinds, conditionLogicalKind);
+      const valueType = checkLogicalConditionValue(context, key, property.value, scope);
+      alternatives = mergeKnownObjectProperty(
+        context,
+        alternatives,
+        key,
+        valueType,
+        condition.range
+      );
       continue;
     }
 
-    hasStateProperty = true;
+    possibleKinds = addConditionKind(possibleKinds, conditionStateKind);
     const valueType = checkStatePropertyValue(context, property.value, scope);
     if (!isPotentialStateScalar(valueType)) {
       context.diagnostics.push(diagnostic(
@@ -124,18 +153,24 @@ export function checkBlockstateCondition(
       ));
     }
     if (key !== undefined) {
-      properties.set(key, objectProperty(valueType));
+      alternatives = mergeKnownObjectProperty(
+        context,
+        alternatives,
+        key,
+        valueType,
+        condition.range
+      );
     }
   }
 
-  if (hasLogicalProperty && hasStateProperty) {
+  if (possibleKinds.has(conditionLogicalKind | conditionStateKind)) {
     context.diagnostics.push(diagnostic(
       "rsgl.mixedBlockstateWhenCondition",
       "Blockstate multipart OR/AND conditions cannot be mixed with state properties in the same object.",
       condition.range
     ));
   }
-  return { kind: "Object", properties };
+  return combineObjectAlternatives(context, alternatives, condition.range);
 }
 
 function checkLogicalConditionValue(
@@ -161,9 +196,24 @@ function checkLogicalConditionValue(
       value.range
     ));
   }
-  const elementTypes = value.elements.map(element =>
-    checkBlockstateCondition(context, element, scope)
-  );
+  const elementTypes = value.elements.map(element => {
+    if (element.kind !== "ListSpread") {
+      return checkBlockstateCondition(context, element, scope);
+    }
+    const spreadType = checkExpression(context, element.expression, scope);
+    const elementType = resolveListSpreadElementType(context, spreadType, element);
+    if (elementType) {
+      if (isDefinitelyNotStateObject(elementType)) {
+        context.diagnostics.push(diagnostic(
+          "rsgl.invalidBlockstateLogicalCondition",
+          `Blockstate multipart ${operator} list spread must contain condition objects.`,
+          element.range
+        ));
+      }
+      return elementType;
+    }
+    return unknownType;
+  });
   return {
     kind: "List",
     elementType: combineRsglTypes(elementTypes)
@@ -175,10 +225,31 @@ function checkInlineStateObject(
   expression: ObjectExprNode,
   scope: RsglScope
 ): RsglType {
-  const properties = new Map<string, ReturnType<typeof objectProperty>>();
+  let alternatives = [emptyObjectType()];
   const seenKeys = new Set<string>();
 
   for (const property of expression.properties) {
+    if (property.kind === "ObjectSpread") {
+      const spreadTypes = checkBlockstateObjectSpread(context, property.expression, scope, property);
+      if (spreadTypes) {
+        for (const spreadType of spreadTypes) {
+          for (const spreadProperty of spreadType.properties?.values() ?? []) {
+            if (!isPotentialStateScalar(spreadProperty.type)) {
+              context.diagnostics.push(diagnostic(
+                "rsgl.invalidBlockstateSelectorValue",
+                "Blockstate selector values must be scalar strings, numbers, or booleans.",
+                property.range
+              ));
+            }
+          }
+        }
+        alternatives = mergeObjectTypeAlternatives({
+          context,
+          range: expression.range
+        }, alternatives, spreadTypes);
+      }
+      continue;
+    }
     const key = checkStatePropertyKey(context, property, scope);
     if (key !== undefined) {
       if (seenKeys.has(key)) {
@@ -200,11 +271,84 @@ function checkInlineStateObject(
       ));
     }
     if (key !== undefined) {
-      properties.set(key, objectProperty(valueType));
+      alternatives = mergeKnownObjectProperty(
+        context,
+        alternatives,
+        key,
+        valueType,
+        expression.range
+      );
     }
   }
 
-  return { kind: "Object", properties };
+  return combineObjectAlternatives(context, alternatives, expression.range);
+}
+
+function checkBlockstateObjectSpread(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  spread: RsglNode
+): RsglType[] | undefined {
+  const type = checkExpression(context, expression, scope);
+  return objectSpreadTypes(context, type, spread);
+}
+
+function emptyObjectType(): RsglType {
+  return { kind: "Object", properties: new Map(), open: false };
+}
+
+function mergeKnownObjectProperty(
+  context: RsglExpressionCheckContext,
+  alternatives: readonly RsglType[],
+  key: string,
+  valueType: RsglType,
+  range: RsglNode["range"]
+): RsglType[] {
+  return mergeObjectTypeAlternatives({ context, range }, alternatives, [{
+    kind: "Object",
+    properties: new Map([[key, objectProperty(valueType)]]),
+    open: false
+  }]);
+}
+
+function combineObjectAlternatives(
+  context: RsglExpressionCheckContext,
+  alternatives: readonly RsglType[],
+  range: RsglNode["range"]
+): RsglType {
+  return combineRsglTypes(
+    alternatives,
+    false,
+    inferredUnionBudgetOptions(context.diagnostics, range)
+  );
+}
+
+function conditionKindForObjectType(type: RsglType): number {
+  let kind = 0;
+  for (const key of type.properties?.keys() ?? []) {
+    kind |= key === "OR" || key === "AND"
+      ? conditionLogicalKind
+      : conditionStateKind;
+  }
+  return kind;
+}
+
+function combineConditionKinds(
+  earlier: ReadonlySet<number>,
+  later: readonly number[]
+): Set<number> {
+  const combined = new Set<number>();
+  for (const left of earlier) {
+    for (const right of later) {
+      combined.add(left | right);
+    }
+  }
+  return combined;
+}
+
+function addConditionKind(kinds: ReadonlySet<number>, kind: number): Set<number> {
+  return new Set(Array.from(kinds, existing => existing | kind));
 }
 
 function checkStatePropertyKey(

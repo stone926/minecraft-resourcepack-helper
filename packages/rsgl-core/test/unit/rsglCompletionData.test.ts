@@ -34,6 +34,20 @@ describe("RSGL completion data", () => {
     assert.strictEqual(topLevel.some(candidate => candidate.label === "template"), false);
     assert.strictEqual(topLevel.some(candidate => candidate.label === "fragment" || candidate.label === "fn"), false);
     assert.strictEqual(topLevel.some(candidate => candidate.label === "cubeAll"), false);
+    for (const label of [
+      "map",
+      "filter",
+      "flatMap",
+      "concat",
+      "join",
+      "entries",
+      "keys",
+      "values",
+      "mergeObjects",
+      "has"
+    ]) {
+      assert.ok(topLevel.some(candidate => candidate.label === label), `missing ${label} completion`);
+    }
 
     const inBlock = getRsglCompletionCandidates("model block stone {\n  ", "model block stone {\n  ".length);
     assert.ok(inBlock.some(candidate => candidate.label === "textures"));

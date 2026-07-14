@@ -17,8 +17,10 @@ import { diagnostic } from "./diagnostics";
 import {
   checkExpression,
   checkExpressionForExpectedType,
+  resolveListSpreadElementType,
   type RsglExpressionCheckContext
 } from "./expressionChecker";
+import { objectSpreadTypes } from "./objectSpreadTypes";
 import { combineRsglTypes } from "./typeNormalization";
 import { formatType, isAssignable } from "./typeRelations";
 import {
@@ -40,6 +42,8 @@ export type RsglBlockstateApplyFactRecorder = (
   scope: RsglScope,
   fact: RsglBlockstateApplyFact
 ) => void;
+
+type ModelPresence = "missing" | "unknown" | "present";
 
 /** Checks the non-global blockstate apply/random AST domain. */
 export function checkBlockstateApplyValue(
@@ -214,6 +218,15 @@ function checkModelObjectList(
 
   const elementTypes: RsglType[] = [];
   for (const element of list.elements) {
+    if (element.kind === "ListSpread") {
+      const spreadType = checkExpression(context, element.expression, scope);
+      const spreadElementType = resolveListSpreadElementType(context, spreadType, element);
+      if (spreadElementType) {
+        elementTypes.push(spreadElementType);
+        validateModelListElementType(context, spreadElementType, element.range);
+      }
+      continue;
+    }
     if (element.kind === "ListExpr") {
       checkExpression(context, element, scope);
       context.diagnostics.push(diagnostic(
@@ -277,12 +290,24 @@ function checkModelObjectExpression(
   scope: RsglScope
 ): RsglType {
   const seen = new Set<string>();
-  let hasModel = false;
-  let hasDynamicKey = false;
+  let possibleModelPresence = new Set<ModelPresence>(["missing"]);
 
   for (const property of expression.properties) {
+    if (property.kind === "ObjectSpread") {
+      const spreadType = checkExpression(context, property.expression, scope);
+      const spreadTypes = objectSpreadTypes(context, spreadType, property);
+      if (spreadTypes) {
+        for (const type of spreadTypes) {
+          validateStructuralModelObjectFields(context, type, property.range);
+        }
+        possibleModelPresence = combineModelPresence(possibleModelPresence, spreadTypes);
+      }
+      continue;
+    }
     if (property.key.kind === "DynamicKey") {
-      hasDynamicKey = true;
+      possibleModelPresence = new Set(Array.from(possibleModelPresence, presence =>
+        presence === "present" ? "present" : "unknown"
+      ));
       checkExpression(context, property.key.expression, scope);
       checkExpression(context, property.value, scope);
       context.diagnostics.push(diagnostic(
@@ -304,11 +329,13 @@ function checkModelObjectExpression(
       ));
     }
     seen.add(name);
-    hasModel ||= name === "model";
+    if (name === "model") {
+      possibleModelPresence = new Set(["present"]);
+    }
     checkModelObjectField(context, name, property.value, scope, property.key.range);
   }
 
-  if (!hasModel && !hasDynamicKey) {
+  if (possibleModelPresence.has("missing")) {
     context.diagnostics.push(diagnostic(
       "rsgl.missingBlockstateModel",
       "A blockstate model object requires a 'model' field.",
@@ -316,6 +343,28 @@ function checkModelObjectExpression(
     ));
   }
   return blockstateModelObjectType;
+}
+
+function combineModelPresence(
+  earlier: ReadonlySet<ModelPresence>,
+  spreadTypes: readonly RsglType[]
+): Set<ModelPresence> {
+  const combined = new Set<ModelPresence>();
+  for (const presence of earlier) {
+    for (const spreadType of spreadTypes) {
+      const model = spreadType.properties?.get("model");
+      if (model && !model.optional) {
+        combined.add("present");
+      } else if (presence === "present") {
+        combined.add("present");
+      } else if (spreadType.open) {
+        combined.add("unknown");
+      } else {
+        combined.add(presence);
+      }
+    }
+  }
+  return combined;
 }
 
 function checkModelObjectField(
@@ -431,6 +480,15 @@ function validateStructuralModelObject(
       range
     ));
   }
+  validateStructuralModelObjectFields(context, type, range);
+}
+
+function validateStructuralModelObjectFields(
+  context: RsglExpressionCheckContext,
+  type: RsglType,
+  range: TextRange
+): void {
+  const properties = type.properties ?? new Map();
   for (const [name, property] of properties) {
     const valueType = property.type;
     if (!isBlockstateModelObjectField(name)) {

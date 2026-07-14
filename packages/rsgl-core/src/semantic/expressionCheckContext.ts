@@ -26,6 +26,8 @@ export interface RsglExpressionCheckContext {
   recordImportCallScope?(expression: CallExprNode, scope: RsglScope): void;
   /** Records the contextual type selected for runtime conversion/validation. */
   recordResolvedExpectedType?(expression: ExprNode, expectedType: RsglType): void;
+  /** Records the final semantic type of an expression for editor tooling. */
+  recordResolvedExpressionType?(expression: ExprNode, type: RsglType): void;
   /** Suppresses cascaded undefined-symbol noise for rejected syntax with its own primary diagnostic. */
   isUndefinedSymbolDiagnosticSuppressed?(name: string): boolean;
 }

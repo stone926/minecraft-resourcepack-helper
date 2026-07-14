@@ -149,7 +149,11 @@ describe("RSGL blockstate parser", () => {
       assert.strictEqual(parenthesized.selectorSyntax, "parenthesizedExpression");
       assert.strictEqual(parenthesized.selector.kind, "ObjectExpr");
       if (parenthesized.selector.kind === "ObjectExpr") {
-        assert.strictEqual(parenthesized.selector.properties[0]?.key.kind, "DynamicKey");
+        const firstEntry = parenthesized.selector.properties[0];
+        assert.strictEqual(firstEntry?.kind, "ObjectProperty");
+        if (firstEntry?.kind === "ObjectProperty") {
+          assert.strictEqual(firstEntry.key.kind, "DynamicKey");
+        }
       }
       assert.strictEqual(parenthesized.value.kind, "BlockstateRandomValue");
       if (parenthesized.value.kind === "BlockstateRandomValue") {

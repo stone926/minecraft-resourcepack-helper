@@ -1,4 +1,5 @@
 import type { JsonValue } from "../ir";
+import { createJsonObject } from "../jsonObjectProperties";
 import { cloneJsonValue, isJsonObject } from "../jsonValues";
 
 export type ValueMergeAction =
@@ -18,7 +19,7 @@ export function valueMergeAction(
       return { kind: "reject" };
     }
     if (isJsonObject(incoming)) {
-      return { kind: "recurse", target: {}, incoming, created: true };
+      return { kind: "recurse", target: createJsonObject(), incoming, created: true };
     }
     return { kind: "assign", value: cloneJsonValue(incoming) };
   }

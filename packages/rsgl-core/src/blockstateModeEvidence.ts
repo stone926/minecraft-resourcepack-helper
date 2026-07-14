@@ -8,11 +8,14 @@ export function staticBlockstateRootFields(expression: ExprNode): Map<string, Rs
   if (expression.kind !== "ObjectExpr") {
     return fields;
   }
-  for (const property of expression.properties) {
-    if (property.key.kind === "Identifier") {
-      fields.set(property.key.text, property.key);
-    } else if (property.key.kind === "StringLiteral") {
-      fields.set(property.key.value, property.key);
+  for (const entry of expression.properties) {
+    if (entry.kind === "ObjectSpread") {
+      continue;
+    }
+    if (entry.key.kind === "Identifier") {
+      fields.set(entry.key.text, entry.key);
+    } else if (entry.key.kind === "StringLiteral") {
+      fields.set(entry.key.value, entry.key);
     }
   }
   return fields;

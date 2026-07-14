@@ -1,5 +1,5 @@
 import { isValidMinecraftNamespace } from "../../../mc-assets/src";
-import { ResourceDeclNode } from "../parser";
+import { ExprNode, ResourceDeclNode } from "../parser";
 import {
   getRsglResourceKindDescriptor,
   isRsglGenericJsonResourceKind,
@@ -15,12 +15,13 @@ import {
   jsonResourceTarget,
   normalizeJsonValue,
   normalizeMcmetaOutputPath,
-  staticText,
   textContent,
   textResourceTarget
 } from "./compilerHelpers";
 import { lowerEquipmentBodySugar } from "./equipmentSugar";
-import { EvaluationContext, evaluateExpression } from "./evaluate";
+import { EvaluationContext, type EvaluationResult } from "./evaluate";
+import { evaluatedOriginAtPath } from "./evaluationProvenance";
+import { evaluationScalarText } from "./evaluatedResourceValues";
 import { BinaryCopyRef, JsonValue, ResourceUnit, RsglMapping } from "./ir";
 import { JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { applyModelImpl } from "./modelImpl";
@@ -58,6 +59,7 @@ export interface ResourceDeclarationCompilerHost {
     mappings?: RsglMapping[]
   ) => ResourceUnit["sourceMap"];
   sourceMapping: (generatedPath: string, sourceRange: SourceRange, context: EvaluationContext) => RsglMapping;
+  evaluateResult: (expression: ExprNode, context: EvaluationContext) => EvaluationResult;
 }
 
 type ResourceCompileHandler = (
@@ -101,7 +103,7 @@ function compileModel(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const idValue = statement.id ? staticText(statement.id, context) : null;
+  const idValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   if (!idValue) {
     host.onError("rsgl.compileMissingResourceId", "Model declaration requires a static id.", statement.range);
     return null;
@@ -137,7 +139,7 @@ function compileItem(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const idValue = statement.id ? staticText(statement.id, context) : null;
+  const idValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   const id = idValue ? parseResourceId(idValue, context.namespace) : null;
   if (!id || !statement.id) {
     host.onError("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
@@ -168,7 +170,7 @@ function compileGenericJsonResource(
     host.onError("rsgl.invalidGenericJsonResource", `${resourceKind} is not a generic JSON resource kind.`, statement.range);
     return null;
   }
-  const idValue = statement.id ? staticText(statement.id, context) : null;
+  const idValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   const id = idValue ? parseResourceId(idValue, context.namespace) : null;
   if (!id || !statement.id) {
     host.onError("rsgl.compileMissingResourceId", `${resourceKind} declaration requires a static id.`, statement.range);
@@ -200,7 +202,7 @@ function compileArbitraryJsonResource(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const targetValue = statement.id ? staticText(statement.id, context) : null;
+  const targetValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   if (!targetValue || !statement.id) {
     host.onError("rsgl.compileMissingResourceId", "JSON declaration requires a static resource id or pack-relative path.", statement.range);
     return null;
@@ -226,7 +228,7 @@ function compileLang(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const idValue = statement.id ? staticText(statement.id, context) : null;
+  const idValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   const id = idValue ? parseResourceId(idValue, context.namespace) : null;
   if (!id || !statement.id) {
     host.onError("rsgl.compileMissingResourceId", "Lang declaration requires a static locale id.", statement.range);
@@ -249,7 +251,7 @@ function compileSounds(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const namespace = soundsNamespace(statement, context);
+  const namespace = soundsNamespace(statement, context, host);
   if (!namespace) {
     host.onError("rsgl.compileMissingResourceId", "Sounds declaration requires a namespace.", statement.range);
     return null;
@@ -272,7 +274,7 @@ function compileTextResource(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const targetValue = statement.id ? staticText(statement.id, context) : null;
+  const targetValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   if (!targetValue || !statement.id) {
     host.onError("rsgl.compileMissingResourceId", "Text declaration requires a static resource id or pack-relative path.", statement.range);
     return null;
@@ -311,7 +313,7 @@ function compileCopyResource(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit | null {
-  const targetValue = statement.id ? staticText(statement.id, context) : null;
+  const targetValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   if (!targetValue || !statement.id) {
     host.onError("rsgl.compileMissingResourceId", "Copy declaration requires a static resource id or pack-relative path.", statement.range);
     return null;
@@ -355,25 +357,42 @@ function compileMcmeta(
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
 ): ResourceUnit[] {
-  const targetValues = mcmetaTargetValues(statement, context, host);
-  if (!targetValues) {
+  const targetEvaluation = mcmetaTargetValues(statement, context, host);
+  if (!targetEvaluation) {
     return [];
   }
   const body = host.compileJsonBody(statement.body, context, "mcmeta");
   const units: ResourceUnit[] = [];
-  for (const idValue of targetValues) {
-    const target = mcmetaTarget(idValue, context.namespace);
+  for (const targetValue of targetEvaluation.targets) {
+    const target = mcmetaTarget(targetValue.value, context.namespace);
     if (!target) {
-      host.onError("rsgl.compileInvalidResourceId", `Invalid mcmeta target '${idValue}'.`, statement.id?.range ?? statement.range);
+      host.onError("rsgl.compileInvalidResourceId", `Invalid mcmeta target '${targetValue.value}'.`, statement.id?.range ?? statement.range);
       continue;
     }
+    const validationOrigin = evaluatedOriginAtPath(
+      targetEvaluation.result,
+      context.sourceFile,
+      targetValue.selectedPath
+    );
+    const resourceIdMappings: RsglMapping[] = statement.id && validationOrigin
+      ? [{
+          ...host.sourceMapping("/@resource-id", statement.id.range, context),
+          validationOrigin,
+          validationOnly: true
+        }]
+      : [];
     units.push({
       id: target.id,
       kind: "mcmeta",
       outputPath: target.outputPath,
       content: body.content,
       mergePolicy: { kind: "errorOnConflict" },
-      sourceMap: host.sourceMap(target.outputPath, statement, context, body.mappings)
+      sourceMap: host.sourceMap(
+        target.outputPath,
+        statement,
+        context,
+        [...body.mappings, ...resourceIdMappings]
+      )
     });
   }
   return units;
@@ -383,17 +402,21 @@ function mcmetaTargetValues(
   statement: ResourceDeclNode,
   context: RsglCompileContext,
   host: ResourceDeclarationCompilerHost
-): string[] | null {
+): {
+  result: EvaluationResult;
+  targets: Array<{ value: string; selectedPath: string }>;
+} | null {
   if (!statement.id) {
     host.onError("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
     return null;
   }
-  const value = evaluateExpression(statement.id, context);
+  const result = host.evaluateResult(statement.id, context);
+  const value = result.value;
   if (Array.isArray(value)) {
-    const targets: string[] = [];
-    for (const item of value) {
+    const targets: Array<{ value: string; selectedPath: string }> = [];
+    for (const [index, item] of value.entries()) {
       if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
-        targets.push(String(item));
+        targets.push({ value: String(item), selectedPath: `/${index}` });
       } else {
         host.onError("rsgl.compileInvalidResourceId", "Mcmeta glob results must be static path strings.", statement.id.range);
       }
@@ -401,17 +424,21 @@ function mcmetaTargetValues(
     if (targets.length === 0) {
       host.onError("rsgl.mcmetaGlobNoMatches", "mcmeta glob did not match any target PNG files.", statement.id.range);
     }
-    return targets;
+    return { result, targets };
   }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return [String(value)];
+    return { result, targets: [{ value: String(value), selectedPath: "" }] };
   }
   host.onError("rsgl.compileMissingResourceId", "Mcmeta declaration requires a static target path.", statement.range);
   return null;
 }
 
-function soundsNamespace(statement: ResourceDeclNode, context: RsglCompileContext): string | null {
-  const idValue = statement.id ? staticText(statement.id, context) : null;
+function soundsNamespace(
+  statement: ResourceDeclNode,
+  context: RsglCompileContext,
+  host: ResourceDeclarationCompilerHost
+): string | null {
+  const idValue = statement.id ? staticResourceText(statement.id, context, host) : null;
   if (!idValue) {
     return null;
   }
@@ -419,6 +446,14 @@ function soundsNamespace(statement: ResourceDeclNode, context: RsglCompileContex
     return idValue;
   }
   return parseResourceId(idValue, context.namespace)?.namespace ?? null;
+}
+
+function staticResourceText(
+  expression: ExprNode,
+  context: EvaluationContext,
+  host: ResourceDeclarationCompilerHost
+): string | null {
+  return evaluationScalarText(host.evaluateResult(expression, context).value);
 }
 
 function mcmetaTarget(value: string, namespace: string): { id?: { namespace: string; path: string }; outputPath: string } | null {

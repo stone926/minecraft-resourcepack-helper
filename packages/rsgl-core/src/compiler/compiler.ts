@@ -33,12 +33,12 @@ import { compileEquipmentLayerStatement } from "./equipmentSugar";
 import {
   childEvaluationContext,
   EvaluationContext,
+  type EvaluationResult,
   EvaluationValue,
   RawGlobLoader,
   bindEvaluationResult,
   evaluateExpression,
   evaluateExpressionResult,
-  expressionEvaluationOrigin,
   hasEvaluationValueBinding
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
@@ -93,6 +93,7 @@ import { RsglTemplateDispatchCache } from "./templateDispatchCache";
 import type { JsonValueSinkOptions } from "./jsonValueLowerer";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { finalizeResourceValueObservations } from "./resourceValueObservationFinalization";
+import { EvaluationItemBudget } from "./evaluationItemBudget";
 
 export {
   compileRsglDirectory,
@@ -122,6 +123,7 @@ interface RsglCompilerOptions {
   onDependency?: (dependency: CompileDependency) => void;
   targetPackFormat?: RsglTargetPackFormat;
   maxEvaluationItems?: number;
+  evaluationItemBudget?: EvaluationItemBudget;
   stdlibRoot?: string;
   blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
   resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
@@ -130,6 +132,11 @@ interface RsglCompilerOptions {
 interface JsonValueLoweringSession {
   invalid: boolean;
   resourceValueObservations: RsglResourceValueObservation[];
+}
+
+interface CachedResourceExpressionResult {
+  context: EvaluationContext;
+  result: EvaluationResult;
 }
 
 export class RsglCompiler {
@@ -256,18 +263,23 @@ export class RsglCompiler {
     };
     const resourceContext: RsglCompileContext = {
       ...context,
+      onEvaluationFailure: () => {
+        session.invalid = true;
+        context.onEvaluationFailure?.();
+      },
       onResourceValueFailure: () => {
         session.invalid = true;
         context.onResourceValueFailure?.();
       }
     };
     this.activeJsonValueLoweringSession = session;
+    const resourceExpressionResults = new Map<ExprNode, CachedResourceExpressionResult>();
     let compiledUnits: ResourceUnit[];
     try {
       compiledUnits = compileResourceDeclaration(
         statement,
         resourceContext,
-        this.resourceDeclarationCompilerHost()
+        this.resourceDeclarationCompilerHost(resourceExpressionResults)
       );
     } finally {
       this.activeJsonValueLoweringSession = previousSession;
@@ -277,12 +289,6 @@ export class RsglCompiler {
     }
     for (const unit of compiledUnits) {
       const referenceOrigins = this.detachValidationOrigins(unit);
-      const resourceIdOrigin = statement.id
-        ? expressionEvaluationOrigin(statement.id, context)
-        : undefined;
-      if (unit.kind === "mcmeta" && resourceIdOrigin) {
-        referenceOrigins.push({ generatedPath: "/@resource-id", ...resourceIdOrigin });
-      }
       if (unit.kind === "model" && externalTextureVariables.length > 0) {
         unit.validation = { ...unit.validation, externalTextureVariables };
       }
@@ -333,7 +339,9 @@ export class RsglCompiler {
     return origins;
   }
 
-  private resourceDeclarationCompilerHost(): ResourceDeclarationCompilerHost {
+  private resourceDeclarationCompilerHost(
+    expressionResults: Map<ExprNode, CachedResourceExpressionResult>
+  ): ResourceDeclarationCompilerHost {
     return {
       fileName: this.options.fileName,
       compileBlockstate: (statement, context) =>
@@ -360,12 +368,24 @@ export class RsglCompiler {
         ),
       onError: (code, message, range) => this.error(code, message, range),
       sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
-      sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context)
+      sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context),
+      evaluateResult: (expression, context) => {
+        const cached = expressionResults.get(expression);
+        if (cached?.context === context) {
+          return cached.result;
+        }
+        const result = evaluateExpressionResult(expression, context);
+        expressionResults.set(expression, { context, result });
+        return result;
+      }
     };
   }
 
   private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
+      if (this.bindPreEvaluatedLocal(statement, statement.name.text, context)) {
+        return;
+      }
       bindEvaluationResult(
         context,
         statement.name.text,
@@ -376,12 +396,34 @@ export class RsglCompiler {
 
   private compileTableDecl(statement: TableDeclNode, context: RsglCompileContext): void {
     if (statement.name) {
+      if (this.bindPreEvaluatedLocal(statement, statement.name.text, context)) {
+        return;
+      }
       const result = evaluateExpressionResult(statement.body, context);
       bindEvaluationResult(context, statement.name.text, {
         ...result,
         value: normalizeJsonValue(result.value)
       });
     }
+  }
+
+  /**
+   * Program/module environments evaluate direct top-level values once so
+   * imports and template closures can capture them. Rebind that durable result
+   * here instead of executing the initializer and charging its shared
+   * collection budget a second time.
+   */
+  private bindPreEvaluatedLocal(
+    statement: LetDeclNode | TableDeclNode,
+    name: string,
+    context: RsglCompileContext
+  ): boolean {
+    const result = this.options.environment?.localEvaluationResults?.get(statement);
+    if (!result) {
+      return false;
+    }
+    bindEvaluationResult(context, name, result, this.options.environment?.fileName);
+    return true;
   }
 
   private compileUseDecl(expression: ExprNode, context: RsglCompileContext): void {
@@ -495,6 +537,9 @@ export class RsglCompiler {
       variables: new Map<string, EvaluationValue>(
         externalValues.map(item => [item.name, item.value])
       ),
+      evaluationItemBudget: this.options.evaluationItemBudget
+        ?? this.options.environment?.evaluationItemBudget
+        ?? new EvaluationItemBudget(this.options.maxEvaluationItems),
       valueOrigins: new Map(externalValues.flatMap(item =>
         item.origin ? [[item.name, item.origin] as const] : []
       )),

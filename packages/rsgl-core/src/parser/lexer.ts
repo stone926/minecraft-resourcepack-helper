@@ -2,6 +2,7 @@ import { isMinecraftResourceLocationText } from "../../../mc-assets/src";
 import { rsglKeywords } from "./keywords";
 import { LexResult, RsglDiagnostic, RsglToken, RsglTokenKind, Trivia } from "./types";
 
+const threeCharacterOperators = new Set(["..."]);
 const twoCharacterOperators = new Set(["->", "=>", "==", "!=", "<=", ">=", "&&", "||", ".."]);
 const singleCharacterOperators = new Set(["=", "?", ":", "+", "-", "*", "/", "%", "!", "<", ">", "|"]);
 const punctuationCharacters = new Set(["{", "}", "[", "]", "(", ")", ",", ".", ";", "@", "#"]);
@@ -112,6 +113,12 @@ class RsglLexer {
 
     if (isDigit(char)) {
       return this.readNumberToken(start, leadingTrivia);
+    }
+
+    const threeCharacters = this.text.slice(this.offset, this.offset + 3);
+    if (threeCharacterOperators.has(threeCharacters)) {
+      this.offset += 3;
+      return this.createToken("operator", start, leadingTrivia);
     }
 
     const twoCharacters = this.text.slice(this.offset, this.offset + 2);

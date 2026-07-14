@@ -51,9 +51,17 @@ function collectLambdaImpureCalls(
     collectLambdaImpureCalls(expression.callee, calls, resolveEffect);
     expression.args.forEach(arg => collectLambdaImpureCalls(arg.value, calls, resolveEffect));
   } else if (expression.kind === "ListExpr") {
-    expression.elements.forEach(element => collectLambdaImpureCalls(element, calls, resolveEffect));
+    expression.elements.forEach(element => collectLambdaImpureCalls(
+      element.kind === "ListSpread" ? element.expression : element,
+      calls,
+      resolveEffect
+    ));
   } else if (expression.kind === "ObjectExpr") {
     expression.properties.forEach(property => {
+      if (property.kind === "ObjectSpread") {
+        collectLambdaImpureCalls(property.expression, calls, resolveEffect);
+        return;
+      }
       if (property.key.kind === "DynamicKey") {
         collectLambdaImpureCalls(property.key.expression, calls, resolveEffect);
       }

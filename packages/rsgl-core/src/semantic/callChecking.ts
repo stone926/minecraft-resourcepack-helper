@@ -2,11 +2,16 @@ import {
   ArgumentNode,
   CallExprNode,
   ExprNode,
+  ObjectExprNode,
   RsglNode,
   TextRange
 } from "../parser";
 import { bindRsglArguments } from "../arguments";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
+import {
+  checkCollectionBuiltinCall,
+  isCollectionBuiltinName
+} from "./collectionBuiltinInference";
 import { diagnostic } from "./diagnostics";
 import { inferProductType, RsglProductSourceIssue } from "./productTypeInference";
 import { createChildScope, lookup } from "./scopes";
@@ -40,6 +45,12 @@ export interface RsglCallCheckHost {
     actual: RsglType,
     node: RsglNode
   ): void;
+  checkContextualObjectExpression(
+    context: RsglExpressionCheckContext,
+    expression: ObjectExprNode,
+    scope: RsglScope,
+    expectedType: RsglType
+  ): RsglType;
 }
 
 export function checkCallExpression(
@@ -47,7 +58,8 @@ export function checkCallExpression(
   expression: CallExprNode,
   scope: RsglScope,
   host: RsglCallCheckHost,
-  allowTemplate = false
+  allowTemplate = false,
+  expectedReturnType?: RsglType
 ): RsglType {
   const { callee, args } = expression;
   const calleeType = host.checkExpression(context, callee, scope);
@@ -97,6 +109,17 @@ export function checkCallExpression(
       `Template '${callee.name.text}' must be invoked with use.`,
       expression.range
     ));
+  }
+
+  if (symbol.kind === "builtin" && isCollectionBuiltinName(callee.name.text)) {
+    return checkCollectionBuiltinCall(
+      context,
+      expression,
+      scope,
+      symbol.signature,
+      host,
+      expectedReturnType
+    );
   }
 
   const argumentTypes = checkArguments(context, symbol.signature, args, scope, expression.range, host);

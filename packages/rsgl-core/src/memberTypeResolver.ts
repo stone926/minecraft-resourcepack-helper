@@ -1,7 +1,7 @@
-import type { ExprNode } from "./parser";
+import type { ExprNode, ObjectPropertyNode } from "./parser";
 import { binaryOperatorResultType, unaryOperatorResultType } from "./semantic/operatorTypes";
 import { resolveIndexType, staticIndexKey } from "./semantic/structuralTypes";
-import { combineRsglTypes } from "./semantic/typeNormalization";
+import { combineRsglTypes, inferListType } from "./semantic/typeNormalization";
 import {
   anyType,
   inferLiteralType,
@@ -30,6 +30,10 @@ export function inferRsglToolingExpressionType(
   if (expression.kind === "IdentifierExpr") {
     return symbolForIdentifier(model, expression)?.type ?? unknownType;
   }
+  const resolvedType = model.resolvedExpressionTypes?.get(expression);
+  if (resolvedType && !containsTypeParameter(resolvedType)) {
+    return resolvedType;
+  }
   if (expression.kind === "MemberExpr") {
     const receiver = inferRsglToolingExpressionType(model, expression.object);
     const property = resolveVisibleRsglMemberProperties(receiver)
@@ -52,32 +56,47 @@ export function inferRsglToolingExpressionType(
     if (expression.callee.kind === "IdentifierExpr") {
       const symbol = symbolForIdentifier(model, expression.callee);
       if (symbol?.signature) {
-        return symbol.signature.returnType;
+        return containsTypeParameter(symbol.signature.returnType)
+          ? unknownType
+          : symbol.signature.returnType;
       }
     }
     const callee = inferRsglToolingExpressionType(model, expression.callee);
     return callee.kind === "Function" ? callee.returnType ?? anyType : unknownType;
   }
   if (expression.kind === "ObjectExpr") {
-    const properties = new Map<string, RsglObjectProperty>();
+    let properties = new Map<string, RsglObjectProperty>();
     let open = false;
-    for (const property of expression.properties) {
-      const name = staticObjectKey(property.key);
+    for (const entry of expression.properties) {
+      if (entry.kind === "ObjectSpread") {
+        const spreadType = inferRsglToolingExpressionType(model, entry.expression);
+        const spreadShape = toolingObjectShape(spreadType);
+        if (!spreadShape) {
+          open = true;
+          continue;
+        }
+        properties = mergeToolingProperties(properties, spreadShape.properties);
+        open ||= spreadShape.open;
+        continue;
+      }
+      const name = staticObjectKey(entry.key);
       if (name === undefined) {
         open = true;
         continue;
       }
-      properties.set(name, objectProperty(inferRsglToolingExpressionType(model, property.value)));
+      properties.set(name, objectProperty(inferRsglToolingExpressionType(model, entry.value)));
     }
     return { kind: "Object", properties, open };
   }
   if (expression.kind === "ListExpr") {
-    return {
-      kind: "List",
-      elementType: combineRsglTypes(
-        expression.elements.map(element => inferRsglToolingExpressionType(model, element))
-      )
-    };
+    return inferListType(expression.elements.map(element => {
+      if (element.kind !== "ListSpread") {
+        return inferRsglToolingExpressionType(model, element);
+      }
+      return toolingListElementType(
+        inferRsglToolingExpressionType(model, element.expression)
+      );
+    }));
   }
   if (expression.kind === "ConditionalExpr") {
     return combineRsglTypes([
@@ -143,7 +162,7 @@ function symbolForIdentifier(
 }
 
 function staticObjectKey(
-  key: Extract<ExprNode, { kind: "ObjectExpr" }>['properties'][number]['key']
+  key: ObjectPropertyNode["key"]
 ): string | undefined {
   if (key.kind === "Identifier") {
     return key.text;
@@ -157,10 +176,80 @@ function staticObjectKey(
   return undefined;
 }
 
+function toolingListElementType(type: RsglType): RsglType {
+  const branches = flattenUnion(type);
+  return branches.length > 0 && branches.every(branch => branch.kind === "List")
+    ? combineRsglTypes(branches.map(branch => branch.elementType ?? unknownType))
+    : unknownType;
+}
+
+function toolingObjectShape(type: RsglType): {
+  properties: Map<string, RsglObjectProperty>;
+  open: boolean;
+} | undefined {
+  const branches = flattenUnion(type);
+  if (branches.length === 0 || branches.some(branch => branch.kind !== "Object")) {
+    return undefined;
+  }
+
+  const objectBranches = branches as Array<RsglType & { kind: "Object" }>;
+  const names = new Set(objectBranches.flatMap(branch => [
+    ...(branch.properties?.keys() ?? [])
+  ]));
+  const properties = new Map<string, RsglObjectProperty>();
+  for (const name of names) {
+    const branchProperties = objectBranches
+      .map(branch => branch.properties?.get(name))
+      .filter((property): property is RsglObjectProperty => Boolean(property));
+    properties.set(name, objectProperty(
+      combineRsglTypes(branchProperties.map(property => property.type)),
+      branchProperties.length < objectBranches.length
+        || branchProperties.some(property => property.optional)
+    ));
+  }
+  return {
+    properties,
+    open: objectBranches.some(branch => branch.open)
+  };
+}
+
+function mergeToolingProperties(
+  earlier: ReadonlyMap<string, RsglObjectProperty>,
+  later: ReadonlyMap<string, RsglObjectProperty>
+): Map<string, RsglObjectProperty> {
+  const result = new Map(earlier);
+  for (const [name, property] of later) {
+    const previous = result.get(name);
+    result.set(name, property.optional && previous
+      ? objectProperty(
+        combineRsglTypes([previous.type, property.type]),
+        previous.optional
+      )
+      : property);
+  }
+  return result;
+}
+
 function flattenUnion(type: RsglType): RsglType[] {
   return type.kind === "Union"
     ? (type.options ?? []).flatMap(flattenUnion)
     : [type];
+}
+
+function containsTypeParameter(type: RsglType, seen = new Set<RsglType>()): boolean {
+  if (seen.has(type)) {
+    return false;
+  }
+  seen.add(type);
+  return type.kind === "TypeParameter"
+    || Boolean(type.elementType && containsTypeParameter(type.elementType, seen))
+    || Boolean(type.returnType && containsTypeParameter(type.returnType, seen))
+    || Boolean(type.parameters?.some(parameter => containsTypeParameter(parameter, seen)))
+    || Boolean(type.options?.some(option => containsTypeParameter(option, seen)))
+    || Boolean(type.indexType && containsTypeParameter(type.indexType, seen))
+    || Boolean(Array.from(type.properties?.values() ?? []).some(property =>
+      containsTypeParameter(property.type, seen)
+    ));
 }
 
 function sameRange(

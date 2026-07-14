@@ -39,6 +39,27 @@ describe("RSGL lexer", () => {
     assert.ok(result.tokens.some(token => token.kind === "operator" && token.text === "?"));
   });
 
+  it("matches ellipsis before range and dot tokens", () => {
+    const result = lexRsgl("... .. . .... 1...2 1..2 1.2");
+    const tokens = result.tokens.filter(token => token.kind !== "endOfFile");
+
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.deepStrictEqual(tokens.map(token => [token.kind, token.text]), [
+      ["operator", "..."],
+      ["operator", ".."],
+      ["punctuation", "."],
+      ["operator", "..."],
+      ["punctuation", "."],
+      ["number", "1"],
+      ["operator", "..."],
+      ["number", "2"],
+      ["number", "1"],
+      ["operator", ".."],
+      ["number", "2"],
+      ["number", "1.2"]
+    ]);
+  });
+
   it("classifies every model geometry descriptor keyword", () => {
     assert.strictEqual(
       new Set(rsglModelGeometryKeywords).size,

@@ -9,6 +9,7 @@ import {
 import {
   type CallExprNode,
   type ExprNode,
+  type ListElementNode,
   type ObjectExprNode,
   type RsglModule,
   parseRsgl
@@ -59,7 +60,7 @@ describe("RSGL typed resource id semantics", () => {
     const textures = objectValue(bundle, "textures");
     assert.ok(textures.kind === "ListExpr");
     assert.strictEqual(factKind(model, textures), "List");
-    assert.deepStrictEqual(textures.elements.map(element => factKind(model, element)), [
+    assert.deepStrictEqual(textures.elements.map(element => listElementFactKind(model, element)), [
       "TextureId",
       "TextureId"
     ]);
@@ -70,7 +71,7 @@ describe("RSGL typed resource id semantics", () => {
 
     const refs = letValue(module, "refs");
     assert.ok(refs.kind === "ListExpr");
-    assert.deepStrictEqual(refs.elements.map(element => factKind(model, element)), [
+    assert.deepStrictEqual(refs.elements.map(element => listElementFactKind(model, element)), [
       "TextureVariable",
       "TextureId"
     ]);
@@ -272,12 +273,22 @@ function asObject(expression: ExprNode): ObjectExprNode {
 }
 
 function objectValue(expression: ObjectExprNode, name: string): ExprNode {
-  const property = expression.properties.find(candidate =>
-    (candidate.key.kind === "Identifier" && candidate.key.text === name)
-    || (candidate.key.kind === "StringLiteral" && candidate.key.value === name)
-  );
-  assert.ok(property, `missing object field ${name}`);
-  return property.value;
+  for (const entry of expression.properties) {
+    if (entry.kind === "ObjectSpread") {
+      continue;
+    }
+    if ((entry.key.kind === "Identifier" && entry.key.text === name)
+      || (entry.key.kind === "StringLiteral" && entry.key.value === name)) {
+      return entry.value;
+    }
+  }
+  assert.fail(`missing object field ${name}`);
+}
+
+function listElementFactKind(model: RsglSemanticModel, element: ListElementNode): string {
+  return element.kind === "ListSpread"
+    ? `spread:${factKind(model, element.expression)}`
+    : factKind(model, element);
 }
 
 function onlyCall(module: RsglModule, name: string): CallExprNode {

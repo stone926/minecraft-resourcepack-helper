@@ -10,6 +10,21 @@ import {
 } from "./helpers/textMateGrammar";
 
 describe("RSGL TextMate grammar", () => {
+  it("highlights spread as one operator without changing range tokenization", () => {
+    const grammar = readGrammar();
+    const source = [
+      "let combined = [head, ...middle, ...tail]",
+      "let derived = { ...base, value: true }",
+      "let interval = 0..3"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "...", "keyword.operator.rsgl", 0);
+    expectScope(tokenization, source, "...", "keyword.operator.rsgl", 1);
+    expectScope(tokenization, source, "...", "keyword.operator.rsgl", 2);
+    expectScope(tokenization, source, "..", "keyword.operator.rsgl");
+  });
+
   it("highlights structural type aliases, optional fields, and nested type names", () => {
     const grammar = readGrammar();
     const source = [

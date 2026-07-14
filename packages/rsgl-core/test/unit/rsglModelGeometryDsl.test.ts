@@ -1,5 +1,10 @@
 import * as assert from "node:assert";
-import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
+import * as path from "node:path";
+import {
+  compileSourceWithUncheckedExterns,
+  expectNoDiagnostics,
+  unitByPath
+} from "./helpers/compile";
 
 describe("RSGL model geometry DSL", () => {
   it("lowers model geometry DSL boxes to vanilla model elements", () => {
@@ -54,5 +59,29 @@ describe("RSGL model geometry DSL", () => {
     assert.ok(mappingPaths.includes("/elements/0/from"));
     assert.ok(mappingPaths.includes("/elements/0/faces/west/cullface"));
     assert.ok(mappingPaths.includes("/elements/1/faces/east/cullface"));
+  });
+
+  it("maps an indexed collection texture to the selected element source", () => {
+    const fileName = path.resolve("pack", "mapped-model-texture.rsgl");
+    const lines = [
+      "let textures = [\"minecraft:block/first\", \"minecraft:block/second\"]",
+      "model block mapped_texture {",
+      "  texture layer map(textures, texture => texture)[1]",
+      "}"
+    ];
+    const source = lines.join("\n");
+    const result = compileSourceWithUncheckedExterns(lines, { fileName });
+
+    expectNoDiagnostics(result);
+    const model = unitByPath(result, "models/block/mapped_texture.json");
+    const origin = model.validation?.referenceOrigins?.find(candidate =>
+      candidate.generatedPath === "/textures/layer"
+    );
+    assert.ok(origin, "Expected an exact validation origin for /textures/layer");
+    assert.strictEqual(origin.sourceFile, fileName);
+    assert.strictEqual(
+      source.slice(origin.sourceRange.start, origin.sourceRange.end),
+      "\"minecraft:block/second\""
+    );
   });
 });

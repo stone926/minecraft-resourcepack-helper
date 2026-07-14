@@ -10,20 +10,28 @@ import {
   type EvaluationOrigin,
   bindEvaluationResult,
   evaluateExpression,
-  evaluateExpressionResult,
-  expressionEvaluationPathOrigins
+  evaluateExpressionResult
 } from "./evaluate";
 import { applyBaseDocument } from "./base/application";
 import type { FragmentMergePolicy } from "./fragmentMerge";
 import { JsonValue } from "./ir";
+import {
+  createJsonObject,
+  jsonObjectEntries,
+  setJsonObjectProperty
+} from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
-import { evaluateJsonExpression, type JsonValueSinkOptions } from "./jsonValueLowerer";
+import {
+  evaluateJsonExpressionWithResult,
+  type EvaluatedJsonExpression,
+  type JsonValueSinkOptions
+} from "./jsonValueLowerer";
 import { forEachLoopContext } from "./looping";
 import {
   applyResourceBodyFragment,
   emitResourceBodyMapping as emitMapping
 } from "./resourceBodyContentMerge";
-import { appendGeneratedPath } from "./sourcePaths";
+import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 
 export interface ResourceBodyCompileOptions extends JsonValueSinkOptions {
   onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => ResourceBodyFragment | undefined;
@@ -72,7 +80,7 @@ function resourceBodyToObjectAtPath(
   path: string,
   allowBase: boolean
 ): Record<string, JsonValue> {
-  const result: Record<string, JsonValue> = {};
+  const result = createJsonObject();
   body.statements.forEach((statement, index) => {
     applyResourceStatement(result, statement, context, options, path, allowBase, index === 0);
   });
@@ -94,10 +102,17 @@ function applyResourceStatement(
 ): void {
   if (statement.kind === "PropertyStmt") {
     const generatedPath = appendGeneratedPath(path, statement.name.text);
-    const value = evaluateJsonExpression(statement.value, context, options, generatedPath);
-    if (value !== undefined) {
-      result[statement.name.text] = value;
-      emitExpressionMapping(options, generatedPath, statement.value, statement.range, context);
+    const evaluated = evaluateJsonExpressionWithResult(statement.value, context, options, generatedPath);
+    if (evaluated) {
+      setJsonObjectProperty(result, statement.name.text, evaluated.value);
+      emitExpressionMapping(
+        options,
+        generatedPath,
+        statement.value,
+        evaluated,
+        statement.range,
+        context
+      );
     }
   } else if (statement.kind === "LetDecl") {
     if (statement.name) {
@@ -111,13 +126,24 @@ function applyResourceStatement(
     if (statement.body) {
       const sectionPath = appendGeneratedPath(path, statement.name.text);
       emitMapping(options, sectionPath, statement.range, context);
-      result[statement.name.text] = resourceBodyToObjectAtPath(statement.body, context, options, sectionPath, false);
+      setJsonObjectProperty(
+        result,
+        statement.name.text,
+        resourceBodyToObjectAtPath(statement.body, context, options, sectionPath, false)
+      );
     } else if (statement.value) {
       const generatedPath = appendGeneratedPath(path, statement.name.text);
-      const value = evaluateJsonExpression(statement.value, context, options, generatedPath);
-      if (value !== undefined) {
-        result[statement.name.text] = value;
-        emitExpressionMapping(options, generatedPath, statement.value, statement.range, context);
+      const evaluated = evaluateJsonExpressionWithResult(statement.value, context, options, generatedPath);
+      if (evaluated) {
+        setJsonObjectProperty(result, statement.name.text, evaluated.value);
+        emitExpressionMapping(
+          options,
+          generatedPath,
+          statement.value,
+          evaluated,
+          statement.range,
+          context
+        );
       }
     }
   } else if (statement.kind === "IfStmt") {
@@ -136,16 +162,13 @@ function applyResourceStatement(
   } else if (statement.kind === "ForStmt") {
     applyForStatement(result, statement, context, options, path);
   } else if (statement.kind === "MergeStmt") {
-    const value = evaluateJsonExpression(statement.value, context, options, path);
-    if (value === undefined) {
+    const evaluated = evaluateJsonExpressionWithResult(statement.value, context, options, path);
+    if (!evaluated) {
       return;
     }
+    const value = evaluated.value;
     if (isJsonObject(value)) {
-      const validationMappings: ResourceBodyMapping[] = expressionEvaluationPathOrigins(
-        statement.value,
-        context,
-        ""
-      ).map(origin => ({
+      const validationMappings: ResourceBodyMapping[] = evaluated.result.pathOrigins.map(origin => ({
         generatedPath: origin.generatedPath,
         sourceRange: statement.value.range,
         context,
@@ -183,7 +206,9 @@ function applyResourceStatement(
       })
     });
     if (base) {
-      Object.assign(result, base.content);
+      for (const [key, value] of jsonObjectEntries(base.content)) {
+        setJsonObjectProperty(result, key, value);
+      }
       base.mappings.forEach(mapping => options.onMapping?.(mapping));
     }
   } else {
@@ -198,12 +223,25 @@ function emitExpressionMapping(
   options: ResourceBodyCompileOptions,
   generatedPath: string,
   expression: ExprNode,
+  evaluated: EvaluatedJsonExpression,
   fallbackRange: TextRange,
   context: EvaluationContext
 ): void {
   emitMapping(options, generatedPath, fallbackRange, context);
-  for (const origin of expressionEvaluationPathOrigins(expression, context, generatedPath)) {
-    emitMapping(options, origin.generatedPath, fallbackRange, context, origin, true);
+  const origins = expression.kind === "CallExpr"
+    && expression.callee.kind === "IdentifierExpr"
+    && expression.callee.name.text === "seq"
+    ? evaluated.result.pathOrigins.filter(origin => origin.generatedPath !== "")
+    : evaluated.result.pathOrigins;
+  for (const origin of origins) {
+    emitMapping(
+      options,
+      joinGeneratedPath(generatedPath, origin.generatedPath),
+      fallbackRange,
+      context,
+      origin,
+      true
+    );
   }
 }
 function resourceBodyFragmentFromResult(result: ResourceBodySpecialResult | undefined): ResourceBodyFragment | undefined {

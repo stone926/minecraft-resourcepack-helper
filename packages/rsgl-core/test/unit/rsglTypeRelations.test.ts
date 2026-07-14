@@ -2,13 +2,43 @@ import * as assert from "node:assert";
 import {
   combineRsglTypes,
   formatType,
+  inferListType,
   isAssignable,
+  neverType,
   normalizeRsglType,
   objectProperty,
   type RsglType
 } from "../../src/semantic";
 
 describe("RSGL structural type relations", () => {
+  it("uses Never as an internal bottom type for empty lists", () => {
+    const empty = inferListType([]);
+
+    assert.strictEqual(empty.kind, "List");
+    assert.strictEqual(empty.elementType?.kind, "Never");
+    assert.strictEqual(isAssignable({ kind: "String" }, neverType), true);
+    assert.strictEqual(isAssignable(neverType, { kind: "String" }), false);
+    assert.strictEqual(isAssignable(
+      { kind: "List", elementType: { kind: "String" } },
+      empty
+    ), true);
+    assert.strictEqual(
+      formatType(combineRsglTypes([neverType, { kind: "String" }])),
+      "String"
+    );
+    assert.strictEqual(combineRsglTypes([]).kind, "Unknown");
+  });
+
+  it("keeps builtin type parameters distinct in structural identities", () => {
+    const first: RsglType = { kind: "TypeParameter", typeParameterName: "T" };
+    const second: RsglType = { kind: "TypeParameter", typeParameterName: "U" };
+
+    assert.strictEqual(formatType(first), "T");
+    assert.strictEqual(isAssignable(first, first), true);
+    assert.strictEqual(isAssignable(first, second), false);
+    assert.strictEqual(formatType(combineRsglTypes([first, second])), "T | U");
+  });
+
   it("flattens, deduplicates, and deterministically orders unions", () => {
     const first = combineRsglTypes([
       { kind: "String" },

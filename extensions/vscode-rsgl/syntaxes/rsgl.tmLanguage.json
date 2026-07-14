@@ -575,7 +575,7 @@
       "patterns": [
         {
           "name": "keyword.operator.rsgl",
-          "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.|[=?:+\\-*/%<>!#]"
+          "match": "=>|->|==|!=|<=|>=|&&|\\|\\||\\.\\.\\.|\\.\\.|[=?:+\\-*/%<>!#]"
         },
         {
           "name": "invalid.deprecated.blockstate-model-apply.rsgl",

@@ -93,6 +93,33 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
+  it("keeps list and object spread markers attached to their operands", () => {
+    const formatted = formatRsglText([
+      "let combined = [",
+      "head",
+      "...middle",
+      "tail",
+      "]",
+      "let derived = {",
+      "...base",
+      "particle: texture",
+      "}"
+    ].join("\n"));
+
+    assert.strictEqual(formatted, [
+      "let combined = [",
+      "  head",
+      "  ...middle",
+      "  tail",
+      "]",
+      "let derived = {",
+      "  ...base",
+      "  particle: texture",
+      "}"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
   it("indents legacy blockstate syntax without migrating its tokens", () => {
     const formatted = formatRsglText([
       "blockstate stairs {",

@@ -2,6 +2,7 @@ import {
   anyType,
   jsonType,
   missingType,
+  neverType,
   objectProperty,
   RsglType,
   unknownType
@@ -96,19 +97,25 @@ export function combineRsglTypes(
       ? { ...unknownType, explicitAnnotation: true }
       : unknownType;
   }
-  if (flattened.some(type => type.kind === "Any")) {
+  const present = flattened.filter(type => type.kind !== "Never");
+  if (present.length === 0) {
+    return inheritedExplicitAnnotation
+      ? { ...neverType, explicitAnnotation: true }
+      : neverType;
+  }
+  if (present.some(type => type.kind === "Any")) {
     return inheritedExplicitAnnotation
       ? { ...anyType, explicitAnnotation: true }
       : anyType;
   }
-  if (flattened.some(type => type.kind === "Unknown")) {
+  if (present.some(type => type.kind === "Unknown")) {
     return inheritedExplicitAnnotation
       ? { ...unknownType, explicitAnnotation: true }
       : unknownType;
   }
 
   const unique = new Map<string, RsglType>();
-  for (const type of flattened) {
+  for (const type of present) {
     const key = rsglTypeKey(type);
     const existing = unique.get(key);
     if (!existing || type.explicitAnnotation === true) {
@@ -146,7 +153,9 @@ export function inferListType(
 ): RsglType {
   return {
     kind: "List",
-    elementType: combineRsglTypes(elementTypes, false, budgetOptions)
+    elementType: elementTypes.length === 0
+      ? neverType
+      : combineRsglTypes(elementTypes, false, budgetOptions)
   };
 }
 
@@ -285,6 +294,8 @@ function rsglTypeKeyInternal(type: RsglType, ancestors: Set<RsglType>): string {
         .sort((left, right) => left.localeCompare(right));
       return `Union<${Array.from(new Set(options)).join("|")}>`;
     }
+    case "TypeParameter":
+      return `TypeParameter<${type.typeParameterName ?? "?"}>`;
     default:
       return type.contextualEscapeOnly
         ? `${type.kind}<contextual-escape-only>`

@@ -7,13 +7,16 @@ import {
 import {
   ExprNode,
   LetDeclNode,
+  ListExprNode,
   ObjectExprNode,
   RsglNode,
   TextRange
 } from "../parser";
 import { checkCallExpression, RsglCallCheckHost } from "./callChecking";
+import { isCollectionBuiltinName } from "./collectionBuiltinInference";
 import {
   checkContextualObject,
+  ContextualObjectCheckOptions,
   ContextualObjectCheckHost,
   selectContextualObjectArm
 } from "./contextualObjectChecking";
@@ -42,6 +45,7 @@ import {
   inferLiteralType,
   jsonType,
   modelIdType,
+  neverType,
   numberType,
   resourceIdType,
   RsglScope,
@@ -59,7 +63,9 @@ export type { RsglExpressionCheckContext } from "./expressionCheckContext";
 const callCheckHost: RsglCallCheckHost = {
   checkExpression,
   checkExpressionForExpectedType,
-  checkAssignable
+  checkAssignable,
+  checkContextualObjectExpression: (context, expression, scope, expectedType) =>
+    checkObject(context, expression, scope, expectedType, { preserveInferredShape: true })
 };
 
 const contextualObjectCheckHost: ContextualObjectCheckHost = {
@@ -68,7 +74,17 @@ const contextualObjectCheckHost: ContextualObjectCheckHost = {
   checkAssignable
 };
 
-export function checkExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
+export function checkExpression(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope
+): RsglType {
+  const type = checkExpressionCore(context, expression, scope);
+  context.recordResolvedExpressionType?.(expression, type);
+  return type;
+}
+
+function checkExpressionCore(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
   if (expression.kind === "IdentifierExpr") {
     const symbol = lookup(scope, expression.name.text);
     context.references.push({ name: expression.name.text, range: expression.range, symbol });
@@ -89,8 +105,7 @@ export function checkExpression(context: RsglExpressionCheckContext, expression:
     return stringType;
   }
   if (expression.kind === "ListExpr") {
-    const elementTypes = expression.elements.map(element => checkExpression(context, element, scope));
-    return inferListType(elementTypes, inferredUnionBudgetOptions(context.diagnostics, expression.range));
+    return checkListExpression(context, expression, scope);
   }
   if (expression.kind === "ObjectExpr") {
     return checkObject(context, expression, scope);
@@ -268,6 +283,38 @@ export function checkExpressionForExpectedType(
   scope: RsglScope,
   expectedType: RsglType
 ): RsglType {
+  const type = checkExpressionForExpectedTypeCore(
+    context,
+    expression,
+    scope,
+    expectedType
+  );
+  context.recordResolvedExpressionType?.(expression, type);
+  return type;
+}
+
+function checkExpressionForExpectedTypeCore(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope,
+  expectedType: RsglType
+): RsglType {
+  if (
+    expression.kind === "CallExpr"
+    && expression.callee.kind === "IdentifierExpr"
+    && isCollectionBuiltinName(expression.callee.name.text)
+    && lookup(scope, expression.callee.name.text)?.kind === "builtin"
+  ) {
+    recordResolvedExpectedType(context, expression, expectedType);
+    return checkCallExpression(
+      context,
+      expression,
+      scope,
+      callCheckHost,
+      false,
+      expectedType
+    );
+  }
   if (expression.kind === "LambdaExpr" && expectedType.kind === "Function") {
     recordResolvedExpectedType(context, expression, expectedType);
     return checkLambdaExpression(
@@ -341,6 +388,28 @@ export function checkExpressionForExpectedType(
   if (expression.kind === "ListExpr" && contextualListType) {
     recordResolvedExpectedType(context, expression, contextualListType);
     const elementTypes = expression.elements.map(element => {
+      if (element.kind === "ListSpread") {
+        const expectedSpreadType: RsglType = {
+          kind: "List",
+          elementType: contextualListType.elementType ?? unknownType
+        };
+        const diagnosticStart = context.diagnostics.length;
+        const spreadType = checkExpressionForExpectedType(
+          context,
+          element.expression,
+          scope,
+          expectedSpreadType
+        );
+        const spreadElementType = resolveListSpreadElementType(context, spreadType, element);
+        if (
+          spreadElementType
+          && !isAssignable(expectedSpreadType, spreadType)
+          && context.diagnostics.length === diagnosticStart
+        ) {
+          checkAssignable(context, expectedSpreadType, spreadType, element.expression);
+        }
+        return spreadElementType ?? unknownType;
+      }
       const actualType = checkExpressionForExpectedType(
         context,
         element,
@@ -670,7 +739,17 @@ export function validateTextureRefExpressionSyntax(
 
 export function checkEquipmentLayerListExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): void {
   if (expression.kind === "ListExpr") {
-    expression.elements.forEach(element => checkEquipmentLayerNameExpression(context, element, scope));
+    expression.elements.forEach(element => {
+      if (element.kind === "ListSpread") {
+        const spreadType = checkExpression(context, element.expression, scope);
+        const elementType = resolveListSpreadElementType(context, spreadType, element);
+        if (elementType) {
+          checkAssignable(context, stringType, elementType, element);
+        }
+      } else {
+        checkEquipmentLayerNameExpression(context, element, scope);
+      }
+    });
     return;
   }
   checkEquipmentLayerNameExpression(context, expression, scope);
@@ -710,15 +789,83 @@ export function checkObject(
   context: RsglExpressionCheckContext,
   expression: ObjectExprNode,
   scope: RsglScope,
-  expectedType?: RsglType
+  expectedType?: RsglType,
+  options?: ContextualObjectCheckOptions
 ): RsglType {
   return checkContextualObject(
     context,
     expression,
     scope,
     contextualObjectCheckHost,
-    expectedType
+    expectedType,
+    options
   );
+}
+
+function checkListExpression(
+  context: RsglExpressionCheckContext,
+  expression: ListExprNode,
+  scope: RsglScope
+): RsglType {
+  const elementTypes: RsglType[] = [];
+  for (const element of expression.elements) {
+    if (element.kind !== "ListSpread") {
+      elementTypes.push(checkExpression(context, element, scope));
+      continue;
+    }
+    const spreadType = checkExpression(context, element.expression, scope);
+    const spreadElementType = resolveListSpreadElementType(context, spreadType, element);
+    if (spreadElementType) {
+      elementTypes.push(spreadElementType);
+    }
+  }
+  return inferListType(
+    elementTypes,
+    inferredUnionBudgetOptions(context.diagnostics, expression.range)
+  );
+}
+
+export function resolveListSpreadElementType(
+  context: RsglExpressionCheckContext,
+  spreadType: RsglType,
+  spread: RsglNode
+): RsglType | undefined {
+  if (spreadType.kind === "List") {
+    return spreadType.elementType ?? unknownType;
+  }
+  if (spreadType.kind === "Union") {
+    const options = spreadType.options ?? [];
+    if (options.every(option =>
+      option.kind === "List"
+      || option.kind === "Unknown"
+      || option.kind === "Any"
+      || option.kind === "Never"
+    )) {
+      const elementTypes = options.flatMap(option => {
+        if (option.kind === "List") {
+          return [option.elementType ?? unknownType];
+        }
+        if (option.kind === "Never") {
+          return [];
+        }
+        return [option];
+      });
+      return combineRsglTypes(
+        elementTypes.length > 0 ? elementTypes : [neverType],
+        false,
+        inferredUnionBudgetOptions(context.diagnostics, spread.range)
+      );
+    }
+  }
+  if (spreadType.kind === "Unknown" || spreadType.kind === "Any") {
+    return spreadType;
+  }
+  context.diagnostics.push(diagnostic(
+    "rsgl.invalidListSpread",
+    `List spread requires a List value, got ${formatType(spreadType)}.`,
+    spread.range
+  ));
+  return undefined;
 }
 
 export function checkAssignable(context: RsglExpressionCheckContext, expected: RsglType, actual: RsglType, node: RsglNode): void {
@@ -859,7 +1006,11 @@ function reportStaticListIndexBounds(
   context: Pick<RsglExpressionCheckContext, "diagnostics">,
   expression: Extract<ExprNode, { kind: "IndexExpr" }>
 ): void {
-  if (expression.object.kind !== "ListExpr" || expression.index.kind !== "NumberLiteral") {
+  if (
+    expression.object.kind !== "ListExpr"
+    || expression.index.kind !== "NumberLiteral"
+    || expression.object.elements.some(element => element.kind === "ListSpread")
+  ) {
     return;
   }
   const index = expression.index.value;

@@ -175,7 +175,7 @@ describe("RSGL compiler emit and write pipeline", () => {
     const sourceMap = JSON.parse(emittedContent(files.find(file => file.outputPath.endsWith("end.txt.rsgl.map")))) as {
       mappings?: Array<{ generatedPath?: string; sourceFile?: string }>;
     };
-    assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), ["", "", ""]);
+    assert.deepStrictEqual(sourceMap.mappings?.map(mapping => mapping.generatedPath), ["", ""]);
     assert.strictEqual(sourceMap.mappings?.[0]?.sourceFile, path.resolve("pack", "main.rsgl"));
 
     const manifest = JSON.parse(emittedContent(files.find(file => file.outputPath === "rsgl.manifest.json"))) as {

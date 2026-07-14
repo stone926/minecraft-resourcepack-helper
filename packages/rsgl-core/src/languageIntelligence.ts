@@ -41,6 +41,7 @@ export interface RsglSignatureParameterInfo {
   label: string;
   type: RsglType;
   optional: boolean;
+  rest?: true;
 }
 
 /** A protocol-neutral callable presentation shared by hover and signature help. */
@@ -226,9 +227,10 @@ export function callablePresentation(
   }
   const parameters = signature.parameters.map(parameter => ({
     name: parameter.name,
-    label: `${parameter.name}: ${formatType(parameter.type)}${parameter.optional ? " = ..." : ""}`,
+    label: `${parameter.rest ? "..." : ""}${parameter.name}: ${formatType(parameter.type)}${parameter.optional ? " = ..." : ""}`,
     type: parameter.type,
-    optional: parameter.optional
+    optional: parameter.optional,
+    ...(parameter.rest ? { rest: true as const } : {})
   }));
   const label = `${displayName}(${parameters.map(parameter => parameter.label).join(", ")}): ${formatType(signature.returnType)}`;
   return {

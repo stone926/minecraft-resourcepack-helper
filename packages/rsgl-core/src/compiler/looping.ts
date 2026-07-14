@@ -13,7 +13,8 @@ import {
   selectEvaluationPathOrigins,
   selectEvaluationValueIssues
 } from "./evaluate";
-import { JsonValue } from "./ir";
+import { jsonObjectEntries } from "./jsonObjectProperties";
+import { isJsonObject } from "./jsonValues";
 
 export function createLoopBindings(names: string[], value: EvaluationValue): Record<string, EvaluationValue> {
   const bindings: Record<string, EvaluationValue> = {};
@@ -24,8 +25,8 @@ export function createLoopBindings(names: string[], value: EvaluationValue): Rec
     return bindings;
   }
 
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const entries = Object.entries(value as Record<string, JsonValue>);
+  if (isJsonObject(value)) {
+    const entries = jsonObjectEntries(value);
     names.forEach((name, index) => {
       bindings[name] = entries[index]?.[1];
     });
@@ -113,10 +114,18 @@ export function forEachLoopContext(
       ...(context.valueIssues ?? []),
       ...bindingValueIssues
     ]);
+    let evaluationFailed = false;
+    const parentEvaluationFailure = iterableContext.onEvaluationFailure;
+    iterableContext.onEvaluationFailure = () => {
+      evaluationFailed = true;
+      parentEvaluationFailure?.();
+    };
     const iterableResult = evaluateExpressionResult(dimension.iterable, iterableContext);
     const iterable = iterableResult.value;
     if (!Array.isArray(iterable)) {
-      onError("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", dimension.iterable.range);
+      if (!evaluationFailed) {
+        onError("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", dimension.iterable.range);
+      }
       return;
     }
     const iterableOrigins = materializeEvaluationPathOrigins(
@@ -135,8 +144,8 @@ export function forEachLoopContext(
       const nextOrigins = new Map(bindingOrigins);
       const nextPathOrigins = new Map(bindingPathOrigins);
       const nextValueIssues = new Map(bindingValueIssues);
-      const objectEntries = value && typeof value === "object" && !Array.isArray(value)
-        ? Object.entries(value as Record<string, JsonValue>)
+      const objectEntries = isJsonObject(value)
+        ? jsonObjectEntries(value)
         : [];
       for (const [bindingIndex, binding] of dimension.bindings.entries()) {
         const bindingItemOrigins = dimension.bindings.length <= 1

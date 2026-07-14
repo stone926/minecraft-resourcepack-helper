@@ -46,14 +46,17 @@ function collectStaticObjectModes(expression: ExprNode, modes: Set<InferredBlock
   if (expression.kind !== "ObjectExpr") {
     return;
   }
-  for (const property of expression.properties) {
-    if (property.key.kind === "Identifier"
-      && (property.key.text === "variants" || property.key.text === "multipart")) {
-      modes.add(property.key.text);
+  for (const entry of expression.properties) {
+    if (entry.kind === "ObjectSpread") {
+      continue;
     }
-    if (property.key.kind === "StringLiteral"
-      && (property.key.value === "variants" || property.key.value === "multipart")) {
-      modes.add(property.key.value);
+    if (entry.key.kind === "Identifier"
+      && (entry.key.text === "variants" || entry.key.text === "multipart")) {
+      modes.add(entry.key.text);
+    }
+    if (entry.key.kind === "StringLiteral"
+      && (entry.key.value === "variants" || entry.key.value === "multipart")) {
+      modes.add(entry.key.value);
     }
   }
 }
