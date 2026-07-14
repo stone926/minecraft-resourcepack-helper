@@ -114,6 +114,8 @@ The RSGL extension owns:
 - Settings under the `rsgl.*` namespace, including output directory, Minecraft target version, vanilla assets fallback, lower-priority packs, source maps, and generated JSON validation.
 - The bundled RSGL language server plus shared compiler/core packages.
 
+The current language surface includes explicit `model` / `variants` / `multipart` template dialects, canonical blockstates with migration tooling, structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
+
 ## Configuration
 
 - `McResHelper.defaultMcAssetsPath`: absolute path to vanilla Minecraft assets. It can point at an `assets` folder, an `assets/minecraft` folder, or a resource pack root containing `assets/minecraft`.

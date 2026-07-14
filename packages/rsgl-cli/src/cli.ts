@@ -530,13 +530,19 @@ function printDiagnostics(diagnostics: { severity: string; code: string; message
 
 function printHelp(io: RsglCliIo): void {
   io.writeOut(`${[
-    "Usage: rsgl <command> [root|file] [--out <dir>] [--write]",
+    "Usage: rsgl <command> [root|file] [options]",
     "",
     "Commands:",
     "  init       Create rsgl.config.json",
     "  build      Compile RSGL files and write generated resource pack files",
     "  check      Compile RSGL files without writing generated files",
     "  migrate    Preview legacy blockstate migration; pass --write to apply atomically",
-    "  watch      Rebuild when .rsgl files, project config, or dependencies change"
+    "  watch      Rebuild when .rsgl files, project config, or dependencies change",
+    "",
+    "Options:",
+    "  --out <dir>, --outDir <dir>  Override the output directory for build, check, and watch",
+    "  --preview                    Preview changes without writing generated files (build only)",
+    "  --watch                      Rebuild after changes (build only; equivalent to watch)",
+    "  --write                      Apply migration atomically (migrate only)"
   ].join("\n")}\n`);
 }

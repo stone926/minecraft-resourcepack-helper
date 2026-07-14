@@ -114,6 +114,8 @@ RSGL 扩展负责：
 - `rsgl.*` 命名空间下的设置，包括输出目录、Minecraft 目标版本、原版资源回退、低优先级资源包、source map 和生成 JSON 校验。
 - 内置 RSGL 语言服务器以及共享 compiler/core 包。
 
+当前语言能力包括显式 `model` / `variants` / `multipart` 模板方言、带迁移工具的 canonical blockstate、结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。可编译示例、项目配置和 CLI 用法见 [RSGL 配套扩展指南](extensions/vscode-rsgl/README.md)。
+
 ## 配置项
 
 - `McResHelper.defaultMcAssetsPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹，或包含 `assets/minecraft` 的资源包根目录。

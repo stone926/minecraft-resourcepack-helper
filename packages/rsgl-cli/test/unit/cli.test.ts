@@ -142,9 +142,18 @@ describe("RSGL CLI", () => {
   it("prints usage and exits cleanly for the help command", () => {
     const captured = captureIo();
     const exitCode = runRsglCli(["help"], captured.io);
+    const output = captured.stdout();
 
     assert.strictEqual(exitCode, 0);
-    assert.ok(captured.stdout().includes("Usage: rsgl <command>"));
+    assert.ok(output.includes("Usage: rsgl <command> [root|file] [options]"));
+    assert.ok(output.includes("--out <dir>, --outDir <dir>"));
+    assert.ok(output.includes("for build, check, and watch"));
+    assert.ok(output.includes("--preview"));
+    assert.ok(output.includes("(build only)"));
+    assert.ok(output.includes("--watch"));
+    assert.ok(output.includes("equivalent to watch"));
+    assert.ok(output.includes("--write"));
+    assert.ok(output.includes("(migrate only)"));
     assert.strictEqual(captured.stderr(), "");
   });
 
