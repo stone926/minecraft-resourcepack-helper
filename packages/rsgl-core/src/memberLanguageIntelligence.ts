@@ -12,10 +12,18 @@ import {
 } from "./memberTypeResolver";
 import {
   RsglObjectProperty,
+  RsglModuleNamespaceMember,
+  RsglModuleNamespaceMemberCategory,
   RsglProgram,
   RsglSemanticModel,
+  RsglSymbol,
   RsglType
 } from "./semantic/types";
+import {
+  moduleNamespaceMembers,
+  resolveModuleNamespaceExpressionMember
+} from "./semantic/moduleNamespace";
+import { originalRsglSymbolDefinition } from "./semantic/symbolDefinition";
 
 type RsglMemberLanguageProgram = Pick<RsglProgram, "models">;
 
@@ -24,6 +32,12 @@ export interface RsglMemberPropertyInfo {
   name: string;
   type: RsglType;
   optional: boolean;
+  /** Present only for nominal module namespace members. */
+  category?: RsglModuleNamespaceMemberCategory;
+  /** Original exported symbol, including its signature and template metadata. */
+  symbol?: RsglSymbol;
+  /** Module that owns the original exported declaration. */
+  sourceFile?: string;
 }
 
 /** A property occurrence selected by hover or definition lookup. */
@@ -37,10 +51,17 @@ export interface RsglMemberDefinitionLocation {
   range: TextRange;
 }
 
-interface ResolvedMemberAccess {
-  expression: MemberExprNode;
-  property: ReturnType<typeof resolveVisibleRsglMemberProperties>[number];
-}
+type ResolvedMemberAccess =
+  | {
+      kind: "property";
+      expression: MemberExprNode;
+      property: ReturnType<typeof resolveVisibleRsglMemberProperties>[number];
+    }
+  | {
+      kind: "module";
+      expression: MemberExprNode;
+      member: RsglModuleNamespaceMember;
+    };
 
 /**
  * Returns `undefined` outside member access and an array (possibly empty) in a
@@ -62,6 +83,16 @@ export function getRsglMemberCompletionInfo(
     return undefined;
   }
   const receiverType = inferRsglToolingExpressionType(model, expression.object);
+  if (receiverType.kind === "ModuleNamespace") {
+    return moduleNamespaceMembers(receiverType).map(member => ({
+      name: member.name,
+      type: member.symbol.type,
+      optional: false,
+      category: member.category,
+      symbol: member.symbol,
+      sourceFile: member.sourceFile
+    }));
+  }
   return resolveVisibleRsglMemberProperties(receiverType).map(({ name, type, optional }) => ({
     name,
     type,
@@ -79,6 +110,17 @@ export function getRsglMemberAccessInfo(
   const resolved = resolvedMemberAccessAtOffset(program, fileName, sourceText, offset);
   if (!resolved) {
     return undefined;
+  }
+  if (resolved.kind === "module") {
+    return {
+      name: resolved.member.name,
+      type: resolved.member.symbol.type,
+      optional: false,
+      category: resolved.member.category,
+      symbol: resolved.member.symbol,
+      sourceFile: resolved.member.sourceFile,
+      range: resolved.expression.property.range
+    };
   }
   return {
     name: resolved.property.name,
@@ -98,6 +140,12 @@ export function getRsglMemberDefinitionLocation(
   const resolved = resolvedMemberAccessAtOffset(program, fileName, sourceText, offset);
   if (!resolved) {
     return undefined;
+  }
+  if (resolved.kind === "module") {
+    return originalRsglSymbolDefinition(program.models, resolved.member.symbol)
+      ?? (resolved.member.symbol.range
+        ? { fileName: resolved.member.sourceFile, range: resolved.member.symbol.range }
+        : undefined);
   }
   const locations: RsglMemberDefinitionLocation[] = [];
   for (const declaration of resolved.property.declarations) {
@@ -127,10 +175,14 @@ function resolvedMemberAccessAtOffset(
   if (!expression || expression.property.text.length === 0) {
     return undefined;
   }
+  const moduleMember = resolveModuleNamespaceExpressionMember(model, expression)?.member;
+  if (moduleMember) {
+    return { kind: "module", expression, member: moduleMember };
+  }
   const receiverType = inferRsglToolingExpressionType(model, expression.object);
   const property = resolveVisibleRsglMemberProperties(receiverType)
     .find(candidate => candidate.name === expression.property.text);
-  return property ? { expression, property } : undefined;
+  return property ? { kind: "property", expression, property } : undefined;
 }
 
 function memberExpressionAtOffset(

@@ -5,6 +5,7 @@ import type { EvaluationContext, EvaluationValue } from "../../src/compiler/eval
 import { stableJsonStringify } from "../../src/compiler/emit";
 import type { JsonValue } from "../../src/compiler/ir";
 import { evaluateJsonExpression } from "../../src/compiler/jsonValueLowerer";
+import { ModuleNamespaceValue } from "../../src/compiler/moduleNamespaceValue";
 import { compileSource, expectNoDiagnostics } from "./helpers/compile";
 
 describe("RSGL JSON value lowering", () => {
@@ -166,6 +167,18 @@ describe("RSGL JSON value lowering", () => {
 
     expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, { kind: "lambda", value: 1 });
+
+    const namespaceMarker = compileSource([
+      "json \"assets/example/namespace-marker.json\" {",
+      "  merge { kind: \"moduleNamespace\", values: {}, templates: {} }",
+      "}"
+    ]);
+    expectNoDiagnostics(namespaceMarker);
+    assert.deepStrictEqual(namespaceMarker.units[0].content, {
+      kind: "moduleNamespace",
+      values: {},
+      templates: {}
+    });
   });
 
   it("preserves prototype-named own properties through lowering and fragment merge", () => {
@@ -186,11 +199,15 @@ describe("RSGL JSON value lowering", () => {
   });
 
   it("rejects a dedicated module namespace runtime value at its nested path", () => {
-    const namespaceValue = {
-      kind: "moduleNamespace" as const,
-      values: new Map<string, unknown>(),
-      templates: new Map<string, unknown>()
-    };
+    const namespaceValue = new ModuleNamespaceValue({
+      fileName: "/virtual/library.rsgl",
+      namespace: "minecraft",
+      values: new Map(),
+      valueOrigins: new Map(),
+      valuePathOrigins: new Map(),
+      valueIssues: new Map(),
+      templates: new Map()
+    });
     const context: EvaluationContext = {
       namespace: "minecraft",
       variables: new Map([

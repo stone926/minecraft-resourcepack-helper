@@ -19,6 +19,7 @@ import {
   type RsglResourceValueObserver
 } from "./resourceValueJsonAdapter";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
+import { isModuleNamespaceValue } from "./moduleNamespaceValue";
 
 export interface JsonValueSinkOptions {
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
@@ -50,13 +51,6 @@ export interface JsonRuntimeValueAdapter {
     value: unknown,
     context: JsonRuntimeValueAdapterContext
   ): JsonRuntimeValueAdapterResult | undefined;
-}
-
-/** Dedicated non-JSON runtime shape reserved for future namespace imports. */
-export interface JsonModuleNamespaceRuntimeValue {
-  kind: "moduleNamespace";
-  values: ReadonlyMap<string, unknown>;
-  templates: ReadonlyMap<string, unknown>;
 }
 
 export type JsonRuntimeValueIssueKind =
@@ -283,7 +277,7 @@ function cloneSerializableValue(
     fail(host, { generatedPath, kind: "lambda", range, sourceFile });
     return undefined;
   }
-  if (isModuleNamespaceRuntimeValue(value)) {
+  if (isModuleNamespaceValue(value)) {
     fail(host, { generatedPath, kind: "moduleNamespace", range, sourceFile });
     return undefined;
   }
@@ -425,14 +419,4 @@ function isLambdaRuntimeValue(value: unknown): boolean {
     && Boolean(candidate.body && typeof candidate.body === "object")
     && Boolean(candidate.context && typeof candidate.context === "object")
     && Array.isArray(candidate.impureCalls);
-}
-
-function isModuleNamespaceRuntimeValue(value: unknown): value is JsonModuleNamespaceRuntimeValue {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const candidate = value as Partial<JsonModuleNamespaceRuntimeValue>;
-  return candidate.kind === "moduleNamespace"
-    && candidate.values instanceof Map
-    && candidate.templates instanceof Map;
 }

@@ -13,6 +13,7 @@ import {
   isCollectionBuiltinName
 } from "./collectionBuiltinInference";
 import { diagnostic } from "./diagnostics";
+import { checkModuleNamespaceMember } from "./moduleNamespace";
 import { inferProductType, RsglProductSourceIssue } from "./productTypeInference";
 import { createChildScope, lookup } from "./scopes";
 import { formatType, isAssignable } from "./typeRelations";
@@ -62,6 +63,40 @@ export function checkCallExpression(
   expectedReturnType?: RsglType
 ): RsglType {
   const { callee, args } = expression;
+  if (callee.kind === "MemberExpr" && callee.object.kind === "IdentifierExpr") {
+    const receiver = lookup(scope, callee.object.name.text);
+    if (receiver?.type.kind === "ModuleNamespace") {
+      const objectType = host.checkExpression(context, callee.object, scope);
+      const access = checkModuleNamespaceMember(
+        context,
+        callee,
+        objectType,
+        allowTemplate ? "template" : "value"
+      );
+      context.recordImportCallScope?.(expression, scope);
+      const member = access?.member;
+      if (!member) {
+        args.forEach(arg => host.checkExpression(context, arg.value, scope));
+        return unknownType;
+      }
+      const symbol = member.symbol;
+      if (!symbol.signature) {
+        if (symbol.type.kind === "Function") {
+          checkFunctionCallArguments(context, symbol.type, args, scope, expression.range, host);
+          return symbol.type.returnType ?? anyType;
+        }
+        args.forEach(arg => host.checkExpression(context, arg.value, scope));
+        context.diagnostics.push(diagnostic(
+          "rsgl.notCallable",
+          `Imported member '${callee.property.text}' is not callable.`,
+          callee.property.range
+        ));
+        return symbol.type;
+      }
+      checkArguments(context, symbol.signature, args, scope, expression.range, host);
+      return symbol.signature.returnType;
+    }
+  }
   const calleeType = host.checkExpression(context, callee, scope);
 
   if (callee.kind !== "IdentifierExpr") {

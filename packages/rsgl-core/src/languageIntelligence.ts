@@ -12,6 +12,7 @@ import {
 } from "./memberLanguageIntelligence";
 import { createRsglExportMaps } from "./semantic/exportResolution";
 import { formatType } from "./semantic/typeRelations";
+import { originalRsglSymbolDefinition } from "./semantic/symbolDefinition";
 import {
   RsglProgram,
   RsglSemanticModel,
@@ -99,6 +100,21 @@ export function getRsglHoverInfo(
   }
   const member = getRsglMemberAccessInfo(program, fileName, sourceText, offset);
   if (member) {
+    if (member.category && member.symbol) {
+      const callerContext = templateCallerContextAtOffset(model, offset);
+      const callable = callablePresentation(member.symbol, member.name, callerContext);
+      if (callable) {
+        return {
+          range: member.range,
+          label: `${member.category === "template" ? "template " : "value "}${callable.label}`,
+          detail: callable.detail
+        };
+      }
+      return {
+        range: member.range,
+        label: `value ${member.name}: ${formatType(member.type)}`
+      };
+    }
     return {
       range: member.range,
       label: `property ${member.name}${member.optional ? "?" : ""}: ${formatType(member.type)}`
@@ -142,18 +158,34 @@ export function getRsglSignatureHelpInfo(
     return undefined;
   }
   const call = callExpressionAtOffset(model, offset);
-  if (!call || call.callee.kind !== "IdentifierExpr") {
+  if (!call) {
     return undefined;
   }
-  const reference = model.references.find(candidate =>
-    sameRange(candidate.range, call.callee.range)
-  );
-  const symbol = reference?.symbol ?? model.scope.symbols.get(call.callee.name.text);
+  let symbol: RsglSymbol | undefined;
+  let displayName: string | undefined;
+  if (call.callee.kind === "IdentifierExpr") {
+    const reference = model.references.find(candidate =>
+      sameRange(candidate.range, call.callee.range)
+    );
+    symbol = reference?.symbol ?? model.scope.symbols.get(call.callee.name.text);
+    displayName = call.callee.name.text;
+  } else if (call.callee.kind === "MemberExpr") {
+    const member = getRsglMemberAccessInfo(
+      program,
+      fileName,
+      sourceText,
+      call.callee.property.range.start
+    );
+    symbol = member?.symbol;
+    displayName = call.callee.object.kind === "IdentifierExpr"
+      ? `${call.callee.object.name.text}.${call.callee.property.text}`
+      : call.callee.property.text;
+  }
   if (!symbol) {
     return undefined;
   }
   const callerContext = templateCallerContextAtOffset(model, offset);
-  const signature = callablePresentation(symbol, call.callee.name.text, callerContext);
+  const signature = callablePresentation(symbol, displayName ?? symbol.name, callerContext);
   if (!signature) {
     return undefined;
   }
@@ -201,18 +233,7 @@ export function getRsglDefinitionLocation(
     return undefined;
   }
 
-  const definitions = program.models.flatMap(owner => owner.symbols
-    .filter(candidate =>
-      candidate.node === occurrence.symbol.node
-      && candidate.kind !== "import"
-      && candidate.range
-    )
-    .map(candidate => ({
-      fileName: owner.fileName,
-      range: candidate.range!
-    })));
-  return definitions
-    .sort((left, right) => rangeLength(left.range) - rangeLength(right.range))[0];
+  return originalRsglSymbolDefinition(program.models, occurrence.symbol);
 }
 
 /** Formats a symbol's callable signature when parameter information is known. */

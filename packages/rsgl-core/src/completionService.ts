@@ -10,6 +10,7 @@ export type RsglCompletionItemKind =
   | RsglCompletionCandidate["kind"]
   | "variable"
   | "struct"
+  | "module"
   | "file";
 
 export interface RsglCompletionItem {
@@ -79,6 +80,9 @@ function symbolCompletionItem(symbol: RsglSymbol): RsglCompletionItem {
 }
 
 function symbolCompletionKind(symbol: RsglSymbol): RsglCompletionItemKind {
+  if (symbol.kind === "namespace") {
+    return "module";
+  }
   if (symbol.kind === "template" || symbol.signature || symbol.type.kind === "Function") {
     return "function";
   }

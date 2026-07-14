@@ -120,6 +120,20 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
+  it("keeps namespace imports intact and idempotent", () => {
+    const source = [
+      "  import * as common from \"./common.rsgl\"  ",
+      "let stone = common.STONE"
+    ].join("\n");
+    const formatted = formatRsglText(source);
+
+    assert.strictEqual(formatted, [
+      "import * as common from \"./common.rsgl\"",
+      "let stone = common.STONE"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
   it("indents legacy blockstate syntax without migrating its tokens", () => {
     const formatted = formatRsglText([
       "blockstate stairs {",

@@ -51,6 +51,7 @@ export type RsglTypeKind =
   | "BlockstateModelObject"
   | "Path"
   | "Json"
+  | "ModuleNamespace"
   | "List"
   | "Object"
   | "Range"
@@ -84,6 +85,9 @@ export interface RsglType {
   explicitAnnotation?: true;
   /** Internal union arm accepted only when static checking proves explicit Json. */
   contextualEscapeOnly?: true;
+  /** Nominal module identity and linked value/template members. */
+  moduleNamespaceId?: string;
+  moduleNamespaceMembers?: ReadonlyMap<string, RsglModuleNamespaceMember>;
 }
 
 export function objectProperty(
@@ -193,6 +197,16 @@ export interface RsglSymbol {
   finiteDomain?: string[];
 }
 
+export type RsglModuleNamespaceMemberCategory = "value" | "template";
+
+/** A linked module export retained with its original semantic identity. */
+export interface RsglModuleNamespaceMember {
+  name: string;
+  category: RsglModuleNamespaceMemberCategory;
+  symbol: RsglSymbol;
+  sourceFile: string;
+}
+
 export interface RsglScope {
   kind: "global" | "module" | "block" | "template" | "loop" | "lambda";
   parent?: RsglScope;
@@ -217,6 +231,7 @@ export interface RsglImportRecord {
   source: string;
   node: ImportDeclNode;
   defaultName?: string;
+  namespaceName?: string;
   importAll?: boolean;
   namedImports: Array<{ imported: string; local: string; range: TextRange }>;
   resolvedFileName?: string;
@@ -315,6 +330,8 @@ export interface RsglBindOptions {
   prelinkedTypeAliases?: ReadonlyMap<string, RsglTypeAliasSymbol>;
   /** Named imports proven to exist only in the type namespace. */
   typeOnlyImportNames?: ReadonlySet<string>;
+  /** Namespace imports resolved by the bounded program prelink pass. */
+  prelinkedModuleNamespaces?: ReadonlyMap<string, RsglType>;
 }
 
 export const unknownType: RsglType = { kind: "Unknown" };

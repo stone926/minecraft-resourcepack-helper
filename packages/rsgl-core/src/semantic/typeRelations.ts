@@ -17,6 +17,10 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     return (expected.options ?? []).some(option => isAssignable(option, actual));
   }
   if (expected.kind === actual.kind) {
+    if (expected.kind === "ModuleNamespace") {
+      return expected.moduleNamespaceId !== undefined
+        && expected.moduleNamespaceId === actual.moduleNamespaceId;
+    }
     if (expected.kind === "TypeParameter") {
       return expected.typeParameterName === actual.typeParameterName;
     }
@@ -64,6 +68,7 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     }
     return actual.kind !== "TextureVariable"
       && actual.kind !== "TextureRef"
+      && actual.kind !== "ModuleNamespace"
       && actual.kind !== "Missing";
   }
   if (expected.kind === "ResourceId" && (actual.kind === "ModelId" || actual.kind === "TextureId")) {
@@ -94,6 +99,9 @@ export function formatType(type: RsglType): string {
   }
   if (type.kind === "BlockstateModelObject") {
     return "blockstate model object";
+  }
+  if (type.kind === "ModuleNamespace") {
+    return "module namespace";
   }
   if (type.kind === "Object") {
     const fields = Array.from(type.properties ?? [])

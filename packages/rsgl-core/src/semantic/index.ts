@@ -2,6 +2,16 @@ export { bindRsglModule } from "./binder";
 export { bindRsglProgram } from "./program";
 export { createRsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 export { createRsglExportMaps } from "./exportResolution";
+export {
+  callableExpressionName,
+  createModuleNamespaceType,
+  moduleExportMemberCategory,
+  moduleNamespaceMembers,
+  resolveCallableSymbolInScope,
+  resolveModuleNamespaceExpressionMember,
+  resolveModuleNamespaceMember,
+  resolveModuleNamespaceMemberInScope
+} from "./moduleNamespace";
 export { getBuiltinSignature } from "./builtins";
 export { formatType, isAssignable } from "./typeRelations";
 export {
@@ -45,6 +55,8 @@ export type {
   RsglLegacyBlockstateRootRecord,
   RsglOutputResourcePreview,
   RsglObjectProperty,
+  RsglModuleNamespaceMember,
+  RsglModuleNamespaceMemberCategory,
   RsglProgram,
   RsglReferenceRecord,
   RsglScope,

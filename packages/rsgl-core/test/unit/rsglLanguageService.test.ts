@@ -6,8 +6,10 @@ import {
   getRsglDocumentCompletionItems,
   getRsglDocumentDefinitionLocation,
   getRsglDocumentHoverInfo,
+  getRsglDocumentRenameEdits,
   getRsglDocumentSignatureHelpInfo,
-  getRsglDocumentSemanticTokens
+  getRsglDocumentSemanticTokens,
+  prepareRsglDocumentRename
 } from "../../src/languageService";
 import {
   rsglSemanticTokenModifiers,
@@ -16,6 +18,8 @@ import {
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 
 const functionTokenType = rsglSemanticTokenTypes.indexOf("function");
+const namespaceTokenType = rsglSemanticTokenTypes.indexOf("namespace");
+const variableTokenType = rsglSemanticTokenTypes.indexOf("variable");
 const declarationModifier = 1 << rsglSemanticTokenModifiers.indexOf("declaration");
 
 describe("RSGL language service", () => {
@@ -212,10 +216,155 @@ describe("RSGL language service", () => {
     assert.strictEqual(signature?.signatures[0].parameters[0].rest, true);
     assert.strictEqual(signature?.activeParameter, 0);
   });
+
+  it("provides namespace-member completion, hover, signatures, definitions, and tokens through re-exports", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-namespace-tooling-"));
+    try {
+      const mainFile = path.join(root, "main.rsgl");
+      const barrelFile = path.join(root, "barrel.rsgl");
+      const commonFile = path.join(root, "共享 common.rsgl");
+      const commonText = [
+        "let VALUE = \"stone\"",
+        "let decorate: (String) -> String = value => `prefix/${value}`",
+        "template cube(id: ModelId) -> model {",
+        "  parent id",
+        "}",
+        "export { VALUE, decorate, cube }"
+      ].join("\n");
+      const mainText = [
+        "import * as common from \"./barrel.rsgl\"",
+        "let selected = common.VALUE",
+        "let decorated = common.decorate(\"stone\")",
+        "model block example {",
+        "  use common.cube(minecraft:block/stone)",
+        "}"
+      ].join("\n");
+      fs.writeFileSync(commonFile, commonText);
+      fs.writeFileSync(barrelFile, [
+        "import { VALUE as V } from \"./共享 common.rsgl\"",
+        "export { V as VALUE }",
+        "export { decorate, cube } from \"./共享 common.rsgl\""
+      ].join("\n"));
+      fs.writeFileSync(mainFile, mainText);
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const document = { fileName: mainFile, getText: () => mainText };
+      const completionOffset = mainText.indexOf("common.VALUE") + "common.".length;
+      const completions = getRsglDocumentCompletionItems(document, completionOffset, cache);
+      assert.deepStrictEqual(
+        completions.map(item => [item.label, item.kind]),
+        [["VALUE", "variable"], ["decorate", "function"], ["cube", "function"]]
+      );
+      assert.strictEqual(
+        getRsglDocumentCompletionItems(document, mainText.length, cache)
+          .find(item => item.label === "common")?.kind,
+        "module"
+      );
+
+      const valueOffset = mainText.indexOf("VALUE");
+      assert.deepStrictEqual(getRsglDocumentHoverInfo(document, valueOffset + 1, cache), {
+        range: { start: valueOffset, end: valueOffset + "VALUE".length },
+        label: "value VALUE: \"stone\""
+      });
+      const cubeOffset = mainText.lastIndexOf("cube");
+      const cubeHover = getRsglDocumentHoverInfo(document, cubeOffset + 1, cache);
+      assert.strictEqual(cubeHover?.label, "template cube(id: ModelId): Json");
+      assert.strictEqual(cubeHover?.detail, "template -> model");
+
+      const callArgumentOffset = mainText.indexOf("\"stone\"") + 2;
+      const signature = getRsglDocumentSignatureHelpInfo(document, callArgumentOffset, cache);
+      assert.strictEqual(signature?.signatures[0].label, "common.decorate(value: String): String");
+      assert.strictEqual(signature?.activeParameter, 0);
+
+      const definition = getRsglDocumentDefinitionLocation(document, valueOffset + 1, cache);
+      const valueDefinitionStart = commonText.indexOf("VALUE");
+      assert.deepStrictEqual(definition, {
+        fileName: commonFile,
+        range: { start: valueDefinitionStart, end: valueDefinitionStart + "VALUE".length }
+      });
+
+      const tokens = getRsglDocumentSemanticTokens(document, cache);
+      const aliasOffset = mainText.indexOf("common");
+      const decorateOffset = mainText.indexOf("common.decorate") + "common.".length;
+      assert.deepStrictEqual(tokenAt(tokens, aliasOffset), {
+        start: aliasOffset,
+        length: "common".length,
+        tokenType: namespaceTokenType,
+        tokenModifiers: declarationModifier
+      });
+      assert.strictEqual(tokenAt(tokens, valueOffset).tokenType, variableTokenType);
+      assert.strictEqual(tokenAt(tokens, decorateOffset).tokenType, functionTokenType);
+      assert.strictEqual(tokenAt(tokens, cubeOffset).tokenType, functionTokenType);
+
+      assert.deepStrictEqual(prepareRsglDocumentRename(document, aliasOffset + 1, cache), {
+        range: { start: aliasOffset, end: aliasOffset + "common".length },
+        placeholder: "common"
+      });
+      const aliasEdits = getRsglDocumentRenameEdits(
+        document,
+        aliasOffset + 1,
+        "shared",
+        cache
+      );
+      assert.strictEqual(aliasEdits?.length, 4);
+      assert.deepStrictEqual(new Set(aliasEdits?.map(edit => edit.fileName)), new Set([mainFile]));
+      assert.ok(aliasEdits?.every(edit => edit.newText === "shared"));
+
+      assert.deepStrictEqual(prepareRsglDocumentRename(document, valueOffset + 1, cache), {
+        range: { start: valueOffset, end: valueOffset + "VALUE".length },
+        placeholder: "VALUE"
+      });
+      const memberEdits = getRsglDocumentRenameEdits(
+        document,
+        valueOffset + 1,
+        "RENAMED",
+        cache
+      );
+      assert.ok(memberEdits);
+      assert.strictEqual(memberEdits.length, 5);
+      const renamedTexts = applyRenameEdits(
+        new Map([
+          [mainFile, mainText],
+          [barrelFile, fs.readFileSync(barrelFile, "utf8")],
+          [commonFile, commonText]
+        ]),
+        memberEdits
+      );
+      assert.ok(renamedTexts.get(mainFile)?.includes("common.RENAMED"));
+      assert.ok(renamedTexts.get(barrelFile)?.includes("import { RENAMED as V }"));
+      assert.ok(renamedTexts.get(barrelFile)?.includes("export { V as RENAMED }"));
+      assert.ok(renamedTexts.get(commonFile)?.includes("let RENAMED = \"stone\""));
+      assert.ok(renamedTexts.get(commonFile)?.includes("export { RENAMED, decorate, cube }"));
+      assert.strictEqual(
+        getRsglDocumentRenameEdits(document, valueOffset + 1, "not-valid!", cache),
+        undefined
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function tokenAt<T extends { start: number }>(tokens: readonly T[], start: number): T {
   const token = tokens.find(candidate => candidate.start === start);
   assert.ok(token, `expected token at ${start}`);
   return token;
+}
+
+function applyRenameEdits(
+  sources: ReadonlyMap<string, string>,
+  edits: readonly { fileName: string; range: { start: number; end: number }; newText: string }[]
+): Map<string, string> {
+  const result = new Map(sources);
+  for (const fileName of new Set(edits.map(edit => edit.fileName))) {
+    let text = result.get(fileName)!;
+    const fileEdits = edits
+      .filter(edit => edit.fileName === fileName)
+      .sort((left, right) => right.range.start - left.range.start);
+    for (const edit of fileEdits) {
+      text = text.slice(0, edit.range.start) + edit.newText + text.slice(edit.range.end);
+    }
+    result.set(fileName, text);
+  }
+  return result;
 }

@@ -11,7 +11,9 @@ import type {
   SugarPropertyNode,
   TextRange
 } from "./parser";
+import { walkRsglModule } from "./parser/astTraversal";
 import type { RsglReferenceRecord, RsglSemanticModel, RsglSymbol } from "./semantic";
+import { resolveModuleNamespaceExpressionMember } from "./semantic/moduleNamespace";
 
 /**
  * Semantic token legend shared by every RSGL transport (LSP server and the
@@ -71,6 +73,7 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
   const referenceStarts = collectReferenceStarts(model.references);
 
   collectPropertyTokens(model.module, candidates);
+  collectModuleNamespaceMemberTokens(model, candidates);
   for (const record of model.imports) {
     collectImportDeclarationTokens(record.node, model, candidates);
   }
@@ -82,6 +85,25 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
   }
 
   return normalizeTokens(candidates);
+}
+
+/** Overrides generic property coloring with the linked export's category. */
+function collectModuleNamespaceMemberTokens(
+  model: RsglSemanticModel,
+  candidates: RsglSemanticToken[]
+): void {
+  walkRsglModule(model.module, {
+    enterExpression(expression) {
+      if (expression.kind !== "MemberExpr") {
+        return;
+      }
+      const member = resolveModuleNamespaceExpressionMember(model, expression)?.member;
+      const classification = member ? classifySymbol(member.symbol) : null;
+      if (classification) {
+        pushToken(candidates, expression.property.range, classification, 0);
+      }
+    }
+  });
 }
 
 /** Emits AST-backed property tokens without guessing context from keywords. */
@@ -164,7 +186,10 @@ function classifySymbol(symbol: RsglSymbol): RsglTokenClassification | null {
     return { tokenType: functionTokenType, tokenModifiers: 0 };
   }
   if (symbol.kind === "variable") {
-    return { tokenType: variableTokenType, tokenModifiers: readonlyModifier };
+    return {
+      tokenType: symbol.type.kind === "Function" ? functionTokenType : variableTokenType,
+      tokenModifiers: readonlyModifier
+    };
   }
   if (symbol.kind === "table") {
     return { tokenType: variableTokenType, tokenModifiers: 0 };
@@ -208,6 +233,14 @@ function collectImportDeclarationTokens(
   if (node.defaultName) {
     pushToken(candidates, node.defaultName.range, importClassification(model, node.defaultName.text), declarationModifier);
   }
+  if (node.namespaceName) {
+    pushToken(
+      candidates,
+      node.namespaceName.range,
+      { tokenType: namespaceTokenType, tokenModifiers: 0 },
+      declarationModifier
+    );
+  }
   for (const specifier of node.namedImports) {
     pushToken(candidates, specifier.local.range, importClassification(model, specifier.local.text), declarationModifier);
   }
@@ -221,7 +254,7 @@ function collectImportDeclarationTokens(
  */
 function importClassification(model: RsglSemanticModel, name: string): RsglTokenClassification {
   const symbol = model.scope.symbols.get(name);
-  if (symbol && symbol.kind === "import") {
+  if (symbol && (symbol.kind === "import" || symbol.kind === "namespace")) {
     return classifySymbol(symbol) ?? { tokenType: variableTokenType, tokenModifiers: 0 };
   }
   return { tokenType: variableTokenType, tokenModifiers: 0 };

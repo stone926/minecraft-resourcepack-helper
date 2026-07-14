@@ -51,6 +51,10 @@ import {
   sequencePatternExpansionCount
 } from "./sequences";
 import { appendGeneratedPath } from "./sourcePaths";
+import {
+  isModuleNamespaceValue,
+  type ModuleNamespaceValue
+} from "./moduleNamespaceValue";
 
 export interface LambdaValue {
   kind: "lambda";
@@ -66,7 +70,12 @@ export interface LambdaValue {
   impureCalls: LambdaImpureCall[];
 }
 
-export type EvaluationValue = JsonValue | RsglEvaluatedResourceValue | LambdaValue | undefined;
+export type EvaluationValue =
+  | JsonValue
+  | RsglEvaluatedResourceValue
+  | LambdaValue
+  | ModuleNamespaceValue
+  | undefined;
 
 export interface RawGlobLoadLimits {
   /** Maximum result items the current shared evaluation budget can accept. */
@@ -484,6 +493,20 @@ function buildEvaluationResult(
 
   if (expression.kind === "MemberExpr") {
     const object = childForExpression(frame, expression.object);
+    if (object && isModuleNamespaceValue(object.result.value)) {
+      const member = object.result.value.resolveValue(expression.property.text);
+      const pathOrigins = member?.pathOrigins.length
+        ? member.pathOrigins
+        : member?.origin
+          ? [{ generatedPath: "", ...member.origin }]
+          : [];
+      return evaluationResult(
+        value,
+        [{ generatedPath: "", sourceRange: expression.range }],
+        pathOrigins,
+        member?.valueIssues ?? direct.valueIssues
+      );
+    }
     return object
       ? selectedEvaluationResult(value, expression.range, object.result, appendGeneratedPath("", expression.property.text))
       : direct;
@@ -950,6 +973,14 @@ export function expressionEvaluationOrigin(
     ]);
   }
   if (expression.kind === "MemberExpr") {
+    if (expression.object.kind === "IdentifierExpr") {
+      const namespaceValue = context.variables.get(expression.object.name.text);
+      if (isModuleNamespaceValue(namespaceValue)) {
+        const member = namespaceValue.resolveValue(expression.property.text);
+        return member?.origin
+          ?? originForEvaluationPath(member?.pathOrigins ?? [], "");
+      }
+    }
     return expressionEvaluationOrigin(expression.object, context);
   }
   if (expression.kind === "IndexExpr") {
@@ -1258,6 +1289,9 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
   }
   if (expression.kind === "MemberExpr") {
     const objectValue = evaluateExpression(expression.object, context);
+    if (isModuleNamespaceValue(objectValue)) {
+      return objectValue.resolveValue(expression.property.text)?.value;
+    }
     if (isJsonObject(objectValue)) {
       return objectValue[expression.property.text] as EvaluationValue;
     }

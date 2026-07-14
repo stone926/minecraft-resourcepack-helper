@@ -28,9 +28,12 @@ import {
   handleSemanticWatchedFileBatch,
   identifierAtOffset,
   normalizeDependencyPath,
+  prepareRenameForDocument,
+  renameEditsForDocument,
   toLspDefinitionLocation,
   toLspDiagnostic,
   toLspSeverity,
+  toLspWorkspaceEdit,
   toValidationSettings,
   workspaceValidationOptionsFor,
   type RsglValidationSettings
@@ -628,6 +631,11 @@ describe("RSGL LSP server core", () => {
       templateSymbol("myCube"),
       { name: "tex", kind: "variable", type: { kind: "TextureId" } },
       {
+        name: "common",
+        kind: "namespace",
+        type: { kind: "ModuleNamespace", moduleNamespaceId: "common.rsgl" }
+      },
+      {
         name: "mapper",
         kind: "variable",
         type: {
@@ -659,6 +667,13 @@ describe("RSGL LSP server core", () => {
       label: "tex",
       kind: CompletionItemKind.Variable,
       detail: "variable: TextureId"
+    });
+
+    const common = items.find(item => item.label === "common");
+    assert.deepStrictEqual(common, {
+      label: "common",
+      kind: CompletionItemKind.Module,
+      detail: "namespace: module namespace"
     });
 
     const mapper = items.find(item => item.label === "mapper");
@@ -743,6 +758,140 @@ describe("RSGL LSP server core", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("prepares namespace renames and converts cross-file member edits with UTF-16 positions", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-rename-lsp-"));
+    try {
+      const mainFile = path.join(root, "入口.rsgl");
+      const barrelFile = path.join(root, "barrel.rsgl");
+      const commonFile = path.join(root, "共享.rsgl");
+      const mainText = [
+        "/*😀*/ import * as common from \"./barrel.rsgl\"",
+        "let selected = common.VALUE"
+      ].join("\n");
+      const barrelText = [
+        "import { VALUE as V } from \"./共享.rsgl\"",
+        "export { V as VALUE }"
+      ].join("\n");
+      const commonText = [
+        "/*😀*/ let VALUE = \"stone\"",
+        "export { VALUE }"
+      ].join("\n");
+      fs.writeFileSync(mainFile, mainText);
+      fs.writeFileSync(barrelFile, barrelText);
+      fs.writeFileSync(commonFile, commonText);
+
+      const documentsByFile = new Map([
+        [path.normalize(mainFile), TextDocument.create(pathToFileURL(mainFile).toString(), "rsgl", 1, mainText)],
+        [path.normalize(barrelFile), TextDocument.create(pathToFileURL(barrelFile).toString(), "rsgl", 1, barrelText)],
+        [path.normalize(commonFile), TextDocument.create(pathToFileURL(commonFile).toString(), "rsgl", 1, commonText)]
+      ]);
+      const mainDocument = documentsByFile.get(path.normalize(mainFile))!;
+      const cache = RsglWorkspaceSemanticCache.create();
+      const deps = { loadProgramFromEntry: (fileName: string) => cache.loadProgramFromEntry(fileName) };
+      const aliasOffset = mainText.indexOf("common");
+      const memberOffset = mainText.lastIndexOf("VALUE");
+
+      assert.deepStrictEqual(
+        prepareRenameForDocument(mainDocument, mainFile, aliasOffset + 1, deps),
+        {
+          range: {
+            start: mainDocument.positionAt(aliasOffset),
+            end: mainDocument.positionAt(aliasOffset + "common".length)
+          },
+          placeholder: "common"
+        }
+      );
+      assert.strictEqual(
+        mainDocument.positionAt(aliasOffset).character,
+        mainText.slice(0, aliasOffset).length,
+        "LSP positions must count the astral emoji as two UTF-16 code units"
+      );
+
+      const aliasEdits = renameEditsForDocument(
+        mainDocument,
+        mainFile,
+        aliasOffset + 1,
+        "shared",
+        deps
+      );
+      assert.ok(aliasEdits);
+      const aliasWorkspaceEdit = await toLspWorkspaceEdit(aliasEdits, async fileName =>
+        documentsByFile.get(path.normalize(fileName)) ?? null
+      );
+      assert.deepStrictEqual(Object.keys(aliasWorkspaceEdit?.changes ?? {}), [mainDocument.uri]);
+      assert.strictEqual(aliasWorkspaceEdit?.changes?.[mainDocument.uri].length, 2);
+      assert.ok(aliasWorkspaceEdit?.changes?.[mainDocument.uri].every(edit => edit.newText === "shared"));
+
+      assert.deepStrictEqual(
+        prepareRenameForDocument(mainDocument, mainFile, memberOffset + 1, deps),
+        {
+          range: {
+            start: mainDocument.positionAt(memberOffset),
+            end: mainDocument.positionAt(memberOffset + "VALUE".length)
+          },
+          placeholder: "VALUE"
+        }
+      );
+      const memberEdits = renameEditsForDocument(
+        mainDocument,
+        mainFile,
+        memberOffset + 1,
+        "RENAMED",
+        deps
+      );
+      assert.ok(memberEdits);
+      assert.strictEqual(memberEdits.length, 5);
+      const loadedFiles: string[] = [];
+      const memberWorkspaceEdit = await toLspWorkspaceEdit(memberEdits, async fileName => {
+        loadedFiles.push(path.normalize(fileName));
+        return documentsByFile.get(path.normalize(fileName)) ?? null;
+      });
+      assert.deepStrictEqual(new Set(Object.keys(memberWorkspaceEdit?.changes ?? {})), new Set([
+        documentsByFile.get(path.normalize(mainFile))!.uri,
+        documentsByFile.get(path.normalize(barrelFile))!.uri,
+        documentsByFile.get(path.normalize(commonFile))!.uri
+      ]));
+      assert.strictEqual(new Set(loadedFiles).size, 3, "each target document should load once");
+
+      const commonDocument = documentsByFile.get(path.normalize(commonFile))!;
+      const definitionOffset = commonText.indexOf("VALUE");
+      const definitionEdit = memberWorkspaceEdit?.changes?.[commonDocument.uri].find(edit =>
+        edit.range.start.line === commonDocument.positionAt(definitionOffset).line
+        && edit.range.start.character === commonDocument.positionAt(definitionOffset).character
+      );
+      assert.ok(definitionEdit);
+      assert.strictEqual(definitionEdit.newText, "RENAMED");
+      assert.strictEqual(
+        definitionEdit.range.start.character,
+        commonText.slice(0, definitionOffset).length
+      );
+      assert.notStrictEqual(
+        definitionEdit.range.start.character,
+        Array.from(commonText.slice(0, definitionOffset)).length
+      );
+      assert.strictEqual(
+        renameEditsForDocument(mainDocument, mainFile, memberOffset + 1, "not-valid!", deps),
+        null
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("advertises prepare rename and registers both rename handlers", () => {
+    const serverSource = fs.readFileSync(path.join(
+      process.cwd(),
+      "packages",
+      "rsgl-lsp",
+      "src",
+      "server.ts"
+    ), "utf8");
+
+    assert.ok(serverSource.includes("renameProvider: { prepareProvider: true }"));
+    assert.ok(serverSource.includes("connection.onPrepareRename"));
+    assert.ok(serverSource.includes("connection.onRenameRequest"));
   });
 
   it("converts imported record member tooling and field definitions with UTF-16 positions", () => {

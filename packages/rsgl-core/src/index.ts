@@ -14,6 +14,7 @@ export * from "./resourceIdSemantics";
 export * from "./resourceBodyHelpers";
 export * from "./rsglConfig";
 export * from "./semanticTokens";
+export * from "./renameService";
 export * from "./sourceRoot";
 export * from "./templateOutput";
 export * from "./workspaceBuildSemantic";

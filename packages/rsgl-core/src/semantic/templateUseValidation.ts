@@ -13,6 +13,10 @@ import { fileDiagnostic, toDiagnostic } from "./diagnostics";
 import { mergeResolvedExpectedTypeFact } from "./expectedTypeFacts";
 import { checkTextureRefExpression } from "./expressionChecker";
 import { lookup } from "./scopes";
+import {
+  callableExpressionName,
+  resolveCallableSymbolInScope
+} from "./moduleNamespace";
 import type {
   RsglContextualTextureSinkRecord,
   RsglFileDiagnostic,
@@ -158,10 +162,10 @@ class ResolvedTemplateUseValidator {
 
   private validateUse(site: TemplateUseSite, callerContext: RsglTemplateCallerContext): void {
     const expression = site.record.expression;
-    if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+    if (expression.kind !== "CallExpr") {
       return;
     }
-    const symbol = lookup(site.record.scope, expression.callee.name.text);
+    const symbol = resolveCallableSymbolInScope(site.record.scope, expression.callee);
     if (isTemplateDeclNode(symbol?.node) && this.conflictingTemplates.has(symbol.node)) {
       return;
     }
@@ -215,7 +219,7 @@ class ResolvedTemplateUseValidator {
 
   private validateUseCallableKind(site: TemplateUseSite): void {
     const expression = site.record.expression;
-    if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+    if (expression.kind !== "CallExpr") {
       this.push(fileDiagnostic(
         site.fileName,
         "rsgl.functionValueCannotUse",
@@ -224,14 +228,29 @@ class ResolvedTemplateUseValidator {
       ));
       return;
     }
-    const name = expression.callee.name.text;
-    const symbol = lookup(site.record.scope, name);
-    const isBuiltinResourceBodyHelper = symbol?.kind === "builtin"
+    const name = callableExpressionName(expression.callee);
+    const symbol = resolveCallableSymbolInScope(site.record.scope, expression.callee);
+    if (!name) {
+      this.push(fileDiagnostic(
+        site.fileName,
+        "rsgl.functionValueCannotUse",
+        "use requires a template call or a registered resource-body helper.",
+        expression.range
+      ));
+      return;
+    }
+    const isBuiltinResourceBodyHelper = expression.callee.kind === "IdentifierExpr"
+      && symbol?.kind === "builtin"
       && Boolean(getRsglResourceBodyHelperDescriptor(name));
     if (isBuiltinResourceBodyHelper || (symbol && resolvedTemplateOutputMetadata(symbol))) {
       return;
     }
-    if (symbol && symbol.kind !== "template" && (symbol.signature || symbol.type.kind === "Function")) {
+    if (
+      expression.callee.kind === "IdentifierExpr"
+      && symbol
+      && symbol.kind !== "template"
+      && (symbol.signature || symbol.type.kind === "Function")
+    ) {
       this.push(fileDiagnostic(
         site.fileName,
         "rsgl.functionValueCannotUse",

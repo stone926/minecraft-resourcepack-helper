@@ -27,6 +27,7 @@ import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import { RsglCompileDiagnostic } from "./ir";
 import { RsglType, typeFromAnnotation } from "../semantic/types";
 import { contextualizeEvaluatedValue } from "./contextualResourceValueConversion";
+import { isModuleNamespaceValue, type ModuleNamespaceValue } from "./moduleNamespaceValue";
 
 export type RsglCompileContext = EvaluationContext & {
   templates?: Map<string, RsglTemplateDefinition>;
@@ -64,10 +65,13 @@ export function createTemplateExpansion(
   options: TemplateExpansionOptions,
   resolvedDefinition?: RsglTemplateDefinition
 ): TemplateExpansion | undefined {
-  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+  if (expression.kind !== "CallExpr") {
     return undefined;
   }
-  const templateName = expression.callee.name.text;
+  const templateName = templateCalleeDisplayName(expression.callee);
+  if (!templateName) {
+    return undefined;
+  }
   const template = resolvedDefinition
     ?? resolveTemplateDefinition(expression, context, options.templates);
   if (!template) {
@@ -152,13 +156,47 @@ export function resolveTemplateDefinition(
   context: RsglCompileContext,
   templates: ReadonlyMap<string, RsglTemplateDefinition>
 ): RsglTemplateDefinition | undefined {
-  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+  if (expression.kind !== "CallExpr") {
     return undefined;
   }
-  if (hasEvaluationValueBinding(context, expression.callee.name.text)) {
+  if (expression.callee.kind === "IdentifierExpr") {
+    if (hasEvaluationValueBinding(context, expression.callee.name.text)) {
+      return undefined;
+    }
+    return (context.templates ?? templates).get(expression.callee.name.text);
+  }
+  if (expression.callee.kind !== "MemberExpr") {
     return undefined;
   }
-  return (context.templates ?? templates).get(expression.callee.name.text);
+  const namespaceValue = resolveNamespaceExpression(expression.callee.object, context);
+  return namespaceValue?.resolveTemplate(expression.callee.property.text);
+}
+
+function resolveNamespaceExpression(
+  expression: ExprNode,
+  context: RsglCompileContext
+): ModuleNamespaceValue | undefined {
+  if (expression.kind === "IdentifierExpr") {
+    const value = context.variables.get(expression.name.text);
+    return isModuleNamespaceValue(value) ? value : undefined;
+  }
+  if (expression.kind !== "MemberExpr") {
+    return undefined;
+  }
+  const parent = resolveNamespaceExpression(expression.object, context);
+  const value = parent?.resolveValue(expression.property.text)?.value;
+  return isModuleNamespaceValue(value) ? value : undefined;
+}
+
+function templateCalleeDisplayName(expression: ExprNode): string | undefined {
+  if (expression.kind === "IdentifierExpr") {
+    return expression.name.text;
+  }
+  if (expression.kind !== "MemberExpr") {
+    return undefined;
+  }
+  const objectName = templateCalleeDisplayName(expression.object);
+  return objectName ? `${objectName}.${expression.property.text}` : undefined;
 }
 
 export function templateResourceBody(body: TemplateBodyNode): ResourceBodyNode | null {

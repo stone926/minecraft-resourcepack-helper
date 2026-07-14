@@ -251,7 +251,12 @@ function isScalarKind(kind: RsglType["kind"]): boolean {
 }
 
 function isJsonCompatibleType(type: RsglType): boolean {
-  if (type.kind === "Function" || type.kind === "Missing" || type.kind === "Unknown") {
+  if (
+    type.kind === "Function"
+    || type.kind === "ModuleNamespace"
+    || type.kind === "Missing"
+    || type.kind === "Unknown"
+  ) {
     return false;
   }
   if (type.kind === "Union") {
@@ -296,6 +301,8 @@ function rsglTypeKeyInternal(type: RsglType, ancestors: Set<RsglType>): string {
     }
     case "TypeParameter":
       return `TypeParameter<${type.typeParameterName ?? "?"}>`;
+    case "ModuleNamespace":
+      return `ModuleNamespace<${JSON.stringify(type.moduleNamespaceId ?? "?")}>`;
     default:
       return type.contextualEscapeOnly
         ? `${type.kind}<contextual-escape-only>`

@@ -1,6 +1,6 @@
 import type { TemplateDeclNode } from "../parser";
 import { fileDiagnostic } from "./diagnostics";
-import { lookup } from "./scopes";
+import { callableExpressionName, resolveCallableSymbolInScope } from "./moduleNamespace";
 import type { RsglFileDiagnostic, RsglSemanticModel } from "./types";
 
 interface TemplateCallEdge {
@@ -39,19 +39,20 @@ function collectTemplateCallEdges(models: readonly RsglSemanticModel[]): Templat
         continue;
       }
       const expression = use.expression;
-      if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+      if (expression.kind !== "CallExpr") {
         continue;
       }
-      const symbol = lookup(use.scope, expression.callee.name.text);
+      const symbol = resolveCallableSymbolInScope(use.scope, expression.callee);
       if (!symbol?.signature?.templateOutput || !isTemplateDeclNode(symbol.node)) {
         continue;
       }
+      const calleeName = callableExpressionName(expression.callee) ?? symbol.name;
       edges.push({
         from: use.enclosingTemplate,
         to: symbol.node,
         fileName: model.fileName,
         range: expression.range,
-        calleeName: expression.callee.name.text
+        calleeName
       });
     }
   }

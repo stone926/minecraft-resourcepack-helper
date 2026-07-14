@@ -36,8 +36,11 @@ import {
   handleSemanticWatchedFileBatch,
   normalizeFileName,
   projectSemanticConfigurationFingerprint,
+  prepareRenameForDocument,
+  renameEditsForDocument,
   rsglBlockstateLegacyFixAllKind,
   toLspDefinitionLocation,
+  toLspWorkspaceEdit,
   toValidationSettings,
   type RsglValidationSettings
 } from "./serverCore";
@@ -66,6 +69,7 @@ connection.onInitialize(params => {
         retriggerCharacters: [","]
       },
       definitionProvider: true,
+      renameProvider: { prepareProvider: true },
       documentFormattingProvider: true,
       codeActionProvider: {
         codeActionKinds: ["quickfix", rsglBlockstateLegacyFixAllKind]
@@ -179,6 +183,34 @@ connection.onDefinition(async params => {
   return targetDocument
     ? toLspDefinitionLocation(targetDocument, targetDocument.uri, definition)
     : null;
+});
+
+connection.onPrepareRename(params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return null;
+  }
+  return prepareRenameForDocument(
+    document,
+    fileNameFromUri(document.uri),
+    document.offsetAt(params.position),
+    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+  );
+});
+
+connection.onRenameRequest(async params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return null;
+  }
+  const edits = renameEditsForDocument(
+    document,
+    fileNameFromUri(document.uri),
+    document.offsetAt(params.position),
+    params.newName,
+    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+  );
+  return edits ? toLspWorkspaceEdit(edits, loadDefinitionDocument) : null;
 });
 
 connection.languages.semanticTokens.on(params => {

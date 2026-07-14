@@ -43,6 +43,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     kind: "snippet"
   },
   {
+    label: "import namespace",
+    insertText: "import * as ${1:common} from \"${2:./module.rsgl}\"",
+    detail: "Import an RSGL module as a namespace",
+    kind: "snippet"
+  },
+  {
     label: "export",
     insertText: "export { ${1:name} }",
     detail: "Export RSGL symbols",

@@ -10,6 +10,7 @@ import {
   RsglExpressionCheckContext
 } from "./expressionChecker";
 import { scopeWithLinkedGlobalFallback } from "./linkedScope";
+import { resolveCallableSymbolInScope } from "./moduleNamespace";
 import { formatType, isAssignable } from "./typeRelations";
 import {
   identifierName,
@@ -89,14 +90,17 @@ class ResolvedImportCallValidator {
 
   private validateCallExpression(expression: Extract<ExprNode, { kind: "CallExpr" }>): void {
     const { callee, args } = expression;
-    if (callee.kind !== "IdentifierExpr") {
-      return;
-    }
-    const symbol = this.model.scope.symbols.get(callee.name.text);
-    if (symbol?.kind !== "import") {
-      return;
-    }
     const callScope = this.model.importCallScopes?.get(expression);
+    const symbol = callee.kind === "IdentifierExpr"
+      ? this.model.scope.symbols.get(callee.name.text)
+      : callScope
+        ? resolveCallableSymbolInScope(callScope, callee)
+        : undefined;
+    const isNamedImport = callee.kind === "IdentifierExpr" && symbol?.kind === "import";
+    const isNamespaceMember = callee.kind === "MemberExpr" && Boolean(symbol);
+    if ((!isNamedImport && !isNamespaceMember) || !symbol) {
+      return;
+    }
     if (!symbol.signature) {
       if (callScope && symbol.type.kind === "Function") {
         this.validateAnonymousImportedFunction(symbol.type, args, expression.range, callScope);

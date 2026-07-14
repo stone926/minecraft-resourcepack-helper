@@ -17,6 +17,21 @@ describe("RSGL lexer", () => {
     assert.ok(result.tokens.some(token => token.kind === "number" && token.text === "88"));
   });
 
+  it("tokenizes namespace import punctuation without introducing new keywords", () => {
+    const result = lexRsgl("import * as common from \"./common.rsgl\"");
+    const tokens = result.tokens.filter(token => token.kind !== "endOfFile");
+
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.deepStrictEqual(tokens.map(token => [token.kind, token.text]), [
+      ["keyword", "import"],
+      ["operator", "*"],
+      ["keyword", "as"],
+      ["identifier", "common"],
+      ["keyword", "from"],
+      ["string", "\"./common.rsgl\""]
+    ]);
+  });
+
   it("classifies the base and merge vocabulary without retaining removed keywords", () => {
     const result = lexRsgl("base merge deep strict upsert append raw_json raw_json_file override");
     const kinds = new Map(result.tokens.map(token => [token.text, token.kind]));

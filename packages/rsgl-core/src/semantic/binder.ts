@@ -40,6 +40,7 @@ import {
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
 import { applyLegacyBlockstateMode, resolveLegacyBlockstateMode } from "./blockstateModeInference";
 import { createChildScope, createScope, lookup } from "./scopes";
+import { createModuleNamespaceType } from "./moduleNamespace";
 import {
   installPrelinkedTypeAliases,
   predeclareTypeAliases,
@@ -49,7 +50,7 @@ import { scopeForTruthyCondition } from "./typeNarrowing";
 import {
   inferResolvedTemplateOutputMetadata,
   resolveProgramTemplateOutputMetadata,
-  templateOutputClassificationForSymbol
+  templateOutputClassificationForName
 } from "./templateOutputResolution";
 import {
   anyType,
@@ -528,7 +529,10 @@ class RsglBinder implements RsglExpressionCheckContext {
       source,
       node: statement,
       defaultName: statement.defaultName?.text,
-      importAll: !statement.defaultName && statement.namedImports.length === 0,
+      namespaceName: statement.namespaceName?.text,
+      importAll: !statement.defaultName
+        && !statement.namespaceName
+        && statement.namedImports.length === 0,
       namedImports: statement.namedImports.map(item => ({
         imported: item.imported.text,
         local: item.local.text,
@@ -537,6 +541,18 @@ class RsglBinder implements RsglExpressionCheckContext {
       resolvedFileName
     };
     this.imports.push(record);
+
+    if (statement.namespaceName) {
+      const namespaceType = this.options.prelinkedModuleNamespaces?.get(statement.namespaceName.text)
+        ?? createModuleNamespaceType(resolvedFileName ?? source);
+      this.defineIdentifier(
+        scope,
+        statement.namespaceName,
+        "namespace",
+        namespaceType,
+        statement
+      );
+    }
 
     for (const specifier of statement.namedImports) {
       if (!this.options.typeOnlyImportNames?.has(specifier.local.text)) {
@@ -589,7 +605,7 @@ class RsglBinder implements RsglExpressionCheckContext {
           })),
         returnType: jsonType,
         templateOutput: inferResolvedTemplateOutputMetadata(statement, calleeName =>
-          templateOutputClassificationForSymbol(lookup(scope, calleeName))
+          templateOutputClassificationForName(scope, calleeName)
         )
       }
     });

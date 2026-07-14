@@ -426,6 +426,7 @@ export interface ImportSpecifierNode extends RsglNode {
 export interface ImportDeclNode extends StatementNodeBase {
   kind: "ImportDecl";
   defaultName?: IdentifierNode;
+  namespaceName?: IdentifierNode;
   namedImports: ImportSpecifierNode[];
   source: StringLiteralNode | null;
 }

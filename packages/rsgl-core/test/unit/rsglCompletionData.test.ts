@@ -11,6 +11,15 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "target"));
     assert.ok(topLevel.some(candidate => candidate.label === "target mc"));
     assert.ok(topLevel.some(candidate => candidate.label === "export"));
+    assert.deepStrictEqual(
+      topLevel.find(candidate => candidate.label === "import namespace"),
+      {
+        label: "import namespace",
+        insertText: "import * as ${1:common} from \"${2:./module.rsgl}\"",
+        detail: "Import an RSGL module as a namespace",
+        kind: "snippet"
+      }
+    );
     assert.ok(topLevel.some(candidate => candidate.label === "atlas"));
     assert.ok(topLevel.some(candidate => candidate.label === "particles"));
     assert.ok(topLevel.some(candidate => candidate.label === "equipment"));

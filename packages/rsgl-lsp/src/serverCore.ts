@@ -14,7 +14,9 @@ import {
   type Location,
   type Position,
   type Range,
-  type SignatureHelp
+  type SignatureHelp,
+  type TextEdit,
+  type WorkspaceEdit
 } from "vscode-languageserver/node";
 import {
   applyTextEdits,
@@ -24,12 +26,14 @@ import {
   getRsglDocumentCompletionItems,
   getRsglDocumentDefinitionLocation,
   getRsglDocumentHoverInfo,
+  getRsglDocumentRenameEdits,
   getRsglDocumentSignatureHelpInfo,
   getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
   loadRsglProjectConfigForSource,
   migrateLegacyBlockstateProgram,
   parseRsgl,
+  prepareRsglDocumentRename,
   projectCompileOptionsFromRsglConfig,
   resolveRsglCompileConfiguration,
   RsglProjectConfigError,
@@ -43,6 +47,7 @@ import {
   type RsglResourceValidationOptions,
   type RsglMigrationProgramFile,
   type RsglModule,
+  type RsglRenameEdit,
   type RsglSemanticModel,
   type RsglSemanticToken,
   type RsglSymbol,
@@ -588,6 +593,94 @@ export function toLspDefinitionLocation(
   };
 }
 
+/** Prepares a namespace alias/member rename and converts its source offsets. */
+export function prepareRenameForDocument(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): { range: Range; placeholder: string } | null {
+  try {
+    const target = prepareRsglDocumentRename({
+      fileName,
+      getText: () => document.getText()
+    }, offset, deps);
+    return target
+      ? {
+          range: {
+            start: document.positionAt(clampOffset(document, target.range.start)),
+            end: document.positionAt(clampOffset(document, target.range.end))
+          },
+          placeholder: target.placeholder
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns protocol-neutral rename edits; target documents are converted separately. */
+export function renameEditsForDocument(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  newName: string,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): RsglRenameEdit[] | null {
+  try {
+    return getRsglDocumentRenameEdits({
+      fileName,
+      getText: () => document.getText()
+    }, offset, newName, deps) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Target document required to convert one core offset edit into an LSP edit. */
+export interface RsglRenameTargetDocument extends RsglLspDocument {
+  uri: string;
+}
+
+/**
+ * Converts a complete cross-file rename atomically. If any target document
+ * cannot be loaded, no partial WorkspaceEdit is returned.
+ */
+export async function toLspWorkspaceEdit(
+  edits: readonly RsglRenameEdit[],
+  loadDocument: (fileName: string) => Promise<RsglRenameTargetDocument | null>
+): Promise<WorkspaceEdit | null> {
+  try {
+    const loadedDocuments: Array<{ fileName: string; document: RsglRenameTargetDocument }> = [];
+    const changes = new Map<string, TextEdit[]>();
+    for (const edit of edits) {
+      let target = loadedDocuments.find(candidate => sameFileName(candidate.fileName, edit.fileName));
+      if (!target) {
+        const document = await loadDocument(edit.fileName);
+        if (!document) {
+          return null;
+        }
+        target = { fileName: edit.fileName, document };
+        loadedDocuments.push(target);
+      }
+      const documentEdits = changes.get(target.document.uri) ?? [];
+      if (!changes.has(target.document.uri)) {
+        changes.set(target.document.uri, documentEdits);
+      }
+      documentEdits.push({
+        range: {
+          start: target.document.positionAt(clampOffset(target.document, edit.range.start)),
+          end: target.document.positionAt(clampOffset(target.document, edit.range.end))
+        },
+        newText: edit.newText
+      });
+    }
+    return { changes: Object.fromEntries(changes) };
+  } catch {
+    return null;
+  }
+}
+
 /** Finds the semantic model belonging to the given file within a bound workspace program. */
 export function semanticModelForFile(
   semanticProgram: RsglWorkspaceSemanticProgram,
@@ -676,6 +769,9 @@ function toCompletionKind(kind: RsglCompletionItem["kind"]): CompletionItemKind 
   }
   if (kind === "file") {
     return CompletionItemKind.File;
+  }
+  if (kind === "module") {
+    return CompletionItemKind.Module;
   }
   if (kind === "variable") {
     return CompletionItemKind.Variable;

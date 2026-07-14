@@ -42,6 +42,7 @@ import type {
 import { templateOutputMetadataFingerprint } from "../templateOutput";
 import { inferResolvedTemplateOutputMetadata } from "../semantic/templateOutputResolution";
 import { EvaluationItemBudget } from "./evaluationItemBudget";
+import { ModuleNamespaceValue, isModuleNamespaceValue } from "./moduleNamespaceValue";
 
 export interface RsglModuleCompileEnvironment {
   fileName: string;
@@ -288,6 +289,20 @@ function collectImportedEnvironmentBindings(
     }
 
     const targetEnvironment = createEnvironment(targetModel);
+    const namespaceName = importedNamespaceName(record);
+    if (namespaceName) {
+      const namespaceValue = new ModuleNamespaceValue({
+        fileName: targetEnvironment.fileName,
+        namespace: targetEnvironment.namespace,
+        values: targetEnvironment.exportedValues,
+        valueOrigins: targetEnvironment.exportedValueOrigins,
+        valuePathOrigins: targetEnvironment.exportedValuePathOrigins,
+        valueIssues: targetEnvironment.exportedValueIssues,
+        templates: targetEnvironment.exportedTemplates
+      });
+      environment.importedValues.set(namespaceName, namespaceValue);
+      environment.allValues.set(namespaceName, namespaceValue);
+    }
     if (record.importAll) {
       copyValueBindings(
         environment.importedValues,
@@ -365,21 +380,6 @@ function collectExportedEnvironmentBindings(
   exportMaps: Map<string, Map<string, RsglSymbol>>,
   createEnvironment: (model: RsglSemanticModel) => RsglModuleCompileEnvironment
 ): void {
-  if (model.exports.length === 0) {
-    copyValueBindings(
-      environment.exportedValues,
-      environment.exportedValueOrigins,
-      environment.exportedValuePathOrigins,
-      environment.exportedValueIssues,
-      environment.allValues,
-      environment.allValueOrigins,
-      environment.allValuePathOrigins,
-      environment.allValueIssues
-    );
-    copyTemplates(environment.exportedTemplates, environment.allTemplates);
-    return;
-  }
-
   const semanticExports = exportMaps.get(normalizeFileName(model.fileName)) ?? new Map();
   for (const [exportedName, symbol] of semanticExports) {
     if (symbol && typeof symbol === "object" && "name" in symbol) {
@@ -685,16 +685,21 @@ function calculateTemplateDefinitionFingerprint(
   }
 
   active.add(sourceIdentity);
-  const callees = collectTemplateCalleeNames(definition.node)
-    .map(name => {
-      const callee = definition.templates.get(name);
+  const callees = collectTemplateCalleeReferences(definition.node)
+    .map(reference => {
+      const callee = reference.namespaceName
+        ? qualifiedTemplateDefinition(
+          definition.values.get(reference.namespaceName),
+          reference.memberName
+        )
+        : definition.templates.get(reference.memberName);
       return callee
         ? {
-            name,
+            name: reference.displayName,
             sourceIdentity: templateDefinitionSourceIdentity(callee),
             fingerprint: calculateTemplateDefinitionFingerprint(callee, targetContext, memo, active)
           }
-        : { name, unresolved: true };
+        : { name: reference.displayName, unresolved: true };
     })
     .sort((left, right) => left.name.localeCompare(right.name, "en"));
   const fingerprint = createHash("sha256")
@@ -726,8 +731,14 @@ function templateDefinitionSourceIdentity(definition: RsglTemplateDefinition): s
   ]);
 }
 
-function collectTemplateCalleeNames(node: TemplateDeclNode): string[] {
-  const names = new Set<string>();
+interface TemplateCalleeReference {
+  displayName: string;
+  namespaceName?: string;
+  memberName: string;
+}
+
+function collectTemplateCalleeReferences(node: TemplateDeclNode): TemplateCalleeReference[] {
+  const references = new Map<string, TemplateCalleeReference>();
   const seen = new WeakSet<object>();
   const visit = (value: unknown): void => {
     if (!value || typeof value !== "object" || seen.has(value)) {
@@ -742,12 +753,28 @@ function collectTemplateCalleeNames(node: TemplateDeclNode): string[] {
     if (record.kind === "UseDecl") {
       const expression = record.expression as {
         kind?: string;
-        callee?: { kind?: string; name?: { text?: string } };
+        callee?: {
+          kind?: string;
+          name?: { text?: string };
+          object?: { kind?: string; name?: { text?: string } };
+          property?: { text?: string };
+        };
       } | undefined;
       if (expression?.kind === "CallExpr" && expression.callee?.kind === "IdentifierExpr") {
         const name = expression.callee.name?.text;
         if (name) {
-          names.add(name);
+          references.set(name, { displayName: name, memberName: name });
+        }
+      } else if (
+        expression?.kind === "CallExpr"
+        && expression.callee?.kind === "MemberExpr"
+        && expression.callee.object?.kind === "IdentifierExpr"
+      ) {
+        const namespaceName = expression.callee.object.name?.text;
+        const memberName = expression.callee.property?.text;
+        if (namespaceName && memberName) {
+          const displayName = `${namespaceName}.${memberName}`;
+          references.set(displayName, { displayName, namespaceName, memberName });
         }
       }
     }
@@ -758,7 +785,20 @@ function collectTemplateCalleeNames(node: TemplateDeclNode): string[] {
     }
   };
   visit(node.body);
-  return [...names];
+  return [...references.values()];
+}
+
+function qualifiedTemplateDefinition(
+  namespaceValue: EvaluationValue,
+  memberName: string
+): RsglTemplateDefinition | undefined {
+  return isModuleNamespaceValue(namespaceValue)
+    ? namespaceValue.resolveTemplate(memberName)
+    : undefined;
+}
+
+function importedNamespaceName(record: RsglSemanticModel["imports"][number]): string | undefined {
+  return record.namespaceName ?? record.node.namespaceName?.text;
 }
 
 function normalizeFileName(fileName: string): string {

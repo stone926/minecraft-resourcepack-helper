@@ -157,7 +157,11 @@ function linkImports(
       if (!targetExports) {
         continue;
       }
-      if (!declaration.defaultName && declaration.namedImports.length === 0) {
+      if (
+        !declaration.defaultName
+        && !declaration.namespaceName
+        && declaration.namedImports.length === 0
+      ) {
         for (const [name, alias] of targetExports) {
           changed = installImportedAlias(module, name, alias, declaration.range, diagnostics) || changed;
         }

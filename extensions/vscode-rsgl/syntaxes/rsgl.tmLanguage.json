@@ -218,6 +218,20 @@
           "end": "(?<=\")|^(?![ \\t]*(?:from\\b|\"|//|/\\*|$))",
           "patterns": [
             {
+              "match": "(\\*)([ \\t]+)(as)([ \\t]+)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]+from\\b)",
+              "captures": {
+                "1": {
+                  "name": "keyword.operator.rsgl"
+                },
+                "3": {
+                  "name": "keyword.control.rsgl"
+                },
+                "5": {
+                  "name": "entity.name.namespace.rsgl"
+                }
+              }
+            },
+            {
               "include": "#comments"
             },
             {

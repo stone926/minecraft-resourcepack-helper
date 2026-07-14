@@ -60,6 +60,29 @@ describe("RSGL program type aliases", () => {
     assert.strictEqual(main.scope.typeAliases.get("Shared")?.type?.kind, "Object");
   });
 
+  it("does not import type aliases through a module namespace binding", () => {
+    const root = path.resolve("C:/rsgl-tests/module-namespace-types");
+    const sharedFile = path.join(root, "shared.rsgl");
+    const mainFile = path.join(root, "main.rsgl");
+    const program = bind([
+      source(sharedFile, [
+        "type Hidden = { label: String }",
+        "let VALUE = 1",
+        "export { Hidden, VALUE }"
+      ]),
+      source(mainFile, [
+        "import * as common from \"./shared.rsgl\"",
+        "let unresolved: Hidden = { label: \"not imported\" }",
+        "let value = common.VALUE"
+      ])
+    ]);
+    const main = model(program, mainFile);
+
+    assert.strictEqual(main.scope.typeAliases.has("Hidden"), false);
+    assert.strictEqual(main.scope.symbols.get("unresolved")?.type.kind, "Unknown");
+    assert.strictEqual(main.scope.symbols.get("value")?.type.kind, "Number");
+  });
+
   it("preserves aliases through a non-ASCII re-export chain and implicit exports", () => {
     const root = path.resolve("C:/rsgl-tests/资源 包/reexports");
     const sourceFile = path.join(root, "原始.rsgl");

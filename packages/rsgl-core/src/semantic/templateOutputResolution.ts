@@ -19,7 +19,10 @@ import {
   templateOutputMetadataFingerprint
 } from "../templateOutput";
 import type { RsglSemanticModel, RsglSymbol } from "./types";
+import type { RsglScope } from "./types";
 import { getRsglResourceBodyHelperDescriptor } from "../resourceBodyHelpers";
+import { resolveModuleNamespaceMember } from "./moduleNamespace";
+import { lookup } from "./scopes";
 
 export type ResolvedTemplateOutputClassification =
   | {
@@ -142,7 +145,7 @@ export function resolveModelTemplateOutputMetadata(model: RsglSemanticModel): bo
       continue;
     }
     const nextClassification = classifyResolvedTemplateOutputMetadata(symbol.node, name =>
-      templateOutputClassificationForSymbol(model.scope.symbols.get(name))
+      templateOutputClassificationForName(model.scope, name)
     );
     const next = nextClassification.metadata;
     const nextConflict = nextClassification.kind === "conflict"
@@ -325,11 +328,20 @@ function collectUseEvidence(
   evidence: TemplateEvidence,
   bindings: ReadonlySet<string>
 ): void {
-  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+  if (expression.kind !== "CallExpr") {
     return;
   }
-  const name = expression.callee.name.text;
-  if (bindings.has(name)) {
+  const callee = expression.callee;
+  const name = callee.kind === "IdentifierExpr"
+    ? callee.name.text
+    : callee.kind === "MemberExpr" && callee.object.kind === "IdentifierExpr"
+      ? `${callee.object.name.text}.${callee.property.text}`
+      : undefined;
+  if (!name) {
+    return;
+  }
+  const rootName = name.split(".", 1)[0];
+  if (bindings.has(rootName)) {
     return;
   }
   const resolved = resolveCallee(name);
@@ -339,7 +351,7 @@ function collectUseEvidence(
     return;
   }
   if (resolved === undefined) {
-    const helper = getRsglResourceBodyHelperDescriptor(name);
+    const helper = name.includes(".") ? undefined : getRsglResourceBodyHelperDescriptor(name);
     if (helper) {
       evidence.bodyDialects.add({ kind: "resourceBody", resourceKind: helper.resourceKind });
     }
@@ -529,6 +541,21 @@ export function templateOutputClassificationForSymbol(
     return undefined;
   }
   return null;
+}
+
+export function templateOutputClassificationForName(
+  scope: RsglScope,
+  name: string
+): ResolvedTemplateOutputClassification | null | undefined {
+  const separator = name.indexOf(".");
+  if (separator < 0) {
+    return templateOutputClassificationForSymbol(lookup(scope, name));
+  }
+  const namespace = lookup(scope, name.slice(0, separator));
+  const member = namespace
+    ? resolveModuleNamespaceMember(namespace.type, name.slice(separator + 1))
+    : undefined;
+  return templateOutputClassificationForSymbol(member?.symbol);
 }
 
 function templateOutputConflictFingerprint(

@@ -7,6 +7,7 @@ import {
 } from "./completionService";
 import { visibleRsglSymbolsAtOffset } from "./completionScope";
 import {
+  callablePresentation,
   getRsglDefinitionLocation,
   getRsglHoverInfo,
   getRsglSignatureHelpInfo,
@@ -28,6 +29,12 @@ import {
 } from "./semanticTokens";
 import { formatType } from "./semantic/typeRelations";
 import type { RsglWorkspaceSemanticProgram } from "./workspaceSemantic";
+import {
+  getRsglNamespaceRenameEdits,
+  prepareRsglNamespaceRename,
+  type RsglRenameEdit,
+  type RsglRenameTarget
+} from "./renameService";
 
 export interface RsglLanguageDocument {
   fileName: string;
@@ -47,11 +54,23 @@ export function getRsglDocumentCompletionItems(
   const text = document.getText();
   const members = getRsglMemberCompletionInfo(context.program, document.fileName, text, offset);
   if (members) {
-    return members.map(member => ({
-      label: member.name,
-      kind: "property",
-      detail: `${member.optional ? "optional " : ""}property: ${formatType(member.type)}`
-    }));
+    return members.map(member => {
+      if (!member.category || !member.symbol) {
+        return {
+          label: member.name,
+          kind: "property" as const,
+          detail: `${member.optional ? "optional " : ""}property: ${formatType(member.type)}`
+        };
+      }
+      const callable = callablePresentation(member.symbol, member.name);
+      return {
+        label: member.name,
+        kind: callable ? "function" as const : "variable" as const,
+        detail: callable
+          ? `${member.category}: ${callable.detail ? `${callable.label} — ${callable.detail}` : callable.label}`
+          : `${member.category}: ${formatType(member.type)}`
+      };
+    });
   }
   return getRsglCompletionItems(
     text,
@@ -97,6 +116,32 @@ export function getRsglDocumentDefinitionLocation(
 ): RsglDefinitionLocation | undefined {
   const context = semanticContextForRsglDocument(document, workspace);
   return getRsglDefinitionLocation(context.program, document.fileName, document.getText(), offset);
+}
+
+/** Prepares rename only for a module namespace alias or one of its members. */
+export function prepareRsglDocumentRename(
+  document: RsglLanguageDocument,
+  offset: number,
+  workspace: RsglLanguageWorkspace
+): RsglRenameTarget | undefined {
+  const context = semanticContextForRsglDocument(document, workspace);
+  return prepareRsglNamespaceRename(context.program, document.fileName, offset);
+}
+
+/** Computes offset edits; protocol layers convert each target document. */
+export function getRsglDocumentRenameEdits(
+  document: RsglLanguageDocument,
+  offset: number,
+  newName: string,
+  workspace: RsglLanguageWorkspace
+): RsglRenameEdit[] | undefined {
+  const context = semanticContextForRsglDocument(document, workspace);
+  return getRsglNamespaceRenameEdits(
+    context.program,
+    document.fileName,
+    offset,
+    newName
+  );
 }
 
 export function semanticModelForRsglDocument(

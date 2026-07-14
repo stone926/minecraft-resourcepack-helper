@@ -10,6 +10,21 @@ import {
 } from "./helpers/textMateGrammar";
 
 describe("RSGL TextMate grammar", () => {
+  it("highlights namespace import aliases without reclassifying other import forms", () => {
+    const grammar = readGrammar();
+    const source = [
+      "import * as common from \"./common.rsgl\"",
+      "import { stone as rock } from \"./common.rsgl\"",
+      "import \"./all.rsgl\""
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "common", "entity.name.namespace.rsgl", 0);
+    expectScope(tokenization, source, "as", "keyword.control.rsgl", 0);
+    expectScope(tokenization, source, "from", "keyword.control.rsgl", 0);
+    expectNoScope(tokenization, source, "rock", "entity.name.namespace.rsgl");
+  });
+
   it("highlights spread as one operator without changing range tokenization", () => {
     const grammar = readGrammar();
     const source = [

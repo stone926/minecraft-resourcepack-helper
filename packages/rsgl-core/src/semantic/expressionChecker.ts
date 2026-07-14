@@ -21,6 +21,7 @@ import {
   selectContextualObjectArm
 } from "./contextualObjectChecking";
 import { diagnostic } from "./diagnostics";
+import { checkModuleNamespaceMember } from "./moduleNamespace";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { checkMatchExhaustiveness, finiteStringDomain, isWildcardPattern } from "./domainChecks";
 import { checkLambdaExpression, lambdaSignature } from "./lambdaTyping";
@@ -152,6 +153,15 @@ function checkExpressionCore(context: RsglExpressionCheckContext, expression: Ex
   }
   if (expression.kind === "MemberExpr") {
     const objectType = checkExpression(context, expression.object, scope);
+    const namespaceMember = checkModuleNamespaceMember(
+      context,
+      expression,
+      objectType,
+      "value"
+    );
+    if (namespaceMember) {
+      return namespaceMember.member?.symbol.type ?? unknownType;
+    }
     const result = resolveMemberType(
       objectType,
       expression.property.text,
@@ -264,7 +274,13 @@ export function checkTemplateUseExpression(
   expression: ExprNode,
   scope: RsglScope
 ): RsglType {
-  if (expression.kind !== "CallExpr" || expression.callee.kind !== "IdentifierExpr") {
+  if (
+    expression.kind !== "CallExpr"
+    || (
+      expression.callee.kind !== "IdentifierExpr"
+      && expression.callee.kind !== "MemberExpr"
+    )
+  ) {
     const type = checkExpression(context, expression, scope);
     context.diagnostics.push(diagnostic(
       "rsgl.functionValueCannotUse",
@@ -875,6 +891,14 @@ export function checkAssignable(context: RsglExpressionCheckContext, expected: R
     // the actionable guard diagnostic.
     return;
   }
+  if (expected.kind === "Json" && containsModuleNamespaceType(actual)) {
+    context.diagnostics.push(diagnostic(
+      "rsgl.moduleNamespaceValueNotSerializable",
+      "A module namespace cannot be serialized as JSON; select one of its exported values.",
+      node.range
+    ));
+    return;
+  }
   if (!isAssignable(expected, actual)) {
     const expectedResourceKind = singleExpectedResourceValueKind(expected);
     const actualResourceKind = resourceValueKindForTypeKind(actual.kind);
@@ -960,6 +984,30 @@ function reportStructuralAccessIssues(
       ));
     }
   }
+}
+
+function containsModuleNamespaceType(type: RsglType, seen = new Set<RsglType>()): boolean {
+  if (type.kind === "ModuleNamespace") {
+    return true;
+  }
+  if (seen.has(type)) {
+    return false;
+  }
+  seen.add(type);
+  if (type.kind === "Union") {
+    return (type.options ?? []).some(option => containsModuleNamespaceType(option, seen));
+  }
+  if (type.kind === "List") {
+    return type.elementType
+      ? containsModuleNamespaceType(type.elementType, seen)
+      : false;
+  }
+  if (type.kind === "Object") {
+    return Array.from(type.properties?.values() ?? [])
+      .some(property => containsModuleNamespaceType(property.type, seen))
+      || Boolean(type.indexType && containsModuleNamespaceType(type.indexType, seen));
+  }
+  return false;
 }
 
 function singleExpectedResourceValueKind(type: RsglType): RsglResourceValueKind | undefined {

@@ -237,10 +237,19 @@ class RsglParser extends StatementParser {
   private parseImportDecl(): TopLevelStatementNode {
     const start = this.advance();
     let defaultName: IdentifierNode | undefined;
+    let namespaceName: IdentifierNode | undefined;
     const namedImports: ImportSpecifierNode[] = [];
     let source: StringLiteralNode | null = null;
 
-    if (this.current().text === "{") {
+    if (this.matchText("*")) {
+      namespaceName = this.parseNamespaceImportName();
+      if (!this.matchText("from")) {
+        this.addDiagnosticAtCurrent(
+          "rsgl.expectedNamespaceImportFrom",
+          "Expected 'from' after namespace import alias."
+        );
+      }
+    } else if (this.current().text === "{") {
       namedImports.push(...this.parseImportSpecifiers());
       this.matchText("from");
     } else if (this.current().kind === "identifier" || this.current().kind === "keyword") {
@@ -268,10 +277,47 @@ class RsglParser extends StatementParser {
       kind: "ImportDecl",
       keyword: start.text,
       defaultName,
+      namespaceName,
       namedImports,
       source,
       ...this.nodeRanges(start, this.previousOr(start))
     };
+  }
+
+  private parseNamespaceImportName(): IdentifierNode | undefined {
+    if (!this.matchText("as")) {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedNamespaceImportAs",
+        "Expected 'as' after '*' in namespace import."
+      );
+    }
+
+    const token = this.current();
+    if (
+      token.text === "from"
+      || token.kind === "string"
+      || token.kind === "endOfFile"
+      || token.text === "}"
+      || (this.isStatementBoundary(token) && isTopLevelKeyword(token.text))
+    ) {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedNamespaceImportAlias",
+        "Expected namespace import alias."
+      );
+      return undefined;
+    }
+
+    if (token.kind !== "identifier" && token.kind !== "keyword") {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedNamespaceImportAlias",
+        "Expected namespace import alias."
+      );
+      this.advance();
+      return undefined;
+    }
+
+    this.advance();
+    return this.syntheticIdentifier(token, token.text);
   }
 
   private parseImportSpecifiers(): ImportSpecifierNode[] {
