@@ -1,4 +1,5 @@
 import type { PreviewBounds, PreviewDirection, PreviewMaterial, PreviewMesh, PreviewRange, PreviewVec3 } from "../ir/PreviewDocument";
+import { getCanonicalFaceVertices } from "../../../packages/mc-assets/src";
 import { lm } from "../../i18n/messages";
 import type { RawElement, ResolvedElement, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
@@ -100,7 +101,7 @@ export class CuboidBaker {
         continue;
       }
 
-      let positions = rotatePositions(getFacePositions(direction, from, to), element);
+      let positions = rotatePositions(getCanonicalFaceVertices(direction, from, to), element);
       let uvs = getFaceUvs(face.uv ?? getDefaultUv(direction, from, to), face.rotation ?? 0);
       const finalDirection = calculateFacing(positions);
       if (!element.rotation && finalDirection) {
@@ -138,28 +139,6 @@ function hasOutOfRangeCoordinate(vector: PreviewVec3): boolean {
 
 function getRenderableElements(model: ResolvedModel): ResolvedElement[] {
   return model.elements;
-}
-
-function getFacePositions(direction: PreviewDirection, from: PreviewVec3, to: PreviewVec3): PreviewVec3[] {
-  const [x1, y1, z1] = from;
-  const [x2, y2, z2] = to;
-
-  // Match Minecraft FaceInfo vertex order. The names x1/x2 mirror the JSON
-  // fields, not numeric min/max, because negative cuboids depend on that.
-  switch (direction) {
-    case "down":
-      return [[x1, y1, z2], [x1, y1, z1], [x2, y1, z1], [x2, y1, z2]];
-    case "up":
-      return [[x1, y2, z1], [x1, y2, z2], [x2, y2, z2], [x2, y2, z1]];
-    case "north":
-      return [[x2, y2, z1], [x2, y1, z1], [x1, y1, z1], [x1, y2, z1]];
-    case "south":
-      return [[x1, y2, z2], [x1, y1, z2], [x2, y1, z2], [x2, y2, z2]];
-    case "west":
-      return [[x1, y2, z1], [x1, y1, z1], [x1, y1, z2], [x1, y2, z2]];
-    case "east":
-      return [[x2, y2, z2], [x2, y1, z2], [x2, y1, z1], [x2, y2, z1]];
-  }
 }
 
 function getDrawableAxes(from: PreviewVec3, to: PreviewVec3): Record<"x" | "y" | "z", boolean> {
@@ -226,7 +205,7 @@ function recalculateWinding(
     Math.max(...positions.map(position => position[1])),
     Math.max(...positions.map(position => position[2]))
   ];
-  const targetPositions = getFacePositions(direction, min, max);
+  const targetPositions = getCanonicalFaceVertices(direction, min, max);
   const sourcePositions = positions.map(position => [...position] as PreviewVec3);
   const sourceUvs = uvs.map(uv => [...uv] as [number, number]);
   const targetUvs: Array<[number, number]> = [];
