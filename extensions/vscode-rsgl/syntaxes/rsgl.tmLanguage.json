@@ -25,6 +25,9 @@
       "include": "#externDeclarations"
     },
     {
+      "include": "#resourcePaths"
+    },
+    {
       "include": "#resourceLocations"
     },
     {
@@ -416,6 +419,14 @@
         {
           "name": "entity.name.resource-location.rsgl",
           "match": "(?<![A-Za-z0-9_.*:/-])[a-z0-9_.-]+:[a-z0-9_./-]+(?![A-Za-z0-9_.*:/-])"
+        }
+      ]
+    },
+    "resourcePaths": {
+      "patterns": [
+        {
+          "name": "entity.name.resource-location.rsgl",
+          "match": "(?<![A-Za-z0-9_.*:/-])[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)+(?![A-Za-z0-9_.*:/-])"
         }
       ]
     },

@@ -452,6 +452,41 @@ describe("RSGL TextMate grammar", () => {
       assert.doesNotMatch(invalid, resourceRegex, `Resource rule partially matched '${invalid}'.`);
     }
   });
+
+  it("keeps bare resource paths from reclassifying path segments as keywords", () => {
+    const grammar = readGrammar();
+    const source = [
+      "model block calibrated_sculk_sensor/overlay/overlay_parent {",
+      "  parent block/calibrated_sculk_sensor/power/parent",
+      "}"
+    ].join("\n");
+    const modelId = "calibrated_sculk_sensor/overlay/overlay_parent";
+    const parentId = "block/calibrated_sculk_sensor/power/parent";
+    const tokenization = tokenizeGrammar(grammar, source);
+    const barePathRegex = exactRegex(namedPattern(
+      grammar,
+      "resourcePaths",
+      "entity.name.resource-location.rsgl"
+    ));
+
+    expectScopeAcross(tokenization, source, modelId, "entity.name.resource-location.rsgl");
+    expectScopeAcross(tokenization, source, parentId, "entity.name.resource-location.rsgl");
+    expectNoScope(tokenization, source, "overlay", "storage.type.rsgl");
+    expectNoScope(
+      tokenization,
+      source,
+      parentId,
+      "variable.other.property.rsgl",
+      0,
+      parentId.lastIndexOf("parent")
+    );
+    for (const validPath of [modelId, parentId, "Upper/Case"]) {
+      assert.match(validPath, barePathRegex, `Expected bare resource path '${validPath}'.`);
+    }
+    for (const invalidPath of ["block/1", "block/foo-bar", "block/foo.bar", "block/.hidden"]) {
+      assert.doesNotMatch(invalidPath, barePathRegex, `Unexpected bare resource path '${invalidPath}'.`);
+    }
+  });
 });
 
 function namedPattern(grammar: RsglGrammar, repository: string, scope: string): GrammarPattern {
