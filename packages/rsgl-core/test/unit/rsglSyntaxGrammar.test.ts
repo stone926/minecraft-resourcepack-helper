@@ -137,6 +137,33 @@ describe("RSGL TextMate grammar", () => {
     assert.strictEqual(headerPattern.test("blockstate variants stairs {"), true);
   });
 
+  it("keeps template-literal blockstate names from terminating at interpolation braces", () => {
+    const grammar = readGrammar();
+    const source = [
+      "blockstate variants `${name}_door` {",
+      "  for half in [\"lower\", \"upper\"] {",
+      "    { half: half }: minecraft:block/door",
+      "  }",
+      "}",
+      "let doors = [{ btex: minecraft:block/door_open/oak/bottom }]"
+    ].join("\n");
+    const header = source.slice(0, source.indexOf("\n"));
+    const declaration = repositoryPatterns(grammar, "blockstateDeclarations")[0];
+    assert.ok(declaration.begin);
+
+    const match = new RegExp(declaration.begin, "d").exec(header);
+    assert.ok(match?.indices, "Expected the blockstate header to match.");
+    assert.strictEqual(match[0], header);
+    assert.deepStrictEqual(match.indices[5], [header.length - 1, header.length]);
+
+    const tokenization = tokenizeGrammar(grammar, source);
+    expectScope(tokenization, source, "for", "keyword.control.rsgl");
+    expectScope(tokenization, source, "\"lower\"", "string.quoted.double.rsgl");
+    expectNoScope(tokenization, source, "\"lower\"", "string.template.rsgl");
+    expectScope(tokenization, source, "minecraft:block/door_open/oak/bottom", "entity.name.resource-location.rsgl");
+    expectRootScope(tokenization, source, "doors");
+  });
+
   it("keeps valid, commented, and malformed extern patterns out of block-comment leakage", () => {
     const grammar = readGrammar();
     const externContext = repositoryPatterns(grammar, "externDeclarations").find(pattern =>
