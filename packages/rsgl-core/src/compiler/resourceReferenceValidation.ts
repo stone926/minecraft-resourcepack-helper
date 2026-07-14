@@ -6,7 +6,12 @@ import {
 } from "../externDeclarations";
 import { getExternResourceKindForTargetKind } from "../resourceKinds";
 import type { ResourceUnit, RsglCompileDiagnostic } from "./ir";
-import { pushDiagnosticAtRange, sourceFileForValidationRange, unitRange } from "./validationDiagnostics";
+import {
+  pushDiagnosticAtRange,
+  sourceFileForValidationRange,
+  sourceRangeForGeneratedPath,
+  unitRange
+} from "./validationDiagnostics";
 import type {
   RsglCheckedResourceReference,
   RsglResourceExistenceKind,
@@ -35,6 +40,12 @@ const resourceDiagnosticPresentation = {
   shaderFragment: { code: "rsgl.fragmentShaderNotFound", label: "Fragment shader" }
 } satisfies Record<RsglResourceExistenceKind, { code: string; label: string }>;
 
+/** The generated field that supplied the typed resource value being checked. */
+export interface RsglResourceValueLocation {
+  readonly unit: ResourceUnit;
+  readonly generatedPath: string;
+}
+
 export function checkResourceExists(
   consumer: RsglResourceReferenceConsumer,
   rawValue: string,
@@ -45,9 +56,19 @@ export function checkResourceExists(
   externScopeFile?: string,
   defaultNamespace: string = unit.id?.namespace ?? "minecraft",
   consumerContext: RsglResourceReferenceConsumerContext = {},
-  generatedPath?: string
+  resourceValueLocation?: RsglResourceValueLocation
 ): RsglCheckedResourceReference {
-  if (!validateResourceValueConsumer(unit, consumer, diagnostics, range, generatedPath)) {
+  const resourceValueUnit = resourceValueLocation?.unit ?? unit;
+  const resourceValueRange = resourceValueLocation
+    ? sourceRangeForGeneratedPath(resourceValueUnit, resourceValueLocation.generatedPath)
+    : range;
+  if (!validateResourceValueConsumer(
+    resourceValueUnit,
+    consumer,
+    diagnostics,
+    resourceValueRange,
+    resourceValueLocation?.generatedPath
+  )) {
     return { available: false, external: false };
   }
   const sourceFile = sourceFileForValidationRange(unit, range);

@@ -83,7 +83,7 @@ export function checkJsonResourceReference(
     externScopeFile,
     defaultNamespace,
     consumerContext,
-    generatedPath
+    { unit, generatedPath }
   );
   if (checked.canonicalId) {
     writeJsonReferenceValue(owner, key, checked.canonicalId);

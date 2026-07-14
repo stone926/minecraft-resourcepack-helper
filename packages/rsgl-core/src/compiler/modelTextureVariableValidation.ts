@@ -209,6 +209,13 @@ function validateExternalTextureVariableResolution(
     );
     return;
   }
+  // Preserve the external model use-site range for dependency tracking, but
+  // validate the typed value at the generated texture field that resolved the
+  // variable. Otherwise the inherited use-site is `/parent`, whose ModelId
+  // observation can be incorrectly checked as a TextureId.
+  const resourceValueLocation = resolution.generatedUnit && resolution.generatedPath
+    ? { unit: resolution.generatedUnit, generatedPath: resolution.generatedPath }
+    : undefined;
   checkResourceExists(
     "modelTexture",
     resolution.texture,
@@ -217,7 +224,9 @@ function validateExternalTextureVariableResolution(
     diagnostics,
     range,
     undefined,
-    resolution.defaultNamespace
+    resolution.defaultNamespace,
+    {},
+    resourceValueLocation
   );
 }
 

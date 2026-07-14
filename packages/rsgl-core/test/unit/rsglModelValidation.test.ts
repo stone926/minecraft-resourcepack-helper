@@ -342,4 +342,47 @@ describe("RSGL model validation", () => {
     assert.ok(codes.includes("rsgl.modelNotFound"));
     assert.strictEqual(codes.includes("rsgl.unresolvedTextureVariable"), false);
   });
+
+  it("validates an external parent's texture variable at the resolved child texture", () => {
+    const result = compileSource([
+      "extern! custom model minecraft:block/external_parent",
+      "extern! custom texture minecraft:block/child_texture",
+      "let parent: ModelId = minecraft:block/external_parent",
+      "let texture: TextureId = minecraft:block/child_texture",
+      "model block child {",
+      "  parent parent",
+      "  textures { age: texture }",
+      "}"
+    ], {
+      externResourceContent: (_source, kind, id) =>
+        kind === "model" && id === "minecraft:block/external_parent"
+          ? { elements: [{ faces: { north: { texture: "#age" } } }] }
+          : undefined
+    });
+
+    assert.deepStrictEqual(result.diagnostics, []);
+  });
+
+  it("keeps the resolved generated texture owner separate from the inheriting child", () => {
+    const result = compileSource([
+      "extern! custom model minecraft:block/external_parent",
+      "extern! custom texture minecraft:block/shared_texture",
+      "let parent: ModelId = minecraft:block/external_parent",
+      "let texture: TextureId = minecraft:block/shared_texture",
+      "model block intermediate {",
+      "  parent parent",
+      "  textures { age: texture }",
+      "}",
+      "model block child {",
+      "  parent minecraft:block/intermediate",
+      "}"
+    ], {
+      externResourceContent: (_source, kind, id) =>
+        kind === "model" && id === "minecraft:block/external_parent"
+          ? { elements: [{ faces: { north: { texture: "#age" } } }] }
+          : undefined
+    });
+
+    assert.deepStrictEqual(result.diagnostics, []);
+  });
 });
