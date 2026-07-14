@@ -66,6 +66,34 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
+  it("formats nested geometry transforms without changing their header syntax", () => {
+    const source = [
+      "template panels() -> model {",
+      "transform rotate_y(90) around [8, 8, 8] {",
+      "transform rotate_x(180) around [8, 8, 8] {",
+      "element from [0, 0, 0] to [16, 1, 16] {",
+      "up texture \"#top\"",
+      "}",
+      "}",
+      "}",
+      "}"
+    ].join("\n");
+    const formatted = formatRsglText(source);
+
+    assert.strictEqual(formatted, [
+      "template panels() -> model {",
+      "  transform rotate_y(90) around [8, 8, 8] {",
+      "    transform rotate_x(180) around [8, 8, 8] {",
+      "      element from [0, 0, 0] to [16, 1, 16] {",
+      "        up texture \"#top\"",
+      "      }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
   it("keeps canonical blockstate bodies and multiline apply properties stable", () => {
     const formatted = formatRsglText([
       "blockstate variants stairs {",

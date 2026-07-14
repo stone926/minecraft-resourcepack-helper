@@ -626,6 +626,7 @@ export type ResourceStatementNode =
   | EquipmentLayerStmtNode
   | ModelTextureStmtNode
   | ModelElementStmtNode
+  | ModelTransformStmtNode
   | BaseStmtNode
   | MergeStmtNode
   | UnknownStmtNode;
@@ -805,6 +806,18 @@ export interface ModelElementStmtNode extends StatementNodeBase {
   to?: ExprNode;
   properties: ModelGeometryPropertyNode[];
   faces: ModelFaceClauseNode[];
+}
+
+export type ModelTransformAxis = "x" | "y" | "z";
+
+/** Controlled model-body geometry copy; never an ordinary JSON property. */
+export interface ModelTransformStmtNode extends StatementNodeBase {
+  kind: "ModelTransformStmt";
+  operation: IdentifierNode;
+  axis: ModelTransformAxis | null;
+  angle: ExprNode;
+  pivot: ExprNode;
+  body: ResourceBodyNode;
 }
 
 export interface ItemOptionNode extends RsglNode {

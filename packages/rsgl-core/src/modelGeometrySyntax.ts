@@ -3,7 +3,11 @@ export type RsglModelGeometryKeywordRole =
   | "elementBodyClause"
   | "faceIntroducer"
   | "faceTarget"
+  | "transformOperation"
+  | "transformClause"
   | "nestedExpression";
+
+export type RsglModelTransformAxis = "x" | "y" | "z";
 
 export interface RsglModelGeometryCompletionDescriptor {
   label: string;
@@ -13,15 +17,22 @@ export interface RsglModelGeometryCompletionDescriptor {
 
 interface RsglModelGeometryStatementDescriptorDefinition {
   keyword: string;
-  statement: {
-    elementKind: "box" | "element";
-    completion: Omit<RsglModelGeometryCompletionDescriptor, "label">;
-  };
+  statement:
+    | {
+        kind: "element";
+        elementKind: "box" | "element";
+        completion: Omit<RsglModelGeometryCompletionDescriptor, "label">;
+      }
+    | {
+        kind: "transform";
+        completion: Omit<RsglModelGeometryCompletionDescriptor, "label">;
+      };
 }
 
 interface RsglModelGeometryRoleDescriptorDefinition {
   keyword: string;
   roles: readonly RsglModelGeometryKeywordRole[];
+  transformAxis?: RsglModelTransformAxis;
 }
 
 type RsglModelGeometryKeywordDescriptorDefinition =
@@ -39,6 +50,7 @@ export const rsglModelGeometryKeywordDescriptors = [
   {
     keyword: "box",
     statement: {
+      kind: "element",
       elementKind: "box",
       completion: {
         insertText: "box \"${1:element}\" from [${2:0, 0, 0}] to [${3:16, 16, 16}] {\n  all texture \"#${4:all}\"\n}",
@@ -49,6 +61,7 @@ export const rsglModelGeometryKeywordDescriptors = [
   {
     keyword: "element",
     statement: {
+      kind: "element",
       elementKind: "element",
       completion: {
         insertText: "element from [${1:0, 0, 0}] to [${2:16, 16, 16}] {\n  all texture \"#${3:all}\"\n}",
@@ -56,6 +69,20 @@ export const rsglModelGeometryKeywordDescriptors = [
       }
     }
   },
+  {
+    keyword: "transform",
+    statement: {
+      kind: "transform",
+      completion: {
+        insertText: "transform ${1|rotate_x,rotate_y,rotate_z|}(${2:90}) around [${3:8, 8, 8}] {\n  ${4}\n}",
+        detail: "Copy model geometry through an exact quarter-turn transform"
+      }
+    }
+  },
+  { keyword: "rotate_x", roles: ["transformOperation"], transformAxis: "x" },
+  { keyword: "rotate_y", roles: ["transformOperation"], transformAxis: "y" },
+  { keyword: "rotate_z", roles: ["transformOperation"], transformAxis: "z" },
+  { keyword: "around", roles: ["transformClause"] },
   { keyword: "from", roles: ["elementHeaderClause"] },
   { keyword: "to", roles: ["elementHeaderClause"] },
   { keyword: "rotation", roles: ["elementHeaderClause", "elementBodyClause"] },
@@ -85,6 +112,10 @@ export type RsglModelGeometryKeywordDescriptor =
   (typeof rsglModelGeometryKeywordDescriptors)[number];
 export type RsglModelGeometryStatementDescriptor =
   Extract<RsglModelGeometryKeywordDescriptor, { statement: unknown }>;
+export type RsglModelElementStatementDescriptor =
+  RsglModelGeometryStatementDescriptor & { statement: { kind: "element" } };
+export type RsglModelTransformStatementDescriptor =
+  RsglModelGeometryStatementDescriptor & { statement: { kind: "transform" } };
 
 const rsglModelGeometryStatementDescriptors =
   rsglModelGeometryKeywordDescriptors.filter(isStatementDescriptor);
@@ -121,6 +152,11 @@ export function getRsglModelGeometryStatementDescriptor(
   keyword: string
 ): RsglModelGeometryStatementDescriptor | undefined {
   return statementDescriptorByKeyword.get(keyword);
+}
+
+export function getRsglModelTransformAxis(keyword: string): RsglModelTransformAxis | undefined {
+  const descriptor = rsglModelGeometryKeywordDescriptors.find(candidate => candidate.keyword === keyword);
+  return descriptor && "transformAxis" in descriptor ? descriptor.transformAxis : undefined;
 }
 
 function isStatementDescriptor(

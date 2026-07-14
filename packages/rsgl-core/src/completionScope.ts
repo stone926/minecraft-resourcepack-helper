@@ -170,6 +170,7 @@ function indexNestedScopes(
       break;
     case "PackOverlayStmt":
     case "AtlasPalettedPermutationsStmt":
+    case "ModelTransformStmt":
       indexBody(statement.body, owners);
       break;
     case "VariantsSection":

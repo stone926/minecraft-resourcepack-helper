@@ -239,6 +239,11 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       statement.properties.forEach(property => walkExpression(property.value, visitor));
       statement.faces.forEach(face => face.properties.forEach(property => walkExpression(property.value, visitor)));
       break;
+    case "ModelTransformStmt":
+      walkExpression(statement.angle, visitor);
+      walkExpression(statement.pivot, visitor);
+      walkBody(statement.body, visitor);
+      break;
     case "ItemRangeStmt":
       walkExpression(statement.property, visitor);
       statement.options.forEach(option => walkExpression(option.value, visitor));

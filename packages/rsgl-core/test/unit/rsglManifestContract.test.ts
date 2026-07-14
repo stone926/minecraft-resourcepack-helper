@@ -1,7 +1,9 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { rsglModelGeometryKeywords } from "../../src/modelGeometrySyntax";
+import {
+  rsglModelGeometryKeywordDescriptors
+} from "../../src/modelGeometrySyntax";
 import { rsglResourceKinds } from "../../src/resourceKinds";
 
 describe("RSGL extension manifest contract", () => {
@@ -71,8 +73,19 @@ describe("RSGL extension manifest contract", () => {
     );
     assert.strictEqual(typeof geometryPropertyRule?.match, "string");
     const geometryPropertyPattern = new RegExp(`^(?:${geometryPropertyRule!.match})$`);
-    for (const keyword of rsglModelGeometryKeywords) {
-      assert.ok(geometryPropertyPattern.test(keyword), `Expected RSGL grammar to include geometry keyword '${keyword}'.`);
+    const grammarText = JSON.stringify(grammarJson);
+    for (const descriptor of rsglModelGeometryKeywordDescriptors) {
+      assert.ok(grammarText.includes(descriptor.keyword), `Expected RSGL grammar to include geometry keyword '${descriptor.keyword}'.`);
+      const isControlledTransformKeyword = "statement" in descriptor
+        ? descriptor.statement.kind === "transform"
+        : descriptor.roles.some(role => role === "transformOperation" || role === "transformClause");
+      assert.strictEqual(
+        geometryPropertyPattern.test(descriptor.keyword),
+        !isControlledTransformKeyword,
+        isControlledTransformKeyword
+          ? `Expected controlled transform keyword '${descriptor.keyword}' to stay out of the generic property rule.`
+          : `Expected RSGL grammar property rule to include geometry keyword '${descriptor.keyword}'.`
+      );
     }
 
     for (const command of [

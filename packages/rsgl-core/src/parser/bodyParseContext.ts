@@ -99,6 +99,16 @@ export function sectionResourceBodyParseContext(name: string): ResourceBodyParse
   };
 }
 
+/** Nested transform blocks remain model grammar without inheriting root-only capabilities. */
+export const modelTransformBodyParseContext: ResourceBodyParseContext = Object.freeze({
+  kind: "resource",
+  position: "nonRoot",
+  owner: { kind: "section", name: "transform" },
+  dialect: "model",
+  allowBase: false,
+  allowModelExternVariables: false
+} satisfies ResourceBodyParseContext);
+
 export function domainResourceBodyParseContext(
   name: Extract<ResourceBodyOwner, { kind: "domainBody" }>["name"]
 ): ResourceBodyParseContext {

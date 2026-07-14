@@ -1,31 +1,48 @@
 import {
+  createMirrorTransform,
+  createQuarterTurnTransform,
+  createTranslationTransform,
+  type ModelAxis,
+  type ModelFaceDirection,
+  type ModelVec3
+} from "../../../mc-assets/src";
+import {
   ExprNode,
   ModelElementStmtNode,
   ModelFaceClauseNode,
   ModelGeometryPropertyNode,
   ModelTextureStmtNode,
+  ModelTransformStmtNode,
+  ResourceBodyNode,
   ResourceStatementNode,
   TextRange
 } from "../parser";
 import { EvaluationContext } from "./evaluate";
+import { EvaluationItemBudget } from "./evaluationItemBudget";
 import { evaluatedRootOrigin } from "./evaluationProvenance";
 import { JsonValue } from "./ir";
+import { createJsonObject, setJsonObjectProperty } from "./jsonObjectProperties";
 import {
   evaluateJsonExpression,
   evaluateJsonExpressionWithResult,
   type JsonValueSinkOptions
 } from "./jsonValueLowerer";
+import { isJsonObject } from "./jsonValues";
+import {
+  transformCompilerModelElement,
+  type CompilerModelGeometryElement
+} from "./modelGeometryTransform";
 import { ResourceBodyFragment, ResourceBodyMapping } from "./resourceBody";
-import { appendGeneratedPath } from "./sourcePaths";
+import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 
-export type ModelGeometryDslOptions = JsonValueSinkOptions;
-
-type Axis = "x" | "y" | "z";
-type FaceDirection = "down" | "up" | "north" | "south" | "west" | "east";
+export interface ModelGeometryDslOptions extends JsonValueSinkOptions {
+  compileModelBody?: (body: ResourceBodyNode, context: EvaluationContext) => ResourceBodyFragment;
+}
 
 interface FaceField {
   value: JsonValue;
   range: TextRange;
+  validationOrigin?: ResourceBodyMapping["validationOrigin"];
 }
 
 interface FaceEntry {
@@ -33,25 +50,19 @@ interface FaceEntry {
   fields: Map<string, FaceField>;
 }
 
-interface CompiledElement {
-  element: Record<string, JsonValue>;
-  fieldRanges: Map<string, TextRange>;
-  faces: Map<FaceDirection, FaceEntry>;
-  mirrorAxes: Axis[];
-  translate?: number[];
+interface PendingElement {
+  element: CompilerModelGeometryElement;
+  mirrorAxes: ModelAxis[];
+  mirrorRange?: TextRange;
+  translate?: ModelVec3;
+  translateRange?: TextRange;
 }
 
-const faceDirections: FaceDirection[] = ["down", "up", "north", "south", "west", "east"];
+const faceDirections: readonly ModelFaceDirection[] = ["down", "up", "north", "south", "west", "east"];
 const faceDirectionSet = new Set<string>(faceDirections);
 const elementFields = new Set(["rotation", "shade", "light_emission"]);
 const faceFields = new Set(["texture", "uv", "cullface", "rotation", "tintindex"]);
 const transformFields = new Set(["mirror", "translate"]);
-const axisIndexes: Record<Axis, number> = { x: 0, y: 1, z: 2 };
-const oppositeFaces: Record<Axis, Partial<Record<FaceDirection, FaceDirection>>> = {
-  x: { east: "west", west: "east" },
-  y: { up: "down", down: "up" },
-  z: { north: "south", south: "north" }
-};
 
 export function compileModelGeometryStatement(
   statement: ResourceStatementNode,
@@ -61,6 +72,9 @@ export function compileModelGeometryStatement(
   if (statement.kind === "ModelTextureStmt") {
     return compileModelTextureStatement(statement, context, options);
   }
+  if (statement.kind === "ModelTransformStmt") {
+    return compileModelTransformStatement(statement, context, options);
+  }
   if (statement.kind !== "ModelElementStmt") {
     return undefined;
   }
@@ -68,15 +82,11 @@ export function compileModelGeometryStatement(
   if (!compiled) {
     return undefined;
   }
-
-  const elements = expandMirroredElements(compiled);
-  const mappings: ResourceBodyMapping[] = [
-    mapping("/elements", statement.range, context)
-  ];
-  elements.forEach((element, index) => {
-    mappings.push(...elementMappings(element, index, statement.range, context));
-  });
-  return { content: { elements: elements.map(element => element.element) }, mappings };
+  const elements = expandLegacyElement(compiled, statement, context, options);
+  if (!elements) {
+    return undefined;
+  }
+  return elementFragment(elements, statement.range, context);
 }
 
 function compileModelTextureStatement(
@@ -113,60 +123,173 @@ function compileModelTextureStatement(
   };
 }
 
+function compileModelTransformStatement(
+  statement: ModelTransformStmtNode,
+  context: EvaluationContext,
+  options: ModelGeometryDslOptions
+): ResourceBodyFragment | undefined {
+  if (!statement.axis) {
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+  const angle = evaluateJsonExpression(statement.angle, context, options, "/elements/@transform/angle");
+  if (typeof angle !== "number" || !Number.isFinite(angle) || !Number.isInteger(angle / 90)) {
+    reportInvalidGeometryRotation(
+      options,
+      context,
+      statement.angle.range,
+      "Geometry rotation angle must be an integer multiple of 90 degrees."
+    );
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+  const pivot = vector3(
+    statement.pivot,
+    "Geometry transform pivot",
+    statement.pivot.range,
+    context,
+    options,
+    "/elements/@transform/around",
+    "rsgl.unsupportedGeometryTransform"
+  );
+  if (!pivot) {
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+  if (!options.compileModelBody) {
+    options.onError?.(
+      "rsgl.unsupportedGeometryTransform",
+      "The active compiler does not support nested model transform bodies.",
+      statement.range,
+      context.sourceFile
+    );
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+
+  const body = options.compileModelBody(statement.body, context);
+  const sourceElements = body.content.elements;
+  if (sourceElements === undefined) {
+    return body;
+  }
+  if (!Array.isArray(sourceElements)) {
+    options.onError?.(
+      "rsgl.unsupportedGeometryTransform",
+      "A model transform body must produce an elements array.",
+      statement.body.range,
+      context.sourceFile
+    );
+    context.onEvaluationFailure?.();
+    return undefined;
+  }
+  if (!consumeGeometryExpansion(context, sourceElements.length, statement.range, options)) {
+    return undefined;
+  }
+
+  const transform = createQuarterTurnTransform(statement.axis, angle / 90, pivot);
+  const transformedElements: CompilerModelGeometryElement[] = [];
+  for (let index = 0; index < sourceElements.length; index++) {
+    const sourceElement = sourceElements[index];
+    if (!isJsonObject(sourceElement)) {
+      options.onError?.(
+        "rsgl.unsupportedGeometryTransform",
+        "A model transform body may only produce object-valued model elements.",
+        statement.body.range,
+        context.sourceFile
+      );
+      context.onEvaluationFailure?.();
+      return undefined;
+    }
+    const sourceMappings = mappingsForElement(body.mappings ?? [], index);
+    if (!sourceMappings.some(candidate => candidate.generatedPath === "")) {
+      sourceMappings.unshift(mapping("", statement.range, context));
+    }
+    const transformed = transformCompilerModelElement(
+      { content: sourceElement, mappings: sourceMappings },
+      transform,
+      transformOptions(statement.range, context, options)
+    );
+    if (!transformed) {
+      context.onEvaluationFailure?.();
+      return undefined;
+    }
+    transformedElements.push(transformed);
+  }
+
+  const content = { ...body.content, elements: transformedElements.map(element => element.content) };
+  const preservedMappings = (body.mappings ?? []).filter(candidate => !isIndexedElementMapping(candidate.generatedPath));
+  if (!preservedMappings.some(candidate => candidate.generatedPath === "/elements")) {
+    preservedMappings.push(mapping("/elements", statement.range, context));
+  }
+  transformedElements.forEach((element, index) => {
+    preservedMappings.push(...prefixElementMappings(element.mappings, index));
+  });
+  return { content, mappings: preservedMappings };
+}
+
 function compileElement(
   statement: ModelElementStmtNode,
   context: EvaluationContext,
   options: ModelGeometryDslOptions
-): CompiledElement | null {
+): PendingElement | undefined {
   const from = vector3(statement.from, "Model element from", statement.range, context, options, "/elements/0/from");
   const to = vector3(statement.to, "Model element to", statement.range, context, options, "/elements/0/to");
   if (!from || !to) {
-    return null;
+    return undefined;
   }
 
-  const compiled: CompiledElement = {
-    element: { from, to },
-    fieldRanges: new Map([
-      ["from", statement.from?.range ?? statement.range],
-      ["to", statement.to?.range ?? statement.range]
-    ]),
-    faces: new Map(),
-    mirrorAxes: []
+  const content = createJsonObject();
+  content.from = from;
+  content.to = to;
+  const faces = new Map<ModelFaceDirection, FaceEntry>();
+  const element: CompilerModelGeometryElement = {
+    content,
+    mappings: [
+      mapping("", statement.range, context),
+      mapping("/from", statement.from?.range ?? statement.range, context),
+      mapping("/to", statement.to?.range ?? statement.range, context)
+    ]
   };
+  const pending: PendingElement = { element, mirrorAxes: [] };
 
   for (const property of statement.properties) {
-    applyElementProperty(compiled, property, context, options);
+    applyElementProperty(pending, faces, property, context, options);
   }
   for (const face of statement.faces) {
-    applyFaceClause(compiled, face, context, options);
+    applyFaceClause(faces, face, context, options);
   }
-
-  if (compiled.faces.size > 0) {
-    compiled.element.faces = facesToJson(compiled.faces);
+  if (faces.size > 0) {
+    content.faces = facesToJson(faces);
+    element.mappings.push(mapping("/faces", statement.range, context));
+    for (const [direction, entry] of faces) {
+      const facePath = appendGeneratedPath("/faces", direction);
+      element.mappings.push(mapping(facePath, entry.range, context));
+      for (const [name, field] of entry.fields) {
+        element.mappings.push(mapping(
+          appendGeneratedPath(facePath, name),
+          field.range,
+          context,
+          field.validationOrigin
+        ));
+      }
+    }
   }
-  if (compiled.translate) {
-    translateElement(compiled.element, compiled.translate);
-  }
-  return compiled;
+  return pending;
 }
 
 function applyElementProperty(
-  compiled: CompiledElement,
+  pending: PendingElement,
+  faces: Map<ModelFaceDirection, FaceEntry>,
   property: ModelGeometryPropertyNode,
   context: EvaluationContext,
   options: ModelGeometryDslOptions
 ): void {
   const name = property.name.text;
   if (elementFields.has(name)) {
-    const value = evaluateJsonExpression(
-      property.value,
-      context,
-      options,
-      appendGeneratedPath("/elements/0", name)
-    );
+    const value = evaluateJsonExpression(property.value, context, options, appendGeneratedPath("/elements/0", name));
     if (value !== undefined) {
-      compiled.element[name] = value;
-      compiled.fieldRanges.set(name, property.value.range);
+      setJsonObjectProperty(pending.element.content, name, value);
+      pending.element.mappings.push(mapping(appendGeneratedPath("", name), property.value.range, context));
     }
     return;
   }
@@ -175,21 +298,17 @@ function applyElementProperty(
       property,
       context,
       options,
-      appendGeneratedPath(
-        appendGeneratedPath("/elements/0/faces", faceDirections[0]),
-        name
-      )
+      appendGeneratedPath(appendGeneratedPath("/elements/0/faces", faceDirections[0]), name)
     );
-    if (!field) {
-      return;
-    }
-    for (const direction of faceDirections) {
-      setFaceField(compiled.faces, direction, property.range, name, field);
+    if (field) {
+      for (const direction of faceDirections) {
+        setFaceField(faces, direction, property.range, name, field);
+      }
     }
     return;
   }
   if (name === "translate") {
-    compiled.translate = vector3(
+    pending.translate = vector3(
       property.value,
       "Model element translate",
       property.range,
@@ -197,25 +316,26 @@ function applyElementProperty(
       options,
       "/elements/0/@translate"
     ) ?? undefined;
+    pending.translateRange = property.range;
     return;
   }
   if (name === "mirror") {
-    compiled.mirrorAxes.push(...mirrorAxes(
-      property.value,
-      context,
-      options,
-      "/elements/0/@mirror"
-    ));
+    pending.mirrorAxes.push(...mirrorAxes(property.value, context, options, "/elements/0/@mirror"));
+    pending.mirrorRange = property.range;
     return;
   }
-  if (transformFields.has(name)) {
-    return;
+  if (!transformFields.has(name)) {
+    options.onError?.(
+      "rsgl.unknownModelElementProperty",
+      `Unknown model element property '${name}'.`,
+      property.name.range,
+      context.sourceFile
+    );
   }
-  options.onError?.("rsgl.unknownModelElementProperty", `Unknown model element property '${name}'.`, property.name.range);
 }
 
 function applyFaceClause(
-  compiled: CompiledElement,
+  faces: Map<ModelFaceDirection, FaceEntry>,
   clause: ModelFaceClauseNode,
   context: EvaluationContext,
   options: ModelGeometryDslOptions
@@ -223,35 +343,167 @@ function applyFaceClause(
   const targets = clause.target.text === "all"
     ? faceDirections
     : faceDirectionSet.has(clause.target.text)
-      ? [clause.target.text as FaceDirection]
+      ? [clause.target.text as ModelFaceDirection]
       : [];
   if (targets.length === 0) {
-    options.onError?.("rsgl.invalidModelFaceTarget", `Invalid model face target '${clause.target.text}'.`, clause.target.range);
+    options.onError?.(
+      "rsgl.invalidModelFaceTarget",
+      `Invalid model face target '${clause.target.text}'.`,
+      clause.target.range,
+      context.sourceFile
+    );
     return;
   }
 
   for (const property of clause.properties) {
     const name = property.name.text;
     if (!faceFields.has(name)) {
-      options.onError?.("rsgl.unknownModelFaceProperty", `Unknown model face property '${name}'.`, property.name.range);
+      options.onError?.(
+        "rsgl.unknownModelFaceProperty",
+        `Unknown model face property '${name}'.`,
+        property.name.range,
+        context.sourceFile
+      );
       continue;
     }
     const field = faceField(
       property,
       context,
       options,
-      appendGeneratedPath(
-        appendGeneratedPath("/elements/0/faces", targets[0]!),
-        name
-      )
+      appendGeneratedPath(appendGeneratedPath("/elements/0/faces", targets[0]), name)
     );
-    if (!field) {
-      continue;
-    }
-    for (const target of targets) {
-      setFaceField(compiled.faces, target, clause.range, name, field);
+    if (field) {
+      for (const target of targets) {
+        setFaceField(faces, target, clause.range, name, field);
+      }
     }
   }
+}
+
+function expandLegacyElement(
+  pending: PendingElement,
+  statement: ModelElementStmtNode,
+  context: EvaluationContext,
+  options: ModelGeometryDslOptions
+): CompilerModelGeometryElement[] | undefined {
+  let translated = pending.element;
+  if (pending.translate) {
+    const result = transformCompilerModelElement(
+      translated,
+      createTranslationTransform(pending.translate),
+      transformOptions(pending.translateRange ?? statement.range, context, options)
+    );
+    if (!result) {
+      context.onEvaluationFailure?.();
+      return undefined;
+    }
+    translated = result;
+  }
+
+  const axes = uniqueAxes(pending.mirrorAxes);
+  if (axes.length === 0) {
+    return [translated];
+  }
+  const combinations = mirrorAxisCombinations(axes);
+  if (!consumeGeometryExpansion(context, combinations.length, pending.mirrorRange ?? statement.range, options)) {
+    return undefined;
+  }
+  const elements: CompilerModelGeometryElement[] = [];
+  for (const combination of combinations) {
+    if (combination.length === 0) {
+      elements.push(translated);
+      continue;
+    }
+    const transformed = transformCompilerModelElement(
+      translated,
+      createMirrorTransform(combination),
+      transformOptions(pending.mirrorRange ?? statement.range, context, options)
+    );
+    if (!transformed) {
+      context.onEvaluationFailure?.();
+      return undefined;
+    }
+    elements.push(transformed);
+  }
+  return elements;
+}
+
+function elementFragment(
+  elements: readonly CompilerModelGeometryElement[],
+  sourceRange: TextRange,
+  context: EvaluationContext
+): ResourceBodyFragment {
+  const mappings: ResourceBodyMapping[] = [mapping("/elements", sourceRange, context)];
+  elements.forEach((element, index) => mappings.push(...prefixElementMappings(element.mappings, index)));
+  return {
+    content: { elements: elements.map(element => element.content) },
+    mappings
+  };
+}
+
+function prefixElementMappings(mappings: readonly ResourceBodyMapping[], index: number): ResourceBodyMapping[] {
+  const elementPath = appendGeneratedPath("/elements", String(index));
+  return mappings.map(candidate => ({
+    ...candidate,
+    generatedPath: joinGeneratedPath(elementPath, candidate.generatedPath)
+  }));
+}
+
+function mappingsForElement(mappings: readonly ResourceBodyMapping[], index: number): ResourceBodyMapping[] {
+  const elementPath = appendGeneratedPath("/elements", String(index));
+  return mappings
+    .filter(candidate => candidate.generatedPath === elementPath || candidate.generatedPath.startsWith(`${elementPath}/`))
+    .map(candidate => ({
+      ...candidate,
+      generatedPath: candidate.generatedPath.slice(elementPath.length)
+    }));
+}
+
+function isIndexedElementMapping(generatedPath: string): boolean {
+  return /^\/elements\/\d+(?:\/|$)/.test(generatedPath);
+}
+
+function transformOptions(
+  fallbackRange: TextRange,
+  context: EvaluationContext,
+  options: ModelGeometryDslOptions
+) {
+  return {
+    fallbackRange,
+    context,
+    onError: options.onError
+  };
+}
+
+function consumeGeometryExpansion(
+  context: EvaluationContext,
+  count: number,
+  range: TextRange,
+  options: ModelGeometryDslOptions
+): boolean {
+  context.evaluationItemBudget ??= new EvaluationItemBudget();
+  const budget = context.evaluationItemBudget;
+  if (budget.tryConsume(count)) {
+    return true;
+  }
+  context.onEvaluationFailure?.();
+  options.onError?.(
+    "rsgl.geometryTransformExpansionLimit",
+    `Geometry transform exceeds maxEvaluationItems=${budget.limit} `
+      + `(consumed ${budget.consumed}, requested ${count}).`,
+    range,
+    context.sourceFile
+  );
+  return false;
+}
+
+function reportInvalidGeometryRotation(
+  options: ModelGeometryDslOptions,
+  context: EvaluationContext,
+  range: TextRange,
+  message: string
+): void {
+  options.onError?.("rsgl.invalidGeometryRotation", message, range, context.sourceFile);
 }
 
 function faceField(
@@ -260,19 +512,19 @@ function faceField(
   options: ModelGeometryDslOptions,
   generatedPath: string
 ): FaceField | undefined {
-  const value = evaluateJsonExpression(property.value, context, options, generatedPath);
-  if (value === undefined) {
-    return undefined;
-  }
-  return {
-    value,
-    range: property.value.range
-  };
+  const evaluated = evaluateJsonExpressionWithResult(property.value, context, options, generatedPath);
+  return evaluated === undefined
+    ? undefined
+    : {
+        value: evaluated.value,
+        range: property.value.range,
+        validationOrigin: evaluatedRootOrigin(evaluated.result, context.sourceFile)
+      };
 }
 
 function setFaceField(
-  faces: Map<FaceDirection, FaceEntry>,
-  direction: FaceDirection,
+  faces: Map<ModelFaceDirection, FaceEntry>,
+  direction: ModelFaceDirection,
   range: TextRange,
   name: string,
   field: FaceField
@@ -285,145 +537,31 @@ function setFaceField(
   entry.fields.set(name, field);
 }
 
-function expandMirroredElements(compiled: CompiledElement): CompiledElement[] {
-  const axes = uniqueAxes(compiled.mirrorAxes);
-  const combinations = mirrorAxisCombinations(axes);
-  return combinations.map(combo => mirrorCompiledElement(compiled, combo));
-}
-
-function mirrorCompiledElement(compiled: CompiledElement, axes: Axis[]): CompiledElement {
-  const element = cloneJsonObject(compiled.element);
-  const faces = cloneFaces(compiled.faces);
-  for (const axis of axes) {
-    mirrorElementOnAxis(element, axis);
-    mirrorFacesOnAxis(faces, axis);
-  }
-  if (faces.size > 0) {
-    element.faces = facesToJson(faces);
-  }
-  return {
-    element,
-    fieldRanges: compiled.fieldRanges,
-    faces,
-    mirrorAxes: []
-  };
-}
-
-function mirrorAxisCombinations(axes: Axis[]): Axis[][] {
-  return axes.reduce<Axis[][]>(
-    (combinations, axis) => [...combinations, ...combinations.map(combo => [...combo, axis])],
-    [[]]
-  );
-}
-
-function uniqueAxes(axes: Axis[]): Axis[] {
-  return axes.filter((axis, index) => axes.indexOf(axis) === index);
-}
-
-function mirrorElementOnAxis(element: Record<string, JsonValue>, axis: Axis): void {
-  const index = axisIndexes[axis];
-  const from = numberVectorValue(element.from);
-  const to = numberVectorValue(element.to);
-  if (from && to) {
-    const nextFrom = [...from];
-    const nextTo = [...to];
-    nextFrom[index] = 16 - to[index];
-    nextTo[index] = 16 - from[index];
-    element.from = nextFrom;
-    element.to = nextTo;
-  }
-
-  const rotation = jsonObject(element.rotation);
-  const origin = numberVectorValue(rotation?.origin);
-  if (rotation && origin) {
-    const nextOrigin = [...origin];
-    nextOrigin[index] = 16 - origin[index];
-    rotation.origin = nextOrigin;
-  }
-}
-
-function translateElement(element: Record<string, JsonValue>, offset: number[]): void {
-  const from = numberVectorValue(element.from);
-  const to = numberVectorValue(element.to);
-  if (from) {
-    element.from = translateVector(from, offset);
-  }
-  if (to) {
-    element.to = translateVector(to, offset);
-  }
-  const rotation = jsonObject(element.rotation);
-  const origin = numberVectorValue(rotation?.origin);
-  if (rotation && origin) {
-    rotation.origin = translateVector(origin, offset);
-  }
-}
-
-function translateVector(vector: number[], offset: number[]): number[] {
-  return vector.map((value, index) => value + (offset[index] ?? 0));
-}
-
-function mirrorFacesOnAxis(faces: Map<FaceDirection, FaceEntry>, axis: Axis): void {
-  const swaps = oppositeFaces[axis];
-  const next = new Map<FaceDirection, FaceEntry>();
-  for (const [direction, entry] of faces) {
-    const target = swaps[direction] ?? direction;
-    next.set(target, mirrorFaceEntry(entry, axis));
-  }
-  faces.clear();
-  for (const [direction, entry] of next) {
-    faces.set(direction, entry);
-  }
-}
-
-function mirrorFaceEntry(entry: FaceEntry, axis: Axis): FaceEntry {
-  const fields = new Map<string, FaceField>();
-  for (const [name, field] of entry.fields) {
-    fields.set(name, name === "cullface" && typeof field.value === "string"
-      ? { ...field, value: oppositeFaces[axis][field.value as FaceDirection] ?? field.value }
-      : field);
-  }
-  return { range: entry.range, fields };
-}
-
-function facesToJson(faces: Map<FaceDirection, FaceEntry>): Record<string, JsonValue> {
-  const result: Record<string, JsonValue> = {};
+function facesToJson(faces: ReadonlyMap<ModelFaceDirection, FaceEntry>): Record<string, JsonValue> {
+  const result = createJsonObject();
   for (const direction of faceDirections) {
     const entry = faces.get(direction);
     if (!entry) {
       continue;
     }
-    const face: Record<string, JsonValue> = {};
+    const face = createJsonObject();
     for (const [name, field] of entry.fields) {
-      face[name] = field.value;
+      setJsonObjectProperty(face, name, field.value);
     }
-    result[direction] = face;
+    setJsonObjectProperty(result, direction, face);
   }
   return result;
 }
 
-function elementMappings(
-  compiled: CompiledElement,
-  index: number,
-  elementRange: TextRange,
-  context: EvaluationContext
-): ResourceBodyMapping[] {
-  const elementPath = appendGeneratedPath("/elements", String(index));
-  const mappings: ResourceBodyMapping[] = [mapping(elementPath, elementRange, context)];
-  for (const [field, range] of compiled.fieldRanges) {
-    mappings.push(mapping(appendGeneratedPath(elementPath, field), range, context));
-  }
-  if (compiled.faces.size > 0) {
-    const facesPath = appendGeneratedPath(elementPath, "faces");
-    mappings.push(mapping(facesPath, elementRange, context));
-    for (const [direction, entry] of compiled.faces) {
-      const facePath = appendGeneratedPath(facesPath, direction);
-      mappings.push(mapping(facePath, entry.range, context));
-      for (const [field, value] of entry.fields) {
-        mappings.push(mapping(appendGeneratedPath(facePath, field), value.range, context));
-      }
-    }
-  }
-  return mappings;
+function mirrorAxisCombinations(axes: readonly ModelAxis[]): ModelAxis[][] {
+  return axes.reduce<ModelAxis[][]>(
+    (combinations, axis) => [...combinations, ...combinations.map(combination => [...combination, axis])],
+    [[]]
+  );
+}
+
+function uniqueAxes(axes: readonly ModelAxis[]): ModelAxis[] {
+  return axes.filter((axis, index) => axes.indexOf(axis) === index);
 }
 
 function mirrorAxes(
@@ -431,18 +569,23 @@ function mirrorAxes(
   context: EvaluationContext,
   options: ModelGeometryDslOptions,
   generatedPath: string
-): Axis[] {
+): ModelAxis[] {
   const evaluated = evaluateJsonExpression(value, context, options, generatedPath);
   if (evaluated === undefined) {
     return [];
   }
   const values = Array.isArray(evaluated) ? evaluated : [evaluated];
-  const result: Axis[] = [];
+  const result: ModelAxis[] = [];
   for (const item of values) {
     if (item === "x" || item === "y" || item === "z") {
       result.push(item);
     } else {
-      options.onError?.("rsgl.invalidModelElementMirror", "Model element mirror must be 'x', 'y', 'z', or a list of axes.", value.range);
+      options.onError?.(
+        "rsgl.invalidModelElementMirror",
+        "Model element mirror must be 'x', 'y', 'z', or a list of axes.",
+        value.range,
+        context.sourceFile
+      );
       return [];
     }
   }
@@ -455,46 +598,41 @@ function vector3(
   fallbackRange: TextRange,
   context: EvaluationContext,
   options: ModelGeometryDslOptions,
-  generatedPath: string
-): number[] | null {
+  generatedPath: string,
+  diagnosticCode = "rsgl.invalidModelElementVector"
+): ModelVec3 | undefined {
   if (!expression) {
-    options.onError?.("rsgl.missingModelElementVector", `${label} must be a finite [x, y, z] number vector.`, fallbackRange);
-    return null;
+    options.onError?.(
+      "rsgl.missingModelElementVector",
+      `${label} must be a finite [x, y, z] number vector.`,
+      fallbackRange,
+      context.sourceFile
+    );
+    return undefined;
   }
   const value = evaluateJsonExpression(expression, context, options, generatedPath);
   if (value === undefined) {
-    return null;
+    return undefined;
   }
   const vector = numberVectorValue(value);
-  if (!vector || vector.length !== 3) {
-    options.onError?.("rsgl.invalidModelElementVector", `${label} must be a finite [x, y, z] number vector.`, expression.range);
-    return null;
+  if (!vector) {
+    options.onError?.(
+      diagnosticCode,
+      `${label} must be a finite [x, y, z] number vector.`,
+      expression.range,
+      context.sourceFile
+    );
+    return undefined;
   }
   return vector;
 }
 
-function numberVectorValue(value: JsonValue | undefined): number[] | null {
-  return Array.isArray(value) && value.every(item => typeof item === "number" && Number.isFinite(item))
-    ? value.map(item => Number(item))
-    : null;
-}
-
-function cloneFaces(faces: Map<FaceDirection, FaceEntry>): Map<FaceDirection, FaceEntry> {
-  const result = new Map<FaceDirection, FaceEntry>();
-  for (const [direction, entry] of faces) {
-    result.set(direction, { range: entry.range, fields: new Map(entry.fields) });
-  }
-  return result;
-}
-
-function cloneJsonObject(value: Record<string, JsonValue>): Record<string, JsonValue> {
-  return JSON.parse(JSON.stringify(value)) as Record<string, JsonValue>;
-}
-
-function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, JsonValue>
-    : null;
+function numberVectorValue(value: JsonValue): ModelVec3 | undefined {
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every(item => typeof item === "number" && Number.isFinite(item))
+    ? [Number(value[0]), Number(value[1]), Number(value[2])]
+    : undefined;
 }
 
 function mapping(

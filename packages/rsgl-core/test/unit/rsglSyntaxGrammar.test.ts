@@ -75,6 +75,30 @@ describe("RSGL TextMate grammar", () => {
     }
   });
 
+  it("highlights model transform headers without reclassifying explicit properties", () => {
+    const grammar = readGrammar();
+    const source = [
+      "model block panel {",
+      "  transform rotate_y(90) around [8, 8, 8] {",
+      "    element from [0, 0, 0] to [16, 1, 16] {}",
+      "  }",
+      "  transform: { rotate_x: 90 }",
+      "  around: [0, 0, 0]",
+      "}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "transform", "keyword.control.rsgl", 0);
+    expectScope(tokenization, source, "rotate_y", "support.function.geometry-transform.rsgl");
+    expectScope(tokenization, source, "around", "keyword.control.rsgl", 0);
+    expectScope(tokenization, source, "transform", "meta.object-key.rsgl", 1);
+    expectNoScope(tokenization, source, "transform", "keyword.control.rsgl", 1);
+    expectScope(tokenization, source, "rotate_x", "meta.object-key.rsgl");
+    expectNoScope(tokenization, source, "rotate_x", "support.function.geometry-transform.rsgl");
+    expectScope(tokenization, source, "around", "meta.object-key.rsgl", 1);
+    expectNoScope(tokenization, source, "around", "keyword.control.rsgl", 1);
+  });
+
   it("highlights only the public template output dialects", () => {
     const grammar = readGrammar();
     const source = [

@@ -337,6 +337,11 @@ export class RsglResourceBodyChecker {
           }
         }));
         break;
+      case "ModelTransformStmt":
+        this.checkExpression(statement.angle, scope);
+        this.checkExpression(statement.pivot, scope);
+        this.checkBody(statement.body, createChildScope(scope, "block"), callerContext);
+        break;
       case "ItemRangeStmt":
         this.checkExpression(statement.property, scope);
         statement.options.forEach(option => this.checkExpression(option.value, scope));

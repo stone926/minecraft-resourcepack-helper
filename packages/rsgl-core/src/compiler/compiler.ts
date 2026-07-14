@@ -57,7 +57,7 @@ import {
 } from "./ir";
 import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopContext as createEvaluationLoopContext, forEachLoopContext } from "./looping";
-import { compileModelGeometryStatement } from "./modelGeometryDsl";
+import { compileModelGeometryStatement, type ModelGeometryDslOptions } from "./modelGeometryDsl";
 import {
   compileOverlayDecl,
   compilePackResource,
@@ -672,6 +672,23 @@ export class RsglCompiler {
     };
   }
 
+  private modelGeometryDslOptions(): ModelGeometryDslOptions {
+    return {
+      ...this.jsonValueSinkOptions(),
+      compileModelBody: (body, context) => {
+        // A transform body is a lexical block. Clone only the variable map so
+        // declarations in the body cannot escape, while retaining the shared
+        // evaluation budget, trace, diagnostics, and provenance state.
+        const bodyContext = childEvaluationContext(context, {});
+        const compiled = this.resourceBodyToObjectWithRawMappings(body, bodyContext, {
+          ...this.resourceBodyFragmentOptions("model"),
+          allowBase: false
+        });
+        return { content: compiled.content, mappings: compiled.mappings };
+      }
+    };
+  }
+
   private resourceBodyFragmentOptions(kind: Exclude<RsglResourceKind, "blockstate">): ResourceBodyCompileOptions {
     return {
       ...this.jsonValueSinkOptions(),
@@ -708,7 +725,7 @@ export class RsglCompiler {
           return compileModelGeometryStatement(
             statement,
             fragmentContext,
-            this.jsonValueSinkOptions()
+            this.modelGeometryDslOptions()
           );
         }
         return kind === "item" && isItemModelStatement(statement)

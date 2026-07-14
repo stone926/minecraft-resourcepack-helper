@@ -24,7 +24,7 @@ export const legacyResourceBodyDialectDescriptors = [
   {
     dialect: "model",
     statementKeywords: ["texture", ...modelGeometryStatementKeywords],
-    statementKinds: ["ExternVarStmt", "ModelTextureStmt", "ModelElementStmt"]
+    statementKinds: ["ExternVarStmt", "ModelTextureStmt", "ModelElementStmt", "ModelTransformStmt"]
   },
   {
     dialect: "blockstate",

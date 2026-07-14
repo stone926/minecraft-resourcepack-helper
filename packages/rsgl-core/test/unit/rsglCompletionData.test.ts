@@ -62,6 +62,7 @@ describe("RSGL completion data", () => {
     assert.ok(inBlock.some(candidate => candidate.label === "textures"));
     assert.ok(inBlock.some(candidate => candidate.label === "box"));
     assert.ok(inBlock.some(candidate => candidate.label === "element"));
+    assert.ok(inBlock.some(candidate => candidate.label === "transform"));
     assert.ok(inBlock.some(candidate => candidate.label === "base"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge deep"));
@@ -79,6 +80,7 @@ describe("RSGL completion data", () => {
     );
     const model = labelsAtEnd("template geometry() -> model {\n  ");
     assert.ok(model.has("element"));
+    assert.ok(model.has("transform"));
     assert.ok(model.has("textures"));
     assert.strictEqual(model.has("variants"), false);
     assert.strictEqual(model.has("extern var"), false);
@@ -90,6 +92,7 @@ describe("RSGL completion data", () => {
     assert.ok(variants.has("variant entry"));
     assert.ok(variants.has("random"));
     assert.strictEqual(variants.has("element"), false);
+    assert.strictEqual(variants.has("transform"), false);
     assert.strictEqual(variants.has("multipart"), false);
 
     const multipart = labelsAtEnd("template parts() -> multipart {\n  ");
@@ -109,6 +112,7 @@ describe("RSGL completion data", () => {
       "      "
     ].join("\n"));
     assert.ok(nestedModel.has("element"));
+    assert.ok(nestedModel.has("transform"));
     assert.strictEqual(nestedModel.has("range"), false);
     assert.strictEqual(nestedModel.has("variants"), false);
 
@@ -120,6 +124,7 @@ describe("RSGL completion data", () => {
     ].join("\n"));
     assert.ok(nestedVariants.has("variant entry"));
     assert.strictEqual(nestedVariants.has("element"), false);
+    assert.strictEqual(nestedVariants.has("transform"), false);
     assert.strictEqual(nestedVariants.has("apply"), false);
   });
 
@@ -138,6 +143,22 @@ describe("RSGL completion data", () => {
         kind: "snippet"
       }))
     );
+  });
+
+  it("keeps model completions inside nested transform bodies", () => {
+    const text = [
+      "template geometry() -> model {",
+      "  transform rotate_y(90) around [8, 8, 8] {",
+      "    "
+    ].join("\n");
+    const candidates = getRsglCompletionCandidates(text, text.length);
+    const transform = candidates.find(candidate => candidate.label === "transform");
+
+    assert.ok(candidates.some(candidate => candidate.label === "element"));
+    assert.ok(transform?.insertText);
+    assert.ok(transform.insertText.includes("rotate_x,rotate_y,rotate_z"));
+    assert.ok(transform.insertText.includes("around ["));
+    assert.strictEqual(candidates.some(candidate => candidate.label === "range"), false);
   });
 
   it("offers base only at the first position of a concrete resource root", () => {

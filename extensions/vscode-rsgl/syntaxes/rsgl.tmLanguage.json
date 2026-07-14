@@ -503,6 +503,17 @@
     "structuralStatements": {
       "patterns": [
         {
+          "match": "(^|\\{)[ \\t]*(transform)([ \\t]+)((?:rotate_x|rotate_y|rotate_z))\\b(?=[ \\t]*\\()",
+          "captures": {
+            "2": {
+              "name": "keyword.control.rsgl"
+            },
+            "4": {
+              "name": "support.function.geometry-transform.rsgl"
+            }
+          }
+        },
+        {
           "match": "(^|\\{)[ \\t]*(formats|block|directory|paletted_permutations|palette_key|permutations|layer|models|gui|scaling|layers)\\b(?![ \\t]*[:=])(?=[ \\t]+|[ \\t]*\\{)",
           "captures": {
             "2": {
@@ -541,7 +552,7 @@
         },
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append)\\b"
+          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append|transform|around)\\b"
         },
         {
           "name": "storage.type.rsgl",

@@ -1,7 +1,9 @@
 import {
   getRsglModelGeometryStatementDescriptor,
-  type RsglModelGeometryStatementDescriptor
+  getRsglModelTransformAxis,
+  type RsglModelElementStatementDescriptor
 } from "../modelGeometrySyntax";
+import { modelTransformBodyParseContext } from "./bodyParseContext";
 import {
   modelElementBodyClauseKeywords,
   modelElementHeaderClauseKeywords,
@@ -13,6 +15,7 @@ import {
   ModelElementStmtNode,
   ModelFaceClauseNode,
   ModelGeometryPropertyNode,
+  ModelTransformStmtNode,
   ModelTextureStmtNode,
   ExprNode,
   ResourceStatementNode
@@ -31,7 +34,9 @@ export function tryParseModelGeometryStatement(
   }
   const statementDescriptor = getRsglModelGeometryStatementDescriptor(token.text);
   if (statementDescriptor && host.peekText(1) !== ":" && host.peekText(1) !== "=") {
-    return parseModelElementStmt(host, statementDescriptor);
+    return statementDescriptor.statement.kind === "transform"
+      ? parseModelTransformStmt(host)
+      : parseModelElementStmt(host, statementDescriptor as RsglModelElementStatementDescriptor);
   }
   return undefined;
 }
@@ -51,7 +56,7 @@ function parseModelTextureStmt(host: ResourceStatementParserHost): ModelTextureS
 
 function parseModelElementStmt(
   host: ResourceStatementParserHost,
-  descriptor: RsglModelGeometryStatementDescriptor
+  descriptor: RsglModelElementStatementDescriptor
 ): ModelElementStmtNode {
   const start = host.advance();
   const elementKind = descriptor.statement.elementKind;
@@ -94,6 +99,71 @@ function parseModelElementStmt(
     faces,
     ...host.nodeRanges(start, host.previousOr(start))
   };
+}
+
+function parseModelTransformStmt(host: ResourceStatementParserHost): ModelTransformStmtNode {
+  const start = host.advance();
+  const operationStart = host.current();
+  const operation = host.isLineBoundaryOr()
+    ? missingTransformOperation(host, operationStart)
+    : host.parseIdentifier("Expected rotate_x, rotate_y, or rotate_z after 'transform'.")
+      ?? host.syntheticIdentifier(operationStart, "");
+  const axis = getRsglModelTransformAxis(operation.text) ?? null;
+  if (!axis && operation.text) {
+    host.addDiagnostic(
+      "rsgl.invalidModelTransformOperation",
+      "Model transform operation must be rotate_x, rotate_y, or rotate_z.",
+      operation.range
+    );
+  }
+
+  host.expectText("(", "Expected '(' before model transform angle.");
+  const angleStart = host.current();
+  const angle = host.isLineBoundaryOr(")", "around", "{", "}")
+    ? missingTransformExpression(host, angleStart, "rsgl.expectedModelTransformAngle", "Expected model transform angle.")
+    : host.parseExpression({ stopTexts: [")", "around", "{", "}"] });
+  host.expectText(")", "Expected ')' after model transform angle.");
+  host.expectText("around", "Expected 'around' after model transform angle.");
+
+  const pivotStart = host.current();
+  const pivot = host.isLineBoundaryOr("{", "}")
+    ? missingTransformExpression(host, pivotStart, "rsgl.expectedModelTransformPivot", "Expected model transform pivot after 'around'.")
+    : host.parseExpression({ stopTexts: ["{", "}"] });
+  const body = host.current().text === "{"
+    ? host.parseResourceBody(modelTransformBodyParseContext)
+    : host.emptyResourceBodyAt(host.current(), "Expected model transform body.");
+
+  return {
+    kind: "ModelTransformStmt",
+    keyword: start.text,
+    operation,
+    axis,
+    angle,
+    pivot,
+    body,
+    ...host.nodeRanges(start, host.previousOr(start))
+  };
+}
+
+function missingTransformOperation(
+  host: ResourceStatementParserHost,
+  token: ReturnType<ResourceStatementParserHost["current"]>
+) {
+  host.addDiagnosticAtCurrent(
+    "rsgl.expectedIdentifier",
+    "Expected rotate_x, rotate_y, or rotate_z after 'transform'."
+  );
+  return host.syntheticIdentifier(token, "");
+}
+
+function missingTransformExpression(
+  host: ResourceStatementParserHost,
+  token: ReturnType<ResourceStatementParserHost["current"]>,
+  code: string,
+  message: string
+): ExprNode {
+  host.addDiagnostic(code, message, { start: token.offset, end: token.offset + token.length });
+  return host.missingExprAt(token);
 }
 
 function parseModelElementBody(
