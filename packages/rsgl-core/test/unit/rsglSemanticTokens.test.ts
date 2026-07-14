@@ -86,6 +86,17 @@ describe("RSGL semantic tokens", () => {
     expectToken(tokens, offsetOf(source, "frames"), "variable", declaration | readonlyFlag, "frames".length);
   });
 
+  it("classifies custom type aliases in generic annotations", () => {
+    const typeSource = [
+      "type SlabMaterial = { name: String }",
+      "let slabMaterials: List<SlabMaterial> = [{ name: \"stone\" }]"
+    ].join("\n");
+    const typeTokens = getRsglSemanticTokens(bindRsglModule(parseRsgl(typeSource)));
+
+    expectToken(typeTokens, offsetOf(typeSource, "SlabMaterial"), "type", declaration, "SlabMaterial".length);
+    expectToken(typeTokens, offsetOf(typeSource, "SlabMaterial", 1), "type", 0, "SlabMaterial".length);
+  });
+
   it("classifies references without the declaration modifier", () => {
     expectToken(tokens, offsetOf(source, "base", 1), "variable", readonlyFlag, "base".length);
     expectToken(tokens, offsetOf(source, "base", 2), "variable", readonlyFlag, "base".length);

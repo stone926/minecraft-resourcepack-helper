@@ -71,6 +71,7 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
   const candidates: RsglSemanticToken[] = [];
   const referenceStarts = collectReferenceStarts(model.references);
 
+  collectTypeAliasTokens(model, candidates);
   collectPropertyTokens(model.module, candidates);
   collectModuleNamespaceMemberTokens(model, candidates);
   for (const record of model.imports) {
@@ -84,6 +85,23 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
   }
 
   return normalizeTokens(candidates);
+}
+
+/** Emits aliases from the type namespace, which is separate from value symbols. */
+function collectTypeAliasTokens(model: RsglSemanticModel, candidates: RsglSemanticToken[]): void {
+  walkRsglModule(model.module, {
+    enterStatement(statement) {
+      if (statement.kind === "TypeAliasDecl" && statement.name && isSemanticIdentifier(statement.name)) {
+        pushToken(candidates, statement.name.range, { tokenType: typeTokenType, tokenModifiers: 0 }, declarationModifier);
+      }
+    },
+    enterType(type) {
+      if ((type.kind === "NamedType" || type.kind === "GenericType")
+        && model.scope.typeAliases.has(type.name.text)) {
+        pushToken(candidates, type.name.range, { tokenType: typeTokenType, tokenModifiers: 0 }, 0);
+      }
+    }
+  });
 }
 
 /** Overrides generic property coloring with the linked export's category. */
