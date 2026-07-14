@@ -11,7 +11,6 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
-  formatRsglText,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
   RsglWorkspaceSemanticCache,
@@ -33,6 +32,7 @@ import {
   dependencyPathsForDocuments,
   documentsDependingOnPath,
   fileNameFromUri,
+  formattingEditsForDocument,
   handleSemanticWatchedFileBatch,
   normalizeFileName,
   projectSemanticConfigurationFingerprint,
@@ -230,17 +230,7 @@ connection.onDocumentFormatting(params => {
   if (!document) {
     return [];
   }
-  const text = document.getText();
-  const formatted = formatRsglText(text, Number(params.options.tabSize) || 2);
-  return formatted === text
-    ? []
-    : [{
-      range: {
-        start: document.positionAt(0),
-        end: document.positionAt(text.length)
-      },
-      newText: formatted
-    }];
+  return formattingEditsForDocument(document, params.options.tabSize);
 });
 
 connection.onCodeAction(params => {

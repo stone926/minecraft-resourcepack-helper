@@ -25,6 +25,7 @@ import {
   dependencyPathsForDocuments,
   documentsDependingOnPath,
   encodeSemanticTokens,
+  formattingEditsForDocument,
   handleSemanticWatchedFileBatch,
   identifierAtOffset,
   normalizeDependencyPath,
@@ -689,6 +690,48 @@ describe("RSGL LSP server core", () => {
     const matches = items.filter(item => item.label === "target");
     assert.strictEqual(matches.length, 1);
     assert.strictEqual(matches[0].kind, CompletionItemKind.Snippet);
+  });
+
+  it("maps model transform completion and formatting through the LSP protocol surface", () => {
+    const completionSource = "template rotated() -> model {\n  ";
+    const items = completionItemsForContent(completionSource, completionSource.length, []);
+    const transform = items.find(item => item.label === "transform");
+
+    assert.strictEqual(transform?.kind, CompletionItemKind.Snippet);
+    assert.strictEqual(transform?.insertTextFormat, InsertTextFormat.Snippet);
+    assert.strictEqual(
+      transform?.insertText,
+      "transform ${1|rotate_x,rotate_y,rotate_z|}(${2:90}) around [${3:8, 8, 8}] {\n  ${4}\n}"
+    );
+
+    const unformatted = [
+      "template rotated() -> model {",
+      "transform rotate_y(90) around [8, 8, 8] {",
+      "element from [0, 0, 0] to [4, 8, 4] {",
+      "north texture \"#side\"",
+      "}",
+      "}",
+      "}"
+    ].join("\n");
+    const document = documentOf(unformatted);
+    const edits = formattingEditsForDocument(document, 2);
+
+    assert.deepStrictEqual(edits, [{
+      range: {
+        start: { line: 0, character: 0 },
+        end: document.positionAt(unformatted.length)
+      },
+      newText: [
+        "template rotated() -> model {",
+        "  transform rotate_y(90) around [8, 8, 8] {",
+        "    element from [0, 0, 0] to [4, 8, 4] {",
+        "      north texture \"#side\"",
+        "    }",
+        "  }",
+        "}"
+      ].join("\n")
+    }]);
+    assert.deepStrictEqual(formattingEditsForDocument(documentOf(edits[0].newText), 2), []);
   });
 
   it("resolves the complete hover identifier at its start, middle, and end", () => {

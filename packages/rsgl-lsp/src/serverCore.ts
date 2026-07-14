@@ -22,6 +22,7 @@ import {
   applyTextEdits,
   compileRsglModule,
   compileRsglProgram,
+  formatRsglText,
   getRsglProjectConfigWatchPaths,
   getRsglDocumentCompletionItems,
   getRsglDocumentDefinitionLocation,
@@ -499,6 +500,24 @@ export function completionItemsForDocument(
     fileName,
     getText: () => document.getText()
   }, offset, deps).map(toCompletionItem);
+}
+
+/** Formats a document and converts the result into an LSP full-document edit. */
+export function formattingEditsForDocument(
+  document: RsglLspDocument,
+  tabSize: number
+): TextEdit[] {
+  const text = document.getText();
+  const formatted = formatRsglText(text, Number(tabSize) || 2);
+  return formatted === text
+    ? []
+    : [{
+      range: {
+        start: document.positionAt(0),
+        end: document.positionAt(text.length)
+      },
+      newText: formatted
+    }];
 }
 
 /** Computes semantic hover content and converts its source offsets to LSP positions. */
