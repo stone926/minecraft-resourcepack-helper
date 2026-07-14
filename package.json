@@ -281,6 +281,7 @@
     "test": "mocha \"./out/src/test/unit/**/*.test.js\" \"./out/packages/**/test/**/*.test.js\"",
     "test:rsgl:better-textures": "npm run compile && node scripts/verify-rsgl-better-textures.mjs",
     "benchmark:model-preview": "npm run compile && node scripts/model-preview-benchmark.mjs",
+    "benchmark:rsgl": "npm run compile && node scripts/rsgl-benchmark.mjs",
     "package:vsix": "node scripts/package-vsix.mjs main",
     "package:main:vsix": "node scripts/package-vsix.mjs main",
     "package:rsgl:vsix": "node scripts/package-vsix.mjs rsgl",

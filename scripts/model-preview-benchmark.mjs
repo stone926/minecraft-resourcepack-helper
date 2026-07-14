@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { performance } from "node:perf_hooks";
-import { ModelPreviewService } from "../out/modelPreview/service/ModelPreviewService.js";
+import { ModelPreviewService } from "../out/src/modelPreview/service/ModelPreviewService.js";
 
 function writeFile(root, relativePath, value) {
   const fileName = path.join(root, relativePath);
