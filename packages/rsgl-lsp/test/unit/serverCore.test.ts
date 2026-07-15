@@ -410,7 +410,7 @@ describe("RSGL LSP server core", () => {
     const text = [
       "model block rotated {}",
       "blockstate variants rotated {",
-      "  {}: { model: project_ns:block/rotated, z: 90 }",
+      "  case * => project_ns:block/rotated with { z: 90 }",
       "}"
     ].join("\n");
     const cache = RsglWorkspaceSemanticCache.create();
@@ -1039,7 +1039,7 @@ function diagnosticsForFile(fileName: string, text: string) {
 function blockstateUsingExternalModel(modelId: string): string {
   return [
     "blockstate variants configured {",
-    `  {}: { model: ${modelId} }`,
+    `  case * => ${modelId}`,
     "}"
   ].join("\n");
 }

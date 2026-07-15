@@ -1,6 +1,8 @@
 import {
   BlockNode,
-  BlockstateApplyValueNode,
+  BlockstateChoiceBodyNode,
+  BlockstateChoiceNode,
+  BlockstateModelSpecNode,
   BlockstateMultipartRootBodyNode,
   BlockstateVariantsRootBodyNode,
   ExprNode,
@@ -29,6 +31,7 @@ type RsglBody =
   | ResourceBodyNode
   | VariantBodyNode
   | MultipartBodyNode
+  | BlockstateChoiceBodyNode
   | BlockstateVariantsRootBodyNode
   | BlockstateMultipartRootBodyNode;
 
@@ -147,14 +150,22 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       }
       break;
     case "BlockstateVariantEntry":
-      walkExpression(statement.selector, visitor);
-      walkBlockstateApplyValue(statement.value, visitor);
+      if (statement.selector.kind !== "BlockstateWildcardSelector") {
+        walkExpression(statement.selector, visitor);
+      }
+      walkBlockstateChoice(statement.choice, visitor);
       break;
     case "BlockstateMultipartEntry":
-      if (statement.when) {
-        walkExpression(statement.when, visitor);
+      if (statement.predicate) {
+        walkExpression(statement.predicate, visitor);
       }
-      walkBlockstateApplyValue(statement.apply, visitor);
+      walkBlockstateChoice(statement.choice, visitor);
+      break;
+    case "BlockstateRandomOption":
+      walkBlockstateModelSpec(statement.model, visitor);
+      if (statement.weight) {
+        walkExpression(statement.weight, visitor);
+      }
       break;
     case "PackFormatsStmt":
       if (statement.min) {
@@ -276,19 +287,19 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
   visitor.leaveStatement?.(statement);
 }
 
-function walkBlockstateApplyValue(
-  value: BlockstateApplyValueNode,
-  visitor: RsglAstVisitor
-): void {
-  if (value.kind === "BlockstateApplyExpr") {
-    walkExpression(value.head, visitor);
-    value.properties.forEach(property => walkExpression(property.value, visitor));
+function walkBlockstateChoice(choice: BlockstateChoiceNode, visitor: RsglAstVisitor): void {
+  if (choice.kind === "BlockstateModelSpec") {
+    walkBlockstateModelSpec(choice, visitor);
     return;
   }
-  value.items.forEach(item => {
-    walkExpression(item.head, visitor);
-    item.properties.forEach(property => walkExpression(property.value, visitor));
-  });
+  walkBody(choice.body, visitor);
+}
+
+function walkBlockstateModelSpec(model: BlockstateModelSpecNode, visitor: RsglAstVisitor): void {
+  walkExpression(model.model, visitor);
+  if (model.options) {
+    walkExpression(model.options, visitor);
+  }
 }
 
 function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {

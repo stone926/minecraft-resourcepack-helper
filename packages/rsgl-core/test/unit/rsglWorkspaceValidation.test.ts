@@ -328,7 +328,7 @@ describe("RSGL workspace validation", () => {
       }));
       fs.writeFileSync(sourceFile, [
         "blockstate variants lamp {",
-        "  { facing: up, lit: true, extra: true }: minecraft:block/lamp",
+        "  case { facing: up, lit: true, extra: true } => minecraft:block/lamp",
         "}"
       ].join("\n"));
 

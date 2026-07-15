@@ -23,6 +23,7 @@ import type {
 
 export interface StatementExpressionOptions {
   stopTexts?: readonly string[];
+  allowLeadingLineBreak?: boolean;
 }
 
 /** Narrow facade exposed to cohesive resource-statement parser modules. */
@@ -39,6 +40,7 @@ export interface ResourceStatementParserHost {
   expectText(text: string, message: string): boolean;
   consumeOptionalSeparator(): void;
   consumeBalancedBlock(message: string): void;
+  consumeBalancedEnclosure(openText: string, closeText: string, message: string): void;
   recoverToLineEnd(): void;
   addDiagnosticAtCurrent(code: string, message: string, severity?: RsglDiagnostic["severity"]): void;
   addDiagnostic(code: string, message: string, range: TextRange, severity?: RsglDiagnostic["severity"]): void;

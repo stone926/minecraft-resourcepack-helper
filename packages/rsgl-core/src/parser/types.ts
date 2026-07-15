@@ -73,7 +73,7 @@ export type TopLevelStatementNode =
   | IfStmtNode
   | UnknownStmtNode;
 
-export type RsglStatement = TopLevelStatementNode | ResourceStatementNode;
+export type RsglStatement = TopLevelStatementNode | ResourceStatementNode | BlockstateChoiceStatementNode;
 
 export interface StatementNodeBase extends RsglNode {
   kind: string;
@@ -153,6 +153,8 @@ export interface ObjectPropertyNode extends RsglNode {
   kind: "ObjectProperty";
   key: IdentifierNode | StringLiteralNode | NumberLiteralNode | DynamicKeyNode;
   value: ExprNode;
+  /** True when `{ name }` supplies the equivalent `{ name: name }` value. */
+  shorthand?: boolean;
 }
 
 export interface ObjectSpreadNode extends RsglNode {
@@ -319,10 +321,15 @@ export interface BlockNode extends RsglNode {
   statements: TopLevelStatementNode[];
 }
 
-export type TemplateOutputDialect = "resources" | "model" | "variants" | "multipart";
+export type TemplateOutputDialect = "resources" | "model" | "variants" | "multipart" | "choice";
 export type DeclaredTemplateOutputDialect = Exclude<TemplateOutputDialect, "resources">;
 
-export type TemplateBodyNode = BlockNode | ResourceBodyNode | VariantBodyNode | MultipartBodyNode;
+export type TemplateBodyNode =
+  | BlockNode
+  | ResourceBodyNode
+  | VariantBodyNode
+  | MultipartBodyNode
+  | BlockstateChoiceBodyNode;
 
 export interface ResourceBodyNode extends RsglNode {
   kind: "ResourceBody";
@@ -337,6 +344,12 @@ export interface VariantBodyNode extends RsglNode {
 export interface MultipartBodyNode extends RsglNode {
   kind: "MultipartBody";
   statements: MultipartSectionStatementNode[];
+}
+
+/** Body that contributes options to one blockstate random choice. */
+export interface BlockstateChoiceBodyNode extends RsglNode {
+  kind: "BlockstateChoiceBody";
+  statements: BlockstateChoiceStatementNode[];
 }
 
 export type BlockstateMode = "variants" | "multipart";
@@ -505,6 +518,7 @@ export interface ForStmtNode extends StatementNodeBase {
     | ResourceBodyNode
     | VariantBodyNode
     | MultipartBodyNode
+    | BlockstateChoiceBodyNode
     | BlockstateVariantsRootBodyNode
     | BlockstateMultipartRootBodyNode;
 }
@@ -517,6 +531,7 @@ export interface IfStmtNode extends StatementNodeBase {
     | ResourceBodyNode
     | VariantBodyNode
     | MultipartBodyNode
+    | BlockstateChoiceBodyNode
     | BlockstateVariantsRootBodyNode
     | BlockstateMultipartRootBodyNode;
   elseBody?:
@@ -524,6 +539,7 @@ export interface IfStmtNode extends StatementNodeBase {
     | ResourceBodyNode
     | VariantBodyNode
     | MultipartBodyNode
+    | BlockstateChoiceBodyNode
     | BlockstateVariantsRootBodyNode
     | BlockstateMultipartRootBodyNode;
 }
@@ -584,9 +600,12 @@ export interface SectionStmtNode extends StatementNodeBase {
 
 export interface BlockstateVariantEntryNode extends StatementNodeBase {
   kind: "BlockstateVariantEntry";
-  selector: ExprNode;
-  selectorSyntax: "inlineObject" | "parenthesizedExpression";
-  value: BlockstateApplyValueNode;
+  selector: ExprNode | BlockstateWildcardSelectorNode;
+  choice: BlockstateChoiceNode;
+}
+
+export interface BlockstateWildcardSelectorNode extends RsglNode {
+  kind: "BlockstateWildcardSelector";
 }
 
 export type VariantSectionStatementNode =
@@ -599,8 +618,9 @@ export type VariantSectionStatementNode =
 
 export interface BlockstateMultipartEntryNode extends StatementNodeBase {
   kind: "BlockstateMultipartEntry";
-  when?: ExprNode;
-  apply: BlockstateApplyValueNode;
+  predicate?: ExprNode;
+  always: boolean;
+  choice: BlockstateChoiceNode;
 }
 
 export type MultipartSectionStatementNode =
@@ -611,30 +631,32 @@ export type MultipartSectionStatementNode =
   | IfStmtNode
   | UnknownStmtNode;
 
-export interface BlockstateModelPropertyNode extends RsglNode {
-  kind: "BlockstateModelProperty";
-  name: IdentifierNode;
-  value: ExprNode;
+export interface BlockstateModelSpecNode extends RsglNode {
+  kind: "BlockstateModelSpec";
+  model: ExprNode;
+  options?: ObjectExprNode;
 }
 
-export interface BlockstateApplyExprNode extends RsglNode {
-  kind: "BlockstateApplyExpr";
-  head: ExprNode;
-  properties: BlockstateModelPropertyNode[];
+export interface BlockstateRandomChoiceNode extends RsglNode {
+  kind: "BlockstateRandomChoice";
+  body: BlockstateChoiceBodyNode;
 }
 
-export interface BlockstateRandomItemNode extends RsglNode {
-  kind: "BlockstateRandomItem";
-  head: ExprNode;
-  properties: BlockstateModelPropertyNode[];
+export type BlockstateChoiceNode = BlockstateModelSpecNode | BlockstateRandomChoiceNode;
+
+export interface BlockstateRandomOptionNode extends StatementNodeBase {
+  kind: "BlockstateRandomOption";
+  model: BlockstateModelSpecNode;
+  weight?: ExprNode;
 }
 
-export interface BlockstateRandomValueNode extends RsglNode {
-  kind: "BlockstateRandomValue";
-  items: BlockstateRandomItemNode[];
-}
-
-export type BlockstateApplyValueNode = BlockstateApplyExprNode | BlockstateRandomValueNode;
+export type BlockstateChoiceStatementNode =
+  | BlockstateRandomOptionNode
+  | LetDeclNode
+  | UseDeclNode
+  | ForStmtNode
+  | IfStmtNode
+  | UnknownStmtNode;
 
 export interface PackFormatsStmtNode extends StatementNodeBase {
   kind: "PackFormatsStmt";

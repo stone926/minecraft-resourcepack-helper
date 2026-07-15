@@ -7,11 +7,7 @@ import {
 } from "../externDeclarations";
 import { getExternResourceKind } from "../resourceKinds";
 import { bindRsglModule, bindRsglProgram, RsglSourceFile } from "../semantic";
-import type {
-  RsglBlockstateApplyFact,
-  RsglBlockstateApplySiteNode,
-  RsglProgram
-} from "../semantic";
+import type { RsglProgram } from "../semantic";
 import { includeRsglStdlibSourceFiles } from "../stdlib";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
 import {
@@ -130,7 +126,6 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     maxEvaluationItems: configuration.maxEvaluationItems,
     evaluationItemBudget,
     stdlibRoot: options.stdlibRoot,
-    blockstateApplyFacts: semanticModel.blockstateApplyFacts,
     resolvedExpectedTypes: semanticModel.resolvedExpectedTypes
   });
   const result = compiler.compile();
@@ -255,13 +250,6 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     });
   }
 
-  const blockstateApplyFacts = new Map<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>();
-  for (const semanticModel of program.models) {
-    for (const [node, fact] of semanticModel.blockstateApplyFacts ?? []) {
-      blockstateApplyFacts.set(node, fact);
-    }
-  }
-
   for (const model of selectedModels) {
     const namespace = effectiveNamespace(model.namespace, configuration);
     const environment = environments.get(normalizeFileName(model.fileName))
@@ -296,7 +284,6 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       maxEvaluationItems: configuration.maxEvaluationItems,
       evaluationItemBudget,
       stdlibRoot: options.stdlibRoot,
-      blockstateApplyFacts,
       resolvedExpectedTypes: model.resolvedExpectedTypes
     });
     const result = compiler.compile();

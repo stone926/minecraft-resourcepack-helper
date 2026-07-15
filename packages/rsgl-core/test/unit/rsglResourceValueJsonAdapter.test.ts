@@ -264,14 +264,14 @@ describe("RSGL resource-value consumer validation", () => {
 describe("RSGL blockstate resource-value observation paths", () => {
   it("rebases a typed scalar variant head to its final model path", () => {
     assertWrongBlockstateApplyPath(
-      "blockstate variants path_test { { facing: north }: wrong }",
+      "blockstate variants path_test { case { facing: north } => wrong }",
       "/variants/facing=north/model"
     );
   });
 
   it("rebases a typed scalar multipart head through the actual entry and apply paths", () => {
     assertWrongBlockstateApplyPath(
-      "blockstate multipart path_test { apply minecraft:builtin/generated apply wrong }",
+      "blockstate multipart path_test { part always => minecraft:builtin/generated; part always => wrong }",
       "/multipart/1/apply/model"
     );
   });
@@ -284,7 +284,7 @@ describe("RSGL blockstate resource-value observation paths", () => {
     const observations: RsglResourceValueObservation[] = [];
     const errors: string[] = [];
     const unit = compileDirectBlockstate(
-      "blockstate multipart root_append { apply minecraft:builtin/generated merge append fragment }",
+      "blockstate multipart root_append { part always => minecraft:builtin/generated; merge append fragment }",
       { fragment },
       observations,
       errors
@@ -310,7 +310,7 @@ describe("RSGL blockstate resource-value observation paths", () => {
     const observations: RsglResourceValueObservation[] = [];
     const errors: string[] = [];
     compileDirectBlockstate(
-      "blockstate variants root_strict { { facing: north }: minecraft:builtin/generated merge strict fragment }",
+      "blockstate variants root_strict { case { facing: north } => minecraft:builtin/generated; merge strict fragment }",
       { fragment },
       observations,
       errors
@@ -328,7 +328,7 @@ describe("RSGL blockstate resource-value observation paths", () => {
     const observations: RsglResourceValueObservation[] = [];
     const errors: string[] = [];
     const unit = compileDirectBlockstate(
-      "blockstate variants root_overwrite { { facing: north }: wrong merge replacement }",
+      "blockstate variants root_overwrite { case { facing: north } => wrong; merge replacement }",
       { wrong, replacement },
       observations,
       errors

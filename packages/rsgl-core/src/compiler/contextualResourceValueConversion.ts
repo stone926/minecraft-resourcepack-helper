@@ -353,7 +353,7 @@ function runtimeValueMatchesType(value: unknown, type: RsglType): boolean {
   if (type.kind === "List" || type.kind === "Range") {
     return Array.isArray(value);
   }
-  if (type.kind === "Object" || type.kind === "BlockstateModelObject") {
+  if (type.kind === "Object") {
     return isPlainRuntimeObject(value);
   }
   if (type.kind === "Function") {

@@ -9,7 +9,7 @@ import {
   EvaluationContext,
   type EvaluationOrigin,
   bindEvaluationResult,
-  evaluateExpression,
+  evaluateCompileTimeCondition,
   evaluateExpressionResult
 } from "./evaluate";
 import { applyBaseDocument } from "./base/application";
@@ -147,7 +147,11 @@ function applyResourceStatement(
       }
     }
   } else if (statement.kind === "IfStmt") {
-    const selectedBody = evaluateExpression(statement.condition, context) ? statement.thenBody : statement.elseBody;
+    const condition = evaluateCompileTimeCondition(statement.condition, context);
+    if (condition === undefined) {
+      return;
+    }
+    const selectedBody = condition ? statement.thenBody : statement.elseBody;
     if (selectedBody?.kind === "ResourceBody") {
       applyResourceBodyFragment(
         result,

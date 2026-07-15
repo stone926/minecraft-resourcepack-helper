@@ -23,6 +23,8 @@ export const binaryPrecedence = new Map<string, number>([
   ["<=", 4],
   [">", 4],
   [">=", 4],
+  ["in", 4],
+  ["not in", 4],
   ["+", 5],
   ["-", 5],
   ["*", 6],

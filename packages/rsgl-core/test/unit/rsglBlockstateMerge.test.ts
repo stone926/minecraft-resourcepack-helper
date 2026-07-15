@@ -5,7 +5,7 @@ describe("RSGL blockstate fragment merge policy", () => {
   it("applies strict and upsert through the shared merge engine", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants lamp {",
-      "  { facing: north }: { model: minecraft:block/lamp, x: 0 }",
+      "  case { facing: north } => minecraft:block/lamp with { x: 90 }",
       "  merge strict {",
       "    variants: { \"facing=north\": { model: minecraft:block/lamp_changed } }",
       "  }",
@@ -20,7 +20,7 @@ describe("RSGL blockstate fragment merge policy", () => {
       variants: {
         "facing=north": {
           model: "minecraft:block/lamp_changed",
-          x: 0
+          x: 90
         },
         "facing=south": {
           model: "minecraft:block/lamp_south"
@@ -32,7 +32,7 @@ describe("RSGL blockstate fragment merge policy", () => {
   it("appends multipart entries and offsets their field mappings", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate multipart fence {",
-      "  apply { model: minecraft:block/fence_post }",
+      "  part always => minecraft:block/fence_post",
       "  merge append {",
       "    multipart: [{ when: { north: true }, apply: { model: minecraft:block/fence_side } }]",
       "  }",
@@ -58,7 +58,7 @@ describe("RSGL blockstate fragment merge policy", () => {
   it("rejects append outside multipart and preserves variants/multipart exclusivity", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants invalid {",
-      "  {}: { model: minecraft:block/base }",
+      "  case * => minecraft:block/base",
       "  merge append { variants: { \"powered=true\": { model: minecraft:block/on } } }",
       "  merge upsert { multipart: [] }",
       "}"

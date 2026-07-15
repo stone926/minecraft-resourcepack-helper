@@ -50,7 +50,7 @@ describe("RSGL use semantics, extern declarations, and convention templates", ()
     const result = compileSource([
       "model block stone {}",
       "blockstate variants stone {",
-      "  {}: { model: minecraft:block/stone }",
+      "  case * => minecraft:block/stone",
       "}"
     ]);
 

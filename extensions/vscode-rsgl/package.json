@@ -26,6 +26,7 @@
   "main": "./out/extensions/vscode-rsgl/src/extension.js",
   "l10n": "./l10n",
   "scripts": {
+    "precompile": "node ../../scripts/clean.mjs extensions/vscode-rsgl/out",
     "compile": "tsc -p ./tsconfig.json",
     "postcompile": "node ../../scripts/copy-rsgl-stdlib.mjs",
     "watch": "tsc -watch -p ./tsconfig.json"

@@ -123,6 +123,60 @@ describe("RSGL completion lexical scope", () => {
     assertNamesExclude(model, afterOffset, "thenOnly", "elseOnly");
   });
 
+  it("indexes locals recursively inside variant and multipart random choices", () => {
+    const text = [
+      "blockstate variants scoped_variant {",
+      "  case * => random {",
+      "    let variantChoiceLocal = minecraft:block/variant",
+      "    option variantChoiceLocal",
+      "    for variantRotation in [0] {",
+      "      let nestedVariantLocal = variantChoiceLocal",
+      "      option nestedVariantLocal with { y: variantRotation }",
+      "    }",
+      "  }",
+      "  case { fallback: true } => minecraft:block/fallback",
+      "}",
+      "blockstate multipart scoped_multipart {",
+      "  part always => random {",
+      "    let multipartChoiceLocal = minecraft:block/multipart",
+      "    option multipartChoiceLocal",
+      "  }",
+      "  part always => minecraft:block/post",
+      "}"
+    ].join("\n");
+    const model = bind(text);
+    const variantChoiceOffset = endOf(text, "option variantChoiceLocal");
+    const nestedVariantOffset = endOf(
+      text,
+      "option nestedVariantLocal with { y: variantRotation }"
+    );
+    const afterVariantChoiceOffset = endOf(
+      text,
+      "case { fallback: true } => minecraft:block/fallback"
+    );
+    const multipartChoiceOffset = endOf(text, "option multipartChoiceLocal");
+    const afterMultipartChoiceOffset = endOf(text, "part always => minecraft:block/post");
+
+    assertNamesInclude(model, variantChoiceOffset, "variantChoiceLocal");
+    assertNamesExclude(model, variantChoiceOffset, "variantRotation", "nestedVariantLocal");
+    assertNamesInclude(
+      model,
+      nestedVariantOffset,
+      "variantChoiceLocal",
+      "variantRotation",
+      "nestedVariantLocal"
+    );
+    assertNamesExclude(
+      model,
+      afterVariantChoiceOffset,
+      "variantChoiceLocal",
+      "variantRotation",
+      "nestedVariantLocal"
+    );
+    assertNamesInclude(model, multipartChoiceOffset, "multipartChoiceLocal");
+    assertNamesExclude(model, afterMultipartChoiceOffset, "multipartChoiceLocal");
+  });
+
   it("offers local lets only after their declaration in the same body", () => {
     const text = [
       "model block ordered {",

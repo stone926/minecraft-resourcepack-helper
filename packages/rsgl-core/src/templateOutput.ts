@@ -25,7 +25,8 @@ export type RsglTemplateCallerContext =
       mode: "variants" | "multipart";
       allowRootMerge: false;
       allowBase: false;
-    };
+    }
+  | { kind: "blockstateChoice" };
 
 export interface TemplateOutputMetadataCarrier {
   node?: unknown;
@@ -96,6 +97,9 @@ export function templateOutputBodyCallerContext(
   if (metadata.outputDialect === "model") {
     return { kind: "resourceBody", resourceKind: "model" };
   }
+  if (metadata.outputDialect === "choice") {
+    return { kind: "blockstateChoice" };
+  }
   return {
     kind: "blockstateEntries",
     mode: metadata.outputDialect,
@@ -110,6 +114,9 @@ export function normalizeTemplateCallerContext(context: RsglTemplateCallerContex
   }
   if (context.kind === "resourceBody") {
     return `resourceBody:${context.resourceKind}`;
+  }
+  if (context.kind === "blockstateChoice") {
+    return "blockstateChoice";
   }
   return [
     context.kind,
@@ -144,6 +151,9 @@ function publicDialectMatchesCaller(
 ): boolean {
   if (dialect === "model") {
     return callerContext.kind === "resourceBody" && callerContext.resourceKind === "model";
+  }
+  if (dialect === "choice") {
+    return callerContext.kind === "blockstateChoice";
   }
   return (callerContext.kind === "blockstateEntries" || callerContext.kind === "blockstateRoot")
     && callerContext.mode === dialect;

@@ -28,7 +28,10 @@ describe("RSGL blockstate validation", () => {
         "  textures { all: minecraft:block/missing_texture }",
         "}",
         "blockstate variants stone {",
-        "  {}: minecraft:block/missing_model z=90 weight=0",
+        "  case { kind: rotated } => minecraft:block/missing_model with { z: 90 }",
+        "  case { kind: weighted } => random {",
+        "    option minecraft:block/missing_weight weight 0",
+        "  }",
         "}",
         "blockstate variants malformed_variants {",
         "  merge {",
@@ -37,6 +40,12 @@ describe("RSGL blockstate validation", () => {
         "      \"broken\": { model: minecraft:block/missing_broken, y: 45 }",
         "    }",
         "  }",
+        "}",
+        "blockstate variants single_weight {",
+        "  merge { variants: { \"\": { model: minecraft:block/single_weight, weight: 2 } } }",
+        "}",
+        "blockstate multipart part_weight {",
+        "  merge { multipart: [{ apply: { model: minecraft:block/part_weight, weight: 2 } }] }",
         "}",
         "blockstate multipart malformed_multipart {",
         "  merge {",
@@ -69,6 +78,10 @@ describe("RSGL blockstate validation", () => {
       assert.ok(codes.includes("rsgl.textureNotFound"));
       assert.ok(codes.includes("rsgl.unsupportedBlockstateZRotation"));
       assert.ok(codes.includes("rsgl.invalidRandomWeight"));
+      assert.strictEqual(
+        codes.filter(code => code === "rsgl.blockstateWeightInvalidContext").length,
+        2
+      );
       assert.ok(codes.includes("rsgl.invalidBlockstateRotation"));
       assert.ok(codes.includes("rsgl.invalidBlockstateUvlock"));
       assert.ok(codes.includes("rsgl.invalidBlockstateVariantKey"));
@@ -158,11 +171,11 @@ describe("RSGL blockstate validation", () => {
     };
     const result = compileSource([
       "blockstate variants lamp {",
-      "  { facing: north, lit: true }: minecraft:block/lamp",
-      "  { facing: up, lit: maybe, bogus: true }: minecraft:block/lamp",
+      "  case { facing: north, lit: true } => minecraft:block/lamp",
+      "  case { facing: up, lit: maybe, bogus: true } => minecraft:block/lamp",
       "}",
       "blockstate multipart fence {",
-      "  when { north: true, side: east } apply minecraft:block/fence_side",
+      "  part when $state.north == true && $state.side == east => minecraft:block/fence_side",
       "}"
     ], {
       resourceExists: () => true,
@@ -179,7 +192,7 @@ describe("RSGL blockstate validation", () => {
     const lamp = result.units.find(unit => unit.outputPath.endsWith("blockstates/lamp.json"));
     const fence = result.units.find(unit => unit.outputPath.endsWith("blockstates/fence.json"));
     const invalidVariantRange = lamp?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/variants/bogus=true,facing=up,lit=maybe")?.sourceRange;
-    const multipartRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0")?.sourceRange;
+    const multipartRange = fence?.sourceMap.mappings.find(mapping => mapping.generatedPath === "/multipart/0/when")?.sourceRange;
 
     assert.ok(invalidVariantRange);
     assert.ok(multipartRange);
@@ -191,6 +204,90 @@ describe("RSGL blockstate validation", () => {
       result.diagnostics.find(diagnostic => diagnostic.message.includes("'side' is not defined"))?.range,
       multipartRange
     );
+  });
+
+  it("rejects wildcard and partial selector overlap while keeping disjoint cases", () => {
+    const result = compileSource([
+      "blockstate variants wildcard_overlap {",
+      "  case * => minecraft:block/default",
+      "  case { facing: north } => minecraft:block/north",
+      "}",
+      "blockstate variants partial_overlap {",
+      "  case { facing: north } => minecraft:block/north",
+      "  case { facing: north, powered: true } => minecraft:block/powered",
+      "}",
+      "blockstate variants disjoint {",
+      "  case { facing: north } => minecraft:block/north",
+      "  case { facing: south } => minecraft:block/south",
+      "}"
+    ], { resourceExists: () => true });
+    const overlaps = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.overlappingBlockstateVariantEntry"
+    );
+
+    assert.strictEqual(overlaps.length, 2);
+    const disjoint = result.units.find(unit => unit.outputPath.endsWith("blockstates/disjoint.json"));
+    assert.deepStrictEqual(disjoint?.content, {
+      variants: {
+        "facing=north": { model: "minecraft:block/north" },
+        "facing=south": { model: "minecraft:block/south" }
+      }
+    });
+  });
+
+  it("warns for schema-backed incomplete variants and accepts complete products", () => {
+    const schema = {
+      properties: {
+        facing: ["north", "south"],
+        lit: ["true", "false"]
+      }
+    };
+    const result = compileSource([
+      "blockstate variants incomplete {",
+      "  case { facing: north, lit: true } => minecraft:block/lamp",
+      "}",
+      "blockstate variants complete {",
+      "  for facing in [\"north\", \"south\"], lit in [true, false] {",
+      "    case { facing, lit } => minecraft:block/lamp",
+      "  }",
+      "}"
+    ], {
+      resourceExists: () => true,
+      blockstateSchema: () => schema
+    });
+    const warnings = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.incompleteBlockstateVariants"
+    );
+
+    assert.strictEqual(warnings.length, 1);
+    assert.strictEqual(warnings[0].severity, "warning");
+    assert.ok(warnings[0].message.includes("3 of 4"));
+    assert.strictEqual(warnings[0].fileName, "<anonymous>");
+    const complete = result.units.find(unit => unit.outputPath.endsWith("blockstates/complete.json"));
+    assert.strictEqual(Object.keys((complete?.content as { variants: object }).variants).length, 4);
+  });
+
+  it("hints on duplicate single-model predicates without merging multipart parts", () => {
+    const result = compileSource([
+      "blockstate multipart duplicate_predicate {",
+      "  part when $state.north == true => minecraft:block/first",
+      "  part when $state.north == true => minecraft:block/second",
+      "  part when $state.north == true => random {",
+      "    option minecraft:block/random_a",
+      "    option minecraft:block/random_b",
+      "  }",
+      "}"
+    ], { resourceExists: () => true });
+    const hints = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.duplicateMultipartPredicateHint"
+    );
+
+    assert.strictEqual(hints.length, 1);
+    assert.strictEqual(hints[0].severity, "info");
+    const unit = result.units.find(unit => unit.outputPath.endsWith("blockstates/duplicate_predicate.json"));
+    const multipart = (unit?.content as { multipart: unknown[] }).multipart;
+    assert.strictEqual(multipart.length, 3, "Duplicate predicates must remain separate stacking parts.");
+    assert.ok(Array.isArray((multipart[2] as { apply: unknown }).apply));
   });
 
   it("infers blockstate schemas from existing JSON content", () => {
@@ -217,10 +314,15 @@ describe("RSGL blockstate validation", () => {
   it("maps blockstate validation diagnostics to generated entry source ranges", () => {
     const result = compileSource([
       "blockstate variants lamp {",
-      "  { facing: north }: minecraft:block/missing_variant x=45",
+      "  merge upsert { variants: {",
+      "    \"facing=north\": { model: minecraft:block/missing_variant, x: 45 }",
+      "  } }",
       "}",
       "blockstate multipart fence {",
-      "  when { north: \"true||false\" } apply minecraft:block/missing_multipart z=45",
+      "  merge append { multipart: [{",
+      "    when: { north: \"true||false\" },",
+      "    apply: { model: minecraft:block/missing_multipart, z: 45 }",
+      "  }] }",
       "}"
     ], {
       targetPackFormat: { major: 74 },

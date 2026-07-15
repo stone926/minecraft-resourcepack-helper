@@ -28,6 +28,7 @@ import { binaryPrecedence } from "./statementKeywords";
 import {
   concreteResourceBodyParseContext,
   blockstateRootParseContext,
+  choiceBodyParseContext,
   multipartBodyParseContext,
   templateResourceBodyParseContext,
   topLevelBodyParseContext,
@@ -559,7 +560,7 @@ class RsglParser extends StatementParser {
       } else {
         this.addDiagnosticAtCurrent(
           "rsgl.invalidTemplateOutputDialect",
-          "Template output dialect must be 'model', 'variants', or 'multipart'."
+          "Template output dialect must be 'model', 'variants', 'multipart', or 'choice'."
         );
         if (dialect.kind === "identifier" || dialect.kind === "keyword") {
           this.advance();
@@ -600,6 +601,13 @@ class RsglParser extends StatementParser {
         const body = this.parseBodyForContext(multipartBodyParseContext);
         if (body.kind !== "MultipartBody") {
           throw new Error(`Internal parser invariant: expected MultipartBody, received ${body.kind}.`);
+        }
+        return body;
+      }
+      if (declaredOutputDialect === "choice") {
+        const body = this.parseBodyForContext(choiceBodyParseContext);
+        if (body.kind !== "BlockstateChoiceBody") {
+          throw new Error(`Internal parser invariant: expected BlockstateChoiceBody, received ${body.kind}.`);
         }
         return body;
       }
@@ -740,7 +748,21 @@ class RsglParser extends StatementParser {
       this.addDiagnosticAtCurrent("rsgl.expectedBlockstateId", "Expected blockstate resource id.");
       return this.missingExprAt(this.current());
     }
-    return this.parseExpression({ stopTexts: ["{"] });
+    const tokenStart = this.mark();
+    const id = this.parseExpression({ stopTexts: ["{"] });
+    const tokenEnd = this.mark();
+    if (
+      id.kind === "ConditionalExpr"
+      && !isEntireExpressionParenthesized(this.tokens, tokenStart, tokenEnd)
+    ) {
+      this.addDiagnostic(
+        "rsgl.blockstateDynamicIdParenthesesRecommended",
+        "Parenthesize a complex dynamic blockstate id to make the declaration header boundary explicit.",
+        id.range,
+        "warning"
+      );
+    }
+    return id;
   }
 
   private looksLikeUnknownBlockstateMode(): boolean {
@@ -777,5 +799,28 @@ function isBlockstateIdExpressionContinuation(text: string): boolean {
 }
 
 function isTemplateOutputDialect(text: string): text is DeclaredTemplateOutputDialect {
-  return text === "model" || text === "variants" || text === "multipart";
+  return text === "model" || text === "variants" || text === "multipart" || text === "choice";
+}
+
+function isEntireExpressionParenthesized(
+  tokens: readonly RsglToken[],
+  start: number,
+  end: number
+): boolean {
+  if (tokens[start]?.text !== "(" || end <= start + 1) {
+    return false;
+  }
+  let depth = 0;
+  for (let index = start; index < end; index += 1) {
+    const text = tokens[index]?.text;
+    if (text === "(") {
+      depth += 1;
+    } else if (text === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index === end - 1;
+      }
+    }
+  }
+  return false;
 }

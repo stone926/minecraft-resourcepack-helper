@@ -114,7 +114,7 @@ The RSGL extension owns:
 - Settings under the `rsgl.*` namespace, including output directory, Minecraft target version, vanilla assets fallback, lower-priority packs, source maps, and generated JSON validation.
 - The bundled RSGL language server plus shared compiler/core packages.
 
-The current language surface accepts canonical syntax only, including explicit `model` / `variants` / `multipart` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
+The current language surface accepts canonical syntax only, including explicit `model` / `variants` / `multipart` / `choice` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
 
 ## Configuration
 

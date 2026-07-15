@@ -7,10 +7,6 @@ import type {
   RsglTemplateCallerContext,
   TemplateOutputDispatch
 } from "../templateOutput";
-import type {
-  RsglBlockstateApplyFact,
-  RsglBlockstateApplySiteNode
-} from "../semantic";
 import {
   BlockstateOperationExecutor,
   type BlockstateOperationExecutorHost
@@ -51,9 +47,6 @@ export interface BlockstateCompileOptions extends JsonValueSinkOptions {
     sourceRange: TextRange,
     context: RsglCompileContext
   ) => RsglMapping;
-  getBlockstateApplyFact?: (
-    node: RsglBlockstateApplySiteNode
-  ) => RsglBlockstateApplyFact | undefined;
 }
 
 export function compileBlockstateResource(
@@ -67,7 +60,8 @@ export function compileBlockstateResource(
     options.onError(
       "rsgl.compileMissingResourceId",
       "Blockstate declaration requires a static id.",
-      statement.range
+      statement.range,
+      context.sourceFile
     );
     return null;
   }
@@ -103,9 +97,6 @@ function executorHost(options: BlockstateCompileOptions): BlockstateOperationExe
     ...(options.onResourceValueObservation
       ? { onResourceValueObservation: options.onResourceValueObservation }
       : {}),
-    sourceMapping: options.sourceMapping,
-    ...(options.getBlockstateApplyFact
-      ? { getApplyFact: options.getBlockstateApplyFact }
-      : {})
+    sourceMapping: options.sourceMapping
   };
 }

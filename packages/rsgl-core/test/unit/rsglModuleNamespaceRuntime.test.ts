@@ -74,19 +74,25 @@ describe("RSGL module namespace runtime", () => {
   it("dispatches every explicit template dialect through a namespace", () => {
     const root = path.resolve("module-namespace-template-dialects");
     const mainFile = path.join(root, "main.rsgl");
+    const barrelFile = path.join(root, "barrel.rsgl");
     const libraryFile = path.join(root, "library.rsgl");
     const result = compileRsglProgram([
       sourceFile(mainFile, [
-        "import * as common from \"./library.rsgl\"",
+        "import * as common from \"./barrel.rsgl\"",
         "model block namespace_model { use common.modelPart() }",
         "blockstate variants namespace_variants { use common.variantsPart() }",
-        "blockstate multipart namespace_multipart { use common.multipartPart() }"
+        "blockstate multipart namespace_multipart { use common.multipartPart() }",
+        "blockstate variants namespace_choice {",
+        "  case * => random { use common.choicePart() }",
+        "}"
       ].join("\n")),
+      sourceFile(barrelFile, "export * from \"./library.rsgl\""),
       sourceFile(libraryFile, [
         "template modelPart() -> model { parent minecraft:block/cube_all }",
-        "template variantsPart() -> variants { {}: minecraft:block/stone }",
-        "template multipartPart() -> multipart { apply minecraft:block/post }",
-        "export { modelPart, variantsPart, multipartPart }"
+        "template variantsPart() -> variants { case * => minecraft:block/stone }",
+        "template multipartPart() -> multipart { part always => minecraft:block/post }",
+        "template choicePart() -> choice { option minecraft:block/alternate weight 2 }",
+        "export { modelPart, variantsPart, multipartPart, choicePart }"
       ].join("\n"))
     ], withUncheckedExterns({ entryFileName: mainFile }));
 
@@ -102,6 +108,10 @@ describe("RSGL module namespace runtime", () => {
     assert.deepStrictEqual(
       unitByPath(result, "blockstates/namespace_multipart.json").content,
       { multipart: [{ apply: { model: "minecraft:block/post" } }] }
+    );
+    assert.deepStrictEqual(
+      unitByPath(result, "blockstates/namespace_choice.json").content,
+      { variants: { "": [{ model: "minecraft:block/alternate", weight: 2 }] } }
     );
   });
 

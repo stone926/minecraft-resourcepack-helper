@@ -12,11 +12,11 @@ import type {
 } from "../templateOutput";
 import { applyBaseDocument } from "./base/application";
 import {
-  type BlockstateApplyLoweringHost,
-  type BlockstateLoweredMapping,
-  type LoweredBlockstateApply,
-  lowerBlockstateApply
-} from "./blockstateApplyLowerer";
+  executeBlockstateChoice,
+  type BlockstateChoiceExecutorHost,
+  type LoweredBlockstateChoice
+} from "./blockstateChoiceExecutor";
+import type { BlockstateModelSpecMapping } from "./blockstateModelSpecLowerer";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import {
   mappingTargetsAppliedContent,
@@ -37,9 +37,9 @@ import {
   templateBlockstateOperationProgram
 } from "./blockstateOperations";
 import {
-  lowerBlockstateCondition,
   lowerBlockstateSelector
 } from "./blockstateSelectorLowerer";
+import { lowerBlockstatePredicate } from "./blockstatePredicate";
 import { blockstateRootModeEvidence } from "./blockstateModePolicy";
 import {
   blockstateMultipartPath,
@@ -47,7 +47,8 @@ import {
 } from "./compilerHelpers";
 import {
   bindEvaluationResult,
-  evaluateExpression,
+  childEvaluationContext,
+  evaluateCompileTimeCondition,
   evaluateExpressionResult,
   type EvaluationOrigin,
   type EvaluationResult,
@@ -66,7 +67,7 @@ import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 import type { RsglCompileContext, TemplateExpansion } from "./templateExpansion";
 
 export interface BlockstateOperationExecutorHost
-  extends BlockstateContentMergeHost, BlockstateApplyLoweringHost {
+  extends BlockstateContentMergeHost, BlockstateChoiceExecutorHost {
   resolveTemplate: (
     statement: Extract<BlockstateOperation, { kind: "Use" }>["statement"],
     context: RsglCompileContext
@@ -204,7 +205,7 @@ export class BlockstateOperationExecutor {
       forEachLoopContext(
         operation.statement,
         context,
-        (code, message, range) => this.host.onError(code, message, range),
+        (code, message, range) => this.host.onError(code, message, range, context.sourceFile),
         loopContext => this.executeProgram(root, operation.body, loopContext, {
           scope: operation.body.scope,
           concreteRoot: false,
@@ -214,11 +215,15 @@ export class BlockstateOperationExecutor {
       return;
     }
     if (operation.kind === "If") {
-      const selected = evaluateExpression(operation.statement.condition, context)
+      const condition = evaluateCompileTimeCondition(operation.statement.condition, context);
+      if (condition === undefined) {
+        return;
+      }
+      const selected = condition
         ? operation.thenProgram
         : operation.elseProgram;
       if (selected) {
-        this.executeProgram(root, selected, context, {
+        this.executeProgram(root, selected, childEvaluationContext(context, {}), {
           scope: selected.scope,
           concreteRoot: false,
           allowBase: false
@@ -260,7 +265,8 @@ export class BlockstateOperationExecutor {
       this.host.onError(
         "rsgl.invalidTemplateContext",
         `Template '${definition.name}' emits resources and cannot be used inside a blockstate body.`,
-        operation.statement.range
+        operation.statement.range,
+        context.sourceFile
       );
       return;
     }
@@ -283,7 +289,7 @@ export class BlockstateOperationExecutor {
       allowBase: frame.allowBase,
       isRoot: frame.concreteRoot,
       isFirstStatement: operation.sourceIndex === 0,
-      onError: (code, message, range) => this.host.onError(code, message, range),
+      onError: (code, message, range) => this.host.onError(code, message, range, context.sourceFile),
       createMapping: (generatedPath, sourceRange, mappingContext) =>
         this.host.sourceMapping(generatedPath, sourceRange, mappingContext)
     });
@@ -292,7 +298,7 @@ export class BlockstateOperationExecutor {
     }
     const evidence = blockstateRootModeEvidence(base.content);
     if (evidence === "both") {
-      this.reportUnselectedModeConflict(operation.statement.range);
+      this.reportUnselectedModeConflict(operation.statement.range, context);
       return;
     }
     if (evidence !== "none" && !this.selectMode(root, evidence, {
@@ -305,7 +311,8 @@ export class BlockstateOperationExecutor {
       root.state,
       base.content,
       operation.statement.range,
-      base.mappings
+      base.mappings,
+      context
     );
   }
 
@@ -332,7 +339,8 @@ export class BlockstateOperationExecutor {
       this.host.onError(
         "rsgl.invalidMergeFragment",
         "merge must evaluate to an object fragment.",
-        operation.statement.value.range
+        operation.statement.value.range,
+        context.sourceFile
       );
       return;
     }
@@ -416,14 +424,16 @@ export class BlockstateOperationExecutor {
     context: RsglCompileContext
   ): void {
     const selectorExpression = statement.selector;
-    const selector = lowerBlockstateSelector(selectorExpression, context, this.host);
+    const selector = selectorExpression.kind === "BlockstateWildcardSelector"
+      ? { key: "" }
+      : lowerBlockstateSelector(selectorExpression, context, this.host);
     if (!selector || !this.selectMode(root, "variants", {
       sourceRange: selectorExpression.range,
       context
     })) {
       return;
     }
-    const lowered = lowerBlockstateApply(statement.value, context, this.host);
+    const lowered = executeBlockstateChoice(statement.choice, context, this.host);
     if (!lowered) {
       return;
     }
@@ -431,7 +441,7 @@ export class BlockstateOperationExecutor {
     const entryMapping = this.host.sourceMapping(entryPath, selectorExpression.range, context);
     const mappings: RsglMapping[] = [{
       ...entryMapping,
-      ...(selector.origin ? { validationOrigin: selector.origin } : {})
+      ...("origin" in selector && selector.origin ? { validationOrigin: selector.origin } : {})
     }];
     mappings.push(...materializeMappings(
       lowered.mappings.filter(item => item.generatedPath !== ""),
@@ -463,23 +473,23 @@ export class BlockstateOperationExecutor {
     })) {
       return;
     }
-    const apply = lowerBlockstateApply(statement.apply, context, this.host);
+    const apply = executeBlockstateChoice(statement.choice, context, this.host);
     if (!apply) {
       return;
     }
     const value: Record<string, JsonValue> = { apply: apply.value };
-    const mappings: BlockstateLoweredMapping[] = [relativeMapping("", statement.range)];
+    const mappings: BlockstateModelSpecMapping[] = [relativeMapping("", statement.range, context)];
     mappings.push(...apply.mappings.map(item => ({
       ...item,
       generatedPath: joinGeneratedPath("/apply", item.generatedPath)
     })));
-    if (statement.when) {
-      const when = lowerBlockstateCondition(statement.when, context, this.host);
+    if (!statement.always && statement.predicate) {
+      const when = lowerBlockstatePredicate(statement.predicate, context, this.host);
       if (!when) {
         return;
       }
       value.when = when.value;
-      mappings.push(relativeMapping("/when", statement.when.range, when.origin));
+      mappings.push(relativeMapping("/when", statement.predicate.range, context, when.origin));
     }
     const index = this.rootMerger.appendMultipart(
       root.state,
@@ -497,7 +507,7 @@ export class BlockstateOperationExecutor {
   }
 
   private emitResourceValueObservations(
-    observations: LoweredBlockstateApply["resourceValueObservations"],
+    observations: LoweredBlockstateChoice["resourceValueObservations"],
     generatedPathPrefix: string
   ): void {
     observations.forEach(observation => this.recordResourceValueObservation({
@@ -508,7 +518,7 @@ export class BlockstateOperationExecutor {
 
   private resourceValueCaptureHost(
     observations: RsglResourceValueObservation[]
-  ): BlockstateApplyLoweringHost {
+  ): BlockstateChoiceExecutorHost {
     return {
       ...this.host,
       onResourceValueObservation: observation => observations.push(observation)
@@ -571,7 +581,7 @@ export class BlockstateOperationExecutor {
   ): MergeResult | undefined {
     const evidence = blockstateRootModeEvidence(content);
     if (evidence === "both") {
-      this.reportUnselectedModeConflict(sourceRange);
+      this.reportUnselectedModeConflict(sourceRange, context);
       return undefined;
     }
     if (evidence !== "none" && !this.selectMode(root, evidence, { sourceRange, context })) {
@@ -591,7 +601,8 @@ export class BlockstateOperationExecutor {
     this.host.onError(
       "rsgl.blockstateModeConflict",
       `A '${root.state.mode}' blockstate root cannot receive '${mode}' content.`,
-      origin.sourceRange
+      origin.sourceRange,
+      origin.context.sourceFile
     );
     return false;
   }
@@ -616,11 +627,12 @@ export class BlockstateOperationExecutor {
     };
   }
 
-  private reportUnselectedModeConflict(range: TextRange): void {
+  private reportUnselectedModeConflict(range: TextRange, context: RsglCompileContext): void {
     this.host.onError(
       "rsgl.blockstateModeConflict",
       "A blockstate root operand cannot contain both 'variants' and 'multipart'.",
-      range
+      range,
+      context.sourceFile
     );
   }
 }
@@ -678,7 +690,7 @@ function evaluationMappingsForValue(
 }
 
 function materializeMappings(
-  mappings: readonly BlockstateLoweredMapping[],
+  mappings: readonly BlockstateModelSpecMapping[],
   basePath: string,
   context: RsglCompileContext,
   host: BlockstateOperationExecutorHost
@@ -687,7 +699,7 @@ function materializeMappings(
     ...host.sourceMapping(
       joinGeneratedPath(basePath, item.generatedPath),
       item.sourceRange,
-      context
+      item.context
     ),
     ...(item.origin ? { validationOrigin: item.origin } : {})
   }));
@@ -696,9 +708,10 @@ function materializeMappings(
 function relativeMapping(
   generatedPath: string,
   sourceRange: TextRange,
+  context: RsglCompileContext,
   origin?: EvaluationOrigin
-): BlockstateLoweredMapping {
-  return { generatedPath, sourceRange, ...(origin ? { origin } : {}) };
+): BlockstateModelSpecMapping {
+  return { generatedPath, sourceRange, context, ...(origin ? { origin } : {}) };
 }
 
 function observationMatchesMapping(

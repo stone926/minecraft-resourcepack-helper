@@ -4,129 +4,193 @@ import { parseRsgl } from "../../src/parser";
 import { bindRsglModule, bindRsglProgram } from "../../src/semantic";
 
 describe("RSGL blockstate semantics", () => {
-  it("checks selectors contextually without changing ordinary object expressions", () => {
+  it("checks case selectors contextually without changing ordinary object expressions", () => {
     const source = [
       "let invalidKey = {}",
       "let invalidValue = {}",
-      "let ordinary = { facing: custom_enum_literal }",
+      "let north = \"south\"",
+      "let shorthandValue = \"ordinary\"",
+      "let ordinary = { facing: custom_enum_literal, shorthandValue }",
       "blockstate variants selectors {",
-      "  { facing: custom_enum_literal }: minecraft:block/one",
-      "  { facing: north, \"facing\": south }: minecraft:block/two",
-      "  { [invalidKey]: north }: minecraft:block/three",
-      "  { facing: invalidValue }: minecraft:block/four",
-      "  (\"north\"): minecraft:block/five",
+      "  case { facing: custom_enum_literal } => minecraft:block/one",
+      "  case { facing: north, \"facing\": south } => minecraft:block/two",
+      "  case { [invalidKey]: north } => minecraft:block/three",
+      "  case { facing: invalidValue } => minecraft:block/four",
+      "  case \"north\" => minecraft:block/five",
       "}"
     ].join("\n");
     const model = bindRsglModule(parseRsgl(source));
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
 
-    assert.strictEqual(codes.filter(code => code === "rsgl.undefinedSymbol").length, 1);
+    const ordinaryUndefined = model.diagnostics.find(diagnostic =>
+      diagnostic.code === "rsgl.undefinedSymbol" && diagnostic.message.includes("custom_enum_literal")
+    );
+    assert.ok(ordinaryUndefined);
     assert.ok(codes.includes("rsgl.duplicateBlockstateSelectorProperty"));
     assert.ok(codes.includes("rsgl.invalidBlockstateSelectorKey"));
     assert.ok(codes.includes("rsgl.invalidBlockstateSelectorValue"));
     assert.ok(codes.includes("rsgl.blockstateSelectorMustBeObject"));
+    assert.ok(codes.includes("rsgl.blockstateEnumLiteralShadowed"));
   });
 
-  it("checks multipart conditions contextually through nested OR and AND objects", () => {
+  it("checks first-class StatePredicate operators and rejects raw condition objects", () => {
     const model = bindRsglModule(parseRsgl([
       "blockstate multipart conditions {",
-      "  when { facing: north } apply minecraft:block/north",
-      "  when { OR: [{ axis: x }, { axis: z }] } apply minecraft:block/axis",
-      "  when { AND: [] } apply minecraft:block/empty",
-      "  when { OR: [{ powered: true }], facing: south } apply minecraft:block/mixed",
+      "  part when $state.facing == north => minecraft:block/north",
+      "  part when $state.axis in [x, z] => minecraft:block/axis",
+      "  part when $state.power in [] => minecraft:block/empty",
+      "  part when { OR: [{ powered: true }] } => minecraft:block/raw",
+      "  part when $state.north == $state.south => minecraft:block/runtime_rhs",
+      "  part when true => minecraft:block/not_a_predicate",
       "}",
       "let ordinary = { facing: still_ordinary }"
     ].join("\n")));
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
-    const undefinedDiagnostics = model.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.undefinedSymbol"
-    );
 
-    assert.strictEqual(undefinedDiagnostics.length, 1);
-    assert.ok(undefinedDiagnostics[0].message.includes("still_ordinary"));
-    assert.ok(codes.includes("rsgl.invalidBlockstateLogicalCondition"));
-    assert.ok(codes.includes("rsgl.mixedBlockstateWhenCondition"));
+    assert.ok(model.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.undefinedSymbol" && diagnostic.message.includes("still_ordinary")
+    ));
+    assert.ok(codes.includes("rsgl.emptyBlockstatePredicateMembership"));
+    assert.ok(codes.includes("rsgl.invalidBlockstatePredicate"));
+    assert.ok(codes.includes("rsgl.invalidBlockstatePredicateComparison"));
   });
 
-  it("checks the closed model-object/list/random domain and records Json provenance", () => {
+  it("reserves $state against value and parameter bindings", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let $state = { north: 5 }",
+      "template shadow($state: Json) -> multipart {",
+      "  part when $state.north == true => minecraft:block/template",
+      "}",
+      "template $state() -> variants { case * => minecraft:block/invalid_name }",
+      "blockstate multipart reserved_state {",
+      "  part when $state.north == true => minecraft:block/root",
+      "}"
+    ].join("\n")));
+
+    assert.strictEqual(
+      model.diagnostics.filter(diagnostic =>
+        diagnostic.code === "rsgl.reservedBlockstateStateNamespace"
+      ).length,
+      3
+    );
+  });
+
+  it("keeps random choice bindings out of the surrounding semantic scope", () => {
+    const model = bindRsglModule(parseRsgl([
+      "blockstate multipart choice_scope {",
+      "  part always => random {",
+      "    let leaked: StatePredicate = $state.north == true",
+      "    option minecraft:block/first",
+      "  }",
+      "  part when leaked => minecraft:block/second",
+      "}"
+    ].join("\n")));
+
+    assert.ok(model.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.undefinedSymbol"
+      && diagnostic.message.includes("leaked")
+    ));
+  });
+
+  it("checks the closed ModelSpec and random option domains and records ModelSpec scopes", () => {
     const source = [
-      "let escaped: Json = { model: minecraft:block/escaped, future_field: true }",
-      "let closed = { model: minecraft:block/closed, misspelled: true }",
-      "blockstate variants apply_values {",
-      "  {}: minecraft:block/direct y=90 uvlock=true",
-      "  {}: { model: minecraft:block/object, x: 180 }",
-      "  {}: [{ model: minecraft:block/a }, { model: minecraft:block/b }]",
-      "  {}: random [minecraft:block/a weight=2, { model: minecraft:block/b }]",
-      "  {}: escaped",
-      "  {}: closed",
-      "  {}: {}",
-      "  {}: []",
-      "  {}: [[{ model: minecraft:block/nested }]]",
-      "  {}: random []",
-      "  {}: random [[{ model: minecraft:block/nested_random }]]",
-      "  {}: { model: minecraft:block/property_head } y=90",
+      "let model: ModelId = minecraft:block/direct",
+      "let x = 90",
+      "let spreadOptions = { y: 90 }",
+      "let field = \"z\"",
+      "blockstate variants model_specs {",
+      "  case { kind: direct } => model with { x, uvlock: true }",
+      "  case { kind: random } => random {",
+      "    option minecraft:block/a weight 2",
+      "    option minecraft:block/b with { y: 180 }",
+      "  }",
+      "  case { kind: unknown } => minecraft:block/c with { future: true }",
+      "  case { kind: spread } => minecraft:block/d with { ...spreadOptions }",
+      "  case { kind: computed } => minecraft:block/e with { [field]: 90 }",
+      "  case { kind: weight } => minecraft:block/f with { weight: 2 }",
+      "  case { kind: rotation } => minecraft:block/g with { x: 45 }",
       "}"
     ].join("\n");
     const model = bindRsglModule(parseRsgl(source));
     const codes = model.diagnostics.map(diagnostic => diagnostic.code);
 
-    assert.strictEqual(codes.filter(code => code === "rsgl.unknownBlockstateModelField").length, 1);
-    assert.ok(codes.includes("rsgl.missingBlockstateModel"));
-    assert.ok(codes.includes("rsgl.emptyBlockstateModelList"));
-    assert.ok(codes.includes("rsgl.nestedBlockstateModelList"));
-    assert.ok(codes.includes("rsgl.emptyBlockstateRandom"));
-    assert.ok(codes.includes("rsgl.invalidBlockstateApplyHead"));
+    for (const expected of [
+      "rsgl.unknownBlockstateModelField",
+      "rsgl.invalidBlockstateModelOptionsSpread",
+      "rsgl.invalidBlockstateModelOption",
+      "rsgl.blockstateWeightInvalidContext",
+      "rsgl.invalidBlockstateRotation"
+    ]) {
+      assert.ok(codes.includes(expected), `Missing ${expected}`);
+    }
 
-    const facts = Array.from(model.blockstateApplyFacts ?? []);
-    const escaped = facts.find(([node]) => source.slice(node.head.range.start, node.head.range.end) === "escaped");
-    const closed = facts.find(([node]) => source.slice(node.head.range.start, node.head.range.end) === "closed");
-    assert.strictEqual(escaped?.[1].unknownFields, "preserveExplicitJson");
-    assert.strictEqual(closed?.[1].unknownFields, "reject");
+    const records = model.blockstateModelSpecRecords ?? [];
+    const heads = records.map(record =>
+      source.slice(record.node.model.range.start, record.node.model.range.end)
+    );
+    assert.ok(heads.includes("model"));
+    assert.ok(heads.includes("minecraft:block/a"));
+    assert.ok(heads.includes("minecraft:block/b"));
+    const direct = records.find(record =>
+      source.slice(record.node.model.range.start, record.node.model.range.end) === "model"
+    );
+    assert.ok(direct);
+    assert.deepStrictEqual(
+      direct.node.options?.properties.map(property =>
+        source.slice(property.range.start, property.range.end)
+      ),
+      ["x", "uvlock: true"]
+    );
   });
 
-  it("reports concrete opposite template modes as template output mismatches", () => {
+  it("reports variants, multipart, and choice template output mismatches", () => {
     const model = bindRsglModule(parseRsgl([
-      "template variantsPart() -> variants { {}: minecraft:block/variant }",
-      "template multipartPart() -> multipart { apply minecraft:block/part }",
+      "template variantsPart() -> variants { case * => minecraft:block/variant }",
+      "template multipartPart() -> multipart { part always => minecraft:block/part }",
+      "template choicePart() -> choice { option minecraft:block/choice }",
       "blockstate variants good { use variantsPart() }",
+      "blockstate multipart good_parts { use multipartPart() }",
+      "blockstate variants good_choice { case * => random { use choicePart() } }",
       "blockstate variants wrong_variants { use multipartPart() }",
-      "blockstate multipart wrong_multipart { use variantsPart() }"
+      "blockstate multipart wrong_multipart { use variantsPart() }",
+      "blockstate variants wrong_choice { use choicePart() }"
     ].join("\n")));
     const mismatches = model.diagnostics.filter(diagnostic =>
       diagnostic.code === "rsgl.templateOutputDialectMismatch"
     );
 
-    assert.strictEqual(mismatches.length, 2);
+    assert.strictEqual(mismatches.length, 3);
     assert.ok(mismatches.some(diagnostic => diagnostic.message.includes("variantsPart")));
     assert.ok(mismatches.some(diagnostic => diagnostic.message.includes("multipartPart")));
+    assert.ok(mismatches.some(diagnostic => diagnostic.message.includes("choicePart")));
   });
 
-  it("stores compact source-position scopes for post-link blockstate rechecks", () => {
+  it("stores compact source-position scopes for post-link selector and ModelSpec rechecks", () => {
     const lets = Array.from({ length: 200 }, (_, index) => `  let local${index} = "value${index}"`);
     const model = bindRsglModule(parseRsgl([
       "blockstate variants compact_scopes {",
       ...lets,
-      "  { state: local199 }: minecraft:block/value",
+      "  let selectedModel: ModelId = minecraft:block/value",
+      "  case { state: local199 } => selectedModel",
       "}"
     ].join("\n")));
     const contextualScope = model.blockstateContextualExpressionRecords?.[0]?.scope;
-    const applyScope = model.blockstateApplyRecords?.[0]?.scope;
+    const modelSpecScope = model.blockstateModelSpecRecords?.[0]?.scope;
 
     assert.deepStrictEqual(Array.from(contextualScope?.symbols.keys() ?? []), ["local199"]);
-    assert.strictEqual(applyScope?.symbols.size, 0);
+    assert.deepStrictEqual(Array.from(modelSpecScope?.symbols.keys() ?? []), ["selectedModel"]);
   });
 
-  it("rechecks bare import-all re-exports with final types and lexical shadowing", () => {
+  it("rechecks bare import-all ModelSpecs with final types and lexical shadowing", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const barrelFile = path.resolve("pack", "barrel.rsgl");
     const definitionsFile = path.resolve("pack", "definitions.rsgl");
     const mainSource = [
       "import \"./barrel.rsgl\"",
       "blockstate variants linked {",
-      "  {}: linkedJson",
-      "  {}: plainClosed",
-      "  let linkedClosed: Json = { model: minecraft:block/local, local_future: true }",
-      "  {}: linkedClosed",
+      "  let linkedModel: ModelId = minecraft:block/local",
+      "  case { kind: shadowed } => linkedModel",
+      "  case { kind: invalid } => plainNumber",
       "}",
       "blockstate variants inferred { use linkedVariants() }"
     ].join("\n");
@@ -136,25 +200,25 @@ describe("RSGL blockstate semantics", () => {
       {
         fileName: definitionsFile,
         module: parseRsgl([
-          "let linkedJson: Json = { model: minecraft:block/json, future_field: true }",
-          "let plainClosed = { model: minecraft:block/closed, misspelled: true }",
-          "let linkedClosed = { model: minecraft:block/imported, misspelled: true }",
-          "template linkedVariants() -> variants { {}: minecraft:block/linked }",
-          "export { linkedJson, plainClosed, linkedClosed, linkedVariants }"
+          "let linkedModel: ModelId = minecraft:block/imported",
+          "let plainNumber = 42",
+          "template linkedVariants() -> variants { case * => minecraft:block/linked }",
+          "export { linkedModel, plainNumber, linkedVariants }"
         ].join("\n"))
       }
     ]);
     const mainModel = program.models.find(model => model.fileName === mainFile);
     const mainDiagnostics = program.fileDiagnostics.filter(diagnostic => diagnostic.fileName === mainFile);
-    const policies = Array.from(mainModel?.blockstateApplyFacts?.values() ?? [])
-      .map(fact => fact.unknownFields);
 
     assert.strictEqual(
-      mainDiagnostics.filter(diagnostic => diagnostic.code === "rsgl.unknownBlockstateModelField").length,
+      mainDiagnostics.filter(diagnostic => diagnostic.code === "rsgl.typeMismatch").length,
       1
     );
-    assert.strictEqual(policies.filter(policy => policy === "preserveExplicitJson").length, 2);
-    assert.strictEqual(policies.filter(policy => policy === "reject").length, 1);
+    const heads = (mainModel?.blockstateModelSpecRecords ?? []).map(record =>
+      mainSource.slice(record.node.model.range.start, record.node.model.range.end)
+    );
+    assert.ok(heads.includes("linkedModel"));
+    assert.ok(heads.includes("plainNumber"));
     const linkedUse = mainModel?.templateUses?.find(record =>
       mainSource.slice(record.expression.range.start, record.expression.range.end).startsWith("linkedVariants")
     );
@@ -170,20 +234,21 @@ describe("RSGL blockstate semantics", () => {
     ));
   });
 
-  it("rechecks imported selectors, computed keys, and multipart conditions after linking", () => {
+  it("rechecks imported selectors, computed keys, and StatePredicate values after linking", () => {
     const mainFile = path.resolve("pack", "contextual-main.rsgl");
     const definitionsFile = path.resolve("pack", "contextual-definitions.rsgl");
     const program = bindRsglProgram([
       {
         fileName: mainFile,
         module: parseRsgl([
-          "import { scalar, objectValue } from \"./contextual-definitions.rsgl\"",
+          "import { scalar, objectValue, attached } from \"./contextual-definitions.rsgl\"",
           "blockstate variants imported_selector {",
-          "  (scalar): minecraft:block/a",
-          "  { [objectValue]: north }: minecraft:block/b",
+          "  case scalar => minecraft:block/a",
+          "  case { [objectValue]: north } => minecraft:block/b",
           "}",
-          "blockstate multipart imported_condition {",
-          "  when scalar apply minecraft:block/c",
+          "blockstate multipart imported_predicate {",
+          "  part when scalar => minecraft:block/c",
+          "  part when attached => minecraft:block/d",
           "}"
         ].join("\n"))
       },
@@ -192,7 +257,8 @@ describe("RSGL blockstate semantics", () => {
         module: parseRsgl([
           "let scalar = \"north\"",
           "let objectValue = {}",
-          "export { scalar, objectValue }"
+          "let attached: StatePredicate = $state.north == true",
+          "export { scalar, objectValue, attached }"
         ].join("\n"))
       }
     ]);
@@ -202,6 +268,11 @@ describe("RSGL blockstate semantics", () => {
 
     assert.ok(codes.includes("rsgl.blockstateSelectorMustBeObject"));
     assert.ok(codes.includes("rsgl.invalidBlockstateSelectorKey"));
-    assert.ok(codes.includes("rsgl.invalidBlockstateCondition"));
+    assert.ok(codes.includes("rsgl.invalidBlockstatePredicate"));
+    assert.strictEqual(
+      codes.filter(code => code === "rsgl.invalidBlockstatePredicate").length,
+      1,
+      "The imported StatePredicate should remain valid after linking."
+    );
   });
 });

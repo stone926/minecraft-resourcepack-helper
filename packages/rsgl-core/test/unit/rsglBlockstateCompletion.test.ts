@@ -79,7 +79,7 @@ describe("RSGL blockstate completion", () => {
 
   it("offers mode entries plus root operations in concrete blockstates", () => {
     const variants = syntaxLabelsAtEnd("blockstate variants stone {\n  ");
-    for (const expected of ["variant entry", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
+    for (const expected of ["variant entry", "default variant", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
       assert.ok(variants.has(expected), `Expected variants root completion '${expected}'.`);
     }
     assert.strictEqual(variants.has("apply"), false);
@@ -87,14 +87,14 @@ describe("RSGL blockstate completion", () => {
     assert.strictEqual(variants.has("variants"), false);
     assert.strictEqual(variants.has("multipart"), false);
     const multipart = syntaxLabelsAtEnd("blockstate multipart wall {\n  ");
-    for (const expected of ["when", "apply", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
+    for (const expected of ["part when", "part always", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
       assert.ok(multipart.has(expected), `Expected multipart root completion '${expected}'.`);
     }
     assert.strictEqual(multipart.has("variant entry"), false);
 
     const afterEntry = syntaxLabelsAtEnd([
       "blockstate variants stone {",
-      "  {}: minecraft:block/stone",
+      "  case * => minecraft:block/stone",
       "  "
     ].join("\n"));
     assert.strictEqual(afterEntry.has("base"), false);
@@ -118,6 +118,7 @@ describe("RSGL blockstate completion", () => {
     const variants = syntaxLabelsAtEnd("template states() -> variants {\n  ");
     assert.deepStrictEqual([...variants], [
       "variant entry",
+      "default variant",
       "random",
       "let",
       "use",
@@ -128,8 +129,8 @@ describe("RSGL blockstate completion", () => {
 
     const multipart = syntaxLabelsAtEnd("template parts() -> multipart {\n  ");
     assert.deepStrictEqual([...multipart], [
-      "when",
-      "apply",
+      "part when",
+      "part always",
       "random",
       "let",
       "use",
@@ -145,23 +146,88 @@ describe("RSGL blockstate completion", () => {
     }
   });
 
-  it("emits only canonical variant, apply, and random snippets", () => {
+  it("emits only canonical case, part, ModelSpec, and random snippets", () => {
     const variants = candidatesAtEnd("template states() -> variants {\n  ");
     const variantEntry = variants.find(candidate => candidate.label === "variant entry")?.insertText ?? "";
     const variantRandom = variants.find(candidate => candidate.label === "random")?.insertText ?? "";
-    assert.match(variantEntry, /\}: .*minecraft:block\/stone/);
-    assert.doesNotMatch(variantEntry, /->|@|\{\s*model\s*:/);
-    assert.match(variantRandom, /\}: random \[/);
-    assert.match(variantRandom, /weight=/);
+    assert.match(variantEntry, /^case \{.*\} => .*minecraft:block\/stone/);
+    assert.doesNotMatch(variantEntry, /->|@|\{\s*model\s*:|\bweight=/);
+    assert.match(variantRandom, /^case \{.*\} => random \{/);
+    assert.match(variantRandom, /option .* weight /);
     assert.doesNotMatch(variantRandom, /@|\{\s*model\s*:/);
 
     const multipart = candidatesAtEnd("template parts() -> multipart {\n  ");
-    const apply = multipart.find(candidate => candidate.label === "apply")?.insertText ?? "";
+    const apply = multipart.find(candidate => candidate.label === "part always")?.insertText ?? "";
     const random = multipart.find(candidate => candidate.label === "random")?.insertText ?? "";
-    assert.match(apply, /^apply .*minecraft:block\/stone/);
+    assert.match(apply, /^part always => .*minecraft:block\/stone/);
     assert.doesNotMatch(apply, /@|\{\s*model\s*:/);
-    assert.match(random, /^apply random \[/);
-    assert.match(random, /weight=/);
+    assert.match(random, /^part always => random \{/);
+    assert.match(random, /option .* weight /);
     assert.doesNotMatch(random, /@|\{\s*model\s*:/);
+  });
+
+  it("offers only option-producing constructs inside choice bodies", () => {
+    const templateChoice = syntaxLabelsAtEnd("template choices() -> choice {\n  ");
+    assert.deepStrictEqual([...templateChoice], [
+      "option",
+      "weighted option",
+      "let",
+      "use",
+      "for",
+      "for multidim",
+      "if"
+    ]);
+
+    const randomChoice = syntaxLabelsAtEnd("blockstate variants stone {\n  case * => random {\n    ");
+    assert.ok(randomChoice.has("option"));
+    assert.ok(randomChoice.has("for"));
+    assert.strictEqual(randomChoice.has("variant entry"), false);
+    assert.strictEqual(randomChoice.has("part always"), false);
+    assert.strictEqual(randomChoice.has("merge"), false);
+  });
+
+  it("offers only canonical fields at ModelSpec with-object key positions", () => {
+    const direct = [
+      "blockstate variants stone {",
+      "  case * => minecraft:block/stone with {",
+      "    "
+    ].join("\n");
+    assert.strictEqual(
+      getRsglCompletionContext(direct, direct.length).blockstateModelOptions,
+      true
+    );
+    assert.deepStrictEqual([...syntaxLabelsAtEnd(direct)], ["x", "y", "z", "uvlock"]);
+
+    const randomOption = [
+      "blockstate multipart wall {",
+      "  part always => random {",
+      "    option minecraft:block/side with { uv"
+    ].join("\n");
+    assert.strictEqual(
+      getRsglCompletionContext(randomOption, randomOption.length).blockstateModelOptions,
+      true
+    );
+    assert.deepStrictEqual([...syntaxLabelsAtEnd(randomOption)], ["x", "y", "z", "uvlock"]);
+
+    const valuePosition = [
+      "blockstate variants stone {",
+      "  case * => minecraft:block/stone with { y: "
+    ].join("\n");
+    assert.strictEqual(
+      getRsglCompletionContext(valuePosition, valuePosition.length).blockstateModelOptions,
+      false
+    );
+  });
+
+  it("offers the runtime state namespace while entering multipart predicates", () => {
+    const predicate = [
+      "blockstate multipart wall {",
+      "  part when (",
+      "    "
+    ].join("\n");
+    const context = getRsglCompletionContext(predicate, predicate.length);
+
+    assert.strictEqual(context.blockstatePredicate, true);
+    assert.deepStrictEqual([...syntaxLabelsAtEnd(predicate)], ["$state"]);
   });
 });

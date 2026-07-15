@@ -5,7 +5,15 @@ import { appendGeneratedPath } from "./sourcePaths";
 import { pushDiagnosticAtRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
-import type { RsglResourceValidationOptions, ValidationRange } from "./validationTypes";
+import {
+  analyzeBlockstateVariantSelectors,
+  type BlockstateVariantSelectorAnalysis
+} from "./blockstateVariantSelectors";
+import type {
+  RsglBlockstateSchema,
+  RsglResourceValidationOptions,
+  ValidationRange
+} from "./validationTypes";
 
 export function validateBlockstateUnit(
   unit: ResourceUnit,
@@ -13,9 +21,10 @@ export function validateBlockstateUnit(
   diagnostics: RsglCompileDiagnostic[]
 ): void {
   const content = asObject(unit.content);
+  const blockstateSchema = unit.id ? options.blockstateSchema?.(unit.id) : undefined;
   validateBlockstateStateDomains(content ?? undefined, unit, diagnostics, {
     rangeForGeneratedPath: path => sourceRangeForGeneratedPath(unit, path),
-    schema: unit.id ? options.blockstateSchema?.(unit.id) : undefined
+    schema: blockstateSchema
   });
   if (content && "variants" in content && "multipart" in content) {
     pushDiagnosticAtRange(
@@ -43,6 +52,9 @@ export function validateBlockstateUnit(
       validateBlockstateVariantKey(key, diagnostics, range);
       validateBlockstateModelProps(value, unit, options, diagnostics, range, generatedPath);
     }
+    const selectorAnalysis = analyzeBlockstateVariantSelectors(Object.keys(variants));
+    validateVariantOverlap(selectorAnalysis, unit, diagnostics);
+    validateVariantExhaustiveness(selectorAnalysis, blockstateSchema, unit, diagnostics);
   }
 
   const multipart = Array.isArray(content?.multipart) ? content.multipart : [];
@@ -79,6 +91,119 @@ export function validateBlockstateUnit(
       appendGeneratedPath(generatedPath, "apply")
     );
   }
+  validateDuplicateMultipartPredicates(multipart, unit, diagnostics);
+}
+
+function validateVariantOverlap(
+  analysis: BlockstateVariantSelectorAnalysis,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  for (const [key, overlappingKey] of analysis.overlaps) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.overlappingBlockstateVariantEntry",
+      `Blockstate variant '${key || "*"}' overlaps '${overlappingKey || "*"}'; variants cases must select disjoint state sets.`,
+      "error",
+      sourceRangeForGeneratedPath(unit, blockstateVariantPath(key))
+    );
+  }
+}
+
+function validateVariantExhaustiveness(
+  analysis: BlockstateVariantSelectorAnalysis,
+  schema: RsglBlockstateSchema | null | undefined,
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  if (!schema || Object.keys(schema.properties).length === 0) {
+    return;
+  }
+  if (analysis.overlaps.size > 0) {
+    return;
+  }
+
+  const schemaEntries = Object.entries(schema.properties);
+  const total = schemaEntries.reduce(
+    (product, [, values]) => product * BigInt(values.length),
+    1n
+  );
+  let covered = 0n;
+  for (const selector of analysis.selectors) {
+    if ([...selector.assignments].some(([name, value]) =>
+      !Object.hasOwn(schema.properties, name)
+      || !schema.properties[name]?.includes(value)
+    )) {
+      continue;
+    }
+    covered += schemaEntries.reduce(
+      (product, [name, values]) => product * BigInt(
+        selector.assignments.has(name) ? 1 : values.length
+      ),
+      1n
+    );
+  }
+  if (covered >= total) {
+    return;
+  }
+  pushDiagnosticAtRange(
+    diagnostics,
+    "rsgl.incompleteBlockstateVariants",
+    `Blockstate variants leave ${total - covered} of ${total} schema state combinations uncovered.`,
+    "warning",
+    sourceRangeForGeneratedPath(unit, "/variants")
+  );
+}
+
+function validateDuplicateMultipartPredicates(
+  multipart: JsonValue[],
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const firstByPredicate = new Map<string, number>();
+  for (const [index, rawEntry] of multipart.entries()) {
+    const entry = asObject(rawEntry);
+    if (!entry || entry.when === undefined || Array.isArray(entry.apply) || !asObject(entry.apply)) {
+      continue;
+    }
+    const key = canonicalCondition(entry.when);
+    const earlier = firstByPredicate.get(key);
+    if (earlier === undefined) {
+      firstByPredicate.set(key, index);
+      continue;
+    }
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.duplicateMultipartPredicateHint",
+      `Multipart parts ${earlier + 1} and ${index + 1} use the same predicate with single models; if one model should be selected at random, put both options in one random choice.`,
+      "info",
+      sourceRangeForGeneratedPath(unit, blockstateMultipartPath(index))
+    );
+  }
+}
+
+function canonicalCondition(value: JsonValue): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalCondition).sort().join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${
+        key === "AND" || key === "OR"
+          ? canonicalCondition(item)
+          : canonicalConditionValue(item)
+      }`)
+      .join(",")}}`;
+  }
+  return canonicalConditionValue(value);
+}
+
+function canonicalConditionValue(value: JsonValue): string {
+  if (typeof value === "string" && value.includes("|")) {
+    return JSON.stringify(value.split("|").sort().join("|"));
+  }
+  return JSON.stringify(value);
 }
 
 function validateBlockstateVariantKey(
@@ -147,13 +272,13 @@ function validateBlockstateModelProps(
           sourceRangeForGeneratedPath(unit, itemPath)
         );
       } else {
-        validateBlockstateModelObject(item, unit, options, diagnostics, range, itemPath);
+        validateBlockstateModelObject(item, unit, options, diagnostics, range, itemPath, true);
       }
     }
     return;
   }
 
-  validateBlockstateModelObject(value, unit, options, diagnostics, range, generatedPath);
+  validateBlockstateModelObject(value, unit, options, diagnostics, range, generatedPath, false);
 }
 
 function validateBlockstateModelObject(
@@ -162,7 +287,8 @@ function validateBlockstateModelObject(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   range: ValidationRange,
-  generatedPath: string
+  generatedPath: string,
+  allowWeight: boolean
 ): void {
   const model = asObject(value);
   if (!model) {
@@ -220,7 +346,15 @@ function validateBlockstateModelObject(
       sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "uvlock"))
     );
   }
-  if ("weight" in model && (!Number.isInteger(model.weight) || Number(model.weight) <= 0)) {
+  if ("weight" in model && !allowWeight) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.blockstateWeightInvalidContext",
+      "weight is only valid on an option inside a random blockstate choice.",
+      "error",
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "weight"))
+    );
+  } else if ("weight" in model && (!Number.isInteger(model.weight) || Number(model.weight) <= 0)) {
     pushDiagnosticAtRange(
       diagnostics,
       "rsgl.invalidRandomWeight",

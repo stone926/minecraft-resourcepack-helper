@@ -123,7 +123,7 @@ describe("RSGL legacy item model backend", () => {
       "  model minecraft:item/wand",
       "}",
       "blockstate variants wand_reference {",
-      "  {}: { model: minecraft:wand }",
+      "  case * => minecraft:wand",
       "}"
     ]);
 

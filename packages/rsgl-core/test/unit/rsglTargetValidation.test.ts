@@ -9,7 +9,7 @@ describe("RSGL target validation", () => {
     const result = compileSource([
       "target java format [74, 0]",
       "blockstate variants rotated {",
-      "  {}: { model: minecraft:block/rotated, z: 90 }",
+      "  case * => minecraft:block/rotated with { z: 90 }",
       "}",
       "overlay \"future\" format [90, 0]..[91, 0] {",
       "  model block rotated { parent minecraft:block/cube_all }",
@@ -25,13 +25,13 @@ describe("RSGL target validation", () => {
     const modern = compileSource([
       "target java mc \"1.21.11\"",
       "blockstate variants rotated {",
-      "  {}: { model: minecraft:block/rotated, z: 90 }",
+      "  case * => minecraft:block/rotated with { z: 90 }",
       "}"
     ]);
     const older = compileSource([
       "target java mc \"1.21.10\"",
       "blockstate variants rotated {",
-      "  {}: { model: minecraft:block/rotated, z: 90 }",
+      "  case * => minecraft:block/rotated with { z: 90 }",
       "}"
     ]);
 

@@ -113,7 +113,7 @@ describe("RSGL compiler template dispatch guards", () => {
 
   it("closes blockstate root base capability inside nested control flow", () => {
     const module = parseRsgl([
-      "template fragment() -> variants { { nested: true }: minecraft:block/stone }",
+      "template fragment() -> variants { case { nested: true } => minecraft:block/stone }",
       "blockstate variants test {",
       "  for value in [0] {",
       "    use fragment()",

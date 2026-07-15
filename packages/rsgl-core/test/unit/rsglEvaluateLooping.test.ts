@@ -49,7 +49,7 @@ describe("RSGL expression evaluation and loops", () => {
     const result = compileSourceWithUncheckedExterns([
       "for state in product({ facing: [north, east], powered: [false, true] }) {",
       "  blockstate variants `lamp_${state.facing}_${state.powered}` {",
-      "    {}: { model: `minecraft:block/lamp_${state.facing}` }",
+      "    case * => `minecraft:block/lamp_${state.facing}`",
       "  }",
       "}"
     ]);
@@ -128,13 +128,12 @@ describe("RSGL expression evaluation and loops", () => {
       "}",
       "blockstate variants orient {",
       "  for dir in HORIZONTAL {",
-      "    { facing: dir }: {",
-      "        model: match dir {",
-      "          north | south -> minecraft:block/line",
-      "          _ -> minecraft:block/turn",
-      "        }",
-      "        y: yaw(dir)",
-      "        uvlock: dir != north",
+      "    case { facing: dir } => match dir {",
+      "      north | south -> minecraft:block/line",
+      "      _ -> minecraft:block/turn",
+      "    } with {",
+      "      y: yaw(dir)",
+      "      uvlock: dir != north",
       "    }",
       "  }",
       "}"
@@ -157,9 +156,7 @@ describe("RSGL expression evaluation and loops", () => {
           uvlock: true
         },
         ["facing=north"]: {
-          model: "minecraft:block/line",
-          y: 0,
-          uvlock: false
+          model: "minecraft:block/line"
         },
         ["facing=south"]: {
           model: "minecraft:block/line",

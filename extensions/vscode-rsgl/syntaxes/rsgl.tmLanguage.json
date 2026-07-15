@@ -77,7 +77,7 @@
     "templateOutputHeaders": {
       "patterns": [
         {
-          "match": "(->)[ \\t]*(model|variants|multipart)\\b(?=[ \\t]*\\{)",
+          "match": "(->)[ \\t]*(model|variants|multipart|choice)\\b(?=[ \\t]*\\{)",
           "captures": {
             "1": {
               "name": "keyword.operator.template-output.rsgl"
@@ -445,6 +445,10 @@
     "contextualIdentifiers": {
       "patterns": [
         {
+          "name": "variable.language.state.rsgl",
+          "match": "\\$state\\b"
+        },
+        {
           "match": "(^|[\\{\\[\\(,;])([ \\t]*)([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*(?:\\?[ \\t]*)?[:=](?!=))",
           "captures": {
             "3": {
@@ -514,7 +518,7 @@
         },
         {
           "name": "keyword.control.rsgl",
-          "match": "\\b(?:for|if|else|in|match|case|fallback|when|apply|use|import|export|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append|transform|around)\\b"
+          "match": "\\b(?:for|if|else|in|not|match|case|part|always|when|option|with|weight|fallback|use|import|export|as|impl|format|random|range|select|condition|composite|empty|selected_item|special|base|merge|deep|strict|upsert|append|transform|around)\\b"
         },
         {
           "name": "storage.type.rsgl",
@@ -530,7 +534,7 @@
       "patterns": [
         {
           "name": "support.type.rsgl",
-          "match": "\\b(?:Any|Boolean|Function|Json|List|ModelId|Number|Path|Range|ResourceId|String|TextureId|TextureRef|TextureVariable)\\b"
+          "match": "\\b(?:Any|Boolean|Function|Json|List|ModelId|Number|Path|Range|ResourceId|StatePredicate|String|TextureId|TextureRef|TextureVariable)\\b"
         }
       ]
     },

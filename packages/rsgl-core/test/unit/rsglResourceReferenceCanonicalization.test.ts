@@ -23,7 +23,7 @@ describe("RSGL resource reference canonicalization", () => {
         "  elements [{ from: [0, 0, 0], to: [16, 16, 16], faces: { north: { texture: block/stone } } }]",
         "}",
         "blockstate variants stone {",
-        "  {}: { model: block/stone }",
+        "  case * => block/stone",
         "}"
       ], {
         fileName: path.join(root, "main.rsgl"),
@@ -82,7 +82,7 @@ describe("RSGL resource reference canonicalization", () => {
       "namespace demo",
       "extern! custom model *:**",
       "blockstate variants invalid {",
-      "  {}: { model: \"Bad Model\" }",
+      "  case * => \"Bad Model\"",
       "}"
     ], {
       externResourceExists: () => {
@@ -132,7 +132,7 @@ describe("RSGL resource reference canonicalization", () => {
     const result = compileSource([
       "namespace demo",
       "blockstate variants external {",
-      "  {}: { model: block/external }",
+      "  case * => block/external",
       "}"
     ], {
       globalExterns: [

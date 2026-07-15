@@ -71,7 +71,7 @@ describe("RSGL stdlib discovery", () => {
     ].join("\n"));
     fs.writeFileSync(projectStdlibFile, [
       "template projectOnly(model: ModelId) -> variants {",
-      "  { custom: \"project\" }: model",
+      "  case { custom: \"project\" } => model",
       "}",
       "export { projectOnly }"
     ].join("\n"));

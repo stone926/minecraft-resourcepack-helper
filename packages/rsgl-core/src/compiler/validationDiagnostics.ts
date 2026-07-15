@@ -1,5 +1,26 @@
-import type { ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import type {
+  ResourceUnit,
+  RsglCompileDiagnostic,
+  RsglMapping,
+  RsglValidationReferenceOrigin
+} from "./ir";
 import type { ValidationRange } from "./validationTypes";
+
+interface ValidationSourceLookup {
+  readonly mappings: readonly RsglMapping[];
+  readonly mappingCount: number;
+  readonly origins: readonly RsglValidationReferenceOrigin[];
+  readonly originCount: number;
+  readonly latestMappingByPath: ReadonlyMap<string, RsglMapping>;
+  readonly latestNonBaseMappingByPath: ReadonlyMap<string, RsglMapping>;
+  readonly latestOriginByPath: ReadonlyMap<string, RsglValidationReferenceOrigin>;
+  readonly originFileByRange: ReadonlyMap<ValidationRange, string>;
+  readonly originFileByCoordinates: ReadonlyMap<string, string>;
+  readonly mappingFileByCoordinates: ReadonlyMap<string, string>;
+}
+
+const validationSourceLookups = new WeakMap<ResourceUnit, ValidationSourceLookup>();
+const noValidationOrigins: readonly RsglValidationReferenceOrigin[] = [];
 
 export function attachSourceFile(
   diagnostics: RsglCompileDiagnostic[],
@@ -15,24 +36,13 @@ export function attachSourceFile(
 }
 
 export function sourceFileForValidationRange(unit: ResourceUnit, range: ValidationRange): string {
-  const referenceOrigins = unit.validation?.referenceOrigins ?? [];
-  for (let index = referenceOrigins.length - 1; index >= 0; index--) {
-    const origin = referenceOrigins[index];
-    if (origin.sourceRange === range) {
-      return origin.sourceFile;
-    }
-  }
-  for (let index = referenceOrigins.length - 1; index >= 0; index--) {
-    const origin = referenceOrigins[index];
-    if (origin.sourceRange.start === range.start && origin.sourceRange.end === range.end) {
-      return origin.sourceFile;
-    }
-  }
-  for (let index = unit.sourceMap.mappings.length - 1; index >= 0; index--) {
-    const mapping = unit.sourceMap.mappings[index];
-    if (mapping.sourceRange.start === range.start && mapping.sourceRange.end === range.end) {
-      return mapping.sourceFile;
-    }
+  const lookup = validationSourceLookup(unit);
+  const coordinateKey = rangeCoordinatesKey(range);
+  const sourceFile = lookup.originFileByRange.get(range)
+    ?? lookup.originFileByCoordinates.get(coordinateKey)
+    ?? lookup.mappingFileByCoordinates.get(coordinateKey);
+  if (sourceFile) {
+    return sourceFile;
   }
   return unit.sourceMap.mappings[0]?.sourceFile ?? "<anonymous>";
 }
@@ -108,13 +118,7 @@ function findLatestValidationOrigin(
   unit: ResourceUnit,
   generatedPath: string
 ): { sourceFile: string; sourceRange: ValidationRange } | undefined {
-  const origins = unit.validation?.referenceOrigins ?? [];
-  for (let index = origins.length - 1; index >= 0; index--) {
-    if (origins[index].generatedPath === generatedPath) {
-      return origins[index];
-    }
-  }
-  return undefined;
+  return validationSourceLookup(unit).latestOriginByPath.get(generatedPath);
 }
 
 function findLatestMappingRange(unit: ResourceUnit, generatedPath: string): ValidationRange | undefined {
@@ -126,11 +130,63 @@ function findLatestMapping(
   generatedPath: string,
   includeBase = true
 ): ResourceUnit["sourceMap"]["mappings"][number] | undefined {
-  for (let index = unit.sourceMap.mappings.length - 1; index >= 0; index--) {
-    const mapping = unit.sourceMap.mappings[index];
-    if (mapping.generatedPath === generatedPath && (includeBase || mapping.reason !== "base")) {
-      return mapping;
-    }
+  const lookup = validationSourceLookup(unit);
+  return (includeBase
+    ? lookup.latestMappingByPath
+    : lookup.latestNonBaseMappingByPath
+  ).get(generatedPath);
+}
+
+function validationSourceLookup(unit: ResourceUnit): ValidationSourceLookup {
+  const mappings = unit.sourceMap.mappings;
+  const origins = unit.validation?.referenceOrigins ?? noValidationOrigins;
+  const cached = validationSourceLookups.get(unit);
+  if (
+    cached
+    && cached.mappings === mappings
+    && cached.mappingCount === mappings.length
+    && cached.origins === origins
+    && cached.originCount === origins.length
+  ) {
+    return cached;
   }
-  return undefined;
+
+  const latestMappingByPath = new Map<string, RsglMapping>();
+  const latestNonBaseMappingByPath = new Map<string, RsglMapping>();
+  const mappingFileByCoordinates = new Map<string, string>();
+  for (const mapping of mappings) {
+    latestMappingByPath.set(mapping.generatedPath, mapping);
+    if (mapping.reason !== "base") {
+      latestNonBaseMappingByPath.set(mapping.generatedPath, mapping);
+    }
+    mappingFileByCoordinates.set(rangeCoordinatesKey(mapping.sourceRange), mapping.sourceFile);
+  }
+
+  const latestOriginByPath = new Map<string, RsglValidationReferenceOrigin>();
+  const originFileByRange = new Map<ValidationRange, string>();
+  const originFileByCoordinates = new Map<string, string>();
+  for (const origin of origins) {
+    latestOriginByPath.set(origin.generatedPath, origin);
+    originFileByRange.set(origin.sourceRange, origin.sourceFile);
+    originFileByCoordinates.set(rangeCoordinatesKey(origin.sourceRange), origin.sourceFile);
+  }
+
+  const lookup: ValidationSourceLookup = {
+    mappings,
+    mappingCount: mappings.length,
+    origins,
+    originCount: origins.length,
+    latestMappingByPath,
+    latestNonBaseMappingByPath,
+    latestOriginByPath,
+    originFileByRange,
+    originFileByCoordinates,
+    mappingFileByCoordinates
+  };
+  validationSourceLookups.set(unit, lookup);
+  return lookup;
+}
+
+function rangeCoordinatesKey(range: ValidationRange): string {
+  return `${range.start}:${range.end}`;
 }

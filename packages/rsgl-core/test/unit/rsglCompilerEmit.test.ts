@@ -37,7 +37,7 @@ describe("RSGL compiler emit and write pipeline", () => {
       "  model minecraft:item/diamond",
       "}",
       "blockstate variants stone {",
-      "  {}: { model: minecraft:block/stone }",
+      "  case * => minecraft:block/stone",
       "}"
     ], { fileName: "pack/rsgl/main.rsgl" });
 
@@ -295,7 +295,7 @@ describe("RSGL compiler emit and write pipeline", () => {
     const result = compileSource([
       "extern custom model minecraft:block/stone, minecraft:block/unused",
       "blockstate variants stone {",
-      "  {}: { model: minecraft:block/stone }",
+      "  case * => minecraft:block/stone",
       "}"
     ], {
       externResourceExists: (source, kind, id) =>
@@ -360,7 +360,7 @@ describe("RSGL compiler emit and write pipeline", () => {
       "extern custom model minecraft:block/missing_model",
       "extern vanilla texture minecraft:block/missing_texture",
       "blockstate variants missing_block {",
-      "  {}: { model: minecraft:block/missing_model }",
+      "  case * => minecraft:block/missing_model",
       "}",
       "model block missing_texture_user {",
       "  textures { all: minecraft:block/missing_texture }",

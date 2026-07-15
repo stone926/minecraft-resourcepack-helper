@@ -55,6 +55,19 @@ import {
   isModuleNamespaceValue,
   type ModuleNamespaceValue
 } from "./moduleNamespaceValue";
+import {
+  evaluateStatePredicateBinary,
+  evaluateStatePredicateUnary,
+  isStateNamespaceValue,
+  isStatePredicateValue,
+  preflightStatePredicateExpression,
+  isStatePropertyValue,
+  stateNamespaceValue,
+  statePropertyValue,
+  type StateNamespaceValue,
+  type StatePredicateValue,
+  type StatePropertyValue
+} from "./blockstatePredicate";
 
 export interface LambdaValue {
   kind: "lambda";
@@ -75,6 +88,9 @@ export type EvaluationValue =
   | RsglEvaluatedResourceValue
   | LambdaValue
   | ModuleNamespaceValue
+  | StateNamespaceValue
+  | StatePropertyValue
+  | StatePredicateValue
   | undefined;
 
 export interface RawGlobLoadLimits {
@@ -149,6 +165,8 @@ export interface EvaluationContext {
   evaluationItemBudget?: EvaluationItemBudget;
   /** Semantic contextual-type facts for AST nodes owned by this module. */
   resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
+  /** Prevents repeated O(n) predicate preflights during one recursive evaluation. */
+  evaluatingStatePredicate?: boolean;
   /** Lexically bound value names, including predeclared bindings not evaluated yet. */
   valueBindingNames?: ReadonlySet<string>;
   /** Lexical origins of values bound from template call arguments. */
@@ -926,6 +944,15 @@ export function evaluateExpressionResult(
 }
 
 export function evaluateExpression(expression: ExprNode, context: EvaluationContext): EvaluationValue {
+  if (
+    !context.evaluatingStatePredicate
+    && context.resolvedExpectedTypes?.get(expression)?.kind === "StatePredicate"
+  ) {
+    if (!preflightStatePredicateExpression(expression, context)) {
+      return undefined;
+    }
+    context = { ...context, evaluatingStatePredicate: true };
+  }
   evaluationItemBudget(context);
   const frame = context.evaluationTrace?.enter(expression, context);
   try {
@@ -946,6 +973,25 @@ export function evaluateExpression(expression: ExprNode, context: EvaluationCont
   }
 }
 
+/** Evaluates a compile-time branch without coercing runtime block-state values. */
+export function evaluateCompileTimeCondition(
+  expression: ExprNode,
+  context: EvaluationContext
+): boolean | undefined {
+  const value = evaluateExpression(expression, context);
+  if (isStateNamespaceValue(value) || isStatePropertyValue(value) || isStatePredicateValue(value)) {
+    context.onEvaluationFailure?.();
+    context.onError?.(
+      "rsgl.statePredicateCompileTimeCondition",
+      "StatePredicate describes runtime block state and cannot control compile-time if/conditional execution.",
+      expression.range,
+      context.sourceFile
+    );
+    return undefined;
+  }
+  return Boolean(value);
+}
+
 function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext): EvaluationValue {
   if (expression.kind === "StringLiteral") {
     return expression.value;
@@ -963,6 +1009,9 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     return evaluateResourceLocationExpression(expression, context);
   }
   if (expression.kind === "IdentifierExpr") {
+    if (expression.name.text === "$state") {
+      return stateNamespaceValue;
+    }
     if (context.variables.has(expression.name.text)) {
       return context.variables.get(expression.name.text);
     }
@@ -1051,6 +1100,9 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
   }
   if (expression.kind === "MemberExpr") {
     const objectValue = evaluateExpression(expression.object, context);
+    if (isStateNamespaceValue(objectValue)) {
+      return statePropertyValue(expression.property.text, context, expression.property.range);
+    }
     if (isModuleNamespaceValue(objectValue)) {
       return objectValue.resolveValue(expression.property.text)?.value;
     }
@@ -1062,6 +1114,9 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
   if (expression.kind === "IndexExpr") {
     const objectValue = evaluateExpression(expression.object, context);
     const indexValue = evaluateExpression(expression.index, context);
+    if (isStateNamespaceValue(objectValue)) {
+      return statePropertyValue(indexValue, context, expression.index.range);
+    }
     if (Array.isArray(objectValue) && typeof indexValue === "number") {
       if (!isValidListIndex(indexValue, objectValue.length)) {
         reportRuntimeListIndexError(expression, indexValue, objectValue.length, context);
@@ -1076,16 +1131,34 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     return undefined;
   }
   if (expression.kind === "ConditionalExpr") {
-    return evaluateExpression(truthy(evaluateExpression(expression.condition, context)) ? expression.whenTrue : expression.whenFalse, context);
+    const condition = evaluateCompileTimeCondition(expression.condition, context);
+    return condition === undefined
+      ? undefined
+      : evaluateExpression(condition ? expression.whenTrue : expression.whenFalse, context);
   }
   if (expression.kind === "MatchExpr") {
     return evaluateMatchExpression(expression.expression, expression.arms, context);
   }
   if (expression.kind === "BinaryExpr") {
-    return evaluateBinaryExpression(expression.operator, evaluateExpression(expression.left, context), evaluateExpression(expression.right, context));
+    return evaluateBinaryExpression(
+      expression.operator,
+      evaluateExpression(expression.left, context),
+      evaluateExpression(expression.right, context),
+      context,
+      expression.range
+    );
   }
   if (expression.kind === "UnaryExpr") {
     const value = evaluateExpression(expression.operand, context);
+    const statePredicate = evaluateStatePredicateUnary(
+      expression.operator,
+      value,
+      context,
+      expression.range
+    );
+    if (statePredicate.handled) {
+      return statePredicate.value;
+    }
     return expression.operator === "!" ? !truthy(value) : -Number(value);
   }
   return undefined;
@@ -1098,6 +1171,9 @@ function contextualizeExpressionValue(
 ): EvaluationValue {
   const expectedType = context.resolvedExpectedTypes?.get(expression);
   if (!expectedType || value === undefined) {
+    return value;
+  }
+  if (expectedType.kind === "StatePredicate" && isStatePredicateValue(value)) {
     return value;
   }
   if (isLambdaValue(value) && expectedType.kind === "Function") {
@@ -1518,7 +1594,23 @@ function scalarText(value: EvaluationValue): string | null {
   return evaluationScalarText(value);
 }
 
-function evaluateBinaryExpression(operator: string, left: EvaluationValue, right: EvaluationValue): EvaluationValue {
+function evaluateBinaryExpression(
+  operator: string,
+  left: EvaluationValue,
+  right: EvaluationValue,
+  context: EvaluationContext,
+  range: TextRange
+): EvaluationValue {
+  const statePredicate = evaluateStatePredicateBinary(
+    operator,
+    left,
+    right,
+    context,
+    range
+  );
+  if (statePredicate.handled) {
+    return statePredicate.value;
+  }
   if (operator === "+") {
     if (typeof left === "string" || typeof right === "string" || isEvaluatedResourceValue(left) || isEvaluatedResourceValue(right)) {
       return `${scalarText(left) ?? ""}${scalarText(right) ?? ""}`;
@@ -1560,6 +1652,15 @@ function evaluateBinaryExpression(operator: string, left: EvaluationValue, right
   }
   if (operator === "||") {
     return truthy(left) || truthy(right);
+  }
+  if (operator === "in" || operator === "not in") {
+    context.onEvaluationFailure?.();
+    context.onError?.(
+      "rsgl.statePredicateOperatorContext",
+      `'${operator}' is only available in a StatePredicate expression.`,
+      range,
+      context.sourceFile
+    );
   }
   return undefined;
 }
@@ -2012,6 +2113,9 @@ function jsonEquals(left: JsonValue, right: JsonValue): boolean {
 }
 
 function truthy(value: EvaluationValue): boolean {
+  if (isStateNamespaceValue(value) || isStatePropertyValue(value) || isStatePredicateValue(value)) {
+    return false;
+  }
   return Boolean(value);
 }
 

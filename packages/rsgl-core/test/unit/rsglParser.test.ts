@@ -250,10 +250,10 @@ describe("RSGL parser", () => {
       "  }",
       "}",
       "template stateSequence(model: ModelId) -> variants {",
-      "  for state in [off, on] { { powered: state }: { model: model } }",
+      "  for state in [off, on] { case { powered: state } => model }",
       "}",
       "template connected(model: ModelId) -> multipart {",
-      "  if true { when { north: true } apply { model: model } }",
+      "  if true { part when $state.north == true => model }",
       "}"
     ].join("\n"));
 
@@ -875,11 +875,11 @@ describe("RSGL parser", () => {
     }
   });
 
-  it("parses multipart entries with structured when/apply nodes", () => {
+  it("parses multipart entries with structured part and choice nodes", () => {
     const module = parseRsgl([
       "blockstate multipart minecraft:oak_fence {",
-      "  apply { model: minecraft:block/oak_fence_post }",
-      "  when { north: true } apply { model: minecraft:block/oak_fence_side }",
+      "  part always => minecraft:block/oak_fence_post",
+      "  part when $state.north == true => minecraft:block/oak_fence_side",
       "}"
     ].join("\n"));
 
@@ -894,22 +894,27 @@ describe("RSGL parser", () => {
     if (firstEntry.kind !== "BlockstateMultipartEntry" || secondEntry.kind !== "BlockstateMultipartEntry") {
       throw new Error("Expected multipart entries.");
     }
-    assert.strictEqual(firstEntry.when, undefined);
-    assert.strictEqual(secondEntry.when?.kind, "ObjectExpr");
-    assert.strictEqual(secondEntry.apply.kind, "BlockstateApplyExpr");
-    assert.strictEqual(secondEntry.apply.head.kind, "ObjectExpr");
+    assert.strictEqual(firstEntry.always, true);
+    assert.strictEqual(firstEntry.predicate, undefined);
+    assert.strictEqual(secondEntry.always, false);
+    assert.strictEqual(secondEntry.predicate?.kind, "BinaryExpr");
+    assert.strictEqual(firstEntry.choice.kind, "BlockstateModelSpec");
+    assert.strictEqual(
+      firstEntry.choice.kind === "BlockstateModelSpec" && firstEntry.choice.model.kind,
+      "ResourceLocationExpr"
+    );
   });
 
   it("parses control flow inside blockstate sections", () => {
     const module = parseRsgl([
       "blockstate variants minecraft:lamp {",
       "  for state in product({ facing: [north, east], powered: [false, true] }) {",
-      "    { facing: state.facing, powered: state.powered }: { model: `minecraft:block/lamp_${state.facing}` }",
+      "    case { facing: state.facing, powered: state.powered } => `minecraft:block/lamp_${state.facing}`",
       "  }",
       "}",
       "blockstate multipart minecraft:fence {",
       "  if true {",
-      "    apply { model: minecraft:block/fence_post }",
+      "    part always => minecraft:block/fence_post",
       "  }",
       "}"
     ].join("\n"));
@@ -960,7 +965,7 @@ describe("RSGL parser", () => {
     const module = parseRsgl([
       "target java format [88, 0]",
       "blockstate variants minecraft:example {",
-      "  { facing: north }:",
+      "  case { facing: north } =>",
       "}",
       "model block broken {",
       "  parent",
@@ -968,7 +973,7 @@ describe("RSGL parser", () => {
     ].join("\n"));
 
     const codes = module.diagnostics.map(diagnostic => diagnostic.code);
-    assert.ok(codes.includes("rsgl.expectedExpression"));
+    assert.ok(codes.includes("rsgl.expectedBlockstateModel"));
     assert.ok(codes.includes("rsgl.expectedPropertyValue"));
     assert.ok(codes.includes("rsgl.expectedClosingBrace"));
   });
@@ -977,7 +982,7 @@ describe("RSGL parser", () => {
     const snippets = [
       "template cube(",
       "model block stone {\n  textures {\n    all:",
-      "blockstate variants minecraft:crop {\n  { age: 0 }:",
+      "blockstate variants minecraft:crop {\n  case { age: 0 } =>",
       "item bow {\n  select property minecraft:potion_contents {\n    case",
       "let values = [north,",
       "let table = { key:"

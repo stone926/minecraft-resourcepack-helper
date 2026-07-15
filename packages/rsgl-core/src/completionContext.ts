@@ -20,6 +20,11 @@ export interface RsglCompletionContext {
   allowExternVar: boolean;
   templateOutputDialect?: DeclaredTemplateOutputDialect;
   blockstate?: RsglBlockstateCompletionContext;
+  blockstateChoice: boolean;
+  /** The cursor is at a property-key position in a ModelSpec `with` object. */
+  blockstateModelOptions: boolean;
+  /** The cursor is inside the predicate portion of `part when ... =>`. */
+  blockstatePredicate: boolean;
 }
 
 /** Computes the small amount of syntax context needed by static completions. */
@@ -28,7 +33,14 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
   const openBraces = unmatchedOpenBraces(prefix);
   const openBrace = openBraces.at(-1);
   if (openBrace === undefined) {
-    return { insideBlock: false, allowBase: false, allowExternVar: false };
+    return {
+      insideBlock: false,
+      allowBase: false,
+      allowExternVar: false,
+      blockstateChoice: false,
+      blockstateModelOptions: false,
+      blockstatePredicate: false
+    };
   }
 
   // Completion is a hot LSP path. Parse the prefix once, then derive each
@@ -43,20 +55,30 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
       && bodyOwner.resourceKind !== null,
     allowExternVar: bodyOwner.resourceKind === "model",
     templateOutputDialect,
-    blockstate: bodyOwner.blockstate
+    blockstate: bodyOwner.blockstate,
+    blockstateChoice: bodyOwner.blockstateChoice,
+    blockstateModelOptions: bodyOwner.blockstateModelOptions
+      && isObjectPropertyKeyPosition(prefix.slice(openBrace + 1)),
+    blockstatePredicate: isBlockstatePredicatePosition(prefix, bodyOwner)
   };
 }
 
 interface CompletionBodyOwner {
   resourceKind: string | null;
   blockstate?: RsglBlockstateCompletionContext;
+  blockstateChoice: boolean;
+  blockstateModelOptions: boolean;
 }
 
 function bodyOwnerAt(
   module: RsglModule,
   openBrace: number
 ): CompletionBodyOwner {
-  const owner: CompletionBodyOwner = { resourceKind: null };
+  const owner: CompletionBodyOwner = {
+    resourceKind: null,
+    blockstateChoice: false,
+    blockstateModelOptions: false
+  };
   walkRsglModule(module, {
     enterStatement(statement) {
       if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
@@ -70,27 +92,111 @@ function bodyOwnerAt(
         return "skipChildren";
       }
       if (statement.kind === "TemplateDecl" && statement.body.range.start === openBrace) {
-        owner.blockstate = blockstateContextForBody(statement.body.kind, "entryTemplate");
+        if (statement.body.kind === "BlockstateChoiceBody") {
+          owner.blockstateChoice = true;
+        } else {
+          owner.blockstate = blockstateContextForBody(statement.body.kind, "entryTemplate");
+        }
         return "skipChildren";
       }
       if (statement.kind === "ForStmt" && statement.body.range.start === openBrace) {
-        owner.blockstate = blockstateContextForBody(statement.body.kind, "nestedRoot");
+        if (statement.body.kind === "BlockstateChoiceBody") {
+          owner.blockstateChoice = true;
+        } else {
+          owner.blockstate = blockstateContextForBody(statement.body.kind, "nestedRoot");
+        }
         return "skipChildren";
       }
       if (statement.kind === "IfStmt") {
         if (statement.thenBody.range.start === openBrace) {
-          owner.blockstate = blockstateContextForBody(statement.thenBody.kind, "nestedRoot");
+          if (statement.thenBody.kind === "BlockstateChoiceBody") {
+            owner.blockstateChoice = true;
+          } else {
+            owner.blockstate = blockstateContextForBody(statement.thenBody.kind, "nestedRoot");
+          }
           return "skipChildren";
         }
         if (statement.elseBody?.range.start === openBrace) {
-          owner.blockstate = blockstateContextForBody(statement.elseBody.kind, "nestedRoot");
+          if (statement.elseBody.kind === "BlockstateChoiceBody") {
+            owner.blockstateChoice = true;
+          } else {
+            owner.blockstate = blockstateContextForBody(statement.elseBody.kind, "nestedRoot");
+          }
           return "skipChildren";
         }
+      }
+      const modelSpec = statement.kind === "BlockstateRandomOption"
+        ? statement.model
+        : (statement.kind === "BlockstateVariantEntry" || statement.kind === "BlockstateMultipartEntry")
+            && statement.choice.kind === "BlockstateModelSpec"
+          ? statement.choice
+          : undefined;
+      if (modelSpec?.options?.range.start === openBrace) {
+        owner.blockstateModelOptions = true;
+        return "skipChildren";
+      }
+      if (
+        (statement.kind === "BlockstateVariantEntry" || statement.kind === "BlockstateMultipartEntry")
+        && statement.choice.kind === "BlockstateRandomChoice"
+        && statement.choice.body.range.start === openBrace
+      ) {
+        owner.blockstateChoice = true;
+        return "skipChildren";
       }
       return undefined;
     }
   });
   return owner;
+}
+
+function isBlockstatePredicatePosition(
+  prefix: string,
+  owner: CompletionBodyOwner
+): boolean {
+  if (owner.blockstate?.mode !== "multipart") {
+    return false;
+  }
+  const tokens = lexRsgl(prefix).tokens.filter(token => token.kind !== "endOfFile");
+  for (let index = tokens.length - 2; index >= 0; index--) {
+    if (tokens[index]?.text !== "part" || tokens[index + 1]?.text !== "when") {
+      continue;
+    }
+    return !tokens.slice(index + 2).some(token => token.text === "=>");
+  }
+  return false;
+}
+
+/** Keeps field completions out of ModelSpec option values and nested calls. */
+function isObjectPropertyKeyPosition(bodyPrefix: string): boolean {
+  const tokens = lexRsgl(bodyPrefix).tokens.filter(token => token.kind !== "endOfFile");
+  let depth = 0;
+  let segmentStart = 0;
+  let lastTokenEnd = 0;
+
+  for (const token of tokens) {
+    if (depth === 0 && token.leadingTrivia.some(trivia => trivia.kind === "newline")) {
+      segmentStart = token.offset;
+    }
+    if (token.text === "(" || token.text === "[" || token.text === "{") {
+      depth++;
+    } else if (token.text === ")" || token.text === "]" || token.text === "}") {
+      depth = Math.max(0, depth - 1);
+    } else if (depth === 0 && (token.text === "," || token.text === ";")) {
+      segmentStart = token.offset + token.length;
+    }
+    lastTokenEnd = token.offset + token.length;
+  }
+
+  if (depth !== 0) {
+    return false;
+  }
+  const trailingText = bodyPrefix.slice(lastTokenEnd);
+  const trailingLineBreak = Math.max(trailingText.lastIndexOf("\n"), trailingText.lastIndexOf("\r"));
+  if (trailingLineBreak >= 0) {
+    segmentStart = lastTokenEnd + trailingLineBreak + 1;
+  }
+  const segment = bodyPrefix.slice(segmentStart).trim();
+  return segment.length === 0 || /^[A-Za-z_][A-Za-z0-9_]*$/.test(segment);
 }
 
 function blockstateContextForBody(

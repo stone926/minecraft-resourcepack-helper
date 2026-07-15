@@ -13,8 +13,6 @@ import { compileAtlasSpecialStatement } from "./atlasSugar";
 import { BlockstateCompileOptions, compileBlockstateResource } from "./blockstateCompiler";
 import {
   bindRsglProgram,
-  type RsglBlockstateApplyFact,
-  type RsglBlockstateApplySiteNode,
   type RsglType
 } from "../semantic";
 import {
@@ -33,7 +31,7 @@ import {
   EvaluationValue,
   RawGlobLoader,
   bindEvaluationResult,
-  evaluateExpression,
+  evaluateCompileTimeCondition,
   evaluateExpressionResult,
   hasEvaluationValueBinding
 } from "./evaluate";
@@ -124,7 +122,6 @@ interface RsglCompilerOptions {
   maxEvaluationItems?: number;
   evaluationItemBudget?: EvaluationItemBudget;
   stdlibRoot?: string;
-  blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
   resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
 }
 
@@ -229,7 +226,11 @@ export class RsglCompiler {
     } else if (statement.kind === "ForStmt") {
       this.compileForStmt(statement, context);
     } else if (statement.kind === "IfStmt") {
-      if (evaluateExpression(statement.condition, context)) {
+      const condition = evaluateCompileTimeCondition(statement.condition, context);
+      if (condition === undefined) {
+        return;
+      }
+      if (condition) {
         if (statement.thenBody.kind === "Block") {
           this.compileBlock(statement.thenBody, context);
         }
@@ -253,7 +254,7 @@ export class RsglCompiler {
       resourceValueObservations: []
     };
     const resourceContext: RsglCompileContext = {
-      ...context,
+      ...childEvaluationContext(context, {}),
       onEvaluationFailure: () => {
         session.invalid = true;
         context.onEvaluationFailure?.();
@@ -505,7 +506,7 @@ export class RsglCompiler {
 
   private compileBlock(body: BlockNode, context: RsglCompileContext): void {
     const blockContext: RsglCompileContext = {
-      ...context,
+      ...childEvaluationContext(context, {}),
       valueBindingNames: new Set([
         ...(context.valueBindingNames ?? []),
         ...body.statements.flatMap(statement =>
@@ -784,8 +785,7 @@ export class RsglCompiler {
       sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context),
       onResourceValueObservation: observation => {
         this.activeJsonValueLoweringSession?.resourceValueObservations.push(observation);
-      },
-      getBlockstateApplyFact: node => this.options.blockstateApplyFacts?.get(node)
+      }
     };
   }
 

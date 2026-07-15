@@ -26,6 +26,7 @@ export {
   neverType,
   objectProperty,
   objectPropertyType,
+  statePredicateType,
   typeFromAnnotation
 } from "./types";
 export type { RsglExportMapResult } from "./exportResolution";
@@ -33,10 +34,7 @@ export type { RsglProgramTypeAliasEnvironment } from "./typeAliasProgram";
 export type {
   RsglBindOptions,
   RsglBuiltinEffect,
-  RsglBlockstateApplyExpectation,
-  RsglBlockstateApplyFact,
-  RsglBlockstateApplyRecord,
-  RsglBlockstateApplySiteNode,
+  RsglBlockstateModelSpecRecord,
   RsglExportRecord,
   RsglFileDiagnostic,
   RsglGenericParameter,

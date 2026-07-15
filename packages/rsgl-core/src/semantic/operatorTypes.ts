@@ -5,6 +5,8 @@ const booleanBinaryOperators = new Set([
   "||",
   "==",
   "!=",
+  "in",
+  "not in",
   "<",
   "<=",
   ">",

@@ -81,7 +81,7 @@ describe("RSGL build worker client", () => {
       fs.writeFileSync(path.join(sourceRoot, "main.rsgl"), [
         "model block rotated {}",
         "blockstate variants rotated {",
-        "  {}: { model: block/rotated, z: 90 }",
+        "  case * => block/rotated with { z: 90 }",
         "}"
       ].join("\n"));
 

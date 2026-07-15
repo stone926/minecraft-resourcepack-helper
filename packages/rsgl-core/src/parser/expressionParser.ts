@@ -24,12 +24,14 @@ import {
 
 interface ExpressionOptions {
   stopTexts?: readonly string[];
+  /** Allows the first expression token to begin on the line after its introducer. */
+  allowLeadingLineBreak?: boolean;
 }
 
 export class ExpressionParser extends TypeParser {
   protected parseExpression(options: ExpressionOptions = {}, minPrecedence = 0): ExprNode {
     const stopTexts = options.stopTexts ?? [];
-    if (this.isExpressionStop(stopTexts)) {
+    if (this.isExpressionStop(stopTexts, options.allowLeadingLineBreak === true)) {
       this.addDiagnosticAtCurrent("rsgl.expectedExpression", "Expected expression.");
       return this.missingExprAt(this.current());
     }
@@ -80,12 +82,18 @@ export class ExpressionParser extends TypeParser {
         continue;
       }
 
-      const precedence = binaryPrecedence.get(this.current().text);
+      const compoundNotIn = this.current().text === "not" && this.peekText(1) === "in";
+      const operatorText = compoundNotIn ? "not in" : this.current().text;
+      const precedence = binaryPrecedence.get(operatorText);
       if (precedence === undefined || precedence < minPrecedence) {
         break;
       }
 
-      const operator = this.advance().text;
+      const operator = operatorText;
+      this.advance();
+      if (compoundNotIn) {
+        this.advance();
+      }
       const right = this.parseExpression(options, precedence + 1);
       if (operator === "..") {
         left = {
@@ -381,8 +389,30 @@ export class ExpressionParser extends TypeParser {
       this.recoverToLineEnd();
       return null;
     }
-    if (!this.matchText(":") && !this.matchText("=")) {
-      this.addDiagnosticAtCurrent("rsgl.expectedPropertySeparator", "Expected ':' or '=' after object key.");
+    const hasSeparator = this.matchText(":") || this.matchText("=");
+    if (!hasSeparator && key.kind === "Identifier" && (
+      this.current().text === ","
+      || this.current().text === "}"
+      || this.isStatementBoundary(this.current())
+    )) {
+      return {
+        kind: "ObjectProperty",
+        key,
+        value: {
+          kind: "IdentifierExpr",
+          name: key,
+          range: key.range,
+          fullRange: key.fullRange
+        },
+        shorthand: true,
+        ...this.nodeRanges(start, this.previousOr(start))
+      };
+    }
+    if (!hasSeparator) {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedPropertySeparator",
+        "Expected ':', '=', or the end of an object shorthand property after the object key."
+      );
     }
     const value = this.parseExpression({ stopTexts: [",", "}"] });
     return {
@@ -521,14 +551,19 @@ export class ExpressionParser extends TypeParser {
     };
   }
 
-  private isExpressionStop(stopTexts: readonly string[]): boolean {
+  private isExpressionStop(
+    stopTexts: readonly string[],
+    allowCurrentLineBoundary = false
+  ): boolean {
     if (this.isAtEnd()) {
       return true;
     }
     if (stopTexts.includes(this.current().text)) {
       return true;
     }
-    return stopTexts.length === 0 && this.isStatementBoundary(this.current());
+    return stopTexts.length === 0
+      && !allowCurrentLineBoundary
+      && this.isStatementBoundary(this.current());
   }
 
   protected recoverToLineEnd(): void {

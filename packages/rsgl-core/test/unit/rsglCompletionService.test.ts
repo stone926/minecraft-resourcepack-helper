@@ -72,4 +72,17 @@ describe("RSGL completion service", () => {
       detail: "import: states(): Json — template -> variants"
     });
   });
+
+  it("keeps ModelSpec option-key completion exclusive of values and builtins", () => {
+    const text = [
+      "blockstate variants stone {",
+      "  case * => minecraft:block/stone with {",
+      "    "
+    ].join("\n");
+    const items = getRsglCompletionItems(text, text.length, [
+      symbol("localRotation", "variable", "Number")
+    ]);
+
+    assert.deepStrictEqual(items.map(item => item.label), ["x", "y", "z", "uvlock"]);
+  });
 });

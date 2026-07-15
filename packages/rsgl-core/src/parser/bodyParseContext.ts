@@ -9,7 +9,8 @@ export type BodyParseContext =
   | { kind: "topLevel" }
   | ResourceBodyParseContext
   | BlockstateEntriesParseContext
-  | BlockstateRootParseContext;
+  | BlockstateRootParseContext
+  | BlockstateChoiceParseContext;
 
 export interface BlockstateEntriesParseContext {
   kind: "blockstateEntries";
@@ -20,6 +21,10 @@ export interface BlockstateRootParseContext {
   kind: "blockstateRoot";
   mode: BlockstateMode;
   allowBase: boolean;
+}
+
+export interface BlockstateChoiceParseContext {
+  kind: "blockstateChoice";
 }
 
 export type ResourceBodyOwner =
@@ -56,6 +61,9 @@ export const variantsBodyParseContext: BlockstateEntriesParseContext = Object.fr
 export const multipartBodyParseContext: BlockstateEntriesParseContext = Object.freeze({
   kind: "blockstateEntries",
   mode: "multipart"
+});
+export const choiceBodyParseContext: BlockstateChoiceParseContext = Object.freeze({
+  kind: "blockstateChoice"
 });
 export function blockstateRootParseContext(mode: BlockstateMode): BlockstateRootParseContext {
   return {

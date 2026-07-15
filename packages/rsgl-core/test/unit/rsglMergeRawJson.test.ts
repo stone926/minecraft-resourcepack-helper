@@ -103,12 +103,12 @@ describe("RSGL merge fragments and base documents", () => {
   it("applies strict, upsert, and append semantics in blockstate bodies", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants lamp {",
-      "  { facing: north }: { model: minecraft:block/lamp, x: 0 }",
+      "  case { facing: north } => minecraft:block/lamp with { x: 0 }",
       "  merge strict { variants: { \"facing=north\": { model: minecraft:block/lamp_changed } } }",
       "  merge upsert { variants: { \"facing=south\": { model: minecraft:block/lamp_south } } }",
       "}",
       "blockstate multipart fence {",
-      "  apply { model: minecraft:block/fence_post }",
+      "  part always => minecraft:block/fence_post",
       "  merge append { multipart: [{ when: { north: true }, apply: { model: minecraft:block/fence_side } }] }",
       "}"
     ]);
@@ -118,8 +118,7 @@ describe("RSGL merge fragments and base documents", () => {
     assert.deepStrictEqual(lamp?.content, {
       variants: {
         ["facing=north"]: {
-          model: "minecraft:block/lamp_changed",
-          x: 0
+          model: "minecraft:block/lamp_changed"
         },
         ["facing=south"]: {
           model: "minecraft:block/lamp_south"
@@ -151,7 +150,7 @@ describe("RSGL merge fragments and base documents", () => {
   it("reports invalid blockstate merge fragments", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants invalid_variants {",
-      "  {}: { model: minecraft:block/base }",
+      "  case * => minecraft:block/base",
       "  merge strict { variants: { \"facing=north\": { model: minecraft:block/new } } }",
       "  merge append { variants: { \"facing=south\": { model: minecraft:block/south } } }",
       "  merge 1",
@@ -159,7 +158,7 @@ describe("RSGL merge fragments and base documents", () => {
       "  merge append 3",
       "}",
       "blockstate multipart invalid_multipart {",
-      "  apply { model: minecraft:block/post }",
+      "  part always => minecraft:block/post",
       "  merge append { multipart: { apply: { model: minecraft:block/side } } }",
       "}"
     ]);

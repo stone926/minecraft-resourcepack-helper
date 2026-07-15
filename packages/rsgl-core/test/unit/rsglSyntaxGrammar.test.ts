@@ -100,16 +100,19 @@ describe("RSGL TextMate grammar", () => {
     const source = [
       "template modelBody() -> model {}",
       "template states() -> variants {}",
-      "template parts() -> multipart {}"
+      "template parts() -> multipart {}",
+      "template weighted() -> choice {}"
     ].join("\n");
     const tokenization = tokenizeGrammar(grammar, source);
 
     expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 0);
     expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 1);
     expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 2);
+    expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 3);
     expectScope(tokenization, source, "model", "storage.type.template-output.rsgl", 1);
     expectScope(tokenization, source, "variants", "storage.type.template-output.rsgl");
     expectScope(tokenization, source, "multipart", "storage.type.template-output.rsgl");
+    expectScope(tokenization, source, "choice", "storage.type.template-output.rsgl");
     const grammarText = readGrammarText();
     assert.doesNotMatch(grammarText, /(?<!shader_)\bfragment\b/);
     assert.doesNotMatch(grammarText, /\bfn\b/);
@@ -119,10 +122,10 @@ describe("RSGL TextMate grammar", () => {
     const grammar = readGrammar();
     const source = [
       "blockstate variants stairs {",
-      "  { facing: north }: minecraft:block/stairs",
+      "  case { facing: north } => minecraft:block/stairs",
       "}",
       "blockstate multipart wall {",
-      "  apply minecraft:block/wall",
+      "  part always => minecraft:block/wall",
       "}"
     ].join("\n");
     const tokenization = tokenizeGrammar(grammar, source);
@@ -137,12 +140,38 @@ describe("RSGL TextMate grammar", () => {
     assert.strictEqual(headerPattern.test("blockstate variants stairs {"), true);
   });
 
+  it("highlights the canonical blockstate rule, predicate, model, and choice vocabulary", () => {
+    const grammar = readGrammar();
+    const source = [
+      "let active: StatePredicate = $state.power not in 0..0",
+      "blockstate variants choice_demo {",
+      "  case * => random {",
+      "    option minecraft:block/stone with { y: 90 } weight 3",
+      "  }",
+      "}",
+      "blockstate multipart powered {",
+      "  part when active => minecraft:block/lamp with { uvlock: true }",
+      "  part always => minecraft:block/base",
+      "}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    for (const keyword of ["case", "random", "option", "with", "weight", "when", "always", "not"]) {
+      expectScope(tokenization, source, keyword, "keyword.control.rsgl");
+    }
+    expectScope(tokenization, source, "part", "keyword.control.rsgl", 1);
+    expectScope(tokenization, source, "StatePredicate", "support.type.rsgl");
+    expectScope(tokenization, source, "$state", "variable.language.state.rsgl");
+    const controlKeywords = matchRegex(namedPattern(grammar, "keywords", "keyword.control.rsgl"));
+    assert.doesNotMatch("apply", controlKeywords, "Legacy multipart 'apply' must not remain a grammar keyword.");
+  });
+
   it("keeps template-literal blockstate names from terminating at interpolation braces", () => {
     const grammar = readGrammar();
     const source = [
       "blockstate variants `${name}_door` {",
       "  for half in [\"lower\", \"upper\"] {",
-      "    { half: half }: minecraft:block/door",
+      "    case { half } => minecraft:block/door",
       "  }",
       "}",
       "let doors = [{ btex: minecraft:block/door_open/oak/bottom }]"
@@ -335,8 +364,9 @@ describe("RSGL TextMate grammar", () => {
       "  }",
       "}",
       "blockstate multipart demo {",
-      "  apply { model: block/foo }",
+      "  part always => block/foo with { y: 90 }",
       "}",
+      "let descriptor = { model: block/foo }",
       "let named = call(base: block/foo, pad: 2)",
       "let member = entry.model",
       "let ternary = condition ? true : false",
@@ -368,7 +398,7 @@ describe("RSGL TextMate grammar", () => {
       "}",
       "let pathValue = block/foo",
       "let blockKey = { block: 1 }",
-      "blockstate variants demo { {}: random [minecraft:block/stone] }",
+      "blockstate variants demo { case * => random { option minecraft:block/stone } }",
       "paletted_permutations {",
       "  palette_key minecraft:trims/color_palettes/trim_palette",
       "  permutations palettes",
@@ -386,6 +416,7 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "model block", "storage.modifier.rsgl", 0, "model ".length);
     expectScope(tokenization, source, "model item", "storage.modifier.rsgl", 0, "model ".length);
     expectScope(tokenization, source, "random", "keyword.control.rsgl");
+    expectScope(tokenization, source, "option", "keyword.control.rsgl");
     for (const structural of ["formats", "block", "directory", "paletted_permutations", "palette_key", "permutations", "layer", "models", "gui", "scaling", "layers"]) {
       expectScope(tokenization, source, `${structural} {`, "keyword.control.rsgl");
     }

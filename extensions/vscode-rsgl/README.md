@@ -56,7 +56,7 @@ model block oak_panel {
 }
 
 blockstate variants oak_panel {
-  {}: modelFor("oak_panel")
+  case * => modelFor("oak_panel")
 }
 ```
 
@@ -69,19 +69,25 @@ A body-fragment template declares its output dialect after `->`. This makes a te
 - `-> model` emits model-body fields and geometry.
 - `-> variants` emits canonical blockstate variant entries.
 - `-> multipart` emits canonical blockstate multipart entries.
+- `-> choice` emits options inside one blockstate random choice.
 
 A template without an arrow remains a complete-resource template and may contain declarations such as `model`, `blockstate`, or `item`.
 
 ```rsgl
 template horizontal(model: ModelId) -> variants {
-  { facing: north }: model
-  { facing: east }: model y=90
-  { facing: south }: model y=180
-  { facing: west }: model y=270
+  case { facing: north } => model
+  case { facing: east } => model with { y: 90 }
+  case { facing: south } => model with { y: 180 }
+  case { facing: west } => model with { y: 270 }
 }
 
 template poweredOverlay(model: ModelId) -> multipart {
-  when { powered: true } apply model
+  part when $state.powered == true => model
+}
+
+template weatheredOptions(base: ModelId, alternate: ModelId) -> choice {
+  option base weight 3
+  option alternate
 }
 
 blockstate variants panel {
@@ -89,12 +95,21 @@ blockstate variants panel {
 }
 
 blockstate multipart lamp {
-  apply model_id("block/lamp")
+  part always => model_id("block/lamp")
   use poweredOverlay(model_id("block/lamp_powered"))
+}
+
+blockstate variants weathered_panel {
+  case * => random {
+    use weatheredOptions(
+      model_id("block/weathered_panel"),
+      model_id("block/weathered_panel_alt")
+    )
+  }
 }
 ```
 
-RSGL accepts canonical blockstates only: put the mode directly after `blockstate`, write variant selectors as `{ property: value }: model`, and write multipart entries with `apply` or `when { ... } apply`.
+RSGL accepts canonical blockstates only: put the mode directly after `blockstate`; write `case <selector> => <choice>` for variants and `part always => <choice>` or `part when <StatePredicate> => <choice>` for multipart. A model choice is a `ModelId` expression with optional `with { x, y, z, uvlock }`; weighted alternatives belong in `random { option ... }`.
 
 ## Types, functions, IDs, and collections
 

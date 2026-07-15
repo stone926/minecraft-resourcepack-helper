@@ -1,5 +1,6 @@
 import type {
   BlockNode,
+  BlockstateChoiceBodyNode,
   BlockstateMultipartRootBodyNode,
   BlockstateVariantsRootBodyNode,
   MultipartBodyNode,
@@ -17,6 +18,7 @@ type RsglBody =
   | ResourceBodyNode
   | VariantBodyNode
   | MultipartBodyNode
+  | BlockstateChoiceBodyNode
   | BlockstateVariantsRootBodyNode
   | BlockstateMultipartRootBodyNode;
 
@@ -152,6 +154,12 @@ function indexNestedScopes(
       indexBody(statement.thenBody, owners);
       if (statement.elseBody) {
         indexBody(statement.elseBody, owners);
+      }
+      break;
+    case "BlockstateVariantEntry":
+    case "BlockstateMultipartEntry":
+      if (statement.choice.kind === "BlockstateRandomChoice") {
+        indexBody(statement.choice.body, owners);
       }
       break;
     case "SectionStmt":

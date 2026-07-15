@@ -3,7 +3,9 @@ import type { ResourceUnit, RsglCompileDiagnostic } from "../../src/compiler/ir"
 import {
   attachSourceFile,
   pushDiagnosticAtRange,
-  pushUnitDiagnostic
+  pushUnitDiagnostic,
+  sourceFileForValidationRange,
+  sourceRangeForGeneratedPath
 } from "../../src/compiler/validationDiagnostics";
 import { validateBooleanField, validateStringField } from "../../src/compiler/validationPrimitives";
 
@@ -55,6 +57,70 @@ describe("RSGL validation diagnostics", () => {
         fileName: "external.rsgl"
       }
     ]);
+  });
+
+  it("indexes generated-path source lookups instead of rescanning every mapping", () => {
+    const mappingCount = 2_000;
+    const rawMappings = Array.from({ length: mappingCount }, (_, index) => ({
+      generatedPath: `/variants/state=${index}/model`,
+      sourceFile: `source-${index}.rsgl`,
+      sourceRange: { start: index * 2 + 1, end: index * 2 + 2 },
+      reason: "direct" as const,
+      expansionStack: []
+    }));
+    let numericReads = 0;
+    const mappings = new Proxy(rawMappings, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      }
+    });
+    const unit: ResourceUnit = {
+      kind: "blockstate",
+      outputPath: "assets/minecraft/blockstates/large.json",
+      content: {},
+      mergePolicy: { kind: "replace" },
+      sourceMap: {
+        generatedFile: "assets/minecraft/blockstates/large.json",
+        mappings
+      }
+    };
+
+    const firstRange = sourceRangeForGeneratedPath(unit, rawMappings[0].generatedPath);
+    assert.deepStrictEqual(firstRange, rawMappings[0].sourceRange);
+    const readsAfterIndexBuild = numericReads;
+    assert.ok(
+      readsAfterIndexBuild <= mappingCount + 1,
+      `Expected one index-building pass, got ${readsAfterIndexBuild} mapping reads.`
+    );
+
+    for (const mapping of rawMappings) {
+      const range = sourceRangeForGeneratedPath(unit, mapping.generatedPath);
+      assert.strictEqual(range, mapping.sourceRange);
+      assert.strictEqual(sourceFileForValidationRange(unit, range), mapping.sourceFile);
+    }
+    assert.strictEqual(
+      numericReads,
+      readsAfterIndexBuild,
+      "Cached validation lookups must not rescan the source-map array per generated path."
+    );
+
+    const appended = {
+      generatedPath: "/variants/state=appended/model",
+      sourceFile: "appended.rsgl",
+      sourceRange: { start: mappingCount * 2 + 1, end: mappingCount * 2 + 2 },
+      reason: "direct" as const,
+      expansionStack: []
+    };
+    rawMappings.push(appended);
+    assert.strictEqual(sourceRangeForGeneratedPath(unit, appended.generatedPath), appended.sourceRange);
+    assert.strictEqual(sourceFileForValidationRange(unit, appended.sourceRange), appended.sourceFile);
+    assert.ok(
+      numericReads <= readsAfterIndexBuild + rawMappings.length + 1,
+      "Changing the mapping count should rebuild the index once."
+    );
   });
 });
 

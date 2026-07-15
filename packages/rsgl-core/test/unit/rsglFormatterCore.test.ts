@@ -94,13 +94,13 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
-  it("keeps canonical blockstate bodies and multiline apply properties stable", () => {
+  it("keeps canonical blockstate choice and ModelSpec bodies stable", () => {
     const formatted = formatRsglText([
       "blockstate variants stairs {",
-      "{ facing: north }: random [",
-      "minecraft:block/stairs x=90 uvlock=true weight=2",
-      "minecraft:block/stairs_inner y=180",
-      "]",
+      "case { facing: north } => random {",
+      "option minecraft:block/stairs with { x: 90, uvlock: true } weight 2",
+      "option minecraft:block/stairs_inner with { y: 180 }",
+      "}",
       "merge deep {",
       "custom: { enabled: true }",
       "}",
@@ -109,10 +109,10 @@ describe("RSGL formatter core", () => {
 
     assert.strictEqual(formatted, [
       "blockstate variants stairs {",
-      "  { facing: north }: random [",
-      "    minecraft:block/stairs x=90 uvlock=true weight=2",
-      "    minecraft:block/stairs_inner y=180",
-      "  ]",
+      "  case { facing: north } => random {",
+      "    option minecraft:block/stairs with { x: 90, uvlock: true } weight 2",
+      "    option minecraft:block/stairs_inner with { y: 180 }",
+      "  }",
       "  merge deep {",
       "    custom: { enabled: true }",
       "  }",

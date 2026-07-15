@@ -6,6 +6,7 @@ import {
   parseMultipartBody,
   parseVariantBody
 } from "./blockstateStatementParser";
+import { parseBlockstateChoiceBody } from "./blockstateChoiceParser";
 import { tryParseItemModelStatement } from "./itemModelStatementParser";
 import { tryParseModelGeometryStatement } from "./modelGeometryStatementParser";
 import { tryParsePackAtlasEquipmentStatement } from "./packAtlasEquipmentStatementParser";
@@ -22,6 +23,7 @@ import { ResourceStatementParserHost } from "./statementParserHost";
 import {
   BlockNode,
   BaseStmtNode,
+  BlockstateChoiceBodyNode,
   BlockstateMultipartRootBodyNode,
   BlockstateRootCommonStatementNode,
   BlockstateVariantsRootBodyNode,
@@ -57,7 +59,7 @@ export abstract class StatementParser extends ExpressionParser {
     if (!this.matchText("=")) {
       this.addDiagnosticAtCurrent("rsgl.expectedEquals", "Expected '=' in let declaration.");
     }
-    const value = this.parseExpression({ stopTexts: [] });
+    const value = this.parseExpression({ stopTexts: [], allowLeadingLineBreak: true });
     return {
       kind: "LetDecl",
       keyword: start.text,
@@ -178,6 +180,7 @@ export abstract class StatementParser extends ExpressionParser {
     | ResourceBodyNode
     | VariantBodyNode
     | MultipartBodyNode
+    | BlockstateChoiceBodyNode
     | BlockstateVariantsRootBodyNode
     | BlockstateMultipartRootBodyNode {
     if (context.kind === "resource") {
@@ -192,6 +195,9 @@ export abstract class StatementParser extends ExpressionParser {
       return context.mode === "variants"
         ? parseBlockstateVariantsRootBody(this.resourceStatementParserHost(), context)
         : parseBlockstateMultipartRootBody(this.resourceStatementParserHost(), context);
+    }
+    if (context.kind === "blockstateChoice") {
+      return parseBlockstateChoiceBody(this.resourceStatementParserHost());
     }
     return this.parseBlock();
   }
@@ -523,6 +529,8 @@ export abstract class StatementParser extends ExpressionParser {
       expectText: (text, message) => this.expectText(text, message),
       consumeOptionalSeparator: () => this.consumeOptionalSeparator(),
       consumeBalancedBlock: message => this.consumeBalancedBlock(message),
+      consumeBalancedEnclosure: (openText, closeText, message) =>
+        this.consumeBalancedEnclosure(openText, closeText, message),
       recoverToLineEnd: () => this.recoverToLineEnd(),
       addDiagnosticAtCurrent: (code, message, severity) => this.addDiagnosticAtCurrent(code, message, severity),
       addDiagnostic: (code, message, range, severity) => this.addDiagnostic(code, message, range, severity),

@@ -68,6 +68,7 @@ export function isAssignable(expected: RsglType, actual: RsglType): boolean {
     }
     return actual.kind !== "TextureVariable"
       && actual.kind !== "TextureRef"
+      && actual.kind !== "StatePredicate"
       && actual.kind !== "ModuleNamespace"
       && actual.kind !== "Missing";
   }
@@ -96,9 +97,6 @@ export function formatType(type: RsglType): string {
   }
   if (type.kind === "TypeParameter") {
     return type.typeParameterName ?? "?";
-  }
-  if (type.kind === "BlockstateModelObject") {
-    return "blockstate model object";
   }
   if (type.kind === "ModuleNamespace") {
     return "module namespace";

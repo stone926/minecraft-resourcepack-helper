@@ -21,6 +21,7 @@ import {
   selectContextualObjectArm
 } from "./contextualObjectChecking";
 import { diagnostic } from "./diagnostics";
+import { checkBlockstatePredicate } from "./blockstatePredicateChecker";
 import { checkModuleNamespaceMember } from "./moduleNamespace";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { checkMatchExhaustiveness, finiteStringDomain, isWildcardPattern } from "./domainChecks";
@@ -78,6 +79,23 @@ export function checkExpression(
 ): RsglType {
   const type = checkExpressionCore(context, expression, scope);
   context.recordResolvedExpressionType?.(expression, type);
+  return type;
+}
+
+/** Checks an ordinary compile-time branch condition and rejects runtime state predicates. */
+export function checkCompileTimeCondition(
+  context: RsglExpressionCheckContext,
+  expression: ExprNode,
+  scope: RsglScope
+): RsglType {
+  const type = checkExpression(context, expression, scope);
+  if (containsStatePredicate(type)) {
+    context.diagnostics.push(diagnostic(
+      "rsgl.statePredicateCompileTimeCondition",
+      "StatePredicate describes runtime block state and cannot control compile-time if/conditional execution.",
+      expression.range
+    ));
+  }
   return type;
 }
 
@@ -161,12 +179,35 @@ function checkExpressionCore(context: RsglExpressionCheckContext, expression: Ex
     return result.type;
   }
   if (expression.kind === "UnaryExpr") {
-    checkExpression(context, expression.operand, scope);
+    const operandType = checkExpression(context, expression.operand, scope);
+    if (containsStatePredicate(operandType)) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.statePredicateOutsidePredicateContext",
+        "StatePredicate operators are only valid where a StatePredicate is expected.",
+        expression.range
+      ));
+    }
     return unaryOperatorResultType(expression.operator);
   }
   if (expression.kind === "BinaryExpr") {
-    checkExpression(context, expression.left, scope);
-    checkExpression(context, expression.right, scope);
+    const leftType = checkExpression(context, expression.left, scope);
+    const rightType = checkExpression(context, expression.right, scope);
+    if (expression.operator === "in" || expression.operator === "not in") {
+      context.diagnostics.push(diagnostic(
+        "rsgl.statePredicateOperatorContext",
+        `'${expression.operator}' is only available in a StatePredicate expression.`,
+        expression.range
+      ));
+      return unknownType;
+    }
+    if (containsStatePredicate(leftType) || containsStatePredicate(rightType)) {
+      context.diagnostics.push(diagnostic(
+        "rsgl.statePredicateOutsidePredicateContext",
+        "StatePredicate operators are only valid where a StatePredicate is expected.",
+        expression.range
+      ));
+      return unknownType;
+    }
     return binaryOperatorResultType(expression.operator);
   }
   if (expression.kind === "RangeExpr") {
@@ -177,7 +218,7 @@ function checkExpressionCore(context: RsglExpressionCheckContext, expression: Ex
     return { kind: "Range", elementType: numberType };
   }
   if (expression.kind === "ConditionalExpr") {
-    checkExpression(context, expression.condition, scope);
+    checkCompileTimeCondition(context, expression.condition, scope);
     const trueType = checkExpression(
       context,
       expression.whenTrue,
@@ -221,6 +262,11 @@ function checkExpressionCore(context: RsglExpressionCheckContext, expression: Ex
       : stringType;
   }
   return inferLiteralType(expression);
+}
+
+function containsStatePredicate(type: RsglType): boolean {
+  return type.kind === "StatePredicate"
+    || (type.kind === "Union" && (type.options ?? []).some(containsStatePredicate));
 }
 
 export function checkResourceIdExpression(context: RsglExpressionCheckContext, expression: ExprNode, scope: RsglScope): RsglType {
@@ -288,6 +334,9 @@ function checkExpressionForExpectedTypeCore(
   scope: RsglScope,
   expectedType: RsglType
 ): RsglType {
+  if (expectedType.kind === "StatePredicate") {
+    return checkBlockstatePredicate(context, expression, scope);
+  }
   if (
     expression.kind === "CallExpr"
     && expression.callee.kind === "IdentifierExpr"
@@ -760,7 +809,9 @@ export function checkStringEnumLikeExpression(context: RsglExpressionCheckContex
 
 export function checkLocalLetDecl(context: RsglExpressionCheckContext, statement: LetDeclNode, scope: RsglScope): void {
   const expectedType = typeFromAnnotation(statement.typeAnnotation, scope, context.diagnostics);
-  const actualType = checkExpressionForExpectedType(context, statement.value, scope, expectedType);
+  const actualType = expectedType.kind === "StatePredicate"
+    ? checkBlockstatePredicate(context, statement.value, scope)
+    : checkExpressionForExpectedType(context, statement.value, scope, expectedType);
   checkAssignable(context, expectedType, actualType, statement.value);
   const declaredType = statement.typeAnnotation ? expectedType : actualType;
   context.defineIdentifier(scope, statement.name, "variable", declaredType, statement);

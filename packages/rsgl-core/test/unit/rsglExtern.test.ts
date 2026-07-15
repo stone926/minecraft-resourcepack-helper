@@ -304,7 +304,7 @@ describe("RSGL extern declarations", () => {
           "template generatedBlockstate() {",
           "  extern! vanilla model minecraft:block/template_model",
           "  blockstate variants generated {",
-          "    {}: { model: minecraft:block/template_model }",
+          "    case * => minecraft:block/template_model",
           "  }",
           "}",
           "export { generatedBlockstate }"
@@ -331,10 +331,10 @@ describe("RSGL extern declarations", () => {
         fileName: templatesFile,
         module: parseRsgl([
           "template scopedModels(callerModel: ModelId) -> variants {",
-          "    {}: [",
-          "      { model: minecraft:block/fixed_missing },",
-          "      { model: callerModel }",
-          "    ]",
+          "    case * => random {",
+          "      option minecraft:block/fixed_missing",
+          "      option callerModel",
+          "    }",
           "}",
           "export { scopedModels }"
         ].join("\n"))
@@ -373,7 +373,7 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:block/library_model",
           "template modelVariant(modelId: ModelId = minecraft:block/library_model) -> variants {",
-          "  {}: { model: modelId }",
+          "  case * => modelId",
           "}",
           "export { modelVariant }"
         ].join("\n"))
@@ -410,7 +410,7 @@ describe("RSGL extern declarations", () => {
           "template aliasedModel(callerModel: ModelId) {",
           "  blockstate variants aliased {",
           "    let alias = callerModel",
-          "    {}: { model: alias }",
+          "    case * => alias",
           "  }",
           "}",
           "export { aliasedModel }"
@@ -442,10 +442,10 @@ describe("RSGL extern declarations", () => {
         module: parseRsgl([
           "extern! vanilla model minecraft:block/library_model",
           "template mixedModels(callerModel: ModelId) -> variants {",
-          "    {}: [",
-          "      { model: minecraft:block/library_model },",
-          "      { model: callerModel }",
-          "    ]",
+          "    case * => random {",
+          "      option minecraft:block/library_model",
+          "      option callerModel",
+          "    }",
           "}",
           "export { mixedModels }"
         ].join("\n"))
@@ -831,7 +831,7 @@ function externalUnits(result: RsglCompileResult): ResourceUnit[] {
 function blockstateUsing(id: string, model: string): string[] {
   return [
     `blockstate variants ${id} {`,
-    `  {}: { model: ${model} }`,
+    `  case * => ${model}`,
     "}"
   ];
 }

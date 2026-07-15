@@ -24,11 +24,6 @@ export interface LoweredBlockstateSelector {
   readonly origin?: EvaluationOrigin;
 }
 
-export interface LoweredBlockstateCondition {
-  readonly value: Record<string, JsonValue>;
-  readonly origin?: EvaluationOrigin;
-}
-
 /** Evaluates and canonicalizes a variants selector exactly once. */
 export function lowerBlockstateSelector(
   expression: ExprNode,
@@ -64,7 +59,17 @@ export function lowerBlockstateSelector(
     host.onError(
       "rsgl.invalidBlockstateSelector",
       "A blockstate variants selector must evaluate to an object.",
-      expression.range
+      expression.range,
+      context.sourceFile
+    );
+    return undefined;
+  }
+  if (Object.keys(value).length === 0) {
+    host.onError(
+      "rsgl.emptyBlockstateSelectorUseWildcard",
+      "An empty variants selector must be written as 'case *'.",
+      expression.range,
+      context.sourceFile
     );
     return undefined;
   }
@@ -72,7 +77,8 @@ export function lowerBlockstateSelector(
     host.onError(
       "rsgl.invalidBlockstateSelectorValue",
       "Blockstate variants selector values must be strings, numbers, or booleans.",
-      expression.range
+      expression.range,
+      context.sourceFile
     );
     return undefined;
   }
@@ -81,52 +87,6 @@ export function lowerBlockstateSelector(
   return {
     key: blockstateVariantKey(cloned),
     value: cloned,
-    ...(origin ? { origin } : {})
-  };
-}
-
-/** Multipart conditions retain their JSON object structure and ordering. */
-export function lowerBlockstateCondition(
-  expression: ExprNode,
-  context: RsglCompileContext,
-  host: BlockstateSelectorLoweringHost
-): LoweredBlockstateCondition | undefined {
-  const result = evaluateExpressionResult(expression, context);
-  const keyIssue = result.valueIssues.find(issue =>
-    issue.kind === "duplicateObjectKey" || issue.kind === "invalidObjectKey"
-  );
-  if (keyIssue) {
-    host.onError(
-      keyIssue.kind === "duplicateObjectKey"
-        ? "rsgl.duplicateBlockstateSelectorProperty"
-        : "rsgl.invalidBlockstateSelectorKey",
-      keyIssue.kind === "duplicateObjectKey"
-        ? "A blockstate condition property resolves to a duplicate canonical key."
-        : "A computed blockstate condition key must evaluate to a scalar value.",
-      keyIssue.sourceRange,
-      keyIssue.sourceFile
-    );
-    return undefined;
-  }
-  const value = lowerJsonEvaluationResult(
-    result,
-    expression.range,
-    createJsonValueLoweringHost(context, host)
-  );
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isJsonObject(value)) {
-    host.onError(
-      "rsgl.invalidBlockstateCondition",
-      "A blockstate multipart condition must evaluate to an object.",
-      expression.range
-    );
-    return undefined;
-  }
-  const origin = originForEvaluationPath(result.pathOrigins, "") ?? result.origin;
-  return {
-    value: cloneJsonObject(value),
     ...(origin ? { origin } : {})
   };
 }

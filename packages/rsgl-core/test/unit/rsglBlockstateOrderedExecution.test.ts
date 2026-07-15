@@ -109,28 +109,28 @@ describe("RSGL ordered blockstate root execution", () => {
   it("keeps custom fields and entry, merge, use, let, for, and if effects on one ordered root", () => {
     const result = compileSourceWithUncheckedExterns([
       "template middle() -> variants {",
-      "  { order: third }: minecraft:block/third",
+      "  case { order: third } => minecraft:block/third",
       "}",
       "blockstate variants ordered {",
       "  custom { phase: \"first\", nested: { first: true } }",
-      "  { order: first }: minecraft:block/first",
+      "  case { order: first } => minecraft:block/first",
       "  merge upsert {",
       "    custom: { phase: \"second\" },",
       "    variants: { \"order=second\": { model: minecraft:block/second } }",
       "  }",
       "  use middle()",
       "  let fourthModel = minecraft:block/fourth",
-      "  { order: fourth }: fourthModel",
+      "  case { order: fourth } => fourthModel",
       "  for order in [\"fifth\", \"sixth\"] {",
-      "    { order: order }: `minecraft:block/${order}`",
+      "    case { order } => `minecraft:block/${order}`",
       "  }",
       "  if true {",
       "    merge deep { custom: { nested: { conditional: true } } }",
-      "    { order: seventh }: minecraft:block/seventh",
+      "    case { order: seventh } => minecraft:block/seventh",
       "  }",
       "  merge upsert { variants: { \"order=first\": { model: minecraft:block/first_patched } } }",
       "  merge upsert { variants: { \"order=eighth\": { model: minecraft:block/eighth } } }",
-      "  { order: eighth }: minecraft:block/rejected",
+      "  case { order: eighth } => minecraft:block/rejected",
       "}"
     ]);
 
@@ -192,17 +192,17 @@ describe("RSGL ordered blockstate root execution", () => {
   it("uses the actual multipart length for base, direct, merge, template, and nested entries", () => {
     const result = compileSourceWithUncheckedExterns([
       "template middle() -> multipart {",
-      "  apply minecraft:block/template",
+      "  part always => minecraft:block/template",
       "}",
       "blockstate multipart indexed {",
       "  base \"./multipart-base.json\"",
-      "  apply minecraft:block/direct",
+      "  part always => minecraft:block/direct",
       "  merge append { multipart: [",
       "    { apply: { model: minecraft:block/merged_a } },",
       "    { apply: { model: minecraft:block/merged_b } }",
       "  ] }",
       "  use middle()",
-      "  if true { apply minecraft:block/nested }",
+      "  if true { part always => minecraft:block/nested }",
       "}"
     ], {
       baseDocumentLoader: {
@@ -254,8 +254,8 @@ describe("RSGL ordered blockstate root execution", () => {
 
   it("accepts same-mode content and atomically rejects opposite and mixed operands", () => {
     const result = compileSourceWithUncheckedExterns([
-      "template sameMode() -> variants { { from: template }: minecraft:block/template }",
-      "template oppositeMode() -> multipart { apply minecraft:block/opposite }",
+      "template sameMode() -> variants { case { from: template } => minecraft:block/template }",
+      "template oppositeMode() -> multipart { part always => minecraft:block/opposite }",
       "blockstate variants guarded {",
       "  custom { kept: true }",
       "  use sameMode()",
@@ -324,9 +324,9 @@ describe("RSGL ordered blockstate root execution", () => {
       "  secondModel: ModelId,",
       "  fallbackModel: ModelId = glob(\"default\")[0]",
       ") -> variants {",
-      "  { slot: first }: firstModel",
-      "  { slot: second }: secondModel",
-      "  { slot: fallback }: fallbackModel",
+      "  case { slot: first } => firstModel",
+      "  case { slot: second } => secondModel",
+      "  case { slot: fallback } => fallbackModel",
       "}",
       "blockstate variants provenance {",
       "  use emitted(",
@@ -343,7 +343,7 @@ describe("RSGL ordered blockstate root execution", () => {
       fileName: "ordered-provenance.rsgl",
       namespace: "minecraft",
       stdlibTemplates: [],
-      blockstateApplyFacts: semantic.blockstateApplyFacts,
+      resolvedExpectedTypes: semantic.resolvedExpectedTypes,
       globLoader: pattern => {
         calls.push(pattern);
         return [`minecraft:block/${pattern}`];

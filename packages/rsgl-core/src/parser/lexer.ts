@@ -442,11 +442,11 @@ class RsglLexer {
 }
 
 function isIdentifierStart(char: string): boolean {
-  return /[A-Za-z_]/.test(char);
+  return /[A-Za-z_$]/.test(char);
 }
 
 function isIdentifierPart(char: string): boolean {
-  return /[A-Za-z0-9_]/.test(char);
+  return /[A-Za-z0-9_$]/.test(char);
 }
 
 function isDigit(char: string): boolean {

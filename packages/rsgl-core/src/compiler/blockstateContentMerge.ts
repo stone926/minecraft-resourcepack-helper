@@ -18,6 +18,10 @@ import {
 } from "./blockstateModePolicy";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 import type { RsglCompileContext } from "./templateExpansion";
+import {
+  BlockstateVariantSelectorIndex,
+  parseBlockstateVariantSelector
+} from "./blockstateVariantSelectors";
 
 export type BlockstateSourceRange = { start: number; end: number };
 
@@ -33,6 +37,8 @@ export interface BlockstateRootState extends BlockstateBodyContent {
   readonly mode: BlockstateMode;
   /** Latest writer for canonical variants keys; used to classify direct conflicts. */
   readonly variantWriters: Map<string, BlockstateVariantWriter>;
+  /** Parsed selector projections used for incremental overlap checks. */
+  readonly variantSelectors: BlockstateVariantSelectorIndex;
 }
 
 export interface BlockstateRootFinalizeOrigin {
@@ -54,7 +60,8 @@ export function createBlockstateRootState(mode: BlockstateMode): BlockstateRootS
     mode,
     content: {},
     mappings: [],
-    variantWriters: new Map()
+    variantWriters: new Map(),
+    variantSelectors: new BlockstateVariantSelectorIndex()
   };
 }
 
@@ -79,9 +86,10 @@ export class BlockstateRootMerger {
     state: BlockstateRootState,
     content: Record<string, JsonValue>,
     sourceRange: BlockstateSourceRange,
-    mappings: readonly RsglMapping[] = []
+    mappings: readonly RsglMapping[] = [],
+    context?: RsglCompileContext
   ): boolean {
-    if (!this.preflight(state, content, sourceRange)) {
+    if (!this.preflight(state, content, sourceRange, context)) {
       return false;
     }
 
@@ -101,7 +109,7 @@ export class BlockstateRootMerger {
     context: RsglCompileContext,
     mappings?: readonly RsglMapping[]
   ): MergeResult | undefined {
-    if (!this.preflight(state, content, sourceRange)) {
+    if (!this.preflight(state, content, sourceRange, context)) {
       return undefined;
     }
 
@@ -130,7 +138,8 @@ export class BlockstateRootMerger {
       this.host.onError(
         "rsgl.blockstateModeConflict",
         "A 'multipart' blockstate root cannot receive a variants entry.",
-        sourceRange
+        sourceRange,
+        context.sourceFile
       );
       return false;
     }
@@ -144,7 +153,8 @@ export class BlockstateRootMerger {
       this.host.onError(
         "rsgl.invalidBlockstateVariantsRoot",
         "Blockstate 'variants' must be an object before a direct entry can be inserted.",
-        sourceRange
+        sourceRange,
+        context.sourceFile
       );
       return false;
     }
@@ -159,13 +169,31 @@ export class BlockstateRootMerger {
         duplicateDirect
           ? `Blockstate variant '${key}' is declared more than once.`
           : `Blockstate variant '${key}' conflicts with content written by ${writer ?? "the existing root"}.`,
-        sourceRange
+        sourceRange,
+        context.sourceFile
       );
       return false;
     }
 
+    const selector = parseBlockstateVariantSelector(key);
+    if (selector) {
+      const overlappingKey = state.variantSelectors.findOverlap(selector);
+      if (overlappingKey !== undefined) {
+        this.host.onError(
+          "rsgl.overlappingBlockstateVariantEntry",
+          `Blockstate variant '${key || "*"}' overlaps '${overlappingKey || "*"}'; variants cases must select disjoint state sets.`,
+          sourceRange,
+          context.sourceFile
+        );
+        return false;
+      }
+    }
+
     variants[key] = cloneJsonValue(value);
     state.variantWriters.set(key, "direct");
+    if (selector) {
+      state.variantSelectors.add(selector);
+    }
     if (mappings?.length) {
       state.mappings.push(...mappings);
     } else {
@@ -186,7 +214,8 @@ export class BlockstateRootMerger {
       this.host.onError(
         "rsgl.blockstateModeConflict",
         "A 'variants' blockstate root cannot receive a multipart entry.",
-        sourceRange
+        sourceRange,
+        context.sourceFile
       );
       return undefined;
     }
@@ -200,7 +229,8 @@ export class BlockstateRootMerger {
       this.host.onError(
         "rsgl.invalidBlockstateMultipartRoot",
         "Blockstate 'multipart' must be an array before a direct entry can be appended.",
-        sourceRange
+        sourceRange,
+        context.sourceFile
       );
       return undefined;
     }
@@ -246,13 +276,15 @@ export class BlockstateRootMerger {
   private preflight(
     state: BlockstateRootState,
     content: Readonly<Record<string, JsonValue>>,
-    sourceRange: BlockstateSourceRange
+    sourceRange: BlockstateSourceRange,
+    context?: RsglCompileContext
   ): boolean {
     if (Object.prototype.hasOwnProperty.call(content, "variants") && !isJsonObject(content.variants)) {
       this.host.onError(
         "rsgl.invalidBlockstateVariantsRoot",
         "Blockstate root field 'variants' must be an object.",
-        sourceRange
+        sourceRange,
+        context?.sourceFile
       );
       return false;
     }
@@ -260,7 +292,8 @@ export class BlockstateRootMerger {
       this.host.onError(
         "rsgl.invalidBlockstateMultipartRoot",
         "Blockstate root field 'multipart' must be an array.",
-        sourceRange
+        sourceRange,
+        context?.sourceFile
       );
       return false;
     }
@@ -268,7 +301,12 @@ export class BlockstateRootMerger {
     if (result.compatible) {
       return true;
     }
-    this.host.onError(result.diagnostic.code, result.diagnostic.message, sourceRange);
+    this.host.onError(
+      result.diagnostic.code,
+      result.diagnostic.message,
+      sourceRange,
+      context?.sourceFile
+    );
     return false;
   }
 
@@ -278,9 +316,12 @@ export class BlockstateRootMerger {
   ): void {
     state.variantWriters.clear();
     if (!isJsonObject(state.content.variants)) {
+      state.variantSelectors.clear();
       return;
     }
-    Object.keys(state.content.variants).forEach(key => state.variantWriters.set(key, writer));
+    const keys = Object.keys(state.content.variants);
+    keys.forEach(key => state.variantWriters.set(key, writer));
+    state.variantSelectors.reset(keys);
   }
 
   private recordMergeVariantWriters(
@@ -290,6 +331,7 @@ export class BlockstateRootMerger {
     const variants = state.content.variants;
     if (!isJsonObject(variants)) {
       state.variantWriters.clear();
+      state.variantSelectors.clear();
       return;
     }
 
@@ -302,6 +344,7 @@ export class BlockstateRootMerger {
     if (isJsonObject(appliedVariants)) {
       Object.keys(appliedVariants).forEach(key => state.variantWriters.set(key, "merge"));
     }
+    state.variantSelectors.reset(Object.keys(variants));
   }
 }
 
@@ -323,7 +366,7 @@ export class BlockstateContentMerger {
       blockstateFragmentMergePolicy
     );
     for (const diagnostic of mergeResult.diagnostics) {
-      this.host.onError(diagnostic.code, diagnostic.message, diagnostic.range);
+      this.host.onError(diagnostic.code, diagnostic.message, diagnostic.range, context.sourceFile);
     }
 
     if (mappings?.length) {

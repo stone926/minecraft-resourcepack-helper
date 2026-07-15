@@ -3,8 +3,16 @@ import {
   rsglResourceCompletionDescriptors
 } from "./resourceKinds";
 import { rsglModelGeometryCompletionDescriptors } from "./modelGeometrySyntax";
-import { getRsglCompletionContext } from "./completionContext";
-import { getBlockstateEntryCompletions } from "./blockstateCompletionData";
+import {
+  getRsglCompletionContext,
+  type RsglCompletionContext
+} from "./completionContext";
+import {
+  blockstateChoiceCompletions,
+  blockstateModelOptionCompletions,
+  blockstatePredicateCompletions,
+  getBlockstateEntryCompletions
+} from "./blockstateCompletionData";
 import {
   rsglResourceIdConstructors,
   typeKindForResourceValueKind
@@ -80,14 +88,20 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
   },
   {
     label: "template -> variants",
-    insertText: "template ${1:name}(${2:model}: ModelId) -> variants {\n  ${3:{}}: ${2:model}\n}",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> variants {\n  case * => ${2:model}\n}",
     detail: "Reusable blockstate variants template",
     kind: "snippet"
   },
   {
     label: "template -> multipart",
-    insertText: "template ${1:name}(${2:model}: ModelId) -> multipart {\n  apply ${2:model}\n}",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> multipart {\n  part always => ${2:model}\n}",
     detail: "Reusable blockstate multipart template",
+    kind: "snippet"
+  },
+  {
+    label: "template -> choice",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> choice {\n  option ${2:model}\n}",
+    detail: "Reusable random blockstate choice fragment",
     kind: "snippet"
   },
   ...rsglExternResourceCompletionDescriptors.map(descriptor => ({
@@ -244,8 +258,25 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
 
 export function getRsglCompletionCandidates(text: string, offset: number): RsglCompletionCandidate[] {
   const context = getRsglCompletionContext(text, offset);
+  return getRsglCompletionCandidatesForContext(context);
+}
+
+/** Builds candidates from an already parsed context for hot language-service paths. */
+export function getRsglCompletionCandidatesForContext(
+  context: RsglCompletionContext
+): RsglCompletionCandidate[] {
   if (!context.insideBlock) {
     return [...topLevelRsglCompletions, ...builtinRsglCompletions];
+  }
+  if (context.blockstateModelOptions) {
+    return [...blockstateModelOptionCompletions];
+  }
+  if (context.blockstatePredicate) {
+    return [...blockstatePredicateCompletions, ...builtinRsglCompletions];
+  }
+  if (context.blockstateChoice || context.templateOutputDialect === "choice") {
+    const controls = blockRsglCompletions.filter(candidate => blockstateControlLabels.has(candidate.label));
+    return [...blockstateChoiceCompletions, ...controls, ...builtinRsglCompletions];
   }
   const blockstate = context.blockstate
     ?? (context.templateOutputDialect === "variants" || context.templateOutputDialect === "multipart"
@@ -279,7 +310,7 @@ export function getRsglCompletionCandidates(text: string, offset: number): RsglC
 
 function completionMatchesTemplateDialect(
   candidate: RsglCompletionCandidate,
-  dialect: "model" | "variants" | "multipart" | undefined
+  dialect: "model" | "variants" | "multipart" | "choice" | undefined
 ): boolean {
   if (!dialect) {
     return true;

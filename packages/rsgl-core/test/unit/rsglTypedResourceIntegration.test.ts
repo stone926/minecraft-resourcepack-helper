@@ -174,8 +174,8 @@ describe("RSGL typed resource integration", () => {
       "namespace demo",
       "let suffix = \"Bad Value\"",
       "blockstate variants bad_state {",
-      "  { facing: north }: minecraft:builtin/generated",
-      "  { facing: south }: model_id(`block/${suffix}`)",
+      "  case { facing: north } => minecraft:builtin/generated",
+      "  case { facing: south } => model_id(`block/${suffix}`)",
       "}",
       "model block bad_model impl model_id(\"block/base\")(all: model_id(\"block/wrong\")) {}",
       "json \"assets/demo/good.json\" { value \"ok\" }"
@@ -205,7 +205,7 @@ describe("RSGL typed resource integration", () => {
       "namespace demo",
       "extern! custom texture demo:block/stone",
       "item bad_item { model texture_id(\"item/wrong\") }",
-      "blockstate variants bad_state { {}: resource_id(\"block/wrong\") }",
+      "blockstate variants bad_state { case * => resource_id(\"block/wrong\") }",
       "model block bad_texture { textures { all: model_id(\"block/wrong\") } }",
       "model block variable { textures { side: demo:block/stone, all: \"#side\" } }"
     ];

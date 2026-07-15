@@ -208,7 +208,7 @@ describe("RSGL import semantics", () => {
           "  use lampFacing()",
           "}",
           "blockstate multipart pane {",
-          "  apply { model: minecraft:block/pane_post }",
+          "  part always => minecraft:block/pane_post",
           "  use connectedPane()",
           "}"
         ].join("\n"))
@@ -219,11 +219,11 @@ describe("RSGL import semantics", () => {
           "namespace library",
           "let defaultModel: ModelId = block/lamp",
           "template lampFacing(modelId: ModelId = defaultModel) -> variants {",
-          "    { facing: north }: { model: modelId }",
+          "    case { facing: north } => modelId",
           "}",
           "template connectedPane(side: ModelId = block/pane_side) -> multipart {",
           "    for facing in [north, east] {",
-          "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
+          "      part when $state[facing] == true => side with { y: yaw(facing) }",
           "    }",
           "}",
           "export { connectedPane, lampFacing }"
@@ -259,8 +259,8 @@ describe("RSGL import semantics", () => {
     assert.deepStrictEqual(pane?.content, {
       multipart: [
         { apply: { model: "minecraft:block/pane_post" } },
-        { apply: { model: "library:block/pane_side", y: 0 }, when: { north: true } },
-        { apply: { model: "library:block/pane_side", y: 90 }, when: { east: true } }
+        { apply: { model: "library:block/pane_side" }, when: { north: "true" } },
+        { apply: { model: "library:block/pane_side", y: 90 }, when: { east: "true" } }
       ]
     });
     assert.deepStrictEqual(pane?.sourceMap.mappings.map(mapping => mapping.generatedPath), [
@@ -271,7 +271,6 @@ describe("RSGL import semantics", () => {
       "/multipart/1",
       "/multipart/1/apply",
       "/multipart/1/apply/model",
-      "/multipart/1/apply/y",
       "/multipart/1/when",
       "/multipart/2",
       "/multipart/2/apply",
@@ -307,7 +306,7 @@ describe("RSGL import semantics", () => {
         module: parseRsgl([
           "namespace library",
           "template keyed(property: String, modelId: ModelId) -> variants {",
-          "    { [property]: full }: modelId",
+          "    case { [property]: full } => modelId",
           "}",
           "export { keyed }"
         ].join("\n"))

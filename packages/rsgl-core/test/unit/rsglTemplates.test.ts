@@ -50,13 +50,13 @@ describe("RSGL template expansion", () => {
       "  parent minecraft:block/cube_all",
       "}",
       "blockstate variants minecraft:invalid {",
-      "  { age: 0 }:",
+      "  case { age: 0 } =>",
       "}"
     ]);
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
 
     assert.deepStrictEqual(generatedResourceUnits(result), []);
-    assert.ok(codes.includes("rsgl.expectedBlockstateApplyValue"));
+    assert.ok(codes.includes("rsgl.expectedBlockstateModel"));
     assert.strictEqual(codes.includes("rsgl.undefinedSymbol"), false);
   });
 

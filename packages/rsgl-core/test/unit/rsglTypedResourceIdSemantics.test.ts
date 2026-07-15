@@ -96,7 +96,7 @@ describe("RSGL typed resource id semantics", () => {
       "  textures { all: other:block/texture }",
       "}",
       "model block implemented impl other:block/base(all: other:block/impl_texture) {}",
-      "blockstate variants child { {}: other:block/variant_model }",
+      "blockstate variants child { case * => other:block/variant_model }",
       "json \"assets/demo/custom/value.json\" { value \"unchanged\" }"
     ].join("\n"));
     const model = bindRsglModule(module);

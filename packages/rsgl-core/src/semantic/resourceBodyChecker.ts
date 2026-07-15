@@ -1,5 +1,7 @@
 import {
   BlockNode,
+  BlockstateChoiceBodyNode,
+  BlockstateModelSpecNode,
   BlockstateMultipartRootBodyNode,
   BlockstateVariantsRootBodyNode,
   ExprNode,
@@ -12,7 +14,6 @@ import {
   VariantBodyNode
 } from "../parser";
 import { RsglBlockstateBodyChecker } from "./blockstateBodyChecker";
-import type { RsglBlockstateApplyFactRecorder } from "./blockstateApplyChecker";
 import { diagnostic } from "./diagnostics";
 import { applyLambdaValueDiagnostics } from "./lambdaAnalysis";
 import { finiteStringDomain } from "./domainChecks";
@@ -20,6 +21,7 @@ import {
   checkEquipmentLayerListExpression,
   checkEquipmentLayerNameExpression,
   checkAssignable,
+  checkCompileTimeCondition,
   checkExpression,
   checkExpressionForExpectedType,
   checkLocalLetDecl,
@@ -59,6 +61,7 @@ type CheckableBody =
   | BlockNode
   | VariantBodyNode
   | MultipartBodyNode
+  | BlockstateChoiceBodyNode
   | BlockstateVariantsRootBodyNode
   | BlockstateMultipartRootBodyNode;
 
@@ -94,7 +97,7 @@ export class RsglResourceBodyChecker {
     private readonly checkBlockStatements: RsglBlockStatementChecker,
     private readonly recordTemplateUse: RsglTemplateUseRecorder,
     private readonly recordContextualTextureSink: RsglContextualTextureSinkRecorder,
-    recordBlockstateApplyFact: RsglBlockstateApplyFactRecorder,
+    recordBlockstateModelSpec: (modelSpec: BlockstateModelSpecNode, scope: RsglScope) => void,
     recordBlockstateContextualExpression: RsglBlockstateContextualExpressionRecorder
   ) {
     this.blockstateBodyChecker = new RsglBlockstateBodyChecker({
@@ -104,7 +107,7 @@ export class RsglResourceBodyChecker {
       checkNestedBody: (body, scope, callerContext) =>
         this.checkBody(body, scope, callerContext),
       recordTemplateUse,
-      recordApplyFact: recordBlockstateApplyFact,
+      recordModelSpec: recordBlockstateModelSpec,
       recordContextualExpression: recordBlockstateContextualExpression
     });
   }
@@ -122,6 +125,9 @@ export class RsglResourceBodyChecker {
         break;
       case "MultipartBody":
         this.blockstateBodyChecker.checkMultipartStatements(body.statements, scope);
+        break;
+      case "BlockstateChoiceBody":
+        this.blockstateBodyChecker.checkChoiceStatements(body.statements, scope);
         break;
       case "BlockstateVariantsRootBody":
         this.blockstateBodyChecker.checkRootBody(
@@ -376,7 +382,7 @@ export class RsglResourceBodyChecker {
         this.checkForStatement(statement, scope, callerContext);
         break;
       case "IfStmt":
-        this.checkExpression(statement.condition, scope);
+        checkCompileTimeCondition(this.context, statement.condition, scope);
         {
           const thenScope = scopeForTruthyCondition(scope, statement.condition);
           this.checkBody(

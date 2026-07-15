@@ -1,7 +1,8 @@
 import {
-  getRsglCompletionCandidates,
+  getRsglCompletionCandidatesForContext,
   type RsglCompletionCandidate
 } from "./completionData";
+import { getRsglCompletionContext } from "./completionContext";
 import { callablePresentation } from "./languageIntelligence";
 import type { RsglSymbol, RsglTypeAliasSymbol } from "./semantic";
 import { formatType } from "./semantic/typeRelations";
@@ -31,18 +32,21 @@ export function getRsglCompletionItems(
   namespace: RsglCompletionNamespace = "both"
 ): RsglCompletionItem[] {
   const items = new Map<string, RsglCompletionItem>();
+  const context = getRsglCompletionContext(text, offset);
   if (namespace !== "type") {
-    for (const candidate of getRsglCompletionCandidates(text, offset)) {
+    for (const candidate of getRsglCompletionCandidatesForContext(context)) {
       items.set(candidate.label, candidateCompletionItem(candidate));
     }
-    for (const symbol of semanticSymbols) {
-      if (!items.has(symbol.name)) {
-        items.set(symbol.name, symbolCompletionItem(symbol));
+    if (!context.blockstateModelOptions) {
+      for (const symbol of semanticSymbols) {
+        if (!items.has(symbol.name)) {
+          items.set(symbol.name, symbolCompletionItem(symbol));
+        }
       }
     }
   }
   const collidingTypeAliases: RsglCompletionItem[] = [];
-  if (namespace !== "value") {
+  if (namespace !== "value" && !context.blockstateModelOptions) {
     for (const [name, alias] of typeAliases) {
       const item = {
         label: name,

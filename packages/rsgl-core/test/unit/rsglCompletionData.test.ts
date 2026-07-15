@@ -40,6 +40,7 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "template -> model"));
     assert.ok(topLevel.some(candidate => candidate.label === "template -> variants"));
     assert.ok(topLevel.some(candidate => candidate.label === "template -> multipart"));
+    assert.ok(topLevel.some(candidate => candidate.label === "template -> choice"));
     assert.strictEqual(topLevel.some(candidate => candidate.label === "template"), false);
     for (const label of [
       "map",
@@ -92,9 +93,16 @@ describe("RSGL completion data", () => {
     assert.strictEqual(variants.has("multipart"), false);
 
     const multipart = labelsAtEnd("template parts() -> multipart {\n  ");
-    assert.ok(multipart.has("apply"));
-    assert.ok(multipart.has("when"));
+    assert.ok(multipart.has("part always"));
+    assert.ok(multipart.has("part when"));
     assert.ok(multipart.has("random"));
+
+    const choice = labelsAtEnd("template options() -> choice {\n  ");
+    assert.ok(choice.has("option"));
+    assert.ok(choice.has("weighted option"));
+    assert.ok(choice.has("for"));
+    assert.strictEqual(choice.has("variant entry"), false);
+    assert.strictEqual(choice.has("part always"), false);
   });
 
   it("retains explicit template completion dialects inside nested control flow", () => {
@@ -121,7 +129,7 @@ describe("RSGL completion data", () => {
     assert.ok(nestedVariants.has("variant entry"));
     assert.strictEqual(nestedVariants.has("element"), false);
     assert.strictEqual(nestedVariants.has("transform"), false);
-    assert.strictEqual(nestedVariants.has("apply"), false);
+    assert.strictEqual(nestedVariants.has("part always"), false);
   });
 
   it("keeps model geometry completion metadata and ordering descriptor-backed", () => {

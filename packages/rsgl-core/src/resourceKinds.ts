@@ -106,13 +106,13 @@ export const rsglResourceKindDescriptors = [
       {
         order: 20,
         label: "blockstate variants",
-        insertText: "blockstate variants ${1:id} {\n  {}: minecraft:block/${1:id}\n}",
+        insertText: "blockstate variants ${1:id} {\n  case * => minecraft:block/${1:id}\n}",
         detail: "Variants blockstate resource"
       },
       {
         order: 21,
         label: "blockstate multipart",
-        insertText: "blockstate multipart ${1:id} {\n  apply minecraft:block/${1:id}\n}",
+        insertText: "blockstate multipart ${1:id} {\n  part always => minecraft:block/${1:id}\n}",
         detail: "Multipart blockstate resource"
       }
     ],

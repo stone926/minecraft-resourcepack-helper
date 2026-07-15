@@ -1,4 +1,12 @@
-import { parseBlockstateApplyValue } from "./blockstateApplyParser";
+import {
+  parseBlockstateChoice,
+  validateBlockstateChoiceEnd
+} from "./blockstateChoiceParser";
+import {
+  isRemovedModelModifierProperty,
+  recoverRemovedMultipartEntry,
+  rejectRemovedModelModifierProperty
+} from "./blockstateRemovedSyntaxRecovery";
 import { parseBlockstateVariantEntry } from "./blockstateSelectorParser";
 import {
   multipartBodyParseContext,
@@ -64,11 +72,16 @@ export function parseBlockstateVariantsRootBody(
   }
   const statements: BlockstateVariantsRootStatementNode[] = [];
   let seenBase = false;
+  let followsChoice = false;
   while (!host.isAtEnd() && host.current().text !== "}") {
     const mark = host.mark();
-    const statement = parseVariantsRootStatement(host, context);
+    const misplacedModifier: boolean = followsChoice && isRemovedModelModifierProperty(host);
+    const statement: BlockstateVariantsRootStatementNode = misplacedModifier
+      ? rejectRemovedModelModifierProperty(host)
+      : parseVariantsRootStatement(host, context);
     seenBase = validateRootBase(host, statement, statements.length, seenBase, context.allowBase);
     statements.push(statement);
+    followsChoice = statement.kind === "BlockstateVariantEntry" || misplacedModifier;
     host.consumeOptionalSeparator();
     host.ensureProgress(mark, "Unable to parse blockstate variants root statement; skipping token.");
   }
@@ -91,11 +104,16 @@ export function parseBlockstateMultipartRootBody(
   }
   const statements: BlockstateMultipartRootStatementNode[] = [];
   let seenBase = false;
+  let followsChoice = false;
   while (!host.isAtEnd() && host.current().text !== "}") {
     const mark = host.mark();
-    const statement = parseMultipartRootStatement(host, context);
+    const misplacedModifier: boolean = followsChoice && isRemovedModelModifierProperty(host);
+    const statement: BlockstateMultipartRootStatementNode = misplacedModifier
+      ? rejectRemovedModelModifierProperty(host)
+      : parseMultipartRootStatement(host, context);
     seenBase = validateRootBase(host, statement, statements.length, seenBase, context.allowBase);
     statements.push(statement);
+    followsChoice = statement.kind === "BlockstateMultipartEntry" || misplacedModifier;
     host.consumeOptionalSeparator();
     host.ensureProgress(mark, "Unable to parse blockstate multipart root statement; skipping token.");
   }
@@ -159,28 +177,61 @@ function parseCanonicalMultipartEntry(
   host: ResourceStatementParserHost
 ): BlockstateMultipartEntryNode | UnknownStmtNode {
   const start = host.current();
-  let when;
-  if (host.matchText("when")) {
-    when = host.parseExpression({ stopTexts: ["apply"] });
-  }
-  const hasApply = host.expectText("apply", "Expected 'apply' in multipart entry.");
-  if (!hasApply) {
-    if (host.current().text === "{") {
-      host.consumeBalancedBlock("Expected '}' after malformed multipart entry.");
+  if (!host.matchText("part")) {
+    const legacy = start.text === "when" || start.text === "apply";
+    host.addDiagnosticAtCurrent(
+      legacy ? "rsgl.legacyBlockstateMultipartEntry" : "rsgl.expectedBlockstatePart",
+      legacy
+        ? "'when ... apply' and 'apply ...' entries are no longer supported; use 'part when ... => ...' or 'part always => ...'."
+        : "Expected a multipart blockstate entry beginning with 'part'."
+    );
+    if (legacy) {
+      recoverRemovedMultipartEntry(host, start.text);
     } else {
       host.recoverToLineEnd();
     }
-    return {
-      kind: "UnknownStmt",
-      keyword: start.text,
-      ...host.nodeRanges(start, host.previousOr(start))
-    };
+    return unknownMultipartEntry(host, start);
   }
+
+  let predicate;
+  let always = false;
+  if (host.matchText("always")) {
+    always = true;
+  } else if (host.matchText("when")) {
+    predicate = host.parseExpression({ stopTexts: ["=>"] });
+  } else {
+    host.addDiagnosticAtCurrent(
+      "rsgl.expectedBlockstatePartCondition",
+      "Expected 'always' or 'when <predicate>' after 'part'."
+    );
+    host.recoverToLineEnd();
+    return unknownMultipartEntry(host, start);
+  }
+
+  if (!host.expectText("=>", "Expected '=>' after the multipart part condition.")) {
+    host.recoverToLineEnd();
+    return unknownMultipartEntry(host, start);
+  }
+
+  const choice = parseBlockstateChoice(host);
+  validateBlockstateChoiceEnd(host);
   return {
     kind: "BlockstateMultipartEntry",
-    keyword: "multipartEntry",
-    when,
-    apply: parseBlockstateApplyValue(host),
+    keyword: start.text,
+    predicate,
+    always,
+    choice,
+    ...host.nodeRanges(start, host.previousOr(start))
+  };
+}
+
+function unknownMultipartEntry(
+  host: ResourceStatementParserHost,
+  start: ReturnType<ResourceStatementParserHost["current"]>
+): UnknownStmtNode {
+  return {
+    kind: "UnknownStmt",
+    keyword: start.text,
     ...host.nodeRanges(start, host.previousOr(start))
   };
 }
@@ -196,6 +247,7 @@ function isRootCommonStatementStart(host: ResourceStatementParserHost): boolean 
     || host.peekText(1) === ":"
     || host.peekText(1) === "="
     || (text !== "{" && text !== "(" && text !== "[" && text !== "apply" && text !== "when"
+      && text !== "case" && text !== "part"
       && text !== "variants" && text !== "multipart");
 }
 

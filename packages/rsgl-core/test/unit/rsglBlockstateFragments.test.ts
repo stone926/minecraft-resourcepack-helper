@@ -6,7 +6,7 @@ describe("RSGL blockstate bodies and fragments", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants lamp {",
       "  for state in product({ facing: [north, east], powered: [false, true] }) {",
-      "    { facing: state.facing, powered: state.powered }: { model: `minecraft:block/lamp_${state.facing}` }",
+      "    case { facing: state.facing, powered: state.powered } => `minecraft:block/lamp_${state.facing}`",
       "  }",
       "}"
     ]);
@@ -49,14 +49,14 @@ describe("RSGL blockstate bodies and fragments", () => {
   it("expands for and if statements inside canonical blockstate multipart roots", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate multipart oak_fence {",
-      "  apply { model: minecraft:block/oak_fence_post }",
+      "  part always => minecraft:block/oak_fence_post",
       "  for side in [north, east] {",
-      "    when { [side]: true } apply { model: `minecraft:block/oak_fence_side_${side}` }",
+      "    part when $state[side] == true => `minecraft:block/oak_fence_side_${side}`",
       "  }",
       "  if false {",
-      "    apply { model: minecraft:block/unused }",
+      "    part always => minecraft:block/unused",
       "  } else {",
-      "    when { west: true } apply { model: minecraft:block/oak_fence_side_west }",
+      "    part when $state.west == true => minecraft:block/oak_fence_side_west",
       "  }",
       "}"
     ]);
@@ -74,7 +74,7 @@ describe("RSGL blockstate bodies and fragments", () => {
             model: "minecraft:block/oak_fence_side_north"
           },
           when: {
-            north: true
+            north: "true"
           }
         },
         {
@@ -82,7 +82,7 @@ describe("RSGL blockstate bodies and fragments", () => {
             model: "minecraft:block/oak_fence_side_east"
           },
           when: {
-            east: true
+            east: "true"
           }
         },
         {
@@ -90,7 +90,7 @@ describe("RSGL blockstate bodies and fragments", () => {
             model: "minecraft:block/oak_fence_side_west"
           },
           when: {
-            west: true
+            west: "true"
           }
         }
       ]
@@ -154,13 +154,13 @@ describe("RSGL blockstate bodies and fragments", () => {
     });
   });
 
-  it("lowers canonical random apply values inside blockstate variants", () => {
+  it("lowers canonical random choices inside blockstate variants", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants stone {",
-      "  {}: random [",
-      "    minecraft:block/stone weight=3,",
-      "    minecraft:block/stone_mirrored y=180",
-      "  ]",
+      "  case * => random {",
+      "    option minecraft:block/stone weight 3",
+      "    option minecraft:block/stone_mirrored with { y: 180 }",
+      "  }",
       "}"
     ]);
 
@@ -180,13 +180,13 @@ describe("RSGL blockstate bodies and fragments", () => {
     const result = compileSourceWithUncheckedExterns([
       "template lampFacing(modelId: ModelId, states: Json = HORIZONTAL) -> variants {",
       "    for facing in states {",
-      "      { facing: facing }: { model: modelId, y: yaw(facing) }",
+      "      case { facing } => modelId with { y: yaw(facing) }",
       "    }",
       "}",
       "template connectedPane(post: ModelId, side: ModelId) -> multipart {",
-      "    apply { model: post }",
+      "    part always => post",
       "    for facing in [north, east] {",
-      "      when { [facing]: true } apply { model: side, y: yaw(facing) }",
+      "      part when $state[facing] == true => side with { y: yaw(facing) }",
       "    }",
       "}",
       "blockstate variants lamp {",
@@ -202,7 +202,7 @@ describe("RSGL blockstate bodies and fragments", () => {
     const pane = result.units.find(unit => unit.outputPath.endsWith("pane.json"));
     assert.deepStrictEqual(lamp?.content, {
       variants: {
-        ["facing=north"]: { model: "minecraft:block/lamp", y: 0 },
+        ["facing=north"]: { model: "minecraft:block/lamp" },
         ["facing=east"]: { model: "minecraft:block/lamp", y: 90 },
         ["facing=south"]: { model: "minecraft:block/lamp", y: 180 },
         ["facing=west"]: { model: "minecraft:block/lamp", y: 270 }
@@ -211,8 +211,8 @@ describe("RSGL blockstate bodies and fragments", () => {
     assert.deepStrictEqual(pane?.content, {
       multipart: [
         { apply: { model: "minecraft:block/pane_post" } },
-        { when: { north: true }, apply: { model: "minecraft:block/pane_side", y: 0 } },
-        { when: { east: true }, apply: { model: "minecraft:block/pane_side", y: 90 } }
+        { when: { north: "true" }, apply: { model: "minecraft:block/pane_side" } },
+        { when: { east: "true" }, apply: { model: "minecraft:block/pane_side", y: 90 } }
       ]
     });
   });
@@ -221,8 +221,8 @@ describe("RSGL blockstate bodies and fragments", () => {
     const result = compileSourceWithUncheckedExterns([
       "let suffix = \"lamp\"",
       "template keyed(property: String, prop1: String, modelId: ModelId) -> variants {",
-      "    { [property]: full, [prop1]: false }:",
-      "      modelId y=yaw(east)",
+      "    case { [property]: full, [prop1]: false } =>",
+      "      modelId with { y: yaw(east) }",
       "}",
       "blockstate variants example {",
       "  use keyed(\"tilt\", \"powered\", `minecraft:block/${suffix}`)",
@@ -240,15 +240,16 @@ describe("RSGL blockstate bodies and fragments", () => {
     });
   });
 
-  it("parses newline blockstate values and comma-separated random apply entries", () => {
+  it("parses multiline random choice options", () => {
     const result = compileSourceWithUncheckedExterns([
       "let block = \"powder_snow\"",
       "blockstate variants snow {",
-      "  {}:",
-      "    random [",
-      "      `minecraft:block/${block}`, `minecraft:block/${block}` y=90,",
-      "      `minecraft:block/${block}` y=180, `minecraft:block/${block}` y=270",
-      "    ]",
+      "  case * => random {",
+      "    option `minecraft:block/${block}`",
+      "    option `minecraft:block/${block}` with { y: 90 }",
+      "    option `minecraft:block/${block}` with { y: 180 }",
+      "    option `minecraft:block/${block}` with { y: 270 }",
+      "  }",
       "}"
     ]);
 
@@ -269,8 +270,8 @@ describe("RSGL blockstate bodies and fragments", () => {
   it("evaluates local let declarations inside multipart sections", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate multipart sensor {",
-      "  let poweredStates = \"1|2|3\"",
-      "  when { power: poweredStates } apply minecraft:block/sensor_powered",
+      "  let poweredStates = 1..3",
+      "  part when $state.power in poweredStates => minecraft:block/sensor_powered",
       "}"
     ]);
 

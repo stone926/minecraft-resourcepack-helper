@@ -20,6 +20,11 @@ import {
 } from "./resourceValueJsonAdapter";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 import { isModuleNamespaceValue } from "./moduleNamespaceValue";
+import {
+  isStateNamespaceValue,
+  isStatePredicateValue,
+  isStatePropertyValue
+} from "./blockstatePredicate";
 
 export interface JsonValueSinkOptions {
   onError?: (code: string, message: string, range: TextRange, fileName?: string) => void;
@@ -280,6 +285,10 @@ function cloneSerializableValue(
   }
   if (isModuleNamespaceValue(value)) {
     fail(host, { generatedPath, kind: "moduleNamespace", range, sourceFile });
+    return undefined;
+  }
+  if (isStateNamespaceValue(value) || isStatePropertyValue(value) || isStatePredicateValue(value)) {
+    fail(host, { generatedPath, kind: "runtimeObject", range, sourceFile });
     return undefined;
   }
   const objectValue = value && typeof value === "object" ? value : undefined;

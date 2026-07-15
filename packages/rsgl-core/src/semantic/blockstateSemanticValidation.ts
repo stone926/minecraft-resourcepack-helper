@@ -1,30 +1,22 @@
-import type { RsglDiagnostic } from "../parser";
-import {
-  blockstateApplyExpectationForNode,
-  checkBlockstateApplySite
-} from "./blockstateApplyChecker";
-import {
-  checkBlockstateCondition,
-  checkBlockstateSelector
-} from "./blockstateSelectorChecker";
+import type { ExprNode, RsglDiagnostic } from "../parser";
+import { checkBlockstateModelSpec } from "./blockstateModelSpecChecker";
+import { checkBlockstatePredicate } from "./blockstatePredicateChecker";
+import { checkBlockstateSelector } from "./blockstateSelectorChecker";
 import { fileDiagnostic } from "./diagnostics";
 import { scopeWithLinkedGlobalFallback } from "./linkedScope";
 import type {
-  RsglBlockstateApplyFact,
-  RsglBlockstateApplySiteNode,
   RsglFileDiagnostic,
-  RsglSemanticModel
+  RsglSemanticModel,
+  RsglType
 } from "./types";
 
-const provisionalBlockstateApplyDiagnosticCodes = new Set([
-  "rsgl.invalidBlockstateApplyHead",
-  "rsgl.nestedBlockstateModelList",
-  "rsgl.emptyBlockstateModelList",
+const provisionalModelSpecDiagnosticCodes = new Set([
+  "rsgl.invalidBlockstateModelOption",
+  "rsgl.invalidBlockstateModelOptionsSpread",
   "rsgl.unknownBlockstateModelField",
   "rsgl.duplicateBlockstateModelField",
-  "rsgl.missingBlockstateModel",
+  "rsgl.blockstateWeightInvalidContext",
   "rsgl.invalidBlockstateUvlock",
-  "rsgl.invalidRandomWeight",
   "rsgl.invalidBlockstateRotation"
 ]);
 
@@ -33,17 +25,17 @@ const provisionalContextualExpressionDiagnosticCodes = new Set([
   "rsgl.invalidBlockstateSelectorValue",
   "rsgl.invalidBlockstateSelectorKey",
   "rsgl.duplicateBlockstateSelectorProperty",
-  "rsgl.invalidBlockstateCondition",
-  "rsgl.invalidBlockstateWhen",
-  "rsgl.invalidBlockstateLogicalCondition",
-  "rsgl.mixedBlockstateWhenCondition"
+  "rsgl.emptyBlockstateSelectorUseWildcard",
+  "rsgl.invalidBlockstatePredicate",
+  "rsgl.invalidBlockstatePredicateProperty",
+  "rsgl.invalidBlockstatePredicateValue",
+  "rsgl.invalidBlockstatePredicateMembership",
+  "rsgl.emptyBlockstatePredicateMembership",
+  "rsgl.invalidBlockstatePredicateComparison",
+  "rsgl.blockstateEnumLiteralShadowed"
 ]);
 
-/**
- * Rechecks apply heads after import/export linking has replaced provisional
- * Any/import symbols with their final types. It also refreshes the immutable
- * per-node policy that runtime lowering consumes.
- */
+/** Rechecks ModelSpec, selector, and predicate sites after import linking. */
 export function validateResolvedProgramBlockstateSemantics(
   models: readonly RsglSemanticModel[]
 ): RsglFileDiagnostic[] {
@@ -54,84 +46,72 @@ export function validateResolvedProgramBlockstateSemantics(
       ? model.resolvedExpectedTypes
       : new Map(model.resolvedExpectedTypes);
     model.resolvedExpectedTypes = resolvedExpectedTypes;
-    // Apply-site diagnostics are provisional until import-all/re-export linking
-    // has populated the final global scope. Every code in this set is produced
-    // by a recorded site and is regenerated below from the linked program.
     model.diagnostics = model.diagnostics.filter(diagnostic =>
-      !provisionalBlockstateApplyDiagnosticCodes.has(diagnostic.code)
+      !provisionalModelSpecDiagnosticCodes.has(diagnostic.code)
       && !provisionalContextualExpressionDiagnosticCodes.has(diagnostic.code)
-    );
-    const facts = new Map<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>(
-      model.blockstateApplyFacts
     );
     const known = new Set(model.diagnostics.map(diagnosticKey));
 
-    for (const record of model.blockstateApplyRecords ?? []) {
+    for (const record of model.blockstateModelSpecRecords ?? []) {
       const diagnostics: RsglDiagnostic[] = [];
-      checkBlockstateApplySite(
+      checkBlockstateModelSpec(
         {
           diagnostics,
           references: [],
-          // This linked recheck is authoritative. Replacing a provisional
-          // fact is essential for bare import-all values whose first-pass type
-          // was Unknown but whose final type may be explicit Json.
           recordResolvedExpectedType: (expression, expectedType) => {
             resolvedExpectedTypes.set(expression, expectedType);
           },
           defineIdentifier: () => undefined
         },
         record.node,
-        scopeWithLinkedGlobalFallback(record.scope, model.scope),
-        blockstateApplyExpectationForNode(record.node),
-        (node, _scope, fact) => facts.set(node, fact)
+        scopeWithLinkedGlobalFallback(record.scope, model.scope)
       );
-      for (const item of diagnostics) {
-        const key = diagnosticKey(item);
-        if (known.has(key)) {
-          continue;
-        }
-        known.add(key);
-        result.push(fileDiagnostic(
-          model.fileName,
-          item.code,
-          item.message,
-          item.range,
-          item.severity
-        ));
-      }
+      appendNewDiagnostics(result, known, diagnostics, model.fileName);
     }
+
     for (const record of model.blockstateContextualExpressionRecords ?? []) {
       const diagnostics: RsglDiagnostic[] = [];
       const context = {
         diagnostics,
         references: [],
+        recordResolvedExpectedType: (expression: ExprNode, expectedType: RsglType) => {
+          resolvedExpectedTypes.set(expression, expectedType);
+        },
         defineIdentifier: () => undefined
       };
       const scope = scopeWithLinkedGlobalFallback(record.scope, model.scope);
       if (record.kind === "selector") {
-        checkBlockstateSelector(context, record.expression, record.selectorSyntax, scope);
+        checkBlockstateSelector(context, record.expression, scope);
       } else {
-        checkBlockstateCondition(context, record.expression, scope);
+        checkBlockstatePredicate(context, record.expression, scope);
       }
-      for (const item of diagnostics) {
-        const key = diagnosticKey(item);
-        if (known.has(key)) {
-          continue;
-        }
-        known.add(key);
-        result.push(fileDiagnostic(
-          model.fileName,
-          item.code,
-          item.message,
-          item.range,
-          item.severity
-        ));
-      }
+      appendNewDiagnostics(result, known, diagnostics, model.fileName);
     }
-    model.blockstateApplyFacts = facts;
   }
 
   return result;
+}
+
+function appendNewDiagnostics(
+  output: RsglFileDiagnostic[],
+  known: Set<string>,
+  diagnostics: readonly RsglDiagnostic[],
+  fileName: string
+): void {
+  for (const item of diagnostics) {
+    const key = diagnosticKey(item);
+    if (known.has(key)) {
+      continue;
+    }
+    known.add(key);
+    output.push(fileDiagnostic(
+      fileName,
+      item.code,
+      item.message,
+      item.range,
+      item.severity
+    ));
+  }
 }
 
 function diagnosticKey(

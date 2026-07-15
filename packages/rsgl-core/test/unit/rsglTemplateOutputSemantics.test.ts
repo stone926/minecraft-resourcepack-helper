@@ -15,8 +15,8 @@ describe("RSGL template output dialects", () => {
     const model = bindRsglModule(parseRsgl([
       "template resources() { model block stone {} }",
       "template modelBody() -> model { parent minecraft:block/cube_all }",
-      "template variantEntries() -> variants { { lit: true }: minecraft:block/lamp }",
-      "template multipartEntries() -> multipart { apply minecraft:block/post }"
+      "template variantEntries() -> variants { case { lit: true } => minecraft:block/lamp }",
+      "template multipartEntries() -> multipart { part always => minecraft:block/post }"
     ].join("\n")));
 
     assert.deepStrictEqual(templateMetadata(model, "resources"), {
@@ -64,10 +64,10 @@ describe("RSGL template output dialects", () => {
   it("compiles public variants and multipart templates", () => {
     const result = compileSourceWithUncheckedExterns([
       "template stateSequence(model: ModelId) -> variants {",
-      "  for powered in [false, true] { { powered: powered }: { model: model } }",
+      "  for powered in [false, true] { case { powered } => model }",
       "}",
       "template fenceParts(model: ModelId) -> multipart {",
-      "  apply { model: model }",
+      "  part always => model",
       "}",
       "blockstate variants lamp { use stateSequence(minecraft:block/lamp) }",
       "blockstate multipart fence { use fenceParts(minecraft:block/fence_post) }"
@@ -90,7 +90,7 @@ describe("RSGL template output dialects", () => {
     const program = bindRsglProgram([{
       fileName: path.resolve("pack", "wrong-dialect.rsgl"),
       module: parseRsgl([
-        "template variantsOnly() -> variants { {}: { model: minecraft:block/stone } }",
+        "template variantsOnly() -> variants { case * => minecraft:block/stone }",
         "blockstate multipart wrong { use variantsOnly() }"
       ].join("\n"))
     }]);
@@ -119,7 +119,7 @@ describe("RSGL template output dialects", () => {
         module: parseRsgl([
           "export { stateSequence }",
           "template stateSequence(model: ModelId) -> variants {",
-          "  {}: { model: model }",
+          "  case * => model",
           "}"
         ].join("\n"))
       }
@@ -354,7 +354,7 @@ describe("RSGL template output dialects", () => {
         fileName: definitionsFile,
         module: parseRsgl([
           "export { states }",
-          "template states() -> variants { {}: minecraft:block/lamp }"
+          "template states() -> variants { case * => minecraft:block/lamp }"
         ].join("\n"))
       }
     ]);

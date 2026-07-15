@@ -1,6 +1,5 @@
 import {
-  BlockstateApplyExprNode,
-  BlockstateRandomItemNode,
+  BlockstateModelSpecNode,
   ExprNode,
   ExportDeclNode,
   IdentifierNode,
@@ -47,7 +46,7 @@ export type RsglTypeKind =
   | "TextureId"
   | "TextureVariable"
   | "TextureRef"
-  | "BlockstateModelObject"
+  | "StatePredicate"
   | "Path"
   | "Json"
   | "ModuleNamespace"
@@ -105,21 +104,8 @@ export function objectPropertyType(property: RsglObjectProperty | undefined): Rs
   return property?.type;
 }
 
-export type RsglBlockstateApplySiteNode = BlockstateApplyExprNode | BlockstateRandomItemNode;
-
-export type RsglBlockstateApplyExpectation =
-  | "modelIdOnly"
-  | "modelOrObject"
-  | "modelOrObjectOrFlatList";
-
-export interface RsglBlockstateApplyFact {
-  expectation: RsglBlockstateApplyExpectation;
-  actualType: RsglType;
-  unknownFields: "reject" | "preserveExplicitJson";
-}
-
-export interface RsglBlockstateApplyRecord {
-  node: RsglBlockstateApplySiteNode;
+export interface RsglBlockstateModelSpecRecord {
+  node: BlockstateModelSpecNode;
   scope: RsglScope;
 }
 
@@ -127,10 +113,9 @@ export type RsglBlockstateContextualExpression =
   | {
       kind: "selector";
       expression: ExprNode;
-      selectorSyntax: "inlineObject" | "parenthesizedExpression";
     }
   | {
-      kind: "condition";
+      kind: "predicate";
       expression: ExprNode;
     };
 
@@ -277,10 +262,8 @@ export interface RsglSemanticModel {
   importCallScopes?: ReadonlyMap<ExprNode, RsglScope>;
   templateUses?: readonly RsglTemplateUseRecord[];
   contextualTextureSinks?: readonly RsglContextualTextureSinkRecord[];
-  /** Final semantic policy consumed by blockstate runtime lowering. */
-  blockstateApplyFacts?: ReadonlyMap<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>;
-  /** Source-position scopes retained for the post-link import/re-export pass. */
-  blockstateApplyRecords?: readonly RsglBlockstateApplyRecord[];
+  /** ModelSpec sites rechecked after import/re-export linking. */
+  blockstateModelSpecRecords?: readonly RsglBlockstateModelSpecRecord[];
   /** Contextual selectors/conditions rechecked after imported types are linked. */
   blockstateContextualExpressionRecords?: readonly RsglBlockstateContextualExpressionRecord[];
 }
@@ -337,7 +320,7 @@ export const modelIdType: RsglType = { kind: "ModelId" };
 export const textureIdType: RsglType = { kind: "TextureId" };
 export const textureVariableType: RsglType = { kind: "TextureVariable" };
 export const textureRefType: RsglType = { kind: "TextureRef" };
-export const blockstateModelObjectType: RsglType = { kind: "BlockstateModelObject" };
+export const statePredicateType: RsglType = { kind: "StatePredicate" };
 export const jsonType: RsglType = { kind: "Json" };
 
 export function typeFromAnnotation(
@@ -455,6 +438,9 @@ export function namedType(name: string): RsglType {
   }
   if (name === "TextureRef") {
     return textureRefType;
+  }
+  if (name === "StatePredicate") {
+    return statePredicateType;
   }
   if (name === "Range") {
     return { kind: "Range", elementType: numberType };

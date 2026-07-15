@@ -41,6 +41,30 @@ describe("RSGL lexer", () => {
     }
   });
 
+  it("lexes the blockstate rule vocabulary and state namespace", () => {
+    const result = lexRsgl(
+      "case part always when random option weight with choice not in $state $state_value"
+    );
+    const tokens = result.tokens.filter(token => token.kind !== "endOfFile");
+
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.deepStrictEqual(tokens.map(token => [token.kind, token.text]), [
+      ["keyword", "case"],
+      ["keyword", "part"],
+      ["keyword", "always"],
+      ["keyword", "when"],
+      ["keyword", "random"],
+      ["keyword", "option"],
+      ["keyword", "weight"],
+      ["keyword", "with"],
+      ["keyword", "choice"],
+      ["keyword", "not"],
+      ["keyword", "in"],
+      ["identifier", "$state"],
+      ["identifier", "$state_value"]
+    ]);
+  });
+
   it("reserves type aliases without exposing fn or Missing as keywords", () => {
     const result = lexRsgl("type Record = { optional?: String } fn Missing");
     const kinds = new Map(result.tokens.map(token => [token.text, token.kind]));

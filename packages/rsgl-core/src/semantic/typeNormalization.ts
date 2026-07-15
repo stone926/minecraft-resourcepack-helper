@@ -246,8 +246,8 @@ function isScalarKind(kind: RsglType["kind"]): boolean {
     || kind === "TextureId"
     || kind === "TextureVariable"
     || kind === "TextureRef"
-    || kind === "Json"
-    || kind === "BlockstateModelObject";
+    || kind === "StatePredicate"
+    || kind === "Json";
 }
 
 function isJsonCompatibleType(type: RsglType): boolean {

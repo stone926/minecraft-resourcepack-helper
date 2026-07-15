@@ -109,7 +109,18 @@ function collectMultipartStateDomains(
   for (const [index, entry] of multipart.entries()) {
     const condition = asObject(asObject(entry)?.when);
     if (condition) {
-      collectWhenStateDomains(condition, domains, unit, diagnostics, rangeForGeneratedPath(unit, options, appendGeneratedPath("/multipart", String(index))), options.schema);
+      collectWhenStateDomains(
+        condition,
+        domains,
+        unit,
+        diagnostics,
+        rangeForGeneratedPath(
+          unit,
+          options,
+          appendGeneratedPath(appendGeneratedPath("/multipart", String(index)), "when")
+        ),
+        options.schema
+      );
     }
   }
 }
@@ -403,7 +414,9 @@ function validateStateAgainstSchema(
   if (!schema) {
     return;
   }
-  const allowedValues = schema.properties[name];
+  const allowedValues = Object.hasOwn(schema.properties, name)
+    ? schema.properties[name]
+    : undefined;
   if (!allowedValues) {
     pushDiagnosticAtRange(
       diagnostics,

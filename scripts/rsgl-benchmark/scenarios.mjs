@@ -79,7 +79,7 @@ function createLargeBlockstateScenario(core, variantCount) {
     "model block shared {}",
     "blockstate variants large {",
     ...Array.from({ length: variantCount }, (_, index) =>
-      `  { index: "${pad(index)}" }: ${modelId}`
+      `  case { index: "${pad(index)}" } => ${modelId}`
     ),
     "}"
   ].join("\n");

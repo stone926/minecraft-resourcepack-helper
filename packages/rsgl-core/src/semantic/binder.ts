@@ -1,4 +1,5 @@
 import {
+  BlockstateModelSpecNode,
   ExprNode,
   ExternDeclNode,
   IdentifierNode,
@@ -26,6 +27,7 @@ import {
 import { lambdaSignature } from "./lambdaTyping";
 import {
   checkAssignable,
+  checkCompileTimeCondition,
   checkExpression,
   checkExpressionForExpectedType,
   checkObject,
@@ -33,6 +35,7 @@ import {
   checkTemplateUseExpression,
   validateResourceLocationLike
 } from "./expressionChecker";
+import { checkBlockstatePredicate } from "./blockstatePredicateChecker";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
 import { createChildScope, createScope, lookup } from "./scopes";
@@ -57,9 +60,7 @@ import {
   RsglScope,
   RsglSemanticModel,
   RsglSymbol,
-  RsglBlockstateApplyFact,
-  RsglBlockstateApplyRecord,
-  RsglBlockstateApplySiteNode,
+  RsglBlockstateModelSpecRecord,
   RsglBlockstateContextualExpressionRecord,
   RsglContextualTextureSinkRecord,
   RsglTemplateUseRecord,
@@ -100,8 +101,7 @@ class RsglBinder implements RsglExpressionCheckContext {
   private readonly resolvedExpressionTypes = new Map<ExprNode, RsglType>();
   private readonly templateUses: RsglTemplateUseRecord[] = [];
   private readonly contextualTextureSinks: RsglContextualTextureSinkRecord[] = [];
-  private readonly blockstateApplyFacts = new Map<RsglBlockstateApplySiteNode, RsglBlockstateApplyFact>();
-  private readonly blockstateApplyRecords: RsglBlockstateApplyRecord[] = [];
+  private readonly blockstateModelSpecRecords: RsglBlockstateModelSpecRecord[] = [];
   private readonly blockstateContextualExpressionRecords: RsglBlockstateContextualExpressionRecord[] = [];
   private readonly unsupportedDefaultImportNames = new Set<string>();
   private readonly globalScope: RsglScope = createScope("global");
@@ -134,11 +134,10 @@ class RsglBinder implements RsglExpressionCheckContext {
           enclosingTemplate: this.enclosingTemplate
         });
       }
-    }, (node, scope, fact) => {
-      this.blockstateApplyFacts.set(node, fact);
-      this.blockstateApplyRecords.push({
+    }, (node, scope) => {
+      this.blockstateModelSpecRecords.push({
         node,
-        scope: snapshotScope(scope, blockstateApplySiteExpressions(node))
+        scope: snapshotScope(scope, blockstateModelSpecExpressions(node))
       });
     }, (record, scope) => {
       this.blockstateContextualExpressionRecords.push({
@@ -178,8 +177,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       importCallScopes: this.importCallScopes,
       templateUses: this.templateUses,
       contextualTextureSinks: this.contextualTextureSinks,
-      blockstateApplyFacts: this.blockstateApplyFacts,
-      blockstateApplyRecords: this.blockstateApplyRecords,
+      blockstateModelSpecRecords: this.blockstateModelSpecRecords,
       blockstateContextualExpressionRecords: this.blockstateContextualExpressionRecords
     };
   }
@@ -209,6 +207,9 @@ class RsglBinder implements RsglExpressionCheckContext {
   ): void {
     const name = identifierName(identifier);
     if (!name) {
+      return;
+    }
+    if (this.rejectReservedValueBinding(name, identifier?.range ?? node.range)) {
       return;
     }
     this.define(scope, { name, kind, type, node, range: identifier?.range });
@@ -250,7 +251,9 @@ class RsglBinder implements RsglExpressionCheckContext {
     for (const statement of statements) {
       if (statement.kind === "LetDecl") {
         const expectedType = typeFromAnnotation(statement.typeAnnotation, scope, this.diagnostics);
-        const actualType = checkExpressionForExpectedType(this, statement.value, scope, expectedType);
+        const actualType = expectedType.kind === "StatePredicate"
+          ? checkBlockstatePredicate(this, statement.value, scope)
+          : checkExpressionForExpectedType(this, statement.value, scope, expectedType);
         checkAssignable(this, expectedType, actualType, statement.value);
         const name = identifierName(statement.name);
         const symbol = name ? lookup(scope, name) : undefined;
@@ -287,7 +290,7 @@ class RsglBinder implements RsglExpressionCheckContext {
       } else if (statement.kind === "ForStmt") {
         this.bodyChecker.checkForStatement(statement, scope, callerContext);
       } else if (statement.kind === "IfStmt") {
-        this.checkExpression(statement.condition, scope);
+        checkCompileTimeCondition(this, statement.condition, scope);
         const thenScope = scopeForTruthyCondition(scope, statement.condition);
         this.bodyChecker.checkBody(
           statement.thenBody,
@@ -344,7 +347,9 @@ class RsglBinder implements RsglExpressionCheckContext {
       );
       if (parameter.defaultValue) {
         const expectedType = typeFromAnnotation(parameter.typeAnnotation, scope, this.diagnostics);
-        const actualType = checkExpressionForExpectedType(this, parameter.defaultValue, scope, expectedType);
+        const actualType = expectedType.kind === "StatePredicate"
+          ? checkBlockstatePredicate(this, parameter.defaultValue, scope)
+          : checkExpressionForExpectedType(this, parameter.defaultValue, scope, expectedType);
         checkAssignable(this, expectedType, actualType, parameter.defaultValue);
       }
     }
@@ -501,6 +506,9 @@ class RsglBinder implements RsglExpressionCheckContext {
     if (!name) {
       return;
     }
+    if (this.rejectReservedValueBinding(name, statement.name?.range ?? statement.range)) {
+      return;
+    }
     this.define(scope, {
       name,
       kind,
@@ -533,6 +541,21 @@ class RsglBinder implements RsglExpressionCheckContext {
       node: statement,
       range: statement.id?.range
     });
+  }
+
+  private rejectReservedValueBinding(
+    name: string,
+    range: { start: number; end: number }
+  ): boolean {
+    if (name !== "$state") {
+      return false;
+    }
+    this.diagnostics.push(diagnostic(
+      "rsgl.reservedBlockstateStateNamespace",
+      "'$state' is reserved for blockstate predicates and cannot be used as a value binding name.",
+      range
+    ));
+    return true;
   }
 
   private define(scope: RsglScope, symbol: RsglSymbol): void {
@@ -619,6 +642,14 @@ function snapshotScope(scope: RsglScope, expressions: readonly ExprNode[]): Rsgl
   };
 }
 
-function blockstateApplySiteExpressions(node: RsglBlockstateApplySiteNode): ExprNode[] {
-  return [node.head, ...node.properties.map(property => property.value)];
+function blockstateModelSpecExpressions(node: BlockstateModelSpecNode): ExprNode[] {
+  return [
+    node.model,
+    ...(node.options?.properties.flatMap(property => property.kind === "ObjectSpread"
+      ? [property.expression]
+      : [
+          ...(property.key.kind === "DynamicKey" ? [property.key.expression] : []),
+          property.value
+        ]) ?? [])
+  ];
 }

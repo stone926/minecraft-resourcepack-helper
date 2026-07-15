@@ -180,7 +180,9 @@ describe("RSGL semantic tokens", () => {
       "  line */: \"value\" }",
       "}",
       "blockstate multipart demo {",
-      "  apply minecraft:block/foo y=90 uvlock=true weight=2",
+      "  part when $state.facing == north => random {",
+      "    option minecraft:block/foo with { y: 90, uvlock: true } weight 2",
+      "  }",
       "}"
     ].join("\n");
     const contextualModule = parseRsgl(contextualSource);
@@ -190,18 +192,20 @@ describe("RSGL semantic tokens", () => {
     const modelKey = offsetOf(contextualSource, "model: model");
     const memberName = offsetOf(contextualSource, ".model") + 1;
     const namedArgument = offsetOf(contextualSource, "pad: 2");
-    const modelProperty = offsetOf(contextualSource, "y=90");
+    const stateProperty = offsetOf(contextualSource, ".facing") + 1;
+    const modelProperty = offsetOf(contextualSource, "y: 90");
     const uvlockProperty = offsetOf(contextualSource, "uvlock");
-    const weightProperty = offsetOf(contextualSource, "weight=2");
+    const weightKeyword = offsetOf(contextualSource, "weight 2");
     const commentedKey = offsetOf(contextualSource, "extern /* multi");
 
     expectToken(contextualTokens, parentKey, "property", 0, "parent".length);
     expectToken(contextualTokens, modelKey, "property", 0, "model".length);
     expectToken(contextualTokens, memberName, "property", 0, "model".length);
     expectToken(contextualTokens, namedArgument, "property", 0, "pad".length);
+    expectToken(contextualTokens, stateProperty, "property", 0, "facing".length);
     expectToken(contextualTokens, modelProperty, "property", 0, "y".length);
     expectToken(contextualTokens, uvlockProperty, "property", 0, "uvlock".length);
-    expectToken(contextualTokens, weightProperty, "property", 0, "weight".length);
+    assert.ok(!contextualTokens.some(token => token.start === weightKeyword));
     expectToken(contextualTokens, commentedKey, "property", 0, "extern".length);
     expectToken(
       contextualTokens,
@@ -292,9 +296,9 @@ describe("RSGL semantic tokens", () => {
         fileName: templatesFile,
         module: parseRsgl([
           "template slab(bottom: ModelId, top: ModelId, double: ModelId) -> variants {",
-          "  { type: \"bottom\" }: bottom",
-          "  { type: \"top\" }: top",
-          "  { type: \"double\" }: double",
+          "  case { type: \"bottom\" } => bottom",
+          "  case { type: \"top\" } => top",
+          "  case { type: \"double\" } => double",
           "}",
           "export { slab }"
         ].join("\n"))

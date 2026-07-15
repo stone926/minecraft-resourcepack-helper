@@ -25,7 +25,7 @@ describe("RSGL semantic model", () => {
       "  textures { all: id }",
       "}",
       "blockstate variants acacia_stairs {",
-      "  {}: minecraft:block/acacia_stairs",
+      "  case * => minecraft:block/acacia_stairs",
       "}"
     ].join("\n"));
 
@@ -474,7 +474,7 @@ describe("RSGL semantic model", () => {
         fileName: fragmentsFile,
         module: parseRsgl([
           "template lampFacing(modelId: ModelId) -> variants {",
-          "  { facing: north }: { model: modelId }",
+          "  case { facing: north } => modelId",
           "}",
           "export { lampFacing }"
         ].join("\n"))

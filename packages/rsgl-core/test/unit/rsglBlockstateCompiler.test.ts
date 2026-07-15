@@ -3,7 +3,6 @@ import * as path from "node:path";
 import { compileRsglFile, compileRsglProgram } from "../../src/compiler";
 import { RsglCompiler } from "../../src/compiler/compiler";
 import { parseRsgl } from "../../src/parser";
-import { bindRsglModule } from "../../src/semantic";
 import {
   compileSourceWithUncheckedExterns,
   expectNoDiagnostics,
@@ -11,31 +10,28 @@ import {
 } from "./helpers/compile";
 
 describe("RSGL canonical blockstate compiler", () => {
-  it("evaluates selector, model head, property, and when expressions once", () => {
+  it("evaluates selector, model, option, and predicate expressions once", () => {
     const module = parseRsgl([
       "blockstate variants once {",
-      "  (glob(\"selector\")[0] ? {} : {}):",
-      "    glob(\"head\")[0] uvlock=(glob(\"property\")[0] ? true : false)",
+      "  case (glob(\"selector\")[0] ? { slot: selected } : { slot: fallback }) =>",
+      "    glob(\"head\")[0] with { uvlock: glob(\"option\")[0] ? true : false }",
       "}",
       "blockstate multipart once_multipart {",
-      "  when (glob(\"when\")[0] ? { north: true } : {})",
-      "    apply minecraft:block/stone",
+      "  part when $state[glob(\"predicate\")[0]] == true => minecraft:block/stone",
       "}"
     ].join("\n"));
-    const model = bindRsglModule(module);
     const calls: string[] = [];
     const values: Record<string, string[]> = {
-      selector: ["selected"],
+      selector: ["enabled"],
       head: ["minecraft:block/stone"],
-      property: ["enabled"],
-      when: ["enabled"]
+      option: ["enabled"],
+      predicate: ["north"]
     };
 
     const result = new RsglCompiler(module, {
       fileName: "once.rsgl",
       namespace: "minecraft",
       stdlibTemplates: [],
-      blockstateApplyFacts: model.blockstateApplyFacts,
       globLoader: pattern => {
         calls.push(pattern);
         return values[pattern] ?? [];
@@ -43,173 +39,157 @@ describe("RSGL canonical blockstate compiler", () => {
     }).compile();
 
     assert.deepStrictEqual(module.diagnostics, []);
-    assert.deepStrictEqual(model.diagnostics, []);
     assert.deepStrictEqual(result.diagnostics, []);
-    assert.deepStrictEqual(calls, ["selector", "head", "property", "when"]);
+    assert.deepStrictEqual(calls, ["selector", "head", "option", "predicate"]);
     assert.deepStrictEqual(result.units.map(unit => unit.content), [
       {
         variants: {
-          "": { model: "minecraft:block/stone", uvlock: true }
+          "slot=selected": { model: "minecraft:block/stone", uvlock: true }
         }
       },
       {
-        multipart: [
-          {
-            apply: { model: "minecraft:block/stone" },
-            when: { north: true }
-          }
-        ]
+        multipart: [{
+          apply: { model: "minecraft:block/stone" },
+          when: { north: "true" }
+        }]
       }
     ]);
   });
 
-  it("preserves defaults in complete objects/lists but omits shorthand defaults", () => {
+  it("omits canonical ModelSpec and option defaults", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants defaults {",
-      "  { kind: object }: {",
-      "    model: minecraft:block/object, x: 0, y: 0, z: 0, uvlock: false, weight: 1",
+      "  case { kind: single } => minecraft:block/single with {",
+      "    x: 0, y: 0, z: 0, uvlock: false",
       "  }",
-      "  { kind: list }: [",
-      "    { model: minecraft:block/a, x: 0, uvlock: false, weight: 1 },",
-      "    { model: minecraft:block/b, y: 0 }",
-      "  ]",
-      "  { kind: shorthand }:",
-      "    minecraft:block/short x=0 y=0 z=0 uvlock=false weight=1",
+      "  case { kind: random } => random {",
+      "    option minecraft:block/a with { x: 0, uvlock: false } weight 1",
+      "    option minecraft:block/b with { y: 0 }",
+      "  }",
       "}"
     ]);
 
     expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, {
       variants: {
-        "kind=list": [
-          {
-            model: "minecraft:block/a",
-            x: 0,
-            uvlock: false,
-            weight: 1
-          },
-          { model: "minecraft:block/b", y: 0 }
+        "kind=random": [
+          { model: "minecraft:block/a" },
+          { model: "minecraft:block/b" }
         ],
-        "kind=object": {
-          model: "minecraft:block/object",
-          x: 0,
-          y: 0,
-          z: 0,
-          uvlock: false,
-          weight: 1
-        },
-        "kind=shorthand": { model: "minecraft:block/short" }
+        "kind=single": { model: "minecraft:block/single" }
       }
     });
   });
 
-  it("preserves unknown model fields only for explicit Json facts", () => {
+  it("keeps random and conditional lets lexically scoped", () => {
     const result = compileSourceWithUncheckedExterns([
-      "let escaped: Json = { model: minecraft:block/escaped, future_field: true }",
-      "let closed = { model: minecraft:block/closed, misspelled: true }",
-      "blockstate variants facts {",
-      "  { kind: keep }: escaped",
-      "  { kind: reject }: closed",
+      "let selected: ModelId = minecraft:block/root",
+      "blockstate variants scoped_lets {",
+      "  case { kind: random } => random {",
+      "    let selected: ModelId = minecraft:block/random",
+      "    option selected",
+      "    if true {",
+      "      let selected: ModelId = minecraft:block/branch",
+      "      option selected",
+      "    }",
+      "    option selected",
+      "  }",
+      "  if true {",
+      "    let selected: ModelId = minecraft:block/conditional",
+      "    case { kind: conditional } => selected",
+      "  }",
+      "  case { kind: root } => selected",
+      "}",
+      "let attached: StatePredicate = $state.north == true",
+      "blockstate multipart scoped_predicate {",
+      "  part when attached => random {",
+      "    let attached: StatePredicate = $state.south == true",
+      "    option minecraft:block/side",
+      "  }",
       "}"
     ]);
 
-    assert.strictEqual(
-      result.diagnostics.filter(diagnostic =>
-        diagnostic.code === "rsgl.unknownBlockstateModelField"
-      ).length,
-      1
-    );
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(result.units[0].content, {
       variants: {
-        "kind=keep": {
-          model: "minecraft:block/escaped",
-          future_field: true
-        }
+        "kind=conditional": { model: "minecraft:block/conditional" },
+        "kind=random": [
+          { model: "minecraft:block/random" },
+          { model: "minecraft:block/branch" },
+          { model: "minecraft:block/random" }
+        ],
+        "kind=root": { model: "minecraft:block/root" }
       }
+    });
+    assert.deepStrictEqual(result.units[1].content, {
+      multipart: [{
+        apply: [{ model: "minecraft:block/side" }],
+        when: { north: "true" }
+      }]
     });
   });
 
-  it("rejects recursively unserializable blockstate Json values without normalizing them to null", () => {
-    const source = [
-      "let lambdaValue: Json = { model: minecraft:block/a, future: (x) => x }",
-      "let undefinedValue: Json = { model: minecraft:block/b, future: {}.missing }",
-      "let callValue: Json = { model: minecraft:block/c, future: unknown() }",
-      "let nonFiniteValue: Json = { model: minecraft:block/d, future: 1 / 0 }",
-      "blockstate variants invalid_json {",
-      "  { slot: lambda }: lambdaValue",
-      "  { slot: undefined }: undefinedValue",
-      "  { slot: call }: callValue",
-      "  { slot: number }: nonFiniteValue",
-      "}"
-    ].join("\n");
-    const result = compileSourceWithUncheckedExterns(source.split("\n"));
-    const expected = new Map([
-      ["(x) => x", "rsgl.functionValueNotSerializable"],
-      ["{}.missing", "rsgl.missingValueNotSerializable"],
-      ["unknown()", "rsgl.missingValueNotSerializable"],
-      ["1 / 0", "rsgl.unserializableJsonValue"]
+  it("isolates blockstate resource and top-level block bindings", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let selected: ModelId = minecraft:block/root",
+      "blockstate variants first_resource {",
+      "  let selected: ModelId = minecraft:block/resource",
+      "  case * => selected",
+      "}",
+      "if true {",
+      "  let selected: ModelId = minecraft:block/block",
+      "  blockstate variants nested_resource { case * => selected }",
+      "}",
+      "blockstate variants final_resource { case * => selected }"
     ]);
-    const diagnostics = result.diagnostics.filter(diagnostic =>
-      expected.has(source.slice(diagnostic.range.start, diagnostic.range.end))
-    );
 
-    assert.strictEqual(diagnostics.length, 4);
-    diagnostics.forEach(diagnostic => assert.strictEqual(
-      diagnostic.code,
-      expected.get(source.slice(diagnostic.range.start, diagnostic.range.end))
-    ));
-    assert.deepStrictEqual(result.units[0].content, { variants: {} });
-  });
-
-  it("retains value-shape issues through template argument binding", () => {
-    const source = [
-      "template emit(value: Json) -> variants { { slot: invalid }: value }",
-      "blockstate variants template_json {",
-      "  use emit({ model: minecraft:block/a, future: [][0] })",
-      "}"
-    ].join("\n");
-    const result = compileSourceWithUncheckedExterns(source.split("\n"));
-    const diagnostic = result.diagnostics.find(item =>
-      item.code === "rsgl.missingValueNotSerializable"
-    );
-
-    assert.ok(diagnostic);
-    assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "[][0]");
-    assert.deepStrictEqual(result.units, []);
-  });
-
-  it("rejects lossy computed keys in explicit Json at the computed key", () => {
-    const source = [
-      "let first = \"future\"",
-      "let second = \"future\"",
-      "let missing = [][0]",
-      "let duplicate: Json = { model: minecraft:block/a, [first]: true, [second]: false }",
-      "let invalid: Json = { model: minecraft:block/b, [missing]: true }",
-      "blockstate variants lossy_json {",
-      "  { slot: \"duplicate\" }: duplicate",
-      "  { slot: \"invalid\" }: invalid",
-      "}"
-    ].join("\n");
-    const result = compileSourceWithUncheckedExterns(source.split("\n"));
-    const diagnostics = result.diagnostics.filter(item =>
-      item.code === "rsgl.unserializableJsonValue"
-    );
-
-    assert.strictEqual(diagnostics.length, 2);
+    expectNoDiagnostics(result);
     assert.deepStrictEqual(
-      new Set(diagnostics.map(diagnostic => source.slice(diagnostic.range.start, diagnostic.range.end))),
-      new Set(["[second]", "[missing]"])
+      result.units.filter(unit => unit.kind === "blockstate").map(unit => unit.content),
+      [
+        { variants: { "": { model: "minecraft:block/resource" } } },
+        { variants: { "": { model: "minecraft:block/block" } } },
+        { variants: { "": { model: "minecraft:block/root" } } }
+      ]
     );
-    assert.ok(diagnostics.some(diagnostic => diagnostic.message.includes("duplicate computed object key")));
-    assert.ok(diagnostics.some(diagnostic => diagnostic.message.includes("computed object key without a value")));
+  });
+
+  it("rejects invalid ModelSpec fields without accepting object or list facts", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let options = { x: 90 }",
+      "let field = \"x\"",
+      "blockstate variants invalid_specs {",
+      "  case { kind: unknown } => minecraft:block/a with { future_field: true }",
+      "  case { kind: spread } => minecraft:block/b with { ...options }",
+      "  case { kind: computed } => minecraft:block/c with { [field]: 90 }",
+      "  case { kind: weight } => minecraft:block/d with { weight: 2 }",
+      "  case { kind: rotation } => minecraft:block/e with { x: 45 }",
+      "  case { kind: uvlock } => minecraft:block/f with { uvlock: \"yes\" }",
+      "}"
+    ]);
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    for (const expected of [
+      "rsgl.unknownBlockstateModelField",
+      "rsgl.invalidBlockstateModelOptionsSpread",
+      "rsgl.invalidBlockstateModelOption",
+      "rsgl.blockstateWeightInvalidContext",
+      "rsgl.invalidBlockstateRotation"
+    ]) {
+      assert.ok(codes.includes(expected), `Missing ${expected}`);
+    }
+    assert.ok(
+      codes.includes("rsgl.typeMismatch") || codes.includes("rsgl.invalidBlockstateUvlock"),
+      "Expected an invalid uvlock diagnostic."
+    );
     assert.deepStrictEqual(result.units[0].content, { variants: {} });
   });
 
-  it("retains computed-key issues through multi-dimensional loop bindings", () => {
+  it("retains computed selector failures through multi-dimensional loop bindings", () => {
     const source = [
       "blockstate variants loop_issue {",
       "  for ignored in [true], selector in [{ [[][0]]: true }] {",
-      "    (selector): minecraft:block/stone",
+      "    case selector => minecraft:block/stone",
       "  }",
       "}"
     ].join("\n");
@@ -223,116 +203,12 @@ describe("RSGL canonical blockstate compiler", () => {
     assert.deepStrictEqual(result.units, []);
   });
 
-  it("rejects cyclic runtime values without recursing or leaking the object", () => {
-    const source = "blockstate variants cyclic { {}: injected }";
-    const module = parseRsgl(source);
-    const model = bindRsglModule(module);
-    const cyclic: Record<string, unknown> = { model: "minecraft:block/cyclic" };
-    cyclic.future = cyclic;
-    const result = new RsglCompiler(module, {
-      fileName: "cyclic.rsgl",
-      namespace: "minecraft",
-      stdlibTemplates: [],
-      blockstateApplyFacts: model.blockstateApplyFacts,
-      externalValues: [{ name: "injected", value: cyclic as never }]
-    }).compile();
-
-    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.unserializableJsonValue"
-    ]);
-    assert.deepStrictEqual(result.units[0].content, { variants: {} });
-  });
-
-  it("attributes imported Json runtime field diagnostics to each definition field", () => {
-    const root = path.resolve("/virtual/rsgl-blockstate-invalid-json");
-    const mainFile = path.join(root, "main.rsgl");
-    const barrelFile = path.join(root, "barrel.rsgl");
-    const definitionsFile = path.join(root, "definitions.rsgl");
-    const definitionsSource = [
-      "let invalidJson: Json = { model: minecraft:block/a, future: unknown() }",
-      "let invalidX: Json = { model: minecraft:block/b, x: 45 }",
-      "let invalidUvlock: Json = { model: minecraft:block/c, uvlock: \"yes\" }",
-      "let invalidWeight: Json = { model: minecraft:block/d, weight: 0 }",
-      "export { invalidJson, invalidX, invalidUvlock, invalidWeight }"
-    ].join("\n");
-    const result = compileRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import \"./barrel.rsgl\"",
-          "blockstate variants imported_invalid {",
-          "  { slot: json }: invalidJson",
-          "  { slot: x }: invalidX",
-          "  { slot: uvlock }: invalidUvlock",
-          "  { slot: weight }: invalidWeight",
-          "}"
-        ].join("\n"))
-      },
-      { fileName: barrelFile, module: parseRsgl("export * from \"./definitions.rsgl\"") },
-      { fileName: definitionsFile, module: parseRsgl(definitionsSource) }
-    ], withUncheckedExterns({ entryFileName: mainFile }));
-    const expected = new Map([
-      ["rsgl.missingValueNotSerializable", "unknown()"],
-      ["rsgl.invalidBlockstateRotation", "45"],
-      ["rsgl.invalidBlockstateUvlock", "\"yes\""],
-      ["rsgl.invalidRandomWeight", "0"]
-    ]);
-
-    for (const [code, sourceText] of expected) {
-      const diagnostic = result.diagnostics.find(item => item.code === code);
-      assert.ok(diagnostic, `Missing ${code}`);
-      assert.strictEqual(diagnostic.fileName, definitionsFile);
-      assert.strictEqual(
-        definitionsSource.slice(diagnostic.range.start, diagnostic.range.end),
-        sourceText
-      );
-    }
-  });
-
-  it("retains captured template value issues and field origins across files", () => {
-    const root = path.resolve("/virtual/rsgl-blockstate-template-capture");
-    const mainFile = path.join(root, "main.rsgl");
-    const definitionsFile = path.join(root, "definitions.rsgl");
-    const definitionsSource = [
-      "let capturedJson: Json = { model: minecraft:block/a, future: unknown() }",
-      "let capturedRotation: Json = { model: minecraft:block/b, x: 45 }",
-      "template emit() -> variants {",
-      "  { slot: json }: capturedJson",
-      "  { slot: rotation }: capturedRotation",
-      "}",
-      "export { emit }"
-    ].join("\n");
-    const result = compileRsglProgram([
-      {
-        fileName: mainFile,
-        module: parseRsgl([
-          "import { emit } from \"./definitions.rsgl\"",
-          "blockstate variants captured { use emit() }"
-        ].join("\n"))
-      },
-      { fileName: definitionsFile, module: parseRsgl(definitionsSource) }
-    ], withUncheckedExterns({ entryFileName: mainFile }));
-
-    for (const [code, text] of [
-      ["rsgl.missingValueNotSerializable", "unknown()"],
-      ["rsgl.invalidBlockstateRotation", "45"]
-    ] as const) {
-      const diagnostic = result.diagnostics.find(item => item.code === code);
-      assert.ok(diagnostic, `Missing ${code}`);
-      assert.strictEqual(diagnostic.fileName, definitionsFile);
-      assert.strictEqual(
-        definitionsSource.slice(diagnostic.range.start, diagnostic.range.end),
-        text
-      );
-    }
-  });
-
   it("rejects duplicate runtime selector keys after canonical evaluation", () => {
     const source = [
       "let first = \"facing\"",
       "let second = \"facing\"",
       "blockstate variants duplicate_selector {",
-      "  { [first]: north, [second]: south }: minecraft:block/stone",
+      "  case { [first]: north, [second]: south } => minecraft:block/stone",
       "}"
     ].join("\n");
     const result = compileSourceWithUncheckedExterns(source.split("\n"));
@@ -345,13 +221,27 @@ describe("RSGL canonical blockstate compiler", () => {
     assert.deepStrictEqual(result.units[0].content, { variants: {} });
   });
 
-  it("lowers parenthesized let, member, and call selectors", () => {
+  it("rejects data-driven empty selectors in favor of case wildcard", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let empty = {}",
+      "blockstate variants empty_data_selector {",
+      "  case empty => minecraft:block/stone",
+      "}"
+    ]);
+
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.emptyBlockstateSelectorUseWildcard"
+    ));
+    assert.deepStrictEqual(result.units[0]?.content, { variants: {} });
+  });
+
+  it("lowers let, member, and call selector expressions without parentheses", () => {
     const result = compileSourceWithUncheckedExterns([
       "let row = { state: { slot: \"member\" } }",
       "let identity = (value) => value",
       "blockstate variants expression_selectors {",
-      "  (row.state): minecraft:block/member",
-      "  (identity({ slot: \"call\" })): minecraft:block/call",
+      "  case row.state => minecraft:block/member",
+      "  case identity({ slot: \"call\" }) => minecraft:block/call",
       "}"
     ]);
 
@@ -364,19 +254,19 @@ describe("RSGL canonical blockstate compiler", () => {
     });
   });
 
-  it("keeps multipart entry, merge, template, and loop outputs in execution order", () => {
+  it("keeps multipart part, merge, template, and root loop outputs in execution order", () => {
     const result = compileSourceWithUncheckedExterns([
       "template middle() -> multipart {",
-      "  apply minecraft:block/third",
+      "  part always => minecraft:block/third",
       "}",
       "blockstate multipart ordered {",
-      "  apply minecraft:block/first",
+      "  part always => minecraft:block/first",
       "  merge append {",
       "    multipart: [{ apply: { model: minecraft:block/second } }]",
       "  }",
       "  use middle()",
       "  for modelId in [minecraft:block/fourth, minecraft:block/fifth] {",
-      "    apply modelId",
+      "    part always => modelId",
       "  }",
       "}"
     ]);
@@ -395,138 +285,113 @@ describe("RSGL canonical blockstate compiler", () => {
       /^\/multipart\/\d+\/apply\/model$/.test(mapping.generatedPath)
     );
     assert.deepStrictEqual(
-      modelMappings.map(mapping => mapping.generatedPath),
-      [
-        "/multipart/0/apply/model",
-        "/multipart/1/apply/model",
-        "/multipart/2/apply/model",
-        "/multipart/3/apply/model",
-        "/multipart/4/apply/model"
-      ]
-    );
-    assert.deepStrictEqual(
       modelMappings.map(mapping => mapping.reason),
       ["direct", "direct", "template", "loop", "loop"]
     );
   });
 
-  it("maps the mode header, selector, model, properties, and random items independently", () => {
+  it("maps the mode header, selector, ModelSpec fields, and random options independently", () => {
     const source = [
       "blockstate variants mapped {",
-      "  { facing: north }: minecraft:block/single x=90",
-      "  { facing: south }: random [",
-      "    minecraft:block/a weight=2,",
-      "    minecraft:block/b",
-      "  ]",
+      "  case { facing: north } => minecraft:block/single with { x: 90 }",
+      "  case { facing: south } => random {",
+      "    option minecraft:block/a weight 2",
+      "    option minecraft:block/b",
+      "  }",
       "}"
     ].join("\n");
     const result = compileSourceWithUncheckedExterns(source.split("\n"));
 
     expectNoDiagnostics(result);
     const mappings = result.units[0].sourceMap.mappings;
-    const rangeOf = (text: string, occurrence = 0) => {
-      let start = -1;
-      for (let index = 0; index <= occurrence; index += 1) {
-        start = source.indexOf(text, start + 1);
-      }
-      assert.notStrictEqual(start, -1, `Missing source text: ${text}`);
-      return { start, end: start + text.length };
-    };
     const rangeForPath = (generatedPath: string) => mappings.find(mapping =>
       mapping.generatedPath === generatedPath
     )?.sourceRange;
 
-    assert.deepStrictEqual(rangeForPath("/variants"), rangeOf("variants"));
-    assert.deepStrictEqual(rangeForPath("/variants/facing=north"), rangeOf("{ facing: north }"));
+    assert.deepStrictEqual(rangeForPath("/variants"), textRange(source, "variants"));
+    assert.deepStrictEqual(
+      rangeForPath("/variants/facing=north"),
+      textRange(source, "{ facing: north }")
+    );
     assert.deepStrictEqual(
       rangeForPath("/variants/facing=north/model"),
-      rangeOf("minecraft:block/single")
+      textRange(source, "minecraft:block/single")
     );
-    assert.deepStrictEqual(rangeForPath("/variants/facing=north/x"), rangeOf("90"));
+    assert.deepStrictEqual(rangeForPath("/variants/facing=north/x"), textRange(source, "90"));
     assert.deepStrictEqual(
       rangeForPath("/variants/facing=south/0/model"),
-      rangeOf("minecraft:block/a")
+      textRange(source, "minecraft:block/a")
     );
-    assert.deepStrictEqual(rangeForPath("/variants/facing=south/0/weight"), rangeOf("2"));
+    assert.deepStrictEqual(rangeForPath("/variants/facing=south/0/weight"), textRange(source, "2"));
     assert.deepStrictEqual(
       rangeForPath("/variants/facing=south/1/model"),
-      rangeOf("minecraft:block/b")
+      textRange(source, "minecraft:block/b")
     );
   });
 
-  it("retains path origins through top-level/local let, member, and complete lists", () => {
+  it("retains origins through ModelId lets, with fields, and random options", () => {
     const source = [
-      "let top = { model: minecraft:block/top, x: 90 }",
+      "let top: ModelId = minecraft:block/top",
+      "let topX = 90",
       "blockstate variants traced_values {",
-      "  let local = {",
-      "    item: { model: minecraft:block/local, uvlock: true },",
-      "    choices: [",
-      "      { model: minecraft:block/list_a, weight: 2 },",
-      "      { model: minecraft:block/list_b, y: 90 }",
-      "    ]",
+      "  let local: ModelId = minecraft:block/local",
+      "  let localUvlock = true",
+      "  let randomA: ModelId = minecraft:block/random_a",
+      "  let randomB: ModelId = minecraft:block/random_b",
+      "  case { slot: \"top\" } => top with { x: topX }",
+      "  case { slot: \"local\" } => local with { uvlock: localUvlock }",
+      "  case { slot: \"random\" } => random {",
+      "    option randomA weight 2",
+      "    option randomB with { y: 90 }",
       "  }",
-      "  { slot: \"top\" }: top",
-      "  { slot: \"local\" }: local.item",
-      "  { slot: \"list\" }: local.choices",
       "}"
     ].join("\n");
     const result = compileSourceWithUncheckedExterns(source.split("\n"));
 
     expectNoDiagnostics(result);
-    const unit = result.units[0];
-    const origins = unit.validation?.referenceOrigins ?? [];
+    const origins = result.units[0].validation?.referenceOrigins ?? [];
     const sourceTextForOrigin = (generatedPath: string) => {
       const origin = origins.find(item => item.generatedPath === generatedPath);
       assert.ok(origin, `Missing validation origin for ${generatedPath}`);
       return source.slice(origin.sourceRange.start, origin.sourceRange.end);
     };
-    assert.strictEqual(
-      sourceTextForOrigin("/variants/slot=top/model"),
-      "minecraft:block/top"
-    );
-    assert.strictEqual(
-      sourceTextForOrigin("/variants/slot=local/model"),
-      "minecraft:block/local"
-    );
-    assert.strictEqual(
-      sourceTextForOrigin("/variants/slot=list/0/model"),
-      "minecraft:block/list_a"
-    );
-    assert.strictEqual(
-      sourceTextForOrigin("/variants/slot=list/1/y"),
-      "90"
-    );
+    assert.strictEqual(sourceTextForOrigin("/variants/slot=top/model"), "minecraft:block/top");
+    assert.strictEqual(sourceTextForOrigin("/variants/slot=local/model"), "minecraft:block/local");
+    assert.strictEqual(sourceTextForOrigin("/variants/slot=random/0/model"), "minecraft:block/random_a");
+    assert.strictEqual(sourceTextForOrigin("/variants/slot=random/1/model"), "minecraft:block/random_b");
   });
 
-  it("evaluates conditional loop inputs once and preserves each item member origin", () => {
+  it("evaluates conditional loop inputs once and preserves ModelId member origins", () => {
     const source = [
       "blockstate variants traced_loop {",
       "  for entry in (glob(\"rows\")[0] ? [",
-      "    { state: { slot: first }, apply: { model: minecraft:block/first } },",
-      "    { state: { slot: second }, apply: { model: minecraft:block/second } }",
+      "    { state: { slot: first }, model: minecraft:block/first },",
+      "    { state: { slot: second }, model: minecraft:block/second }",
       "  ] : []) {",
-      "    (entry.state): entry.apply",
+      "    case entry.state => entry.model",
       "  }",
       "}"
     ].join("\n");
     let globCalls = 0;
     const module = parseRsgl(source);
-    const model = bindRsglModule(module);
     const result = new RsglCompiler(module, {
       fileName: "loop-origin.rsgl",
       namespace: "minecraft",
       stdlibTemplates: [],
-      blockstateApplyFacts: model.blockstateApplyFacts,
       globLoader: () => {
         globCalls += 1;
         return ["enabled"];
       }
     }).compile();
 
+    assert.deepStrictEqual(module.diagnostics, []);
     assert.deepStrictEqual(result.diagnostics, []);
     assert.strictEqual(globCalls, 1);
     const origins = result.units[0].validation?.referenceOrigins ?? [];
-    for (const [slot, modelText] of [["first", "minecraft:block/first"], ["second", "minecraft:block/second"]]) {
+    for (const [slot, modelText] of [
+      ["first", "minecraft:block/first"],
+      ["second", "minecraft:block/second"]
+    ]) {
       const origin = origins.find(item =>
         item.generatedPath === `/variants/slot=${slot}/model`
       );
@@ -535,25 +400,23 @@ describe("RSGL canonical blockstate compiler", () => {
     }
   });
 
-  it("preserves imported structured let origins through member and list access", () => {
+  it("preserves imported ModelId origins through single and random choices", () => {
     const root = path.resolve("/virtual/rsgl-blockstate-origin");
     const mainFile = path.join(root, "main.rsgl");
     const valuesFile = path.join(root, "values.rsgl");
     const valuesSource = [
-      "let imported = {",
-      "  item: { model: minecraft:block/imported, x: 90 },",
-      "  choices: [{ model: minecraft:block/imported_list, uvlock: true }]",
-      "}",
-      "export { imported }"
+      "let importedModel: ModelId = minecraft:block/imported",
+      "let importedRandomModel: ModelId = minecraft:block/imported_random",
+      "export { importedModel, importedRandomModel }"
     ].join("\n");
     const result = compileRsglProgram([
       {
         fileName: mainFile,
         module: parseRsgl([
-          "import { imported } from \"./values.rsgl\"",
+          "import { importedModel, importedRandomModel } from \"./values.rsgl\"",
           "blockstate variants imported_values {",
-          "  { slot: item }: imported.item",
-          "  { slot: list }: imported.choices",
+          "  case { slot: item } => importedModel with { x: 90 }",
+          "  case { slot: random } => random { option importedRandomModel }",
           "}"
         ].join("\n"))
       },
@@ -564,24 +427,150 @@ describe("RSGL canonical blockstate compiler", () => {
     const unit = result.units.find(item => item.kind === "blockstate");
     assert.ok(unit);
     const origins = unit.validation?.referenceOrigins ?? [];
-    const modelOrigin = origins.find(item =>
-      item.generatedPath === "/variants/slot=item/model"
-    );
-    const listOrigin = origins.find(item =>
-      item.generatedPath === "/variants/slot=list/0/model"
-    );
-    assert.ok(modelOrigin);
-    assert.ok(listOrigin);
-    assert.strictEqual(modelOrigin.sourceFile, valuesFile);
-    assert.strictEqual(listOrigin.sourceFile, valuesFile);
-    assert.strictEqual(
-      valuesSource.slice(modelOrigin.sourceRange.start, modelOrigin.sourceRange.end),
-      "minecraft:block/imported"
-    );
-    assert.strictEqual(
-      valuesSource.slice(listOrigin.sourceRange.start, listOrigin.sourceRange.end),
-      "minecraft:block/imported_list"
-    );
+    for (const [generatedPath, sourceText] of [
+      ["/variants/slot=item/model", "minecraft:block/imported"],
+      ["/variants/slot=random/0/model", "minecraft:block/imported_random"]
+    ]) {
+      const origin = origins.find(item => item.generatedPath === generatedPath);
+      assert.ok(origin, `Missing imported origin for ${generatedPath}`);
+      assert.strictEqual(origin.sourceFile, valuesFile);
+      assert.strictEqual(
+        valuesSource.slice(origin.sourceRange.start, origin.sourceRange.end),
+        sourceText
+      );
+    }
+  });
+
+  it("lowers typed StatePredicate operators to canonical Minecraft conditions", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let attached: StatePredicate = $state.north == true || $state.south == true",
+      "let direction = \"west\"",
+      "blockstate multipart predicates {",
+      "  part when $state.facing in [north, south] && $state.power in 1..2 => minecraft:block/ranged",
+      "  part when !attached => minecraft:block/detached",
+      "  part when $state[direction] != false => minecraft:block/dynamic",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units[0].content, {
+      multipart: [
+        {
+          apply: { model: "minecraft:block/ranged" },
+          when: { facing: "north|south", power: "1|2" }
+        },
+        {
+          apply: { model: "minecraft:block/detached" },
+          when: { north: "!true", south: "!true" }
+        },
+        {
+          apply: { model: "minecraft:block/dynamic" },
+          when: { west: "!false" }
+        }
+      ]
+    });
+  });
+
+  it("keeps root part expansion separate from random option expansion", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "blockstate multipart boundaries {",
+      "  for direction in [\"north\", \"east\"] {",
+      "    part when $state[direction] == true => minecraft:block/side with { y: yaw(direction) }",
+      "  }",
+      "  part always => random {",
+      "    for idx in 0..1 {",
+      "      option `minecraft:block/frame_${idx}` with { y: idx * 90 }",
+      "    }",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    const multipart = (result.units[0].content as { multipart: unknown[] }).multipart;
+    assert.strictEqual(multipart.length, 3, "root for must generate two independent parts plus one random part");
+    assert.deepStrictEqual(multipart, [
+      {
+        apply: { model: "minecraft:block/side" },
+        when: { north: "true" }
+      },
+      {
+        apply: { model: "minecraft:block/side", y: 90 },
+        when: { east: "true" }
+      },
+      {
+        apply: [
+          { model: "minecraft:block/frame_0" },
+          { model: "minecraft:block/frame_1", y: 90 }
+        ]
+      }
+    ]);
+  });
+
+  it("rejects every removed blockstate surface without emitting a resource", () => {
+    const cases: Array<[string, string]> = [
+      [
+        "blockstate old { variants { [facing=north] -> @minecraft:block/old } }",
+        "rsgl.blockstateModeRequired"
+      ],
+      [
+        "blockstate variants old { [facing=north] -> minecraft:block/old }",
+        "rsgl.expectedBlockstateCase"
+      ],
+      [
+        "blockstate variants old { case * => @minecraft:block/old }",
+        "rsgl.expectedExpression"
+      ],
+      [
+        "blockstate variants old { {}: minecraft:block/old }",
+        "rsgl.legacyBlockstateVariantEntry"
+      ],
+      [
+        "blockstate multipart old { apply minecraft:block/old }",
+        "rsgl.legacyBlockstateMultipartEntry"
+      ],
+      [
+        "blockstate multipart old { when { north: true } apply minecraft:block/old }",
+        "rsgl.legacyBlockstateMultipartEntry"
+      ],
+      [
+        "blockstate variants old { case * => minecraft:block/old x=90 }",
+        "rsgl.legacyBlockstateModelModifiers"
+      ],
+      [
+        "blockstate variants old { case * => { model: minecraft:block/old } }",
+        "rsgl.legacyBlockstateModelValue"
+      ],
+      [
+        "blockstate variants old { case * => [minecraft:block/a, minecraft:block/b] }",
+        "rsgl.legacyBlockstateModelValue"
+      ],
+      [
+        "blockstate variants old { case * => random [minecraft:block/a] }",
+        "rsgl.legacyBlockstateRandomList"
+      ]
+    ];
+
+    for (const [source, expected] of cases) {
+      const result = compileSourceWithUncheckedExterns([source]);
+      assert.ok(
+        result.diagnostics.some(diagnostic => diagnostic.code === expected),
+        `Missing ${expected} for ${source}`
+      );
+      assert.deepStrictEqual(result.units, [], `Removed syntax must not emit a unit: ${source}`);
+    }
+  });
+
+  it("rejects raw multipart condition objects instead of lowering legacy conditions", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "blockstate multipart raw_condition {",
+      "  part when { north: true } => minecraft:block/old",
+      "}"
+    ]);
+
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidBlockstatePredicate"
+    ));
+    assert.deepStrictEqual(result.units[0]?.content, { multipart: [] });
   });
 
   it("attributes canonical stdlib model references to caller extern scope", () => {
@@ -605,3 +594,12 @@ describe("RSGL canonical blockstate compiler", () => {
     assert.ok(modelOrigins.every(origin => path.normalize(origin.sourceFile) === path.normalize(fixture)));
   });
 });
+
+function textRange(source: string, text: string, occurrence = 0): { start: number; end: number } {
+  let start = -1;
+  for (let index = 0; index <= occurrence; index += 1) {
+    start = source.indexOf(text, start + 1);
+  }
+  assert.notStrictEqual(start, -1, `Missing source text: ${text}`);
+  return { start, end: start + text.length };
+}

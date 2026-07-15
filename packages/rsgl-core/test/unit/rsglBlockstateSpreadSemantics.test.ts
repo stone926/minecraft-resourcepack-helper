@@ -3,53 +3,47 @@ import { parseRsgl } from "../../src/parser";
 import { bindRsglModule } from "../../src/semantic";
 
 describe("RSGL blockstate object spread semantics", () => {
-  it("accepts object-union spreads in variant selectors", () => {
+  it("accepts object-union spreads in case selectors", () => {
     assert.deepStrictEqual(diagnosticCodes([
       "let selector = true ? { facing: \"north\" } : { powered: true }",
       "blockstate variants minecraft:test {",
-      "  { ...selector }: minecraft:block/stone",
+      "  case { ...selector } => minecraft:block/stone",
       "}"
     ]), []);
   });
 
-  it("checks multipart union arms independently before diagnosing mixed conditions", () => {
+  it("accepts conditional StatePredicate values without exposing condition-object spreads", () => {
+    assert.deepStrictEqual(diagnosticCodes([
+      "let facing: StatePredicate = $state.facing == north",
+      "let powered: StatePredicate = $state.powered == true",
+      "let condition = true ? facing : powered",
+      "blockstate multipart minecraft:test {",
+      "  part when condition => minecraft:block/stone",
+      "}"
+    ]), []);
+
     assert.deepStrictEqual(diagnosticCodes([
       "let condition = true ? { OR: [{ facing: \"north\" }] } : { powered: true }",
       "blockstate multipart minecraft:test {",
-      "  when { ...condition } apply minecraft:block/stone",
+      "  part when { ...condition } => minecraft:block/stone",
       "}"
-    ]), []);
-
-    assert.deepStrictEqual(diagnosticCodes([
-      "let condition = true ? { OR: [{ facing: \"north\" }] } : { powered: true }",
-      "blockstate multipart minecraft:test {",
-      "  when { ...condition, facing: \"north\" } apply minecraft:block/stone",
-      "}"
-    ]), ["rsgl.mixedBlockstateWhenCondition"]);
+    ]), ["rsgl.invalidBlockstatePredicate"]);
   });
 
-  it("accepts model-object union spreads and requires a model on every closed arm", () => {
+  it("rejects spreads in closed ModelSpec with blocks", () => {
     assert.deepStrictEqual(diagnosticCodes([
-      "let choice = true ? { model: minecraft:block/stone, x: 0 } : { model: minecraft:block/dirt, y: 90 }",
+      "let options = true ? { x: 0 } : { y: 90 }",
       "blockstate variants minecraft:test {",
-      "  {}: { ...choice }",
-      "  { powered: true }: { ...{ x: 0 }, model: minecraft:block/stone }",
+      "  case * => minecraft:block/stone with { ...options }",
       "}"
-    ]), []);
-
-    assert.deepStrictEqual(diagnosticCodes([
-      "let choice = true ? { model: minecraft:block/stone } : { x: 0 }",
-      "blockstate variants minecraft:test {",
-      "  {}: { ...choice }",
-      "}"
-    ]), ["rsgl.missingBlockstateModel"]);
+    ]), ["rsgl.invalidBlockstateModelOptionsSpread"]);
   });
 
-  it("keeps rejecting a spread union with a non-object runtime arm", () => {
+  it("keeps rejecting a selector spread union with a non-object arm", () => {
     assert.deepStrictEqual(diagnosticCodes([
       "let invalid = true ? { facing: \"north\" } : 1",
       "blockstate variants minecraft:test {",
-      "  { ...invalid }: minecraft:block/stone",
+      "  case { ...invalid } => minecraft:block/stone",
       "}"
     ]), ["rsgl.invalidObjectSpread"]);
   });
