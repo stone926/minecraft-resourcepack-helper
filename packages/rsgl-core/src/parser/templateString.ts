@@ -3,12 +3,16 @@ import { lexRsgl } from "./lexer";
 import {
   ExprNode,
   ObjectPropertyNode,
+  RsglDiagnostic,
   RsglNode,
   RsglToken,
   TemplateStringPart
 } from "./types";
 
-export function parseTemplateStringParts(token: RsglToken): TemplateStringPart[] {
+export function parseTemplateStringParts(
+  token: RsglToken,
+  onDiagnostic?: (diagnostic: RsglDiagnostic) => void
+): TemplateStringPart[] {
   const raw = token.text;
   const content = raw.startsWith("`") && raw.endsWith("`") ? raw.slice(1, -1) : raw.slice(1);
   const parts: TemplateStringPart[] = [];
@@ -28,7 +32,11 @@ export function parseTemplateStringParts(token: RsglToken): TemplateStringPart[]
       const expressionText = content.slice(exprStart, exprEnd);
       parts.push({
         kind: "expression",
-        expression: parseStandaloneExpression(expressionText, token.offset + 1 + exprStart),
+        expression: parseStandaloneExpression(
+          expressionText,
+          token.offset + 1 + exprStart,
+          onDiagnostic
+        ),
         range: { start: token.offset + 1 + index, end: token.offset + 1 + Math.min(content.length, exprEnd + 1) }
       });
       index = Math.min(content.length, exprEnd + 1);
@@ -49,10 +57,21 @@ export function parseTemplateStringParts(token: RsglToken): TemplateStringPart[]
   return parts;
 }
 
-function parseStandaloneExpression(text: string, baseOffset: number): ExprNode {
+function parseStandaloneExpression(
+  text: string,
+  baseOffset: number,
+  onDiagnostic?: (diagnostic: RsglDiagnostic) => void
+): ExprNode {
   const lexResult = lexRsgl(text);
   const parser = new StandaloneExpressionParser(lexResult.tokens, lexResult.diagnostics);
-  return offsetExpressionRanges(parser.parse(), baseOffset);
+  const expression = offsetExpressionRanges(parser.parse(), baseOffset);
+  for (const diagnostic of parser.getDiagnostics()) {
+    onDiagnostic?.({
+      ...diagnostic,
+      range: offsetRange(diagnostic.range, baseOffset)
+    });
+  }
+  return expression;
 }
 
 function offsetExpressionRanges<T extends ExprNode>(expression: T, offset: number): T {
@@ -111,6 +130,12 @@ function offsetExpressionRanges<T extends ExprNode>(expression: T, offset: numbe
     offsetExpressionRanges(expression.condition, offset);
     offsetExpressionRanges(expression.whenTrue, offset);
     offsetExpressionRanges(expression.whenFalse, offset);
+  } else if (expression.kind === "LambdaExpr") {
+    expression.parameters.forEach(parameter => offsetNodeRange(parameter, offset));
+    offsetExpressionRanges(expression.body, offset);
+  } else if (expression.kind === "ForInExpr") {
+    offsetNodeRange(expression.binding, offset);
+    offsetExpressionRanges(expression.iterable, offset);
   } else if (expression.kind === "MatchExpr") {
     offsetExpressionRanges(expression.expression, offset);
     for (const arm of expression.arms) {

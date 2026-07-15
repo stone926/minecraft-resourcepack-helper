@@ -121,6 +121,28 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
+  it("keeps canonical and erroneous arrow tokens stable and idempotent", () => {
+    const source = [
+      "let canonical = match mode {",
+      "north => 1",
+      "}",
+      "let legacy = match mode {",
+      "north -> 1",
+      "}",
+      "type Correct = (Json) -> ModelId",
+      "type Wrong = (Json) => ModelId"
+    ].join("\n");
+
+    const formatted = formatRsglText(source);
+
+    assert.ok(formatted.includes("  north => 1"));
+    assert.ok(formatted.includes("  north -> 1"));
+    assert.ok(formatted.includes("type Correct = (Json) -> ModelId"));
+    assert.ok(formatted.includes("type Wrong = (Json) => ModelId"));
+    assert.deepStrictEqual(formatted.match(/=>|->/g), source.match(/=>|->/g));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
   it("keeps list and object spread markers attached to their operands", () => {
     const formatted = formatRsglText([
       "let combined = [",

@@ -1,4 +1,5 @@
 import { binaryPrecedence } from "./statementKeywords";
+import { isRsglArrowText } from "./arrowSemantics";
 import { parseTemplateStringParts } from "./templateString";
 import {
   getNodeOrTokenFullRange,
@@ -18,6 +19,7 @@ import {
   ObjectExprNode,
   ObjectPropertyNode,
   ResourceBodyNode,
+  RsglDiagnostic,
   RsglNode,
   RsglToken
 } from "./types";
@@ -40,7 +42,7 @@ export class ExpressionParser extends TypeParser {
     left = this.parsePostfixExpression(left, stopTexts);
 
     while (!this.isExpressionStop(stopTexts)) {
-      if (this.current().text === "=>" && left.kind === "IdentifierExpr") {
+      if (isRsglArrowText(this.current().text) && left.kind === "IdentifierExpr") {
         if (minPrecedence > 0) {
           break;
         }
@@ -134,7 +136,7 @@ export class ExpressionParser extends TypeParser {
     }
 
     if (token.text === "(") {
-      if (this.looksLikeParenthesizedLambda()) {
+      if (this.looksLikeParenthesizedLambda(stopTexts)) {
         return this.parseParenthesizedLambda(stopTexts);
       }
       this.advance();
@@ -234,7 +236,7 @@ export class ExpressionParser extends TypeParser {
   }
 
   private finishSingleParameterLambda(parameter: Extract<ExprNode, { kind: "IdentifierExpr" }>, stopTexts: readonly string[]): LambdaExprNode {
-    this.expectText("=>", "Expected '=>' in lambda expression.");
+    this.expectMappingArrow("lambda expression");
     const body = this.parseExpression({ stopTexts });
     return {
       kind: "LambdaExpr",
@@ -267,7 +269,7 @@ export class ExpressionParser extends TypeParser {
       this.ensureProgress(mark, "Unable to parse lambda parameter; skipping token.");
     }
     this.expectText(")", "Expected ')' after lambda parameters.");
-    this.expectText("=>", "Expected '=>' in lambda expression.");
+    this.expectMappingArrow("lambda expression");
     const body = this.parseExpression({ stopTexts });
     return {
       kind: "LambdaExpr",
@@ -482,12 +484,25 @@ export class ExpressionParser extends TypeParser {
       const mark = this.mark();
       const armStart = this.current();
       const patterns: ExprNode[] = [];
-      patterns.push(this.parseExpression({ stopTexts: ["|", "->"] }));
+      patterns.push(this.parseExpression({ stopTexts: ["|", "=>", "->"] }));
       while (this.matchText("|")) {
-        patterns.push(this.parseExpression({ stopTexts: ["|", "->"] }));
+        patterns.push(this.parseExpression({ stopTexts: ["|", "=>", "->"] }));
       }
-      this.expectText("->", "Expected '->' in match arm.");
-      const value = this.parseExpression({ stopTexts: [] });
+      const arrow = this.expectMappingArrow("match arm");
+      const hasArrow = arrow !== "missing";
+      let value: ExprNode;
+      const atArmBoundary = this.current().text === "}"
+        || this.current().text === ","
+        || this.current().text === ";"
+        || (arrow === "recoveredUnexpected" && this.looksLikeMatchArmStartOnCurrentLine());
+      if (hasArrow && atArmBoundary) {
+        this.addDiagnosticAtCurrent("rsgl.expectedExpression", "Expected expression after mapping arrow.");
+        value = this.missingExprAt(this.current());
+      } else if (!hasArrow && (this.isStatementBoundary(this.current()) || atArmBoundary)) {
+        value = this.missingExprAt(this.current());
+      } else {
+        value = this.parseExpression({ stopTexts: [], allowLeadingLineBreak: hasArrow });
+      }
       arms.push({
         kind: "MatchArm",
         patterns,
@@ -511,7 +526,12 @@ export class ExpressionParser extends TypeParser {
     return {
       kind: "TemplateStringExpr",
       raw: token.text,
-      parts: parseTemplateStringParts(token),
+      parts: parseTemplateStringParts(token, diagnostic => this.addDiagnostic(
+        diagnostic.code,
+        diagnostic.message,
+        diagnostic.range,
+        diagnostic.severity
+      )),
       ...this.nodeRanges(token, token)
     };
   }
@@ -576,7 +596,7 @@ export class ExpressionParser extends TypeParser {
     return token.leadingTrivia.length > 0;
   }
 
-  private looksLikeParenthesizedLambda(): boolean {
+  private looksLikeParenthesizedLambda(stopTexts: readonly string[]): boolean {
     if (this.current().text !== "(") {
       return false;
     }
@@ -585,7 +605,8 @@ export class ExpressionParser extends TypeParser {
     while (index < this.tokens.length) {
       const token = this.tokens[index];
       if (token.text === ")") {
-        return this.tokens[index + 1]?.text === "=>";
+        const arrow = this.tokens[index + 1]?.text ?? "";
+        return isRsglArrowText(arrow) && !stopTexts.includes(arrow);
       }
       if (expectParameter) {
         if (token.text === "...") {
@@ -606,10 +627,45 @@ export class ExpressionParser extends TypeParser {
     }
     return false;
   }
+
+  /**
+   * On the already-invalid wrong-arrow path, keeps an incomplete arm from
+   * treating the next line's complete arm as its RHS. Canonical arrows do not
+   * use this heuristic, so multiline lambda values remain unambiguous.
+   */
+  private looksLikeMatchArmStartOnCurrentLine(): boolean {
+    if (!this.isStatementBoundary(this.current()) || this.isAtEnd()) {
+      return false;
+    }
+    const start = this.tokenOffset();
+    let depth = 0;
+    for (let index = start; index < this.tokens.length; index++) {
+      const token = this.tokens[index];
+      if (index > start && token.leadingTrivia.some(trivia => trivia.kind === "newline")) {
+        return false;
+      }
+      if (depth === 0 && isRsglArrowText(token.text)) {
+        return true;
+      }
+      if (token.text === "(" || token.text === "[" || token.text === "{") {
+        depth++;
+      } else if (token.text === ")" || token.text === "]" || token.text === "}") {
+        if (depth === 0) {
+          return false;
+        }
+        depth--;
+      }
+    }
+    return false;
+  }
 }
 
 export class StandaloneExpressionParser extends ExpressionParser {
   public parse(): ExprNode {
     return this.parseExpression();
+  }
+
+  public getDiagnostics(): readonly RsglDiagnostic[] {
+    return this.diagnostics;
   }
 }

@@ -552,7 +552,8 @@ class RsglParser extends StatementParser {
     }
     let outputSyntax: "noArrow" | "explicitArrow" = "noArrow";
     let declaredOutputDialect: DeclaredTemplateOutputDialect | undefined;
-    if (this.matchText("->")) {
+    if (this.current().text === "->" || this.current().text === "=>") {
+      this.expectOutputContractArrow("template output dialect declaration");
       outputSyntax = "explicitArrow";
       const dialect = this.current();
       if (isTemplateOutputDialect(dialect.text)) {
@@ -795,6 +796,7 @@ function isBlockstateIdExpressionContinuation(text: string): boolean {
     || text === "?"
     || text === "in"
     || text === "=>"
+    || text === "->"
     || binaryPrecedence.has(text);
 }
 

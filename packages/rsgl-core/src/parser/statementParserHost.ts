@@ -20,6 +20,7 @@ import type {
   BodyParseContext,
   ResourceBodyParseContext
 } from "./bodyParseContext";
+import type { RsglArrowExpectation } from "./arrowSemantics";
 
 export interface StatementExpressionOptions {
   stopTexts?: readonly string[];
@@ -38,6 +39,7 @@ export interface ResourceStatementParserHost {
   ensureProgress(mark: number, message: string): void;
   matchText(text: string): boolean;
   expectText(text: string, message: string): boolean;
+  expectMappingArrow(context: string): RsglArrowExpectation;
   consumeOptionalSeparator(): void;
   consumeBalancedBlock(message: string): void;
   consumeBalancedEnclosure(openText: string, closeText: string, message: string): void;

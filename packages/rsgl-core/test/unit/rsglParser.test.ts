@@ -462,7 +462,7 @@ describe("RSGL parser", () => {
       "}",
       "item potion {",
       "  select property minecraft:potion_contents component minecraft:potion_contents {",
-      "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
+      "    case \"minecraft:healing\" => minecraft:item/potion_healing",
       "    fallback minecraft:item/potion",
       "  }",
       "}"

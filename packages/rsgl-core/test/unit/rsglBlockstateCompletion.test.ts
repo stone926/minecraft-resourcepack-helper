@@ -230,4 +230,16 @@ describe("RSGL blockstate completion", () => {
     assert.strictEqual(context.blockstatePredicate, true);
     assert.deepStrictEqual([...syntaxLabelsAtEnd(predicate)], ["$state"]);
   });
+
+  it("ends multipart predicate completion at either arrow during error recovery", () => {
+    for (const arrow of ["=>", "->"]) {
+      const source = [
+        "blockstate multipart wall {",
+        `  part when $state.powered ${arrow} minecraft:block/wall`,
+        "  "
+      ].join("\n");
+
+      assert.strictEqual(getRsglCompletionContext(source, source.length).blockstatePredicate, false);
+    }
+  });
 });

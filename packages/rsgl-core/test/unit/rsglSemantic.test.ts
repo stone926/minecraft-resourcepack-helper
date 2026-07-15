@@ -145,8 +145,8 @@ describe("RSGL semantic model", () => {
     const model = bindRsglModule(parseRsgl([
       "for dir in HORIZONTAL {",
       "  let model = match dir {",
-      "    north -> \"north\"",
-      "    west -> \"west\"",
+      "    north => \"north\"",
+      "    west => \"west\"",
       "  }",
       "}"
     ].join("\n")));
@@ -160,8 +160,8 @@ describe("RSGL semantic model", () => {
     const withFallback = bindRsglModule(parseRsgl([
       "for dir in HORIZONTAL {",
       "  let model = match dir {",
-      "    north -> \"north\"",
-      "    _ -> \"other\"",
+      "    north => \"north\"",
+      "    _ => \"other\"",
       "  }",
       "}"
     ].join("\n")));
@@ -171,10 +171,10 @@ describe("RSGL semantic model", () => {
   it("derives match domains from literal unions and record members", () => {
     const model = bindRsglModule(parseRsgl([
       "let direct: \"active\" | \"inactive\" = \"active\"",
-      "let directResult = match direct { \"active\" -> 1 }",
+      "let directResult = match direct { \"active\" => 1 }",
       "type State = { kind: \"ready\" | \"waiting\" }",
       "let state: State = { kind: \"ready\" }",
-      "let memberResult = match state.kind { \"ready\" -> 1 }"
+      "let memberResult = match state.kind { \"ready\" => 1 }"
     ].join("\n")));
     const diagnostics = model.diagnostics.filter(item => item.code === "rsgl.nonExhaustiveMatch");
 

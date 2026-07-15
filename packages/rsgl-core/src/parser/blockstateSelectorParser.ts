@@ -20,7 +20,7 @@ export function parseBlockstateVariantEntry(host: ResourceStatementParserHost): 
 
   const selector = host.matchText("*")
     ? wildcardSelector(host, host.previousOr(start))
-    : host.parseExpression({ stopTexts: ["=>"] });
+    : host.parseExpression({ stopTexts: ["=>", "->"] });
 
   if (selector.kind === "ObjectExpr" && selector.properties.length === 0) {
     host.addDiagnostic(
@@ -30,7 +30,7 @@ export function parseBlockstateVariantEntry(host: ResourceStatementParserHost): 
     );
   }
 
-  if (!host.expectText("=>", "Expected '=>' after blockstate selector.")) {
+  if (host.expectMappingArrow("blockstate variant case") === "missing") {
     consumeRejectedEntryTail(host);
     return unknownVariantEntry(host, start);
   }
@@ -67,7 +67,7 @@ function rejectMissingCase(host: ResourceStatementParserHost, legacyShape: boole
 }
 
 function consumeRejectedEntryTail(host: ResourceStatementParserHost): void {
-  if (host.isLineBoundaryOr("}")) {
+  if (host.isLineBoundaryOr("}", ",", ";")) {
     return;
   }
   if (host.current().text === "{") {

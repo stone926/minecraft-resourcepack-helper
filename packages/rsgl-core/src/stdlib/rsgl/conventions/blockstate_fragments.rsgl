@@ -51,9 +51,9 @@ template stairs(base: ModelId, inner: ModelId, outer: ModelId, uvlock: Boolean =
         shape in STAIR_SHAPES,
         facing in HORIZONTAL {
       let entryModel = match shape {
-        inner_left | inner_right -> inner
-        outer_left | outer_right -> outer
-        _ -> base
+        inner_left | inner_right => inner
+        outer_left | outer_right => outer
+        _ => base
       }
       let x = half == top ? 180 : 0
       let y = stairsYaw[`${half}_${shape}_${facing}`]

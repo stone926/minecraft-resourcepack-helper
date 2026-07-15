@@ -257,8 +257,8 @@ describe("RSGL template output dialects", () => {
       "model block local {",
       "  use ref(true ? \"#\" : \"#\")",
       "  use variable(match true {",
-      "    true -> \"#side\"",
-      "    false -> minecraft:block/stone",
+      "    true => \"#side\"",
+      "    false => minecraft:block/stone",
       "  })",
       "}"
     ].join("\n");
@@ -278,8 +278,8 @@ describe("RSGL template output dialects", () => {
       "model block imported {",
       "  let selectMalformed = true",
       "  use ref(match selectMalformed {",
-      "    true -> true ? \"#\" : \"#\"",
-      "    false -> \"#side\"",
+      "    true => true ? \"#\" : \"#\"",
+      "    false => \"#side\"",
       "  })",
       "  use variable(true ? \"#side\" : minecraft:block/stone)",
       "}"

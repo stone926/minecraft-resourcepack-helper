@@ -6,6 +6,26 @@ import {
 import { rsglModelGeometryCompletionDescriptors } from "../../src/modelGeometrySyntax";
 
 describe("RSGL completion data", () => {
+  it("inserts mapping and output-contract arrows according to their roles", () => {
+    const candidates = [
+      ...getRsglCompletionCandidates("", 0),
+      ...blockRsglCompletions
+    ];
+
+    for (const label of ["select", "lambda", "seq", "map", "filter", "flatMap"]) {
+      const candidate = candidates.find(item => item.label === label);
+      const insertText = candidate?.insertText;
+      assert.ok(insertText, `missing ${label} completion`);
+      assert.ok(insertText.includes("=>"), `${label} should insert a mapping arrow`);
+      assert.strictEqual(insertText.includes(" -> "), false, `${label} must not insert an output-contract arrow`);
+    }
+
+    for (const label of ["template -> model", "template -> variants", "template -> multipart", "template -> choice"]) {
+      const candidate = candidates.find(item => item.label === label);
+      assert.ok(candidate?.insertText?.includes(" -> "), `${label} should insert an output-contract arrow`);
+    }
+  });
+
   it("provides top-level and block-aware completion candidates", () => {
     const topLevel = getRsglCompletionCandidates("", 0);
     assert.ok(topLevel.some(candidate => candidate.label === "target"));

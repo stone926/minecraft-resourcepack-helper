@@ -198,7 +198,7 @@ function parseCanonicalMultipartEntry(
   if (host.matchText("always")) {
     always = true;
   } else if (host.matchText("when")) {
-    predicate = host.parseExpression({ stopTexts: ["=>"] });
+    predicate = host.parseExpression({ stopTexts: ["=>", "->"] });
   } else {
     host.addDiagnosticAtCurrent(
       "rsgl.expectedBlockstatePartCondition",
@@ -208,8 +208,10 @@ function parseCanonicalMultipartEntry(
     return unknownMultipartEntry(host, start);
   }
 
-  if (!host.expectText("=>", "Expected '=>' after the multipart part condition.")) {
-    host.recoverToLineEnd();
+  if (host.expectMappingArrow("blockstate multipart part") === "missing") {
+    if (!host.isLineBoundaryOr("}", ",", ";")) {
+      host.recoverToLineEnd();
+    }
     return unknownMultipartEntry(host, start);
   }
 

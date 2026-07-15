@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { findByNormalizedPath } from "../../mc-assets/src";
 import {
+  CodeActionKind,
   createConnection,
   ProposedFeatures,
   TextDocuments,
@@ -22,6 +23,7 @@ import {
 } from "../../rsgl-shared/src";
 import {
   completionItemsForDocument as completionItemsForDocumentCore,
+  codeActionsForDiagnostics,
   computeDocumentDiagnostics,
   computeDocumentHover,
   computeDocumentSignatureHelp,
@@ -67,6 +69,9 @@ connection.onInitialize(params => {
         retriggerCharacters: [","]
       },
       definitionProvider: true,
+      codeActionProvider: {
+        codeActionKinds: [CodeActionKind.QuickFix]
+      },
       renameProvider: { prepareProvider: true },
       documentFormattingProvider: true,
       semanticTokensProvider: {
@@ -134,6 +139,15 @@ connection.onCompletion(params => {
   }
   const offset = document.offsetAt(params.position);
   return completionItemsForDocument(document, offset);
+});
+
+connection.onCodeAction(params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document || (params.context.only?.length
+    && !params.context.only.some(kind => kind === CodeActionKind.QuickFix))) {
+    return [];
+  }
+  return codeActionsForDiagnostics(document, params.textDocument.uri, params.context.diagnostics);
 });
 
 connection.onHover(params => {

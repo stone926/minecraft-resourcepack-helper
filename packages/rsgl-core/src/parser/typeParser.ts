@@ -1,4 +1,9 @@
 import { ParserContext, tokenRange } from "./parserContext";
+import {
+  rsglArrowRule,
+  type RsglArrowExpectation,
+  type RsglArrowRole
+} from "./arrowSemantics";
 import { isTopLevelKeyword } from "./keywords";
 import {
   BooleanLiteralNode,
@@ -162,7 +167,7 @@ export class TypeParser extends ParserContext {
       this.ensureProgress(mark, "Unable to parse function parameter type; skipping token.");
     }
     this.expectText(")", "Expected ')' after function parameter types.");
-    this.expectText("->", "Expected '->' in function type.");
+    this.expectOutputContractArrow("function type");
     const returnType = this.isUnexpectedDeclarationBoundary()
       ? this.missingTypeAt(this.current())
       : this.parseType();
@@ -316,6 +321,39 @@ export class TypeParser extends ParserContext {
     }
     this.addDiagnosticAtCurrent(expectedTokenDiagnosticCode(text), message);
     return false;
+  }
+
+  protected expectMappingArrow(context: string): RsglArrowExpectation {
+    return this.expectArrow("mapping", context);
+  }
+
+  protected expectOutputContractArrow(context: string): RsglArrowExpectation {
+    return this.expectArrow("outputContract", context);
+  }
+
+  /**
+   * Consumes either arrow so callers can keep a local recovery AST. A wrong
+   * arrow still emits an error at the exact token and therefore cannot compile
+   * successfully.
+   */
+  private expectArrow(role: RsglArrowRole, context: string): RsglArrowExpectation {
+    const rule = rsglArrowRule(role);
+    const token = this.current();
+    if (token.text === rule.expectedText) {
+      this.advance();
+      return "expected";
+    }
+    if (token.text === rule.unexpectedText) {
+      this.advance();
+      this.addDiagnostic(
+        rule.unexpectedDiagnosticCode,
+        rule.unexpectedMessage(context),
+        tokenRange(token)
+      );
+      return "recoveredUnexpected";
+    }
+    this.addDiagnosticAtCurrent(rule.expectedDiagnosticCode, rule.expectedMessage(context));
+    return "missing";
   }
 
   protected nodeRanges(start: RsglToken, end: RsglToken): Pick<RsglNode, "range" | "fullRange"> {

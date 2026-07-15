@@ -45,8 +45,8 @@ describe("RSGL item model fragments", () => {
       "}",
       "item potion {",
       "  select property minecraft:potion_contents component minecraft:potion_contents {",
-      "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
-      "    case \"minecraft:strong_healing\" -> minecraft:item/potion_strong_healing",
+      "    case \"minecraft:healing\" => minecraft:item/potion_healing",
+      "    case \"minecraft:strong_healing\" => minecraft:item/potion_strong_healing",
       "    fallback minecraft:item/potion",
       "  }",
       "}"

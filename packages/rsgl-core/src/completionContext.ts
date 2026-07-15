@@ -7,6 +7,7 @@ import {
   type RsglModule,
   type TopLevelStatementNode
 } from "./parser";
+import { isRsglArrowText } from "./parser/arrowSemantics";
 import { walkRsglModule } from "./parser/astTraversal";
 
 export interface RsglBlockstateCompletionContext {
@@ -161,7 +162,7 @@ function isBlockstatePredicatePosition(
     if (tokens[index]?.text !== "part" || tokens[index + 1]?.text !== "when") {
       continue;
     }
-    return !tokens.slice(index + 2).some(token => token.text === "=>");
+    return !tokens.slice(index + 2).some(token => isRsglArrowText(token.text));
   }
   return false;
 }

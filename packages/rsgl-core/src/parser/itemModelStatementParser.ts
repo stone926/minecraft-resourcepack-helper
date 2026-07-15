@@ -109,6 +109,7 @@ function parseItemSelectStmt(host: ResourceStatementParserHost): ItemSelectStmtN
         host.addDiagnosticAtCurrent("rsgl.unexpectedItemSelectStatement", "Expected 'case' or 'fallback' in item select body.");
         host.recoverToLineEnd();
       }
+      host.consumeOptionalSeparator();
       host.ensureProgress(mark, "Unable to parse item select statement; skipping token.");
     }
     host.expectText("}", "Expected '}' after item select body.");
@@ -129,9 +130,24 @@ function parseItemSelectStmt(host: ResourceStatementParserHost): ItemSelectStmtN
 
 function parseItemSelectCase(host: ResourceStatementParserHost): ItemSelectCaseNode {
   const start = host.advance();
-  const when = host.parseExpression({ stopTexts: ["->"] });
-  host.expectText("->", "Expected '->' in item select case.");
-  const model = host.parseExpression({ stopTexts: [] });
+  const when = host.parseExpression({ stopTexts: ["=>", "->"] });
+  const arrow = host.expectMappingArrow("item select case");
+  const hasArrow = arrow !== "missing";
+  let model: ExprNode;
+  const atClauseBoundary = host.current().text === "}"
+    || host.current().text === ","
+    || host.current().text === ";"
+    || (arrow === "recoveredUnexpected"
+      && host.isLineBoundaryOr()
+      && (host.current().text === "case" || host.current().text === "fallback"));
+  if (hasArrow && atClauseBoundary) {
+    host.addDiagnosticAtCurrent("rsgl.expectedExpression", "Expected model expression after mapping arrow.");
+    model = host.missingExprAt(host.current());
+  } else if (!hasArrow && (host.isLineBoundaryOr("}") || atClauseBoundary)) {
+    model = host.missingExprAt(host.current());
+  } else {
+    model = host.parseExpression({ stopTexts: [], allowLeadingLineBreak: hasArrow });
+  }
   return {
     kind: "ItemSelectCase",
     when,

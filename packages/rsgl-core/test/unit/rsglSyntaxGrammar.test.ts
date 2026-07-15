@@ -118,6 +118,32 @@ describe("RSGL TextMate grammar", () => {
     assert.doesNotMatch(grammarText, /\bfn\b/);
   });
 
+  it("keeps mapping and erroneous arrows in stable general operator scopes", () => {
+    const grammar = readGrammar();
+    const source = [
+      "let mapped = match key { _ => 1 }",
+      "let oldMapping = match key { _ -> 1 }",
+      "type Mapper = (Json) -> ModelId",
+      "item sample { select property minecraft:display_context { case \"gui\" -> minecraft:item/gui } }",
+      "template wrong() => model {}",
+      "template right() -> model {}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "=>", "keyword.operator.rsgl", 0);
+    expectScope(tokenization, source, "->", "keyword.operator.rsgl", 0);
+    expectScope(tokenization, source, "->", "keyword.operator.rsgl", 1);
+    expectScope(tokenization, source, "->", "keyword.operator.rsgl", 2);
+    expectScope(tokenization, source, "=>", "keyword.operator.rsgl", 1);
+    expectNoScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 0);
+    expectNoScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 1);
+    expectNoScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 2);
+    expectNoScope(tokenization, source, "=>", "keyword.operator.template-output.rsgl", 1);
+    expectNoScope(tokenization, source, "model", "storage.type.template-output.rsgl", 0);
+    expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 3);
+    expectScope(tokenization, source, "model", "storage.type.template-output.rsgl", 1);
+  });
+
   it("highlights canonical blockstate header modes", () => {
     const grammar = readGrammar();
     const source = [

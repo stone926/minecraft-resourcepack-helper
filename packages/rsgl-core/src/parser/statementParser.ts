@@ -527,6 +527,7 @@ export abstract class StatementParser extends ExpressionParser {
       ensureProgress: (mark, message) => this.ensureProgress(mark, message),
       matchText: text => this.matchText(text),
       expectText: (text, message) => this.expectText(text, message),
+      expectMappingArrow: context => this.expectMappingArrow(context),
       consumeOptionalSeparator: () => this.consumeOptionalSeparator(),
       consumeBalancedBlock: message => this.consumeBalancedBlock(message),
       consumeBalancedEnclosure: (openText, closeText, message) =>
