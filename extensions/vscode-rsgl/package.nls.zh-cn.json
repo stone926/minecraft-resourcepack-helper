@@ -1,5 +1,6 @@
 {
   "extension.displayName": "RSGL - 资源包生成语言",
+  "extension.description": "面向 Minecraft 资源包生成语言（RSGL）的语言支持与构建工具。",
   "config.title": "RSGL",
   "config.desc.outDir": "生成的资源包文件的输出目录。留空时使用最近的 pack.mcmeta 所在目录。",
   "config.desc.defaultAssetsPath": "校验生成的引用时使用的原版资源回退路径。留空时禁用原版资源回退。",

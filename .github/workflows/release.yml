@@ -25,16 +25,36 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
+      - name: Validate release tag checkout
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            echo "Release tag ${RELEASE_TAG} does not exist."
+            exit 1
+          fi
+          TAG_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          if [ "${TAG_COMMIT}" != "${HEAD_COMMIT}" ]; then
+            echo "Release tag ${RELEASE_TAG} does not point to the checked-out commit."
+            exit 1
+          fi
+
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            extensions/vscode-rsgl/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -51,12 +71,14 @@ jobs:
       - name: Read package metadata
         id: meta
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           NAME="$(node -p "require('./package.json').name")"
           RSGL_VERSION="$(node -p "require('./extensions/vscode-rsgl/package.json').version")"
           RSGL_NAME="$(node -p "require('./extensions/vscode-rsgl/package.json').name")"
-          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          TAG="${RELEASE_TAG}"
           if [ "${TAG}" != "v${VERSION}" ]; then
             echo "Tag ${TAG} does not match package version ${VERSION}."
             exit 1
@@ -74,15 +96,19 @@ jobs:
           echo "rsgl_vsix=dist/${RSGL_NAME}-${RSGL_VERSION}.vsix" >> "${GITHUB_OUTPUT}"
 
       - name: Package VSIX artifacts
+        env:
+          MAIN_VSIX: ${{ steps.meta.outputs.main_vsix }}
+          RSGL_VSIX: ${{ steps.meta.outputs.rsgl_vsix }}
         run: |
           mkdir -p dist
-          npm run package:main:vsix -- --out "${{ steps.meta.outputs.main_vsix }}"
-          npm run package:rsgl:vsix -- --out "${{ steps.meta.outputs.rsgl_vsix }}"
+          npm run package:main:vsix -- --out "${MAIN_VSIX}"
+          npm run package:rsgl:vsix -- --out "${RSGL_VSIX}"
+          npm run verify:rsgl:vsix -- "${RSGL_VSIX}"
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: vscode-extensions-${{ steps.meta.outputs.version }}-vsix
+          name: vscode-extensions-${{ steps.meta.outputs.version }}-vsix-${{ github.run_attempt }}
           path: |
             ${{ steps.meta.outputs.main_vsix }}
             ${{ steps.meta.outputs.rsgl_vsix }}
@@ -100,13 +126,15 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish RSGL extension to VS Code Marketplace
-        run: npm run deploy -- --packagePath "${{ steps.meta.outputs.rsgl_vsix }}" --skip-duplicate
+        run: npm run deploy -- --packagePath "${RSGL_VSIX}" --skip-duplicate
         env:
+          RSGL_VSIX: ${{ steps.meta.outputs.rsgl_vsix }}
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish main extension to VS Code Marketplace
-        run: npm run deploy -- --packagePath "${{ steps.meta.outputs.main_vsix }}" --skip-duplicate
+        run: npm run deploy -- --packagePath "${MAIN_VSIX}" --skip-duplicate
         env:
+          MAIN_VSIX: ${{ steps.meta.outputs.main_vsix }}
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Extract release notes
@@ -151,11 +179,11 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          MAIN_VSIX: ${{ steps.meta.outputs.main_vsix }}
+          RSGL_VSIX: ${{ steps.meta.outputs.rsgl_vsix }}
         shell: bash
         run: |
-          TAG="${{ steps.meta.outputs.tag }}"
-          MAIN_VSIX="${{ steps.meta.outputs.main_vsix }}"
-          RSGL_VSIX="${{ steps.meta.outputs.rsgl_vsix }}"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md
             gh release upload "${TAG}" "${MAIN_VSIX}" "${RSGL_VSIX}" --clobber

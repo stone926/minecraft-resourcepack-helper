@@ -1,5 +1,6 @@
 {
   "name": "minecraft-resourcepack-helper",
+  "private": true,
   "displayName": "%extension.displayName%",
   "publisher": "stone926",
   "author": {
@@ -11,7 +12,7 @@
   ],
   "description": "%extension.description%",
   "version": "2.3.1",
-  "license": "UNLICENSED",
+  "license": "Unlicense",
   "engines": {
     "vscode": "^1.125.0"
   },
@@ -267,10 +268,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "node scripts/clean.mjs out && npm run compile",
     "clean": "node scripts/clean.mjs",
     "compile": "tsc -p ./",
-    "postcompile": "node scripts/copy-rsgl-stdlib.mjs",
+    "postcompile": "node scripts/copy-rsgl-stdlib.mjs out",
     "compile:all": "npm run compile && npm run compile:rsgl-extension",
     "compile:rsgl-extension": "npm --prefix extensions/vscode-rsgl run compile",
     "compile:test": "npm run clean && npm run compile",
@@ -285,9 +286,10 @@
     "package:vsix": "node scripts/package-vsix.mjs main",
     "package:main:vsix": "node scripts/package-vsix.mjs main",
     "package:rsgl:vsix": "node scripts/package-vsix.mjs rsgl",
+    "verify:rsgl:vsix": "node scripts/verify-rsgl-vsix.mjs",
     "deploy": "vsce publish",
-    "publish": "node scripts/release.mjs",
-    "publish:dry-run": "node scripts/release.mjs --dry-run",
+    "release": "node scripts/release.mjs",
+    "release:dry-run": "node scripts/release.mjs --dry-run",
     "push": "git push origin master"
   },
   "devDependencies": {

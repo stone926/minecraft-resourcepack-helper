@@ -15,7 +15,7 @@ for (const flag of flags) {
 }
 
 if (positional.length > 1) {
-  fail("Usage: npm run publish -- [patch|minor|major|x.y.z] [--dry-run] [--skip-tests] [--no-push]");
+  fail("Usage: npm run release -- [patch|minor|major|x.y.z] [--dry-run] [--skip-tests] [--no-push]");
 }
 
 const dryRun = flags.has("--dry-run");

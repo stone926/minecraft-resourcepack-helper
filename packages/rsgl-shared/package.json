@@ -1,7 +1,8 @@
 {
   "name": "@minecraft-resourcepack-helper/rsgl-shared",
   "version": "1.0.0",
-  "license": "UNLICENSED",
+  "private": true,
+  "license": "Unlicense",
   "main": "out/index.js",
   "types": "out/index.d.ts"
 }

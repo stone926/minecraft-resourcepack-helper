@@ -29,13 +29,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            extensions/vscode-rsgl/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -55,12 +58,13 @@ jobs:
           mkdir -p dist
           npm run package:main:vsix -- --out dist/minecraft-resourcepack-helper-ci.vsix
           npm run package:rsgl:vsix -- --out dist/rsgl-ci.vsix
+          npm run verify:rsgl:vsix -- dist/rsgl-ci.vsix
 
       - name: Upload VSIX artifact
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: vscode-extension-ci-vsix
+          name: vscode-extension-ci-vsix-${{ github.run_attempt }}
           path: |
             dist/minecraft-resourcepack-helper-ci.vsix
             dist/rsgl-ci.vsix

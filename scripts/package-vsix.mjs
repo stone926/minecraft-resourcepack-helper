@@ -14,7 +14,7 @@ const targets = {
   },
   rsgl: {
     cwd: path.join(repoRoot, "extensions", "vscode-rsgl"),
-    defaultArgs: ["--skip-license"],
+    defaultArgs: [],
   },
 };
 
