@@ -41,6 +41,7 @@ import {
   type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglDefinitionLocation,
+  type RsglLanguageWorkspace,
   type RsglResourceValidationOptions,
   type RsglRenameEdit,
   type RsglSemanticToken,
@@ -74,10 +75,8 @@ export interface RsglDocumentValidationDeps {
   settings: RsglValidationSettings;
 }
 
-/** Injected collaborators for completion computation. */
-export interface RsglDocumentCompletionDeps {
-  loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
-}
+/** Injected collaborators for completion computation and project target lookup. */
+export type RsglDocumentCompletionDeps = RsglLanguageWorkspace;
 
 /** Injected collaborators shared by hover, signature help, and definition lookup. */
 export type RsglDocumentLanguageIntelligenceDeps = RsglDocumentCompletionDeps;
@@ -239,6 +238,7 @@ export function normalizeDependencyPath(fileName: string): string {
 
 export interface RsglSemanticWatchBatchCallbacks {
   invalidatePath(fileName: string): void;
+  invalidateProjectConfiguration?(): void;
   refresh(): void;
 }
 
@@ -260,6 +260,9 @@ export function handleSemanticWatchedFileBatch(
     }
   }
 
+  if (configurationChanged) {
+    callbacks.invalidateProjectConfiguration?.();
+  }
   for (const fileName of rsglChanges) {
     callbacks.invalidatePath(fileName);
   }
@@ -305,7 +308,12 @@ function projectConfigurationDiagnosticCode(error: unknown): string {
   const topLevelProperty = error instanceof RsglProjectConfigError
     ? topLevelConfigProperty(error.relativeFieldPath)
     : undefined;
-  if (topLevelProperty === "namespace" || topLevelProperty === "target" || topLevelProperty === "maxEvaluationItems") {
+  if (
+    topLevelProperty === "namespace"
+    || topLevelProperty === "target"
+    || topLevelProperty === "maxEvaluationItems"
+    || topLevelProperty === "maxItemModelDepth"
+  ) {
     return "rsgl.invalidProjectConfiguration";
   }
   return "rsgl.invalidExternConfiguration";

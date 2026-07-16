@@ -13,7 +13,6 @@ import {
   isExistingFile,
   isPackRelativeTargetExpression,
   jsonResourceTarget,
-  normalizeJsonValue,
   normalizeMcmetaOutputPath,
   textContent,
   textResourceTarget
@@ -43,6 +42,10 @@ export interface ResourceDeclarationCompilerHost {
     body: ResourceDeclNode["body"],
     context: RsglCompileContext,
     resourceKind: Exclude<RsglResourceKind, "blockstate" | "pack">
+  ) => { content: Record<string, JsonValue>; mappings: RsglMapping[] };
+  compileItemBody: (
+    body: ResourceDeclNode["body"],
+    context: RsglCompileContext
   ) => { content: Record<string, JsonValue>; mappings: RsglMapping[] };
   compileJsonBody: (
     body: ResourceDeclNode["body"],
@@ -159,16 +162,13 @@ function compileItem(
     host.onError("rsgl.compileMissingResourceId", "Item declaration requires a static id.", statement.range);
     return null;
   }
-  const body = host.compileBody(statement.body, context, "item");
-  const model = typeof body.content.model === "string"
-    ? { type: "minecraft:model", model: body.content.model }
-    : body.content.model;
+  const body = host.compileItemBody(statement.body, context);
   const outputPath = resourceOutputPath("item", id);
   return {
     id,
     kind: "item",
     outputPath,
-    content: { ...body.content, model: normalizeJsonValue(model) },
+    content: body.content,
     mergePolicy: { kind: "errorOnConflict" },
     sourceMap: host.sourceMap(outputPath, statement, context, body.mappings)
   };

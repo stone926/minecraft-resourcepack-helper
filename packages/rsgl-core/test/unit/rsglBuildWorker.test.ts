@@ -93,7 +93,8 @@ describe("RSGL build worker client", () => {
           namespace: "worker_ns",
           defaultNamespace: "project_ns",
           projectTarget: { edition: "java", packFormat: { major: 75, minor: 0 } },
-          maxEvaluationItems: 4321
+          maxEvaluationItems: 4321,
+          maxItemModelDepth: 64
         }
       });
       assert.strictEqual(modern.type, "success");
@@ -139,6 +140,7 @@ describe("RSGL build worker client", () => {
     await nextTurn();
     assert.strictEqual(created, true);
     assert.strictEqual(transport.messages.length, 1);
+    assert.strictEqual(transport.messages[0].request.payload.maxItemModelDepth, 64);
 
     transport.emitMessage({
       type: "success",
@@ -182,7 +184,8 @@ function compileRequest() {
     kind: "compileDirectory" as const,
     payload: {
       sourceRoot: "rsgl-src",
-      validationAnchor: "rsgl-src"
+      validationAnchor: "rsgl-src",
+      maxItemModelDepth: 64
     }
   };
 }

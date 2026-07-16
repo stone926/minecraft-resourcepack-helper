@@ -7,7 +7,15 @@ import {
   parseVariantBody
 } from "./blockstateStatementParser";
 import { parseBlockstateChoiceBody } from "./blockstateChoiceParser";
-import { tryParseItemModelStatement } from "./itemModelStatementParser";
+import {
+  parseItemCompositeBody,
+  parseItemFirstMatchBody,
+  parseItemModelTemplateBody,
+  parseItemModelUseDecl,
+  parseItemRangeBody,
+  parseItemSelectBody,
+  tryParseItemModelStatement
+} from "./itemModelStatementParser";
 import { tryParseModelGeometryStatement } from "./modelGeometryStatementParser";
 import { tryParsePackAtlasEquipmentStatement } from "./packAtlasEquipmentStatementParser";
 import { tokenRange } from "./parserContext";
@@ -23,10 +31,7 @@ import { ResourceStatementParserHost } from "./statementParserHost";
 import {
   BlockNode,
   BaseStmtNode,
-  BlockstateChoiceBodyNode,
-  BlockstateMultipartRootBodyNode,
   BlockstateRootCommonStatementNode,
-  BlockstateVariantsRootBodyNode,
   ExprNode,
   ExternVarStmtNode,
   ForDimensionNode,
@@ -37,14 +42,13 @@ import {
   MergeStmtNode,
   MergeMode,
   MergeModifierNode,
-  MultipartBodyNode,
   PropertyStmtNode,
   ResourceBodyNode,
   ResourceStatementNode,
+  RsglStatementBodyNode,
   RsglToken,
   TopLevelStatementNode,
-  UseDeclNode,
-  VariantBodyNode
+  UseDeclNode
 } from "./types";
 
 export abstract class StatementParser extends ExpressionParser {
@@ -175,14 +179,7 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
-  protected parseBodyForContext(context: BodyParseContext):
-    | BlockNode
-    | ResourceBodyNode
-    | VariantBodyNode
-    | MultipartBodyNode
-    | BlockstateChoiceBodyNode
-    | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode {
+  protected parseBodyForContext(context: BodyParseContext): RsglStatementBodyNode {
     if (context.kind === "resource") {
       return this.parseResourceBody(context);
     }
@@ -198,6 +195,21 @@ export abstract class StatementParser extends ExpressionParser {
     }
     if (context.kind === "blockstateChoice") {
       return parseBlockstateChoiceBody(this.resourceStatementParserHost());
+    }
+    if (context.kind === "itemModelBody") {
+      const host = this.resourceStatementParserHost();
+      switch (context.owner) {
+        case "select":
+          return parseItemSelectBody(host);
+        case "range":
+          return parseItemRangeBody(host);
+        case "composite":
+          return parseItemCompositeBody(host);
+        case "first_match":
+          return parseItemFirstMatchBody(host);
+        case "itemModelTemplate":
+          return parseItemModelTemplateBody(host);
+      }
     }
     return this.parseBlock();
   }
@@ -258,7 +270,9 @@ export abstract class StatementParser extends ExpressionParser {
       return this.parseLetDecl();
     }
     if (!explicitPropertyStart && token.text === "use") {
-      return this.parseUseDecl();
+      return context.dialect === "item"
+        ? parseItemModelUseDecl(this.resourceStatementParserHost())
+        : this.parseUseDecl();
     }
     if (!explicitPropertyStart && token.text === "for") {
       return this.parseForStmt(context);

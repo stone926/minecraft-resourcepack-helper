@@ -13,6 +13,7 @@ export type {
 } from "./compileSnapshot";
 export {
   DEFAULT_MAX_EVALUATION_ITEMS,
+  DEFAULT_MAX_ITEM_MODEL_DEPTH,
   createRsglSemanticConfigurationFingerprint,
   effectiveNamespace,
   resolveRsglCompileConfiguration

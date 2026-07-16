@@ -2,14 +2,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type {
   ExprNode,
-  ItemCompositeStmtNode,
-  ItemConditionStmtNode,
-  ItemEmptyStmtNode,
-  ItemRangeStmtNode,
-  ItemSelectedItemStmtNode,
-  ItemSelectStmtNode,
-  ItemSpecialStmtNode,
-  ResourceStatementNode,
   RsglModule
 } from "../parser";
 import { evaluateExpression } from "./evaluate";
@@ -384,23 +376,6 @@ export function moduleSyntaxDiagnostics(module: RsglModule, fileName: string | u
 
 export function hasErrors(diagnostics: RsglCompileDiagnostic[]): boolean {
   return diagnostics.some(diagnostic => diagnostic.severity === "error");
-}
-
-export function isItemModelStatement(statement: ResourceStatementNode): statement is
-  | ItemRangeStmtNode
-  | ItemSelectStmtNode
-  | ItemConditionStmtNode
-  | ItemCompositeStmtNode
-  | ItemEmptyStmtNode
-  | ItemSelectedItemStmtNode
-  | ItemSpecialStmtNode {
-  return statement.kind === "ItemRangeStmt"
-    || statement.kind === "ItemSelectStmt"
-    || statement.kind === "ItemConditionStmt"
-    || statement.kind === "ItemCompositeStmt"
-    || statement.kind === "ItemEmptyStmt"
-    || statement.kind === "ItemSelectedItemStmt"
-    || statement.kind === "ItemSpecialStmt";
 }
 
 export function semanticProgramMatchesFiles(

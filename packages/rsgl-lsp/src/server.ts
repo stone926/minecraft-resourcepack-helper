@@ -14,6 +14,7 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
+  RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
   type CompileDependency
 } from "../../rsgl-core/src";
@@ -48,6 +49,7 @@ import {
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const semanticCache = RsglWorkspaceSemanticCache.create();
+const projectTargetCache = new RsglProjectTargetCache();
 const dependenciesByDocument = new Map<string, Set<string>>();
 let publishedDependencyPaths = "";
 
@@ -110,6 +112,7 @@ connection.onDidChangeWatchedFiles(params => {
   const changedFileNames = params.changes.map(change => fileNameFromUri(change.uri));
   if (handleSemanticWatchedFileBatch(changedFileNames, {
     invalidatePath: fileName => semanticCache.invalidatePath(fileName),
+    invalidateProjectConfiguration: () => projectTargetCache.invalidateAll(),
     refresh: refreshOpenDocuments
   })) {
     return;
@@ -157,7 +160,7 @@ connection.onHover(params => {
   }
   const offset = document.offsetAt(params.position);
   return computeDocumentHover(document, fileNameFromUri(document.uri), offset, {
-    loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
+    ...documentLanguageWorkspace()
   });
 });
 
@@ -284,9 +287,20 @@ function invalidateDocument(document: TextDocument): void {
 }
 
 function completionItemsForDocument(document: TextDocument, offset: number): CompletionItem[] {
-  return completionItemsForDocumentCore(document, fileNameFromUri(document.uri), offset, {
-    loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
-  });
+  return completionItemsForDocumentCore(
+    document,
+    fileNameFromUri(document.uri),
+    offset,
+    documentLanguageWorkspace()
+  );
+}
+
+function documentLanguageWorkspace() {
+  return {
+    loadProgramFromEntry: (entryFileName: string) => loadSemanticProgram(entryFileName),
+    projectItemModelTargetFormatForSource: (sourceFileName: string) =>
+      projectTargetCache.projectItemModelTargetFormatForSource(sourceFileName)
+  };
 }
 
 function loadSemanticProgram(

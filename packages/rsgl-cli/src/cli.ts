@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   DEFAULT_MAX_EVALUATION_ITEMS,
+  DEFAULT_MAX_ITEM_MODEL_DEPTH,
   buildRsglResourcePackDirectory,
   formatRsglBuildPreview,
   getRsglProjectConfigWatchPaths,
@@ -424,6 +425,7 @@ function initConfig(io: RsglCliIo): number {
     outDir: ".generated",
     namespace: "minecraft",
     maxEvaluationItems: DEFAULT_MAX_EVALUATION_ITEMS,
+    maxItemModelDepth: DEFAULT_MAX_ITEM_MODEL_DEPTH,
     emitSourceMap: true,
     manifest: true
   }, null, 2)}\n`);

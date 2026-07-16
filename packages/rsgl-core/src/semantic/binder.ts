@@ -576,6 +576,9 @@ const resourcesCallerContext: RsglTemplateCallerContext = { kind: "resources" };
 
 function resourceDeclarationCallerContext(statement: ResourceDeclNode): RsglTemplateCallerContext {
   if (statement.resourceKind !== "blockstate") {
+    if (statement.resourceKind === "item") {
+      return { kind: "itemModel" };
+    }
     return { kind: "resourceBody", resourceKind: statement.resourceKind };
   }
   return {

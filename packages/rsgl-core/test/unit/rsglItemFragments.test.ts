@@ -1,5 +1,9 @@
 import * as assert from "node:assert";
-import { compileSourceWithUncheckedExterns, expectNoDiagnostics } from "./helpers/compile";
+import {
+  compileSourceWithUncheckedExterns,
+  expectDiagnosticCodes,
+  expectNoDiagnostics
+} from "./helpers/compile";
 
 describe("RSGL item model fragments", () => {
   it("lowers stdlib range frames with lambda model mapping", () => {
@@ -118,7 +122,7 @@ describe("RSGL item model fragments", () => {
     });
   });
 
-  it("lowers item condition and composite statements", () => {
+  it("lowers item condition and composite statements while validating raw model fields", () => {
     const result = compileSourceWithUncheckedExterns([
       "item bow {",
       "  condition property minecraft:using_item {",
@@ -134,7 +138,7 @@ describe("RSGL item model fragments", () => {
       "}"
     ]);
 
-    expectNoDiagnostics(result);
+    expectDiagnosticCodes(result, ["rsgl.unexpectedItemModelField"]);
     assert.deepStrictEqual(result.units.find(unit => unit.outputPath.endsWith("bow.json"))?.content, {
       model: {
         type: "minecraft:condition",

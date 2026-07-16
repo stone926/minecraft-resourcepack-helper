@@ -1,4 +1,5 @@
 import { rsglExternResourceKinds, rsglResourceKinds } from "../resourceKinds";
+import { rsglItemModelLexicalKeywords } from "../itemModelSyntax";
 import { rsglModelGeometryKeywords } from "../modelGeometrySyntax";
 
 const declarationKeywords = [
@@ -52,16 +53,8 @@ export const rsglKeywords = new Set<string>([
   "strict",
   "upsert",
   "append",
-  "range",
-  "select",
-  "condition",
-  "composite",
-  "empty",
-  "selected_item",
-  "special",
+  ...rsglItemModelLexicalKeywords,
   "base",
-  "on_true",
-  "on_false",
   "else",
   "in",
   "not",

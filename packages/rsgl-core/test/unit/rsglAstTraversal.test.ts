@@ -59,4 +59,76 @@ describe("RSGL AST traversal", () => {
     assert.deepStrictEqual(statements, ["ResourceDecl", "ModelTransformStmt", "ModelElementStmt"]);
     assert.deepStrictEqual(identifiers, ["quarter", "angle", "pivot", "start", "finish", "panelTexture"]);
   });
+
+  it("visits every recursive item-model expression and option exactly once in source order", () => {
+    const module = parseRsgl([
+      "item traversal {",
+      "  select property selector component componentName {",
+      "    case matchValue => condition property conditionProperty {",
+      "      on_true composite {",
+      "        model leafValue with { tints: [tintValue] }",
+      "        model use buildModel(argument: useValue)",
+      "      } with { transformation: transformValue }",
+      "      on_false range property rangeProperty period periodValue {",
+      "        entry thresholdValue => entryValue with { tints: [entryTint] }",
+      "        frames frameValues model frameValue with { tints: [frameTint] }",
+      "        fallback fallbackValue",
+      "      } with { transformation: rangeTransform }",
+      "    } with { transformation: conditionTransform }",
+      "    fallback rootFallback",
+      "  } with { transformation: selectTransform }",
+      "}"
+    ].join("\n"));
+    const statements: string[] = [];
+    const identifiers: string[] = [];
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    walkRsglModule(module, {
+      enterStatement(statement) {
+        statements.push(statement.kind);
+      },
+      enterExpression(expression) {
+        if (expression.kind === "IdentifierExpr") {
+          identifiers.push(expression.name.text);
+        }
+      }
+    });
+
+    assert.deepStrictEqual(statements, [
+      "ResourceDecl",
+      "ItemModelProducerStmt",
+      "ItemSelectCase",
+      "ItemCompositeModel",
+      "ItemCompositeModel",
+      "ItemRangeEntry",
+      "ItemRangeFrames",
+      "ItemFallbackClause",
+      "ItemFallbackClause"
+    ]);
+    assert.deepStrictEqual(identifiers, [
+      "traversal",
+      "selector",
+      "componentName",
+      "matchValue",
+      "conditionProperty",
+      "leafValue",
+      "tintValue",
+      "buildModel",
+      "useValue",
+      "transformValue",
+      "rangeProperty",
+      "periodValue",
+      "thresholdValue",
+      "entryValue",
+      "entryTint",
+      "frameValues",
+      "frameValue",
+      "frameTint",
+      "fallbackValue",
+      "rangeTransform",
+      "conditionTransform",
+      "rootFallback",
+      "selectTransform"
+    ]);
+  });
 });

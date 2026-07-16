@@ -24,6 +24,12 @@ import type { RsglArrowExpectation } from "./arrowSemantics";
 
 export interface StatementExpressionOptions {
   stopTexts?: readonly string[];
+  /**
+   * Contextual delimiters that stop only a syntactically complete outer
+   * expression. They remain ordinary identifiers while parsing operands and
+   * nested expressions.
+   */
+  contextualStopTexts?: readonly string[];
   allowLeadingLineBreak?: boolean;
 }
 

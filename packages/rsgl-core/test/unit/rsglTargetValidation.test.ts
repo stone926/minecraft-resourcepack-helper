@@ -1,6 +1,10 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { compileRsglModule, compileRsglProgram } from "../../src/compiler";
+import {
+  compileRsglModule,
+  compileRsglProgram,
+  rsglTargetPackFormatForMinecraftVersion
+} from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
 import { compileSource } from "./helpers/compile";
 
@@ -63,5 +67,29 @@ describe("RSGL target validation", () => {
     ]);
 
     assert.ok(conflicting.diagnostics.some(diagnostic => diagnostic.code === "rsgl.conflictingTargetFormat"));
+  });
+
+  it("maps the 26.x stable releases to their exact pack formats", () => {
+    assert.deepStrictEqual(rsglTargetPackFormatForMinecraftVersion("26.1"), { major: 84, minor: 0 });
+    assert.deepStrictEqual(rsglTargetPackFormatForMinecraftVersion("26.1.1"), { major: 84, minor: 0 });
+    assert.deepStrictEqual(rsglTargetPackFormatForMinecraftVersion("26.1.2"), { major: 84, minor: 0 });
+    assert.deepStrictEqual(rsglTargetPackFormatForMinecraftVersion("26.2"), { major: 88, minor: 0 });
+  });
+
+  it("requires exact non-negative integer format tuples", () => {
+    for (const source of [
+      "target java format [88]",
+      "target java format [88, 0, 1]",
+      "target java format 88.5",
+      "target java format [-1, 0]"
+    ]) {
+      const result = compileRsglModule(parseRsgl(source));
+      assert.ok(
+        result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidTargetFormat"),
+        source
+      );
+    }
+    const scalar = compileRsglModule(parseRsgl("target java format 88"));
+    assert.ok(!scalar.diagnostics.some(diagnostic => diagnostic.code === "rsgl.invalidTargetFormat"));
   });
 });

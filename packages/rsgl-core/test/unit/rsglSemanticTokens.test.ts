@@ -237,6 +237,78 @@ describe("RSGL semantic tokens", () => {
     );
   });
 
+  it("classifies recursive item-model option fields without overriding DSL keywords", () => {
+    const itemSource = [
+      "template choose(fallbackModel: ModelId) -> item_model {",
+      "  first_match {",
+      "    when property minecraft:component",
+      "      component \"minecraft:enchantments\"",
+      "      predicate \"contains\"",
+      "      value [{ id: minecraft:channeling }] =>",
+      "      range property minecraft:damage scale 2 normalize true {",
+      "        entry 0 => empty {}",
+      "        frames [1] model fallbackModel",
+      "        fallback selected_item {}",
+      "      } with { transformation: { translation: [0, 0, 0] } }",
+      "    fallback fallbackModel",
+      "  }",
+      "}"
+    ].join("\n");
+    const itemModule = parseRsgl(itemSource);
+    assert.deepStrictEqual(itemModule.diagnostics, []);
+    const itemTokens = getRsglSemanticTokens(bindRsglModule(itemModule));
+
+    for (const [needle, length] of [
+      ["component \"minecraft:enchantments\"", "component".length],
+      ["predicate \"contains\"", "predicate".length],
+      ["value [{", "value".length],
+      ["scale 2", "scale".length],
+      ["normalize true", "normalize".length],
+      ["id: minecraft:channeling", "id".length],
+      ["transformation:", "transformation".length],
+      ["translation:", "translation".length]
+    ] as const) {
+      expectToken(itemTokens, offsetOf(itemSource, needle), "property", 0, length);
+    }
+
+    expectToken(
+      itemTokens,
+      offsetOf(itemSource, "fallbackModel"),
+      "parameter",
+      declaration,
+      "fallbackModel".length
+    );
+    expectToken(
+      itemTokens,
+      offsetOf(itemSource, "fallbackModel", 1),
+      "parameter",
+      0,
+      "fallbackModel".length
+    );
+    expectToken(
+      itemTokens,
+      offsetOf(itemSource, "fallbackModel", 2),
+      "parameter",
+      0,
+      "fallbackModel".length
+    );
+
+    const keywordOffsets = [
+      offsetOf(itemSource, "item_model"),
+      offsetOf(itemSource, "first_match"),
+      offsetOf(itemSource, "when property"),
+      offsetOf(itemSource, "when property") + "when ".length,
+      offsetOf(itemSource, "entry 0"),
+      offsetOf(itemSource, "empty {}"),
+      offsetOf(itemSource, "frames [1]"),
+      offsetOf(itemSource, "] model ") + 2,
+      offsetOf(itemSource, "fallback selected_item"),
+      offsetOf(itemSource, "selected_item"),
+      offsetOf(itemSource, "} with {") + 2
+    ];
+    assert.ok(keywordOffsets.every(start => !itemTokens.some(token => token.start === start)));
+  });
+
   it("returns sorted, non-overlapping tokens", () => {
     let lastEnd = -1;
     for (const token of tokens) {

@@ -2,10 +2,19 @@ import {
   getRsglCompletionCandidatesForContext,
   type RsglCompletionCandidate
 } from "./completionData";
-import { getRsglCompletionContext } from "./completionContext";
+import {
+  getRsglCompletionContext,
+  type RsglCompletionContext
+} from "./completionContext";
+import { isItemModelCompletionKeyPosition } from "./itemModelCompletionContext";
+import type { ItemModelFormat } from "./itemModelSchema";
 import { callablePresentation } from "./languageIntelligence";
 import type { RsglSymbol, RsglTypeAliasSymbol } from "./semantic";
 import { formatType } from "./semantic/typeRelations";
+import {
+  resolvedTemplateOutputMetadata,
+  resolveTemplateOutputDispatch
+} from "./templateOutput";
 
 export type RsglCompletionItemKind =
   | RsglCompletionCandidate["kind"]
@@ -29,24 +38,42 @@ export function getRsglCompletionItems(
   offset: number,
   semanticSymbols: readonly RsglSymbol[] = [],
   typeAliases: ReadonlyMap<string, RsglTypeAliasSymbol> = new Map(),
+  namespace: RsglCompletionNamespace = "both",
+  projectTargetFormat?: ItemModelFormat
+): RsglCompletionItem[] {
+  const context = getRsglCompletionContext(text, offset, projectTargetFormat);
+  return getRsglCompletionItemsForContext(
+    context,
+    semanticSymbols,
+    typeAliases,
+    namespace
+  );
+}
+
+/** Merges candidates from an already parsed completion context. */
+export function getRsglCompletionItemsForContext(
+  context: RsglCompletionContext,
+  semanticSymbols: readonly RsglSymbol[] = [],
+  typeAliases: ReadonlyMap<string, RsglTypeAliasSymbol> = new Map(),
   namespace: RsglCompletionNamespace = "both"
 ): RsglCompletionItem[] {
   const items = new Map<string, RsglCompletionItem>();
-  const context = getRsglCompletionContext(text, offset);
+  const propertyKeyOnly = context.blockstateModelOptions
+    || isItemModelCompletionKeyPosition(context.itemModel);
   if (namespace !== "type") {
     for (const candidate of getRsglCompletionCandidatesForContext(context)) {
       items.set(candidate.label, candidateCompletionItem(candidate));
     }
-    if (!context.blockstateModelOptions) {
+    if (!propertyKeyOnly) {
       for (const symbol of semanticSymbols) {
-        if (!items.has(symbol.name)) {
+        if (symbolMatchesCompletionContext(symbol, context) && !items.has(symbol.name)) {
           items.set(symbol.name, symbolCompletionItem(symbol));
         }
       }
     }
   }
   const collidingTypeAliases: RsglCompletionItem[] = [];
-  if (namespace !== "value" && !context.blockstateModelOptions) {
+  if (namespace !== "value" && !propertyKeyOnly) {
     for (const [name, alias] of typeAliases) {
       const item = {
         label: name,
@@ -64,6 +91,20 @@ export function getRsglCompletionItems(
     }
   }
   return [...items.values(), ...collidingTypeAliases];
+}
+
+function symbolMatchesCompletionContext(
+  symbol: RsglSymbol,
+  context: ReturnType<typeof getRsglCompletionContext>
+): boolean {
+  if (symbol.kind !== "template") {
+    return true;
+  }
+  if (!context.itemModel && context.templateOutputDialect !== "item_model") {
+    return true;
+  }
+  const metadata = resolvedTemplateOutputMetadata(symbol);
+  return Boolean(metadata && resolveTemplateOutputDispatch({ kind: "itemModel" }, metadata).compatible);
 }
 
 function candidateCompletionItem(candidate: RsglCompletionCandidate): RsglCompletionItem {

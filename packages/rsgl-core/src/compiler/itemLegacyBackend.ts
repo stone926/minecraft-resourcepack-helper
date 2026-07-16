@@ -13,6 +13,16 @@ import { appendGeneratedPath } from "./sourcePaths";
 import type { RsglTargetPackFormat } from "./targetConfig";
 import { sourceFileForValidationRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { stripMinecraftPrefix } from "./validationPrimitives";
+import {
+  legacySelectPropertyOptionIssues,
+  resolveLegacyRangeProperty,
+  type LegacyItemPropertyOptionIssue
+} from "./itemLegacyPropertyOptions";
+import {
+  ITEM_MODEL_DEFINITION_INTRODUCED_FORMAT,
+  compareItemModelFormats,
+  itemModelFormatFromTarget
+} from "../itemModelSchema";
 
 export interface LowerItemUnitsForTargetResult {
   units: ResourceUnit[];
@@ -34,13 +44,11 @@ interface LegacyModelReference {
   sourcePath: string;
 }
 
-const modernItemModelPackFormat = 75;
-
 export function lowerItemUnitsForTarget(
   units: ResourceUnit[],
   targetPackFormat: RsglTargetPackFormat | undefined
 ): LowerItemUnitsForTargetResult {
-  if (!targetPackFormat || targetPackFormat.major >= modernItemModelPackFormat) {
+  if (!usesLegacyItemBackend(targetPackFormat)) {
     return { units, diagnostics: [] };
   }
 
@@ -54,6 +62,20 @@ export function lowerItemUnitsForTarget(
   return { units: lowered, diagnostics };
 }
 
+/**
+ * Item definitions are a source-level RSGL representation even for targets
+ * that predate the item-definition resource directory. Those targets must
+ * validate the representation before this backend replaces it with a legacy
+ * model unit.
+ */
+export function usesLegacyItemBackend(
+  targetPackFormat: RsglTargetPackFormat | undefined
+): boolean {
+  const target = itemModelFormatFromTarget(targetPackFormat);
+  return target !== undefined
+    && compareItemModelFormats(target, ITEM_MODEL_DEFINITION_INTRODUCED_FORMAT) < 0;
+}
+
 function lowerItemUnitToLegacy(
   unit: ResourceUnit,
   modelOutputPaths: Set<string>,
@@ -65,6 +87,23 @@ function lowerItemUnitToLegacy(
   }
 
   const content = isJsonObject(unit.content) ? unit.content : null;
+  if (content) {
+    const unsupportedRootField = [
+      "hand_animation_on_swap",
+      "oversized_in_gui",
+      "swap_animation_scale"
+    ].find(field => Object.hasOwn(content, field));
+    if (unsupportedRootField) {
+      pushLegacyDiagnostic(
+        unit,
+        diagnostics,
+        "rsgl.unsupportedLegacyItemModel",
+        "Legacy item backend cannot represent item root field '" + unsupportedRootField + "'.",
+        appendGeneratedPath("", unsupportedRootField)
+      );
+      return [];
+    }
+  }
   const model = isJsonObject(content?.model) ? content.model : null;
   if (!model) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy item backend requires an item model object.");
@@ -88,6 +127,19 @@ function lowerLegacyItemModel(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): LegacyItemLowering | null {
+  for (const field of ["tints", "transformation"]) {
+    if (!Object.hasOwn(model, field)) {
+      continue;
+    }
+    pushLegacyDiagnostic(
+      unit,
+      diagnostics,
+      "rsgl.unsupportedLegacyItemModel",
+      "Legacy item backend cannot represent item model field '" + field + "'.",
+      appendGeneratedPath(generatedPath, field)
+    );
+    return null;
+  }
   const type = stripMinecraftPrefix(model.type);
   if (type === "model") {
     const modelValue = modelRef(model, appendGeneratedPath(generatedPath, "model"));
@@ -113,13 +165,20 @@ function lowerLegacyRangeDispatch(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): LegacyItemLowering | null {
-  const predicate = rangePredicateName(model);
+  const propertyResolution = resolveLegacyRangeProperty(model);
+  if (pushLegacyPropertyOptionIssues(unit, diagnostics, generatedPath, propertyResolution.issues)) {
+    return null;
+  }
+  const configuration = propertyResolution.configuration;
+  if (!configuration) {
+    return null;
+  }
   const entries = Array.isArray(model.entries) ? model.entries : null;
   const fallbackPath = appendGeneratedPath(generatedPath, "fallback");
   const fallback = isJsonObject(model.fallback)
     ? lowerLegacyItemModel(model.fallback, unit, diagnostics, fallbackPath)
     : null;
-  if (!predicate || !entries || !fallback) {
+  if (!entries || !fallback) {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch lowering requires a supported property, entries, and a model fallback.");
     return null;
   }
@@ -128,7 +187,11 @@ function lowerLegacyRangeDispatch(
     return null;
   }
 
-  const overrides: LegacyItemOverride[] = [];
+  const entryLowerings: Array<{
+    order: number;
+    threshold: number;
+    overrides: LegacyItemOverride[];
+  }> = [];
   for (const [index, entry] of entries.entries()) {
     const entryObject = isJsonObject(entry) ? entry : null;
     const threshold = typeof entryObject?.threshold === "number" && Number.isFinite(entryObject.threshold)
@@ -145,14 +208,36 @@ function lowerLegacyRangeDispatch(
       pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy range_dispatch entries must use finite thresholds and lowerable model branches.");
       return null;
     }
-    const branchOverrides = prefixLowering({ [predicate]: threshold }, branch, unit, diagnostics);
+    const legacyThreshold = threshold / configuration.thresholdScale;
+    if (!Number.isFinite(legacyThreshold)) {
+      pushLegacyDiagnostic(
+        unit,
+        diagnostics,
+        "rsgl.unsupportedLegacyItemModel",
+        "Legacy range_dispatch lowering cannot represent thresholds after applying 'scale'.",
+        appendGeneratedPath(generatedPath, "scale")
+      );
+      return null;
+    }
+    const branchOverrides = prefixLowering(
+      { [configuration.predicate]: legacyThreshold },
+      branch,
+      unit,
+      diagnostics
+    );
     if (!branchOverrides) {
       return null;
     }
-    overrides.push(...branchOverrides);
+    entryLowerings.push({ order: index, threshold: legacyThreshold, overrides: branchOverrides });
   }
 
-  return { baseModel: fallback.baseModel, overrides };
+  entryLowerings.sort((left, right) =>
+    left.threshold - right.threshold || left.order - right.order
+  );
+  return {
+    baseModel: fallback.baseModel,
+    overrides: entryLowerings.flatMap(entry => entry.overrides)
+  };
 }
 
 function lowerLegacySelect(
@@ -170,6 +255,14 @@ function lowerLegacySelect(
   }
   if (property !== "custom_model_data") {
     pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy select lowering currently supports custom_model_data, main_hand, and charge_type cases.");
+    return null;
+  }
+  if (pushLegacyPropertyOptionIssues(
+    unit,
+    diagnostics,
+    generatedPath,
+    legacySelectPropertyOptionIssues(model)
+  )) {
     return null;
   }
 
@@ -336,14 +429,22 @@ function lowerLegacyChargeTypeSelect(
     }
   }
 
+  // The legacy `charged` predicate also matches firework-loaded crossbows.
+  // Place the complete fallback tree after arrow overrides so the missing
+  // rocket case retains every nested fallback decision, not just its base.
+  const rocketFallbackOverrides = hasArrowCase && !hasRocketCase
+    ? prefixLowering(chargeTypePredicate("rocket"), fallback, unit, diagnostics)
+    : [];
+  if (!rocketFallbackOverrides) {
+    return null;
+  }
+
   return {
     baseModel: fallback.baseModel,
     overrides: [
       ...fallback.overrides,
       ...arrowOverrides,
-      ...(hasArrowCase && !hasRocketCase
-        ? [{ predicate: chargeTypePredicate("rocket"), model: fallback.baseModel }]
-        : []),
+      ...rocketFallbackOverrides,
       ...rocketOverrides
     ]
   };
@@ -355,15 +456,36 @@ function lowerLegacyCondition(
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): LegacyItemLowering | null {
+  const property = normalizedProperty(model.property);
+  if (property === "using_item") {
+    pushLegacyDiagnostic(
+      unit,
+      diagnostics,
+      "rsgl.unsupportedLegacyItemModel",
+      "Legacy item overrides cannot losslessly represent the general 'using_item' condition as the item-specific 'pulling' predicate.",
+      appendGeneratedPath(generatedPath, "property")
+    );
+    return null;
+  }
   const predicate = conditionPredicateName(model);
+  if (!predicate) {
+    pushLegacyDiagnostic(
+      unit,
+      diagnostics,
+      "rsgl.unsupportedLegacyItemModel",
+      "Legacy condition lowering requires a supported property.",
+      appendGeneratedPath(generatedPath, "property")
+    );
+    return null;
+  }
   const onTrue = isJsonObject(model["on_true"])
     ? lowerLegacyItemModel(model["on_true"], unit, diagnostics, appendGeneratedPath(generatedPath, "on_true"))
     : null;
   const onFalse = isJsonObject(model["on_false"])
     ? lowerLegacyItemModel(model["on_false"], unit, diagnostics, appendGeneratedPath(generatedPath, "on_false"))
     : null;
-  if (!predicate || !onTrue || !onFalse) {
-    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires a supported property and lowerable model branches.");
+  if (!onTrue || !onFalse) {
+    pushLegacyDiagnostic(unit, diagnostics, "rsgl.unsupportedLegacyItemModel", "Legacy condition lowering requires lowerable model branches.");
     return null;
   }
 
@@ -532,34 +654,8 @@ function modelRef(model: Record<string, JsonValue>, sourcePath: string): LegacyM
     : null;
 }
 
-function rangePredicateName(model: Record<string, JsonValue>): string | null {
-  const property = normalizedProperty(model.property);
-  if (!property) {
-    return null;
-  }
-  if (property === "custom_model_data") {
-    return "custom_model_data";
-  }
-  if (property === "damage" || property === "damaged" || property === "pull" || property === "pulling" || property === "blocking" || property === "cooldown") {
-    return property;
-  }
-  if (property === "crossbow/pull") {
-    return "pull";
-  }
-  if (property === "compass") {
-    return "angle";
-  }
-  if (property === "time") {
-    return "time";
-  }
-  return null;
-}
-
 function conditionPredicateName(model: Record<string, JsonValue>): string | null {
   const property = normalizedProperty(model.property);
-  if (property === "using_item") {
-    return "pulling";
-  }
   if (property === "fishing_rod/cast") {
     return "cast";
   }
@@ -665,13 +761,37 @@ function pushLegacyDiagnostic(
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[],
   code: string,
-  message: string
+  message: string,
+  generatedPath?: string
 ): void {
+  const range = generatedPath
+    ? sourceRangeForGeneratedPath(unit, generatedPath)
+    : unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 };
   diagnostics.push({
     code,
     message,
     severity: "error",
-    range: unit.sourceMap.mappings[0]?.sourceRange ?? { start: 0, end: 1 },
-    fileName: unit.sourceMap.mappings[0]?.sourceFile
+    range,
+    fileName: generatedPath
+      ? sourceFileForValidationRange(unit, range)
+      : unit.sourceMap.mappings[0]?.sourceFile
   });
+}
+
+function pushLegacyPropertyOptionIssues(
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[],
+  generatedPath: string,
+  issues: readonly LegacyItemPropertyOptionIssue[]
+): boolean {
+  for (const issue of issues) {
+    pushLegacyDiagnostic(
+      unit,
+      diagnostics,
+      "rsgl.unsupportedLegacyItemModel",
+      issue.message,
+      appendGeneratedPath(generatedPath, issue.field)
+    );
+  }
+  return issues.length > 0;
 }

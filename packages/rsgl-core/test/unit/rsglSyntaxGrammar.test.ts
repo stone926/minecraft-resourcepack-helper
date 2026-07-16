@@ -101,7 +101,8 @@ describe("RSGL TextMate grammar", () => {
       "template modelBody() -> model {}",
       "template states() -> variants {}",
       "template parts() -> multipart {}",
-      "template weighted() -> choice {}"
+      "template weighted() -> choice {}",
+      "template itemNode() -> item_model {}"
     ].join("\n");
     const tokenization = tokenizeGrammar(grammar, source);
 
@@ -109,13 +110,66 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 1);
     expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 2);
     expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 3);
+    expectScope(tokenization, source, "->", "keyword.operator.template-output.rsgl", 4);
     expectScope(tokenization, source, "model", "storage.type.template-output.rsgl", 1);
     expectScope(tokenization, source, "variants", "storage.type.template-output.rsgl");
     expectScope(tokenization, source, "multipart", "storage.type.template-output.rsgl");
     expectScope(tokenization, source, "choice", "storage.type.template-output.rsgl");
+    expectScope(tokenization, source, "item_model", "storage.type.template-output.rsgl");
     const grammarText = readGrammarText();
     assert.doesNotMatch(grammarText, /(?<!shader_)\bfragment\b/);
     assert.doesNotMatch(grammarText, /\bfn\b/);
+  });
+
+  it("highlights recursive item-model constructors, owners, and clauses", () => {
+    const grammar = readGrammar();
+    const source = [
+      "template choose() -> item_model {",
+      "  first_match {",
+      "    when property minecraft:component predicate \"enchantments\" value [] =>",
+      "    range property minecraft:damage scale 1 {",
+      "      entry 0 => empty {}",
+      "      frames [1, 2] model selected_item {}",
+      "      fallback minecraft:item/default",
+      "    } with { transformation: { scale: [1, 1, 1] } }",
+      "  }",
+      "}",
+      "item branches {",
+      "  condition property minecraft:using_item {",
+      "    on_true composite { model minecraft:item/active }",
+      "    on_false special base minecraft:item/base model { type: minecraft:shield }",
+      "  }",
+      "}"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    for (const keyword of [
+      "first_match",
+      "when",
+      "property",
+      "range",
+      "entry",
+      "empty",
+      "frames",
+      "selected_item",
+      "fallback",
+      "with",
+      "condition",
+      "on_true",
+      "composite",
+      "on_false",
+      "special",
+      "base"
+    ]) {
+      expectScope(tokenization, source, keyword, "keyword.control.rsgl");
+    }
+    expectScope(tokenization, source, "item_model", "storage.type.template-output.rsgl");
+
+    const objectKeys = ["transformation:", "scale:", "type:"];
+    for (const key of objectKeys) {
+      expectScope(tokenization, source, key, "meta.object-key.rsgl");
+      expectNoScope(tokenization, source, key, "keyword.control.rsgl");
+    }
   });
 
   it("keeps mapping and erroneous arrows in stable general operator scopes", () => {

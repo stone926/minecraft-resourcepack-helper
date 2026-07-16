@@ -93,6 +93,53 @@ describe("RSGL language service", () => {
     assert.ok(nested.some(item => item.label === "merge deep"));
   });
 
+  it("provides target-aware item-model schema hover without workspace dependencies", () => {
+    const text = [
+      "target java format [82, 0]",
+      "item example {",
+      "  select property minecraft:component component minecraft:custom_data {",
+      "    case [{ value: 1 }] => special base minecraft:item/example model {",
+      "      type: minecraft:shulker_box,",
+      "      texture: \"example\",",
+      "      orientation: north",
+      "    }",
+      "    fallback minecraft:item/example",
+      "  }",
+      "}"
+    ].join("\n");
+    const document = { fileName: path.resolve("item-schema-hover.rsgl"), getText: () => text };
+    let projectTargetLookups = 0;
+    const fallbackWorkspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open document fallback.");
+      },
+      projectItemModelTargetFormatForSource(): never {
+        projectTargetLookups++;
+        throw new Error("A file target must bypass project target lookup.");
+      }
+    };
+
+    const propertyStart = text.indexOf("minecraft:component");
+    const propertyHover = getRsglDocumentHoverInfo(document, propertyStart + 3, fallbackWorkspace);
+    assert.strictEqual(propertyHover?.label, "item select property minecraft:component");
+    assert.ok(propertyHover?.detail?.includes("complete equality"));
+
+    const optionStart = text.indexOf("component minecraft:custom_data");
+    const optionHover = getRsglDocumentHoverInfo(document, optionStart + 2, fallbackWorkspace);
+    assert.strictEqual(optionHover?.label, "component: resourceId");
+    assert.ok(optionHover?.detail?.includes("Required"));
+
+    const whenStart = text.indexOf("[{ value");
+    const whenHover = getRsglDocumentHoverInfo(document, whenStart + 1, fallbackWorkspace);
+    assert.ok(whenHover?.detail?.includes("not as subsets"));
+
+    const orientationStart = text.indexOf("orientation");
+    const orientationHover = getRsglDocumentHoverInfo(document, orientationStart + 2, fallbackWorkspace);
+    assert.strictEqual(orientationHover?.label, "orientation?: enum");
+    assert.ok(orientationHover?.detail?.includes("down, up, north"));
+    assert.strictEqual(projectTargetLookups, 0);
+  });
+
   it("resolves hover, signature help, and definitions through aliases and re-exports", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-intelligence-"));
     try {

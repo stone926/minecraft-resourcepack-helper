@@ -86,7 +86,7 @@ function targetPackFormatFromDecl(
   if (!target) {
     diagnostics.push({
       code: "rsgl.invalidTargetFormat",
-      message: "Target pack format must be a finite number or [major, minor] array.",
+      message: "Target pack format must be a non-negative integer or exact [major, minor] integer tuple.",
       severity: "error",
       range: statement.value.range,
       ...(fileName ? { fileName } : {})
@@ -137,14 +137,22 @@ function targetPackFormatFromMinecraftVersion(
 }
 
 function targetPackFormatValue(value: JsonValue | undefined): RsglTargetPackFormat | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (isPackFormatPart(value)) {
     return { major: value, minor: 0 };
   }
-  if (Array.isArray(value) && typeof value[0] === "number" && Number.isFinite(value[0])) {
-    const minor = typeof value[1] === "number" && Number.isFinite(value[1]) ? value[1] : 0;
-    return { major: value[0], minor };
+  if (
+    Array.isArray(value)
+    && value.length === 2
+    && isPackFormatPart(value[0])
+    && isPackFormatPart(value[1])
+  ) {
+    return { major: value[0], minor: value[1] };
   }
   return null;
+}
+
+function isPackFormatPart(value: JsonValue | undefined): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function targetEvaluationContext(namespace: string): EvaluationContext {

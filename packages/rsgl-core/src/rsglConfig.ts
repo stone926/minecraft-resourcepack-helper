@@ -24,12 +24,13 @@ export interface RsglProjectConfig {
   namespace?: string;
   target?: RsglTargetConfig;
   maxEvaluationItems?: number;
+  maxItemModelDepth?: number;
 }
 
 /** Internal compile options contributed by a validated public project config. */
 export type RsglProjectCompileOptions = Pick<
   RsglCompileConfigurationOptions,
-  "defaultNamespace" | "projectTarget" | "maxEvaluationItems"
+  "defaultNamespace" | "projectTarget" | "maxEvaluationItems" | "maxItemModelDepth"
 >;
 
 export interface LoadedRsglProjectConfig {
@@ -72,7 +73,8 @@ const configProperties = new Set([
   "checkExternExistence",
   "namespace",
   "target",
-  "maxEvaluationItems"
+  "maxEvaluationItems",
+  "maxItemModelDepth"
 ]);
 
 const externEntryProperties = new Set(["source", "kind", "patterns", "checkExistence"]);
@@ -107,6 +109,10 @@ function parseRsglProjectConfigValue(value: unknown, configPath: string): RsglPr
     maxEvaluationItems: optionalPositiveSafeInteger(
       config.maxEvaluationItems,
       `${configPath}.maxEvaluationItems`
+    ),
+    maxItemModelDepth: optionalPositiveSafeInteger(
+      config.maxItemModelDepth,
+      `${configPath}.maxItemModelDepth`
     )
   };
 }
@@ -124,6 +130,9 @@ export function projectCompileOptionsFromRsglConfig(
   }
   if (config.maxEvaluationItems !== undefined) {
     options.maxEvaluationItems = config.maxEvaluationItems;
+  }
+  if (config.maxItemModelDepth !== undefined) {
+    options.maxItemModelDepth = config.maxItemModelDepth;
   }
   return options;
 }

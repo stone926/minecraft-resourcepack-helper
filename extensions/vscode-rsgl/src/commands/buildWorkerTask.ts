@@ -113,6 +113,7 @@ function createValidationOptions(
     defaultNamespace: context.defaultNamespace,
     projectTarget: context.projectTarget,
     maxEvaluationItems: context.maxEvaluationItems,
+    maxItemModelDepth: context.maxItemModelDepth,
     ...createRsglWorkspaceValidationOptions({
       sourceFileName: context.validationAnchor,
       defaultAssetsPath: context.defaultAssetsPath,

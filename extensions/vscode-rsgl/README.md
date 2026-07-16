@@ -24,7 +24,8 @@ Create `rsgl.config.json` at the project root:
     "edition": "java",
     "mc": "1.21.4"
   },
-  "maxEvaluationItems": 100000
+  "maxEvaluationItems": 100000,
+  "maxItemModelDepth": 128
 }
 ```
 
@@ -70,6 +71,7 @@ A body-fragment template declares its output dialect after `->`. This makes a te
 - `-> variants` emits canonical blockstate variant entries.
 - `-> multipart` emits canonical blockstate multipart entries.
 - `-> choice` emits options inside one blockstate random choice.
+- `-> item_model` emits exactly one recursive item-model node.
 
 A template without an arrow remains a complete-resource template and may contain declarations such as `model`, `blockstate`, or `item`.
 
@@ -111,6 +113,48 @@ blockstate variants weathered_panel {
 
 RSGL accepts canonical blockstates only: put the mode directly after `blockstate`; write `case <selector> => <choice>` for variants and `part always => <choice>` or `part when <StatePredicate> => <choice>` for multipart. A model choice is a `ModelId` expression with optional `with { x, y, z, uvlock }`; weighted alternatives belong in `random { option ... }`.
 
+## Recursive item models and conventions
+
+Item-model constructors are recursive: `case`, `fallback`, `on_true`, `on_false`, `model`, `entry`, `frames`, and ordered `first_match` branches can contain another constructor or `use` an `-> item_model` template. A model leaf accepts postfix `with { tints, transformation }` options.
+
+The bundled `rsgl:conventions/item_definitions.rsgl` module includes reusable, data-driven helpers:
+
+- `potionItem(id, folder, potions)` emits a complete potion item from a caller-owned ordered table.
+- `orderedEnchantedBookItemModel(enchantments, fallbackModel) -> item_model` preserves both enchantment priority and level order.
+- `tridentVariantItemModel(suffix, fallbackModel) -> item_model` shares one enchantment decision tree across the normal, in-hand, and throwing variants.
+- `selfMappedItems(ids)` maps each caller-provided item id to its same-named model.
+- `tintedSpawnEggItemModel(baseModel, baseColor, highlightColor) -> item_model` adds two constant tints only when colors are explicitly supplied.
+
+```rsgl
+import {
+  potionItem,
+  selfMappedItems,
+  tintedSpawnEggItemModel
+} from "rsgl:conventions/item_definitions.rsgl"
+
+let potions = [
+  { id: minecraft:mundane, stem: "mundane" },
+  { id: minecraft:long_night_vision, stem: "night_vision_long" }
+]
+
+use potionItem(id: minecraft:potion, folder: "normal", potions: potions)
+
+use selfMappedItems(ids: [
+  minecraft:allay_spawn_egg,
+  minecraft:armadillo_spawn_egg
+])
+
+item custom_spawn_egg {
+  use tintedSpawnEggItemModel(
+    baseModel: minecraft:item/custom_spawn_egg,
+    baseColor: -6265536,
+    highlightColor: [1, 0.5, 0]
+  )
+}
+```
+
+The conventions deliberately contain no potion, general enchantment, or spawn-egg registry. Keep those lists in project source so their aliases, order, and Minecraft-version binding remain explicit.
+
 ## Types, functions, IDs, and collections
 
 RSGL evaluates abstraction logic at compile time. Type aliases and structural record types catch missing, excess, and incompatible fields. Optional record fields use `?`; function values use `(ParameterTypes) -> ReturnType` annotations and lambda expressions.
@@ -131,6 +175,7 @@ let fields = keys(material)
 ```
 
 Collection expansion is bounded by `maxEvaluationItems`, so malformed or unexpectedly large source does not grow without limit.
+Expanded recursive item models are independently bounded by `maxItemModelDepth`, measured in edges from a root at depth 0.
 
 ## Namespace imports
 
@@ -191,6 +236,7 @@ Place `rsgl.config.json` in a project directory or one of its ancestors. The ext
 - `namespace` is a project default, not a hard override. Precedence is: an explicit compiler/API override, a source `namespace` declaration, the project setting, then `minecraft`.
 - `target` is a project-wide Java Edition constraint. Set exactly one of `format` (for example `[50, 0]`) or `mc` (for example `"1.21.4"`). A matching source target is allowed; a conflicting one is diagnosed.
 - `maxEvaluationItems` is the positive budget for bounded compile-time collection expansion and defaults to `100000`. It participates in compiler cache identity.
+- `maxItemModelDepth` is the positive expanded item-model recursion limit, measured in edges from root depth 0, and defaults to `128`. It participates in compiler cache identity.
 - `emitSourceMap`, `manifest`, `defaultAssetsPath`, `resourcePackRoots`, `extern`, and `checkExternExistence` control generated metadata and external resource validation.
 
 Command-line `--out` overrides `outDir` for build, check, and watch operations without changing the config file.

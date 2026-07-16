@@ -1,81 +1,31 @@
+import {
+  findItemModelSpecialSchema,
+  findItemModelTintSchema,
+  isItemModelSchemaEntryAvailable,
+  itemModelFormatFromTarget,
+  itemModelSchemaAvailabilityMessage,
+  itemModelSpecialVariantsForTarget,
+  type ItemModelFieldSchema
+} from "../itemModelSchema";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { appendGeneratedPath } from "./sourcePaths";
 import { checkJsonResourceReference } from "./jsonResourceReferenceValidation";
 import { getItemSpecialTextureConsumer } from "./resourceReferenceConsumers";
 import { pushUnitDiagnostic } from "./validationDiagnostics";
-import {
-  requireArray,
-  requireEnum,
-  requireNumberInRange,
-  requireObject,
-  requireString,
-  stripMinecraftPrefix
-} from "./validationPrimitives";
+import { requireArray, requireObject, stripMinecraftPrefix } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
-
-const specialModelRequiredFields = new Map<string, string[]>([
-  ["banner", ["color"]],
-  ["bell", []],
-  ["book", ["open_angle", "page1", "page2"]],
-  ["chest", ["texture"]],
-  ["conduit", []],
-  ["copper_golem_statue", ["pose", "texture"]],
-  ["decorated_pot", []],
-  ["end_cube", ["effect"]],
-  ["head", ["kind"]],
-  ["player_head", []],
-  ["shield", []],
-  ["shulker_box", ["texture"]],
-  ["trident", []]
-]);
-
-const specialModelEnumFields = new Map<string, Array<{ field: string; values: string[] }>>([
-  ["banner", [
-    { field: "attachment", values: ["ground", "wall"] },
-    { field: "color", values: ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"] }
-  ]],
-  ["chest", [
-    { field: "chest_type", values: ["single", "left", "right"] }
-  ]],
-  ["copper_golem_statue", [
-    { field: "pose", values: ["standing", "sitting", "running", "star"] }
-  ]],
-  ["end_cube", [
-    { field: "effect", values: ["gateway", "portal"] }
-  ]],
-  ["head", [
-    { field: "kind", values: ["skeleton", "wither_skeleton", "player", "zombie", "creeper", "piglin", "dragon"] }
-  ]]
-]);
-
-const specialModelStringFields = new Map<string, string[]>([
-  ["chest", ["texture"]],
-  ["copper_golem_statue", ["texture"]],
-  ["head", ["texture"]],
-  ["shulker_box", ["texture"]]
-]);
-
-const itemTintRequiredFields = new Map<string, string[]>([
-  ["constant", ["value"]],
-  ["dye", ["default"]],
-  ["firework", ["default"]],
-  ["grass", ["temperature", "downfall"]],
-  ["map_color", ["default"]],
-  ["potion", ["default"]],
-  ["team", ["default"]],
-  ["custom_model_data", ["default"]]
-]);
 
 export function validateItemSpecial(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
+  generatedPath: string,
+  validateResourceReferences = true
 ): void {
   const basePath = appendGeneratedPath(generatedPath, "base");
   const specialModelPath = appendGeneratedPath(generatedPath, "model");
-  if (typeof model.base === "string") {
+  if (typeof model.base === "string" && validateResourceReferences) {
     checkJsonResourceReference(
       model,
       "base",
@@ -85,7 +35,7 @@ export function validateItemSpecial(
       diagnostics,
       basePath
     );
-  } else {
+  } else if (typeof model.base !== "string") {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSpecialBase", "Item special model must define a base model id.", "error", basePath);
   }
 
@@ -98,9 +48,9 @@ export function validateItemSpecial(
     return;
   }
 
-  validateSpecialModelShape(specialModel, unit, diagnostics, specialModelPath);
+  validateSpecialModelShape(specialModel, unit, options, diagnostics, specialModelPath);
   const texture = typeof specialModel.texture === "string" ? specialModel.texture : null;
-  if (texture !== null) {
+  if (texture !== null && validateResourceReferences) {
     const consumer = getItemSpecialTextureConsumer(stripMinecraftPrefix(specialModel.type));
     if (consumer) {
       checkJsonResourceReference(
@@ -119,6 +69,7 @@ export function validateItemSpecial(
 export function validateItemTints(
   model: Record<string, JsonValue>,
   unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
@@ -135,6 +86,7 @@ export function validateItemTints(
     return;
   }
 
+  const target = itemModelFormatFromTarget(options.targetPackFormat);
   for (const [index, tint] of tints.entries()) {
     const tintPath = appendGeneratedPath(tintsPath, String(index));
     const tintObject = requireObject(tint, unit, diagnostics, {
@@ -146,133 +98,208 @@ export function validateItemTints(
       continue;
     }
     const type = stripMinecraftPrefix(tintObject.type);
-    const requiredFields = type ? itemTintRequiredFields.get(type) : undefined;
-    if (!type || !requiredFields) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemTint", "Item tint must define a known tint type.", "error", tintPath);
+    const schema = type ? findItemModelTintSchema(type) : undefined;
+    if (!type || !schema) {
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemTint", "Item tint must define a known tint type.", "error", appendGeneratedPath(tintPath, "type"));
       continue;
     }
-    for (const field of requiredFields) {
-      if (!(field in tintObject)) {
-        pushUnitDiagnostic(diagnostics, unit, "rsgl.missingItemTintField", `Item tint '${type}' must define '${field}'.`, "error", tintPath);
-      }
+    if (target && !isItemModelSchemaEntryAvailable(schema, target)) {
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.unsupportedItemTint",
+        itemModelSchemaAvailabilityMessage("Item tint '" + type + "'", schema, target),
+        "error",
+        appendGeneratedPath(tintPath, "type")
+      );
     }
-    validateTintValue(tintObject, type, unit, diagnostics, tintPath);
+    validateSchemaFields(
+      tintObject,
+      type,
+      schema.fields,
+      unit,
+      diagnostics,
+      tintPath,
+      "Tint",
+      "rsgl.missingItemTintField",
+      "rsgl.invalidItemTintField",
+      "rsgl.unexpectedItemTintField"
+    );
   }
 }
 
 function validateSpecialModelShape(
   specialModel: Record<string, JsonValue>,
   unit: ResourceUnit,
+  options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
 ): void {
   const typePath = appendGeneratedPath(generatedPath, "type");
   const type = stripMinecraftPrefix(specialModel.type);
-  const requiredFields = type ? specialModelRequiredFields.get(type) : undefined;
-  if (!type || !requiredFields) {
+  const schema = type ? findItemModelSpecialSchema(type) : undefined;
+  if (!type || !schema) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidItemSpecialModelType", "Item special model must define a known special model type.", "error", typePath);
     return;
   }
 
-  for (const field of requiredFields) {
-    if (!(field in specialModel)) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.missingItemSpecialModelField", `Item special model '${type}' must define '${field}'.`, "error", typePath);
-    }
-  }
-
-  for (const { field, values } of specialModelEnumFields.get(type) ?? []) {
-    const value = specialModel[field];
-    if (value !== undefined) {
-      requireEnum(value, values, unit, diagnostics, {
-        code: "rsgl.invalidItemSpecialModelField",
-        message: `Item special model '${type}' field '${field}' has an invalid value.`,
-        generatedPath: appendGeneratedPath(generatedPath, field)
-      });
-    }
-  }
-
-  for (const field of specialModelStringFields.get(type) ?? []) {
-    if (field in specialModel) {
-      requireString(specialModel[field], unit, diagnostics, {
-        code: "rsgl.invalidItemSpecialModelField",
-        message: `Field '${field}' must be a string.`,
-        generatedPath: appendGeneratedPath(generatedPath, field)
-      });
-    }
-  }
-
-  validateNumberFieldInRange(specialModel, "page1", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
-  validateNumberFieldInRange(specialModel, "page2", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
-  validateNumberFieldInRange(specialModel, "openness", 0, 1, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
-  validateNumberFieldInRange(specialModel, "animation", -Infinity, Infinity, "rsgl.invalidItemSpecialModelField", unit, diagnostics, generatedPath);
-  if ("open_angle" in specialModel && !Number.isInteger(specialModel.open_angle)) {
+  const target = itemModelFormatFromTarget(options.targetPackFormat);
+  if (target && !isItemModelSchemaEntryAvailable(schema, target)) {
     pushUnitDiagnostic(
       diagnostics,
       unit,
-      "rsgl.invalidItemSpecialModelField",
-      "Item special model 'book' field 'open_angle' must be an integer.",
+      "rsgl.unsupportedItemSpecialModelType",
+      itemModelSchemaAvailabilityMessage("Item special model type '" + type + "'", schema, target),
       "error",
-      appendGeneratedPath(generatedPath, "open_angle")
+      typePath
     );
   }
+
+  const projectedVariants = itemModelSpecialVariantsForTarget(schema, target);
+  const variants = projectedVariants.length > 0
+    ? projectedVariants
+    : itemModelSpecialVariantsForTarget(schema, undefined);
+  const fields = unionSpecialFields(variants.map(variant => variant.fields));
+  validateSchemaFields(
+    specialModel,
+    type,
+    fields,
+    unit,
+    diagnostics,
+    generatedPath,
+    "Special model",
+    "rsgl.missingItemSpecialModelField",
+    "rsgl.invalidItemSpecialModelField",
+    "rsgl.unexpectedItemSpecialModelField"
+  );
 }
 
-function validateTintValue(
-  tint: Record<string, JsonValue>,
+function unionSpecialFields(
+  variants: readonly (readonly ItemModelFieldSchema[])[]
+): readonly ItemModelFieldSchema[] {
+  const rules = new Map<string, ItemModelFieldSchema>();
+  const requiredCounts = new Map<string, number>();
+  for (const fields of variants) {
+    for (const rule of fields) {
+      if (!rules.has(rule.name)) {
+        rules.set(rule.name, rule);
+      }
+      if (rule.required) {
+        requiredCounts.set(rule.name, (requiredCounts.get(rule.name) ?? 0) + 1);
+      }
+    }
+  }
+  return [...rules.values()].map(rule => ({
+    ...rule,
+    required: (requiredCounts.get(rule.name) ?? 0) === variants.length
+  }));
+}
+
+function validateSchemaFields(
+  object: Record<string, JsonValue>,
   type: string,
+  fields: readonly ItemModelFieldSchema[],
   unit: ResourceUnit,
   diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
+  generatedPath: string,
+  label: string,
+  missingCode: string,
+  invalidCode: string,
+  unexpectedCode: string
 ): void {
-  for (const field of ["value", "default"]) {
-    if (field in tint && !isColorValue(tint[field])) {
+  const allowedFields = new Set(["type", ...fields.map(rule => rule.name)]);
+  for (const key of Object.keys(object)) {
+    if (allowedFields.has(key)) {
+      continue;
+    }
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      unexpectedCode,
+      label + " '" + type + "' does not support field '" + key + "'.",
+      "error",
+      appendGeneratedPath(generatedPath, key)
+    );
+  }
+  for (const rule of fields) {
+    if (rule.required && !Object.hasOwn(object, rule.name)) {
       pushUnitDiagnostic(
         diagnostics,
         unit,
-        "rsgl.invalidItemTintColor",
-        `Item tint '${type}' field '${field}' must be a packed color integer or RGB triplet.`,
+        missingCode,
+        label + " '" + type + "' must define '" + rule.name + "'.",
         "error",
-        appendGeneratedPath(generatedPath, field)
+        appendGeneratedPath(generatedPath, rule.name)
       );
+      continue;
     }
-  }
-  validateNumberFieldInRange(tint, "temperature", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
-  validateNumberFieldInRange(tint, "downfall", 0, 1, "rsgl.invalidItemTintField", unit, diagnostics, generatedPath);
-  if ("index" in tint && (!Number.isInteger(tint.index) || Number(tint.index) < 0)) {
+    if (!Object.hasOwn(object, rule.name) || isSchemaFieldValue(rule, object[rule.name])) {
+      continue;
+    }
+    const code = rule.kind === "color" ? "rsgl.invalidItemTintColor" : invalidCode;
     pushUnitDiagnostic(
       diagnostics,
       unit,
-      "rsgl.invalidItemTintField",
-      `Item tint '${type}' field 'index' must be a non-negative integer.`,
+      code,
+      schemaFieldMessage(label, type, rule),
       "error",
-      appendGeneratedPath(generatedPath, "index")
+      appendGeneratedPath(generatedPath, rule.name)
     );
   }
 }
 
-function validateNumberFieldInRange(
-  object: Record<string, JsonValue>,
-  field: string,
-  min: number,
-  max: number,
-  code: string,
-  unit: ResourceUnit,
-  diagnostics: RsglCompileDiagnostic[],
-  generatedPath: string
-): void {
-  if (!(field in object)) {
-    return;
+function isSchemaFieldValue(rule: ItemModelFieldSchema, value: JsonValue): boolean {
+  if (rule.kind === "json") {
+    return true;
   }
-  requireNumberInRange(object[field], min, max, unit, diagnostics, {
-    code,
-    message: `Field '${field}' must be a number${Number.isFinite(min) && Number.isFinite(max) ? ` between ${min} and ${max}` : ""}.`,
-    generatedPath: appendGeneratedPath(generatedPath, field)
-  });
+  if (rule.kind === "boolean") {
+    return typeof value === "boolean";
+  }
+  if (rule.kind === "string" || rule.kind === "resourceId") {
+    return typeof value === "string";
+  }
+  if (rule.kind === "enum") {
+    const normalized = stripMinecraftPrefix(value);
+    return normalized !== null && (rule.values ?? []).includes(normalized);
+  }
+  if (rule.kind === "integer") {
+    return Number.isInteger(value);
+  }
+  if (rule.kind === "nonNegativeInteger") {
+    return Number.isSafeInteger(value) && Number(value) >= 0;
+  }
+  if (rule.kind === "finiteNumber") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  if (rule.kind === "positiveNumber") {
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+  }
+  if (rule.kind === "numberInUnitRange") {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+  }
+  return isColorValue(value);
+}
+
+function schemaFieldMessage(
+  label: string,
+  type: string,
+  rule: ItemModelFieldSchema
+): string {
+  if (rule.kind === "color") {
+    return label + " '" + type + "' field '" + rule.name + "' must be a signed 32-bit packed color integer or RGB triplet.";
+  }
+  if (rule.kind === "numberInUnitRange") {
+    return label + " '" + type + "' field '" + rule.name + "' must be a number between 0 and 1.";
+  }
+  if (rule.kind === "enum") {
+    return label + " '" + type + "' field '" + rule.name + "' has an invalid value.";
+  }
+  return label + " '" + type + "' field '" + rule.name + "' has an invalid value.";
 }
 
 function isColorValue(value: JsonValue | undefined): boolean {
   if (typeof value === "number" && Number.isInteger(value)) {
-    return value >= 0 && value <= 0xffffff;
+    return value >= -0x80000000 && value <= 0x7fffffff;
   }
   return Array.isArray(value)
     && value.length === 3

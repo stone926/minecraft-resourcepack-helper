@@ -1,26 +1,12 @@
 import type {
-  BlockNode,
-  BlockstateChoiceBodyNode,
-  BlockstateMultipartRootBodyNode,
-  BlockstateVariantsRootBodyNode,
-  MultipartBodyNode,
-  ResourceBodyNode,
+  ItemModelNode,
   RsglNode,
   RsglStatement,
+  RsglStatementBodyNode,
   TextRange,
-  VariantBodyNode
 } from "./parser";
 import { walkRsglModule } from "./parser/astTraversal";
 import type { RsglSemanticModel, RsglSymbol } from "./semantic";
-
-type RsglBody =
-  | BlockNode
-  | ResourceBodyNode
-  | VariantBodyNode
-  | MultipartBodyNode
-  | BlockstateChoiceBodyNode
-  | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode;
 
 interface LexicalOwner {
   /** The source region in which the binding can be referenced. */
@@ -99,7 +85,7 @@ function visibilityIndex(model: RsglSemanticModel): VisibilityIndex {
   return created;
 }
 
-function indexBody(body: RsglBody, owners: Map<RsglNode, LexicalOwner>): void {
+function indexBody(body: RsglStatementBodyNode, owners: Map<RsglNode, LexicalOwner>): void {
   const region = lexicalOwner(body.range);
   for (const statement of body.statements) {
     if (statement.kind === "LetDecl") {
@@ -172,13 +158,50 @@ function indexNestedScopes(
     case "ModelTransformStmt":
       indexBody(statement.body, owners);
       break;
-    case "ItemRangeStmt":
-      if (statement.frames) {
-        // `index` and `frame` are synthetic bindings scoped to the frame model.
-        owners.set(statement.frames, lexicalOwner(statement.frames.model.range));
-      }
+    case "ItemModelProducerStmt":
+      indexItemModelNode(statement.value, owners);
+      break;
+    case "ItemSelectCase":
+    case "ItemRangeEntry":
+    case "ItemFallbackClause":
+    case "ItemCompositeModel":
+    case "ItemFirstMatchWhen":
+      indexItemModelNode(statement.model, owners);
+      break;
+    case "ItemRangeFrames":
+      // `index` and `frame` are synthetic bindings scoped to the complete nested model.
+      owners.set(statement, lexicalOwner(statement.model.range));
+      indexItemModelNode(statement.model, owners);
       break;
     default:
+      break;
+  }
+}
+
+function indexItemModelNode(
+  model: ItemModelNode,
+  owners: Map<RsglNode, LexicalOwner>
+): void {
+  switch (model.kind) {
+    case "ItemModelRange":
+    case "ItemModelSelect":
+    case "ItemModelComposite":
+    case "ItemModelFirstMatch":
+      indexBody(model.body, owners);
+      break;
+    case "ItemModelCondition":
+      if (model.onTrue) {
+        indexItemModelNode(model.onTrue, owners);
+      }
+      if (model.onFalse) {
+        indexItemModelNode(model.onFalse, owners);
+      }
+      break;
+    case "ItemModelExpr":
+    case "ItemModelUse":
+    case "ItemModelSpecial":
+    case "ItemModelEmpty":
+    case "ItemModelSelectedItem":
       break;
   }
 }

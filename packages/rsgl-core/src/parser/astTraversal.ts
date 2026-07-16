@@ -1,18 +1,13 @@
 import {
-  BlockNode,
-  BlockstateChoiceBodyNode,
   BlockstateChoiceNode,
   BlockstateModelSpecNode,
-  BlockstateMultipartRootBodyNode,
-  BlockstateVariantsRootBodyNode,
   ExprNode,
-  MultipartBodyNode,
+  ItemModelNode,
   ObjectPropertyNode,
-  ResourceBodyNode,
   RsglModule,
   RsglStatement,
+  RsglStatementBodyNode,
   TypeNode,
-  VariantBodyNode
 } from "./types";
 
 export type RsglAstVisitControl = "skipChildren" | void;
@@ -25,15 +20,6 @@ export interface RsglAstVisitor {
   enterType?(type: TypeNode): RsglAstVisitControl;
   leaveType?(type: TypeNode): void;
 }
-
-type RsglBody =
-  | BlockNode
-  | ResourceBodyNode
-  | VariantBodyNode
-  | MultipartBodyNode
-  | BlockstateChoiceBodyNode
-  | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode;
 
 /**
  * Walks every statement and expression in deterministic structural order.
@@ -61,7 +47,7 @@ export function walkRsglType(type: TypeNode, visitor: RsglAstVisitor): void {
   walkType(type, visitor);
 }
 
-function walkBody(body: RsglBody, visitor: RsglAstVisitor): void {
+function walkBody(body: RsglStatementBodyNode, visitor: RsglAstVisitor): void {
   body.statements.forEach(statement => walkStatement(statement, visitor));
 }
 
@@ -81,8 +67,6 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
     case "ExportDecl":
     case "ExternDecl":
     case "ExternVarStmt":
-    case "ItemEmptyStmt":
-    case "ItemSelectedItemStmt":
     case "UnknownStmt":
       break;
     case "TypeAliasDecl":
@@ -235,44 +219,29 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       walkExpression(statement.pivot, visitor);
       walkBody(statement.body, visitor);
       break;
-    case "ItemRangeStmt":
+    case "ItemModelProducerStmt":
+      walkItemModelNode(statement.value, visitor);
+      break;
+    case "ItemSelectCase":
+      walkExpression(statement.when, visitor);
+      walkItemModelNode(statement.model, visitor);
+      break;
+    case "ItemRangeEntry":
+      walkExpression(statement.threshold, visitor);
+      walkItemModelNode(statement.model, visitor);
+      break;
+    case "ItemRangeFrames":
+      walkExpression(statement.frames, visitor);
+      walkItemModelNode(statement.model, visitor);
+      break;
+    case "ItemFallbackClause":
+    case "ItemCompositeModel":
+      walkItemModelNode(statement.model, visitor);
+      break;
+    case "ItemFirstMatchWhen":
       walkExpression(statement.property, visitor);
-      statement.options.forEach(option => walkExpression(option.value, visitor));
-      if (statement.frames) {
-        walkExpression(statement.frames.frames, visitor);
-        walkExpression(statement.frames.model, visitor);
-      }
-      if (statement.fallback) {
-        walkExpression(statement.fallback, visitor);
-      }
-      break;
-    case "ItemSelectStmt":
-      walkExpression(statement.property, visitor);
-      statement.options.forEach(option => walkExpression(option.value, visitor));
-      statement.cases.forEach(item => {
-        walkExpression(item.when, visitor);
-        walkExpression(item.model, visitor);
-      });
-      if (statement.fallback) {
-        walkExpression(statement.fallback, visitor);
-      }
-      break;
-    case "ItemConditionStmt":
-      walkExpression(statement.property, visitor);
-      statement.options.forEach(option => walkExpression(option.value, visitor));
-      if (statement.onTrue) {
-        walkExpression(statement.onTrue, visitor);
-      }
-      if (statement.onFalse) {
-        walkExpression(statement.onFalse, visitor);
-      }
-      break;
-    case "ItemCompositeStmt":
-      statement.models.forEach(model => walkExpression(model, visitor));
-      break;
-    case "ItemSpecialStmt":
-      walkExpression(statement.base, visitor);
-      walkExpression(statement.model, visitor);
+      statement.propertyOptions.forEach(option => walkExpression(option.value, visitor));
+      walkItemModelNode(statement.model, visitor);
       break;
     case "BaseStmt":
       walkExpression(statement.path, visitor);
@@ -299,6 +268,62 @@ function walkBlockstateModelSpec(model: BlockstateModelSpecNode, visitor: RsglAs
   walkExpression(model.model, visitor);
   if (model.options) {
     walkExpression(model.options, visitor);
+  }
+}
+
+/** Internal recursive item-model walker; public visitors continue to observe statements and expressions. */
+function walkItemModelNode(model: ItemModelNode, visitor: RsglAstVisitor): void {
+  switch (model.kind) {
+    case "ItemModelExpr":
+      walkExpression(model.expression, visitor);
+      if (model.options) {
+        walkExpression(model.options, visitor);
+      }
+      break;
+    case "ItemModelUse":
+      walkExpression(model.expression, visitor);
+      break;
+    case "ItemModelRange":
+    case "ItemModelSelect":
+      walkExpression(model.property, visitor);
+      model.propertyOptions.forEach(option => walkExpression(option.value, visitor));
+      walkBody(model.body, visitor);
+      if (model.options) {
+        walkExpression(model.options, visitor);
+      }
+      break;
+    case "ItemModelCondition":
+      walkExpression(model.property, visitor);
+      model.propertyOptions.forEach(option => walkExpression(option.value, visitor));
+      if (model.onTrue) {
+        walkItemModelNode(model.onTrue, visitor);
+      }
+      if (model.onFalse) {
+        walkItemModelNode(model.onFalse, visitor);
+      }
+      if (model.options) {
+        walkExpression(model.options, visitor);
+      }
+      break;
+    case "ItemModelComposite":
+    case "ItemModelFirstMatch":
+      walkBody(model.body, visitor);
+      if (model.options) {
+        walkExpression(model.options, visitor);
+      }
+      break;
+    case "ItemModelSpecial":
+      walkExpression(model.base, visitor);
+      walkExpression(model.model, visitor);
+      if (model.options) {
+        walkExpression(model.options, visitor);
+      }
+      break;
+    case "ItemModelEmpty":
+    case "ItemModelSelectedItem":
+      break;
+    default:
+      assertNever(model);
   }
 }
 

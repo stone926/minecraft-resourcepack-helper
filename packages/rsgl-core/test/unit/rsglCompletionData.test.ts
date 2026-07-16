@@ -20,7 +20,7 @@ describe("RSGL completion data", () => {
       assert.strictEqual(insertText.includes(" -> "), false, `${label} must not insert an output-contract arrow`);
     }
 
-    for (const label of ["template -> model", "template -> variants", "template -> multipart", "template -> choice"]) {
+    for (const label of ["template -> model", "template -> variants", "template -> multipart", "template -> choice", "template -> item_model"]) {
       const candidate = candidates.find(item => item.label === label);
       assert.ok(candidate?.insertText?.includes(" -> "), `${label} should insert an output-contract arrow`);
     }
@@ -61,6 +61,7 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "template -> variants"));
     assert.ok(topLevel.some(candidate => candidate.label === "template -> multipart"));
     assert.ok(topLevel.some(candidate => candidate.label === "template -> choice"));
+    assert.ok(topLevel.some(candidate => candidate.label === "template -> item_model"));
     assert.strictEqual(topLevel.some(candidate => candidate.label === "template"), false);
     for (const label of [
       "map",
@@ -150,6 +151,172 @@ describe("RSGL completion data", () => {
     assert.strictEqual(nestedVariants.has("element"), false);
     assert.strictEqual(nestedVariants.has("transform"), false);
     assert.strictEqual(nestedVariants.has("part always"), false);
+  });
+
+  it("scopes item-model completions to roots, typed owners, values, and options", () => {
+    const labelsAtEnd = (text: string) => new Set(
+      getRsglCompletionCandidates(text, text.length).map(candidate => candidate.label)
+    );
+
+    const root = labelsAtEnd("item example {\n  ");
+    for (const label of ["model", "select", "range", "condition", "first_match", "use item_model", "merge", "hand_animation_on_swap"]) {
+      assert.ok(root.has(label), `missing item-root completion ${label}`);
+    }
+    assert.strictEqual(root.has("parent"), false);
+    assert.strictEqual(root.has("element"), false);
+
+    const template = labelsAtEnd("template reusable() -> item_model {\n  ");
+    assert.ok(template.has("model"));
+    assert.ok(template.has("first_match"));
+    assert.ok(template.has("use item_model"));
+    assert.strictEqual(template.has("merge"), false);
+    assert.strictEqual(template.has("hand_animation_on_swap"), false);
+
+    const select = labelsAtEnd([
+      "item example {",
+      "  select property minecraft:display_context {",
+      "    "
+    ].join("\n"));
+    assert.ok(select.has("case"));
+    assert.ok(select.has("fallback"));
+    assert.ok(select.has("for"));
+    assert.strictEqual(select.has("entry"), false);
+
+    const range = labelsAtEnd([
+      "item example {",
+      "  range property minecraft:damage {",
+      "    "
+    ].join("\n"));
+    assert.ok(range.has("entry"));
+    assert.ok(range.has("frames"));
+    assert.strictEqual(range.has("case"), false);
+
+    const nestedValue = labelsAtEnd([
+      "item example {",
+      "  select property minecraft:display_context {",
+      "    case \"gui\" => "
+    ].join("\n"));
+    assert.ok(nestedValue.has("condition"));
+    assert.ok(nestedValue.has("empty"));
+    assert.ok(nestedValue.has("use item_model"));
+    assert.strictEqual(nestedValue.has("case"), false);
+
+    const condition = labelsAtEnd([
+      "item example {",
+      "  condition property minecraft:using_item {",
+      "    "
+    ].join("\n"));
+    assert.deepStrictEqual(
+      [...condition].filter(label => label === "on_true" || label === "on_false").sort(),
+      ["on_false", "on_true"]
+    );
+    for (const control of ["let", "for", "if"]) {
+      assert.strictEqual(condition.has(control), false, `condition must not suggest ${control}`);
+    }
+
+    const leafOptions = labelsAtEnd([
+      "item example {",
+      "  model minecraft:item/example with {",
+      "    "
+    ].join("\n"));
+    assert.deepStrictEqual([...leafOptions].sort(), ["tints", "transformation"]);
+
+    const transformOptions = labelsAtEnd([
+      "item example {",
+      "  composite { model minecraft:item/example } with {",
+      "    "
+    ].join("\n"));
+    assert.deepStrictEqual([...transformOptions], ["transformation"]);
+
+    const modelBody = labelsAtEnd("model block example {\n  ");
+    assert.strictEqual(modelBody.has("range"), false);
+    assert.strictEqual(modelBody.has("select"), false);
+  });
+
+  it("derives target-aware item property, enum, tint, special, and transform candidates from the schema", () => {
+    const labelsAtEnd = (text: string) => new Set(
+      getRsglCompletionCandidates(text, text.length).map(candidate => candidate.label)
+    );
+
+    const format44Properties = labelsAtEnd("target java format [44, 0]\nitem x {\n  select property ");
+    assert.ok(format44Properties.has("minecraft:display_context"));
+    assert.ok(format44Properties.has("minecraft:potion_contents"));
+    assert.strictEqual(format44Properties.has("minecraft:component"), false);
+    assert.strictEqual(format44Properties.has("minecraft:context_dimension"), false);
+
+    const format44Root = labelsAtEnd("target java format [44, 0]\nitem x {\n  ");
+    const format44Branch = labelsAtEnd([
+      "target java format [44, 0]",
+      "item x {",
+      "  select property minecraft:display_context {",
+      "    fallback "
+    ].join("\n"));
+    assert.strictEqual(format44Root.has("empty"), false);
+    assert.strictEqual(format44Branch.has("empty"), false);
+    const format46Root = labelsAtEnd("target java format [46, 0]\nitem x {\n  ");
+    assert.ok(format46Root.has("empty"));
+
+    const minecraftVersionOptions = labelsAtEnd([
+      "target java mc \"1.21.4\"",
+      "item x {",
+      "  range property minecraft:time "
+    ].join("\n"));
+    assert.ok(minecraftVersionOptions.has("source"), "1.21.4 maps to format 46");
+    assert.strictEqual(minecraftVersionOptions.has("natural_only"), false);
+
+    const sourceValues = labelsAtEnd([
+      "target java format [46, 0]",
+      "item x {",
+      "  range property minecraft:time source "
+    ].join("\n"));
+    assert.deepStrictEqual([...sourceValues].sort(), ["daytime", "moon_phase", "random"]);
+
+    const displayContext65_1 = labelsAtEnd([
+      "target java format [65, 1]",
+      "item x {",
+      "  select property minecraft:display_context {",
+      "    case "
+    ].join("\n"));
+    assert.ok(displayContext65_1.has("\"none\""));
+    assert.strictEqual(displayContext65_1.has("\"on_shelf\""), false);
+    const displayContext65_2 = labelsAtEnd([
+      "target java format [65, 2]",
+      "item x {",
+      "  select property minecraft:display_context {",
+      "    case "
+    ].join("\n"));
+    assert.ok(displayContext65_2.has("\"on_shelf\""));
+
+    const shulker82 = labelsAtEnd([
+      "target java format [82, 0]",
+      "item x {",
+      "  special base minecraft:item/x model { type: minecraft:shulker_box, "
+    ].join("\n"));
+    assert.ok(shulker82.has("orientation"));
+    const shulker83 = labelsAtEnd([
+      "target java format [83, 0]",
+      "item x {",
+      "  special base minecraft:item/x model { type: minecraft:shulker_box, "
+    ].join("\n"));
+    assert.strictEqual(shulker83.has("orientation"), false);
+    assert.ok(shulker83.has("texture"));
+
+    const tintType = labelsAtEnd("item x {\n  model minecraft:item/x with { tints: [{ type: ");
+    assert.ok(tintType.has("minecraft:potion"));
+    const tintFields = labelsAtEnd("item x {\n  model minecraft:item/x with { tints: [{ type: minecraft:potion, ");
+    assert.deepStrictEqual([...tintFields], ["default"]);
+
+    const oldLeafOptions = labelsAtEnd("target java format [44, 0]\nitem x {\n  model minecraft:item/x with { ");
+    assert.deepStrictEqual([...oldLeafOptions], ["tints"]);
+    const transformationFields = labelsAtEnd([
+      "target java format [83, 0]",
+      "item x {",
+      "  model minecraft:item/x with { transformation: { "
+    ].join("\n"));
+    assert.deepStrictEqual(
+      [...transformationFields],
+      ["right_rotation", "translation", "left_rotation", "scale"]
+    );
   });
 
   it("keeps model geometry completion metadata and ordering descriptor-backed", () => {

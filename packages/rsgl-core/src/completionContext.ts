@@ -1,3 +1,10 @@
+import { isObjectPropertyKeyPosition } from "./completionObjectContext";
+import {
+  createItemModelCompletionAnalyzer,
+  type RsglItemModelCompletionContext
+} from "./itemModelCompletionContext";
+import type { ItemModelFormat } from "./itemModelSchema";
+import { effectiveItemModelTargetFormat } from "./itemModelTarget";
 import {
   lexRsgl,
   parseRsgl,
@@ -10,6 +17,13 @@ import {
 import { isRsglArrowText } from "./parser/arrowSemantics";
 import { walkRsglModule } from "./parser/astTraversal";
 
+export type {
+  RsglItemModelCompletionContext,
+  RsglItemModelCompletionOwner,
+  RsglItemModelPropertyFamily,
+  RsglItemModelSchemaCompletionContext
+} from "./itemModelCompletionContext";
+
 export interface RsglBlockstateCompletionContext {
   mode: BlockstateMode;
   scope: "concreteRoot" | "nestedRoot" | "entryTemplate";
@@ -17,10 +31,14 @@ export interface RsglBlockstateCompletionContext {
 
 export interface RsglCompletionContext {
   insideBlock: boolean;
+  resourceKind?: string;
   allowBase: boolean;
   allowExternVar: boolean;
   templateOutputDialect?: DeclaredTemplateOutputDialect;
+  /** Effective file-local or project fallback target, when known. */
+  targetFormat?: ItemModelFormat;
   blockstate?: RsglBlockstateCompletionContext;
+  itemModel?: RsglItemModelCompletionContext;
   blockstateChoice: boolean;
   /** The cursor is at a property-key position in a ModelSpec `with` object. */
   blockstateModelOptions: boolean;
@@ -29,7 +47,11 @@ export interface RsglCompletionContext {
 }
 
 /** Computes the small amount of syntax context needed by static completions. */
-export function getRsglCompletionContext(text: string, offset: number): RsglCompletionContext {
+export function getRsglCompletionContext(
+  text: string,
+  offset: number,
+  projectTargetFormat?: ItemModelFormat
+): RsglCompletionContext {
   const prefix = text.slice(0, Math.max(0, Math.min(offset, text.length)));
   const openBraces = unmatchedOpenBraces(prefix);
   const openBrace = openBraces.at(-1);
@@ -47,16 +69,20 @@ export function getRsglCompletionContext(text: string, offset: number): RsglComp
   // Completion is a hot LSP path. Parse the prefix once, then derive each
   // independent context facet from the same immutable syntax tree.
   const module = parseRsgl(prefix);
-  const bodyOwner = bodyOwnerAt(module, openBrace);
+  const bodyOwner = bodyOwnerAt(module, prefix, openBrace);
   const templateOutputDialect = templateDialectInStatementsAt(module.statements, openBrace);
+  const targetFormat = effectiveItemModelTargetFormat(module, projectTargetFormat);
 
   return {
     insideBlock: true,
+    ...(bodyOwner.resourceKind ? { resourceKind: bodyOwner.resourceKind } : {}),
     allowBase: isBaseOperandPosition(prefix.slice(openBrace + 1))
       && bodyOwner.resourceKind !== null,
     allowExternVar: bodyOwner.resourceKind === "model",
     templateOutputDialect,
+    targetFormat,
     blockstate: bodyOwner.blockstate,
+    itemModel: bodyOwner.itemModel,
     blockstateChoice: bodyOwner.blockstateChoice,
     blockstateModelOptions: bodyOwner.blockstateModelOptions
       && isObjectPropertyKeyPosition(prefix.slice(openBrace + 1)),
@@ -69,12 +95,15 @@ interface CompletionBodyOwner {
   blockstate?: RsglBlockstateCompletionContext;
   blockstateChoice: boolean;
   blockstateModelOptions: boolean;
+  itemModel?: RsglItemModelCompletionContext;
 }
 
 function bodyOwnerAt(
   module: RsglModule,
+  prefix: string,
   openBrace: number
 ): CompletionBodyOwner {
+  const analyzeItemModel = createItemModelCompletionAnalyzer(module, prefix, openBrace);
   const owner: CompletionBodyOwner = {
     resourceKind: null,
     blockstateChoice: false,
@@ -82,6 +111,14 @@ function bodyOwnerAt(
   };
   walkRsglModule(module, {
     enterStatement(statement) {
+      const itemModel = analyzeItemModel(statement);
+      if (itemModel) {
+        owner.itemModel = itemModel.context;
+        if (itemModel.resourceKind) {
+          owner.resourceKind = itemModel.resourceKind;
+        }
+        return "skipChildren";
+      }
       if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
         owner.resourceKind = statement.resourceKind;
         if (statement.resourceKind === "blockstate") {
@@ -165,39 +202,6 @@ function isBlockstatePredicatePosition(
     return !tokens.slice(index + 2).some(token => isRsglArrowText(token.text));
   }
   return false;
-}
-
-/** Keeps field completions out of ModelSpec option values and nested calls. */
-function isObjectPropertyKeyPosition(bodyPrefix: string): boolean {
-  const tokens = lexRsgl(bodyPrefix).tokens.filter(token => token.kind !== "endOfFile");
-  let depth = 0;
-  let segmentStart = 0;
-  let lastTokenEnd = 0;
-
-  for (const token of tokens) {
-    if (depth === 0 && token.leadingTrivia.some(trivia => trivia.kind === "newline")) {
-      segmentStart = token.offset;
-    }
-    if (token.text === "(" || token.text === "[" || token.text === "{") {
-      depth++;
-    } else if (token.text === ")" || token.text === "]" || token.text === "}") {
-      depth = Math.max(0, depth - 1);
-    } else if (depth === 0 && (token.text === "," || token.text === ";")) {
-      segmentStart = token.offset + token.length;
-    }
-    lastTokenEnd = token.offset + token.length;
-  }
-
-  if (depth !== 0) {
-    return false;
-  }
-  const trailingText = bodyPrefix.slice(lastTokenEnd);
-  const trailingLineBreak = Math.max(trailingText.lastIndexOf("\n"), trailingText.lastIndexOf("\r"));
-  if (trailingLineBreak >= 0) {
-    segmentStart = lastTokenEnd + trailingLineBreak + 1;
-  }
-  const segment = bodyPrefix.slice(segmentStart).trim();
-  return segment.length === 0 || /^[A-Za-z_][A-Za-z0-9_]*$/.test(segment);
 }
 
 function blockstateContextForBody(

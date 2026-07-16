@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import {
   DEFAULT_MAX_EVALUATION_ITEMS,
+  DEFAULT_MAX_ITEM_MODEL_DEPTH,
   effectiveNamespace,
   parseRsglProjectConfig,
   projectCompileOptionsFromRsglConfig,
@@ -16,7 +17,8 @@ describe("RSGL project compile configuration", () => {
         edition: "java",
         format: [50, 1]
       },
-      maxEvaluationItems: 12_345
+      maxEvaluationItems: 12_345,
+      maxItemModelDepth: 96
     });
 
     assert.deepStrictEqual(config.target, {
@@ -29,7 +31,8 @@ describe("RSGL project compile configuration", () => {
         edition: "java",
         packFormat: { major: 50, minor: 1 }
       },
-      maxEvaluationItems: 12_345
+      maxEvaluationItems: 12_345,
+      maxItemModelDepth: 96
     });
     assert.deepStrictEqual(projectCompileOptionsFromRsglConfig(parseRsglProjectConfig({
       target: { edition: "java", format: 50 }
@@ -65,7 +68,8 @@ describe("RSGL project compile configuration", () => {
     const publicConfig = parseRsglProjectConfig({
       namespace: "example",
       target: { edition: "java", format: 50 },
-      maxEvaluationItems: 500
+      maxEvaluationItems: 500,
+      maxItemModelDepth: 64
     });
     const compileOptions = projectCompileOptionsFromRsglConfig(publicConfig);
 
@@ -100,7 +104,7 @@ describe("RSGL project compile configuration", () => {
     );
   });
 
-  it("rejects invalid namespaces, targets, and evaluation budgets", () => {
+  it("rejects invalid namespaces, targets, and compile limits", () => {
     const invalidConfigs: readonly [unknown, RegExp][] = [
       [{ namespace: "" }, /rsgl\.config\.json\.namespace/],
       [{ namespace: "Example" }, /rsgl\.config\.json\.namespace/],
@@ -119,7 +123,11 @@ describe("RSGL project compile configuration", () => {
       [{ maxEvaluationItems: 0 }, /rsgl\.config\.json\.maxEvaluationItems/],
       [{ maxEvaluationItems: -1 }, /rsgl\.config\.json\.maxEvaluationItems/],
       [{ maxEvaluationItems: 1.5 }, /rsgl\.config\.json\.maxEvaluationItems/],
-      [{ maxEvaluationItems: Number.MAX_SAFE_INTEGER + 1 }, /rsgl\.config\.json\.maxEvaluationItems/]
+      [{ maxEvaluationItems: Number.MAX_SAFE_INTEGER + 1 }, /rsgl\.config\.json\.maxEvaluationItems/],
+      [{ maxItemModelDepth: 0 }, /rsgl\.config\.json\.maxItemModelDepth/],
+      [{ maxItemModelDepth: -1 }, /rsgl\.config\.json\.maxItemModelDepth/],
+      [{ maxItemModelDepth: 1.5 }, /rsgl\.config\.json\.maxItemModelDepth/],
+      [{ maxItemModelDepth: Number.MAX_SAFE_INTEGER + 1 }, /rsgl\.config\.json\.maxItemModelDepth/]
     ];
 
     for (const [config, expectedMessage] of invalidConfigs) {
@@ -127,10 +135,11 @@ describe("RSGL project compile configuration", () => {
     }
   });
 
-  it("resolves namespace precedence and evaluation defaults once", () => {
+  it("resolves namespace precedence and compile defaults once", () => {
     const defaults = resolveRsglCompileConfiguration();
     assert.strictEqual(defaults.defaultNamespace, "minecraft");
     assert.strictEqual(defaults.maxEvaluationItems, DEFAULT_MAX_EVALUATION_ITEMS);
+    assert.strictEqual(defaults.maxItemModelDepth, DEFAULT_MAX_ITEM_MODEL_DEPTH);
     assert.strictEqual(effectiveNamespace(undefined, defaults), "minecraft");
 
     const projectDefault = resolveRsglCompileConfiguration({
@@ -151,10 +160,12 @@ describe("RSGL project compile configuration", () => {
     const minecraftTarget = projectCompileOptionsFromRsglConfig(parseRsglProjectConfig({
       namespace: "example",
       target: { edition: "java", mc: "1.21.4" },
-      maxEvaluationItems: 500
+      maxEvaluationItems: 500,
+      maxItemModelDepth: 64
     }));
     const formatTarget = projectCompileOptionsFromRsglConfig(parseRsglProjectConfig({
       maxEvaluationItems: 500,
+      maxItemModelDepth: 64,
       target: { format: [46, 0], edition: "java" },
       namespace: "example"
     }));
@@ -166,7 +177,8 @@ describe("RSGL project compile configuration", () => {
       resolveRsglCompileConfiguration().semanticFingerprint,
       resolveRsglCompileConfiguration({
         defaultNamespace: "minecraft",
-        maxEvaluationItems: DEFAULT_MAX_EVALUATION_ITEMS
+        maxEvaluationItems: DEFAULT_MAX_EVALUATION_ITEMS,
+        maxItemModelDepth: DEFAULT_MAX_ITEM_MODEL_DEPTH
       }).semanticFingerprint
     );
 
@@ -174,6 +186,7 @@ describe("RSGL project compile configuration", () => {
       resolveRsglCompileConfiguration({ ...minecraftTarget, namespace: "override" }),
       resolveRsglCompileConfiguration({ ...minecraftTarget, defaultNamespace: "other" }),
       resolveRsglCompileConfiguration({ ...minecraftTarget, maxEvaluationItems: 501 }),
+      resolveRsglCompileConfiguration({ ...minecraftTarget, maxItemModelDepth: 65 }),
       resolveRsglCompileConfiguration({
         ...minecraftTarget,
         projectTarget: { edition: "java", packFormat: { major: 46, minor: 1 } }

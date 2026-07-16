@@ -39,6 +39,7 @@ import {
   EvaluationItemBudget,
   MAX_EVALUATION_ITEMS_PER_ALLOCATION
 } from "./evaluationItemBudget";
+import { consumeEvaluationItems } from "./evaluationItemAccounting";
 import {
   createJsonObject,
   jsonObjectKeys,
@@ -1512,27 +1513,6 @@ function evaluateObjectEntries(
     });
   }
   return result;
-}
-
-function consumeEvaluationItems(
-  context: EvaluationContext,
-  count: number,
-  range: TextRange,
-  operation: string
-): boolean {
-  const budget = evaluationItemBudget(context);
-  if (budget.tryConsume(count)) {
-    return true;
-  }
-  context.onEvaluationFailure?.();
-  context.onError?.(
-    "rsgl.collectionExpansionLimit",
-    `Collection operation '${operation}' exceeds maxEvaluationItems=${budget.limit} `
-      + `(consumed ${budget.consumed}, requested ${Number.isSafeInteger(count) ? count : `more than ${budget.remaining}`}).`,
-    range,
-    context.sourceFile
-  );
-  return false;
 }
 
 function reportInvalidSpread(

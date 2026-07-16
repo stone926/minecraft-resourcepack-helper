@@ -5,7 +5,12 @@ export type ResolvedTemplateOutputMetadata =
   | { outputSource: "noArrowResources"; outputDialect: "resources" }
   | {
       outputSource: "explicitArrow";
-      outputDialect: Exclude<TemplateOutputDialect, "resources">;
+      outputDialect: Exclude<TemplateOutputDialect, "resources" | "item_model">;
+    }
+  | {
+      outputSource: "explicitArrow";
+      outputDialect: "item_model";
+      cardinality: "one";
     };
 
 export type RsglTemplateCallerContext =
@@ -26,7 +31,8 @@ export type RsglTemplateCallerContext =
       allowRootMerge: false;
       allowBase: false;
     }
-  | { kind: "blockstateChoice" };
+  | { kind: "blockstateChoice" }
+  | { kind: "itemModel" };
 
 export interface TemplateOutputMetadataCarrier {
   node?: unknown;
@@ -45,7 +51,11 @@ export function templateOutputMetadataForDeclaration(
   template: TemplateDeclNode
 ): ResolvedTemplateOutputMetadata {
   if (template.outputSyntax === "explicitArrow" && template.declaredOutputDialect) {
-    return {
+    return template.declaredOutputDialect === "item_model" ? {
+      outputSource: "explicitArrow",
+      outputDialect: "item_model",
+      cardinality: "one"
+    } : {
       outputSource: "explicitArrow",
       outputDialect: template.declaredOutputDialect
     };
@@ -100,6 +110,9 @@ export function templateOutputBodyCallerContext(
   if (metadata.outputDialect === "choice") {
     return { kind: "blockstateChoice" };
   }
+  if (metadata.outputDialect === "item_model") {
+    return { kind: "itemModel" };
+  }
   return {
     kind: "blockstateEntries",
     mode: metadata.outputDialect,
@@ -118,6 +131,9 @@ export function normalizeTemplateCallerContext(context: RsglTemplateCallerContex
   if (context.kind === "blockstateChoice") {
     return "blockstateChoice";
   }
+  if (context.kind === "itemModel") {
+    return "itemModel";
+  }
   return [
     context.kind,
     context.mode,
@@ -127,7 +143,9 @@ export function normalizeTemplateCallerContext(context: RsglTemplateCallerContex
 }
 
 export function templateOutputMetadataFingerprint(metadata: ResolvedTemplateOutputMetadata): string {
-  return `${metadata.outputSource}:${metadata.outputDialect}`;
+  return `${metadata.outputSource}:${metadata.outputDialect}${
+    metadata.outputDialect === "item_model" ? `:${metadata.cardinality}` : ""
+  }`;
 }
 
 export function formatTemplateOutputMetadata(metadata: ResolvedTemplateOutputMetadata): string {
@@ -154,6 +172,9 @@ function publicDialectMatchesCaller(
   }
   if (dialect === "choice") {
     return callerContext.kind === "blockstateChoice";
+  }
+  if (dialect === "item_model") {
+    return callerContext.kind === "itemModel";
   }
   return (callerContext.kind === "blockstateEntries" || callerContext.kind === "blockstateRoot")
     && callerContext.mode === dialect;

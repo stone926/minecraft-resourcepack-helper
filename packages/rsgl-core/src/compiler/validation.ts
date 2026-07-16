@@ -3,7 +3,11 @@ import { getRsglResourceKindDescriptor, RsglResourceValidationHandler } from "..
 import { validateAtlasUnit } from "./atlasValidation";
 import { validateBlockstateUnit } from "./blockstateJsonValidation";
 import { validateFontMetadata } from "./fontValidation";
-import { validateItemModelDefinition, validateItemTopLevelFields } from "./itemDefinitionValidation";
+import {
+  validateItemModelDefinition,
+  validateItemTopLevelFields,
+  type ItemDefinitionValidationMode
+} from "./itemDefinitionValidation";
 import { validateLangMetadata, validateSoundsMetadata } from "./langSoundsValidation";
 import { validateMcmetaMetadata } from "./mcmetaValidation";
 import { validateModelUnit } from "./modelReferenceValidation";
@@ -105,14 +109,46 @@ export function canonicalizeAndValidateResourceUnits(
   return diagnostics;
 }
 
+/**
+ * Validates item-definition source IR before the legacy backend replaces it
+ * with models/item output. A legacy target cannot itself select an item-model
+ * schema (the format did not exist yet), so structural validation deliberately
+ * uses the union of known historical schemas. Exact representability remains
+ * the responsibility of the legacy backend.
+ */
+export function validateLegacyItemSourceUnits(
+  units: ResourceUnit[],
+  options: RsglResourceValidationOptions = {}
+): RsglCompileDiagnostic[] {
+  const diagnostics: RsglCompileDiagnostic[] = [];
+  const validationOptions: RsglResourceValidationOptions = {
+    ...options,
+    targetPackFormat: undefined
+  };
+
+  for (const unit of units) {
+    if (unit.kind !== "item" || isExternalResourceUnit(unit)) {
+      continue;
+    }
+    const diagnosticStart = diagnostics.length;
+    validateItemUnit(unit, validationOptions, diagnostics, "sourceSchema");
+    for (const diagnostic of diagnostics.slice(diagnosticStart)) {
+      diagnostic.fileName ??= sourceFileForValidationRange(unit, diagnostic.range);
+    }
+  }
+
+  return diagnostics;
+}
+
 function validateItemUnit(
   unit: ResourceUnit,
   options: RsglResourceValidationOptions,
-  diagnostics: RsglCompileDiagnostic[]
+  diagnostics: RsglCompileDiagnostic[],
+  mode: ItemDefinitionValidationMode = "full"
 ): void {
   const content = asObject(unit.content);
-  validateItemTopLevelFields(content, unit, diagnostics, "");
-  validateItemModelDefinition(content?.model, unit, options, diagnostics, "/model");
+  validateItemTopLevelFields(content, unit, options, diagnostics, "");
+  validateItemModelDefinition(content?.model, unit, options, diagnostics, "/model", mode);
 }
 
 function validateSoundsUnit(

@@ -182,7 +182,7 @@ describe("RSGL resource-value metadata backends", () => {
       }
     };
 
-    const result = lowerItemUnitsForTarget([source], { major: 64, minor: 0 });
+    const result = lowerItemUnitsForTarget([source], { major: 43, minor: 0 });
 
     assert.deepStrictEqual(result.diagnostics, []);
     assert.strictEqual(result.units.length, 1);
@@ -215,16 +215,18 @@ describe("RSGL resource-value metadata backends", () => {
     assert.deepStrictEqual(
       observations.map(observation => observation.generatedPath),
       [
+        "/model/property",
         "/model/entries/0/model/model",
         "/model/entries/1/model/model",
         "/model/fallback/model"
       ]
     );
     assert.deepStrictEqual(
-      observations.slice(0, 2).map(observation => source.slice(
+      observations.filter(observation => observation.generatedPath.includes("/entries/"))
+        .map(observation => source.slice(
         observation.range.start,
         observation.range.end
-      )),
+        )),
       ["\"item/first\"", "\"item/second\""]
     );
   });

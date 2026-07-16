@@ -99,4 +99,38 @@ describe("RSGL merge statements", () => {
     assert.ok(mappingPaths.includes("/layers/0/texture"));
     assert.ok(mappingPaths.includes("/layers/1/texture"));
   });
+
+  it("keeps section and selected-if bindings in lexical child contexts", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "json \"assets/minecraft/scoped-resource-body.json\" {",
+      "  let value = \"outer\"",
+      "  before value",
+      "  textures {",
+      "    inherited value",
+      "    let value = \"section\"",
+      "    shadowed value",
+      "  }",
+      "  after_section value",
+      "  if true {",
+      "    branch_inherited value",
+      "    let value = \"branch\"",
+      "    branch_shadowed value",
+      "  }",
+      "  after_if value",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
+      before: "outer",
+      textures: {
+        inherited: "outer",
+        shadowed: "section"
+      },
+      after_section: "outer",
+      branch_inherited: "outer",
+      branch_shadowed: "branch",
+      after_if: "outer"
+    });
+  });
 });

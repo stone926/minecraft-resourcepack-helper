@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { CodeActionKind, CompletionItemKind, DiagnosticSeverity, InsertTextFormat } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
+  RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
   parseRsgl,
   rsglSemanticTokenModifiers,
@@ -424,7 +425,7 @@ describe("RSGL LSP server core", () => {
     }
   });
 
-  it("maps project namespace, target, and evaluation budget into LSP compile options", () => {
+  it("maps project namespace, target, and compile limits into LSP compile options", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-compile-config-"));
     const sourceFile = path.join(root, "src", "main.rsgl");
     try {
@@ -433,7 +434,8 @@ describe("RSGL LSP server core", () => {
       fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
         namespace: "project_ns",
         target: { edition: "java", format: [75, 0] },
-        maxEvaluationItems: 45678
+        maxEvaluationItems: 45678,
+        maxItemModelDepth: 96
       }));
 
       const options = workspaceValidationOptionsFor(sourceFile, emptySettings);
@@ -445,6 +447,7 @@ describe("RSGL LSP server core", () => {
         packFormat: { major: 75, minor: 0 }
       });
       assert.strictEqual(options.maxEvaluationItems, 45678);
+      assert.strictEqual(options.maxItemModelDepth, 96);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -478,18 +481,29 @@ describe("RSGL LSP server core", () => {
       fs.writeFileSync(sourceFile, text);
       fs.writeFileSync(configFile, JSON.stringify({
         namespace: "project_ns",
-        target: { edition: "java", format: [75, 0] }
+        target: { edition: "java", format: [75, 0] },
+        maxItemModelDepth: 64
       }));
 
       assert.strictEqual(diagnostics().some(item => item.code === "rsgl.unsupportedBlockstateZRotation"), false);
       fs.writeFileSync(configFile, JSON.stringify({
         namespace: "project_ns",
-        target: { edition: "java", format: [74, 0] }
+        target: { edition: "java", format: [74, 0] },
+        maxItemModelDepth: 64
+      }));
+      assert.strictEqual(diagnostics().some(item => item.code === "rsgl.unsupportedBlockstateZRotation"), true);
+
+      fs.writeFileSync(configFile, JSON.stringify({
+        namespace: "project_ns",
+        target: { edition: "java", format: [74, 0] },
+        maxItemModelDepth: 65
       }));
       assert.strictEqual(diagnostics().some(item => item.code === "rsgl.unsupportedBlockstateZRotation"), true);
 
       assert.notStrictEqual(programs[0], programs[1]);
       assert.strictEqual(programs[0].files[0], programs[1].files[0], "config edits should reuse parsed source files");
+      assert.notStrictEqual(programs[1], programs[2], "item-model depth changes must invalidate semantic cache identity");
+      assert.strictEqual(programs[1].files[0], programs[2].files[0], "limit edits should reuse parsed source files");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -570,6 +584,15 @@ describe("RSGL LSP server core", () => {
         "rsgl.invalidProjectConfiguration"
       ]);
       assert.ok(diagnostics[0].message.includes(".namespace"));
+
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        maxItemModelDepth: 0
+      }));
+      const depthDiagnostics = diagnosticsForFile(sourceFile, text);
+      assert.deepStrictEqual(depthDiagnostics.map(diagnostic => diagnostic.code), [
+        "rsgl.invalidProjectConfiguration"
+      ]);
+      assert.ok(depthDiagnostics[0].message.includes(".maxItemModelDepth"));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -653,11 +676,13 @@ describe("RSGL LSP server core", () => {
       first
     ], {
       invalidatePath: fileName => events.push(`invalidate:${fileName}`),
+      invalidateProjectConfiguration: () => events.push("invalidate:project-config"),
       refresh: () => events.push("refresh")
     });
 
     assert.strictEqual(handled, true);
     assert.deepStrictEqual(events, [
+      "invalidate:project-config",
       `invalidate:${first}`,
       `invalidate:${second}`,
       "refresh"
@@ -780,6 +805,127 @@ describe("RSGL LSP server core", () => {
       ].join("\n")
     }]);
     assert.deepStrictEqual(formattingEditsForDocument(documentOf(edits[0].newText), 2), []);
+  });
+
+  it("maps target-aware item-model completion and schema hover through the LSP surface", () => {
+    const completionSource = [
+      "target java format [46, 0]",
+      "item example {",
+      "  range property minecraft:time "
+    ].join("\n");
+    const completionItems = completionItemsForContent(
+      completionSource,
+      completionSource.length,
+      []
+    );
+    assert.ok(completionItems.some(item => item.label === "source" && item.kind === CompletionItemKind.Property));
+    assert.strictEqual(completionItems.some(item => item.label === "natural_only"), false);
+
+    const hoverSource = [
+      "/*😀*/ target java format [84, 0]",
+      "item example {",
+      "  select property minecraft:component component minecraft:custom_data {",
+      "    case [{ value: 1 }] => minecraft:item/example",
+      "    fallback minecraft:item/example",
+      "  }",
+      "}"
+    ].join("\n");
+    const document = documentOf(hoverSource);
+    const propertyStart = hoverSource.indexOf("minecraft:component");
+    const hover = computeDocumentHover(document, "item-schema-hover.rsgl", propertyStart + 2, {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open-document fallback.");
+      }
+    });
+    assert.ok(hover);
+    assert.deepStrictEqual(hover.range, {
+      start: document.positionAt(propertyStart),
+      end: document.positionAt(propertyStart + "minecraft:component".length)
+    });
+    const hoverText = (hover.contents as { value: string }).value;
+    assert.ok(hoverText.includes("item select property minecraft:component"));
+    assert.ok(hoverText.includes("complete equality"));
+  });
+
+  it("uses the project target as the completion and hover fallback", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-target-"));
+    const configuredRoot = path.join(root, "配置 project");
+    const unionRoot = path.join(root, "no-config");
+    const projectTargets = new RsglProjectTargetCache();
+
+    const assertLanguageSurface = (
+      sourceRoot: string,
+      fileTarget: string | undefined,
+      expectsTransformationCompletion: boolean,
+      expectsUnavailableHover: boolean
+    ): void => {
+      const prefix = fileTarget ? `${fileTarget}\n` : "";
+      const completionText = `${prefix}item example {\n  model example with { `;
+      const hoverText = [
+        fileTarget,
+        "item example {",
+        "  model minecraft:item/example with { transformation: [] }",
+        "}"
+      ].filter((line): line is string => line !== undefined).join("\n");
+      const completionFile = path.join(sourceRoot, "补全.rsgl");
+      const hoverFile = path.join(sourceRoot, "悬停.rsgl");
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(completionFile, completionText);
+      fs.writeFileSync(hoverFile, hoverText);
+
+      const semanticCache = RsglWorkspaceSemanticCache.create();
+      const deps = {
+        loadProgramFromEntry: (fileName: string) => semanticCache.loadProgramFromEntry(fileName),
+        projectItemModelTargetFormatForSource: (fileName: string) =>
+          projectTargets.projectItemModelTargetFormatForSource(fileName)
+      };
+      const completionDocument = TextDocument.create(
+        pathToFileURL(completionFile).toString(),
+        "rsgl",
+        1,
+        completionText
+      );
+      const labels = completionItemsForDocument(
+        completionDocument,
+        completionFile,
+        completionText.length,
+        deps
+      ).map(item => item.label);
+      assert.strictEqual(
+        labels.includes("transformation"),
+        expectsTransformationCompletion
+      );
+
+      const hoverDocument = TextDocument.create(
+        pathToFileURL(hoverFile).toString(),
+        "rsgl",
+        1,
+        hoverText
+      );
+      const transformationStart = hoverText.indexOf("transformation");
+      const hover = computeDocumentHover(
+        hoverDocument,
+        hoverFile,
+        transformationStart + 2,
+        deps
+      );
+      assert.ok(hover);
+      const contents = (hover.contents as { value: string }).value;
+      assert.strictEqual(contents.includes("Unavailable for this target"), expectsUnavailableHover);
+    };
+
+    try {
+      fs.mkdirSync(configuredRoot, { recursive: true });
+      fs.writeFileSync(path.join(configuredRoot, "rsgl.config.json"), JSON.stringify({
+        target: { edition: "java", format: [82, 0] }
+      }));
+
+      assertLanguageSurface(configuredRoot, undefined, false, true);
+      assertLanguageSurface(configuredRoot, "target java format [83, 0]", true, false);
+      assertLanguageSurface(unionRoot, undefined, true, false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("resolves the complete hover identifier at its start, middle, and end", () => {

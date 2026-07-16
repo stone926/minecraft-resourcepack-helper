@@ -26,6 +26,12 @@ import {
 
 interface ExpressionOptions {
   stopTexts?: readonly string[];
+  /**
+   * Delimiters that apply only after the outer expression has consumed a
+   * complete operand. Unlike hard stops, these words remain valid at the
+   * beginning of the expression and inside nested or binary operands.
+   */
+  contextualStopTexts?: readonly string[];
   /** Allows the first expression token to begin on the line after its introducer. */
   allowLeadingLineBreak?: boolean;
 }
@@ -33,15 +39,18 @@ interface ExpressionOptions {
 export class ExpressionParser extends TypeParser {
   protected parseExpression(options: ExpressionOptions = {}, minPrecedence = 0): ExprNode {
     const stopTexts = options.stopTexts ?? [];
+    const contextualStopTexts = minPrecedence === 0
+      ? options.contextualStopTexts ?? []
+      : [];
     if (this.isExpressionStop(stopTexts, options.allowLeadingLineBreak === true)) {
       this.addDiagnosticAtCurrent("rsgl.expectedExpression", "Expected expression.");
       return this.missingExprAt(this.current());
     }
 
     let left = this.parsePrefixExpression(stopTexts);
-    left = this.parsePostfixExpression(left, stopTexts);
+    left = this.parsePostfixExpression(left, stopTexts, contextualStopTexts);
 
-    while (!this.isExpressionStop(stopTexts)) {
+    while (!this.isExpressionStop(stopTexts, false, contextualStopTexts)) {
       if (isRsglArrowText(this.current().text) && left.kind === "IdentifierExpr") {
         if (minPrecedence > 0) {
           break;
@@ -197,10 +206,14 @@ export class ExpressionParser extends TypeParser {
     return this.missingExprAt(token);
   }
 
-  private parsePostfixExpression(expression: ExprNode, stopTexts: readonly string[]): ExprNode {
+  private parsePostfixExpression(
+    expression: ExprNode,
+    stopTexts: readonly string[],
+    contextualStopTexts: readonly string[] = []
+  ): ExprNode {
     let result = expression;
     let reading = true;
-    while (reading && !this.isExpressionStop(stopTexts)) {
+    while (reading && !this.isExpressionStop(stopTexts, false, contextualStopTexts)) {
       if (this.isStatementBoundary(this.current())) {
         break;
       }
@@ -573,12 +586,16 @@ export class ExpressionParser extends TypeParser {
 
   private isExpressionStop(
     stopTexts: readonly string[],
-    allowCurrentLineBoundary = false
+    allowCurrentLineBoundary = false,
+    contextualStopTexts: readonly string[] = []
   ): boolean {
     if (this.isAtEnd()) {
       return true;
     }
     if (stopTexts.includes(this.current().text)) {
+      return true;
+    }
+    if (contextualStopTexts.includes(this.current().text)) {
       return true;
     }
     return stopTexts.length === 0

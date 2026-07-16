@@ -73,7 +73,15 @@ export type TopLevelStatementNode =
   | IfStmtNode
   | UnknownStmtNode;
 
-export type RsglStatement = TopLevelStatementNode | ResourceStatementNode | BlockstateChoiceStatementNode;
+export type RsglStatement =
+  | TopLevelStatementNode
+  | ResourceStatementNode
+  | BlockstateChoiceStatementNode
+  | ItemSelectBodyStatementNode
+  | ItemRangeBodyStatementNode
+  | ItemCompositeBodyStatementNode
+  | ItemFirstMatchBodyStatementNode
+  | ItemModelTemplateBodyStatementNode;
 
 export interface StatementNodeBase extends RsglNode {
   kind: string;
@@ -321,7 +329,7 @@ export interface BlockNode extends RsglNode {
   statements: TopLevelStatementNode[];
 }
 
-export type TemplateOutputDialect = "resources" | "model" | "variants" | "multipart" | "choice";
+export type TemplateOutputDialect = "resources" | "model" | "variants" | "multipart" | "choice" | "item_model";
 export type DeclaredTemplateOutputDialect = Exclude<TemplateOutputDialect, "resources">;
 
 export type TemplateBodyNode =
@@ -329,7 +337,23 @@ export type TemplateBodyNode =
   | ResourceBodyNode
   | VariantBodyNode
   | MultipartBodyNode
-  | BlockstateChoiceBodyNode;
+  | BlockstateChoiceBodyNode
+  | ItemModelTemplateBodyNode;
+
+/** Every statement-bearing body that can be preserved through shared control flow. */
+export type RsglStatementBodyNode =
+  | BlockNode
+  | ResourceBodyNode
+  | VariantBodyNode
+  | MultipartBodyNode
+  | BlockstateChoiceBodyNode
+  | BlockstateVariantsRootBodyNode
+  | BlockstateMultipartRootBodyNode
+  | ItemSelectBodyNode
+  | ItemRangeBodyNode
+  | ItemCompositeBodyNode
+  | ItemFirstMatchBodyNode
+  | ItemModelTemplateBodyNode;
 
 export interface ResourceBodyNode extends RsglNode {
   kind: "ResourceBody";
@@ -350,6 +374,32 @@ export interface MultipartBodyNode extends RsglNode {
 export interface BlockstateChoiceBodyNode extends RsglNode {
   kind: "BlockstateChoiceBody";
   statements: BlockstateChoiceStatementNode[];
+}
+
+export interface ItemSelectBodyNode extends RsglNode {
+  kind: "ItemSelectBody";
+  statements: ItemSelectBodyStatementNode[];
+}
+
+export interface ItemRangeBodyNode extends RsglNode {
+  kind: "ItemRangeBody";
+  statements: ItemRangeBodyStatementNode[];
+}
+
+export interface ItemCompositeBodyNode extends RsglNode {
+  kind: "ItemCompositeBody";
+  statements: ItemCompositeBodyStatementNode[];
+}
+
+export interface ItemFirstMatchBodyNode extends RsglNode {
+  kind: "ItemFirstMatchBody";
+  statements: ItemFirstMatchBodyStatementNode[];
+}
+
+/** Cardinality-one body used only by `template ... -> item_model`. */
+export interface ItemModelTemplateBodyNode extends RsglNode {
+  kind: "ItemModelTemplateBody";
+  statements: ItemModelTemplateBodyStatementNode[];
 }
 
 export type BlockstateMode = "variants" | "multipart";
@@ -513,35 +563,14 @@ export interface UseDeclNode extends StatementNodeBase {
 export interface ForStmtNode extends StatementNodeBase {
   kind: "ForStmt";
   dimensions: ForDimensionNode[];
-  body:
-    | BlockNode
-    | ResourceBodyNode
-    | VariantBodyNode
-    | MultipartBodyNode
-    | BlockstateChoiceBodyNode
-    | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode;
+  body: RsglStatementBodyNode;
 }
 
 export interface IfStmtNode extends StatementNodeBase {
   kind: "IfStmt";
   condition: ExprNode;
-  thenBody:
-    | BlockNode
-    | ResourceBodyNode
-    | VariantBodyNode
-    | MultipartBodyNode
-    | BlockstateChoiceBodyNode
-    | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode;
-  elseBody?:
-    | BlockNode
-    | ResourceBodyNode
-    | VariantBodyNode
-    | MultipartBodyNode
-    | BlockstateChoiceBodyNode
-    | BlockstateVariantsRootBodyNode
-    | BlockstateMultipartRootBodyNode;
+  thenBody: RsglStatementBodyNode;
+  elseBody?: RsglStatementBodyNode;
 }
 
 export interface UnknownStmtNode extends StatementNodeBase {
@@ -553,13 +582,7 @@ export type ResourceStatementNode =
   | ExternVarStmtNode
   | PropertyStmtNode
   | SectionStmtNode
-  | ItemRangeStmtNode
-  | ItemSelectStmtNode
-  | ItemConditionStmtNode
-  | ItemCompositeStmtNode
-  | ItemEmptyStmtNode
-  | ItemSelectedItemStmtNode
-  | ItemSpecialStmtNode
+  | ItemModelProducerStmtNode
   | BlockstateVariantEntryNode
   | BlockstateMultipartEntryNode
   | UseDeclNode
@@ -748,59 +771,167 @@ export interface ItemOptionNode extends RsglNode {
   value: ExprNode;
 }
 
-export interface ItemRangeFramesNode extends RsglNode {
-  kind: "ItemRangeFrames";
-  frames: ExprNode;
-  model: ExprNode;
+/** An arbitrary RSGL expression used as an item-model node, optionally with leaf options. */
+export interface ItemModelExprNode extends RsglNode {
+  kind: "ItemModelExpr";
+  expression: ExprNode;
+  options?: ObjectExprNode;
 }
 
-export interface ItemRangeStmtNode extends StatementNodeBase {
-  kind: "ItemRangeStmt";
-  property: ExprNode;
-  options: ItemOptionNode[];
-  frames?: ItemRangeFramesNode;
-  fallback?: ExprNode;
+export interface ItemModelUseNode extends RsglNode {
+  kind: "ItemModelUse";
+  expression: ExprNode;
 }
 
-export interface ItemSelectCaseNode extends RsglNode {
+export interface ItemSelectCaseNode extends StatementNodeBase {
   kind: "ItemSelectCase";
   when: ExprNode;
-  model: ExprNode;
+  model: ItemModelNode;
 }
 
-export interface ItemSelectStmtNode extends StatementNodeBase {
-  kind: "ItemSelectStmt";
+export interface ItemRangeEntryNode extends StatementNodeBase {
+  kind: "ItemRangeEntry";
+  threshold: ExprNode;
+  model: ItemModelNode;
+}
+
+export interface ItemRangeFramesNode extends StatementNodeBase {
+  kind: "ItemRangeFrames";
+  frames: ExprNode;
+  model: ItemModelNode;
+}
+
+export interface ItemFallbackClauseNode extends StatementNodeBase {
+  kind: "ItemFallbackClause";
+  model: ItemModelNode;
+}
+
+export interface ItemCompositeModelNode extends StatementNodeBase {
+  kind: "ItemCompositeModel";
+  model: ItemModelNode;
+}
+
+export interface ItemFirstMatchWhenNode extends StatementNodeBase {
+  kind: "ItemFirstMatchWhen";
   property: ExprNode;
-  options: ItemOptionNode[];
-  cases: ItemSelectCaseNode[];
-  fallback?: ExprNode;
+  propertyOptions: ItemOptionNode[];
+  model: ItemModelNode;
 }
 
-export interface ItemConditionStmtNode extends StatementNodeBase {
-  kind: "ItemConditionStmt";
+export type ItemSelectBodyStatementNode =
+  | ItemSelectCaseNode
+  | ItemFallbackClauseNode
+  | LetDeclNode
+  | ForStmtNode
+  | IfStmtNode
+  | UnknownStmtNode;
+
+export type ItemRangeBodyStatementNode =
+  | ItemRangeEntryNode
+  | ItemRangeFramesNode
+  | ItemFallbackClauseNode
+  | LetDeclNode
+  | ForStmtNode
+  | IfStmtNode
+  | UnknownStmtNode;
+
+export type ItemCompositeBodyStatementNode =
+  | ItemCompositeModelNode
+  | LetDeclNode
+  | ForStmtNode
+  | IfStmtNode
+  | UnknownStmtNode;
+
+export type ItemFirstMatchBodyStatementNode =
+  | ItemFirstMatchWhenNode
+  | ItemFallbackClauseNode
+  | LetDeclNode
+  | ForStmtNode
+  | IfStmtNode
+  | UnknownStmtNode;
+
+export type ItemModelTemplateBodyStatementNode =
+  | ItemModelProducerStmtNode
+  | LetDeclNode
+  | UseDeclNode
+  | ForStmtNode
+  | IfStmtNode
+  | UnknownStmtNode;
+
+export interface ItemModelRangeNode extends RsglNode {
+  kind: "ItemModelRange";
   property: ExprNode;
-  options: ItemOptionNode[];
-  onTrue?: ExprNode;
-  onFalse?: ExprNode;
+  propertyOptions: ItemOptionNode[];
+  body: ItemRangeBodyNode;
+  options?: ObjectExprNode;
 }
 
-export interface ItemCompositeStmtNode extends StatementNodeBase {
-  kind: "ItemCompositeStmt";
-  models: ExprNode[];
+export interface ItemModelSelectNode extends RsglNode {
+  kind: "ItemModelSelect";
+  property: ExprNode;
+  propertyOptions: ItemOptionNode[];
+  body: ItemSelectBodyNode;
+  options?: ObjectExprNode;
 }
 
-export interface ItemEmptyStmtNode extends StatementNodeBase {
-  kind: "ItemEmptyStmt";
+export interface ItemModelConditionNode extends RsglNode {
+  kind: "ItemModelCondition";
+  property: ExprNode;
+  propertyOptions: ItemOptionNode[];
+  onTrue?: ItemModelNode;
+  onFalse?: ItemModelNode;
+  options?: ObjectExprNode;
 }
 
-export interface ItemSelectedItemStmtNode extends StatementNodeBase {
-  kind: "ItemSelectedItemStmt";
+export interface ItemModelCompositeNode extends RsglNode {
+  kind: "ItemModelComposite";
+  body: ItemCompositeBodyNode;
+  options?: ObjectExprNode;
 }
 
-export interface ItemSpecialStmtNode extends StatementNodeBase {
-  kind: "ItemSpecialStmt";
+export interface ItemModelFirstMatchNode extends RsglNode {
+  kind: "ItemModelFirstMatch";
+  body: ItemFirstMatchBodyNode;
+  options?: ObjectExprNode;
+}
+
+export interface ItemModelEmptyNode extends RsglNode {
+  kind: "ItemModelEmpty";
+}
+
+export interface ItemModelSelectedItemNode extends RsglNode {
+  kind: "ItemModelSelectedItem";
+}
+
+export interface ItemModelSpecialNode extends RsglNode {
+  kind: "ItemModelSpecial";
   base: ExprNode;
   model: ExprNode;
+  options?: ObjectExprNode;
+}
+
+export type ItemModelNode =
+  | ItemModelExprNode
+  | ItemModelUseNode
+  | ItemModelRangeNode
+  | ItemModelSelectNode
+  | ItemModelConditionNode
+  | ItemModelCompositeNode
+  | ItemModelFirstMatchNode
+  | ItemModelEmptyNode
+  | ItemModelSelectedItemNode
+  | ItemModelSpecialNode;
+
+export type ItemModelProducerSurfaceKind =
+  | "modelExpression"
+  | "rawProperty"
+  | "structured"
+  | "terminal";
+
+export interface ItemModelProducerStmtNode extends StatementNodeBase {
+  kind: "ItemModelProducerStmt";
+  value: ItemModelNode;
+  surfaceKind: ItemModelProducerSurfaceKind;
 }
 
 export interface BaseStmtNode extends StatementNodeBase {

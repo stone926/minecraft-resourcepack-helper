@@ -1,6 +1,7 @@
 import type { RsglNormalizedProjectTarget } from "./targetConfig";
 
 export const DEFAULT_MAX_EVALUATION_ITEMS = 100_000;
+export const DEFAULT_MAX_ITEM_MODEL_DEPTH = 128;
 
 /** Internal compiler configuration. `namespace` remains the hard API override. */
 export interface RsglCompileConfigurationOptions {
@@ -8,6 +9,7 @@ export interface RsglCompileConfigurationOptions {
   defaultNamespace?: string;
   projectTarget?: RsglNormalizedProjectTarget;
   maxEvaluationItems?: number;
+  maxItemModelDepth?: number;
 }
 
 /** Fully materialized compiler configuration shared by all pipeline stages. */
@@ -16,6 +18,7 @@ export interface ResolvedRsglCompileConfiguration {
   defaultNamespace: string;
   projectTarget?: RsglNormalizedProjectTarget;
   maxEvaluationItems: number;
+  maxItemModelDepth: number;
   semanticFingerprint: string;
 }
 
@@ -27,17 +30,20 @@ export function resolveRsglCompileConfiguration(
   const defaultNamespace = options.defaultNamespace ?? "minecraft";
   const projectTarget = cloneProjectTarget(options.projectTarget);
   const maxEvaluationItems = options.maxEvaluationItems ?? DEFAULT_MAX_EVALUATION_ITEMS;
+  const maxItemModelDepth = options.maxItemModelDepth ?? DEFAULT_MAX_ITEM_MODEL_DEPTH;
   const semanticFingerprint = createRsglSemanticConfigurationFingerprint({
     namespaceOverride,
     defaultNamespace,
     projectTarget,
-    maxEvaluationItems
+    maxEvaluationItems,
+    maxItemModelDepth
   });
   return {
     ...(namespaceOverride === undefined ? {} : { namespaceOverride }),
     defaultNamespace,
     ...(projectTarget === undefined ? {} : { projectTarget }),
     maxEvaluationItems,
+    maxItemModelDepth,
     semanticFingerprint
   };
 }
@@ -57,15 +63,20 @@ export function effectiveNamespace(
 export function createRsglSemanticConfigurationFingerprint(
   configuration: Pick<
     ResolvedRsglCompileConfiguration,
-    "namespaceOverride" | "defaultNamespace" | "projectTarget" | "maxEvaluationItems"
+    | "namespaceOverride"
+    | "defaultNamespace"
+    | "projectTarget"
+    | "maxEvaluationItems"
+    | "maxItemModelDepth"
   >
 ): string {
   const target = configuration.projectTarget?.packFormat;
-  return `rsgl-semantic-config-v1:${JSON.stringify([
+  return `rsgl-semantic-config-v2:${JSON.stringify([
     configuration.namespaceOverride ?? null,
     configuration.defaultNamespace,
     target ? [target.major, target.minor] : null,
-    configuration.maxEvaluationItems
+    configuration.maxEvaluationItems,
+    configuration.maxItemModelDepth
   ])}`;
 }
 

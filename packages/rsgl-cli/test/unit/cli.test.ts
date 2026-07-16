@@ -166,6 +166,7 @@ describe("RSGL CLI", () => {
       const config = JSON.parse(fs.readFileSync(path.join(root, "rsgl.config.json"), "utf8"));
       assert.strictEqual(config.namespace, "minecraft");
       assert.strictEqual(config.maxEvaluationItems, 100000);
+      assert.strictEqual(config.maxItemModelDepth, 128);
       assert.strictEqual("defaultNamespace" in config, false);
       assert.strictEqual("projectTarget" in config, false);
     } finally {
@@ -311,14 +312,15 @@ describe("RSGL CLI", () => {
     }
   });
 
-  it("maps public namespace, target, and evaluation budget to compiler options", () => {
+  it("maps public namespace, target, and compile limits to compiler options", () => {
     const root = createTempRoot();
     const previousCwd = process.cwd();
     try {
       fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
         namespace: "project_ns",
         target: { edition: "java", mc: "1.21.11" },
-        maxEvaluationItems: 54321
+        maxEvaluationItems: 54321,
+        maxItemModelDepth: 96
       }));
       process.chdir(root);
 
@@ -331,6 +333,7 @@ describe("RSGL CLI", () => {
         packFormat: { major: 75, minor: 0 }
       });
       assert.strictEqual(context.options.maxEvaluationItems, 54321);
+      assert.strictEqual(context.options.maxItemModelDepth, 96);
     } finally {
       process.chdir(previousCwd);
       fs.rmSync(root, { recursive: true, force: true });

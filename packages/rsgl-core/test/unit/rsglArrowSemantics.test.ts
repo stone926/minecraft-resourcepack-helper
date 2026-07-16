@@ -1,7 +1,12 @@
 import * as assert from "node:assert";
 import { compileRsglModule } from "../../src/compiler";
 import { formatRsglText } from "../../src/formatterCore";
-import { parseRsgl, type ItemSelectStmtNode } from "../../src/parser";
+import {
+  parseRsgl,
+  type ItemFallbackClauseNode,
+  type ItemModelSelectNode,
+  type ItemSelectCaseNode
+} from "../../src/parser";
 import { compileSourceWithUncheckedExterns } from "./helpers/compile";
 
 describe("RSGL arrow semantics", () => {
@@ -81,10 +86,15 @@ describe("RSGL arrow semantics", () => {
 
     const module = parseRsgl(source);
     const select = itemSelectStatement(module.statements[1]);
+    const cases = itemSelectCases(select);
 
     assert.deepStrictEqual(module.diagnostics, []);
-    assert.strictEqual(select?.cases[0].model.kind, "IdentifierExpr");
-    assert.strictEqual(select?.fallback, undefined);
+    assert.strictEqual(cases[0]?.model.kind, "ItemModelExpr");
+    assert.strictEqual(
+      cases[0]?.model.kind === "ItemModelExpr" ? cases[0].model.expression.kind : undefined,
+      "IdentifierExpr"
+    );
+    assert.strictEqual(itemSelectFallback(select), undefined);
   });
 
   it("reports every output-contract arrow used in a mapping at the arrow token", () => {
@@ -200,8 +210,9 @@ describe("RSGL arrow semantics", () => {
       assert.fail("Expected recovered match expression.");
     }
     const select = itemSelectStatement(module.statements[1]);
-    assert.strictEqual(select?.cases.length, 2);
-    assert.strictEqual(select?.cases[1].when.kind, "StringLiteral");
+    const cases = itemSelectCases(select);
+    assert.strictEqual(cases.length, 2);
+    assert.strictEqual(cases[1].when.kind, "StringLiteral");
   });
 
   it("preserves same-line clauses across optional separators during recovery", () => {
@@ -240,8 +251,8 @@ describe("RSGL arrow semantics", () => {
       2
     );
     const select = itemSelectStatement(module.statements[3]);
-    assert.strictEqual(select?.cases.length, 2);
-    assert.strictEqual(select?.fallback?.kind, "ResourceLocationExpr");
+    assert.strictEqual(itemSelectCases(select).length, 2);
+    assert.strictEqual(itemModelExpressionKind(itemSelectFallback(select)?.model), "ResourceLocationExpr");
   });
 
   it("does not consume a closing body delimiter when a mapping RHS is missing", () => {
@@ -266,7 +277,7 @@ describe("RSGL arrow semantics", () => {
         module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedClosingBrace"),
         false
       );
-      assert.strictEqual(itemSelectStatement(module.statements[1])?.cases.length, 1);
+      assert.strictEqual(itemSelectCases(itemSelectStatement(module.statements[1])).length, 1);
     }
   });
 
@@ -303,8 +314,8 @@ describe("RSGL arrow semantics", () => {
       assert.fail("Expected recovered match expression.");
     }
     const select = itemSelectStatement(module.statements[1]);
-    assert.strictEqual(select?.cases.length, 1);
-    assert.strictEqual(select?.fallback?.kind, "ResourceLocationExpr");
+    assert.strictEqual(itemSelectCases(select).length, 1);
+    assert.strictEqual(itemModelExpressionKind(itemSelectFallback(select)?.model), "ResourceLocationExpr");
   });
 
   it("propagates wrong-arrow diagnostics out of template-string interpolations", () => {
@@ -407,10 +418,30 @@ describe("RSGL arrow semantics", () => {
   });
 });
 
-function itemSelectStatement(statement: ReturnType<typeof parseRsgl>["statements"][number]): ItemSelectStmtNode | undefined {
+function itemSelectStatement(statement: ReturnType<typeof parseRsgl>["statements"][number]): ItemModelSelectNode | undefined {
   if (statement.kind !== "ResourceDecl") {
     return undefined;
   }
-  const candidate = statement.body.statements.find(item => item.kind === "ItemSelectStmt");
-  return candidate?.kind === "ItemSelectStmt" ? candidate : undefined;
+  const candidate = statement.body.statements.find(item => item.kind === "ItemModelProducerStmt");
+  return candidate?.kind === "ItemModelProducerStmt" && candidate.value.kind === "ItemModelSelect"
+    ? candidate.value
+    : undefined;
+}
+
+function itemSelectCases(select: ItemModelSelectNode | undefined): ItemSelectCaseNode[] {
+  return select?.body.statements.filter(
+    (statement): statement is ItemSelectCaseNode => statement.kind === "ItemSelectCase"
+  ) ?? [];
+}
+
+function itemSelectFallback(select: ItemModelSelectNode | undefined): ItemFallbackClauseNode | undefined {
+  return select?.body.statements.find(
+    (statement): statement is ItemFallbackClauseNode => statement.kind === "ItemFallbackClause"
+  );
+}
+
+function itemModelExpressionKind(
+  model: ItemSelectCaseNode["model"] | undefined
+): string | undefined {
+  return model?.kind === "ItemModelExpr" ? model.expression.kind : model?.kind;
 }

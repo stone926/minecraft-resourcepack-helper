@@ -3,6 +3,7 @@ import {
   type RsglResourceBodyDialect,
   type RsglResourceKind
 } from "../resourceKinds";
+import type { RsglItemModelBodyOwner } from "../itemModelSyntax";
 import type { BlockstateMode } from "./types";
 
 export type BodyParseContext =
@@ -10,7 +11,8 @@ export type BodyParseContext =
   | ResourceBodyParseContext
   | BlockstateEntriesParseContext
   | BlockstateRootParseContext
-  | BlockstateChoiceParseContext;
+  | BlockstateChoiceParseContext
+  | ItemModelBodyParseContext;
 
 export interface BlockstateEntriesParseContext {
   kind: "blockstateEntries";
@@ -25,6 +27,11 @@ export interface BlockstateRootParseContext {
 
 export interface BlockstateChoiceParseContext {
   kind: "blockstateChoice";
+}
+
+export interface ItemModelBodyParseContext {
+  kind: "itemModelBody";
+  owner: RsglItemModelBodyOwner;
 }
 
 export type ResourceBodyOwner =
@@ -64,6 +71,26 @@ export const multipartBodyParseContext: BlockstateEntriesParseContext = Object.f
 });
 export const choiceBodyParseContext: BlockstateChoiceParseContext = Object.freeze({
   kind: "blockstateChoice"
+});
+export const selectItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+  kind: "itemModelBody",
+  owner: "select"
+});
+export const rangeItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+  kind: "itemModelBody",
+  owner: "range"
+});
+export const compositeItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+  kind: "itemModelBody",
+  owner: "composite"
+});
+export const firstMatchItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+  kind: "itemModelBody",
+  owner: "first_match"
+});
+export const itemModelTemplateBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+  kind: "itemModelBody",
+  owner: "itemModelTemplate"
 });
 export function blockstateRootParseContext(mode: BlockstateMode): BlockstateRootParseContext {
   return {

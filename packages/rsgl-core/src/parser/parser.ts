@@ -29,6 +29,7 @@ import {
   concreteResourceBodyParseContext,
   blockstateRootParseContext,
   choiceBodyParseContext,
+  itemModelTemplateBodyParseContext,
   multipartBodyParseContext,
   templateResourceBodyParseContext,
   topLevelBodyParseContext,
@@ -561,7 +562,7 @@ class RsglParser extends StatementParser {
       } else {
         this.addDiagnosticAtCurrent(
           "rsgl.invalidTemplateOutputDialect",
-          "Template output dialect must be 'model', 'variants', 'multipart', or 'choice'."
+          "Template output dialect must be 'model', 'variants', 'multipart', 'choice', or 'item_model'."
         );
         if (dialect.kind === "identifier" || dialect.kind === "keyword") {
           this.advance();
@@ -609,6 +610,13 @@ class RsglParser extends StatementParser {
         const body = this.parseBodyForContext(choiceBodyParseContext);
         if (body.kind !== "BlockstateChoiceBody") {
           throw new Error(`Internal parser invariant: expected BlockstateChoiceBody, received ${body.kind}.`);
+        }
+        return body;
+      }
+      if (declaredOutputDialect === "item_model") {
+        const body = this.parseBodyForContext(itemModelTemplateBodyParseContext);
+        if (body.kind !== "ItemModelTemplateBody") {
+          throw new Error(`Internal parser invariant: expected ItemModelTemplateBody, received ${body.kind}.`);
         }
         return body;
       }
@@ -801,7 +809,11 @@ function isBlockstateIdExpressionContinuation(text: string): boolean {
 }
 
 function isTemplateOutputDialect(text: string): text is DeclaredTemplateOutputDialect {
-  return text === "model" || text === "variants" || text === "multipart" || text === "choice";
+  return text === "model"
+    || text === "variants"
+    || text === "multipart"
+    || text === "choice"
+    || text === "item_model";
 }
 
 function isEntireExpressionParenthesized(

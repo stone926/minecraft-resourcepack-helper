@@ -9,9 +9,6 @@ export const resourceBodySectionKeywords = new Set([
   "raw"
 ]);
 
-export const itemRangeOptionKeywords = ["component", "source", "target", "wobble", "scale"];
-export const itemSelectOptionKeywords = ["component"];
-export const itemConditionOptionKeywords = ["component", "ignore_default", "index", "keybind", "predicate", "value"];
 export const equipmentLayerClauseKeywords = ["texture", "dyeable", "color", "use_player_texture"];
 
 export const binaryPrecedence = new Map<string, number>([

@@ -85,4 +85,73 @@ describe("RSGL completion service", () => {
 
     assert.deepStrictEqual(items.map(item => item.label), ["x", "y", "z", "uvlock"]);
   });
+
+  it("filters template symbols to item_model output in item-model contexts", () => {
+    const itemTemplate: RsglSymbol = {
+      name: "itemLeaf",
+      kind: "template",
+      type: { kind: "Function" },
+      signature: {
+        parameters: [],
+        returnType: { kind: "Json" },
+        templateOutput: {
+          outputSource: "explicitArrow",
+          outputDialect: "item_model",
+          cardinality: "one"
+        }
+      }
+    };
+    const variantsTemplate: RsglSymbol = {
+      name: "states",
+      kind: "template",
+      type: { kind: "Function" },
+      signature: {
+        parameters: [],
+        returnType: { kind: "Json" },
+        templateOutput: { outputSource: "explicitArrow", outputDialect: "variants" }
+      }
+    };
+    const text = "item example {\n  ";
+    const labels = new Set(
+      getRsglCompletionItems(text, text.length, [itemTemplate, variantsTemplate])
+        .map(item => item.label)
+    );
+
+    assert.ok(labels.has("itemLeaf"));
+    assert.strictEqual(labels.has("states"), false);
+  });
+
+  it("keeps item-model option-key completion exclusive of symbols and builtins", () => {
+    const text = [
+      "item example {",
+      "  model minecraft:item/example with {",
+      "    "
+    ].join("\n");
+    const items = getRsglCompletionItems(text, text.length, [
+      symbol("localTint", "variable", "Number")
+    ]);
+
+    assert.deepStrictEqual(items.map(item => item.label).sort(), ["tints", "transformation"]);
+  });
+
+  it("keeps schema-derived item header and subtype keys exclusive of value symbols", () => {
+    const symbols = [symbol("localValue", "variable", "Number")];
+    const header = [
+      "item example {",
+      "  select property minecraft:component "
+    ].join("\n");
+    assert.deepStrictEqual(
+      getRsglCompletionItems(header, header.length, symbols).map(item => item.label),
+      ["component"]
+    );
+
+    const special = [
+      "item example {",
+      "  special base minecraft:item/example model { type: minecraft:shulker_box, "
+    ].join("\n");
+    const labels = getRsglCompletionItems(special, special.length, symbols).map(item => item.label);
+    assert.ok(labels.includes("texture"));
+    assert.strictEqual(labels.includes("localValue"), false);
+    assert.strictEqual(labels.includes("true"), false);
+  });
 });

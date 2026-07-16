@@ -61,6 +61,13 @@
       "maximum": 9007199254740991,
       "default": 100000,
       "description": "Maximum compile-time evaluation and expansion work items."
+    },
+    "maxItemModelDepth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "default": 128,
+      "description": "Maximum expanded recursive item-model depth, measured in edges from root depth 0."
     }
   },
   "definitions": {

@@ -1,10 +1,11 @@
 import * as path from "node:path";
 import { normalizePathKey } from "../../mc-assets/src";
 import {
-  getRsglCompletionItems,
+  getRsglCompletionItemsForContext,
   type RsglCompletionItem,
   type RsglCompletionNamespace
 } from "./completionService";
+import { getRsglCompletionContext } from "./completionContext";
 import { visibleRsglSymbolsAtOffset } from "./completionScope";
 import {
   callablePresentation,
@@ -28,6 +29,10 @@ import {
   type RsglSemanticToken
 } from "./semanticTokens";
 import { formatType } from "./semantic/typeRelations";
+import { getRsglItemModelHoverInfo } from "./itemModelLanguageIntelligence";
+import { isItemModelCompletionKeyPosition } from "./itemModelCompletionContext";
+import type { ItemModelFormat } from "./itemModelSchema";
+import { itemModelTargetFormatInModule } from "./itemModelTarget";
 import type { RsglWorkspaceSemanticProgram } from "./workspaceSemantic";
 import {
   getRsglNamespaceRenameEdits,
@@ -43,6 +48,8 @@ export interface RsglLanguageDocument {
 
 export interface RsglLanguageWorkspace {
   loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
+  /** Cached project fallback used only when the source has no target declaration. */
+  projectItemModelTargetFormatForSource?(fileName: string): ItemModelFormat | undefined;
 }
 
 export function getRsglDocumentCompletionItems(
@@ -52,7 +59,17 @@ export function getRsglDocumentCompletionItems(
 ): RsglCompletionItem[] {
   const context = semanticContextForRsglDocument(document, workspace);
   const text = document.getText();
-  const members = getRsglMemberCompletionInfo(context.program, document.fileName, text, offset);
+  const effectiveTarget = effectiveItemModelTargetForDocument(
+    context.model.module,
+    document.fileName,
+    workspace
+  );
+  const completionContext = getRsglCompletionContext(text, offset, effectiveTarget);
+  const itemSchemaOwnsCompletion = Boolean(completionContext.itemModel?.schema)
+    || isItemModelCompletionKeyPosition(completionContext.itemModel);
+  const members = itemSchemaOwnsCompletion
+    ? undefined
+    : getRsglMemberCompletionInfo(context.program, document.fileName, text, offset);
   if (members) {
     return members.map(member => {
       if (!member.category || !member.symbol) {
@@ -72,9 +89,8 @@ export function getRsglDocumentCompletionItems(
       };
     });
   }
-  return getRsglCompletionItems(
-    text,
-    offset,
+  return getRsglCompletionItemsForContext(
+    completionContext,
     visibleRsglSymbolsAtOffset(context.model, offset),
     context.model.scope.typeAliases,
     completionNamespaceAt(context.model, text, offset)
@@ -95,7 +111,36 @@ export function getRsglDocumentHoverInfo(
   workspace: RsglLanguageWorkspace
 ): RsglHoverInfo | undefined {
   const context = semanticContextForRsglDocument(document, workspace);
-  return getRsglHoverInfo(context.program, document.fileName, document.getText(), offset);
+  const text = document.getText();
+  return getRsglHoverInfo(context.program, document.fileName, text, offset)
+    ?? getRsglItemModelHoverInfo(
+      context.model.module,
+      text,
+      offset,
+      effectiveItemModelTargetForDocument(context.model.module, document.fileName, workspace)
+    );
+}
+
+function effectiveItemModelTargetForDocument(
+  module: RsglSemanticModel["module"],
+  fileName: string,
+  workspace: RsglLanguageWorkspace
+): ItemModelFormat | undefined {
+  return itemModelTargetFormatInModule(module)
+    ?? projectItemModelTargetForDocument(fileName, workspace);
+}
+
+function projectItemModelTargetForDocument(
+  fileName: string,
+  workspace: RsglLanguageWorkspace
+): ItemModelFormat | undefined {
+  try {
+    return workspace.projectItemModelTargetFormatForSource?.(fileName);
+  } catch {
+    // Project-config diagnostics own malformed configuration reporting. Language
+    // features retain target-neutral union behavior while the config is invalid.
+    return undefined;
+  }
 }
 
 /** Returns signature help for the innermost template/function call at the cursor. */

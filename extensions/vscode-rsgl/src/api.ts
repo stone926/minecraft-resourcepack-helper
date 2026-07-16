@@ -36,6 +36,7 @@ export interface RsglApiCheckOptions {
   /** Hard namespace override; takes precedence over file and project declarations. */
   namespace?: string;
   maxEvaluationItems?: number;
+  maxItemModelDepth?: number;
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
   globalExterns?: RsglGlobalExternConfigEntry[];
@@ -132,6 +133,7 @@ function apiWorkerConfiguration(
     ...projectCompileOptions,
     ...(options.namespace === undefined ? {} : { namespace: options.namespace }),
     maxEvaluationItems: options.maxEvaluationItems ?? projectCompileOptions.maxEvaluationItems,
+    maxItemModelDepth: options.maxItemModelDepth ?? projectCompileOptions.maxItemModelDepth,
     defaultAssetsPath: validationConfiguration.defaultAssetsPath,
     resourcePackRoots: validationConfiguration.resourcePackRoots,
     globalExterns: validationConfiguration.globalExterns,

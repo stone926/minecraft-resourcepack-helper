@@ -15,6 +15,7 @@ import {
 } from "./evaluate";
 import { jsonObjectEntries } from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
+import { ensureEvaluationItemsForExpansion } from "./evaluationItemAccounting";
 
 export function createLoopBindings(names: string[], value: EvaluationValue): Record<string, EvaluationValue> {
   const bindings: Record<string, EvaluationValue> = {};
@@ -71,7 +72,8 @@ export function forEachLoopContext(
   statement: ForStmtNode,
   context: EvaluationContext,
   onError: (code: string, message: string, range: TextRange) => void,
-  visit: (context: EvaluationContext) => void
+  visit: (context: EvaluationContext) => void,
+  options: { readonly operation?: string } = {}
 ): void {
   const dimensions = statement.dimensions;
 
@@ -114,12 +116,23 @@ export function forEachLoopContext(
       evaluationFailed = true;
       parentEvaluationFailure?.();
     };
+    const consumedBeforeEvaluation = iterableContext.evaluationItemBudget?.consumed ?? 0;
     const iterableResult = evaluateExpressionResult(dimension.iterable, iterableContext);
     const iterable = iterableResult.value;
     if (!Array.isArray(iterable)) {
       if (!evaluationFailed) {
         onError("rsgl.compileNonFiniteLoop", "for input must evaluate to a finite list.", dimension.iterable.range);
       }
+      return;
+    }
+    if (!ensureEvaluationItemsForExpansion(
+      iterableContext,
+      consumedBeforeEvaluation,
+      iterable.length,
+      dimension.iterable.range,
+      options.operation ?? "for expansion",
+      (code, message, range) => onError(code, message, range)
+    )) {
       return;
     }
     const iterableOrigins = materializeEvaluationPathOrigins(

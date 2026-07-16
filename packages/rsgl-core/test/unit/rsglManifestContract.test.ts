@@ -189,6 +189,7 @@ describe("RSGL extension manifest contract", () => {
       "extern",
       "manifest",
       "maxEvaluationItems",
+      "maxItemModelDepth",
       "namespace",
       "outDir",
       "resourcePackRoots",
@@ -205,6 +206,8 @@ describe("RSGL extension manifest contract", () => {
 
     assert.strictEqual(schema.properties?.maxEvaluationItems?.minimum, 1);
     assert.strictEqual(schema.properties?.maxEvaluationItems?.default, 100000);
+    assert.strictEqual(schema.properties?.maxItemModelDepth?.minimum, 1);
+    assert.strictEqual(schema.properties?.maxItemModelDepth?.default, 128);
     assert.strictEqual(schema.properties?.target?.$ref, "#/definitions/target");
 
     const target = schema.definitions?.target;

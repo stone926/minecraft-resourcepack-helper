@@ -37,10 +37,11 @@ import {
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import {
+  DEFAULT_MAX_ITEM_MODEL_DEPTH,
   resolveRsglCompileConfiguration,
   type ResolvedRsglCompileConfiguration
 } from "./compileConfiguration";
-import { compileItemSpecialStatement } from "./itemFragments";
+import { executeItemResourceBody, type ItemOperationExecutorHost } from "./itemOperationExecutor";
 import {
   JsonValue,
   ResourceUnit,
@@ -72,7 +73,6 @@ import {
 } from "./templateExpansion";
 import { createRsglStdlibPreludeSourceFiles } from "../stdlib";
 import {
-  isItemModelStatement,
   normalizeFileName,
   normalizeJsonValue
 } from "./compilerHelpers";
@@ -120,6 +120,7 @@ interface RsglCompilerOptions {
   onDependency?: (dependency: CompileDependency) => void;
   targetPackFormat?: RsglTargetPackFormat;
   maxEvaluationItems?: number;
+  maxItemModelDepth?: number;
   evaluationItemBudget?: EvaluationItemBudget;
   stdlibRoot?: string;
   resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
@@ -164,7 +165,8 @@ export class RsglCompiler {
     );
     const definitionFingerprintContext = JSON.stringify({
       namespace: this.options.namespace,
-      targetPackFormat: this.options.targetPackFormat
+      targetPackFormat: this.options.targetPackFormat,
+      maxItemModelDepth: this.options.maxItemModelDepth ?? DEFAULT_MAX_ITEM_MODEL_DEPTH
     });
     const resolvedExpectedTypes = this.options.resolvedExpectedTypes
       ?? this.options.environment?.resolvedExpectedTypes;
@@ -346,6 +348,7 @@ export class RsglCompiler {
           context,
           { ...this.resourceBodyFragmentOptions(resourceKind), allowBase: true }
         ),
+      compileItemBody: (body, context) => this.compileItemBody(body, context),
       compileJsonBody: (body, context, fragmentKind) =>
         this.resourceBodyToObjectWithMappings(
           body,
@@ -645,8 +648,42 @@ export class RsglCompiler {
     return { content, mappings };
   }
 
-  private itemFragmentOptions() {
-    return this.jsonValueSinkOptions();
+  private compileItemBody(
+    body: ResourceDeclNode["body"],
+    context: RsglCompileContext
+  ): { content: Record<string, JsonValue>; mappings: RsglMapping[] } {
+    if (body.kind !== "ResourceBody") {
+      this.error(
+        "rsgl.invalidItemBody",
+        "An item declaration requires a resource body.",
+        body.range
+      );
+      return { content: {}, mappings: [] };
+    }
+    const compiled = executeItemResourceBody(body, context, this.itemOperationExecutorHost());
+    return {
+      content: compiled.content,
+      mappings: compiled.mappings.map(mapping => ({
+        ...this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context),
+        ...(mapping.validationOrigin ? { validationOrigin: mapping.validationOrigin } : {}),
+        ...(mapping.validationOnly ? { validationOnly: true } : {})
+      }))
+    };
+  }
+
+  private itemOperationExecutorHost(): ItemOperationExecutorHost {
+    return {
+      ...this.jsonValueSinkOptions(),
+      maxItemModelDepth: this.options.maxItemModelDepth ?? DEFAULT_MAX_ITEM_MODEL_DEPTH,
+      resourceBodyOptions: this.resourceBodyFragmentOptions("item"),
+      resolveTemplate: (expression, context) => this.findTemplateDefinition(expression, context),
+      expandTemplate: (expression, context, definition) =>
+        this.createTemplateExpansion(expression, context, definition),
+      resolveTemplateDispatch: (definition, callerContext) =>
+        this.resolveTemplateDispatch(definition, callerContext),
+      onWarning: (code, message, range, fileName) =>
+        this.warning(code, message, range, fileName)
+    };
   }
 
   private jsonValueSinkOptions(): JsonValueSinkOptions {
@@ -719,9 +756,7 @@ export class RsglCompiler {
             this.modelGeometryDslOptions()
           );
         }
-        return kind === "item" && isItemModelStatement(statement)
-          ? compileItemSpecialStatement(statement, fragmentContext, this.itemFragmentOptions())
-          : undefined;
+        return undefined;
       }
     };
   }
@@ -878,6 +913,10 @@ export class RsglCompiler {
 
   private error(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
     this.diagnostics.push({ code, message, range, severity: "error", ...(fileName ? { fileName } : {}) });
+  }
+
+  private warning(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
+    this.diagnostics.push({ code, message, range, severity: "warning", ...(fileName ? { fileName } : {}) });
   }
 }
 

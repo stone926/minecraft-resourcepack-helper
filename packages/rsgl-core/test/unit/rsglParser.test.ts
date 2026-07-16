@@ -476,8 +476,20 @@ describe("RSGL parser", () => {
     if (compass.kind !== "ResourceDecl" || potion.kind !== "ResourceDecl") {
       throw new Error("Expected item resource declarations.");
     }
-    assert.deepStrictEqual(compass.body.statements.map(statement => statement.kind), ["ItemRangeStmt"]);
-    assert.deepStrictEqual(potion.body.statements.map(statement => statement.kind), ["ItemSelectStmt"]);
+    assert.deepStrictEqual(compass.body.statements.map(statement => statement.kind), ["ItemModelProducerStmt"]);
+    assert.deepStrictEqual(potion.body.statements.map(statement => statement.kind), ["ItemModelProducerStmt"]);
+    assert.strictEqual(
+      compass.body.statements[0].kind === "ItemModelProducerStmt"
+        ? compass.body.statements[0].value.kind
+        : undefined,
+      "ItemModelRange"
+    );
+    assert.strictEqual(
+      potion.body.statements[0].kind === "ItemModelProducerStmt"
+        ? potion.body.statements[0].value.kind
+        : undefined,
+      "ItemModelSelect"
+    );
   });
 
   it("parses item condition and composite statements", () => {
@@ -504,8 +516,18 @@ describe("RSGL parser", () => {
     if (bow.kind !== "ResourceDecl" || layered.kind !== "ResourceDecl") {
       throw new Error("Expected item resource declarations.");
     }
-    assert.deepStrictEqual(bow.body.statements.map(statement => statement.kind), ["ItemConditionStmt"]);
-    assert.deepStrictEqual(layered.body.statements.map(statement => statement.kind), ["ItemCompositeStmt"]);
+    assert.deepStrictEqual(bow.body.statements.map(statement => statement.kind), ["ItemModelProducerStmt"]);
+    assert.deepStrictEqual(layered.body.statements.map(statement => statement.kind), ["ItemModelProducerStmt"]);
+    assert.strictEqual(
+      bow.body.statements[0].kind === "ItemModelProducerStmt" ? bow.body.statements[0].value.kind : undefined,
+      "ItemModelCondition"
+    );
+    assert.strictEqual(
+      layered.body.statements[0].kind === "ItemModelProducerStmt"
+        ? layered.body.statements[0].value.kind
+        : undefined,
+      "ItemModelComposite"
+    );
   });
 
   it("parses item special, empty, and selected item statements", () => {
@@ -529,9 +551,13 @@ describe("RSGL parser", () => {
     if (shield.kind !== "ResourceDecl" || hidden.kind !== "ResourceDecl" || bundle.kind !== "ResourceDecl") {
       throw new Error("Expected item resource declarations.");
     }
-    assert.deepStrictEqual(shield.body.statements.map(statement => statement.kind), ["ItemSpecialStmt"]);
-    assert.deepStrictEqual(hidden.body.statements.map(statement => statement.kind), ["ItemEmptyStmt"]);
-    assert.deepStrictEqual(bundle.body.statements.map(statement => statement.kind), ["ItemSelectedItemStmt"]);
+    assert.deepStrictEqual(
+      [shield, hidden, bundle].map(resource => {
+        const statement = resource.body.statements[0];
+        return statement.kind === "ItemModelProducerStmt" ? statement.value.kind : statement.kind;
+      }),
+      ["ItemModelSpecial", "ItemModelEmpty", "ItemModelSelectedItem"]
+    );
   });
 
   it("parses overlay declarations", () => {

@@ -2,6 +2,7 @@ import type {
   ArgumentNode,
   IdentifierNode,
   ImportDeclNode,
+  ItemOptionNode,
   MemberExprNode,
   ObjectPropertyNode,
   PropertyStmtNode,
@@ -181,6 +182,8 @@ function propertyIdentifiers(node: RsglNode): readonly IdentifierNode[] {
       return [(node as MemberExprNode).property];
     case "PropertyStmt":
       return [(node as PropertyStmtNode).name];
+    case "ItemOption":
+      return [(node as ItemOptionNode).name];
     default:
       return [];
   }
@@ -278,6 +281,14 @@ function collectDeclarationToken(
   candidates: RsglSemanticToken[]
 ): void {
   if (symbol.kind === "import" || symbol.kind === "builtin" || !symbol.range) {
+    return;
+  }
+  // Range `frame`/`index` bindings are implicit and therefore use their
+  // owning statement as a diagnostic range. They have no declaration
+  // identifier to color; emitting that broad range would also suppress real
+  // reference tokens contained by the frames statement.
+  if (symbol.node?.kind === "ItemRangeFrames"
+    && (symbol.name === "frame" || symbol.name === "index")) {
     return;
   }
   if (symbol.kind === "resource" && !isResourceNameToken(symbol, referenceStarts)) {

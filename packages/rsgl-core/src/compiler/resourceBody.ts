@@ -9,6 +9,7 @@ import {
   EvaluationContext,
   type EvaluationOrigin,
   bindEvaluationResult,
+  childEvaluationContext,
   evaluateCompileTimeCondition,
   evaluateExpressionResult
 } from "./evaluate";
@@ -82,7 +83,7 @@ function resourceBodyToObjectAtPath(
 ): Record<string, JsonValue> {
   const result = createJsonObject();
   body.statements.forEach((statement, index) => {
-    applyResourceStatement(result, statement, context, options, path, allowBase, index === 0);
+    applyResourceBodyStatement(result, statement, context, options, path, allowBase, index === 0);
   });
   return result;
 }
@@ -91,7 +92,14 @@ export function findResourceStatement(body: ResourceBodyNode, kind: ResourceStat
   return body.statements.find(statement => statement.kind === kind);
 }
 
-function applyResourceStatement(
+/**
+ * Applies one statement with the canonical generic resource-body semantics.
+ *
+ * Specialized ordered executors (for example item roots) use this seam for
+ * ordinary properties, sections, base documents, and explicit merge modes
+ * while retaining control over their domain-specific operations.
+ */
+export function applyResourceBodyStatement(
   result: Record<string, JsonValue>,
   statement: ResourceStatementNode,
   context: EvaluationContext,
@@ -125,11 +133,12 @@ function applyResourceStatement(
   } else if (statement.kind === "SectionStmt") {
     if (statement.body) {
       const sectionPath = appendGeneratedPath(path, statement.name.text);
+      const sectionContext = childEvaluationContext(context, {});
       emitMapping(options, sectionPath, statement.range, context);
       setJsonObjectProperty(
         result,
         statement.name.text,
-        resourceBodyToObjectAtPath(statement.body, context, options, sectionPath, false)
+        resourceBodyToObjectAtPath(statement.body, sectionContext, options, sectionPath, false)
       );
     } else if (statement.value) {
       const generatedPath = appendGeneratedPath(path, statement.name.text);
@@ -153,9 +162,10 @@ function applyResourceStatement(
     }
     const selectedBody = condition ? statement.thenBody : statement.elseBody;
     if (selectedBody?.kind === "ResourceBody") {
+      const branchContext = childEvaluationContext(context, {});
       applyResourceBodyFragment(
         result,
-        compileControlFlowFragment(selectedBody, context, options, path),
+        compileControlFlowFragment(selectedBody, branchContext, options, path),
         "deep",
         statement.range,
         context,

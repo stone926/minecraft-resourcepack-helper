@@ -39,7 +39,7 @@ import {
 } from "./environment";
 import { ResourceUnit, RsglCompileDiagnostic, RsglCompileResult } from "./ir";
 import { EvaluationItemBudget } from "./evaluationItemBudget";
-import { lowerItemUnitsForTarget } from "./itemLegacyBackend";
+import { lowerItemUnitsForTarget, usesLegacyItemBackend } from "./itemLegacyBackend";
 import { mergeResourceUnits } from "./merge";
 import { createExternalResource } from "./templates";
 import { resolveTargetPackFormat } from "./target";
@@ -47,7 +47,8 @@ import type { RsglTargetPackFormat } from "./targetConfig";
 import {
   type RsglExternalResourceUsage,
   canonicalizeAndValidateResourceUnits,
-  RsglResourceValidationOptions
+  RsglResourceValidationOptions,
+  validateLegacyItemSourceUnits
 } from "./validation";
 
 export interface RsglCompileOptions extends RsglResourceValidationOptions, RsglCompileConfigurationOptions {
@@ -124,6 +125,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     globLoader,
     targetPackFormat: target.targetPackFormat,
     maxEvaluationItems: configuration.maxEvaluationItems,
+    maxItemModelDepth: configuration.maxItemModelDepth,
     evaluationItemBudget,
     stdlibRoot: options.stdlibRoot,
     resolvedExpectedTypes: semanticModel.resolvedExpectedTypes
@@ -282,6 +284,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       globLoader,
       targetPackFormat: target.targetPackFormat,
       maxEvaluationItems: configuration.maxEvaluationItems,
+      maxItemModelDepth: configuration.maxItemModelDepth,
       evaluationItemBudget,
       stdlibRoot: options.stdlibRoot,
       resolvedExpectedTypes: model.resolvedExpectedTypes
@@ -347,8 +350,6 @@ function finishCompilation(
   options: RsglResourceValidationOptions,
   dependencies: CompileDependency[] = []
 ): RsglCompileResult {
-  const lowered = lowerItemUnitsForTarget(units, targetPackFormat);
-  const merged = mergeResourceUnits(lowered.units);
   const externalUnits = new Map<string, ResourceUnit>();
   const externalDependencies: CompileDependency[] = [];
   const validationOptions = withTargetPackFormat({
@@ -366,11 +367,17 @@ function finishCompilation(
       }
     }
   }, targetPackFormat);
+  const legacySourceDiagnostics = usesLegacyItemBackend(targetPackFormat)
+    ? validateLegacyItemSourceUnits(units, validationOptions)
+    : [];
+  const lowered = lowerItemUnitsForTarget(units, targetPackFormat);
+  const merged = mergeResourceUnits(lowered.units);
   const validationDiagnostics = canonicalizeAndValidateResourceUnits(merged.units, validationOptions);
   return {
     units: [...merged.units, ...externalUnits.values()],
     dependencies: dedupeCompileDependencies([...dependencies, ...externalDependencies]),
     diagnostics: [
+      ...legacySourceDiagnostics,
       ...lowered.diagnostics,
       ...merged.diagnostics,
       ...detectOutputConflicts(merged.units),

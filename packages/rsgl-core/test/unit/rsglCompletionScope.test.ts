@@ -191,6 +191,51 @@ describe("RSGL completion lexical scope", () => {
     assertNamesInclude(model, endOf(text, "parent delayed"), "delayed");
   });
 
+  it("scopes each range frames binding across its complete recursive model without leaking", () => {
+    const text = [
+      "item scoped {",
+      "  range property rangeProperty {",
+      "    let outer = 1",
+      "    frames firstFrames model condition property frame {",
+      "      on_true composite {",
+      "        let nested = index",
+      "        model buildModel(index, frame, outer, nested)",
+      "      }",
+      "      on_false fallbackModel",
+      "    } with { transformation: frame }",
+      "    entry index => outsideModel",
+      "    frames secondFrames model use buildFrame(index: index, frame: frame)",
+      "    fallback frame",
+      "  }",
+      "}"
+    ].join("\n");
+    const model = bind(text);
+
+    assertNamesInclude(model, endOf(text, "property frame"), "outer", "index", "frame");
+    assertNamesInclude(
+      model,
+      endOf(text, "model buildModel(index, frame, outer, nested)"),
+      "outer",
+      "index",
+      "frame",
+      "nested"
+    );
+    assertNamesInclude(model, endOf(text, "transformation: frame"), "outer", "index", "frame");
+    assertNamesExclude(model, endOf(text, "transformation: frame"), "nested");
+    assertNamesInclude(model, endOf(text, "entry index"), "outer");
+    assertNamesExclude(model, endOf(text, "entry index"), "index", "frame", "nested");
+    assertNamesInclude(
+      model,
+      endOf(text, "buildFrame(index: index, frame: frame)"),
+      "outer",
+      "index",
+      "frame"
+    );
+    assertNamesExclude(model, endOf(text, "buildFrame(index: index, frame: frame)"), "nested");
+    assertNamesInclude(model, endOf(text, "fallback frame"), "outer");
+    assertNamesExclude(model, endOf(text, "fallback frame"), "index", "frame", "nested");
+  });
+
   it("filters large local symbol sets within a bounded time", () => {
     const localCount = 5_000;
     const text = [

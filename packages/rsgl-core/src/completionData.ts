@@ -7,6 +7,7 @@ import {
   getRsglCompletionContext,
   type RsglCompletionContext
 } from "./completionContext";
+import { getItemModelCompletionCandidates } from "./itemModelCompletionData";
 import {
   blockstateChoiceCompletions,
   blockstateModelOptionCompletions,
@@ -102,6 +103,12 @@ export const topLevelRsglCompletions: RsglCompletionCandidate[] = [
     label: "template -> choice",
     insertText: "template ${1:name}(${2:model}: ModelId) -> choice {\n  option ${2:model}\n}",
     detail: "Reusable random blockstate choice fragment",
+    kind: "snippet"
+  },
+  {
+    label: "template -> item_model",
+    insertText: "template ${1:name}(${2:model}: ModelId) -> item_model {\n  model ${2:model}\n}",
+    detail: "Reusable cardinality-one item-model template",
     kind: "snippet"
   },
   ...rsglExternResourceCompletionDescriptors.map(descriptor => ({
@@ -215,6 +222,15 @@ const blockstateRootOperationLabels = new Set([
   "merge upsert",
   "merge append"
 ]);
+const itemOnlyBlockCompletionLabels = new Set([
+  "range",
+  "select",
+  "condition",
+  "composite",
+  "special",
+  "empty",
+  "selected_item"
+]);
 
 export const builtinRsglCompletions: RsglCompletionCandidate[] = [
   ...Object.entries(rsglResourceIdConstructors).map(([label, kind]) => ({
@@ -268,6 +284,14 @@ export function getRsglCompletionCandidatesForContext(
   if (!context.insideBlock) {
     return [...topLevelRsglCompletions, ...builtinRsglCompletions];
   }
+  if (context.itemModel || context.templateOutputDialect === "item_model") {
+    return getItemModelCompletionCandidates(context, {
+      builtinCompletions: builtinRsglCompletions,
+      resourceRootOperationCompletions: blockRsglCompletions.filter(candidate =>
+        blockstateRootOperationLabels.has(candidate.label)
+      )
+    });
+  }
   if (context.blockstateModelOptions) {
     return [...blockstateModelOptionCompletions];
   }
@@ -303,6 +327,7 @@ export function getRsglCompletionCandidatesForContext(
   const blockCandidates = blockRsglCompletions.filter(candidate =>
     (candidate.label !== "base" || context.allowBase)
     && (candidate.label !== "extern var" || context.allowExternVar)
+    && !itemOnlyBlockCompletionLabels.has(candidate.label)
     && completionMatchesTemplateDialect(candidate, context.templateOutputDialect)
   );
   return [...blockCandidates, ...builtinRsglCompletions];
@@ -310,7 +335,7 @@ export function getRsglCompletionCandidatesForContext(
 
 function completionMatchesTemplateDialect(
   candidate: RsglCompletionCandidate,
-  dialect: "model" | "variants" | "multipart" | "choice" | undefined
+  dialect: RsglCompletionContext["templateOutputDialect"]
 ): boolean {
   if (!dialect) {
     return true;

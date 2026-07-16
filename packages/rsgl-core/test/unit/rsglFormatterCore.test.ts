@@ -143,6 +143,100 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
+  it("keeps recursive item-model continuations aligned to their enclosing braces", () => {
+    const source = [
+      "item recursive {",
+      "first_match {",
+      "when property minecraft:component predicate \"enchantments\" value [{ enchantments: minecraft:channeling }] =>",
+      "condition property minecraft:using_item {",
+      "on_true",
+      "empty {}",
+      "on_false selected_item {},",
+      "} with {",
+      "transformation: {",
+      "scale: [",
+      "1,",
+      "1,",
+      "1,",
+      "],",
+      "},",
+      "};",
+      "fallback",
+      "minecraft:item/fallback,",
+      "} with {",
+      "transformation: { translation: [0, 0, 0] },",
+      "}",
+      "}"
+    ].join("\n");
+
+    const formatted = formatRsglText(source);
+
+    assert.strictEqual(formatted, [
+      "item recursive {",
+      "  first_match {",
+      "    when property minecraft:component predicate \"enchantments\" value [{ enchantments: minecraft:channeling }] =>",
+      "    condition property minecraft:using_item {",
+      "      on_true",
+      "      empty {}",
+      "      on_false selected_item {},",
+      "    } with {",
+      "      transformation: {",
+      "        scale: [",
+      "          1,",
+      "          1,",
+      "          1,",
+      "        ],",
+      "      },",
+      "    };",
+      "    fallback",
+      "    minecraft:item/fallback,",
+      "  } with {",
+      "    transformation: { translation: [0, 0, 0] },",
+      "  }",
+      "}"
+    ].join("\n"));
+    assert.ok(formatted.includes("    } with {"), "postfix options must stay on the closing-brace line");
+    assert.ok(formatted.includes("      empty {}"), "canonical empty nodes must stay compact");
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
+  it("aligns an arrow-newline RHS after a multiline selector with the owner body", () => {
+    const source = [
+      "item display {",
+      "select property minecraft:display_context {",
+      "case [",
+      "\"gui\",",
+      "\"ground\";",
+      "] =>",
+      "composite {",
+      "model minecraft:item/base;",
+      "model minecraft:item/overlay,",
+      "}",
+      "fallback empty {}",
+      "}",
+      "}"
+    ].join("\n");
+
+    const formatted = formatRsglText(source);
+
+    assert.strictEqual(formatted, [
+      "item display {",
+      "  select property minecraft:display_context {",
+      "    case [",
+      "      \"gui\",",
+      "      \"ground\";",
+      "    ] =>",
+      "    composite {",
+      "      model minecraft:item/base;",
+      "      model minecraft:item/overlay,",
+      "    }",
+      "    fallback empty {}",
+      "  }",
+      "}"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
   it("keeps list and object spread markers attached to their operands", () => {
     const formatted = formatRsglText([
       "let combined = [",

@@ -6,7 +6,11 @@ import {
   BlockstateVariantsRootBodyNode,
   ExprNode,
   ForStmtNode,
-  IdentifierNode,
+  ItemCompositeBodyNode,
+  ItemFirstMatchBodyNode,
+  ItemModelTemplateBodyNode,
+  ItemRangeBodyNode,
+  ItemSelectBodyNode,
   MultipartBodyNode,
   ResourceBodyNode,
   ResourceStatementNode,
@@ -14,6 +18,7 @@ import {
   VariantBodyNode
 } from "../parser";
 import { RsglBlockstateBodyChecker } from "./blockstateBodyChecker";
+import { RsglItemModelBodyChecker } from "./itemModelBodyChecker";
 import { diagnostic } from "./diagnostics";
 import { applyLambdaValueDiagnostics } from "./lambdaAnalysis";
 import { finiteStringDomain } from "./domainChecks";
@@ -46,8 +51,6 @@ import { inferListType } from "./typeNormalization";
 import { formatType } from "./typeRelations";
 import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
-  anyType,
-  numberType,
   type RsglBlockstateContextualExpression,
   RsglScope,
   RsglType,
@@ -63,7 +66,12 @@ type CheckableBody =
   | MultipartBodyNode
   | BlockstateChoiceBodyNode
   | BlockstateVariantsRootBodyNode
-  | BlockstateMultipartRootBodyNode;
+  | BlockstateMultipartRootBodyNode
+  | ItemSelectBodyNode
+  | ItemRangeBodyNode
+  | ItemCompositeBodyNode
+  | ItemFirstMatchBodyNode
+  | ItemModelTemplateBodyNode;
 
 export type RsglBlockStatementChecker = (
   statements: TopLevelStatementNode[],
@@ -91,6 +99,7 @@ export type RsglBlockstateContextualExpressionRecorder = (
 /** Checks all scope-sensitive statements nested below a top-level declaration. */
 export class RsglResourceBodyChecker {
   private readonly blockstateBodyChecker: RsglBlockstateBodyChecker;
+  private readonly itemModelBodyChecker: RsglItemModelBodyChecker;
 
   public constructor(
     private readonly context: RsglExpressionCheckContext,
@@ -109,6 +118,14 @@ export class RsglResourceBodyChecker {
       recordTemplateUse,
       recordModelSpec: recordBlockstateModelSpec,
       recordContextualExpression: recordBlockstateContextualExpression
+    });
+    this.itemModelBodyChecker = new RsglItemModelBodyChecker({
+      context,
+      checkForStatement: (statement, scope, callerContext) =>
+        this.checkForStatement(statement, scope, callerContext),
+      checkNestedBody: (body, scope, callerContext) =>
+        this.checkBody(body, scope, callerContext),
+      recordTemplateUse
     });
   }
 
@@ -142,6 +159,21 @@ export class RsglResourceBodyChecker {
           scope,
           blockstateRootContext(callerContext, "multipart")
         );
+        break;
+      case "ItemSelectBody":
+        this.itemModelBodyChecker.checkSelectBody(body, scope);
+        break;
+      case "ItemRangeBody":
+        this.itemModelBodyChecker.checkRangeBody(body, scope);
+        break;
+      case "ItemCompositeBody":
+        this.itemModelBodyChecker.checkCompositeBody(body, scope);
+        break;
+      case "ItemFirstMatchBody":
+        this.itemModelBodyChecker.checkFirstMatchBody(body, scope);
+        break;
+      case "ItemModelTemplateBody":
+        this.itemModelBodyChecker.checkTemplateBody(body, scope);
         break;
       default:
         assertNever(body);
@@ -208,7 +240,11 @@ export class RsglResourceBodyChecker {
     switch (statement.kind) {
       case "PropertyStmt": {
         const propertySink = resourcePropertyReferenceSink(
-          callerContext?.kind === "resourceBody" ? callerContext.resourceKind : undefined,
+          callerContext?.kind === "resourceBody"
+            ? callerContext.resourceKind
+            : callerContext?.kind === "itemModel"
+              ? "item"
+              : undefined,
           owner,
           statement.name.text
         );
@@ -239,8 +275,18 @@ export class RsglResourceBodyChecker {
           }
         }
         if (statement.body) {
-          this.checkResourceBody(statement.body, createChildScope(scope, "block"), statement.name.text, callerContext);
+          this.checkResourceBody(
+            statement.body,
+            createChildScope(scope, "block"),
+            statement.name.text,
+            callerContext?.kind === "itemModel"
+              ? { kind: "resourceBody", resourceKind: "item" }
+              : callerContext
+          );
         }
+        break;
+      case "ItemModelProducerStmt":
+        this.itemModelBodyChecker.checkProducer(statement, scope);
         break;
       case "BlockstateVariantEntry":
         this.blockstateBodyChecker.checkVariantStatements([statement], scope);
@@ -336,48 +382,6 @@ export class RsglResourceBodyChecker {
         this.checkExpression(statement.pivot, scope);
         this.checkBody(statement.body, createChildScope(scope, "block"), callerContext);
         break;
-      case "ItemRangeStmt":
-        this.checkExpression(statement.property, scope);
-        statement.options.forEach(option => this.checkExpression(option.value, scope));
-        if (statement.frames) {
-          this.checkExpression(statement.frames.frames, scope);
-          const frameScope = createChildScope(scope, "block");
-          this.context.defineIdentifier(frameScope, syntheticIdentifier("index", statement.frames.range), "variable", numberType, statement.frames);
-          this.context.defineIdentifier(frameScope, syntheticIdentifier("frame", statement.frames.range), "variable", anyType, statement.frames);
-          this.checkResourceReference(statement.frames.model, frameScope, "itemModel");
-        }
-        if (statement.fallback) {
-          this.checkResourceReference(statement.fallback, scope, "itemModel");
-        }
-        break;
-      case "ItemSelectStmt":
-        this.checkExpression(statement.property, scope);
-        statement.options.forEach(option => this.checkExpression(option.value, scope));
-        statement.cases.forEach(item => {
-          this.checkExpression(item.when, scope);
-          this.checkResourceReference(item.model, scope, "itemModel");
-        });
-        if (statement.fallback) {
-          this.checkResourceReference(statement.fallback, scope, "itemModel");
-        }
-        break;
-      case "ItemConditionStmt":
-        this.checkExpression(statement.property, scope);
-        statement.options.forEach(option => this.checkExpression(option.value, scope));
-        if (statement.onTrue) {
-          this.checkResourceReference(statement.onTrue, scope, "itemModel");
-        }
-        if (statement.onFalse) {
-          this.checkResourceReference(statement.onFalse, scope, "itemModel");
-        }
-        break;
-      case "ItemCompositeStmt":
-        statement.models.forEach(model => this.checkResourceReference(model, scope, "itemModel"));
-        break;
-      case "ItemSpecialStmt":
-        this.checkResourceReference(statement.base, scope, "model");
-        this.checkExpression(statement.model, scope);
-        break;
       case "ForStmt":
         this.checkForStatement(statement, scope, callerContext);
         break;
@@ -402,8 +406,6 @@ export class RsglResourceBodyChecker {
         this.checkExpression(statement.value, scope);
         break;
       case "ExternVarStmt":
-      case "ItemEmptyStmt":
-      case "ItemSelectedItemStmt":
       case "UnknownStmt":
         break;
       default:
@@ -492,15 +494,6 @@ function blockstateRootContext(
         allowRootMerge: true,
         allowBase: false
       };
-}
-
-function syntheticIdentifier(text: string, range: { start: number; end: number }): IdentifierNode {
-  return {
-    kind: "Identifier",
-    text,
-    range,
-    fullRange: range
-  };
 }
 
 function assertNever(value: never): never {

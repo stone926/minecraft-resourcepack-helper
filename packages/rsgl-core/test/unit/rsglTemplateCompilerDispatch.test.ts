@@ -111,6 +111,49 @@ describe("RSGL compiler template dispatch guards", () => {
     assert.strictEqual(defaulted.textures.all, "definition:block/default");
   });
 
+  it("attributes item_model cardinality to both cross-file call sites and template bodies", () => {
+    const mainFile = path.resolve("item-model-cardinality", "main.rsgl");
+    const definitionFile = path.resolve("item-model-cardinality", "definitions.rsgl");
+    const mainSource = [
+      "import { none, many } from \"./definitions.rsgl\"",
+      "item zero { use none() }",
+      "item multiple { use many() }"
+    ].join("\n");
+    const definitionSource = [
+      "export { none, many }",
+      "template none() -> item_model {}",
+      "template many() -> item_model {",
+      "  model minecraft:item/one",
+      "  model minecraft:item/two",
+      "}"
+    ].join("\n");
+    const result = compileRsglProgram([
+      { fileName: mainFile, module: parseRsgl(mainSource) },
+      { fileName: definitionFile, module: parseRsgl(definitionSource) }
+    ], withUncheckedExterns({ entryFileName: mainFile }));
+
+    const callDiagnostics = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.itemModelTemplateCardinality"
+    );
+    const bodyDiagnostics = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.itemModelTemplateCardinalityDefinition"
+    );
+    assert.strictEqual(callDiagnostics.length, 2);
+    assert.strictEqual(bodyDiagnostics.length, 2);
+    assert.ok(callDiagnostics.every(diagnostic => diagnostic.fileName === mainFile));
+    assert.ok(bodyDiagnostics.every(diagnostic => diagnostic.fileName === definitionFile));
+    assert.deepStrictEqual(
+      callDiagnostics.map(diagnostic => mainSource.slice(diagnostic.range.start, diagnostic.range.end)),
+      ["use none()", "use many()"]
+    );
+    assert.ok(bodyDiagnostics.some(diagnostic =>
+      definitionSource.slice(diagnostic.range.start, diagnostic.range.end) === "{}"
+    ));
+    assert.ok(bodyDiagnostics.some(diagnostic =>
+      definitionSource.slice(diagnostic.range.start, diagnostic.range.end).includes("model minecraft:item/two")
+    ));
+  });
+
   it("closes blockstate root base capability inside nested control flow", () => {
     const module = parseRsgl([
       "template fragment() -> variants { case { nested: true } => minecraft:block/stone }",

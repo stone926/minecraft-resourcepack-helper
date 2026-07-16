@@ -13,4 +13,107 @@ template rangeFrames(id: ResourceId, property: ResourceId, values: List<Number> 
   }
 }
 
-export { simpleModelItem, rangeFrames }
+// The caller supplies the potion table explicitly so aliases and source order
+// remain pack-owned instead of becoming a version-sensitive stdlib registry.
+template potionItem(id: ResourceId, folder: String, potions: List<Json>) {
+  item id {
+    select property minecraft:component component minecraft:potion_contents {
+      for potion in potions {
+        case [{ potion: potion.id }] => `minecraft:item/potions/${folder}/${potion.stem}`
+      }
+      fallback `${resource_namespace(id)}:item/${resource_path(id)}` with {
+        tints: [
+          { type: minecraft:potion, default: -13083194 }
+        ]
+      }
+    }
+  }
+}
+
+// Preserve the caller-provided enchantment and level order. In particular,
+// overflow is an explicit model and is never inferred from a name suffix.
+template orderedEnchantedBookItemModel(
+  enchantments: List<Json>,
+  fallbackModel: ModelId
+) -> item_model {
+  first_match {
+    for enchantment in enchantments {
+      when property minecraft:component
+      predicate "stored_enchantments"
+      value [{ enchantments: enchantment.id }] => first_match {
+        for level in enchantment.levels {
+          when property minecraft:component
+          predicate "stored_enchantments"
+          value [{
+            enchantments: enchantment.id,
+            levels: level.value
+          }] => level.model
+        }
+        fallback enchantment.overflow
+      }
+    }
+    fallback fallbackModel
+  }
+}
+
+// The three display-context branches provide different suffix/fallback pairs
+// but share this single enchantment decision tree.
+template tridentVariantItemModel(
+  suffix: String,
+  fallbackModel: ModelId
+) -> item_model {
+  first_match {
+    when property minecraft:component
+    predicate "enchantments"
+    value [{ enchantments: minecraft:channeling }] => condition property minecraft:component
+    predicate "enchantments"
+    value [{ enchantments: minecraft:loyalty }] {
+      on_true `minecraft:item/trident/cl${suffix}`
+      on_false `minecraft:item/trident/channeling${suffix}`
+    }
+
+    when property minecraft:component
+    predicate "enchantments"
+    value [{ enchantments: minecraft:loyalty }] => `minecraft:item/trident/loyalty${suffix}`
+
+    when property minecraft:component
+    predicate "enchantments"
+    value [{ enchantments: minecraft:riptide }] => `minecraft:item/trident/riptide${suffix}`
+
+    fallback fallbackModel
+  }
+}
+
+// Generic self-mapping intentionally accepts a caller-owned list. It does not
+// scan the workspace or embed a Minecraft item/spawn-egg registry.
+template selfMappedItems(ids: List<ResourceId>) {
+  for id in ids {
+    item id {
+      model `${resource_namespace(id)}:item/${resource_path(id)}`
+    }
+  }
+}
+
+// Opt-in tinting for packs that explicitly provide both spawn-egg colors.
+template tintedSpawnEggItemModel(
+  baseModel: ModelId,
+  baseColor: Number | List<Number>,
+  highlightColor: Number | List<Number>
+) -> item_model {
+  model baseModel with {
+    tints: [
+      { type: minecraft:constant, value: baseColor },
+      { type: minecraft:constant, value: highlightColor }
+    ]
+  }
+}
+
+export {
+  simpleModelItem,
+  rangeFrames,
+  potionItem,
+  orderedEnchantedBookItemModel,
+  tridentVariantItemModel,
+  selfMappedItems,
+  tintedSpawnEggItemModel
+}
