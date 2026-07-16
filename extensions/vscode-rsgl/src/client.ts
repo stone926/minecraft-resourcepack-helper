@@ -15,8 +15,9 @@ import {
   rsglFileGlob,
   type RsglDependencyPathsNotification
 } from "../../../packages/rsgl-shared/src";
+import { rsglWorkspaceSourceRootCache } from "../../../packages/rsgl-core/src/sourceRoot";
 import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "./configuration";
-import { DependencyWatchRegistry } from "./dependencyWatch";
+import { DependencyWatchRegistry, requiresExactDependencyWatcher } from "./dependencyWatch";
 
 interface RsglValidationSettings {
   defaultAssetsPath: string | null;
@@ -34,17 +35,26 @@ export function startRsglLanguageServer(context: vscode.ExtensionContext): void 
     run: { module: serverModule, transport: TransportKind.ipc },
     debug: { module: serverModule, transport: TransportKind.ipc }
   };
+  const rsglWatcher = vscode.workspace.createFileSystemWatcher(rsglFileGlob);
+  const jsonWatcher = vscode.workspace.createFileSystemWatcher("**/*.json");
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "rsgl" }],
     initializationOptions: () => currentRsglValidationSettings(),
     synchronize: {
       fileEvents: [
-        vscode.workspace.createFileSystemWatcher(rsglFileGlob),
-        vscode.workspace.createFileSystemWatcher("**/*.json")
+        rsglWatcher,
+        jsonWatcher
       ]
     }
   };
   const client = new LanguageClient("rsgl", "RSGL", serverOptions, clientOptions);
+  context.subscriptions.push(
+    rsglWatcher,
+    jsonWatcher,
+    rsglWatcher.onDidCreate(uri => rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath)),
+    rsglWatcher.onDidDelete(uri => rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath)),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => rsglWorkspaceSourceRootCache.invalidateAll())
+  );
   const sendDependencyChange = (uri: vscode.Uri, type: FileChangeType) => {
     void client.sendNotification(DidChangeWatchedFilesNotification.type, {
       changes: [{ uri: uri.toString(), type }]
@@ -63,9 +73,12 @@ export function startRsglLanguageServer(context: vscode.ExtensionContext): void 
   const dependencyNotification = client.onNotification(
     rsglDependencyPathsNotification,
     (notification: RsglDependencyPathsNotification) => {
-      const externalPaths = dependencyPathsFromNotification(notification)
-        .filter(fileName => !vscode.workspace.getWorkspaceFolder(vscode.Uri.file(fileName)));
-      const update = externalDependencyWatchers.update(externalPaths);
+      const exactPaths = dependencyPathsFromNotification(notification)
+        .filter(fileName => requiresExactDependencyWatcher(
+          fileName,
+          Boolean(vscode.workspace.getWorkspaceFolder(vscode.Uri.file(fileName)))
+        ));
+      const update = externalDependencyWatchers.update(exactPaths);
       if (update.added.length > 0) {
         void client.sendNotification(DidChangeWatchedFilesNotification.type, {
           changes: update.added.map(fileName => ({

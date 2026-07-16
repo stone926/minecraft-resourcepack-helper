@@ -141,25 +141,26 @@ export class ModelResourceCache {
     getVersion: (fileName: string) => string | null
   ): void {
     const key = normalizePathKey(fileName);
-    this.previewResolvedModels.set(key, {
-      model: model.then(resolvedModel => {
-        const entry = this.previewResolvedModels.get(key);
-        if (entry) {
-          const dependencies = new Set([
-            fileName,
-            ...(resolvedModel?.dependencies.map(dependency => dependency.fileName) ?? [])
-          ]);
-          entry.dependencyKeys = new Set([...dependencies].map(dependency => normalizePathKey(dependency)));
-          entry.dependencyVersions = new Map(
-            [...dependencies].map(dependency => [normalizePathKey(dependency), getVersion(dependency)])
-          );
-        }
-        return resolvedModel;
-      }),
+    const entry: PreviewResolvedModelCacheEntry = {
+      model,
       configurationKey,
       dependencyKeys: new Set([key]),
       dependencyVersions: null
+    };
+    entry.model = model.then(resolvedModel => {
+      if (this.previewResolvedModels.peek(key) === entry) {
+        const dependencies = new Set([
+          fileName,
+          ...(resolvedModel?.dependencies.map(dependency => dependency.fileName) ?? [])
+        ]);
+        entry.dependencyKeys = new Set([...dependencies].map(dependency => normalizePathKey(dependency)));
+        entry.dependencyVersions = new Map(
+          [...dependencies].map(dependency => [normalizePathKey(dependency), getVersion(dependency)])
+        );
+      }
+      return resolvedModel;
     });
+    this.previewResolvedModels.set(key, entry);
   }
 
   invalidatePreviewDependents(fileName: string): void {

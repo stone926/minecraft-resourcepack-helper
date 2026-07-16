@@ -5,6 +5,22 @@ import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
 import { createOggVorbisBytes, createPngBytes, createTempDirectory } from "./helpers/tempPack";
 
 describe("workspace resource cache", () => {
+  it("keeps filename-only resource inventory generations stable across text edits", () => {
+    const cache = new WorkspaceResourceCache();
+    const initialGeneration = cache.getResourceIndexGeneration();
+
+    cache.invalidateDocument({
+      fileName: path.resolve("pack", "assets", "minecraft", "items", "stick.json"),
+      languageId: "json",
+      version: 2,
+      getText: () => "{}"
+    });
+    assert.strictEqual(cache.getResourceIndexGeneration(), initialGeneration);
+
+    cache.invalidatePath(path.resolve("pack", "assets", "minecraft", "items", "new_item.json"));
+    assert.strictEqual(cache.getResourceIndexGeneration(), initialGeneration + 1);
+  });
+
   it("keeps the coordination facade free of cache storage details", () => {
     const servicesRoot = path.join(process.cwd(), "src", "services");
     const facade = fs.readFileSync(path.join(servicesRoot, "workspaceResourceCache.ts"), "utf8");

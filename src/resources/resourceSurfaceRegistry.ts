@@ -152,7 +152,15 @@ const referenceSurfaceRegistry = [
   ),
   jsonReferenceSurface("atlases", "atlases", "**/atlases/**/*.json", "%schema.atlases.url%", getAtlasReferences, ["texture", "textureDirectory"]),
   jsonReferenceSurface("equipment", "equipment", "**/equipment/**/*.json", "%schema.equipment.url%", getEquipmentReferences, ["texture"]),
-  jsonReferenceSurface("font", "font", "**/font/**/*.json", "%schema.font.url%", getFontReferences, ["font", "fontFile", "texture"]),
+  jsonReferenceSurface(
+    "font",
+    "font",
+    "**/font/**/*.json",
+    "%schema.font.url%",
+    getFontReferences,
+    ["font", "fontFile", "texture"],
+    { watcherPatterns: ["**/assets/*/font/**/*"] }
+  ),
   jsonReferenceSurface("waypointStyle", "waypoint_style", "**/waypoint_style/**/*.json", "%schema.waypointStyle.url%", getWaypointStyleReferences, ["texture"]),
   jsonReferenceSurface(
     "postEffect",
@@ -170,6 +178,7 @@ const referenceSurfaceRegistry = [
     selectorPatterns: ["**/assets/*/sounds.json"],
     schema: [{ fileMatch: "**/assets/*/sounds.json", url: "%schema.sounds.url%" }],
     capabilities: referenceCapabilities,
+    watcherPatterns: ["**/assets/*/sounds/**/*.ogg"],
     referenceExtraction: { mode: "json", extract: getSoundReferences },
     referenceTargets: ["sound"],
     graphFileExtensions: ["json"],
@@ -366,6 +375,7 @@ function jsonReferenceSurface<const K extends string>(
   extract: JsonReferenceExtractor,
   referenceTargets: readonly ResourceReferenceKind[],
   options: {
+    watcherPatterns?: readonly string[];
     manifestWhenClauses?: readonly string[];
     graphPreviewContext?: ResourceGraphPreviewContext;
     semanticDiagnostics?: ResourceSemanticDiagnosticsKind;
@@ -378,6 +388,7 @@ function jsonReferenceSurface<const K extends string>(
     selectorPatterns: [selectorPattern],
     schema: [{ fileMatch: selectorPattern, url: schemaUrl }],
     capabilities: referenceCapabilities,
+    watcherPatterns: options.watcherPatterns,
     referenceExtraction: { mode: "json", extract },
     referenceTargets,
     graphFileExtensions: ["json"],

@@ -120,6 +120,13 @@ describe("resource surface registry", () => {
     assert.strictEqual(isResourceSurfaceFile(fileName, "diagnostics", registry), true);
   });
 
+  it("watches non-JSON sound and font targets that participate in resolution", () => {
+    const watcherPatterns = getResourceWatcherPatterns();
+
+    assert.ok(watcherPatterns.includes("**/assets/*/sounds/**/*.ogg"));
+    assert.ok(watcherPatterns.includes("**/assets/*/font/**/*"));
+  });
+
   it("keeps manifest menu resource clauses consistent with descriptors", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
       contributes?: { menus?: Record<string, Array<{ when?: string }>> };

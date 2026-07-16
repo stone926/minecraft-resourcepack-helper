@@ -51,6 +51,10 @@ export class LruCache<K, V> {
     this.values.clear();
   }
 
+  peek(key: K): V | undefined {
+    return this.values.get(key);
+  }
+
   entries(): IterableIterator<[K, V]> {
     return this.values.entries();
   }

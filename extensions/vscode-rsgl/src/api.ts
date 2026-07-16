@@ -19,7 +19,8 @@ import {
   dependencyBuildNeedsVerification,
   dependencyPathSet,
   isPathWithinRoot,
-  normalizeDependencyPath
+  normalizeDependencyPath,
+  requiresExactDependencyWatcher
 } from "./dependencyWatch";
 import { RsglProjectConfigWatchRegistry } from "./projectConfigWatch";
 import { mergeRsglValidationConfiguration } from "./validationConfiguration";
@@ -220,7 +221,7 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
             invalidatedDuringBuild
           );
           dependencyPaths = nextDependencyPaths;
-          externalDependencyWatchers.update(externalDependencyPaths(
+          externalDependencyWatchers.update(exactDependencyPaths(
             workspace.fsPath,
             outcome.result.dependencies
           ));
@@ -279,7 +280,7 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
     watcher.onDidDelete(scheduleDependencyCompile);
     return watcher;
   });
-  externalDependencyWatchers.update(externalDependencyPaths(
+  externalDependencyWatchers.update(exactDependencyPaths(
     workspace.fsPath,
     options.dependencies ?? []
   ));
@@ -307,13 +308,16 @@ function createWatcher(workspace: vscode.Uri, options: RsglApiWatchOptions = {})
   });
 }
 
-function externalDependencyPaths(
+function exactDependencyPaths(
   workspaceRoot: string,
   dependencies: readonly CompileDependency[]
 ): string[] {
   return dependencies
     .map(dependency => dependency.path)
-    .filter(fileName => !isPathWithinRoot(workspaceRoot, fileName));
+    .filter(fileName => requiresExactDependencyWatcher(
+      fileName,
+      isPathWithinRoot(workspaceRoot, fileName)
+    ));
 }
 
 function extensionVersion(context: vscode.ExtensionContext): string {

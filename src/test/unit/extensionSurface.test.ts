@@ -49,10 +49,25 @@ describe("extension surface", () => {
   it("keeps workspace event handlers on the diagnostics controller boundary", () => {
     const source = readSource("registration", "registerWorkspaceEvents.ts");
 
-    assert.ok(source.includes("diagnostics.refresh(event.document);"));
+    assert.ok(source.includes("diagnostics.refreshSoon(event.document);"));
+    assert.ok(source.includes("diagnostics.refresh(document);"));
     assert.ok(source.includes("diagnostics.refreshAllSoon();"));
     assert.ok(source.includes("diagnostics.clear(document);"));
     assert.strictEqual(source.includes("refreshResourceDiagnostics("), false);
+  });
+
+  it("debounces edit-time diagnostics and texture decorations through shared metadata", () => {
+    const workspaceEvents = readSource("registration", "registerWorkspaceEvents.ts");
+    const diagnostics = readSource("registration", "registerResourceDiagnostics.ts");
+    const decorator = readSource("decorator", "textureVarDecorator.ts");
+
+    assert.ok(workspaceEvents.includes("scheduleDecorationRefresh(activeEditor);"));
+    assert.ok(diagnostics.includes("documentRefreshTimers"));
+    assert.ok(diagnostics.includes("refreshSoon(document: vscode.TextDocument"));
+    assert.ok(decorator.includes("resourceConfigurationKeys.undefinedTextureVariableColor"));
+    assert.ok(decorator.includes('isResourceSurfaceFile(editor.document.uri.fsPath, "textureVariables")'));
+    assert.ok(decorator.includes("decorationType: vscode.TextEditorDecorationType | null = null"));
+    assert.strictEqual(decorator.includes("McResHelper.tipColorForUndefinedTextureVariables"), false);
   });
 
   it("shares the resource-resolution configuration change predicate", () => {
@@ -64,6 +79,17 @@ describe("extension surface", () => {
       assert.strictEqual(source.includes("McResHelper.defaultMcAssetsPath"), false);
       assert.strictEqual(source.includes("McResHelper.resourcePackLoadOrder"), false);
     }
+  });
+
+  it("invalidates RSGL source-root discovery and owns its filesystem watchers", () => {
+    const client = fs.readFileSync(
+      path.join(process.cwd(), "extensions", "vscode-rsgl", "src", "client.ts"),
+      "utf8"
+    );
+
+    assert.ok(client.includes("onDidChangeWorkspaceFolders(() => rsglWorkspaceSourceRootCache.invalidateAll())"));
+    assert.ok(client.includes("rsglWatcher,"));
+    assert.ok(client.includes("jsonWatcher,"));
   });
 
   it("shares normalized open-document lookup across extension and LSP hosts", () => {

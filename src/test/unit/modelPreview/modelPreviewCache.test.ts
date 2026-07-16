@@ -7,6 +7,7 @@ import { WorkspaceResourceCache } from "../../../services/workspaceResourceCache
 
 const modelFileName = path.join("pack", "assets", "minecraft", "models", "block", "cached.json");
 const parentFileName = path.join("pack", "assets", "minecraft", "models", "block", "parent.json");
+const oldParentFileName = path.join("pack", "assets", "minecraft", "models", "block", "old_parent.json");
 const textureFileName = path.join("pack", "assets", "minecraft", "textures", "block", "cached.png");
 
 describe("model preview cache", () => {
@@ -28,6 +29,44 @@ describe("model preview cache", () => {
 
     cache.invalidateDependents(modelFileName);
 
+    assert.strictEqual(cache.get(modelFileName), null);
+  });
+
+  it("does not let an invalidated preview completion mutate its replacement", async () => {
+    const cache = new ModelPreviewCache();
+    const stale = deferred<ModelPreviewDocument>();
+    const staleCached = cache.set(modelFileName, stale.promise);
+    cache.invalidate(modelFileName);
+
+    const current = cache.set(modelFileName, Promise.resolve(createPreviewDocument([parentFileName])));
+    await current;
+    stale.resolve(createPreviewDocument([textureFileName]));
+    await staleCached;
+
+    cache.invalidateDependents(textureFileName);
+    assert.strictEqual(cache.get(modelFileName), current, "stale dependencies must not replace current dependencies");
+    cache.invalidateDependents(parentFileName);
+    assert.strictEqual(cache.get(modelFileName), null);
+  });
+
+  it("keeps a replacement preview when an invalidated request rejects", async () => {
+    const cache = new ModelPreviewCache();
+    const stale = deferred<ModelPreviewDocument>();
+    const staleCached = cache.set(modelFileName, stale.promise);
+    cache.invalidate(modelFileName);
+    const current = cache.set(modelFileName, Promise.resolve(createPreviewDocument([])));
+
+    stale.reject(new Error("stale preview failed"));
+    await assert.rejects(staleCached, /stale preview failed/);
+    await current;
+    assert.strictEqual(cache.get(modelFileName), current);
+  });
+
+  it("removes the current preview entry when its request rejects", async () => {
+    const cache = new ModelPreviewCache();
+    const rejected = cache.set(modelFileName, Promise.reject(new Error("preview failed")));
+
+    await assert.rejects(rejected, /preview failed/);
     assert.strictEqual(cache.get(modelFileName), null);
   });
 
@@ -57,6 +96,27 @@ describe("model preview cache", () => {
     assert.strictEqual(cache.getResolvedModel(modelFileName, "other-cfg", () => "v1"), null);
     assert.strictEqual(cache.getResolvedModel(modelFileName, "cfg", () => "v2"), null, "changed dependency versions must force resolution");
 
+    cache.invalidateDependents(parentFileName);
+    assert.strictEqual(cache.getResolvedModel(modelFileName, "cfg", () => "v1"), null);
+  });
+
+  it("does not let stale resolved-model dependencies overwrite a replacement", async () => {
+    const cache = new ModelPreviewCache();
+    const stale = deferred<ResolvedModel>();
+    cache.setResolvedModel(modelFileName, "cfg", stale.promise, () => "v1");
+    cache.invalidateDependents(modelFileName);
+    cache.setResolvedModel(
+      modelFileName,
+      "cfg",
+      Promise.resolve(createResolvedModel([parentFileName])),
+      () => "v1"
+    );
+    await cache.getResolvedModel(modelFileName, "cfg", () => "v1");
+
+    stale.resolve(createResolvedModel([oldParentFileName]));
+    await stale.promise;
+    cache.invalidateDependents(oldParentFileName);
+    assert.ok(cache.getResolvedModel(modelFileName, "cfg", () => "v1"));
     cache.invalidateDependents(parentFileName);
     assert.strictEqual(cache.getResolvedModel(modelFileName, "cfg", () => "v1"), null);
   });
@@ -140,4 +200,18 @@ function createResolvedModel(dependencyFileNames: string[]): ResolvedModel {
     display: {},
     dependencies: dependencyFileNames.map(fileName => ({ fileName, kind: "model" as const }))
   };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: Error) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }

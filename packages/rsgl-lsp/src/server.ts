@@ -98,7 +98,7 @@ documents.onDidOpen(event => {
 });
 documents.onDidChangeContent(event => {
   invalidateDocument(event.document);
-  refreshOpenDocuments();
+  scheduleOpenDocumentRefresh();
 });
 documents.onDidClose(event => {
   semanticCache.invalidatePath(fileNameFromUri(event.document.uri));
@@ -120,9 +120,6 @@ connection.onDidChangeWatchedFiles(params => {
 
   const affectedUris = new Set<string>();
   for (const changedFileName of changedFileNames) {
-    if (path.extname(changedFileName).toLowerCase() !== ".json") {
-      continue;
-    }
     for (const uri of documentsDependingOnPath(dependenciesByDocument, changedFileName)) {
       affectedUris.add(uri);
     }
@@ -272,6 +269,7 @@ function validateDocument(document: TextDocument): void {
 }
 
 function refreshOpenDocuments(excludeUri?: string): void {
+  cancelScheduledOpenDocumentRefresh();
   for (const document of documents.all()) {
     if (document.uri === excludeUri) {
       continue;
@@ -293,6 +291,23 @@ function completionItemsForDocument(document: TextDocument, offset: number): Com
     offset,
     documentLanguageWorkspace()
   );
+}
+
+let openDocumentRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleOpenDocumentRefresh(delay = 150): void {
+  cancelScheduledOpenDocumentRefresh();
+  openDocumentRefreshTimer = setTimeout(() => {
+    openDocumentRefreshTimer = null;
+    refreshOpenDocuments();
+  }, delay);
+}
+
+function cancelScheduledOpenDocumentRefresh(): void {
+  if (openDocumentRefreshTimer) {
+    clearTimeout(openDocumentRefreshTimer);
+    openDocumentRefreshTimer = null;
+  }
 }
 
 function documentLanguageWorkspace() {

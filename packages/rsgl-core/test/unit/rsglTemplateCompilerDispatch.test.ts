@@ -1,9 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import {
-  compileRsglProgram,
-  RsglCompiler
-} from "../../src/compiler/compiler";
+import { RsglCompiler } from "../../src/compiler/compiler";
+import { compileRsglProgram } from "../../src/compiler";
 import {
   compileBlockstateResource,
   type BlockstateCompileOptions

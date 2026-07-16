@@ -70,6 +70,15 @@ export function normalizeDependencyPath(fileName: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+/** Returns true when a dependency is not covered by workspace RSGL/JSON globs. */
+export function requiresExactDependencyWatcher(fileName: string, isInWorkspace: boolean): boolean {
+  if (!isInWorkspace) {
+    return true;
+  }
+  const extension = path.extname(fileName).toLowerCase();
+  return extension !== ".rsgl" && extension !== ".json";
+}
+
 /** Converts a dependency list into a normalized identity set. */
 export function dependencyPathSet(dependencies: readonly { path: string }[]): Set<string> {
   return new Set(dependencies.map(dependency => normalizeDependencyPath(dependency.path)));

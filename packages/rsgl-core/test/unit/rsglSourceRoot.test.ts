@@ -57,4 +57,28 @@ describe("RSGL source root discovery", () => {
     assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [sourceRoot]);
     assert.strictEqual(calls, 2);
   });
+
+  it("does not cache a workspace scan that was invalidated while in flight", async () => {
+    const cache = new RsglWorkspaceSourceRootCache();
+    const firstRoot = path.resolve("first", "src");
+    const secondRoot = path.resolve("second", "src");
+    let releaseFirst!: (files: string[]) => void;
+    let calls = 0;
+    const provider = () => {
+      calls++;
+      if (calls === 1) {
+        return new Promise<string[]>(resolve => {
+          releaseFirst = resolve;
+        });
+      }
+      return [path.join(secondRoot, "main.rsgl")];
+    };
+
+    const discovery = cache.discover(provider);
+    cache.invalidatePath(path.join(secondRoot, "main.rsgl"));
+    releaseFirst([path.join(firstRoot, "main.rsgl")]);
+
+    assert.deepStrictEqual((await discovery).map(root => root.sourceRoot), [secondRoot]);
+    assert.strictEqual(calls, 2);
+  });
 });

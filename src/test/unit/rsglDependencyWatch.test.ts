@@ -3,7 +3,8 @@ import * as path from "node:path";
 import {
   DependencyWatchRegistry,
   dependencyBuildNeedsVerification,
-  normalizeDependencyPath
+  normalizeDependencyPath,
+  requiresExactDependencyWatcher
 } from "../../../extensions/vscode-rsgl/src/dependencyWatch";
 
 describe("RSGL dependency watcher state", () => {
@@ -44,5 +45,14 @@ describe("RSGL dependency watcher state", () => {
       dependencyBuildNeedsVerification(new Set([first]), new Set([first]), new Set()),
       false
     );
+  });
+
+  it("uses exact watchers for external files and workspace non-source dependencies", () => {
+    assert.strictEqual(requiresExactDependencyWatcher("inside/source.rsgl", true), false);
+    assert.strictEqual(requiresExactDependencyWatcher("inside/base.json", true), false);
+    assert.strictEqual(requiresExactDependencyWatcher("inside/texture.png", true), true);
+    assert.strictEqual(requiresExactDependencyWatcher("inside/sound.ogg", true), true);
+    assert.strictEqual(requiresExactDependencyWatcher("outside/base.json", false), true);
+    assert.strictEqual(requiresExactDependencyWatcher("outside/source.rsgl", false), true);
   });
 });

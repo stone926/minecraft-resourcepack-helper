@@ -28,11 +28,13 @@ export function registerWorkspaceEvents(
   workspaceResourceCache.setOpenTextDocumentProvider(findOpenTextDocument);
 
   let activeEditor = vscode.window.activeTextEditor;
+  let decorationTimer: ReturnType<typeof setTimeout> | null = null;
   if (activeEditor) {
     applyDecoration(activeEditor);
   }
 
   vscode.window.onDidChangeActiveTextEditor(editor => {
+    cancelDecorationRefresh();
     activeEditor = editor;
     if (editor) {
       applyDecoration(editor);
@@ -43,9 +45,9 @@ export function registerWorkspaceEvents(
   vscode.workspace.onDidChangeTextDocument(event => {
     workspaceResourceCache.invalidateDocument(event.document);
     if (activeEditor && event.document === activeEditor.document) {
-      applyDecoration(activeEditor);
+      scheduleDecorationRefresh(activeEditor);
     }
-    diagnostics.refresh(event.document);
+    diagnostics.refreshSoon(event.document);
     if (isResourceGraphDocumentPath(event.document.fileName)) {
       resourceGraph.invalidateDocument(event.document);
       resourceGraph.refreshSoon();
@@ -81,6 +83,7 @@ export function registerWorkspaceEvents(
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration(resourceConfigurationKeys.undefinedTextureVariableColor) && activeEditor) {
+      cancelDecorationRefresh();
       updateDecoration(activeEditor);
     }
     if (affectsResourceResolutionConfiguration(event)) {
@@ -91,9 +94,29 @@ export function registerWorkspaceEvents(
   }));
 
   context.subscriptions.push(
-    { dispose: disposeDecoration },
+    { dispose: () => {
+      cancelDecorationRefresh();
+      disposeDecoration();
+    } },
     { dispose: () => workspaceResourceCache.setOpenTextDocumentProvider(null) }
   );
+
+  function scheduleDecorationRefresh(editor: vscode.TextEditor, delay = 120): void {
+    cancelDecorationRefresh();
+    decorationTimer = setTimeout(() => {
+      decorationTimer = null;
+      if (activeEditor === editor) {
+        applyDecoration(editor);
+      }
+    }, delay);
+  }
+
+  function cancelDecorationRefresh(): void {
+    if (decorationTimer) {
+      clearTimeout(decorationTimer);
+      decorationTimer = null;
+    }
+  }
 }
 
 function registerResourceWatcher(

@@ -2,7 +2,7 @@ import { getCitDocumentSource } from "./citPaths";
 import { resolveCitResourceType, resolveCitType } from "./citKeyResolution";
 import { getCitPropertiesEntries, type CitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
 import type { CitType } from "./citSpecTypes";
-import type { ResourceReference } from "../utils/resourceReferences";
+import type { ResourceReference } from "../utils/resourceReferences/types";
 
 export function getCitPropertyReferences(document: CitPropertiesDocument): ResourceReference[] {
   const references: ResourceReference[] = [];

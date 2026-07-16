@@ -1,24 +1,27 @@
 import * as vscode from "vscode";
+import { isResourceSurfaceFile } from "../resources/resourceSurfaceRegistry";
 import { modelSourceForFile } from "../services/modelParentChain";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from "../utils/jsonAst";
 import { createTextureVariableDefinitionResolver } from "../utils/modelTexture";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
+import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
 
-let tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
-let decorationType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
-  color: tipColor
-});
+let decorationType: vscode.TextEditorDecorationType | null = null;
 
-export function applyDecoration(editor: vscode.TextEditor) {
-  if (editor.document.languageId !== "json" || !isModelFile(editor.document.uri.fsPath)) {
-    editor.setDecorations(decorationType, []);
+export function applyDecoration(editor: vscode.TextEditor): void {
+  const currentDecorationType = getDecorationType();
+  if (
+    editor.document.languageId !== "json"
+    || !isResourceSurfaceFile(editor.document.uri.fsPath, "textureVariables")
+  ) {
+    editor.setDecorations(currentDecorationType, []);
     return;
   }
 
   const ast = workspaceResourceCache.getJsonAst(editor.document);
   if (!ast) {
-    editor.setDecorations(decorationType, []);
+    editor.setDecorations(currentDecorationType, []);
     return;
   }
 
@@ -65,28 +68,35 @@ export function applyDecoration(editor: vscode.TextEditor) {
     }
   }
 
-  editor.setDecorations(decorationType, ranges);
+  editor.setDecorations(currentDecorationType, ranges);
 }
 
-export function updateDecoration(editor: vscode.TextEditor) {
-  tipColor = <string>vscode.workspace.getConfiguration().get("McResHelper.tipColorForUndefinedTextureVariables");
-  editor.setDecorations(decorationType, []);
-  decorationType.dispose();
-  decorationType = vscode.window.createTextEditorDecorationType({
-    color: tipColor
-  });
+export function updateDecoration(editor: vscode.TextEditor): void {
+  const currentDecorationType = getDecorationType();
+  editor.setDecorations(currentDecorationType, []);
+  currentDecorationType.dispose();
+  decorationType = createDecorationType();
   applyDecoration(editor);
 }
 
-export function disposeDecoration() {
-  decorationType.dispose();
+export function disposeDecoration(): void {
+  decorationType?.dispose();
+  decorationType = null;
 }
 
-function isModelFile(filePath: string): boolean {
-  return /[\\/]models[\\/].+\.json$/i.test(filePath);
+function getDecorationType(): vscode.TextEditorDecorationType {
+  decorationType ??= createDecorationType();
+  return decorationType;
 }
 
-function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined) {
+function createDecorationType(): vscode.TextEditorDecorationType {
+  const color = vscode.workspace.getConfiguration().get<string>(
+    resourceConfigurationKeys.undefinedTextureVariableColor
+  ) ?? "Chartreuse";
+  return vscode.window.createTextEditorDecorationType({ color });
+}
+
+function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined): void {
   if (!node?.loc) {
     return;
   }

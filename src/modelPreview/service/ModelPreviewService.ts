@@ -45,12 +45,7 @@ export class ModelPreviewService {
       return cached;
     }
 
-    const document = this.createPreviewDocument(fileName, cancellationToken).catch(error => {
-      this.cache.invalidate(fileName);
-      throw error;
-    });
-    this.cache.set(fileName, document);
-    return document;
+    return this.cache.set(fileName, this.createPreviewDocument(fileName, cancellationToken));
   }
 
   invalidate(fileName: string): void {

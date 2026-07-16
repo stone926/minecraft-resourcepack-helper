@@ -19,7 +19,6 @@ export * from "./semanticTokens";
 export * from "./renameService";
 export * from "./sourceRoot";
 export * from "./templateOutput";
-export * from "./workspaceBuildSemantic";
 export * from "./workspaceSemantic";
 export * from "./workspaceSource";
 export * from "./workspaceValidation";

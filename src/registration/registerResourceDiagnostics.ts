@@ -7,6 +7,7 @@ import {
 
 export interface ResourceDiagnosticsController extends vscode.Disposable {
   refresh(document: vscode.TextDocument): void;
+  refreshSoon(document: vscode.TextDocument, delay?: number): void;
   clear(document: vscode.TextDocument): void;
   refreshAll(): void;
   refreshAllSoon(delay?: number): void;
@@ -24,14 +25,26 @@ export function registerResourceDiagnostics(
 
 class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly documentRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly collection: vscode.DiagnosticCollection) {}
 
   refresh(document: vscode.TextDocument): void {
+    this.cancelDocumentRefresh(document.uri.toString());
     void refreshResourceDiagnostics(document, this.collection);
   }
 
+  refreshSoon(document: vscode.TextDocument, delay = 150): void {
+    const key = document.uri.toString();
+    this.cancelDocumentRefresh(key);
+    this.documentRefreshTimers.set(key, setTimeout(() => {
+      this.documentRefreshTimers.delete(key);
+      void refreshResourceDiagnostics(document, this.collection);
+    }, delay));
+  }
+
   clear(document: vscode.TextDocument): void {
+    this.cancelDocumentRefresh(document.uri.toString());
     clearResourceDiagnostics(document, this.collection);
   }
 
@@ -57,7 +70,19 @@ class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    for (const timer of this.documentRefreshTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.documentRefreshTimers.clear();
     disposeResourceDiagnosticsRefreshes(this.collection);
     this.collection.dispose();
+  }
+
+  private cancelDocumentRefresh(key: string): void {
+    const timer = this.documentRefreshTimers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.documentRefreshTimers.delete(key);
+    }
   }
 }

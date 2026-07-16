@@ -18,13 +18,18 @@ export class RsglWorkspaceSourceRootCache {
   private cache: RsglWorkspaceSourceRootCacheEntry | null = null;
 
   public async discover(provider: RsglWorkspaceSourceRootFileProvider): Promise<RsglDiscoveredSourceRoot[]> {
-    if (this.cache?.generation === this.generation) {
-      return this.cache.roots;
-    }
+    while (true) {
+      if (this.cache?.generation === this.generation) {
+        return this.cache.roots;
+      }
 
-    const roots = discoverRsglSourceRootsFromFileNames(await provider());
-    this.cache = { generation: this.generation, roots };
-    return roots;
+      const generation = this.generation;
+      const roots = discoverRsglSourceRootsFromFileNames(await provider());
+      if (generation === this.generation) {
+        this.cache = { generation, roots };
+        return roots;
+      }
+    }
   }
 
   public invalidatePath(fileName: string): void {

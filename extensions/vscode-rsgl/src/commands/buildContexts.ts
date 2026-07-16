@@ -6,7 +6,6 @@ import {
   resolveRsglSourceRootFromFileName,
   type RsglDiscoveredSourceRoot
 } from "../../../../packages/rsgl-core/src/sourceRoot";
-import { rsglWorkspaceBuildSemanticCache } from "../../../../packages/rsgl-core/src/workspaceBuildSemantic";
 import { rsglConfigKeys } from "../../../../packages/rsgl-shared/src";
 import { rsglLanguageId } from "../language";
 
@@ -45,7 +44,6 @@ export async function resolveFileBuildContext(uri: vscode.Uri | undefined): Prom
       await vscode.window.showErrorMessage(vscode.l10n.t("Save the RSGL file before building."));
       return null;
     }
-    rsglWorkspaceBuildSemanticCache.invalidatePath(document.fileName);
   }
 
   const outputRoot = await resolveOutputRoot(document.fileName);
@@ -168,7 +166,6 @@ async function saveRsglDocumentsInSourceRoots(sourceRoots: readonly string[]): P
       if (!saved) {
         return false;
       }
-      rsglWorkspaceBuildSemanticCache.invalidatePath(document.fileName);
     }
   }
   return true;

@@ -616,21 +616,21 @@ describe("RSGL LSP server core", () => {
     }
   });
 
-  it("selects only documents that depend on a changed JSON path", () => {
+  it("selects only documents that depend on a changed path regardless of file type", () => {
     const root = path.join(os.tmpdir(), "rsgl-dependency-index");
-    const shared = path.join(root, "shared.json");
-    const other = path.join(root, "other.json");
+    const shared = path.join(root, "shared.png");
+    const other = path.join(root, "other.ogg");
     const index = new Map<string, ReadonlySet<string>>([
       ["file:///one.rsgl", new Set([normalizeDependencyPath(shared)])],
       ["file:///two.rsgl", new Set([normalizeDependencyPath(other)])],
       ["file:///three.rsgl", new Set([normalizeDependencyPath(shared), normalizeDependencyPath(other)])]
     ]);
 
-    assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, ".", "shared.json")), [
+    assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, ".", "shared.png")), [
       "file:///one.rsgl",
       "file:///three.rsgl"
     ]);
-    assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, "unrelated.json")), []);
+    assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, "unrelated.bin")), []);
   });
 
   it("publishes a stable dependency union across all open documents", () => {
@@ -689,9 +689,9 @@ describe("RSGL LSP server core", () => {
     ]);
   });
 
-  it("leaves JSON-only watcher batches for dependency-specific validation", () => {
+  it("leaves non-source watcher batches for dependency-specific validation", () => {
     const events: string[] = [];
-    const handled = handleSemanticWatchedFileBatch([path.join("pack", "base.json")], {
+    const handled = handleSemanticWatchedFileBatch([path.join("pack", "texture.png")], {
       invalidatePath: fileName => events.push(`invalidate:${fileName}`),
       refresh: () => events.push("refresh")
     });
@@ -1131,6 +1131,8 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("connection.onRenameRequest"));
     assert.ok(serverSource.includes("codeActionKinds: [CodeActionKind.QuickFix]"));
     assert.ok(serverSource.includes("connection.onCodeAction"));
+    assert.ok(serverSource.includes("scheduleOpenDocumentRefresh();"));
+    assert.strictEqual(serverSource.includes('path.extname(changedFileName).toLowerCase() !== ".json"'), false);
   });
 
   it("converts imported record member tooling and field definitions with UTF-16 positions", () => {

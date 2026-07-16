@@ -3,16 +3,18 @@ import { isCitPropertiesFileName } from "../../cit/citPaths";
 import { affectsResourceResolutionConfiguration } from "../../utils/resourceConfigurationKeys";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
 import { isModelPreviewFileName } from "./modelPreviewFiles";
+import { ModelPreviewRefreshScheduler } from "./ModelPreviewRefreshScheduler";
 
 export class ModelPreviewWatcher implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly refreshScheduler: ModelPreviewRefreshScheduler;
 
   constructor(
     private readonly tracker: ModelDependencyTracker,
     private readonly refresh: (changedFileNameOrUri?: string) => void,
     private readonly updateTargetFromActiveEditor: (uri: vscode.Uri) => void
   ) {
+    this.refreshScheduler = new ModelPreviewRefreshScheduler(reason => this.refresh(reason));
     this.watchWorkspaceFiles("**/assets/*/models/**/*.json");
     this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.json");
     this.watchWorkspaceFiles("**/assets/*/textures/**/*.png");
@@ -29,11 +31,12 @@ export class ModelPreviewWatcher implements vscode.Disposable {
         return;
       }
 
-      if (!isCitPropertiesFileName(event.document.fileName) && !isJsonComplete(event.document.getText())) {
-        return;
-      }
-
-      this.refreshSoon(event.document.fileName);
+      this.refreshSoon(
+        event.document.fileName,
+        () => !event.document.isClosed && (
+          isCitPropertiesFileName(event.document.fileName) || isJsonComplete(event.document.getText())
+        )
+      );
     }));
 
     this.disposables.push(vscode.workspace.onDidSaveTextDocument(document => {
@@ -56,10 +59,7 @@ export class ModelPreviewWatcher implements vscode.Disposable {
   }
 
   dispose(): void {
-    if (this.refreshTimer) {
-      clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
+    this.refreshScheduler.dispose();
     this.disposables.forEach(disposable => disposable.dispose());
   }
 
@@ -77,15 +77,8 @@ export class ModelPreviewWatcher implements vscode.Disposable {
     }
   }
 
-  private refreshSoon(_reason: string): void {
-    if (this.refreshTimer) {
-      clearTimeout(this.refreshTimer);
-    }
-
-    this.refreshTimer = setTimeout(() => {
-      this.refreshTimer = null;
-      this.refresh(_reason);
-    }, 180);
+  private refreshSoon(reason: string, shouldRefresh?: () => boolean): void {
+    this.refreshScheduler.schedule(reason, shouldRefresh);
   }
 }
 

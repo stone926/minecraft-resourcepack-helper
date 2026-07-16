@@ -176,7 +176,6 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   }
 
   invalidateDocument(document: CacheTextDocument): void {
-    this.resourceIndexGeneration++;
     this.fileSystem.invalidateDocument(document);
     this.resourceResolution.invalidateDocument(document.fileName);
     this.models.invalidatePath(document.fileName);

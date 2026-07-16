@@ -43,18 +43,28 @@ export class ModelPreviewCache {
     return this.previews.get(normalizePathKey(fileName))?.document ?? null;
   }
 
-  set(fileName: string, document: Promise<ModelPreviewDocument>): void {
+  set(fileName: string, document: Promise<ModelPreviewDocument>): Promise<ModelPreviewDocument> {
     const key = normalizePathKey(fileName);
-    this.previews.set(key, {
-      document: document.then(preview => {
-        const entry = this.previews.get(key);
-        if (entry) {
+    const entry: PreviewCacheEntry = {
+      document,
+      dependencyKeys: new Set([normalizePathKey(fileName)])
+    };
+    entry.document = document.then(
+      preview => {
+        if (this.previews.peek(key) === entry) {
           entry.dependencyKeys = new Set(preview.dependencies.map(dependency => dependencyKey(dependency.uri)));
         }
         return preview;
-      }),
-      dependencyKeys: new Set([normalizePathKey(fileName)])
-    });
+      },
+      error => {
+        if (this.previews.peek(key) === entry) {
+          this.previews.delete(key);
+        }
+        throw error;
+      }
+    );
+    this.previews.set(key, entry);
+    return entry.document;
   }
 
   getRawModel(fileName: string, version: string | null): Promise<RawModelDocument> | null {

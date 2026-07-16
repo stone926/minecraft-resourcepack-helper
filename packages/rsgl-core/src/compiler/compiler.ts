@@ -92,22 +92,6 @@ import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { finalizeResourceValueObservations } from "./resourceValueObservationFinalization";
 import { EvaluationItemBudget } from "./evaluationItemBudget";
 
-export {
-  compileRsglDirectory,
-  compileRsglFile,
-  compileRsglModule,
-  compileRsglProgram,
-  loadRsglSourceFilesFromDirectory,
-  loadRsglSourceFilesFromFile
-} from "./compilePipeline";
-export type {
-  RsglCompileOptions,
-  RsglDirectoryCompileOptions,
-  RsglFileCompileOptions,
-  RsglFileLoadOptions,
-  RsglProgramCompileOptions
-} from "./compilePipeline";
-
 interface RsglCompilerOptions {
   fileName: string;
   namespace: string;
