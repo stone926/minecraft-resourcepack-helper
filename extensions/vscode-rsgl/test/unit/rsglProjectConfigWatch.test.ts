@@ -5,12 +5,12 @@ import * as path from "node:path";
 import {
   findRsglProjectConfig,
   getRsglProjectConfigWatchPaths
-} from "../../../packages/rsgl-core/src/rsglConfig";
+} from "../../../../packages/rsgl-core/src/rsglConfig";
 import {
   RsglProjectConfigWatchRegistry,
   type RsglProjectConfigWatcherFactory
-} from "../../../extensions/vscode-rsgl/src/projectConfigWatch";
-import { mergeRsglValidationConfiguration } from "../../../extensions/vscode-rsgl/src/validationConfiguration";
+} from "../../src/projectConfigWatch";
+import { mergeRsglValidationConfiguration } from "../../src/validationConfiguration";
 
 describe("RSGL project config watcher", () => {
   it("tracks the nearest ancestor config across edits, deletion fallbacks, and closer creation", () => {

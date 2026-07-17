@@ -16,57 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            extensions/vscode-rsgl/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install RSGL extension dependencies
-        run: npm ci --prefix extensions/vscode-rsgl
-
-      - name: Test
-        run: npm test
-
-      - name: Compile RSGL extension
-        run: npm run compile:rsgl-extension
-
-      - name: Package VSIX smoke test
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p dist
-          npm run package:main:vsix -- --out dist/minecraft-resourcepack-helper-ci.vsix
-          npm run package:rsgl:vsix -- --out dist/rsgl-ci.vsix
-          npm run verify:rsgl:vsix -- dist/rsgl-ci.vsix
-
-      - name: Upload VSIX artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v7
-        with:
-          name: vscode-extension-ci-vsix-${{ github.run_attempt }}
-          path: |
-            dist/minecraft-resourcepack-helper-ci.vsix
-            dist/rsgl-ci.vsix
-          if-no-files-found: error
-          retention-days: 7
+  verify:
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      product: all
+      upload_artifacts: true

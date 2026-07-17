@@ -6,6 +6,7 @@ import {
   resolveRsglSourceRootFromFileName,
   type RsglDiscoveredSourceRoot
 } from "../../../../packages/rsgl-core/src/sourceRoot";
+import { isRsglPathInsideOrEqual } from "../../../../packages/rsgl-core/src/pathIdentity";
 import { rsglConfigKeys } from "../../../../packages/rsgl-shared/src";
 import { rsglLanguageId } from "../language";
 
@@ -187,8 +188,7 @@ function isRsglDocument(document: vscode.TextDocument): boolean {
 }
 
 function isPathInsideOrEqual(fileName: string, directory: string): boolean {
-  const relative = path.relative(directory, fileName);
-  return relative === "" || (relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative));
+  return isRsglPathInsideOrEqual(fileName, directory);
 }
 
 function resolveConfiguredOutDir(anchorFileName: string): string | null {

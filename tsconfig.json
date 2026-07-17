@@ -1,33 +1,13 @@
 {
-	"compilerOptions": {
-		"module": "Node16",
-		"target": "ES2023",
-		"outDir": "out",
-		"lib": [
-			"ES2023"
-		],
-		"sourceMap": true,
-		"rootDir": ".",
-		"strict": true,
-		"moduleResolution": "Node16",
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"types": [
-			"node",
-			"vscode",
-			"mocha"
-		]
-  },
-	"include": [
-		"src/**/*.ts",
-		"packages/**/*.ts",
-		"extensions/**/*.ts"
-	],
-	"exclude": [
-		"node_modules",
-		"out",
-		"packages/**/out",
-		"extensions/**/out",
-		".vscode-test"
-	]
+  "files": [],
+  "references": [
+    { "path": "./packages/mc-assets" },
+    { "path": "./packages/rsgl-core" },
+    { "path": "./packages/rsgl-shared" },
+    { "path": "./packages/rsgl-lsp" },
+    { "path": "./packages/rsgl-cli" },
+    { "path": "./tsconfig.main.json" },
+    { "path": "./extensions/vscode-rsgl" },
+    { "path": "./tsconfig.tests.json" }
+  ]
 }

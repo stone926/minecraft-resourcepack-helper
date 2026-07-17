@@ -1,16 +1,16 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import {
   runRsglWorkerTask,
   type RsglWorkerCancellationToken,
   type RsglWorkerTransport
-} from "../../../../extensions/vscode-rsgl/src/commands/buildWorkerClient";
+} from "../../src/commands/buildWorkerClient";
 import type {
   RsglWorkerRequestEnvelope,
   RsglWorkerResponse
-} from "../../../../extensions/vscode-rsgl/src/commands/buildWorkerProtocol";
-import { createTempDir } from "./helpers/fs";
+} from "../../src/commands/buildWorkerProtocol";
 
 describe("RSGL build worker client", () => {
   it("prepares a build in a real worker without writing output", async () => {
@@ -248,4 +248,8 @@ class FakeWorkerTransport implements RsglWorkerTransport {
 
 function nextTurn(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
+}
+
+function createTempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }

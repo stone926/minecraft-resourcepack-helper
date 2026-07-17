@@ -114,15 +114,16 @@ export class TextureReferenceResolver {
     forceTranslucent: boolean,
     referenceRange?: PreviewRange
   ): TextureMaterialResolution {
+    const candidateDependencies = uniqueTextureDependencies(
+      this.resources.getTextureFileCandidates(textureResource, sourceModelFileName)
+    );
     const textureFile = this.resources.resolveTextureFileName(textureResource, sourceModelFileName);
     if (!textureFile) {
-      const missingDependencies = this.resources.getTextureFileCandidates(textureResource, sourceModelFileName)
-        .map(fileName => ({ fileName, kind: "texture" as const }));
       this.issues.warning(lm("Texture not found: {0}", textureResource), sourceModelFileName, referenceRange);
-      return missingMaterial(textureResource, missingDependencies);
+      return missingMaterial(textureResource, candidateDependencies);
     }
 
-    const dependencies: ResolvedDependency[] = [{ fileName: textureFile.fileName, kind: "texture" }];
+    const dependencies: ResolvedDependency[] = candidateDependencies;
     const metadataFileName = `${textureFile.fileName}.mcmeta`;
     if (this.fileSystem.fileExists(metadataFileName)) {
       dependencies.push({ fileName: metadataFileName, kind: "textureMetadata" });
@@ -142,6 +143,13 @@ export class TextureReferenceResolver {
       textureFileName: textureFile.fileName
     };
   }
+}
+
+function uniqueTextureDependencies(fileNames: readonly string[]): ResolvedDependency[] {
+  return [...new Map(fileNames.map(fileName => [
+    normalizePathKey(fileName),
+    { fileName, kind: "texture" as const }
+  ])).values()];
 }
 
 function missingMaterial(textureReference: string, dependencies: ResolvedDependency[] = []): TextureMaterialResolution {

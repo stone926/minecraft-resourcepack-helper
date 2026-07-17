@@ -141,6 +141,32 @@ describe("RSGL workspace semantic cache", () => {
     }
   });
 
+  it("reuses semantic programs across Windows path-case variants without changing display paths", function () {
+    if (process.platform !== "win32") {
+      this.skip();
+    }
+
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-case-");
+    try {
+      const mainFile = path.join(root, "Main.rsgl");
+      fs.writeFileSync(mainFile, "let value = 1");
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const first = cache.loadProgramFromEntry(mainFile);
+      const second = cache.loadProgramFromEntry(mainFile.toUpperCase());
+
+      assert.strictEqual(second.program, first.program);
+      assert.strictEqual(second.files[0], first.files[0]);
+      assert.strictEqual(second.files[0].fileName, path.normalize(mainFile));
+
+      cache.invalidatePath(mainFile.toUpperCase());
+      const rebound = cache.loadProgramFromEntry(mainFile);
+      assert.notStrictEqual(rebound.program, first.program);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reuses and refreshes bound directory programs", () => {
     const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-");
     try {

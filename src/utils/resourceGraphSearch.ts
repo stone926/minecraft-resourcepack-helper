@@ -1,6 +1,10 @@
 import * as path from "node:path";
-import { parseAssetsPath } from "../../packages/mc-assets/src";
-import { isResourceSurfaceFile } from "../resources/resourceSurfaceRegistry";
+import { normalizePathKey, parseAssetsPath } from "../../packages/mc-assets/src";
+import {
+  getResourceIncomingReferenceRoots,
+  isResourceSurfaceFile,
+  type ResourceIncomingReferenceRoot
+} from "../resources/resourceSurfaceRegistry";
 
 export interface AssetResource {
   namespace: string;
@@ -59,8 +63,7 @@ export function getAssetResource(fsPath: string): AssetResource | null {
 }
 
 export function resourceUriKey(uri: AssetUriLike): string {
-  const key = uri.scheme === "file" ? path.normalize(uri.fsPath) : uri.toString();
-  return process.platform === "win32" ? key.toLowerCase() : key;
+  return uri.scheme === "file" ? normalizePathKey(uri.fsPath) : uri.toString();
 }
 
 export function isModelDocumentPath(fileName: string): boolean {
@@ -81,27 +84,7 @@ function getPossibleReferencePaths(resourcePath: string): Set<string> {
   const pathWithoutExtension = stripExtension(normalizedResourcePath);
   const basenameWithoutExtension = path.posix.basename(pathWithoutExtension);
   const basename = path.posix.basename(normalizedResourcePath);
-  const targetRoots = [
-    "",
-    "models",
-    "textures",
-    "textures/particle",
-    "textures/entity",
-    "textures/entity/bed",
-    "textures/entity/chest",
-    "textures/entity/shulker",
-    "textures/entity/signs",
-    "textures/entity/signs/hanging",
-    "textures/effect",
-    "textures/gui/sprites/hud/locator_bar_dot",
-    "font",
-    "shaders",
-    "shaders/core",
-    "shaders/include",
-    "sounds"
-  ];
-
-  for (const targetRoot of targetRoots) {
+  for (const targetRoot of getResourceIncomingReferenceRoots()) {
     addReferencePathForTargetRoot(paths, normalizedResourcePath, pathWithoutExtension, targetRoot);
   }
 
@@ -112,7 +95,6 @@ function getPossibleReferencePaths(resourcePath: string): Set<string> {
     paths.add(basename);
   }
 
-  addEquipmentReferencePath(paths, normalizedResourcePath, pathWithoutExtension);
   return paths;
 }
 
@@ -120,17 +102,30 @@ function addReferencePathForTargetRoot(
   paths: Set<string>,
   resourcePath: string,
   pathWithoutExtension: string,
-  targetRoot: string
+  target: ResourceIncomingReferenceRoot
 ): void {
+  const targetRoot = target.root;
   const normalizedRoot = targetRoot.length > 0 ? `${targetRoot}/` : "";
   if (targetRoot.length > 0 && !resourcePath.startsWith(normalizedRoot)) {
     return;
   }
 
-  const rawPath = targetRoot.length > 0 ? resourcePath.slice(normalizedRoot.length) : resourcePath;
-  const rawPathWithoutExtension = targetRoot.length > 0
+  let rawPath = targetRoot.length > 0 ? resourcePath.slice(normalizedRoot.length) : resourcePath;
+  let rawPathWithoutExtension = targetRoot.length > 0
     ? pathWithoutExtension.slice(normalizedRoot.length)
     : pathWithoutExtension;
+
+  for (let index = 0; index < (target.stripLeadingSegments ?? 0); index++) {
+    const slashIndex = rawPath.indexOf("/");
+    if (slashIndex < 0) {
+      return;
+    }
+    rawPath = rawPath.slice(slashIndex + 1);
+    const extensionlessSlashIndex = rawPathWithoutExtension.indexOf("/");
+    rawPathWithoutExtension = extensionlessSlashIndex < 0
+      ? ""
+      : rawPathWithoutExtension.slice(extensionlessSlashIndex + 1);
+  }
 
   if (rawPathWithoutExtension.length > 0) {
     paths.add(rawPathWithoutExtension);
@@ -138,32 +133,6 @@ function addReferencePathForTargetRoot(
 
   if (rawPath.length > 0) {
     paths.add(rawPath);
-  }
-}
-
-function addEquipmentReferencePath(paths: Set<string>, resourcePath: string, pathWithoutExtension: string): void {
-  const equipmentRoot = "textures/entity/equipment/";
-  if (!resourcePath.startsWith(equipmentRoot)) {
-    return;
-  }
-
-  const rawPath = resourcePath.slice(equipmentRoot.length);
-  const rawPathWithoutExtension = pathWithoutExtension.slice(equipmentRoot.length);
-  const slashIndex = rawPath.indexOf("/");
-
-  if (slashIndex < 0) {
-    return;
-  }
-
-  const texturePath = rawPath.slice(slashIndex + 1);
-  const texturePathWithoutExtension = rawPathWithoutExtension.slice(slashIndex + 1);
-
-  if (texturePathWithoutExtension.length > 0) {
-    paths.add(texturePathWithoutExtension);
-  }
-
-  if (texturePath.length > 0) {
-    paths.add(texturePath);
   }
 }
 

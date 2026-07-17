@@ -128,6 +128,19 @@ describe("model preview manifest", () => {
     assert.strictEqual(script.includes("x >> 2"), false, "missing texture should not use the old 4px checkerboard");
   });
 
+  it("watches pack metadata used by open preview resource resolution", () => {
+    const watcherSource = fs.readFileSync(
+      path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWatcher.ts"),
+      "utf8"
+    );
+
+    assert.ok(watcherSource.includes('this.watchWorkspaceFiles("**/pack.mcmeta")'));
+    assert.ok(watcherSource.includes("isPackMetadataFileName(event.document.fileName)"));
+    assert.ok(watcherSource.includes("onDidDeleteFiles"));
+    assert.ok(watcherSource.includes("onDidRenameFiles"));
+    assert.ok(watcherSource.includes("hasFileAtOrBelow"));
+  });
+
   it("caches webview textures by dependency version instead of timestamps", () => {
     const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewRenderer.js"), "utf8");
 

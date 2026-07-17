@@ -2,12 +2,140 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { compileRsglFile } from "../../src/compiler";
-import { createRsglWorkspaceValidationOptions } from "../../src/workspaceValidation";
+import {
+  createRsglWorkspaceValidationOptions,
+  RsglWorkspaceValidationCache,
+  type RsglValidationFileSystem
+} from "../../src/workspaceValidation";
 import { compileSource } from "./helpers/compile";
 import { createPngBytes } from "./helpers/fixtures";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL workspace validation", () => {
+  it("reuses watcher-trusted validation I/O until the changed path is invalidated", () => {
+    const fileName = path.resolve("virtual-validation", "model.json");
+    let exists = true;
+    let value = 1;
+    let existsCalls = 0;
+    let readCalls = 0;
+    let versionCalls = 0;
+    const fileSystem: RsglValidationFileSystem = {
+      exists: () => { existsCalls++; return exists; },
+      isDirectory: () => false,
+      readJson: () => { readCalls++; return { value }; },
+      readPngMetadata: () => null,
+      readOggMetadata: () => null,
+      fileVersion: () => { versionCalls++; return `v${value}`; }
+    };
+    const cache = new RsglWorkspaceValidationCache({ fileSystem, watcherTrusted: true });
+
+    assert.strictEqual(cache.exists(fileName), true);
+    assert.strictEqual(cache.exists(fileName), true);
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 1 });
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 1 });
+    assert.deepStrictEqual([existsCalls, versionCalls, readCalls], [1, 1, 1]);
+
+    exists = false;
+    value = 2;
+    assert.strictEqual(cache.exists(fileName), true);
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 1 });
+    cache.invalidatePath(fileName);
+    assert.strictEqual(cache.exists(fileName), false);
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 2 });
+    assert.deepStrictEqual([existsCalls, versionCalls, readCalls], [2, 2, 2]);
+  });
+
+  it("uses TTL/version verification without rereading unchanged validation content", () => {
+    const fileName = path.resolve("virtual-validation", "blockstate.json");
+    let now = 0;
+    let value = 1;
+    let versionCalls = 0;
+    let readCalls = 0;
+    const fileSystem: RsglValidationFileSystem = {
+      exists: () => true,
+      isDirectory: () => false,
+      readJson: () => { readCalls++; return { value }; },
+      readPngMetadata: () => null,
+      readOggMetadata: () => null,
+      fileVersion: () => { versionCalls++; return `v${value}`; }
+    };
+    const cache = new RsglWorkspaceValidationCache({
+      fileSystem,
+      verificationTtlMs: 100,
+      clock: () => now
+    });
+
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 1 });
+    now = 50;
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 1 });
+    assert.deepStrictEqual([versionCalls, readCalls], [1, 1]);
+
+    now = 101;
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 1 });
+    assert.deepStrictEqual([versionCalls, readCalls], [2, 1]);
+
+    value = 2;
+    now = 202;
+    assert.deepStrictEqual(cache.readJson(fileName), { value: 2 });
+    assert.deepStrictEqual([versionCalls, readCalls], [3, 2]);
+  });
+
+  it("lets a reused validation resolver observe a resource created after TTL", () => {
+    const packRoot = path.resolve("virtual-validation", "pack");
+    const sourceFileName = path.join(packRoot, "src", "main.rsgl");
+    const textureFileName = path.join(
+      packRoot,
+      "assets",
+      "minecraft",
+      "textures",
+      "block",
+      "late.png"
+    );
+    const existing = new Set([path.join(packRoot, "pack.mcmeta")].map(fileName => path.normalize(fileName)));
+    let now = 0;
+    const fileSystem: RsglValidationFileSystem = {
+      exists: fileName => existing.has(path.normalize(fileName)),
+      isDirectory: () => false,
+      readJson: () => null,
+      readPngMetadata: () => null,
+      readOggMetadata: () => null
+    };
+    const cache = new RsglWorkspaceValidationCache({
+      fileSystem,
+      verificationTtlMs: 100,
+      clock: () => now
+    });
+    const validation = createRsglWorkspaceValidationOptions({ sourceFileName, cache });
+
+    assert.strictEqual(validation.resourceExists("texture", "minecraft:block/late"), false);
+    existing.add(path.normalize(textureFileName));
+    now = 99;
+    assert.strictEqual(validation.resourceExists("texture", "minecraft:block/late"), false);
+    now = 100;
+    assert.strictEqual(validation.resourceExists("texture", "minecraft:block/late"), true);
+  });
+
+  it("recovers from a missed delete event using the default verification TTL", () => {
+    const fileName = path.resolve("virtual-validation", "missed-delete.json");
+    let now = 0;
+    let exists = true;
+    const fileSystem: RsglValidationFileSystem = {
+      exists: () => exists,
+      isDirectory: () => false,
+      readJson: () => null,
+      readPngMetadata: () => null,
+      readOggMetadata: () => null
+    };
+    const cache = new RsglWorkspaceValidationCache({ fileSystem, clock: () => now });
+
+    assert.strictEqual(cache.exists(fileName), true);
+    exists = false;
+    now = 999;
+    assert.strictEqual(cache.exists(fileName), true);
+    now = 1_000;
+    assert.strictEqual(cache.exists(fileName), false);
+  });
+
   it("uses filesystem workspace validation for RSGL resources", () => {
     const root = createTempDir();
     const sourcePack = path.join(root, "source-pack");
@@ -506,6 +634,60 @@ describe("RSGL workspace validation", () => {
       assert.strictEqual(
         validation.externResourcePath("custom", "texture", "minecraft:font/ascii.png"),
         bitmap
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records missing external candidates and pack metadata for create invalidation", () => {
+    const root = createTempDir("rsgl-missing-external-dependencies-");
+    const sourcePack = path.join(root, "source-pack");
+    const customPack = path.join(root, "custom-pack");
+    const sourceFile = path.join(sourcePack, "src", "nested", "main.rsgl");
+    const missingModel = path.join(
+      customPack,
+      "assets",
+      "minecraft",
+      "models",
+      "block",
+      "future.json"
+    );
+    const cache = new RsglWorkspaceValidationCache({ watcherTrusted: true });
+    try {
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.mkdirSync(customPack, { recursive: true });
+      fs.writeFileSync(path.join(sourcePack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(customPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(sourceFile, [
+        "extern custom model minecraft:block/future",
+        "model block child { parent minecraft:block/future }"
+      ].join("\n"));
+      const compile = () => compileRsglFile(sourceFile, createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        resourcePackRoots: [customPack],
+        cache
+      }));
+
+      const missing = compile();
+      const dependencyPaths = missing.dependencies
+        .filter(dependency => dependency.reason === "extern")
+        .map(dependency => path.resolve(dependency.path));
+      assert.ok(missing.diagnostics.some(diagnostic => diagnostic.code === "rsgl.modelNotFound"));
+      assert.ok(dependencyPaths.includes(path.resolve(missingModel)));
+      assert.ok(dependencyPaths.includes(path.join(sourcePack, "pack.mcmeta")));
+      assert.ok(dependencyPaths.includes(path.join(sourcePack, "src", "pack.mcmeta")));
+      assert.ok(dependencyPaths.includes(path.join(sourcePack, "src", "nested", "pack.mcmeta")));
+      assert.ok(dependencyPaths.includes(path.join(customPack, "pack.mcmeta")));
+
+      fs.mkdirSync(path.dirname(missingModel), { recursive: true });
+      fs.writeFileSync(missingModel, "{}");
+      assert.ok(compile().diagnostics.some(diagnostic => diagnostic.code === "rsgl.modelNotFound"));
+
+      cache.invalidatePath(missingModel);
+      assert.strictEqual(
+        compile().diagnostics.some(diagnostic => diagnostic.code === "rsgl.modelNotFound"),
+        false
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

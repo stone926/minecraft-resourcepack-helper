@@ -3,14 +3,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   rsglModelGeometryKeywordDescriptors
-} from "../../src/modelGeometrySyntax";
-import { rsglResourceKinds } from "../../src/resourceKinds";
+} from "../../packages/rsgl-core/src/modelGeometrySyntax";
+import { rsglResourceKinds } from "../../packages/rsgl-core/src/resourceKinds";
 
 describe("RSGL extension manifest contract", () => {
   it("contributes the rsgl language and bundled editor assets", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
       activationEvents?: string[];
       extensionDependencies?: string[];
+      extensionPack?: string[];
       contributes?: {
         commands?: Array<{ command?: string; icon?: string }>;
         languages?: Array<{ id?: string; extensions?: string[]; configuration?: string }>;
@@ -27,6 +28,7 @@ describe("RSGL extension manifest contract", () => {
       path.join("src", "client.ts")
     ].map(file => fs.readFileSync(path.join(rsglPackageRoot, file), "utf8")).join("\n");
 
+    assert.ok(packageJson.extensionPack?.includes("stone926.rsgl"));
     assert.strictEqual(packageJson.extensionDependencies?.includes("stone926.rsgl") ?? false, false);
     assert.strictEqual(packageJson.contributes?.languages?.some(entry => entry.id === "rsgl"), false);
     assert.strictEqual(rsglConfigurationSurface.includes("McResHelper."), false);
@@ -241,19 +243,14 @@ describe("RSGL extension manifest contract", () => {
     ]);
   });
 
-  it("exposes an honest synchronous extension API contract", () => {
-    const apiSource = fs.readFileSync(
-      path.join(process.cwd(), "extensions", "vscode-rsgl", "src", "api.ts"),
-      "utf8"
-    );
-    const sharedSource = fs.readFileSync(path.join(process.cwd(), "packages", "rsgl-shared", "src", "index.ts"), "utf8");
+  it("does not expose the removed synchronous extension API", () => {
+    const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
+    const extensionSource = fs.readFileSync(path.join(extensionRoot, "extension.ts"), "utf8");
 
-    assert.strictEqual(apiSource.includes("Promise.resolve("), false);
-    assert.match(apiSource, /compileFile\(uri: vscode\.Uri, options\?: RsglApiCompileOptions\): RsglApiCompileResult/);
-    assert.match(apiSource, /compileWorkspace\(workspace: vscode\.Uri, options\?: RsglApiCompileOptions\): RsglApiCompileResult/);
-    assert.match(apiSource, /checkWorkspace\(workspace: vscode\.Uri, options\?: RsglApiCheckOptions\): RsglApiCheckResult/);
-    assert.strictEqual(apiSource.includes("apiVersion"), false);
-    assert.strictEqual(sharedSource.includes("rsglApiVersion"), false);
+    assert.strictEqual(fs.existsSync(path.join(extensionRoot, "api.ts")), false);
+    assert.match(extensionSource, /activate\(context: vscode\.ExtensionContext\): void/);
+    assert.strictEqual(extensionSource.includes("RsglApi"), false);
+    assert.strictEqual(extensionSource.includes("createRsglApi"), false);
   });
 
   it("offloads command and watcher builds from the extension host", () => {
@@ -261,21 +258,20 @@ describe("RSGL extension manifest contract", () => {
     const presenterSource = fs.readFileSync(path.join(extensionRoot, "commands", "buildPresenter.ts"), "utf8");
     const commandSource = fs.readFileSync(path.join(extensionRoot, "commands", "build.ts"), "utf8");
     const workerClientSource = fs.readFileSync(path.join(extensionRoot, "commands", "buildWorkerClient.ts"), "utf8");
-    const apiSource = fs.readFileSync(path.join(extensionRoot, "api.ts"), "utf8");
+    const extensionSource = fs.readFileSync(path.join(extensionRoot, "extension.ts"), "utf8");
 
     assert.strictEqual(presenterSource.includes("Promise.resolve(task())"), false);
     assert.match(presenterSource, /cancellable:\s*true/);
     assert.match(commandSource, /runRsglWorkerTask/);
     assert.strictEqual(commandSource.includes("buildRsglResourcePackProgram"), false);
     assert.match(workerClientSource, /new Worker\(/);
-    assert.match(apiSource, /kind:\s*"compileDirectory"/);
-    assert.strictEqual(apiSource.includes("onDidCompile?.(compileWorkspace("), false);
+    assert.match(extensionSource, /import\("\.\/commands\/build\.js"\)/);
+    assert.strictEqual(extensionSource.includes('from "./commands/build"'), false);
   });
 
   it("shares the RSGL file glob while keeping watcher responsibilities separate", () => {
     const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
     const clientSource = fs.readFileSync(path.join(extensionRoot, "client.ts"), "utf8");
-    const apiSource = fs.readFileSync(path.join(extensionRoot, "api.ts"), "utf8");
     const sharedSource = fs.readFileSync(
       path.join(process.cwd(), "packages", "rsgl-shared", "src", "index.ts"),
       "utf8"
@@ -284,12 +280,9 @@ describe("RSGL extension manifest contract", () => {
     assert.match(sharedSource, /rsglFileGlob\s*=\s*"\*\*\/\*\.rsgl"/);
     assert.match(clientSource, /fileEvents:\s*\[/);
     assert.match(clientSource, /vscode\.workspace\.createFileSystemWatcher\(rsglFileGlob\)/);
-    assert.match(clientSource, /vscode\.workspace\.createFileSystemWatcher\("\*\*\/\*\.json"\)/);
-    assert.match(apiSource, /new vscode\.RelativePattern\(workspace\.fsPath, rsglFileGlob\)/);
-    assert.match(apiSource, /new vscode\.RelativePattern\(workspace\.fsPath, "\*\*\/\*\.json"\)/);
-    assert.match(apiSource, /const dependencyPath = normalizeDependencyPath\(uri\.fsPath\)/);
-    assert.match(apiSource, /dependencyPaths\.has\(dependencyPath\)/);
     assert.match(clientSource, /synchronize:\s*\{/);
-    assert.match(apiSource, /const scheduleCompile/);
+    assert.match(clientSource, /new DependencyWatchRegistry/);
+    assert.strictEqual(clientSource.includes('createFileSystemWatcher("**/*.json")'), false);
+    assert.match(sharedSource, /refreshWorkspace:\s*"rsgl\.refreshWorkspace"/);
   });
 });

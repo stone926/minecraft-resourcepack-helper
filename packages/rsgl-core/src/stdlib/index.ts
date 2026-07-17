@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ExportDeclNode, ImportDeclNode, parseRsgl, RsglModule } from "../parser";
+import { normalizeRsglPath, rsglPathKey } from "../pathIdentity";
 import type { RsglSourceFile } from "../semantic/types";
 
 export const rsglStdlibScheme = "rsgl:";
@@ -75,7 +76,7 @@ export function readRsglStdlibVirtualSource(fileName: string, options: RsglStdli
 
 export function includeRsglStdlibSourceFiles(files: readonly RsglSourceFile[], options: RsglStdlibDiscoveryOptions = {}): RsglSourceFile[] {
   const result = [...files];
-  const known = new Set(result.map(file => path.normalize(file.fileName)));
+  const known = new Set(result.map(file => rsglPathKey(file.fileName)));
 
   for (let index = 0; index < result.length; index++) {
     const file = result[index];
@@ -84,9 +85,9 @@ export function includeRsglStdlibSourceFiles(files: readonly RsglSourceFile[], o
       if (!sourceFile) {
         continue;
       }
-      const normalized = path.normalize(sourceFile.fileName);
-      if (!known.has(normalized)) {
-        known.add(normalized);
+      const key = rsglPathKey(sourceFile.fileName);
+      if (!known.has(key)) {
+        known.add(key);
         result.push(sourceFile);
       }
     }
@@ -158,7 +159,7 @@ function enumerateRsglFiles(root: string): string[] {
       if (entry.isDirectory()) {
         visit(fileName);
       } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".rsgl") {
-        result.push(path.normalize(fileName));
+        result.push(normalizeRsglPath(fileName));
       }
     }
   };
@@ -168,12 +169,18 @@ function enumerateRsglFiles(root: string): string[] {
 
 function rsglStdlibRootCandidates(options: RsglStdlibDiscoveryOptions): string[] {
   if (options.stdlibRoot) {
-    return [path.normalize(path.resolve(options.stdlibRoot))];
+    return [normalizeRsglPath(path.resolve(options.stdlibRoot))];
   }
   const candidates = [
     path.join(__dirname, stdlibDirectoryName),
     path.resolve(process.cwd(), "packages", "rsgl-core", "src", "stdlib", stdlibDirectoryName),
     path.resolve(process.cwd(), "extensions", "vscode-rsgl", "out", "packages", "rsgl-core", "src", "stdlib", stdlibDirectoryName)
   ];
-  return Array.from(new Set(candidates.map(item => path.normalize(item))));
+  const byKey = new Map<string, string>();
+  for (const candidate of candidates.map(normalizeRsglPath)) {
+    if (!byKey.has(rsglPathKey(candidate))) {
+      byKey.set(rsglPathKey(candidate), candidate);
+    }
+  }
+  return [...byKey.values()];
 }

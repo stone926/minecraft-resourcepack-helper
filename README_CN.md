@@ -24,7 +24,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 - 额外语义检查覆盖 `pack.mcmeta`、`pack.png`、colormap PNG 尺寸、`sounds.json`、后处理 target、模型 parent/纹理变量链，以及 `assets/<namespace>/texts/{splashes,end,postcredits}.txt`。
 - 扩展命令、运行时提示、诊断、资源关系图标签、模型预览问题和模型预览 webview 控件均覆盖英文与简体中文本地化。
 - 提供创建现代资源包脚手架的命令，包含常用命名空间目录、默认 `pack.png` 和 `min_format`/`max_format` 资源包元数据。
-- 通过配套的 `stone926.rsgl` 扩展提供 RSGL 支持。该扩展作为依赖自动安装，负责 `.rsgl` 语言能力、构建命令和内置语言服务器。
+- 通过配套的 `stone926.rsgl` 扩展提供可选 RSGL 支持。该扩展列入主扩展的扩展包，负责 `.rsgl` 语言能力、构建命令和内置语言服务器。
 
 ## 快速开始
 
@@ -34,7 +34,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 4. 可选：用 `McResHelper.resourcePackLoadOrder` 配置低优先级资源包根目录的绝对路径。
 5. 打开受支持的资源包文件，使用跳转定义、路径建议、诊断、Minecraft 资源活动栏视图，或在模型 JSON 中打开模型预览。
 
-当工作区中存在 `pack.mcmeta` 时，扩展会自动激活。安装 Minecraft 资源包助手时，VS Code 也会通过扩展依赖自动安装 RSGL 配套扩展。
+当工作区中存在 `pack.mcmeta` 时，扩展会自动激活。市场安装会通过扩展包一并提供 RSGL 配套扩展；用户可以单独移除它，Minecraft 资源包助手仍可正常工作。
 
 ## 资源解析顺序
 
@@ -105,13 +105,14 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 
 ## RSGL
 
-RSGL 支持已经拆分到独立 VS Code 扩展：`stone926.rsgl`。Minecraft 资源包助手依赖该扩展，用户安装主扩展时会自动获得 RSGL 能力。
+RSGL 支持已经拆分到独立 VS Code 扩展：`stone926.rsgl`。主扩展通过扩展包提供便捷安装，但不把它作为运行时依赖；用户可以单独移除 RSGL 扩展。
 
 RSGL 扩展负责：
 
 - `.rsgl` 语言注册、语法高亮、语言配置、诊断、补全、悬停和格式化。
 - RSGL 构建与预览命令，例如 **RSGL: Build Resourcepack JSON**、**RSGL: Preview Build**、**RSGL: Build Source Directory** 和工作区构建命令。
-- `rsgl.*` 命名空间下的设置，包括输出目录、Minecraft 目标版本、原版资源回退、低优先级资源包、source map 和生成 JSON 校验。
+- `rsgl.*` 命名空间下的 VS Code 设置，包括输出目录、原版资源回退和低优先级资源包。
+- `rsgl.config.json` 中的项目编译选项，包括 Minecraft 目标版本、source map、生成 JSON 校验、源码根目录和求值上限。
 - 内置 RSGL 语言服务器以及共享 compiler/core 包。
 
 当前语言仅接受 canonical 语法，包括显式 `model` / `variants` / `multipart` / `choice` 模板方言和 canonical blockstate；同时支持结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。可编译示例、项目配置和 CLI 用法见 [RSGL 配套扩展指南](extensions/vscode-rsgl/README.md)。
@@ -170,9 +171,12 @@ npm run benchmark:model-preview
 npm run compile:rsgl-extension
 npm run package:main:vsix
 npm run package:rsgl:vsix
+npm run package:rsgl-cli
 ```
 
 仓库根目录是主扩展，`packages/rsgl-*` 存放共享 RSGL 包，`extensions/vscode-rsgl` 是独立 RSGL VS Code 扩展。RSGL 单元测试与核心包放在一起：`packages/rsgl-core/test/unit`。
+
+三个公开产品独立发布：主扩展使用 `vX.Y.Z`，RSGL 扩展使用 `rsgl-vX.Y.Z`，npm CLI 使用 `rsgl-cli-vX.Y.Z`。分别使用 `npm run release:main`、`npm run release:rsgl` 或 `npm run release:rsgl-cli`，只推进对应产品的 manifest、changelog、artifact 和 tag。已准备好的 RSGL 1.0.0 首发应使用 `npm run release:rsgl:current` 与 `npm run release:rsgl-cli:current`；后续命令默认只为选中的产品递增一个补丁版本，也可直接向 `scripts/release.mjs` 传入目标版本。
 
 ## 链接
 

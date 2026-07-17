@@ -1,19 +1,13 @@
-import * as path from "node:path";
 import * as vscode from "vscode";
-import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
-import { workspaceResourceCache } from "../../services/workspaceResourceCache";
-import { citResourceTypeFor } from "../citAssetResolver";
-import type { CitResourceType } from "../citKeyResolution";
-import { getCitPathCandidates } from "../citPaths";
 import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
 import { getResourceReferences, type ResourceReference } from "../../utils/resourceReferences";
+import { MissingCitResourceApplicationService } from "../services/missingCitResourceApplicationService";
+import { MissingCitResourcePlanner } from "../services/missingCitResourcePlanner";
 
 export const createMissingCitResourceCommand = "McResHelper.createMissingCitResource";
 
-const missingPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAFgwJ/lLD9WQAAAABJRU5ErkJggg==",
-  "base64"
-);
+const missingResourcePlanner = new MissingCitResourcePlanner();
+const missingResourceApplication = new MissingCitResourceApplicationService();
 
 const citCodeActionProvider: vscode.CodeActionProvider = {
   provideCodeActions(document: vscode.TextDocument, range: vscode.Range) {
@@ -31,7 +25,7 @@ const citCodeActionProvider: vscode.CodeActionProvider = {
         return;
       }
 
-      const target = getCreateTargetPath(document.fileName, reference);
+      const target = missingResourcePlanner.targetPath(document.fileName, reference);
       if (!target) {
         return;
       }
@@ -60,52 +54,11 @@ export async function createMissingCitResource(uri: vscode.Uri, referenceIndex: 
     return null;
   }
 
-  const targetPath = getCreateTargetPath(document.fileName, reference);
-  if (!targetPath) {
+  const plan = missingResourcePlanner.plan(document.fileName, reference);
+  if (!plan) {
     return null;
   }
-
-  const target = vscode.Uri.file(targetPath);
-  await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(target.fsPath)));
-  await vscode.workspace.fs.writeFile(target, getDefaultContent(reference));
-  const targetDocument = await vscode.workspace.openTextDocument(target);
-  await vscode.window.showTextDocument(targetDocument);
-  return target;
-}
-
-function getCreateTargetPath(documentFileName: string, reference: ResourceReference): string | null {
-  const resourceType = getResourceType(reference);
-  if (!resourceType) {
-    return null;
-  }
-
-  const packRoot = workspaceResourceCache.getPackRoot(documentFileName) ?? packRootFromAssetsPath(documentFileName);
-  if (!packRoot) {
-    return null;
-  }
-
-  return getCitPathCandidates(documentFileName, packRoot, reference.value, resourceType)[0] ?? null;
-}
-
-function getResourceType(reference: ResourceReference): CitResourceType | null {
-  if (reference.origin === "citAutoDiscovery") {
-    return "models";
-  }
-  return citResourceTypeFor(reference.target, reference.extension);
-}
-
-function getDefaultContent(reference: ResourceReference): Uint8Array {
-  if (getResourceType(reference) === "textures") {
-    return missingPng;
-  }
-
-  const json = {
-    parent: "minecraft:item/generated",
-    textures: {
-      layer0: "minecraft:item/generated"
-    }
-  };
-  return Buffer.from(`${JSON.stringify(json, null, 2)}\n`, "utf8");
+  return missingResourceApplication.create(plan);
 }
 
 function referenceRangeIntersects(reference: ResourceReference, range: vscode.Range): boolean {

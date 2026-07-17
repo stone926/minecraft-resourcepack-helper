@@ -1,10 +1,11 @@
 .vscode/**
 dist/**
+out/**
 src/**
 **/*.ts
 **/*.test.*
 **/*.map
 tsconfig.json
 package-lock.json
-node_modules/@types/**
-node_modules/typescript/**
+node_modules/**
+!bundle/*.map

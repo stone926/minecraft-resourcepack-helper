@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { normalizeRsglPath, rsglPathKey } from "../pathIdentity";
 import {
   includeRsglStdlibSourceFiles,
   isRsglStdlibImportSource,
@@ -49,8 +50,8 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
         ...options,
         fileName: file.fileName,
         resolver,
-        prelinkedTypeAliases: typeAliases.importsByFile.get(normalizeFileName(file.fileName)),
-        typeOnlyImportNames: typeOnlyImports.get(normalizeFileName(file.fileName))
+        prelinkedTypeAliases: typeAliases.importsByFile.get(rsglPathKey(file.fileName)),
+        typeOnlyImportNames: typeOnlyImports.get(rsglPathKey(file.fileName))
       }));
       importGraph = buildImportGraph(sourceFiles, models, resolver);
       const next = typeOnlyImportNamesByFile(
@@ -79,9 +80,9 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
         ...options,
         fileName: file.fileName,
         resolver,
-        prelinkedTypeAliases: typeAliases.importsByFile.get(normalizeFileName(file.fileName)),
-        typeOnlyImportNames: typeOnlyImports.get(normalizeFileName(file.fileName)),
-        prelinkedModuleNamespaces: namespaces.get(normalizeFileName(file.fileName))
+        prelinkedTypeAliases: typeAliases.importsByFile.get(rsglPathKey(file.fileName)),
+        typeOnlyImportNames: typeOnlyImports.get(rsglPathKey(file.fileName)),
+        prelinkedModuleNamespaces: namespaces.get(rsglPathKey(file.fileName))
       }));
       importGraph = buildImportGraph(sourceFiles, models, resolver);
       linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
@@ -213,19 +214,19 @@ function resolveProgramImports(
 ): ImportLinkPassResult {
   const diagnostics: RsglFileDiagnostic[] = [];
   let changed = false;
-  const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
+  const modelsByFile = new Map(models.map(model => [rsglPathKey(model.fileName), model]));
 
   for (const sourceModel of models) {
     const trackedBindings = importAllBindings.get(sourceModel) ?? new Map<string, ImportAllBinding>();
     importAllBindings.set(sourceModel, trackedBindings);
     for (const [recordRank, record] of sourceModel.imports.entries()) {
-      const currentFile = normalizeFileName(sourceModel.fileName);
+      const currentFile = rsglPathKey(sourceModel.fileName);
       const edge = importGraph.edges.find(item =>
-        item.from === currentFile
+        rsglPathKey(item.from) === currentFile
         && item.source === record.source
-        && normalizeFileName(record.resolvedFileName ?? item.to) === item.to
+        && rsglPathKey(record.resolvedFileName ?? item.to) === rsglPathKey(item.to)
       );
-      const targetModel = edge ? modelsByFile.get(edge.to) : undefined;
+      const targetModel = edge ? modelsByFile.get(rsglPathKey(edge.to)) : undefined;
       if (!targetModel) {
         continue;
       }
@@ -234,8 +235,8 @@ function resolveProgramImports(
         const localSymbol = sourceModel.scope.symbols.get(record.namespaceName);
         if (localSymbol?.kind === "namespace") {
           const namespaceType = createModuleNamespaceType(
-            normalizeFileName(targetModel.fileName),
-            exportMaps.get(normalizeFileName(targetModel.fileName)) ?? new Map(),
+            targetModel.fileName,
+            exportMaps.get(rsglPathKey(targetModel.fileName)) ?? new Map(),
             { sourceFileForSymbol: symbol => sourceFileForSymbol(models, symbol) }
           );
           if (!sameModuleNamespaceType(localSymbol.type, namespaceType)) {
@@ -246,10 +247,10 @@ function resolveProgramImports(
       }
 
       for (const item of record.namedImports) {
-        const exported = exportMaps.get(normalizeFileName(targetModel.fileName))?.get(item.imported);
+        const exported = exportMaps.get(rsglPathKey(targetModel.fileName))?.get(item.imported);
         const localSymbol = sourceModel.scope.symbols.get(item.local);
         if (!exported) {
-          if (typeAliasExportMaps.get(normalizeFileName(targetModel.fileName))?.has(item.imported)) {
+          if (typeAliasExportMaps.get(rsglPathKey(targetModel.fileName))?.has(item.imported)) {
             continue;
           }
           diagnostics.push(fileDiagnostic(
@@ -265,7 +266,7 @@ function resolveProgramImports(
         }
       }
       if (record.importAll) {
-        const exportedSymbols = exportMaps.get(normalizeFileName(targetModel.fileName)) ?? new Map();
+        const exportedSymbols = exportMaps.get(rsglPathKey(targetModel.fileName)) ?? new Map();
         const importedNames = new Set<string>();
         for (const [name, exported] of exportedSymbols) {
           const tracked = trackedBindings.get(name);
@@ -339,7 +340,7 @@ function moduleNamespaceTypesByFile(
   const exports = createRsglExportMaps([...models], importGraph).maps;
   const result = new Map<string, Map<string, RsglType>>();
   for (const model of models) {
-    const fileName = normalizeFileName(model.fileName);
+    const fileName = rsglPathKey(model.fileName);
     const namespaces = new Map<string, RsglType>();
     result.set(fileName, namespaces);
     for (const record of model.imports) {
@@ -347,16 +348,16 @@ function moduleNamespaceTypesByFile(
         continue;
       }
       const edge = importGraph.edges.find(candidate =>
-        candidate.from === fileName
+        rsglPathKey(candidate.from) === fileName
         && candidate.source === record.source
-        && normalizeFileName(record.resolvedFileName ?? candidate.to) === candidate.to
+        && rsglPathKey(record.resolvedFileName ?? candidate.to) === rsglPathKey(candidate.to)
       );
       if (!edge) {
         continue;
       }
       namespaces.set(record.namespaceName, createModuleNamespaceType(
         edge.to,
-        exports.get(edge.to) ?? new Map(),
+        exports.get(rsglPathKey(edge.to)) ?? new Map(),
         { sourceFileForSymbol: symbol => sourceFileForSymbol(models, symbol) }
       ));
     }
@@ -430,10 +431,10 @@ function sourceFileForSymbol(
 ): string | undefined {
   const definition = originalRsglSymbolDefinition(models, symbol);
   if (definition) {
-    return normalizeFileName(definition.fileName);
+    return definition.fileName;
   }
   const owner = models.find(model => model.symbols.includes(symbol));
-  return owner ? normalizeFileName(owner.fileName) : undefined;
+  return owner?.fileName;
 }
 
 function typeOnlyImportNamesByFile(
@@ -444,17 +445,18 @@ function typeOnlyImportNamesByFile(
 ): Map<string, Set<string>> {
   const result = new Map<string, Set<string>>();
   for (const model of models) {
-    const fileName = normalizeFileName(model.fileName);
+    const fileName = rsglPathKey(model.fileName);
     const names = new Set<string>();
     for (const record of model.imports) {
       const edge = importGraph.edges.find(candidate =>
-        candidate.from === fileName && candidate.source === record.source
+        rsglPathKey(candidate.from) === fileName && candidate.source === record.source
       );
       if (!edge) {
         continue;
       }
-      const valueExports = valueExportMaps.get(edge.to);
-      const typeExports = typeExportMaps.get(edge.to);
+      const targetKey = rsglPathKey(edge.to);
+      const valueExports = valueExportMaps.get(targetKey);
+      const typeExports = typeExportMaps.get(targetKey);
       for (const item of record.namedImports) {
         if (typeExports?.has(item.imported) && !valueExports?.has(item.imported)) {
           names.add(item.local);
@@ -478,7 +480,7 @@ function isValueExportDiagnosticSatisfiedByTypeAlias(
     return false;
   }
   const model = models.find(candidate =>
-    normalizeFileName(candidate.fileName) === normalizeFileName(diagnostic.fileName)
+    rsglPathKey(candidate.fileName) === rsglPathKey(diagnostic.fileName)
   );
   if (!model) {
     return false;
@@ -488,7 +490,7 @@ function isValueExportDiagnosticSatisfiedByTypeAlias(
       if (
         specifier.range.start === diagnostic.range.start
         && specifier.range.end === diagnostic.range.end
-        && typeExportMaps.get(normalizeFileName(model.fileName))?.has(specifier.exported)
+        && typeExportMaps.get(rsglPathKey(model.fileName))?.has(specifier.exported)
       ) {
         return true;
       }
@@ -520,7 +522,10 @@ function sameNameSets(
 function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnostic[] {
   return importGraph.cycles.flatMap(cycle => cycle.map((fileName, index) => {
     const nextFileName = cycle[(index + 1) % cycle.length];
-    const edge = importGraph.edges.find(item => item.from === fileName && item.to === nextFileName);
+    const edge = importGraph.edges.find(item =>
+      rsglPathKey(item.from) === rsglPathKey(fileName)
+      && rsglPathKey(item.to) === rsglPathKey(nextFileName)
+    );
     return fileDiagnostic(
       fileName,
       "rsgl.importCycle",
@@ -531,18 +536,21 @@ function importCycleDiagnostics(importGraph: RsglImportGraph): RsglFileDiagnosti
 }
 
 function createDefaultResolver(files: RsglSourceFile[]): RsglModuleResolver {
-  const fileNames = new Set(files.map(file => normalizeFileName(file.fileName)));
+  const fileNamesByKey = new Map(files.map(file => [
+    rsglPathKey(file.fileName),
+    normalizeRsglPath(file.fileName)
+  ]));
   return {
     resolveImport(fromFileName: string, source: string): string | null {
       if (isRsglStdlibImportSource(source)) {
         const virtual = rsglStdlibVirtualFileName(source);
-        return virtual && fileNames.has(normalizeFileName(virtual)) ? normalizeFileName(virtual) : null;
+        return virtual ? fileNamesByKey.get(rsglPathKey(virtual)) ?? null : null;
       }
       if (!source.startsWith(".")) {
         return null;
       }
-      const resolved = normalizeFileName(path.resolve(path.dirname(fromFileName), source));
-      return fileNames.has(resolved) ? resolved : null;
+      const resolved = normalizeRsglPath(path.resolve(path.dirname(fromFileName), source));
+      return fileNamesByKey.get(rsglPathKey(resolved)) ?? null;
     }
   };
 }
@@ -552,7 +560,7 @@ function buildImportGraph(
   models: RsglSemanticModel[],
   resolver: RsglModuleResolver
 ): RsglImportGraph {
-  const normalizedFiles = files.map(file => normalizeFileName(file.fileName));
+  const normalizedFiles = uniqueDisplayPaths(files.map(file => normalizeRsglPath(file.fileName)));
   const edges: RsglImportGraph["edges"] = [];
   const missing: RsglImportGraph["missing"] = [];
 
@@ -561,14 +569,14 @@ function buildImportGraph(
       const resolved = record.resolvedFileName ?? resolver.resolveImport(model.fileName, record.source);
       if (resolved) {
         edges.push({
-          from: normalizeFileName(model.fileName),
-          to: normalizeFileName(resolved),
+          from: normalizeRsglPath(model.fileName),
+          to: canonicalDisplayPath(normalizedFiles, resolved),
           source: record.source,
           range: record.node.source?.range ?? record.node.range
         });
       } else {
         missing.push({
-          from: normalizeFileName(model.fileName),
+          from: normalizeRsglPath(model.fileName),
           source: record.source,
           range: record.node.source?.range ?? record.node.range
         });
@@ -581,14 +589,14 @@ function buildImportGraph(
       const resolved = record.resolvedFileName ?? resolver.resolveImport(model.fileName, record.source);
       if (resolved) {
         edges.push({
-          from: normalizeFileName(model.fileName),
-          to: normalizeFileName(resolved),
+          from: normalizeRsglPath(model.fileName),
+          to: canonicalDisplayPath(normalizedFiles, resolved),
           source: record.source,
           range: record.node.source?.range ?? record.node.range
         });
       } else {
         missing.push({
-          from: normalizeFileName(model.fileName),
+          from: normalizeRsglPath(model.fileName),
           source: record.source,
           range: record.node.source?.range ?? record.node.range
         });
@@ -605,12 +613,13 @@ function buildImportGraph(
 }
 
 function findCycles(files: string[], edges: RsglImportGraph["edges"]): string[][] {
+  const displayByKey = new Map(files.map(fileName => [rsglPathKey(fileName), fileName]));
   const adjacency = new Map<string, string[]>();
   for (const file of files) {
-    adjacency.set(file, []);
+    adjacency.set(rsglPathKey(file), []);
   }
   for (const edge of edges) {
-    adjacency.get(edge.from)?.push(edge.to);
+    adjacency.get(rsglPathKey(edge.from))?.push(rsglPathKey(edge.to));
   }
 
   const cycles: string[][] = [];
@@ -622,7 +631,7 @@ function findCycles(files: string[], edges: RsglImportGraph["edges"]): string[][
     if (visiting.has(file)) {
       const start = stack.indexOf(file);
       if (start >= 0) {
-        cycles.push(stack.slice(start));
+        cycles.push(stack.slice(start).map(key => displayByKey.get(key) ?? key));
       }
       return;
     }
@@ -639,10 +648,22 @@ function findCycles(files: string[], edges: RsglImportGraph["edges"]): string[][
     visited.add(file);
   };
 
-  files.forEach(visit);
+  files.map(rsglPathKey).forEach(visit);
   return cycles;
 }
 
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
+function uniqueDisplayPaths(fileNames: readonly string[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const fileName of fileNames) {
+    const key = rsglPathKey(fileName);
+    if (!byKey.has(key)) {
+      byKey.set(key, fileName);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function canonicalDisplayPath(fileNames: readonly string[], fileName: string): string {
+  const key = rsglPathKey(fileName);
+  return fileNames.find(candidate => rsglPathKey(candidate) === key) ?? normalizeRsglPath(fileName);
 }

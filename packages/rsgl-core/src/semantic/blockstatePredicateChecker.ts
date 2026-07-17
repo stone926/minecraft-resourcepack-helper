@@ -10,11 +10,6 @@ import {
   MAX_BLOCKSTATE_PREDICATE_NODES
 } from "../blockstatePredicateComplexity";
 import { diagnostic } from "./diagnostics";
-import {
-  checkCompileTimeCondition,
-  checkExpression,
-  resolveListSpreadElementType
-} from "./expressionChecker";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { lookup } from "./scopes";
 import { scopeForTruthyCondition } from "./typeNarrowing";
@@ -32,15 +27,35 @@ const predicateBinaryOperators = new Set(["&&", "||"]);
 const comparisonOperators = new Set(["==", "!="]);
 const membershipOperators = new Set(["in", "not in"]);
 
+/** Ordinary-expression capabilities needed while checking predicate leaves. */
+export interface BlockstatePredicateCheckHost {
+  checkExpression(
+    context: RsglExpressionCheckContext,
+    expression: ExprNode,
+    scope: RsglScope
+  ): RsglType;
+  checkCompileTimeCondition(
+    context: RsglExpressionCheckContext,
+    expression: ExprNode,
+    scope: RsglScope
+  ): RsglType;
+  resolveListSpreadElementType(
+    context: RsglExpressionCheckContext,
+    spreadType: RsglType,
+    spread: RsglNode
+  ): RsglType | undefined;
+}
+
 /**
  * Checks the first-class StatePredicate language without making `$state` a
  * normal RSGL value. This routine is the only semantic entry point that
  * recognizes the runtime state namespace.
  */
-export function checkBlockstatePredicate(
+export function checkBlockstatePredicateWithHost(
   context: RsglExpressionCheckContext,
   expression: ExprNode,
-  scope: RsglScope
+  scope: RsglScope,
+  host: BlockstatePredicateCheckHost
 ): RsglType {
   context.recordResolvedExpectedType?.(expression, statePredicateType);
   const complexity = analyzeBlockstatePredicateExpression(expression);
@@ -55,7 +70,7 @@ export function checkBlockstatePredicate(
     recordType(context, expression, statePredicateType);
     return statePredicateType;
   }
-  checkPredicateNode(context, expression, scope);
+  checkPredicateNode(context, expression, scope, host);
   recordType(context, expression, statePredicateType);
   return statePredicateType;
 }
@@ -63,22 +78,24 @@ export function checkBlockstatePredicate(
 function checkPredicateNode(
   context: RsglExpressionCheckContext,
   expression: ExprNode,
-  scope: RsglScope
+  scope: RsglScope,
+  host: BlockstatePredicateCheckHost
 ): void {
   if (expression.kind === "ConditionalExpr") {
-    checkCompileTimeCondition(context, expression.condition, scope);
+    host.checkCompileTimeCondition(context, expression.condition, scope);
     checkPredicateNode(
       context,
       expression.whenTrue,
-      scopeForTruthyCondition(scope, expression.condition)
+      scopeForTruthyCondition(scope, expression.condition),
+      host
     );
-    checkPredicateNode(context, expression.whenFalse, scope);
+    checkPredicateNode(context, expression.whenFalse, scope, host);
     recordType(context, expression, statePredicateType);
     return;
   }
 
   if (expression.kind === "IdentifierExpr") {
-    const type = checkExpression(context, expression, scope);
+    const type = host.checkExpression(context, expression, scope);
     if (type.kind !== "StatePredicate" && type.kind !== "Any" && type.kind !== "Unknown") {
       invalidPredicate(
         context,
@@ -90,7 +107,7 @@ function checkPredicateNode(
   }
 
   if (expression.kind !== "UnaryExpr" && expression.kind !== "BinaryExpr") {
-    const type = checkExpression(context, expression, scope);
+    const type = host.checkExpression(context, expression, scope);
     if (!isPredicateValueType(type)) {
       invalidPredicate(
         context,
@@ -104,32 +121,32 @@ function checkPredicateNode(
   if (expression.kind === "UnaryExpr") {
     if (expression.operator !== "!") {
       invalidPredicate(context, expression, "StatePredicate only supports unary '!'.");
-      checkExpression(context, expression.operand, scope);
+      host.checkExpression(context, expression.operand, scope);
       return;
     }
-    checkPredicateNode(context, expression.operand, scope);
+    checkPredicateNode(context, expression.operand, scope, host);
     recordType(context, expression, statePredicateType);
     return;
   }
 
   if (predicateBinaryOperators.has(expression.operator)) {
-    checkPredicateNode(context, expression.left, scope);
-    checkPredicateNode(context, expression.right, scope);
+    checkPredicateNode(context, expression.left, scope, host);
+    checkPredicateNode(context, expression.right, scope, host);
     recordType(context, expression, statePredicateType);
     return;
   }
 
   if (comparisonOperators.has(expression.operator)) {
-    const access = checkStateAccess(context, expression.left, scope);
+    const access = checkStateAccess(context, expression.left, scope, host);
     if (!access) {
-      checkExpression(context, expression.left, scope);
+      host.checkExpression(context, expression.left, scope);
       invalidPredicate(
         context,
         expression.left,
         `The left side of '${expression.operator}' must be a $state property.`
       );
     }
-    const rightAccess = checkStateAccess(context, expression.right, scope);
+    const rightAccess = checkStateAccess(context, expression.right, scope, host);
     if (rightAccess) {
       context.diagnostics.push(diagnostic(
         "rsgl.invalidBlockstatePredicateComparison",
@@ -137,29 +154,29 @@ function checkPredicateNode(
         expression.right.range
       ));
     } else {
-      checkStateAtom(context, expression.right, scope, access?.propertyName);
+      checkStateAtom(context, expression.right, scope, host, access?.propertyName);
     }
     recordType(context, expression, statePredicateType);
     return;
   }
 
   if (membershipOperators.has(expression.operator)) {
-    const access = checkStateAccess(context, expression.left, scope);
+    const access = checkStateAccess(context, expression.left, scope, host);
     if (!access) {
-      checkExpression(context, expression.left, scope);
+      host.checkExpression(context, expression.left, scope);
       invalidPredicate(
         context,
         expression.left,
         `The left side of '${expression.operator}' must be a $state property.`
       );
     }
-    checkMembershipValues(context, expression.right, scope, access?.propertyName);
+    checkMembershipValues(context, expression.right, scope, host, access?.propertyName);
     recordType(context, expression, statePredicateType);
     return;
   }
 
-  checkExpression(context, expression.left, scope);
-  checkExpression(context, expression.right, scope);
+  host.checkExpression(context, expression.left, scope);
+  host.checkExpression(context, expression.right, scope);
   invalidPredicate(
     context,
     expression,
@@ -170,7 +187,8 @@ function checkPredicateNode(
 function checkStateAccess(
   context: RsglExpressionCheckContext,
   expression: ExprNode,
-  scope: RsglScope
+  scope: RsglScope,
+  host: BlockstatePredicateCheckHost
 ): { node: StateAccess; propertyName?: string } | undefined {
   if (
     expression.kind === "MemberExpr"
@@ -193,7 +211,7 @@ function checkStateAccess(
     && isStateNamespace(expression.object)
   ) {
     recordType(context, expression.object, unknownType);
-    const keyType = checkStateAtom(context, expression.index, scope);
+    const keyType = checkStateAtom(context, expression.index, scope, host);
     if (!isPotentialStateScalar(keyType)) {
       context.diagnostics.push(diagnostic(
         "rsgl.invalidBlockstatePredicateProperty",
@@ -215,6 +233,7 @@ function checkMembershipValues(
   context: RsglExpressionCheckContext,
   expression: ExprNode,
   scope: RsglScope,
+  host: BlockstatePredicateCheckHost,
   propertyName?: string
 ): void {
   if (expression.kind === "ListExpr") {
@@ -227,11 +246,11 @@ function checkMembershipValues(
     }
     for (const element of expression.elements) {
       if (element.kind !== "ListSpread") {
-        checkStateAtom(context, element, scope, propertyName);
+        checkStateAtom(context, element, scope, host, propertyName);
         continue;
       }
-      const spreadType = checkExpression(context, element.expression, scope);
-      const elementType = resolveListSpreadElementType(context, spreadType, element);
+      const spreadType = host.checkExpression(context, element.expression, scope);
+      const elementType = host.resolveListSpreadElementType(context, spreadType, element);
       if (elementType && !isPotentialStateScalar(elementType)) {
         context.diagnostics.push(diagnostic(
           "rsgl.invalidBlockstatePredicateValue",
@@ -243,7 +262,7 @@ function checkMembershipValues(
     return;
   }
 
-  const type = checkExpression(context, expression, scope);
+  const type = host.checkExpression(context, expression, scope);
   const elementType = type.kind === "List" || type.kind === "Range"
     ? type.elementType ?? unknownType
     : undefined;
@@ -266,6 +285,7 @@ function checkStateAtom(
   context: RsglExpressionCheckContext,
   expression: ExprNode,
   scope: RsglScope,
+  host: BlockstatePredicateCheckHost,
   propertyName?: string
 ): RsglType {
   if (expression.kind === "IdentifierExpr" && !lookup(scope, expression.name.text)) {
@@ -291,7 +311,7 @@ function checkStateAtom(
     ));
   }
 
-  const type = checkExpression(context, expression, scope);
+  const type = host.checkExpression(context, expression, scope);
   if (!isPotentialStateScalar(type)) {
     context.diagnostics.push(diagnostic(
       "rsgl.invalidBlockstatePredicateValue",

@@ -165,6 +165,65 @@ describe("model preview generated item and CIT previews", () => {
     }
   });
 
+  it("keeps a missing CIT model and its source as create/edit dependencies", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const properties = path.join(pack, "assets/minecraft/citresewn/cit/missing_model.properties");
+      const modelCandidate = path.join(pack, "assets/minecraft/citresewn/cit/later_model.json");
+      writeFile(pack, "assets/minecraft/citresewn/cit/missing_model.properties", [
+        "type=item",
+        "items=stick",
+        "model=./later_model"
+      ].join("\n"));
+      const service = createService();
+
+      const missing = await service.getPreviewDocument(properties);
+      assert.ok(missing.dependencies.some(dependency => dependency.uri.endsWith("missing_model.properties")));
+      assert.ok(missing.dependencies.some(dependency => dependency.uri.endsWith("later_model.json")));
+
+      writeJson(pack, "assets/minecraft/citresewn/cit/later_model.json", {
+        elements: [{
+          from: [0, 0, 0],
+          to: [16, 16, 16],
+          faces: { north: { texture: "minecraft:block/stone" } }
+        }]
+      });
+      service.invalidateDependents(modelCandidate);
+      const created = await service.getPreviewDocument(properties);
+      assert.strictEqual(created.meshes.length, 1);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("keeps a missing CIT texture candidate as a create dependency", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const properties = path.join(pack, "assets/minecraft/citresewn/cit/missing_texture.properties");
+      const textureCandidate = path.join(pack, "assets/minecraft/citresewn/cit/later_texture.png");
+      writeFile(pack, "assets/minecraft/citresewn/cit/missing_texture.properties", [
+        "type=item",
+        "items=stick",
+        "texture=./later_texture"
+      ].join("\n"));
+      const service = createService();
+
+      const missing = await service.getPreviewDocument(properties);
+      assert.ok(missing.dependencies.some(dependency => dependency.uri.endsWith("later_texture.png")));
+
+      writeFile(pack, "assets/minecraft/citresewn/cit/later_texture.png", createRgbaPng(2, 2, () => 255));
+      service.invalidateDependents(textureCandidate);
+      const created = await service.getPreviewDocument(properties);
+      assert.match(created.materials[0].textureUri ?? "", /later_texture\.png$/);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
   it("simplifies oversized item/generated side extrusion", async () => {
     const root = createTempDirectory();
 

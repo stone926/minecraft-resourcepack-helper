@@ -10,6 +10,7 @@ export * from "./languageService";
 export * from "./itemModelSchema";
 export * from "./itemModelSyntax";
 export * from "./memberLanguageIntelligence";
+export * from "./pathIdentity";
 export * from "./projectTargetCache";
 export * from "./resourceKinds";
 export * from "./resourceIdSemantics";

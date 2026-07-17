@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-- breaking(rsgl): accept only canonical template and blockstate syntax, require explicit module exports, and remove migration and compatibility surfaces from the compiler, language server, CLI, and public APIs.
-- feat(rsgl): add structural record types, function values, typed resource IDs, bounded collection composition and spread, and namespace imports.
-- feat(rsgl): add exact axis-aligned quarter-turn model geometry transforms shared with model preview geometry semantics.
-- feat(rsgl): expand language-server completion, formatting, navigation, rename, semantic highlighting, and project-configuration diagnostics for the new language surface.
-- test(rsgl): add reproducible compiler/source-map performance benchmarks and restore the model-preview benchmark smoke gate.
+- refactor: add watcher-backed hot caches with TTL/mtime verification, explicit resource refresh, and incremental resource-graph updates.
+- refactor: separate CIT resource planning from VS Code filesystem/UI application logic and derive graph prefilters from the resource registry.
+- fix: make model previews reject mixed resource snapshots and track missing, fallback, pack-metadata, parent, and texture candidates precisely.
+- build: split project-reference builds, bundle extension entry points, enforce activation/VSIX budgets, and publish RSGL through the optional extension pack.
+- release: give the main extension, RSGL extension, and RSGL CLI independent, reproducible, digest-verified cross-platform release contracts.
 
 ## [2.3.1] - 2026-07-01
 

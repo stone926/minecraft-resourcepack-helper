@@ -81,15 +81,28 @@ describe("extension surface", () => {
     }
   });
 
-  it("invalidates RSGL source-root discovery and owns its filesystem watchers", () => {
-    const client = fs.readFileSync(
-      path.join(process.cwd(), "extensions", "vscode-rsgl", "src", "client.ts"),
-      "utf8"
-    );
+  it("does not equate recursive workspace watchers with trusted cache coverage", () => {
+    const workspaceEvents = readSource("registration", "registerWorkspaceEvents.ts");
 
-    assert.ok(client.includes("onDidChangeWorkspaceFolders(() => rsglWorkspaceSourceRootCache.invalidateAll())"));
-    assert.ok(client.includes("rsglWatcher,"));
-    assert.ok(client.includes("jsonWatcher,"));
+    assert.ok(workspaceEvents.includes("files.watcherExclude"));
+    assert.ok(workspaceEvents.includes("setWatcherTrustProvider(null)"));
+    assert.ok(workspaceEvents.includes("onDidDeleteFiles"));
+    assert.ok(workspaceEvents.includes("onDidRenameFiles"));
+    assert.ok(workspaceEvents.includes("onWillDeleteFiles"));
+    assert.ok(workspaceEvents.includes("ResourceStructureOperationTracker"));
+    assert.ok(workspaceEvents.includes("invalidateWorkspaceDirectoryOperation"));
+    assert.strictEqual(
+      workspaceEvents.includes("getWorkspaceFolder(vscode.Uri.file(fileName)) !== undefined"),
+      false
+    );
+  });
+
+  it("loads model preview and image export commands only when invoked", () => {
+    const commands = readSource("registration", "registerCommands.ts");
+
+    assert.ok(commands.includes('import("../modelPreview/commands/modelPreviewCommandRuntime.js")'));
+    assert.strictEqual(commands.includes('from "../modelPreview/service/ModelPreviewService"'), false);
+    assert.strictEqual(commands.includes('from "../modelPreview/commands/exportModelPreviewImage"'), false);
   });
 
   it("shares normalized open-document lookup across extension and LSP hosts", () => {
@@ -103,7 +116,11 @@ describe("extension surface", () => {
       assert.ok(source.includes("findByNormalizedPath("));
     }
     assert.strictEqual(workspaceEvents.includes("normalizePathKey("), false);
-    assert.strictEqual(lspServer.includes("normalizePathKey("), false);
+    const openDocumentLookup = lspServer.match(
+      /function findOpenDocument\([\s\S]*?\n\}/
+    )?.[0] ?? "";
+    assert.ok(openDocumentLookup.length > 0);
+    assert.strictEqual(openDocumentLookup.includes("normalizePathKey("), false);
   });
 });
 

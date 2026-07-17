@@ -10,5 +10,6 @@
   "command.title.buildDirectory": "RSGL: 构建源目录",
   "command.title.previewDirectoryBuild": "RSGL: 预览源目录构建",
   "command.title.buildWorkspace": "RSGL: 构建工作区源目录",
-  "command.title.previewWorkspaceBuild": "RSGL: 预览工作区构建"
+  "command.title.previewWorkspaceBuild": "RSGL: 预览工作区构建",
+  "command.title.refreshWorkspace": "RSGL: 刷新工作区资源与诊断"
 }

@@ -1,0 +1,21 @@
+{
+  "activationModules": {
+    "main": 105,
+    "rsgl": 12
+  },
+  "coldActivationMilliseconds": {
+    "main": 500,
+    "rsgl": 500
+  },
+  "bundleBytes": {
+    "main": 1800000,
+    "rsglExtension": 1800000,
+    "rsglServer": 2800000,
+    "rsglWorker": 2800000,
+    "rsglCli": 2800000
+  },
+  "vsixFiles": {
+    "main": 110,
+    "rsgl": 110
+  }
+}

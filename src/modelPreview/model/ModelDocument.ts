@@ -11,6 +11,8 @@ export interface ModelPreviewFileSystem {
   readTextFile(fileName: string): Promise<string>;
   readBinaryFile(fileName: string): Promise<Uint8Array>;
   fileExists(fileName: string): boolean;
+  getResourceGeneration?(): number;
+  hasAnyResourceChangedSince?(generation: number, fileNames: readonly string[]): boolean;
   fileVersion?(fileName: string): string | null;
   getPackRoot?(fileName: string): string | null;
   getPackMetadata?(packRoot: string): PackMetadata;
@@ -101,7 +103,7 @@ export interface ResolvedElement {
 
 export interface ResolvedDependency {
   fileName: string;
-  kind: "model" | "texture" | "textureMetadata";
+  kind: "model" | "texture" | "textureMetadata" | "packMetadata";
 }
 
 export function isTextureObject(value: RawTextureValue): value is RawTextureObject {

@@ -29,9 +29,9 @@ export class ModelPreviewArtifactCache {
     fileName: string,
     configurationKey: string,
     model: Promise<ResolvedModel | null>,
-    getVersion: (fileName: string) => string | null
+    dependencyVersions: ReadonlyMap<string, string | null>
   ): void {
-    this.models.setPreviewResolvedModel(fileName, configurationKey, model, getVersion);
+    this.models.setPreviewResolvedModel(fileName, configurationKey, model, dependencyVersions);
   }
 
   getTextureAlphaMask(fileName: string, version: string | null): Promise<PngAlphaMask | null> | null {

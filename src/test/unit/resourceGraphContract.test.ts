@@ -30,6 +30,28 @@ describe("resource graph index contract", () => {
     assert.ok(source.includes("removeIndexedSource"));
     assert.ok(source.includes("indexDocument(document)"));
     assert.strictEqual(source.includes("invalidateDocument(document: ResourceGraphDocument): void {\n    this.invalidate();"), false);
+    const invalidatePath = source.slice(
+      source.indexOf("invalidatePath(uri: vscode.Uri"),
+      source.indexOf("getReferences(document:")
+    );
+    assert.ok(invalidatePath.includes("workspaceCache.updatePath(uri, kind)"));
+    assert.strictEqual(invalidatePath.includes("workspaceCache.invalidate()"), false);
+  });
+
+  it("keeps block inventory snapshots across content-only refreshes", () => {
+    const tree = fs.readFileSync(
+      path.join(process.cwd(), "src", "views", "resourceGraphTree.ts"),
+      "utf8"
+    );
+    const events = fs.readFileSync(
+      path.join(process.cwd(), "src", "registration", "registerWorkspaceEvents.ts"),
+      "utf8"
+    );
+
+    assert.ok(tree.includes("if (invalidateInventory)"));
+    assert.ok(events.includes('kind !== "change" && isBlockstateDocumentPath(uri.fsPath)'));
+    assert.ok(events.includes('handleChange(uri, "create")'));
+    assert.ok(events.includes('handleChange(uri, "delete")'));
   });
 
   it("replaces open-document references and reloads disk content after close", () => {

@@ -4,6 +4,7 @@ import * as path from "node:path";
 import {
   getResourceDocumentSelectors,
   getResourceGraphDiscoveryGlob,
+  getResourceIncomingReferenceRoots,
   getResourceGraphPreviewContext,
   getResourceGraphPreviewContexts,
   getResourceManifestWhenClauses,
@@ -11,6 +12,7 @@ import {
   getResourceReferenceTargets,
   getResourceSchemaRegistrations,
   getResourceSemanticDiagnosticsKind,
+  getResourceStructureDiscoveryGlob,
   getResourceSurfaceDocumentKind,
   getResourceWatcherPatterns,
   isResourceSurfaceFile,
@@ -98,6 +100,7 @@ describe("resource surface registry", () => {
       referenceExtraction: { mode: "json", extract: extractFixtureReferences },
       referenceTargets: ["model"],
       graphFileExtensions: ["fixture"],
+      incomingReferenceRoots: [{ root: "fixtures" }],
       graphPreviewContext: "modelResource",
       fileNamePattern: /[\\/]fixture[\\/].+\.fixture$/i
     };
@@ -115,6 +118,7 @@ describe("resource surface registry", () => {
     assert.strictEqual(fixtureExtraction?.mode === "json" ? fixtureExtraction.extract : null, extractFixtureReferences);
     assert.deepStrictEqual(getResourceReferenceTargets("fixture", registry), ["model"]);
     assert.strictEqual(getResourceGraphDiscoveryGlob(registry), "**/assets/**/*.fixture");
+    assert.deepStrictEqual(getResourceIncomingReferenceRoots(registry), [{ root: "fixtures" }]);
     assert.strictEqual(getResourceGraphPreviewContext(fileName, registry), "modelResource");
     assert.strictEqual(isResourceSurfaceFile(fileName, "graph", registry), true);
     assert.strictEqual(isResourceSurfaceFile(fileName, "diagnostics", registry), true);
@@ -125,6 +129,17 @@ describe("resource surface registry", () => {
 
     assert.ok(watcherPatterns.includes("**/assets/*/sounds/**/*.ogg"));
     assert.ok(watcherPatterns.includes("**/assets/*/font/**/*"));
+  });
+
+  it("derives incoming reference roots and layered aliases from descriptors", () => {
+    const roots = getResourceIncomingReferenceRoots();
+
+    assert.ok(roots.some(root => root.root === "models"));
+    assert.ok(roots.some(root => root.root === "textures/particle"));
+    assert.ok(roots.some(root =>
+      root.root === "textures/entity/equipment" && root.stripLeadingSegments === 1
+    ));
+    assert.ok(roots.some(root => root.root === "shaders/include"));
   });
 
   it("keeps manifest menu resource clauses consistent with descriptors", () => {
@@ -158,6 +173,8 @@ describe("resource surface registry", () => {
       assert.strictEqual(source.includes("**/assets"), false, path.basename(fileName));
       assert.strictEqual(source.includes("**/models"), false, path.basename(fileName));
     }
+    assert.match(getResourceStructureDiscoveryGlob(), /pack\.mcmeta/);
+    assert.match(getResourceStructureDiscoveryGlob(), /assets/);
 
     const graphScan = fs.readFileSync(
       path.join(process.cwd(), "src", "utils", "resourceGraphScan.ts"),

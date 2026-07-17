@@ -13,6 +13,8 @@ import {
   type RsglCliIo
 } from "../../src/cli";
 import { parseRsglProjectConfig } from "../../../rsgl-core/src/rsglConfig";
+import { resolvedRsglPathKey } from "../../../rsgl-core/src/pathIdentity";
+import type { CompileDependency } from "../../../rsgl-core/src/compiler";
 
 interface CapturedIo {
   io: RsglCliIo;
@@ -125,8 +127,7 @@ function createFakeWatchRuntime(): FakeWatchRuntime {
 }
 
 function normalizedTestPath(fileName: string): string {
-  const normalized = path.normalize(path.resolve(fileName));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return resolvedRsglPathKey(fileName);
 }
 
 describe("RSGL CLI", () => {
@@ -457,6 +458,114 @@ describe("RSGL CLI", () => {
       isRsglWatchPathRelevant(path.join(root, "fragments", "unrelated.json"), dependencies),
       false
     );
+  });
+
+  it("watches glob create, change, and delete events inside and outside the source root", () => {
+    const root = createTempRoot();
+    const sourceRoot = path.join(root, "workspace", "src");
+    const externalRoot = path.join(root, "external");
+    const fake = createFakeWatchRuntime();
+    const captured = captureIo();
+    const dependencies: CompileDependency[] = [
+      {
+        path: path.join(sourceRoot, "generated"),
+        globPattern: "**/*.json",
+        reason: "glob",
+        sourceFile: path.join(sourceRoot, "main.rsgl"),
+        sourceRange: { start: 0, end: 16 }
+      },
+      {
+        path: path.join(externalRoot, "future", "nested"),
+        globPattern: "**/*.json",
+        reason: "glob",
+        sourceFile: path.join(sourceRoot, "main.rsgl"),
+        sourceRange: { start: 17, end: 33 }
+      }
+    ];
+    const recordBuild = fake.runtime.build;
+    fake.runtime.build = (buildRoot, options) => ({
+      ...recordBuild(buildRoot, options),
+      dependencies
+    });
+    let session: ReturnType<typeof startRsglCliWatch> | undefined;
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.mkdirSync(externalRoot, { recursive: true });
+
+      session = startRsglCliWatch({ command: "watch", root: sourceRoot }, captured.io, fake.runtime);
+      assert.strictEqual(fake.builds.length, 1);
+
+      // Installing the newly discovered external watcher performs one
+      // post-install verification and then stabilizes.
+      fake.flushTimers();
+      assert.strictEqual(fake.builds.length, 2);
+      fake.flushTimers();
+      assert.strictEqual(fake.builds.length, 2);
+
+      const sourceWatcher = fake.directoryWatchers.find(watcher =>
+        normalizedTestPath(watcher.directory) === normalizedTestPath(sourceRoot)
+      );
+      const externalWatcher = fake.directoryWatchers.find(watcher =>
+        normalizedTestPath(watcher.directory) === normalizedTestPath(externalRoot)
+      );
+      assert.ok(sourceWatcher);
+      assert.ok(externalWatcher);
+
+      const trigger = (
+        watcher: FakeDirectoryWatcher,
+        event: string,
+        fileName: string,
+        expectedBuilds = 1
+      ) => {
+        const previousBuildCount = fake.builds.length;
+        watcher.listener(event, fileName);
+        fake.flushTimers();
+        assert.strictEqual(fake.builds.length, previousBuildCount + expectedBuilds);
+      };
+
+      trigger(sourceWatcher, "rename", "generated");
+      trigger(sourceWatcher, "change", "generated/changed.json");
+      trigger(sourceWatcher, "rename", "generated/deleted.json");
+      trigger(externalWatcher, "rename", "future");
+      trigger(externalWatcher, "change", "future/nested/changed.json");
+      trigger(externalWatcher, "rename", "future/nested/deleted.json");
+
+      const insideMovedDirectory = path.join(sourceRoot, "generated", "moved-tree");
+      fs.mkdirSync(insideMovedDirectory, { recursive: true });
+      trigger(sourceWatcher, "rename", "generated/moved-tree");
+      fs.rmSync(insideMovedDirectory, { recursive: true, force: true });
+      trigger(sourceWatcher, "rename", "generated/moved-tree");
+
+      const outsideMovedDirectory = path.join(externalRoot, "future", "nested", "moved-tree");
+      fs.mkdirSync(outsideMovedDirectory, { recursive: true });
+      // The first move-in also rebases the external watcher to the now-existing
+      // static root, which intentionally schedules one post-install verification.
+      trigger(externalWatcher, "rename", "future/nested/moved-tree", 2);
+      const rebasedExternalWatcher = fake.directoryWatchers.find(watcher =>
+        !watcher.closed
+        && normalizedTestPath(watcher.directory)
+          === normalizedTestPath(path.join(externalRoot, "future", "nested"))
+      );
+      assert.ok(rebasedExternalWatcher);
+      fs.rmSync(outsideMovedDirectory, { recursive: true, force: true });
+      trigger(rebasedExternalWatcher, "rename", "moved-tree");
+
+      const previousBuildCount = fake.builds.length;
+      const unrelatedCreatedFile = path.join(sourceRoot, "generated", "unrelated.png");
+      fs.writeFileSync(unrelatedCreatedFile, "not a glob match");
+      sourceWatcher.listener("rename", "generated/unrelated.png");
+      sourceWatcher.listener("change", "unrelated.png");
+      externalWatcher.listener("change", "unrelated.png");
+      fake.flushTimers();
+      assert.strictEqual(fake.builds.length, previousBuildCount);
+
+      sourceWatcher.listener("change", null);
+      fake.flushTimers();
+      assert.strictEqual(fake.builds.length, previousBuildCount + 1);
+    } finally {
+      session?.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reloads created, edited, and deleted nearest configs and rewires the source watcher", () => {

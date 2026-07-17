@@ -3,10 +3,17 @@ import type { JsonValue } from "../ir";
 
 /** A filesystem input that can invalidate a compiled RSGL program. */
 export interface CompileDependency {
+  /** Exact input path, or the static search root when globPattern is present. */
   path: string;
-  reason: "base-import" | "glob" | "extern";
+  reason: "base-import" | "copy" | "glob" | "extern";
   sourceFile: string;
   sourceRange: TextRange;
+  /**
+   * A slash-normalized pattern relative to path. Pattern dependencies let
+   * watcher-backed hosts observe future matching creates and deletes without
+   * watching the complete workspace.
+   */
+  globPattern?: string;
 }
 
 /** Parsed JSON content and source locations for one imported base document. */

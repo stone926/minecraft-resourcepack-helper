@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { isCitPropertiesFileName } from "../../cit/citPaths";
 import { affectsResourceResolutionConfiguration } from "../../utils/resourceConfigurationKeys";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
-import { isModelPreviewFileName } from "./modelPreviewFiles";
+import { isModelPreviewFileName, isPackMetadataFileName } from "./modelPreviewFiles";
 import { ModelPreviewRefreshScheduler } from "./ModelPreviewRefreshScheduler";
 
 export class ModelPreviewWatcher implements vscode.Disposable {
@@ -21,9 +21,13 @@ export class ModelPreviewWatcher implements vscode.Disposable {
     this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.png");
     this.watchWorkspaceFiles("**/assets/*/textures/**/*.png.mcmeta");
     this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.properties");
+    this.watchWorkspaceFiles("**/pack.mcmeta");
 
     this.disposables.push(vscode.workspace.onDidChangeTextDocument(event => {
-      if (event.document.uri.scheme !== "file" || !isModelPreviewFileName(event.document.fileName)) {
+      if (event.document.uri.scheme !== "file" || (
+        !isModelPreviewFileName(event.document.fileName) &&
+        !isPackMetadataFileName(event.document.fileName)
+      )) {
         return;
       }
 
@@ -44,6 +48,14 @@ export class ModelPreviewWatcher implements vscode.Disposable {
         this.refreshSoon(document.fileName);
       }
     }));
+
+    this.disposables.push(
+      vscode.workspace.onDidCreateFiles(event => this.refreshIfDependencyStructure(event.files)),
+      vscode.workspace.onDidDeleteFiles(event => this.refreshIfDependencyStructure(event.files)),
+      vscode.workspace.onDidRenameFiles(event => this.refreshIfDependencyStructure(
+        event.files.flatMap(file => [file.oldUri, file.newUri])
+      ))
+    );
 
     this.disposables.push(vscode.window.onDidChangeActiveTextEditor(editor => {
       if (editor?.document.uri.scheme === "file" && isModelPreviewFileName(editor.document.fileName)) {
@@ -79,6 +91,15 @@ export class ModelPreviewWatcher implements vscode.Disposable {
 
   private refreshSoon(reason: string, shouldRefresh?: () => boolean): void {
     this.refreshScheduler.schedule(reason, shouldRefresh);
+  }
+
+  private refreshIfDependencyStructure(uris: readonly vscode.Uri[]): void {
+    const changed = uris.find(uri =>
+      uri.scheme === "file" && this.tracker.hasFileAtOrBelow(uri.fsPath)
+    );
+    if (changed) {
+      this.refreshSoon(changed.fsPath);
+    }
   }
 }
 

@@ -6,10 +6,11 @@ Standalone VS Code extension for editing, validating, and building Minecraft Jav
 
 - Language registration and syntax highlighting for `.rsgl` files.
 - Completion, diagnostics, hover, signature help, navigation, rename, semantic highlighting, and formatting powered by the bundled RSGL language server.
-- VS Code build and preview commands for a single file, a source directory, or configured workspace roots, plus CLI check and watch workflows.
+- VS Code build and preview commands for a single file, a source directory, or configured workspace roots.
+- A separately published CLI package for terminal-based build, check, watch, and project initialization workflows.
 - Explicit template output dialects, canonical blockstate syntax, structural types, typed resource IDs, compile-time collections, namespace imports, and exact model-geometry transforms.
 
-This extension can be installed directly, and is also installed automatically when Minecraft Resourcepack Helper is installed.
+This extension can be installed directly. Minecraft Resourcepack Helper also lists it in an extension pack for convenient installation, but either extension can be removed and used independently.
 
 ## Quick start
 
@@ -61,7 +62,7 @@ blockstate variants oak_panel {
 }
 ```
 
-Run `rsgl check` to validate without writing, `rsgl build` to emit the generated resource-pack files, or use the matching **RSGL:** commands from the Command Palette.
+Use the matching **RSGL:** commands from the Command Palette. To run the same project workflows in a terminal, install the separately versioned CLI package described below.
 
 ## Explicit template dialects
 
@@ -242,6 +243,12 @@ Place `rsgl.config.json` in a project directory or one of its ancestors. The ext
 Command-line `--out` overrides `outDir` for build, check, and watch operations without changing the config file.
 
 ## CLI
+
+The CLI is not embedded in the VS Code extension. Install the independently released npm package with Node.js 20 or newer:
+
+```bash
+npm install --global @minecraft-resourcepack-helper/rsgl-cli
+```
 
 The complete command surface is:
 

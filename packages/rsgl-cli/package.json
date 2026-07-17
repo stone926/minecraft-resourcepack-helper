@@ -1,11 +1,45 @@
 {
   "name": "@minecraft-resourcepack-helper/rsgl-cli",
   "version": "1.0.0",
-  "private": true,
+  "description": "Command-line compiler and project tooling for the Resourcepack Generation Language",
   "license": "Unlicense",
-  "main": "out/main.js",
-  "types": "out/main.d.ts",
+  "author": {
+    "name": "stone926"
+  },
+  "keywords": [
+    "minecraft",
+    "resource-pack",
+    "rsgl",
+    "compiler",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stone926/minecraft-resourcepack-helper.git",
+    "directory": "packages/rsgl-cli"
+  },
+  "homepage": "https://github.com/stone926/minecraft-resourcepack-helper#readme",
+  "bugs": {
+    "url": "https://github.com/stone926/minecraft-resourcepack-helper/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "dist/rsgl.js",
   "bin": {
-    "rsgl": "out/main.js"
+    "rsgl": "dist/rsgl.js"
+  },
+  "files": [
+    "dist/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "npm --prefix ../.. run build:rsgl-cli"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

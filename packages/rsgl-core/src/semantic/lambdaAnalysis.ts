@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import type {
   ExprNode,
   LetDeclNode,
@@ -7,6 +6,7 @@ import type {
   RsglStatement,
   TopLevelStatementNode
 } from "../parser";
+import { rsglPathKey } from "../pathIdentity";
 import { walkRsglStatements } from "../parser/astTraversal";
 import { diagnostic, fileDiagnostic } from "./diagnostics";
 import { lookup } from "./scopes";
@@ -417,5 +417,5 @@ function removeBoundName(boundNames: Map<string, number>, name: string): void {
 }
 
 function normalizeExportMapKey(fileName: string): string {
-  return path.normalize(fileName);
+  return rsglPathKey(fileName);
 }

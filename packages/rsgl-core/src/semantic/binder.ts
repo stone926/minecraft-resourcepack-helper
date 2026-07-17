@@ -27,6 +27,7 @@ import {
 import { lambdaSignature } from "./lambdaTyping";
 import {
   checkAssignable,
+  checkBlockstatePredicate,
   checkCompileTimeCondition,
   checkExpression,
   checkExpressionForExpectedType,
@@ -35,7 +36,6 @@ import {
   checkTemplateUseExpression,
   validateResourceLocationLike
 } from "./expressionChecker";
-import { checkBlockstatePredicate } from "./blockstatePredicateChecker";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { RsglResourceBodyChecker } from "./resourceBodyChecker";
 import { createChildScope, createScope, lookup } from "./scopes";

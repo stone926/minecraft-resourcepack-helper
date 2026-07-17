@@ -10,12 +10,12 @@ import { bindRsglModule, bindRsglProgram, RsglSourceFile } from "../semantic";
 import type { RsglProgram } from "../semantic";
 import { includeRsglStdlibSourceFiles } from "../stdlib";
 import { RsglWorkspaceSourceCache } from "../workspaceSource";
+import { resolvedRsglPathKey, rsglPathKey } from "../pathIdentity";
 import {
   createCompileGlobLoader,
   detectOutputConflicts,
   hasErrors,
   moduleSyntaxDiagnostics,
-  normalizeFileName,
   selectProgramModels,
   selectProgramTargetModels,
   semanticProgramMatchesFiles,
@@ -89,6 +89,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
   const evaluationItemBudget = new EvaluationItemBudget(configuration.maxEvaluationItems);
   const loaderDiagnostics: RsglCompileDiagnostic[] = [];
   const environmentDiagnostics: RsglCompileDiagnostic[] = [];
+  const environmentDependencies: CompileDependency[] = [];
   const baseDocumentLoader = createCachedBaseDocumentLoader(
     options.baseDocumentLoader ?? createFileBaseDocumentLoader({ fallbackFileName: fileName })
   );
@@ -103,6 +104,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     {
       baseDocumentLoader,
       globLoader,
+      onDependency: dependency => environmentDependencies.push(dependency),
       onError: (code, message, range, diagnosticFileName) => {
         environmentDiagnostics.push({
           code,
@@ -136,7 +138,7 @@ export function compileRsglModule(module: RsglModule, options: RsglCompileOption
     result.units,
     target.targetPackFormat,
     { ...options, externDeclarations: externs.declarations },
-    result.dependencies
+    [...environmentDependencies, ...result.dependencies]
   );
   return {
     units: finished.units,
@@ -223,6 +225,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
     rootModels: selectedModels,
     baseDocumentLoader,
     globLoader,
+    onDependency: dependency => dependencies.push(dependency),
     onError: (code, message, range, fileName) => {
       diagnostics.push({
         code,
@@ -254,7 +257,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
 
   for (const model of selectedModels) {
     const namespace = effectiveNamespace(model.namespace, configuration);
-    const environment = environments.get(normalizeFileName(model.fileName))
+    const environment = environments.get(rsglPathKey(model.fileName))
       ?? createStandaloneCompileEnvironment(model, namespace, {
         evaluationItemBudget,
         onError: (code, message, range, fileName) => {
@@ -357,9 +360,18 @@ function finishCompilation(
     onExternResourceUsed: usage => {
       options.onExternResourceUsed?.(usage);
       recordExternalUsage(externalUnits, usage);
-      if (usage.resolvedPath) {
+      const resourceDependencyPaths = usage.candidatePaths?.length
+        ? usage.candidatePaths
+        : usage.resolvedPath
+          ? [usage.resolvedPath]
+          : [];
+      const dependencyPaths = [
+        ...resourceDependencyPaths,
+        ...(usage.metadataPaths ?? [])
+      ];
+      for (const dependencyPath of dependencyPaths) {
         externalDependencies.push({
-          path: usage.resolvedPath,
+          path: dependencyPath,
           reason: "extern",
           sourceFile: usage.sourceFile,
           sourceRange: usage.range
@@ -432,6 +444,7 @@ function dedupeCompileDependencies(dependencies: CompileDependency[]): CompileDe
     const key = [
       normalizedDependencyPath(dependency.path),
       dependency.reason,
+      dependency.globPattern ?? "",
       normalizedDependencyPath(dependency.sourceFile),
       dependency.sourceRange.start,
       dependency.sourceRange.end
@@ -470,8 +483,7 @@ function normalizedDependencyPath(fileName: string): string {
   if (/^<[^>]+>$/.test(fileName)) {
     return fileName;
   }
-  const normalized = path.normalize(path.resolve(fileName));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return resolvedRsglPathKey(fileName);
 }
 
 interface CollectedExternDeclarations {

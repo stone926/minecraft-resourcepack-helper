@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { normalizePathKey } from "../../mc-assets/src";
 
@@ -10,23 +11,45 @@ export type RsglWorkspaceSourceRootFileProvider = () => readonly string[] | Prom
 
 interface RsglWorkspaceSourceRootCacheEntry {
   generation: number;
+  verifiedAtMs: number;
   roots: RsglDiscoveredSourceRoot[];
+}
+
+export interface RsglWorkspaceSourceRootCacheOptions {
+  verificationTtlMs?: number;
+  now?: () => number;
+  pathExists?: (fileName: string) => boolean;
 }
 
 export class RsglWorkspaceSourceRootCache {
   private generation = 0;
   private cache: RsglWorkspaceSourceRootCacheEntry | null = null;
+  private readonly verificationTtlMs: number;
+  private readonly now: () => number;
+  private readonly pathExists: (fileName: string) => boolean;
+
+  public constructor(options: RsglWorkspaceSourceRootCacheOptions = {}) {
+    this.verificationTtlMs = Math.max(0, options.verificationTtlMs ?? 1_000);
+    this.now = options.now ?? Date.now;
+    this.pathExists = options.pathExists ?? fs.existsSync;
+  }
 
   public async discover(provider: RsglWorkspaceSourceRootFileProvider): Promise<RsglDiscoveredSourceRoot[]> {
     while (true) {
-      if (this.cache?.generation === this.generation) {
+      const now = this.now();
+      if (
+        this.cache?.generation === this.generation
+        && now >= this.cache.verifiedAtMs
+        && now - this.cache.verifiedAtMs < this.verificationTtlMs
+        && this.cache.roots.every(root => this.sampleStillExists(root.sampleFileName))
+      ) {
         return this.cache.roots;
       }
 
       const generation = this.generation;
       const roots = discoverRsglSourceRootsFromFileNames(await provider());
       if (generation === this.generation) {
-        this.cache = { generation, roots };
+        this.cache = { generation, verifiedAtMs: this.now(), roots };
         return roots;
       }
     }
@@ -41,6 +64,14 @@ export class RsglWorkspaceSourceRootCache {
   public invalidateAll(): void {
     this.generation++;
     this.cache = null;
+  }
+
+  private sampleStillExists(fileName: string): boolean {
+    try {
+      return this.pathExists(fileName);
+    } catch {
+      return false;
+    }
   }
 }
 

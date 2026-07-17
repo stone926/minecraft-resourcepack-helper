@@ -4,6 +4,7 @@ import type {
   JsonValue,
   ResourceId,
   RsglBlockstateSchema,
+  RsglExternalResourceResolution,
   RsglResourceContentKind,
   RsglResourceExistenceKind,
   RsglResourceValidationOptions,
@@ -12,12 +13,14 @@ import type {
 } from "./compiler";
 import { inferBlockstateSchemaFromContent, parseResourceId } from "./compiler";
 import type { ExternResourceSource } from "./externDeclarations";
+import { BoundedCache } from "./boundedCache";
 import {
   findPackRoot,
   getConfiguredPackResourceRootCandidates,
   getDocumentResourceRootCandidates,
   getResourceRootCandidates,
   minecraftResourceTarget,
+  normalizePathKey,
   readOggFileMetadata,
   readPackMetadata,
   readPngFileMetadata,
@@ -30,6 +33,7 @@ export interface RsglWorkspaceValidationOptions {
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
   fileSystem?: RsglValidationFileSystem;
+  cache?: RsglWorkspaceValidationCache;
 }
 
 export interface RsglValidationFileSystem {
@@ -38,13 +42,34 @@ export interface RsglValidationFileSystem {
   readJson(fileName: string): JsonValue | null;
   readPngMetadata(fileName: string): RsglTextureMetadata | null;
   readOggMetadata(fileName: string): RsglSoundMetadata | null;
+  fileVersion?(fileName: string): string | null;
 }
 
-export interface RsglWorkspaceValidationCallbacks extends Pick<
+export interface RsglWorkspaceValidationCacheOptions {
+  fileSystem?: RsglValidationFileSystem;
+  watcherTrusted?: boolean;
+  verificationTtlMs?: number;
+  clock?: () => number;
+}
+
+interface CachedValidationValue<T> {
+  readonly value: T;
+  readonly version?: string | null;
+  verifiedAt: number;
+}
+
+type RequiredResourceValidationCallbacks = Required<Pick<
   RsglResourceValidationOptions,
   "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata" | "blockstateSchema"
-> {
+>>;
+
+export interface RsglWorkspaceValidationCallbacks extends RequiredResourceValidationCallbacks {
   externResourceExists(source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string): boolean;
+  externResourceResolution(
+    source: ExternResourceSource,
+    kind: RsglResourceExistenceKind,
+    id: string
+  ): RsglExternalResourceResolution;
   externResourcePath(source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string): string | null;
   externResourceContent(source: ExternResourceSource, kind: RsglResourceContentKind, id: string): JsonValue | null;
   externTextureMetadata(source: ExternResourceSource, id: string): RsglTextureMetadata | null | undefined;
@@ -57,8 +82,136 @@ const defaultFileSystem: RsglValidationFileSystem = {
   isDirectory: fileName => directoryExists(fileName),
   readJson: fileName => readJsonFile(fileName),
   readPngMetadata: fileName => readPngFileMetadata(fileName),
-  readOggMetadata: fileName => readOggFileMetadata(fileName)
+  readOggMetadata: fileName => readOggFileMetadata(fileName),
+  fileVersion: fileName => fileVersion(fileName)
 };
+
+/**
+ * Shared validation I/O cache for repeated LSP compiles.
+ *
+ * Watcher-backed hosts reuse hot values without filesystem calls and explicitly
+ * invalidate changed paths. Other hosts verify file-backed values by TTL and
+ * mtime/size before reading them again.
+ */
+export class RsglWorkspaceValidationCache implements RsglValidationFileSystem {
+  private readonly fileSystem: RsglValidationFileSystem;
+  private readonly watcherTrusted: boolean;
+  private readonly verificationTtlMs: number;
+  private readonly clock: () => number;
+  private readonly existence = new BoundedCache<string, CachedValidationValue<boolean>>(8_192);
+  private readonly directories = new BoundedCache<string, CachedValidationValue<boolean>>(2_048);
+  private readonly json = new BoundedCache<string, CachedValidationValue<JsonValue | null>>(2_048);
+  private readonly png = new BoundedCache<string, CachedValidationValue<RsglTextureMetadata | null>>(2_048);
+  private readonly ogg = new BoundedCache<string, CachedValidationValue<RsglSoundMetadata | null>>(2_048);
+  private readonly packMetadata = new BoundedCache<string, CachedValidationValue<PackMetadata>>(256);
+  private cacheGeneration = 0;
+
+  public constructor(options: RsglWorkspaceValidationCacheOptions = {}) {
+    this.fileSystem = options.fileSystem ?? defaultFileSystem;
+    this.watcherTrusted = options.watcherTrusted ?? false;
+    this.verificationTtlMs = normalizeVerificationTtl(options.verificationTtlMs);
+    this.clock = options.clock ?? Date.now;
+  }
+
+  public get generation(): number {
+    return this.cacheGeneration;
+  }
+
+  public exists(fileName: string): boolean {
+    return this.getQueryValue(this.existence, fileName, () => this.fileSystem.exists(fileName));
+  }
+
+  public isDirectory(fileName: string): boolean {
+    return this.getQueryValue(this.directories, fileName, () => this.fileSystem.isDirectory(fileName));
+  }
+
+  public readJson(fileName: string): JsonValue | null {
+    return this.getFileValue(this.json, fileName, () => this.fileSystem.readJson(fileName));
+  }
+
+  public readPngMetadata(fileName: string): RsglTextureMetadata | null {
+    return this.getFileValue(this.png, fileName, () => this.fileSystem.readPngMetadata(fileName));
+  }
+
+  public readOggMetadata(fileName: string): RsglSoundMetadata | null {
+    return this.getFileValue(this.ogg, fileName, () => this.fileSystem.readOggMetadata(fileName));
+  }
+
+  public fileVersion(fileName: string): string | null {
+    return this.fileSystem.fileVersion?.(fileName) ?? null;
+  }
+
+  public readPackMetadata(packRoot: string): PackMetadata {
+    const mcmetaPath = path.join(packRoot, "pack.mcmeta");
+    return this.getFileValue(this.packMetadata, mcmetaPath, () =>
+      readPackMetadata(packRoot, { pathExists: candidate => this.exists(candidate) }));
+  }
+
+  public invalidatePath(fileName: string): void {
+    const key = normalizePathKey(fileName);
+    this.cacheGeneration++;
+    this.existence.delete(key);
+    this.directories.delete(key);
+    this.json.delete(key);
+    this.png.delete(key);
+    this.ogg.delete(key);
+    this.packMetadata.delete(key);
+  }
+
+  public invalidateAll(): void {
+    this.cacheGeneration++;
+    this.existence.clear();
+    this.directories.clear();
+    this.json.clear();
+    this.png.clear();
+    this.ogg.clear();
+    this.packMetadata.clear();
+  }
+
+  private getQueryValue<T>(
+    cache: BoundedCache<string, CachedValidationValue<T>>,
+    fileName: string,
+    compute: () => T
+  ): T {
+    const key = normalizePathKey(fileName);
+    const now = this.clock();
+    const cached = cache.get(key);
+    if (cached && this.canReuse(cached, now)) {
+      return cached.value;
+    }
+    const value = compute();
+    cache.set(key, { value, verifiedAt: now });
+    return value;
+  }
+
+  private getFileValue<T>(
+    cache: BoundedCache<string, CachedValidationValue<T>>,
+    fileName: string,
+    compute: () => T
+  ): T {
+    const key = normalizePathKey(fileName);
+    const now = this.clock();
+    const cached = cache.get(key);
+    if (cached && this.canReuse(cached, now)) {
+      return cached.value;
+    }
+
+    const version = this.fileSystem.fileVersion?.(fileName);
+    if (cached && version !== undefined && cached.version === version) {
+      cached.verifiedAt = now;
+      return cached.value;
+    }
+
+    const value = compute();
+    cache.set(key, { value, version, verifiedAt: now });
+    return value;
+  }
+
+  private canReuse(entry: CachedValidationValue<unknown>, now: number): boolean {
+    return this.watcherTrusted
+      || (now >= entry.verifiedAt && now - entry.verifiedAt < this.verificationTtlMs);
+  }
+}
 
 export function createRsglWorkspaceValidationOptions(
   options: RsglWorkspaceValidationOptions
@@ -71,6 +224,8 @@ export function createRsglWorkspaceValidationOptions(
     soundMetadata: id => resolver.soundMetadata(id),
     blockstateSchema: id => resolver.blockstateSchema(id),
     externResourceExists: (source, kind, id) => resolver.resolve(id, minecraftResourceTarget(kind), source) !== null,
+    externResourceResolution: (source, kind, id) =>
+      resolver.resolveWithCandidates(id, minecraftResourceTarget(kind), source),
     externResourcePath: (source, kind, id) => resolver.resolve(id, minecraftResourceTarget(kind), source),
     externResourceContent: (source, kind, id) => resolver.readJson(id, minecraftResourceTarget(kind), source),
     externTextureMetadata: (source, id) => resolver.textureMetadata(id, source),
@@ -81,30 +236,31 @@ export function createRsglWorkspaceValidationOptions(
 
 class WorkspaceResourceResolver {
   private readonly fileSystem: RsglValidationFileSystem;
+  private readonly validationCache: RsglWorkspaceValidationCache;
   private readonly sourceFileName: string;
   private readonly defaultAssetsPath: string | null;
   private readonly resourcePackRoots: string[];
-  private readonly resolvedPaths = new Map<string, string | null>();
-  private readonly packMetadataByRoot = new Map<string, PackMetadata>();
-  private packRoot: string | null | undefined;
 
   constructor(options: RsglWorkspaceValidationOptions) {
-    this.fileSystem = options.fileSystem ?? defaultFileSystem;
+    this.validationCache = options.cache ?? new RsglWorkspaceValidationCache({
+      fileSystem: options.fileSystem
+    });
+    this.fileSystem = this.validationCache;
     this.sourceFileName = path.resolve(options.sourceFileName);
     this.defaultAssetsPath = options.defaultAssetsPath ?? null;
     this.resourcePackRoots = options.resourcePackRoots ?? [];
   }
 
   resolve(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): string | null {
-    const cacheKey = `${source ?? "workspace"}\0${target.directory}\0${target.extension ?? ""}\0${target.isDirectory ? "d" : "f"}\0${id}`;
-    const cached = this.resolvedPaths.get(cacheKey);
-    if (cached !== undefined) {
-      return cached;
-    }
+    return this.resolveWithCandidates(id, target, source).resolvedPath;
+  }
 
-    const resolved = this.resolveUncached(id, target, source);
-    this.resolvedPaths.set(cacheKey, resolved);
-    return resolved;
+  resolveWithCandidates(
+    id: string,
+    target: MinecraftResourceTarget,
+    source?: ExternResourceSource
+  ): RsglExternalResourceResolution {
+    return this.resolveUncached(id, target, source);
   }
 
   readJson(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): JsonValue | null {
@@ -127,10 +283,14 @@ class WorkspaceResourceResolver {
     return inferBlockstateSchemaFromContent(content ?? undefined);
   }
 
-  private resolveUncached(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): string | null {
+  private resolveUncached(
+    id: string,
+    target: MinecraftResourceTarget,
+    source?: ExternResourceSource
+  ): RsglExternalResourceResolution {
     const resourceId = parseResourceId(id, "minecraft");
     if (!resourceId) {
-      return null;
+      return { resolvedPath: null, candidatePaths: [] };
     }
 
     const resourcePath = resourcePathWithTargetExtension(resourceId.path, target);
@@ -152,13 +312,21 @@ class WorkspaceResourceResolver {
         }
       );
 
-    for (const root of roots) {
-      const candidate = path.join(root, ...relativePath);
+    const candidatePaths = roots.map(root => path.join(root, ...relativePath));
+    for (const candidate of candidatePaths) {
       if (target.isDirectory ? this.fileSystem.isDirectory(candidate) : this.fileSystem.exists(candidate)) {
-        return candidate;
+        return {
+          resolvedPath: candidate,
+          candidatePaths,
+          metadataPaths: this.packMetadataDependencyPaths()
+        };
       }
     }
-    return null;
+    return {
+      resolvedPath: null,
+      candidatePaths,
+      metadataPaths: this.packMetadataDependencyPaths()
+    };
   }
 
   private getExternResourceRootCandidates(
@@ -185,19 +353,43 @@ class WorkspaceResourceResolver {
   }
 
   private getPackRoot(fileName: string): string | null {
-    if (this.packRoot === undefined) {
-      this.packRoot = findPackRoot(fileName, { pathExists: candidate => this.fileSystem.exists(candidate) });
-    }
-    return this.packRoot;
+    return findPackRoot(fileName, { pathExists: candidate => this.fileSystem.exists(candidate) });
   }
 
   private getPackMetadata(packRoot: string): PackMetadata {
-    let metadata = this.packMetadataByRoot.get(packRoot);
-    if (!metadata) {
-      metadata = readPackMetadata(packRoot, { pathExists: candidate => this.fileSystem.exists(candidate) });
-      this.packMetadataByRoot.set(packRoot, metadata);
+    return this.validationCache.readPackMetadata(packRoot);
+  }
+
+  private packMetadataDependencyPaths(): string[] {
+    const paths = new Map<string, string>();
+    const addPackRoot = (packRoot: string | null): void => {
+      if (!packRoot) {
+        return;
+      }
+      const metadataPath = path.join(path.resolve(packRoot), "pack.mcmeta");
+      paths.set(normalizePathKey(metadataPath), metadataPath);
+    };
+
+    const existingSourcePackRoot = this.getPackRoot(this.sourceFileName);
+    const existingSourcePackKey = existingSourcePackRoot
+      ? normalizePathKey(existingSourcePackRoot)
+      : null;
+    let sourceAncestor = path.dirname(this.sourceFileName);
+    while (true) {
+      addPackRoot(sourceAncestor);
+      if (existingSourcePackKey === normalizePathKey(sourceAncestor)) {
+        break;
+      }
+      const parent = path.dirname(sourceAncestor);
+      if (parent === sourceAncestor) {
+        break;
+      }
+      sourceAncestor = parent;
     }
-    return metadata;
+    for (const configuredRoot of this.resourcePackRoots) {
+      addPackRoot(configuredRoot);
+    }
+    return [...paths.values()];
   }
 }
 
@@ -230,4 +422,21 @@ function directoryExists(fileName: string): boolean {
   } catch {
     return false;
   }
+}
+
+function fileVersion(fileName: string): string | null {
+  try {
+    const stat = fs.statSync(fileName);
+    return `${stat.mtimeMs}:${stat.size}:${stat.isDirectory() ? "d" : "f"}`;
+  } catch {
+    return null;
+  }
+}
+
+const DEFAULT_VERIFICATION_TTL_MS = 1_000;
+
+function normalizeVerificationTtl(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, value)
+    : DEFAULT_VERIFICATION_TTL_MS;
 }

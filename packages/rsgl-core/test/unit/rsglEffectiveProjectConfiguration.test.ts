@@ -13,6 +13,7 @@ import {
   type RsglProgramCompileOptions
 } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
+import { resolvedRsglPathKey } from "../../src/pathIdentity";
 import {
   generatedResourceUnits,
   withUncheckedExterns
@@ -349,6 +350,5 @@ function entryClosureProjection(
 }
 
 function normalizedPath(fileName: string): string {
-  const normalized = path.normalize(path.resolve(fileName));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return resolvedRsglPathKey(fileName);
 }

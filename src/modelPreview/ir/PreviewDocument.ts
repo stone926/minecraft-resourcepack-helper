@@ -57,7 +57,7 @@ export interface PreviewMaterial {
 
 export interface PreviewDependency {
   uri: string;
-  kind: "model" | "texture" | "textureMetadata" | "configuration";
+  kind: "model" | "texture" | "textureMetadata" | "packMetadata" | "configuration";
 }
 
 export interface PreviewPosition {

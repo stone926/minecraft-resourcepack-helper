@@ -348,6 +348,13 @@ function compileCopyResource(
     host.onError("rsgl.invalidCopySource", "Copy resource requires a static string 'from' field.", statement.body.range);
     return null;
   }
+  const fromMapping = body.mappings.find(mapping => mapping.generatedPath === "/from");
+  context.onDependency?.({
+    path: sourcePath,
+    reason: "copy",
+    sourceFile: fromMapping?.context.sourceFile ?? context.sourceFile ?? host.fileName,
+    sourceRange: fromMapping?.sourceRange ?? statement.body.range
+  });
   if (!isExistingFile(sourcePath)) {
     host.onError("rsgl.copySourceNotFound", `Copy source file not found: ${sourcePath}`, statement.body.range);
     return null;

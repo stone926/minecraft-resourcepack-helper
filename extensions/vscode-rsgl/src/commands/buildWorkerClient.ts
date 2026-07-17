@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 import type {
@@ -131,7 +132,10 @@ export function runRsglWorkerTask<K extends RsglWorkerTaskKind>(
 }
 
 function createNodeWorkerTransport(): RsglWorkerTransport {
-  const worker = new Worker(path.join(__dirname, "buildWorker.js"));
+  const bundledWorker = path.join(__dirname, "worker.js");
+  const worker = new Worker(existsSync(bundledWorker)
+    ? bundledWorker
+    : path.join(__dirname, "buildWorker.js"));
   return {
     postMessage: message => worker.postMessage(message),
     onceMessage: listener => worker.once("message", listener),

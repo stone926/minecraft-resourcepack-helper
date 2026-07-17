@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "../../out",
+    "tsBuildInfoFile": "../../out/.tsbuildinfo/rsgl-lsp.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    { "path": "../mc-assets" },
+    { "path": "../rsgl-core" },
+    { "path": "../rsgl-shared" }
+  ]
+}

@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const supportedPaths = ["out", "extensions/vscode-rsgl/out"];
+const supportedPaths = [
+  "out",
+  "bundle",
+  "extensions/vscode-rsgl/out",
+  "extensions/vscode-rsgl/bundle",
+  "packages/rsgl-cli/dist"
+];
 const requestedPaths = process.argv.slice(2);
 const relativePaths = requestedPaths.length > 0 ? requestedPaths : supportedPaths;
 

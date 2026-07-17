@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizePathKey } from "../../mc-assets/src";
 import {
   CodeActionKind,
   CompletionItemKind,
@@ -48,7 +49,10 @@ import {
   type RsglSymbol,
   type RsglWorkspaceSemanticProgram
 } from "../../rsgl-core/src";
-import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
+import {
+  createRsglWorkspaceValidationOptions,
+  type RsglWorkspaceValidationCache
+} from "../../rsgl-core/src/workspaceValidation";
 
 /** Validation settings pushed by the client via initializationOptions or didChangeConfiguration. */
 export interface RsglValidationSettings {
@@ -72,6 +76,7 @@ export interface RsglDocumentValidationDeps {
   ): RsglWorkspaceSemanticProgram;
   onDependencies?: (dependencies: readonly CompileDependency[]) => void;
   onProjectConfigWatchPaths?: (paths: readonly string[]) => void;
+  validationCache?: RsglWorkspaceValidationCache;
   settings: RsglValidationSettings;
 }
 
@@ -100,11 +105,11 @@ export function computeDocumentDiagnostics(
   fileName: string,
   deps: RsglDocumentValidationDeps
 ): Diagnostic[] {
-  const currentFileName = normalizeFileName(path.resolve(fileName));
+  const currentFileKey = normalizePathKey(path.resolve(fileName));
   deps.onProjectConfigWatchPaths?.(getRsglProjectConfigWatchPaths(fileName, "file"));
   let validationOptions: RsglResourceValidationOptions & RsglCompileConfigurationOptions;
   try {
-    validationOptions = workspaceValidationOptionsFor(fileName, deps.settings);
+    validationOptions = workspaceValidationOptionsFor(fileName, deps.settings, deps.validationCache);
   } catch (error) {
     return [toLspDiagnostic(document, {
       code: projectConfigurationDiagnosticCode(error),
@@ -123,7 +128,10 @@ export function computeDocumentDiagnostics(
     });
     deps.onDependencies?.(result.dependencies);
     return result.diagnostics
-      .filter(diagnostic => !diagnostic.fileName || normalizeFileName(path.resolve(diagnostic.fileName)) === currentFileName)
+      .filter(diagnostic =>
+        !diagnostic.fileName
+        || normalizePathKey(path.resolve(diagnostic.fileName)) === currentFileKey
+      )
       .map(diagnostic => toLspDiagnostic(document, diagnostic));
   }
 
@@ -191,50 +199,24 @@ function offsetAtPosition(text: string, position: Position): number {
   return Math.max(lineStart, Math.min(contentEnd, lineStart + position.character));
 }
 
-/** Returns open-document ids whose last compile depends on a changed filesystem path. */
-export function documentsDependingOnPath(
-  dependenciesByDocument: ReadonlyMap<string, ReadonlySet<string>>,
-  changedPath: string
-): string[] {
-  const normalizedChangedPath = normalizeDependencyPath(changedPath);
-  const result: string[] = [];
-  for (const [documentId, dependencies] of dependenciesByDocument) {
-    if (dependencies.has(normalizedChangedPath)) {
-      result.push(documentId);
-    }
-  }
-  return result;
-}
-
-/** Merges compile dependencies and exact non-dependency watch candidates for one document. */
-export function dependencyPathsForDocument(
-  dependencies: readonly CompileDependency[],
-  additionalWatchPaths: readonly string[]
-): Set<string> {
-  return new Set([
-    ...dependencies.map(dependency => normalizeDependencyPath(dependency.path)),
-    ...additionalWatchPaths.map(normalizeDependencyPath)
-  ]);
-}
-
-/** Returns the stable, deduplicated dependency union for all open documents. */
-export function dependencyPathsForDocuments(
-  dependenciesByDocument: ReadonlyMap<string, ReadonlySet<string>>
-): string[] {
-  const paths = new Set<string>();
-  for (const dependencies of dependenciesByDocument.values()) {
-    for (const dependency of dependencies) {
-      paths.add(normalizeDependencyPath(dependency));
-    }
-  }
-  return [...paths].sort();
-}
-
-/** Normalizes dependency paths for stable identity comparisons across watcher events. */
-export function normalizeDependencyPath(fileName: string): string {
-  const normalized = path.normalize(path.resolve(fileName));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
+export {
+  dependencyInvalidationPathsForStructuralChange,
+  dependencyPathsForDocument,
+  dependencyPathsForDocuments,
+  dependencyPatternsForDocuments,
+  documentDependenciesEqual,
+  documentDependenciesExpanded,
+  documentDependenciesForCompile,
+  documentsDependingOnPath,
+  documentsStructurallyDependingOnPath,
+  normalizeDependencyPath,
+  requiredExactWatchPathsForDocuments
+} from "./dependencyIndex";
+export type {
+  RsglDependencyWatchPattern,
+  RsglDocumentDependencies,
+  RsglDocumentDependencyIndex
+} from "./dependencyIndex";
 
 export interface RsglSemanticWatchBatchCallbacks {
   invalidatePath(fileName: string): void;
@@ -276,7 +258,8 @@ export function handleSemanticWatchedFileBatch(
 /** Builds filesystem-backed resource validation options for the given source file. */
 export function workspaceValidationOptionsFor(
   sourceFileName: string,
-  settings: RsglValidationSettings
+  settings: RsglValidationSettings,
+  validationCache?: RsglWorkspaceValidationCache
 ): ReturnType<typeof createRsglWorkspaceValidationOptions>
   & RsglResourceValidationOptions
   & RsglCompileConfigurationOptions {
@@ -289,7 +272,8 @@ export function workspaceValidationOptionsFor(
       defaultAssetsPath: projectDefaultAssetsPath === undefined
         ? settings.defaultAssetsPath
         : projectDefaultAssetsPath,
-      resourcePackRoots: projectConfig?.resourcePackRoots ?? settings.resourcePackRoots
+      resourcePackRoots: projectConfig?.resourcePackRoots ?? settings.resourcePackRoots,
+      cache: validationCache
     }),
     globalExterns: projectConfig?.extern,
     checkExternExistence: projectConfig?.checkExternExistence
@@ -707,14 +691,10 @@ export function fileNameFromUri(uri: string): string {
 }
 
 /** Normalizes a filesystem path for identity comparisons. */
-export function normalizeFileName(fileName: string): string {
+export function normalizeDisplayFileName(fileName: string): string {
   return path.normalize(fileName);
 }
 
 function sameFileName(left: string, right: string): boolean {
-  const leftNormalized = normalizeFileName(path.resolve(left));
-  const rightNormalized = normalizeFileName(path.resolve(right));
-  return process.platform === "win32"
-    ? leftNormalized.toLowerCase() === rightNormalized.toLowerCase()
-    : leftNormalized === rightNormalized;
+  return normalizePathKey(path.resolve(left)) === normalizePathKey(path.resolve(right));
 }

@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import { RsglDiagnostic } from "../parser";
+import { RsglPathKeyMap, rsglPathKey } from "../pathIdentity";
 import { moduleExportMemberCategory } from "./moduleNamespace";
 import {
   RsglFileDiagnostic,
@@ -37,16 +37,16 @@ export function createRsglExportMaps(
   models: RsglSemanticModel[],
   importGraph: RsglImportGraph
 ): RsglExportMapResult {
-  const modelsByFile = new Map(models.map(model => [normalizeFileName(model.fileName), model]));
+  const modelsByFile = new RsglPathKeyMap(models.map(model => [model.fileName, model] as const));
   let state: ExportResolutionState = {
-    maps: new Map(models.map(model => [
-      normalizeFileName(model.fileName),
+    maps: new RsglPathKeyMap(models.map(model => [
+      model.fileName,
       new Map<string, RsglSymbol>()
-    ])),
-    routes: new Map(models.map(model => [
-      normalizeFileName(model.fileName),
+    ] as const)),
+    routes: new RsglPathKeyMap(models.map(model => [
+      model.fileName,
       new Map<string, readonly string[]>()
-    ]))
+    ] as const))
   };
   const maximumPasses = Math.max(4, models.length * 4 + importGraph.edges.length * 2);
 
@@ -71,10 +71,10 @@ function buildExportMaps(
   previous: ExportResolutionState,
   diagnostics: RsglFileDiagnostic[] | undefined
 ): ExportResolutionState {
-  const maps = new Map<string, Map<string, RsglSymbol>>();
-  const routes = new Map<string, Map<string, readonly string[]>>();
+  const maps = new RsglPathKeyMap<Map<string, RsglSymbol>>();
+  const routes = new RsglPathKeyMap<Map<string, readonly string[]>>();
   for (const model of models) {
-    const fileName = normalizeFileName(model.fileName);
+    const fileName = rsglPathKey(model.fileName);
     const exports = new Map<string, RsglSymbol>();
     const exportRoutes = new Map<string, readonly string[]>();
     const owners = new Map<string, ExportOwner>();
@@ -128,7 +128,7 @@ function buildExportMaps(
       if (!targetModel) {
         continue;
       }
-      const targetFileName = normalizeFileName(targetModel.fileName);
+      const targetFileName = rsglPathKey(targetModel.fileName);
       const targetExports = previous.maps.get(targetFileName) ?? new Map();
       const targetRoutes = previous.routes.get(targetFileName) ?? new Map();
       if (record.exportAll) {
@@ -189,9 +189,11 @@ function resolveExportTargetModel(
   importGraph: RsglImportGraph,
   modelsByFile: ReadonlyMap<string, RsglSemanticModel>
 ): RsglSemanticModel | undefined {
-  const currentFile = normalizeFileName(model.fileName);
-  const targetFile = importGraph.edges.find(edge => edge.from === currentFile && edge.source === source)?.to;
-  return targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
+  const currentFile = rsglPathKey(model.fileName);
+  const targetFile = importGraph.edges.find(edge =>
+    rsglPathKey(edge.from) === currentFile && edge.source === source
+  )?.to;
+  return targetFile ? modelsByFile.get(rsglPathKey(targetFile)) : undefined;
 }
 
 function setExport(
@@ -276,8 +278,4 @@ function diagnostic(
   severity: RsglDiagnostic["severity"] = "error"
 ): RsglFileDiagnostic {
   return { fileName, code, message, range, severity };
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
 }

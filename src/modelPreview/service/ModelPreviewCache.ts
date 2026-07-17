@@ -23,7 +23,7 @@ export interface ModelPreviewArtifactCacheStore {
     fileName: string,
     configurationKey: string,
     model: Promise<ResolvedModel | null>,
-    getVersion: (fileName: string) => string | null
+    dependencyVersions: ReadonlyMap<string, string | null>
   ): void;
   getTextureAlphaMask(fileName: string, version: string | null): Promise<PngAlphaMask | null> | null;
   setTextureAlphaMask(fileName: string, version: string | null, alphaMask: Promise<PngAlphaMask | null>): void;
@@ -87,9 +87,9 @@ export class ModelPreviewCache {
     fileName: string,
     configurationKey: string,
     model: Promise<ResolvedModel | null>,
-    getVersion: (fileName: string) => string | null
+    dependencyVersions: ReadonlyMap<string, string | null>
   ): void {
-    this.artifacts.setResolvedModel(fileName, configurationKey, model, getVersion);
+    this.artifacts.setResolvedModel(fileName, configurationKey, model, dependencyVersions);
   }
 
   getTextureAlphaMask(fileName: string, version: string | null): Promise<PngAlphaMask | null> | null {

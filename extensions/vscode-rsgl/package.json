@@ -4,7 +4,7 @@
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
   "publisher": "stone926",
-  "version": "2.3.1",
+  "version": "1.0.0",
   "license": "Unlicense",
   "repository": {
     "url": "https://github.com/stone926/minecraft-resourcepack-helper",
@@ -30,16 +30,18 @@
     "onCommand:rsgl.buildDirectory",
     "onCommand:rsgl.previewDirectoryBuild",
     "onCommand:rsgl.buildWorkspace",
-    "onCommand:rsgl.previewWorkspaceBuild"
+    "onCommand:rsgl.previewWorkspaceBuild",
+    "onCommand:rsgl.refreshWorkspace"
   ],
-  "main": "./out/extensions/vscode-rsgl/src/extension.js",
+  "main": "./bundle/extension.js",
   "l10n": "./l10n",
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "precompile": "node ../../scripts/clean.mjs extensions/vscode-rsgl/out",
-    "compile": "tsc -p ./tsconfig.json",
-    "postcompile": "node ../../scripts/copy-rsgl-stdlib.mjs extensions/vscode-rsgl/out",
-    "watch": "tsc -watch -p ./tsconfig.json"
+    "vscode:prepublish": "npm run build",
+    "typecheck": "tsc -b ./tsconfig.json",
+    "bundle": "node ../../scripts/build-bundles.mjs rsgl",
+    "build": "npm run typecheck && npm run bundle",
+    "compile": "npm run build",
+    "watch": "tsc -b ./tsconfig.json --watch"
   },
   "contributes": {
     "languages": [
@@ -98,6 +100,11 @@
         "command": "rsgl.previewWorkspaceBuild",
         "title": "%command.title.previewWorkspaceBuild%",
         "icon": "$(diff)"
+      },
+      {
+        "command": "rsgl.refreshWorkspace",
+        "title": "%command.title.refreshWorkspace%",
+        "icon": "$(sync)"
       }
     ],
     "menus": {

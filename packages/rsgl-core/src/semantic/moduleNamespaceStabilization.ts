@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import type { TextRange } from "../parser";
+import { rsglPathKey } from "../pathIdentity";
 import { fileDiagnostic } from "./diagnostics";
 import { rsglTypeKey } from "./typeNormalization";
 import type {
@@ -17,6 +17,7 @@ export type RsglModuleNamespaceEnvironment = Map<string, Map<string, RsglType>>;
 interface NamespaceImportEdge {
   from: string;
   to: string;
+  fileName: string;
   alias: string;
   range: TextRange;
   componentSize: number;
@@ -51,23 +52,25 @@ export class RsglModuleNamespaceCycleStabilizer {
 
     const edges: NamespaceImportEdge[] = [];
     for (const model of models) {
-      const from = normalizeFileName(model.fileName);
+      const from = rsglPathKey(model.fileName);
       for (const record of model.imports) {
         if (!record.namespaceName) {
           continue;
         }
         const edge = importGraph.edges.find(candidate =>
-          candidate.from === from
+          rsglPathKey(candidate.from) === from
           && candidate.source === record.source
-          && normalizeFileName(record.resolvedFileName ?? candidate.to) === candidate.to
+          && rsglPathKey(record.resolvedFileName ?? candidate.to) === rsglPathKey(candidate.to)
         );
         const component = edge ? componentByFile.get(from) : undefined;
-        if (!edge || !component?.includes(edge.to)) {
+        const targetKey = edge ? rsglPathKey(edge.to) : undefined;
+        if (!edge || !targetKey || !component?.includes(targetKey)) {
           continue;
         }
         edges.push({
           from,
-          to: edge.to,
+          to: targetKey,
+          fileName: model.fileName,
           alias: record.namespaceName,
           range: record.node.namespaceName?.range ?? record.node.range,
           componentSize: component.length
@@ -106,7 +109,7 @@ export class RsglModuleNamespaceCycleStabilizer {
         if (!this.reportedMembers.has(reportKey)) {
           this.reportedMembers.add(reportKey);
           this.collectedDiagnostics.push(fileDiagnostic(
-            edge.from,
+            edge.fileName,
             "rsgl.cyclicNamespaceTypeInference",
             `Type inference for '${edge.alias}.${name}' is structurally recursive across an import cycle; its namespace member type was widened to Unknown.`,
             edge.range
@@ -217,17 +220,17 @@ function valueMemberTypeFingerprint(member: RsglModuleNamespaceMember): string {
 }
 
 function stronglyConnectedImportComponents(importGraph: RsglImportGraph): string[][] {
-  const nodes = new Set(importGraph.files.map(normalizeFileName));
+  const nodes = new Set(importGraph.files.map(rsglPathKey));
   for (const edge of importGraph.edges) {
-    nodes.add(edge.from);
-    nodes.add(edge.to);
+    nodes.add(rsglPathKey(edge.from));
+    nodes.add(rsglPathKey(edge.to));
   }
   const outgoing = new Map<string, Set<string>>();
   for (const node of nodes) {
     outgoing.set(node, new Set());
   }
   for (const edge of importGraph.edges) {
-    outgoing.get(edge.from)?.add(edge.to);
+    outgoing.get(rsglPathKey(edge.from))?.add(rsglPathKey(edge.to));
   }
 
   let nextIndex = 0;
@@ -281,9 +284,7 @@ function isCyclicComponent(
   importGraph: RsglImportGraph
 ): boolean {
   return component.length > 1
-    || importGraph.edges.some(edge => edge.from === component[0] && edge.to === component[0]);
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(path.resolve(fileName));
+    || importGraph.edges.some(edge =>
+      rsglPathKey(edge.from) === component[0] && rsglPathKey(edge.to) === component[0]
+    );
 }

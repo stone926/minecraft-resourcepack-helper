@@ -4,57 +4,93 @@ on:
   push:
     tags:
       - "v*"
+      - "rsgl-v*"
+      - "rsgl-cli-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, for example v1.3.4"
+        description: "Existing release tag (vX.Y.Z, rsgl-vX.Y.Z, or rsgl-cli-vX.Y.Z)"
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish VS Code extensions
+  contract:
+    name: Validate release contract
     runs-on: ubuntu-latest
+    outputs:
+      product: ${{ steps.contract.outputs.product }}
+      version: ${{ steps.contract.outputs.version }}
+      tag: ${{ steps.contract.outputs.tag }}
+      publish_kind: ${{ steps.contract.outputs.publish_kind }}
+      asset_name: ${{ steps.contract.outputs.asset_name }}
+      marketplace_publisher: ${{ steps.contract.outputs.marketplace_publisher }}
+      marketplace_extension: ${{ steps.contract.outputs.marketplace_extension }}
+      commit: ${{ steps.contract.outputs.commit }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - name: Checkout release tag
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
-      - name: Validate release tag checkout
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Validate tag and manifest version
+        id: contract
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-        run: |
-          if ! git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
-            echo "Release tag ${RELEASE_TAG} does not exist."
-            exit 1
-          fi
-          TAG_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-          HEAD_COMMIT="$(git rev-parse HEAD)"
-          if [ "${TAG_COMMIT}" != "${HEAD_COMMIT}" ]; then
-            echo "Release tag ${RELEASE_TAG} does not point to the checked-out commit."
-            exit 1
-          fi
+        run: node scripts/release-contract.mjs describe --tag "${RELEASE_TAG}" --verify-git >> "${GITHUB_OUTPUT}"
+
+  verify:
+    name: Cross-platform release gate
+    needs: contract
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      product: ${{ needs.contract.outputs.product }}
+      source_ref: ${{ needs.contract.outputs.commit }}
+
+  build:
+    name: Build immutable release artifact
+    needs:
+      - contract
+      - verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.digest.outputs.sha256 }}
+      publisher_sha256: ${{ steps.publisher.outputs.sha256 }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ needs.contract.outputs.commit }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: |
             package-lock.json
             extensions/vscode-rsgl/package-lock.json
+            tools/vsce-publisher/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -62,131 +98,273 @@ jobs:
       - name: Install RSGL extension dependencies
         run: npm ci --prefix extensions/vscode-rsgl
 
-      - name: Test
-        run: npm test
+      - name: Install pinned Marketplace publishing client
+        if: needs.contract.outputs.publish_kind == 'marketplace'
+        run: npm ci --prefix tools/vsce-publisher --ignore-scripts
 
-      - name: Compile RSGL extension
-        run: npm run compile:rsgl-extension
+      - name: Smoke test pinned Marketplace publishing client
+        if: needs.contract.outputs.publish_kind == 'marketplace'
+        run: node tools/vsce-publisher/node_modules/@vscode/vsce/vsce --version
 
-      - name: Read package metadata
-        id: meta
+      - name: Archive pinned Marketplace publishing client
+        if: needs.contract.outputs.publish_kind == 'marketplace'
+        id: publisher
+        shell: bash
+        run: |
+          mkdir -p release
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+            -czf release-vsce-publisher.tgz -C tools/vsce-publisher node_modules package.json package-lock.json
+          mv release-vsce-publisher.tgz release/vsce-publisher.tgz
+          echo "sha256=$(sha256sum release/vsce-publisher.tgz | cut -d ' ' -f 1)" >> "${GITHUB_OUTPUT}"
+
+      - name: Package selected product
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          PRODUCT: ${{ needs.contract.outputs.product }}
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
         run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          NAME="$(node -p "require('./package.json').name")"
-          RSGL_VERSION="$(node -p "require('./extensions/vscode-rsgl/package.json').version")"
-          RSGL_NAME="$(node -p "require('./extensions/vscode-rsgl/package.json').name")"
-          TAG="${RELEASE_TAG}"
-          if [ "${TAG}" != "v${VERSION}" ]; then
-            echo "Tag ${TAG} does not match package version ${VERSION}."
-            exit 1
-          fi
-          if [ "${RSGL_VERSION}" != "${VERSION}" ]; then
-            echo "RSGL extension version ${RSGL_VERSION} does not match package version ${VERSION}."
-            exit 1
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "name=${NAME}" >> "${GITHUB_OUTPUT}"
-          echo "rsgl_version=${RSGL_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "rsgl_name=${RSGL_NAME}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
-          echo "main_vsix=dist/${NAME}-${VERSION}.vsix" >> "${GITHUB_OUTPUT}"
-          echo "rsgl_vsix=dist/${RSGL_NAME}-${RSGL_VERSION}.vsix" >> "${GITHUB_OUTPUT}"
+          mkdir -p release
+          case "${PRODUCT}" in
+            main)
+              npm run package:main:vsix -- --out "release/${ASSET_NAME}"
+              npm run verify:vsix-budgets -- --main-vsix "release/${ASSET_NAME}"
+              ;;
+            rsgl)
+              npm run package:rsgl:vsix -- --out "release/${ASSET_NAME}"
+              npm run verify:rsgl:vsix -- "release/${ASSET_NAME}"
+              npm run verify:vsix-budgets -- --rsgl-vsix "release/${ASSET_NAME}"
+              ;;
+            rsgl-cli)
+              npm run package:rsgl-cli -- --out "release/${ASSET_NAME}"
+              npm run verify:rsgl-cli -- "release/${ASSET_NAME}"
+              ;;
+            *)
+              echo "Unsupported product: ${PRODUCT}"
+              exit 1
+              ;;
+          esac
 
-      - name: Package VSIX artifacts
+      - name: Generate release notes
         env:
-          MAIN_VSIX: ${{ steps.meta.outputs.main_vsix }}
-          RSGL_VSIX: ${{ steps.meta.outputs.rsgl_vsix }}
-        run: |
-          mkdir -p dist
-          npm run package:main:vsix -- --out "${MAIN_VSIX}"
-          npm run package:rsgl:vsix -- --out "${RSGL_VSIX}"
-          npm run verify:rsgl:vsix -- "${RSGL_VSIX}"
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+        run: node scripts/release-contract.mjs notes --tag "${RELEASE_TAG}" --output release/release-notes.md
 
-      - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v7
+      - name: Generate SHA-256 digest
+        id: digest
+        shell: bash
+        env:
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+        run: |
+          SHA256="$(node scripts/release-contract.mjs digest --asset "release/${ASSET_NAME}" --output release/SHA256SUMS)"
+          echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload immutable artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: vscode-extensions-${{ steps.meta.outputs.version }}-vsix-${{ github.run_attempt }}
-          path: |
-            ${{ steps.meta.outputs.main_vsix }}
-            ${{ steps.meta.outputs.rsgl_vsix }}
+          name: release-${{ needs.contract.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/*
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
 
-      - name: Check Marketplace token
-        shell: bash
-        run: |
-          if [ -z "${VSCE_PAT:-}" ]; then
-            echo "Missing VSCE_PAT repository secret."
-            exit 1
-          fi
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+  publish_marketplace:
+    name: Publish ${{ needs.contract.outputs.product }} to Marketplace
+    needs:
+      - contract
+      - build
+    if: needs.contract.outputs.publish_kind == 'marketplace'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
 
-      - name: Publish RSGL extension to VS Code Marketplace
-        run: npm run deploy -- --packagePath "${RSGL_VSIX}" --skip-duplicate
-        env:
-          RSGL_VSIX: ${{ steps.meta.outputs.rsgl_vsix }}
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+    steps:
+      - name: Download immutable artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release
 
-      - name: Publish main extension to VS Code Marketplace
-        run: npm run deploy -- --packagePath "${MAIN_VSIX}" --skip-duplicate
-        env:
-          MAIN_VSIX: ${{ steps.meta.outputs.main_vsix }}
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
-      - name: Extract release notes
-        id: notes
+      - name: Verify artifact SHA-256
         shell: bash
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          TAG: ${{ steps.meta.outputs.tag }}
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+          EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
         run: |
-          node <<'NODE'
-          const fs = require("node:fs");
+          EXPECTED_RECORD="${EXPECTED_SHA256}  ${ASSET_NAME}"
+          test "$(cat release/SHA256SUMS)" = "${EXPECTED_RECORD}"
+          printf '%s\n' "${EXPECTED_RECORD}" | (cd release && sha256sum --check -)
 
-          const version = process.env.VERSION;
-          const tag = process.env.TAG;
-          const changelogPath = "CHANGELOG.md";
-          const fallback = `Release ${tag}\n`;
+      - name: Verify and extract pinned Marketplace publishing client
+        shell: bash
+        env:
+          EXPECTED_PUBLISHER_SHA256: ${{ needs.build.outputs.publisher_sha256 }}
+        run: |
+          test -n "${EXPECTED_PUBLISHER_SHA256}"
+          printf '%s  %s\n' "${EXPECTED_PUBLISHER_SHA256}" vsce-publisher.tgz \
+            | (cd release && sha256sum --check -)
+          mkdir -p release/vsce-publisher
+          tar -xzf release/vsce-publisher.tgz -C release/vsce-publisher
 
-          if (!fs.existsSync(changelogPath)) {
-            fs.writeFileSync("release-notes.md", fallback);
-            process.exit(0);
-          }
-
-          const content = fs.readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n");
-          const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const headingRegex = new RegExp(`^## \\[${escapedVersion}\\][^\\n]*\\n`, "m");
-          const headingMatch = headingRegex.exec(content);
-          let notes = "";
-
-          if (headingMatch) {
-            const bodyStart = headingMatch.index + headingMatch[0].length;
-            const nextHeadingRegex = /^## \[/gm;
-            nextHeadingRegex.lastIndex = bodyStart;
-
-            const nextHeadingMatch = nextHeadingRegex.exec(content);
-            const bodyEnd = nextHeadingMatch ? nextHeadingMatch.index : content.length;
-            notes = content.slice(bodyStart, bodyEnd).trim();
-          }
-
-          fs.writeFileSync("release-notes.md", notes ? `${notes}\n` : fallback);
-          NODE
-
-      - name: Create GitHub release
+      - name: Revalidate immutable release tag
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.meta.outputs.tag }}
-          MAIN_VSIX: ${{ steps.meta.outputs.main_vsix }}
-          RSGL_VSIX: ${{ steps.meta.outputs.rsgl_vsix }}
-        shell: bash
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.contract.outputs.commit }}
         run: |
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md
-            gh release upload "${TAG}" "${MAIN_VSIX}" "${RSGL_VSIX}" --clobber
+          CURRENT_COMMIT="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+          test "${CURRENT_COMMIT}" = "${EXPECTED_COMMIT}"
+
+      - name: Setup Node.js publishing client
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify an existing Marketplace artifact is identical
+        id: marketplace
+        shell: bash
+        env:
+          MARKETPLACE_PUBLISHER: ${{ needs.contract.outputs.marketplace_publisher }}
+          MARKETPLACE_EXTENSION: ${{ needs.contract.outputs.marketplace_extension }}
+          RELEASE_VERSION: ${{ needs.contract.outputs.version }}
+          EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          PACKAGE_URL="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${MARKETPLACE_PUBLISHER}/vsextensions/${MARKETPLACE_EXTENSION}/${RELEASE_VERSION}/vspackage"
+          STATUS="$(curl --silent --show-error --location \
+            --connect-timeout 20 --max-time 300 \
+            --output release/marketplace-existing.vsix \
+            --write-out '%{http_code}' "${PACKAGE_URL}")"
+          case "${STATUS}" in
+            200)
+              PUBLISHED_SHA256="$(sha256sum release/marketplace-existing.vsix | cut -d ' ' -f 1)"
+              test "${PUBLISHED_SHA256}" = "${EXPECTED_SHA256}"
+              echo "already_published=true" >> "${GITHUB_OUTPUT}"
+              echo "Marketplace already contains the verified artifact; continuing."
+              ;;
+            404)
+              rm -f release/marketplace-existing.vsix
+              echo "already_published=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "Unexpected Marketplace response: HTTP ${STATUS}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Publish to VS Code Marketplace
+        if: steps.marketplace.outputs.already_published != 'true'
+        env:
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: node release/vsce-publisher/node_modules/@vscode/vsce/vsce publish --packagePath "release/${ASSET_NAME}"
+
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+          EXPECTED_COMMIT: ${{ needs.contract.outputs.commit }}
+        run: |
+          CURRENT_COMMIT="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+          test "${CURRENT_COMMIT}" = "${EXPECTED_COMMIT}"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release/release-notes.md
+            gh release upload "${RELEASE_TAG}" "release/${ASSET_NAME}" release/SHA256SUMS --clobber
           else
-            gh release create "${TAG}" "${MAIN_VSIX}" "${RSGL_VSIX}" --title "${TAG}" --notes-file release-notes.md --verify-tag
+            gh release create "${RELEASE_TAG}" "release/${ASSET_NAME}" release/SHA256SUMS \
+              --title "${RELEASE_TAG}" --notes-file release/release-notes.md --verify-tag
+          fi
+
+  publish_cli:
+    name: Publish RSGL CLI to npm
+    needs:
+      - contract
+      - build
+    if: needs.contract.outputs.publish_kind == 'npm'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download immutable artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release
+
+      - name: Verify artifact SHA-256
+        shell: bash
+        env:
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+          EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          EXPECTED_RECORD="${EXPECTED_SHA256}  ${ASSET_NAME}"
+          test "$(cat release/SHA256SUMS)" = "${EXPECTED_RECORD}"
+          printf '%s\n' "${EXPECTED_RECORD}" | (cd release && sha256sum --check -)
+
+      - name: Revalidate immutable release tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.contract.outputs.commit }}
+        run: |
+          CURRENT_COMMIT="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+          test "${CURRENT_COMMIT}" = "${EXPECTED_COMMIT}"
+
+      - name: Setup Node.js publishing client
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish RSGL CLI to npm
+        shell: bash
+        env:
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+          RELEASE_VERSION: ${{ needs.contract.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PACKAGE_SPEC="@minecraft-resourcepack-helper/rsgl-cli@${RELEASE_VERSION}"
+          if PUBLISHED_JSON="$(npm view "${PACKAGE_SPEC}" dist.integrity --json 2>/dev/null)"; then
+            PUBLISHED_INTEGRITY="$(printf '%s' "${PUBLISHED_JSON}" | tr -d '"\r\n')"
+          else
+            PUBLISHED_INTEGRITY=""
+          fi
+          if [[ "${PUBLISHED_INTEGRITY}" == sha512-* ]]; then
+            LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "release/${ASSET_NAME}" | base64 -w 0)"
+            test "${PUBLISHED_INTEGRITY}" = "${LOCAL_INTEGRITY}"
+            echo "${PACKAGE_SPEC} is already published with the verified artifact; continuing."
+          elif test -n "${PUBLISHED_INTEGRITY}" && test "${PUBLISHED_INTEGRITY}" != "null"; then
+            echo "Unexpected registry integrity response for ${PACKAGE_SPEC}: ${PUBLISHED_INTEGRITY}" >&2
+            exit 1
+          else
+            npm publish "release/${ASSET_NAME}" --access public --provenance
+          fi
+
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+          EXPECTED_COMMIT: ${{ needs.contract.outputs.commit }}
+        run: |
+          CURRENT_COMMIT="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+          test "${CURRENT_COMMIT}" = "${EXPECTED_COMMIT}"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release/release-notes.md
+            gh release upload "${RELEASE_TAG}" "release/${ASSET_NAME}" release/SHA256SUMS --clobber
+          else
+            gh release create "${RELEASE_TAG}" "release/${ASSET_NAME}" release/SHA256SUMS \
+              --title "${RELEASE_TAG}" --notes-file release/release-notes.md --verify-tag
           fi

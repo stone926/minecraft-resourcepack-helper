@@ -94,6 +94,11 @@ export interface BlockstateRootExecutionResult extends BlockstateBodyContent {
   readonly mode: BlockstateMode;
 }
 
+const blockstatePredicateEvaluationHost = {
+  evaluateExpressionResult,
+  originForEvaluationPath
+};
+
 interface ExecutionRoot {
   readonly state: BlockstateRootState;
 }
@@ -484,7 +489,12 @@ export class BlockstateOperationExecutor {
       generatedPath: joinGeneratedPath("/apply", item.generatedPath)
     })));
     if (!statement.always && statement.predicate) {
-      const when = lowerBlockstatePredicate(statement.predicate, context, this.host);
+      const when = lowerBlockstatePredicate(
+        statement.predicate,
+        context,
+        this.host,
+        blockstatePredicateEvaluationHost
+      );
       if (!when) {
         return;
       }

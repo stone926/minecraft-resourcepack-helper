@@ -13,9 +13,11 @@ import { createGeneratedItemElements } from "../bake/GeneratedItemModel";
 import { CitPreviewResolver } from "../resolve/CitPreviewResolver";
 import { ParentChainResolver } from "../resolve/ParentChainResolver";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
-import { fileUriString } from "../paths";
+import { collectPackMetadataDependencies } from "../resolve/PackMetadataDependencies";
+import { dependencyKey, fileUriString } from "../paths";
 import { ModelPreviewCache, type ModelPreviewArtifactCacheStore } from "./ModelPreviewCache";
 import { readNodePngAlphaMask } from "./NodePngAlphaMaskProvider";
+import { ResourceVersionSnapshot } from "./ResourceVersionSnapshot";
 import {
   isCancellationError,
   throwIfCancellationRequested,
@@ -26,6 +28,15 @@ export interface ModelPreviewServiceOptions {
   fileSystem?: ModelPreviewFileSystem;
   configuration?: () => ModelPreviewConfiguration;
   artifactCache?: ModelPreviewArtifactCacheStore;
+}
+
+const maxConsistencyAttempts = 3;
+
+export class ModelPreviewConsistencyError extends Error {
+  constructor() {
+    super("Model preview resources changed repeatedly while the preview was being built");
+    this.name = "ModelPreviewConsistencyError";
+  }
 }
 
 export class ModelPreviewService {
@@ -45,7 +56,7 @@ export class ModelPreviewService {
       return cached;
     }
 
-    return this.cache.set(fileName, this.createPreviewDocument(fileName, cancellationToken));
+    return this.cache.set(fileName, this.createConsistentPreviewDocument(fileName, cancellationToken));
   }
 
   invalidate(fileName: string): void {
@@ -60,16 +71,63 @@ export class ModelPreviewService {
     this.cache.invalidateDependents(changedFileNameOrUri);
   }
 
+  private async createConsistentPreviewDocument(
+    fileName: string,
+    cancellationToken?: ModelPreviewCancellationToken
+  ): Promise<ModelPreviewDocument> {
+    for (let attempt = 0; attempt < maxConsistencyAttempts; attempt++) {
+      throwIfCancellationRequested(cancellationToken);
+      const generation = this.resourceGeneration();
+      try {
+        const document = await this.createPreviewDocument(fileName, cancellationToken);
+        throwIfCancellationRequested(cancellationToken);
+        if (!this.previewDependenciesChangedSince(generation, fileName, document)) {
+          return document;
+        }
+      } catch (error) {
+        if (!(error instanceof PreviewResourcesChangedError)) {
+          throw error;
+        }
+      }
+    }
+    throw new ModelPreviewConsistencyError();
+  }
+
   private async createPreviewDocument(fileName: string, cancellationToken?: ModelPreviewCancellationToken): Promise<ModelPreviewDocument> {
     throwIfCancellationRequested(cancellationToken);
     const issues = new ModelIssueCollector();
     const configuration = this.getConfiguration();
-    const model = isCitPropertiesFileName(fileName)
-      ? await this.resolveCitPreviewModel(fileName, configuration, issues, cancellationToken)
-      : await this.resolveModel(fileName, configuration, issues, cancellationToken);
+    const versionSnapshot = new ResourceVersionSnapshot(dependency => this.fileVersion(dependency));
+    versionSnapshot.observe(fileName);
+    let additionalDependencies: ResolvedDependency[] = [];
+    let model: ResolvedModel | null;
+    if (isCitPropertiesFileName(fileName)) {
+      const resolution = await this.resolveCitPreviewModel(
+        fileName,
+        configuration,
+        issues,
+        cancellationToken,
+        versionSnapshot
+      );
+      model = resolution.model;
+      additionalDependencies = resolution.dependencies;
+    } else {
+      model = await this.resolveModel(fileName, configuration, issues, cancellationToken, versionSnapshot);
+    }
     throwIfCancellationRequested(cancellationToken);
 
-    return this.createPreviewDocumentFromModel(fileName, model, configuration, issues, cancellationToken);
+    if (!versionSnapshot.consistentVersions()) {
+      throw new PreviewResourcesChangedError();
+    }
+
+    return this.createPreviewDocumentFromModel(
+      fileName,
+      model,
+      configuration,
+      issues,
+      cancellationToken,
+      additionalDependencies
+    );
   }
 
   private async createPreviewDocumentFromModel(
@@ -77,9 +135,19 @@ export class ModelPreviewService {
     model: ResolvedModel | null,
     configuration: ModelPreviewConfiguration,
     issues: ModelIssueCollector,
-    cancellationToken?: ModelPreviewCancellationToken
+    cancellationToken?: ModelPreviewCancellationToken,
+    additionalDependencies: ResolvedDependency[] = []
   ): Promise<ModelPreviewDocument> {
     if (!model) {
+      const resourceDependencies = [
+        { fileName: sourceFileName, kind: "model" as const },
+        ...additionalDependencies
+      ];
+      const dependencies = collectPackMetadataDependencies(
+        resourceDependencies.map(dependency => dependency.fileName),
+        configuration,
+        this.fileSystem
+      );
       return {
         version: 1,
         sourceUri: fileUriString(sourceFileName),
@@ -89,7 +157,7 @@ export class ModelPreviewService {
         meshes: [],
         materials: [],
         display: {},
-        dependencies: toPreviewDependencies([], true),
+        dependencies: toPreviewDependencies([...resourceDependencies, ...dependencies], true),
         issues: issues.all()
       };
     }
@@ -117,10 +185,19 @@ export class ModelPreviewService {
     const bakeResult = baker.bake(renderModel);
     throwIfCancellationRequested(cancellationToken);
 
-    const dependencies = [
+    const resourceDependencies = [
       { fileName: sourceFileName, kind: "model" as const },
+      ...additionalDependencies,
       ...model.dependencies,
       ...textureResolver.allDependencies()
+    ];
+    const dependencies = [
+      ...resourceDependencies,
+      ...collectPackMetadataDependencies(
+        resourceDependencies.map(dependency => dependency.fileName),
+        configuration,
+        this.fileSystem
+      )
     ];
 
     return {
@@ -141,40 +218,60 @@ export class ModelPreviewService {
     fileName: string,
     configuration: ModelPreviewConfiguration,
     issues: ModelIssueCollector,
-    cancellationToken?: ModelPreviewCancellationToken
-  ): Promise<ResolvedModel | null> {
+    cancellationToken: ModelPreviewCancellationToken | undefined,
+    versionSnapshot: ResourceVersionSnapshot
+  ): Promise<{ model: ResolvedModel | null; dependencies: ResolvedDependency[] }> {
     const citResolver = new CitPreviewResolver(
       this.fileSystem,
       issues,
-      modelFileName => this.resolveModel(modelFileName, configuration, issues, cancellationToken),
-      cancellationToken
+      modelFileName => this.resolveModel(
+        modelFileName,
+        configuration,
+        issues,
+        cancellationToken,
+        versionSnapshot
+      ),
+      cancellationToken,
+      dependency => versionSnapshot.observe(dependency)
     );
-    return citResolver.resolve(fileName);
+    return citResolver.resolve(fileName).then(model => ({
+      model,
+      dependencies: citResolver.allDependencies()
+    }));
   }
 
   private async resolveModel(
     fileName: string,
     configuration: ModelPreviewConfiguration,
     issues: ModelIssueCollector,
-    cancellationToken?: ModelPreviewCancellationToken
+    cancellationToken?: ModelPreviewCancellationToken,
+    parentSnapshot?: ResourceVersionSnapshot
   ) {
-    const configurationKey = getConfigurationKey(configuration);
-    const cached = this.cache.getResolvedModel(fileName, configurationKey, dependency => this.fileVersion(dependency));
+    const resolutionKey = getResolutionKey(configuration);
+    const cached = this.cache.getResolvedModel(fileName, resolutionKey, dependency => this.fileVersion(dependency));
     if (cached) {
       return cached;
     }
 
     const issueStart = issues.size();
+    const versionSnapshot = new ResourceVersionSnapshot(dependency => this.fileVersion(dependency));
+    versionSnapshot.observe(fileName);
     const modelResolver = new ParentChainResolver(
       this.fileSystem,
       configuration,
       issues,
       cancellationToken,
-      this.cache
+      this.cache,
+      dependency => versionSnapshot.observe(dependency)
     );
     const model = await modelResolver.resolve(fileName);
+    parentSnapshot?.merge(versionSnapshot);
+    const dependencyVersions = versionSnapshot.consistentVersions();
+    if (!dependencyVersions) {
+      throw new PreviewResourcesChangedError();
+    }
     if (issues.size() === issueStart) {
-      this.cache.setResolvedModel(fileName, configurationKey, Promise.resolve(model), dependency => this.fileVersion(dependency));
+      this.cache.setResolvedModel(fileName, resolutionKey, Promise.resolve(model), dependencyVersions);
     }
 
     return model;
@@ -218,6 +315,26 @@ export class ModelPreviewService {
   private fileVersion(fileName: string): string | null {
     return this.fileSystem.fileVersion?.(fileName) ?? null;
   }
+
+  private resourceGeneration(): number {
+    return this.fileSystem.getResourceGeneration?.() ?? 0;
+  }
+
+  private previewDependenciesChangedSince(
+    generation: number,
+    sourceFileName: string,
+    document: ModelPreviewDocument
+  ): boolean {
+    const dependencies = [
+      sourceFileName,
+      ...document.dependencies
+        .filter(dependency => dependency.kind !== "configuration")
+        .map(dependency => dependencyKey(dependency.uri))
+    ];
+    return this.fileSystem.hasAnyResourceChangedSince
+      ? this.fileSystem.hasAnyResourceChangedSince(generation, dependencies)
+      : generation !== this.resourceGeneration();
+  }
 }
 
 function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfiguration: boolean): PreviewDependency[] {
@@ -258,9 +375,11 @@ const nodeFileSystem: ModelPreviewFileSystem = {
   }
 };
 
-function getConfigurationKey(configuration: ModelPreviewConfiguration): string {
+function getResolutionKey(configuration: ModelPreviewConfiguration): string {
   return JSON.stringify({
     defaultAssetsPath: configuration.defaultAssetsPath ?? null,
     resourcePackRoots: configuration.resourcePackRoots ?? []
   });
 }
+
+class PreviewResourcesChangedError extends Error {}

@@ -4,6 +4,7 @@ import {
   ResourceGraphIndex,
   ResourceGraphWorkspaceCache,
   type ResourceGraphDocument,
+  type ResourceGraphPathChangeKind,
   type ResolvedResourceReference
 } from "../utils/resourceGraph";
 import type {
@@ -25,8 +26,8 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
     this.index.invalidateDocument(toGraphDocument(document));
   }
 
-  public invalidatePath(uri: ResourceGraphUriLike): void {
-    this.index.invalidatePath(toVscodeUri(uri));
+  public invalidatePath(uri: ResourceGraphUriLike, kind: ResourceGraphPathChangeKind = "change"): void {
+    this.index.invalidatePath(toVscodeUri(uri), kind);
   }
 
   public getBlockstateUris(): Promise<readonly ResourceGraphUriLike[]> {

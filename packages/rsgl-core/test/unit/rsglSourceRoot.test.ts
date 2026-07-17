@@ -35,7 +35,7 @@ describe("RSGL source root discovery", () => {
 
   it("caches RSGL workspace source root discovery until RSGL files change", async () => {
     const sourceRoot = path.resolve("pack", "src");
-    const cache = new RsglWorkspaceSourceRootCache();
+    const cache = new RsglWorkspaceSourceRootCache({ pathExists: () => true });
     let calls = 0;
     const provider = () => {
       calls++;
@@ -59,7 +59,7 @@ describe("RSGL source root discovery", () => {
   });
 
   it("does not cache a workspace scan that was invalidated while in flight", async () => {
-    const cache = new RsglWorkspaceSourceRootCache();
+    const cache = new RsglWorkspaceSourceRootCache({ pathExists: () => true });
     const firstRoot = path.resolve("first", "src");
     const secondRoot = path.resolve("second", "src");
     let releaseFirst!: (files: string[]) => void;
@@ -80,5 +80,37 @@ describe("RSGL source root discovery", () => {
 
     assert.deepStrictEqual((await discovery).map(root => root.sourceRoot), [secondRoot]);
     assert.strictEqual(calls, 2);
+  });
+
+  it("rechecks missing samples immediately and discovers moved-in roots after TTL", async () => {
+    const firstFile = path.resolve("first", "src", "main.rsgl");
+    const secondRoot = path.resolve("second", "src");
+    const secondFile = path.join(secondRoot, "main.rsgl");
+    const existing = new Set([firstFile]);
+    let now = 0;
+    let files = [firstFile];
+    let calls = 0;
+    const cache = new RsglWorkspaceSourceRootCache({
+      verificationTtlMs: 1_000,
+      now: () => now,
+      pathExists: fileName => existing.has(fileName)
+    });
+    const provider = () => {
+      calls++;
+      return files;
+    };
+
+    assert.strictEqual((await cache.discover(provider))[0]?.sampleFileName, firstFile);
+    existing.delete(firstFile);
+    files = [];
+    assert.deepStrictEqual(await cache.discover(provider), []);
+    assert.strictEqual(calls, 2, "a missing sample must bypass the unexpired cache");
+
+    existing.add(secondFile);
+    files = [secondFile];
+    assert.deepStrictEqual(await cache.discover(provider), []);
+    now = 1_001;
+    assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [secondRoot]);
+    assert.strictEqual(calls, 3, "a moved-in root must appear after the verification TTL");
   });
 });

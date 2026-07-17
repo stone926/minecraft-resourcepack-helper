@@ -7,13 +7,14 @@ import {
   type ResourceGraphTreeDocument,
   type ResourceGraphUriLike
 } from "../views/resourceGraphTreeModel";
+import type { ResourceGraphPathChangeKind } from "../utils/resourceGraph";
 
 export interface ResourceGraphController {
   refresh(): void;
-  refreshSoon(delay?: number): void;
+  refreshSoon(delay?: number, invalidateInventory?: boolean): void;
   refreshActiveEditor(): void;
   invalidateDocument(document: ResourceGraphTreeDocument): void;
-  invalidatePath(uri: ResourceGraphUriLike): void;
+  invalidatePath(uri: ResourceGraphUriLike, kind?: ResourceGraphPathChangeKind): void;
 }
 
 export function registerResourceGraph(context: vscode.ExtensionContext): ResourceGraphController {
@@ -25,10 +26,10 @@ export function registerResourceGraph(context: vscode.ExtensionContext): Resourc
       service.invalidateAll();
       provider.refresh();
     },
-    refreshSoon: delay => provider.refreshSoon(delay),
+    refreshSoon: (delay, invalidateInventory) => provider.refreshSoon(delay, invalidateInventory),
     refreshActiveEditor: () => provider.refreshActiveEditor(),
     invalidateDocument: document => service.invalidateDocument(document),
-    invalidatePath: uri => service.invalidatePath(uri)
+    invalidatePath: (uri, kind) => service.invalidatePath(uri, kind)
   };
   context.subscriptions.push(
     provider,

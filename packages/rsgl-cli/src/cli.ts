@@ -4,11 +4,16 @@ import {
   DEFAULT_MAX_EVALUATION_ITEMS,
   DEFAULT_MAX_ITEM_MODEL_DEPTH,
   buildRsglResourcePackDirectory,
+  compileDependencyMatchesPath,
+  compileDependencyPatternStructurallyMatchesPath,
+  compileDependencyWatchPattern,
   formatRsglBuildPreview,
   getRsglProjectConfigWatchPaths,
   loadRsglProjectConfigForSource,
   projectCompileOptionsFromRsglConfig,
   previewRsglResourcePackDirectoryBuild,
+  rebaseCompileDependencyWatchPattern,
+  resolvedRsglPathKey,
   type CompileDependency,
   type RsglBuildOptions,
   type RsglBuildResult
@@ -38,6 +43,8 @@ export interface RsglCliContext {
 
 export interface RsglCliWatchHandle {
   close(): void;
+  onError?(listener: () => void): void;
+  onClose?(listener: () => void): void;
 }
 
 export interface RsglCliWatchRuntime {
@@ -64,7 +71,14 @@ const processIo: RsglCliIo = {
 
 const defaultWatchRuntime: RsglCliWatchRuntime = {
   build: (root, options) => buildRsglResourcePackDirectory(root, options),
-  watchDirectory: (directory, recursive, listener) => fs.watch(directory, { recursive }, listener),
+  watchDirectory: (directory, recursive, listener) => {
+    const watcher = fs.watch(directory, { recursive }, listener);
+    return {
+      close: () => watcher.close(),
+      onError: callback => { watcher.on("error", callback); },
+      onClose: callback => { watcher.on("close", callback); }
+    };
+  },
   watchConfigFile: (fileName, listener) => {
     let initialized = false;
     const watchListener = (current: fs.Stats, previous: fs.Stats) => {
@@ -157,7 +171,7 @@ export function startRsglCliWatch(
   let closed = false;
   let hasRun = false;
   const configWatchers = new Map<string, RsglCliWatchHandle>();
-  const externalWatchers = new Map<string, fs.FSWatcher>();
+  const externalWatchers = new Map<string, RsglCliWatchHandle>();
 
   const scheduleRun = () => {
     if (closed || rebuildScheduled) {
@@ -198,10 +212,14 @@ export function startRsglCliWatch(
     }
     let nextWatcher: RsglCliWatchHandle;
     try {
-      nextWatcher = runtime.watchDirectory(root, true, (_event, fileName) => {
+      nextWatcher = runtime.watchDirectory(root, true, (eventType, fileName) => {
         if (
-          fileName
-          && isRsglWatchPathRelevant(path.resolve(root, fileName.toString()), dependencies)
+          !fileName
+          || isRsglWatchEventRelevant(
+            path.resolve(root, fileName.toString()),
+            eventType,
+            dependencies
+          )
         ) {
           scheduleRun();
         }
@@ -244,10 +262,11 @@ export function startRsglCliWatch(
       return;
     }
     dependencies = result.dependencies;
-    syncExternalDependencyWatchers(
+    const externalWatchersExpanded = syncExternalDependencyWatchers(
       context.root,
       dependencies,
       externalWatchers,
+      runtime,
       () => dependencies,
       scheduleRun
     );
@@ -259,6 +278,11 @@ export function startRsglCliWatch(
       io.writeOut(`Watching ${context.root}\n`);
     }
     hasRun = true;
+    if (externalWatchersExpanded) {
+      // Verify once after installing newly discovered external watchers. A
+      // dependency can change between the build and watcher installation.
+      scheduleRun();
+    }
   };
 
   syncConfigWatchers();
@@ -299,26 +323,57 @@ export function isRsglWatchPathRelevant(
   return isKnownDependencyPath(changedPath, dependencies);
 }
 
+function isRsglWatchEventRelevant(
+  changedPath: string,
+  eventType: string,
+  dependencies: readonly CompileDependency[]
+): boolean {
+  if (isRsglWatchPathRelevant(changedPath, dependencies)) {
+    return true;
+  }
+  if (eventType !== "rename") {
+    return false;
+  }
+  const candidateExists = pathExists(changedPath);
+  const candidateIsDirectory = candidateExists && isDirectory(changedPath);
+  return dependencies.some(dependency => {
+    if (isPathWithinRoot(changedPath, dependency.path)) {
+      return true;
+    }
+    const pattern = compileDependencyWatchPattern(dependency);
+    return Boolean(
+      pattern
+      && compileDependencyPatternStructurallyMatchesPath(pattern, changedPath)
+      && (!candidateExists || candidateIsDirectory)
+    );
+  });
+}
+
 function isKnownDependencyPath(
   changedPath: string,
   dependencies: readonly CompileDependency[]
 ): boolean {
-  const normalizedChangedPath = normalizeWatchPath(changedPath);
-  return dependencies.some(dependency => normalizeWatchPath(dependency.path) === normalizedChangedPath);
+  return dependencies.some(dependency => compileDependencyMatchesPath(dependency, changedPath));
 }
 
 function syncExternalDependencyWatchers(
   root: string,
   dependencies: readonly CompileDependency[],
-  watchers: Map<string, fs.FSWatcher>,
+  watchers: Map<string, RsglCliWatchHandle>,
+  runtime: RsglCliWatchRuntime,
   currentDependencies: () => readonly CompileDependency[],
   rebuild: () => void
-): void {
+): boolean {
   const requiredDirectories = new Set<string>();
+  let expanded = false;
   for (const dependency of dependencies) {
     const dependencyPath = path.resolve(dependency.path);
     if (!isPathWithinRoot(root, dependencyPath)) {
-      requiredDirectories.add(normalizeWatchPath(nearestExistingWatchDirectory(path.dirname(dependencyPath))));
+      const pattern = compileDependencyWatchPattern(dependency);
+      const watchDirectory = pattern
+        ? rebaseCompileDependencyWatchPattern(pattern, isDirectory).basePath
+        : nearestExistingWatchDirectory(path.dirname(dependencyPath));
+      requiredDirectories.add(normalizeWatchPath(watchDirectory));
     }
   }
 
@@ -334,22 +389,29 @@ function syncExternalDependencyWatchers(
       continue;
     }
     try {
-      const watcher = fs.watch(directory, (_event, fileName) => {
+      const watcher = runtime.watchDirectory(directory, true, (eventType, fileName) => {
         if (
           !fileName
-          || watchEventCanAffectDependency(directory, fileName.toString(), currentDependencies())
+          || watchEventCanAffectDependency(
+            directory,
+            fileName.toString(),
+            eventType,
+            currentDependencies()
+          )
         ) {
           rebuild();
         }
       });
       watchers.set(directory, watcher);
-      watcher.on("error", () => recoverExternalWatcher(directory, watcher, watchers, rebuild));
-      watcher.on("close", () => recoverExternalWatcher(directory, watcher, watchers, rebuild, false));
+      expanded = true;
+      watcher.onError?.(() => recoverExternalWatcher(directory, watcher, watchers, rebuild));
+      watcher.onClose?.(() => recoverExternalWatcher(directory, watcher, watchers, rebuild, false));
     } catch {
       // A missing/unwatchable external directory remains a recorded dependency and
       // will be picked up once another source change refreshes the watcher set.
     }
   }
+  return expanded;
 }
 
 /** Finds the closest existing directory that can observe creation of a missing dependency parent. */
@@ -368,20 +430,17 @@ export function nearestExistingWatchDirectory(directory: string): string {
 function watchEventCanAffectDependency(
   watchedDirectory: string,
   fileName: string,
+  eventType: string,
   dependencies: readonly CompileDependency[]
 ): boolean {
   const changedPath = path.resolve(watchedDirectory, fileName);
-  return dependencies.some(dependency => {
-    const dependencyPath = path.resolve(dependency.path);
-    return normalizeWatchPath(changedPath) === normalizeWatchPath(dependencyPath)
-      || isPathWithinRoot(changedPath, dependencyPath);
-  });
+  return isRsglWatchEventRelevant(changedPath, eventType, dependencies);
 }
 
 function recoverExternalWatcher(
   directory: string,
-  watcher: fs.FSWatcher,
-  watchers: Map<string, fs.FSWatcher>,
+  watcher: RsglCliWatchHandle,
+  watchers: Map<string, RsglCliWatchHandle>,
   rebuild: () => void,
   close = true
 ): void {
@@ -403,6 +462,15 @@ function isDirectory(directory: string): boolean {
   }
 }
 
+function pathExists(fileName: string): boolean {
+  try {
+    fs.statSync(fileName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isPathWithinRoot(root: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === ""
@@ -410,8 +478,7 @@ function isPathWithinRoot(root: string, candidate: string): boolean {
 }
 
 function normalizeWatchPath(fileName: string): string {
-  const normalized = path.normalize(path.resolve(fileName));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return resolvedRsglPathKey(fileName);
 }
 
 function initConfig(io: RsglCliIo): number {

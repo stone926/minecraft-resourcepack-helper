@@ -51,6 +51,7 @@ export const modelPreviewWebviewMessages = [
   lm("model"),
   lm("texture"),
   lm("texture metadata"),
+  lm("pack metadata"),
   lm("configuration"),
   lm("Texture load failed: {0}"),
   lm("Renderer has been disposed")

@@ -42,6 +42,19 @@ export {
   resolveBaseDocumentPath
 } from "./base/loader";
 export { compileBaseStatement } from "./base/statement";
+export {
+  compileDependencyMatchesPath,
+  compileDependencyPathContains,
+  compileDependencyPatternMatchesPath,
+  compileDependencyPatternStructurallyMatchesPath,
+  compileDependencyPatternProbePath,
+  compileDependencyStructuralWatchPatterns,
+  compileDependencyWatchPattern,
+  compileDependencyWatchPatternKey,
+  normalizeCompileDependencyWatchPattern,
+  rebaseCompileDependencyWatchPattern
+} from "./compileDependencies";
+export type { CompileDependencyWatchPattern } from "./compileDependencies";
 export type {
   BaseStatementLike,
   CompileBaseStatementOptions
@@ -55,7 +68,7 @@ export type {
   BaseDocumentLoadErrorCode,
   CompileDependency
 } from "./base/types";
-export type { RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
+export type { RsglExternalResourceResolution, RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
 export { createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export type {

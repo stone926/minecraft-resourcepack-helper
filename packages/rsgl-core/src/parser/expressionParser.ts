@@ -1,6 +1,10 @@
 import { binaryPrecedence } from "./statementKeywords";
 import { isRsglArrowText } from "./arrowSemantics";
-import { parseTemplateStringParts } from "./templateString";
+import { lexRsgl } from "./lexer";
+import {
+  parseTemplateStringParts,
+  type TemplateExpressionParseResult
+} from "./templateString";
 import {
   getNodeOrTokenFullRange,
   getNodeOrTokenRange,
@@ -539,12 +543,16 @@ export class ExpressionParser extends TypeParser {
     return {
       kind: "TemplateStringExpr",
       raw: token.text,
-      parts: parseTemplateStringParts(token, diagnostic => this.addDiagnostic(
-        diagnostic.code,
-        diagnostic.message,
-        diagnostic.range,
-        diagnostic.severity
-      )),
+      parts: parseTemplateStringParts(
+        token,
+        parseStandaloneTemplateExpression,
+        diagnostic => this.addDiagnostic(
+          diagnostic.code,
+          diagnostic.message,
+          diagnostic.range,
+          diagnostic.severity
+        )
+      ),
       ...this.nodeRanges(token, token)
     };
   }
@@ -685,4 +693,13 @@ export class StandaloneExpressionParser extends ExpressionParser {
   public getDiagnostics(): readonly RsglDiagnostic[] {
     return this.diagnostics;
   }
+}
+
+function parseStandaloneTemplateExpression(text: string): TemplateExpressionParseResult {
+  const lexResult = lexRsgl(text);
+  const parser = new StandaloneExpressionParser(lexResult.tokens, lexResult.diagnostics);
+  return {
+    expression: parser.parse(),
+    diagnostics: parser.getDiagnostics()
+  };
 }

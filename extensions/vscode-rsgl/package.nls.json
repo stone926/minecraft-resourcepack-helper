@@ -10,5 +10,6 @@
   "command.title.buildDirectory": "RSGL: Build Source Directory",
   "command.title.previewDirectoryBuild": "RSGL: Preview Source Directory Build",
   "command.title.buildWorkspace": "RSGL: Build Workspace Source Directories",
-  "command.title.previewWorkspaceBuild": "RSGL: Preview Workspace Builds"
+  "command.title.previewWorkspaceBuild": "RSGL: Preview Workspace Builds",
+  "command.title.refreshWorkspace": "RSGL: Refresh Workspace Resources and Diagnostics"
 }

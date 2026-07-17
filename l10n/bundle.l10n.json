@@ -167,6 +167,7 @@
   "missing": "missing",
   "model": "model",
   "model: {0}": "model: {0}",
+  "pack metadata": "pack metadata",
   "pack.mcmeta min_format must be less than or equal to max_format.": "pack.mcmeta min_format must be less than or equal to max_format.",
   "pack.mcmeta must use min_format and max_format together for 1.21.9+ resource pack formats.": "pack.mcmeta must use min_format and max_format together for 1.21.9+ resource pack formats.",
   "pack.png is missing; Minecraft will use the default unknown pack icon.": "pack.png is missing; Minecraft will use the default unknown pack icon.",

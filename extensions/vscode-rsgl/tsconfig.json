@@ -1,18 +1,21 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "../..",
-    "outDir": "out"
+    "outDir": "../../out",
+    "tsBuildInfoFile": "../../out/.tsbuildinfo/vscode-rsgl.tsbuildinfo",
+    "types": [
+      "node",
+      "vscode"
+    ]
   },
   "include": [
-    "src/**/*.ts",
-    "../../packages/mc-assets/src/**/*.ts",
-    "../../packages/rsgl-core/src/**/*.ts",
-    "../../packages/rsgl-shared/src/**/*.ts",
-    "../../packages/rsgl-lsp/src/**/*.ts"
+    "src/**/*.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "out"
+  "references": [
+    { "path": "../../packages/mc-assets" },
+    { "path": "../../packages/rsgl-core" },
+    { "path": "../../packages/rsgl-shared" },
+    { "path": "../../packages/rsgl-lsp" }
   ]
 }

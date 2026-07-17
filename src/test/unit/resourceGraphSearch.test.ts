@@ -38,6 +38,25 @@ describe("resource graph search", () => {
     assert.strictEqual(search.matchesText("\"\\u0062lock/cube\""), true, "unicode escapes must stay conservative matches");
   });
 
+  it("uses descriptor-provided layered equipment aliases", () => {
+    const search = createIncomingReferenceSearch({
+      scheme: "file",
+      fsPath: path.join(
+        "pack",
+        "assets",
+        "minecraft",
+        "textures",
+        "entity",
+        "equipment",
+        "humanoid",
+        "diamond.png"
+      )
+    });
+
+    assert.ok(search?.values.has("minecraft:diamond"));
+    assert.ok(search?.values.has("diamond.png"));
+  });
+
   it("returns null for non-file targets and paths outside an assets tree", () => {
     assert.strictEqual(createIncomingReferenceSearch({ scheme: "untitled", fsPath: "cube.json" }), null);
     assert.strictEqual(

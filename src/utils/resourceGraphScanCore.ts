@@ -108,7 +108,7 @@ function shouldSkipDirectory(name: string): boolean {
   return ignoredDirectoryNames.has(name.toLowerCase());
 }
 
-function isBlockstateDocumentPath(fileName: string): boolean {
+export function isBlockstateDocumentPath(fileName: string): boolean {
   return /[\\/]assets[\\/][^\\/]+[\\/]blockstates[\\/][^\\/]+\.json$/i.test(fileName);
 }
 

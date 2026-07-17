@@ -22,11 +22,13 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     this.onDidChangeTreeDataEmitter.fire();
   }
 
-  public refreshSoon(delay = 250): void {
+  public refreshSoon(delay = 250, invalidateInventory = false): void {
     this.clearRefreshTimer();
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
-      this.model.invalidate();
+      if (invalidateInventory) {
+        this.model.invalidate();
+      }
       this.onDidChangeTreeDataEmitter.fire();
     }, delay);
   }

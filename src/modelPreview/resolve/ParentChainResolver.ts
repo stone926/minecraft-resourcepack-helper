@@ -34,7 +34,7 @@ export interface RawModelDocumentCache {
 }
 
 export class ParentChainResolver {
-  private readonly missingDependencies = new Map<string, ResolvedDependency>();
+  private readonly resolutionDependencies = new Map<string, ResolvedDependency>();
   private readonly resources: ResourceDependencyResolver;
 
   constructor(
@@ -42,9 +42,10 @@ export class ParentChainResolver {
     private readonly configuration: ModelPreviewConfiguration,
     private readonly issues: ModelIssueCollector,
     private readonly cancellationToken?: ModelPreviewCancellationToken,
-    private readonly rawModelCache?: RawModelDocumentCache
+    private readonly rawModelCache?: RawModelDocumentCache,
+    private readonly observeDependency?: (fileName: string) => void
   ) {
-    this.resources = new ResourceDependencyResolver(fileSystem, configuration);
+    this.resources = new ResourceDependencyResolver(fileSystem, configuration, observeDependency);
   }
 
   async resolve(entryFileName: string): Promise<ResolvedModel | null> {
@@ -74,11 +75,14 @@ export class ParentChainResolver {
         break;
       }
 
+      for (const candidate of this.resources.getModelFileCandidates(parent, fileName)) {
+        this.resolutionDependencies.set(normalizePathKey(candidate), {
+          fileName: candidate,
+          kind: "model"
+        });
+      }
       const parentFile = this.resources.resolveModelFileName(parent, fileName);
       if (!parentFile) {
-        for (const candidate of this.resources.getModelFileCandidates(parent, fileName)) {
-          this.missingDependencies.set(normalizePathKey(candidate), { fileName: candidate, kind: "model" });
-        }
         this.issues.warning(lm("Parent model not found: {0}", parent), fileName, document.data?.parentRange);
         break;
       }
@@ -100,6 +104,7 @@ export class ParentChainResolver {
 
   private async loadRawModel(fileName: string): Promise<RawModelDocument> {
     throwIfCancellationRequested(this.cancellationToken);
+    this.observeDependency?.(fileName);
     const version = this.fileSystem.fileVersion?.(fileName) ?? null;
     const cached = this.rawModelCache?.getRawModel(fileName, version);
     if (cached) {
@@ -144,7 +149,7 @@ export class ParentChainResolver {
       fileName: node.document.fileName,
       kind: "model" as const
     }));
-    dependencies.push(...this.missingDependencies.values());
+    dependencies.push(...this.resolutionDependencies.values());
     let elements: ResolvedElement[] = [];
     let display: ResolvedModel["display"] = {};
     let generatedItem = false;

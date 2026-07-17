@@ -1,10 +1,14 @@
-import * as path from "node:path";
 import type {
   ExportDeclNode,
   ImportDeclNode,
   RsglDiagnostic,
   RsglModule
 } from "../parser";
+import {
+  normalizeRsglPath,
+  RsglPathKeyMap,
+  rsglPathKey
+} from "../pathIdentity";
 import { createScope } from "./scopes";
 import { predeclareTypeAliases } from "./typeAliases";
 import {
@@ -24,6 +28,7 @@ export interface RsglProgramTypeAliasEnvironment {
 
 interface TypeAliasModuleIndex {
   fileName: string;
+  key: string;
   module: RsglModule;
   scope: RsglScope;
   localNames: Set<string>;
@@ -43,8 +48,10 @@ export function createRsglProgramTypeAliasEnvironment(
 ): RsglProgramTypeAliasEnvironment {
   const fileDiagnostics: RsglFileDiagnostic[] = [];
   const modules = files.map(indexModule);
-  const byFile = new Map(modules.map(module => [module.fileName, module]));
-  let exportMaps = new Map(modules.map(module => [module.fileName, new Map<string, RsglTypeAliasSymbol>()]));
+  const byFile = new RsglPathKeyMap(modules.map(module => [module.fileName, module] as const));
+  let exportMaps: Map<string, Map<string, RsglTypeAliasSymbol>> = new RsglPathKeyMap(
+    modules.map(module => [module.fileName, new Map<string, RsglTypeAliasSymbol>()] as const)
+  );
   const maximumPasses = Math.max(4, modules.length * 4 + importGraph.edges.length * 2);
 
   for (let pass = 0; pass < maximumPasses; pass++) {
@@ -61,13 +68,15 @@ export function createRsglProgramTypeAliasEnvironment(
   fileDiagnostics.push(...reExportCycleDiagnostics(modules, importGraph, exportMaps));
   return {
     exportMaps,
-    importsByFile: new Map(modules.map(module => [module.fileName, module.importedAliases])),
+    importsByFile: new RsglPathKeyMap(
+      modules.map(module => [module.fileName, module.importedAliases] as const)
+    ),
     fileDiagnostics
   };
 }
 
 function indexModule(file: RsglSourceFile): TypeAliasModuleIndex {
-  const fileName = normalizeFileName(file.fileName);
+  const fileName = normalizeRsglPath(file.fileName);
   const scope = createScope("global");
   const diagnostics: RsglDiagnostic[] = [];
   predeclareTypeAliases(file.module.statements, scope, diagnostics);
@@ -75,6 +84,7 @@ function indexModule(file: RsglSourceFile): TypeAliasModuleIndex {
   // index is run before binding only to resolve cross-module dependencies.
   return {
     fileName,
+    key: rsglPathKey(fileName),
     module: file.module,
     scope,
     localNames: new Set(scope.typeAliases.keys()),
@@ -94,7 +104,7 @@ function computeExportMaps(
   importGraph: RsglImportGraph,
   previous: ReadonlyMap<string, Map<string, RsglTypeAliasSymbol>>
 ): Map<string, Map<string, RsglTypeAliasSymbol>> {
-  const result = new Map<string, Map<string, RsglTypeAliasSymbol>>();
+  const result = new RsglPathKeyMap<Map<string, RsglTypeAliasSymbol>>();
   for (const module of modules) {
     const exported = new Map<string, RsglTypeAliasSymbol>();
     for (const declaration of module.exports) {
@@ -108,7 +118,7 @@ function computeExportMaps(
         continue;
       }
       const target = exportTarget(module, declaration.source.value, importGraph, byFile);
-      const targetExports = target ? previous.get(target.fileName) : undefined;
+      const targetExports = target ? previous.get(target.key) : undefined;
       if (!targetExports) {
         continue;
       }
@@ -126,7 +136,7 @@ function computeExportMaps(
         }
       }
     }
-    result.set(module.fileName, exported);
+    result.set(module.key, exported);
   }
   return result;
 }
@@ -145,7 +155,7 @@ function linkImports(
         continue;
       }
       const target = importTarget(module, declaration.source.value, importGraph, byFile);
-      const targetExports = target ? exportMaps.get(target.fileName) : undefined;
+      const targetExports = target ? exportMaps.get(target.key) : undefined;
       if (!targetExports) {
         continue;
       }
@@ -231,27 +241,28 @@ function reExportCycleDiagnostics(
     .filter(declaration => declaration.source)
     .flatMap(declaration => {
       const edge = importGraph.edges.find(candidate =>
-        candidate.from === module.fileName && candidate.source === declaration.source?.value
+        rsglPathKey(candidate.from) === module.key && candidate.source === declaration.source?.value
       );
       if (!edge) {
         return [];
       }
-      const targetAliases = exportMaps.get(edge.to);
+      const targetKey = rsglPathKey(edge.to);
+      const targetAliases = exportMaps.get(targetKey);
       const carriesTypeAlias = declaration.exportAll
         ? Boolean(targetAliases?.size)
         : declaration.specifiers.some(specifier => targetAliases?.has(specifier.local.text));
-      return carriesTypeAlias ? [{ module, declaration, to: edge.to }] : [];
+      return carriesTypeAlias ? [{ module, declaration, to: targetKey }] : [];
     }));
   const adjacency = new Map<string, string[]>();
   for (const module of modules) {
-    adjacency.set(module.fileName, []);
+    adjacency.set(module.key, []);
   }
   for (const edge of reExportEdges) {
-    adjacency.get(edge.module.fileName)?.push(edge.to);
+    adjacency.get(edge.module.key)?.push(edge.to);
   }
   const cyclicFiles = cyclicGraphNodes(adjacency);
   return reExportEdges
-    .filter(edge => cyclicFiles.has(edge.module.fileName) && cyclicFiles.has(edge.to))
+    .filter(edge => cyclicFiles.has(edge.module.key) && cyclicFiles.has(edge.to))
     .map(edge => ({
       fileName: edge.module.fileName,
       code: "rsgl.circularTypeAliasReExport",
@@ -294,8 +305,10 @@ function importTarget(
   importGraph: RsglImportGraph,
   byFile: ReadonlyMap<string, TypeAliasModuleIndex>
 ): TypeAliasModuleIndex | undefined {
-  const edge = importGraph.edges.find(candidate => candidate.from === module.fileName && candidate.source === source);
-  return edge ? byFile.get(normalizeFileName(edge.to)) : undefined;
+  const edge = importGraph.edges.find(candidate =>
+    rsglPathKey(candidate.from) === module.key && candidate.source === source
+  );
+  return edge ? byFile.get(rsglPathKey(edge.to)) : undefined;
 }
 
 const exportTarget = importTarget;
@@ -333,8 +346,4 @@ function pushUniqueDiagnostic(
   )) {
     diagnostics.push(diagnostic);
   }
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
 }

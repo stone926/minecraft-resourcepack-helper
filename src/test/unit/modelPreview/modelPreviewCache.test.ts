@@ -89,7 +89,12 @@ describe("model preview cache", () => {
 
   it("revalidates resolved models against configuration key and dependency versions", async () => {
     const cache = new ModelPreviewCache();
-    cache.setResolvedModel(modelFileName, "cfg", Promise.resolve(createResolvedModel([parentFileName])), () => "v1");
+    cache.setResolvedModel(
+      modelFileName,
+      "cfg",
+      Promise.resolve(createResolvedModel([parentFileName])),
+      versionsFor(modelFileName, parentFileName)
+    );
     await cache.getResolvedModel(modelFileName, "cfg", () => "v1");
 
     assert.ok(cache.getResolvedModel(modelFileName, "cfg", () => "v1"));
@@ -103,13 +108,18 @@ describe("model preview cache", () => {
   it("does not let stale resolved-model dependencies overwrite a replacement", async () => {
     const cache = new ModelPreviewCache();
     const stale = deferred<ResolvedModel>();
-    cache.setResolvedModel(modelFileName, "cfg", stale.promise, () => "v1");
+    cache.setResolvedModel(
+      modelFileName,
+      "cfg",
+      stale.promise,
+      versionsFor(modelFileName, oldParentFileName)
+    );
     cache.invalidateDependents(modelFileName);
     cache.setResolvedModel(
       modelFileName,
       "cfg",
       Promise.resolve(createResolvedModel([parentFileName])),
-      () => "v1"
+      versionsFor(modelFileName, parentFileName)
     );
     await cache.getResolvedModel(modelFileName, "cfg", () => "v1");
 
@@ -145,7 +155,7 @@ describe("model preview cache", () => {
       const texture = path.join("pack", "assets", "minecraft", "textures", "block", `texture_${index}.png`);
       cache.set(fileName, Promise.resolve(createPreviewDocument([])));
       cache.setRawModel(fileName, "v1", Promise.resolve({ fileName, text: "{}", data: null }));
-      cache.setResolvedModel(fileName, "cfg", Promise.resolve(createResolvedModel([])), () => "v1");
+      cache.setResolvedModel(fileName, "cfg", Promise.resolve(createResolvedModel([])), versionsFor(fileName));
       cache.setTextureAlphaMask(texture, "v1", Promise.resolve(null));
     }
 
@@ -200,6 +210,10 @@ function createResolvedModel(dependencyFileNames: string[]): ResolvedModel {
     display: {},
     dependencies: dependencyFileNames.map(fileName => ({ fileName, kind: "model" as const }))
   };
+}
+
+function versionsFor(...fileNames: string[]): ReadonlyMap<string, string | null> {
+  return new Map(fileNames.map(fileName => [fileName, "v1"]));
 }
 
 function deferred<T>(): {

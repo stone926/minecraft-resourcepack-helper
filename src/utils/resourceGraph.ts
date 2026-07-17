@@ -8,6 +8,7 @@ import {
   collectResourceGraphWorkspaceSnapshot,
   type ResourceGraphWorkspaceSnapshot
 } from "./resourceGraphScan";
+import { classifyResourceGraphPaths } from "./resourceGraphScanCore";
 import {
   isResourceGraphDocumentPath,
   resourceUriKey
@@ -47,6 +48,21 @@ export class ResourceGraphWorkspaceCache {
     this.snapshot = null;
   }
 
+  updatePath(uri: vscode.Uri, kind: ResourceGraphPathChangeKind): void {
+    if (!this.snapshot || kind === "change") {
+      return;
+    }
+
+    const current = this.snapshot;
+    const updated = current.then(snapshot => updateWorkspaceSnapshot(snapshot, uri, kind));
+    this.snapshot = updated.catch(error => {
+      if (this.snapshot === updated) {
+        this.snapshot = null;
+      }
+      throw error;
+    });
+  }
+
   async getResourceReferenceUris(): Promise<vscode.Uri[]> {
     return (await this.getSnapshot()).resourceReferenceUris;
   }
@@ -70,6 +86,8 @@ export class ResourceGraphWorkspaceCache {
     return this.snapshot;
   }
 }
+
+export type ResourceGraphPathChangeKind = "create" | "change" | "delete";
 
 export class ResourceGraphIndex {
   private readonly referencesByDocument = new Map<string, ResolvedReferencesCacheEntry>();
@@ -97,9 +115,9 @@ export class ResourceGraphIndex {
     this.pendingDocuments.set(key, document);
   }
 
-  invalidatePath(uri: vscode.Uri): void {
+  invalidatePath(uri: vscode.Uri, kind: ResourceGraphPathChangeKind = "change"): void {
     const key = resourceUriKey(uri);
-    this.workspaceCache.invalidate();
+    this.workspaceCache.updatePath(uri, kind);
     this.referencesByDocument.delete(key);
     this.pendingDocuments.set(key, uri);
   }
@@ -200,6 +218,45 @@ export class ResourceGraphIndex {
 
     return this.resourcePathResolver;
   }
+}
+
+function updateWorkspaceSnapshot(
+  snapshot: ResourceGraphWorkspaceSnapshot,
+  uri: vscode.Uri,
+  kind: Exclude<ResourceGraphPathChangeKind, "change">
+): ResourceGraphWorkspaceSnapshot {
+  const classified = classifyResourceGraphPaths([uri.fsPath], { includeBlockstates: true });
+  return {
+    resourceReferenceUris: updateSnapshotUris(
+      snapshot.resourceReferenceUris,
+      uri,
+      classified.resourceReferencePaths.length > 0,
+      kind
+    ),
+    modelDocumentUris: updateSnapshotUris(
+      snapshot.modelDocumentUris,
+      uri,
+      classified.modelDocumentPaths.length > 0,
+      kind
+    ),
+    blockstateUris: updateSnapshotUris(
+      snapshot.blockstateUris,
+      uri,
+      classified.blockstatePaths.length > 0,
+      kind
+    )
+  };
+}
+
+function updateSnapshotUris(
+  uris: readonly vscode.Uri[],
+  changedUri: vscode.Uri,
+  belongs: boolean,
+  kind: Exclude<ResourceGraphPathChangeKind, "change">
+): vscode.Uri[] {
+  const changedKey = resourceUriKey(changedUri);
+  const retained = uris.filter(uri => resourceUriKey(uri) !== changedKey);
+  return kind === "create" && belongs ? [...retained, changedUri] : retained;
 }
 
 export async function loadResourceGraphDocument(uri: vscode.Uri): Promise<ResourceGraphDocument> {

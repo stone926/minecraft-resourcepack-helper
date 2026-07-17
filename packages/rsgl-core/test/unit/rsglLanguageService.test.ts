@@ -387,6 +387,25 @@ describe("RSGL language service", () => {
         getRsglDocumentRenameEdits(document, valueOffset + 1, "not-valid!", cache),
         undefined
       );
+
+      if (process.platform === "win32") {
+        const caseVariantDocument = {
+          fileName: mainFile.toUpperCase(),
+          getText: () => mainText
+        };
+        const caseVariantEdits = getRsglDocumentRenameEdits(
+          caseVariantDocument,
+          valueOffset + 1,
+          "CASE_RENAMED",
+          cache
+        );
+        assert.ok(caseVariantEdits);
+        assert.deepStrictEqual(
+          new Set(caseVariantEdits.map(edit => edit.fileName)),
+          new Set([mainFile, barrelFile, commonFile]),
+          "case-insensitive lookup must preserve the first canonical display paths"
+        );
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

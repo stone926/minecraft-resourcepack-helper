@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./out",
+    "tsBuildInfoFile": "./out/.tsbuildinfo/main.tsbuildinfo",
+    "types": [
+      "node",
+      "vscode"
+    ]
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/test/**"
+  ],
+  "references": [
+    { "path": "./packages/mc-assets" }
+  ]
+}

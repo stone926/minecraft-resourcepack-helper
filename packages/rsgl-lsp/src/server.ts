@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { findByNormalizedPath } from "../../mc-assets/src";
+import { findByNormalizedPath, normalizePathKey } from "../../mc-assets/src";
 import {
   CodeActionKind,
   createConnection,
@@ -18,9 +18,13 @@ import {
   RsglWorkspaceSemanticCache,
   type CompileDependency
 } from "../../rsgl-core/src";
+import { RsglWorkspaceValidationCache } from "../../rsgl-core/src/workspaceValidation";
 import {
   rsglDependencyPathsNotification,
-  type RsglDependencyPathsNotification
+  rsglDependencyStructureChangedNotification,
+  rsglRefreshWorkspaceNotification,
+  type RsglDependencyPathsNotification,
+  type RsglDependencyStructureChangedNotification
 } from "../../rsgl-shared/src";
 import {
   completionItemsForDocument as completionItemsForDocumentCore,
@@ -30,30 +34,59 @@ import {
   computeDocumentSignatureHelp,
   computeDocumentSemanticTokens,
   definitionLocationForDocument,
-  dependencyPathsForDocument,
+  dependencyInvalidationPathsForStructuralChange,
   dependencyPathsForDocuments,
+  dependencyPatternsForDocuments,
+  documentDependenciesExpanded,
+  documentDependenciesForCompile,
   documentsDependingOnPath,
+  documentsStructurallyDependingOnPath,
   fileNameFromUri,
   formattingEditsForDocument,
-  handleSemanticWatchedFileBatch,
-  normalizeFileName,
+  normalizeDisplayFileName,
   projectSemanticConfigurationFingerprint,
+  requiredExactWatchPathsForDocuments,
   prepareRenameForDocument,
   renameEditsForDocument,
   toLspDefinitionLocation,
   toLspWorkspaceEdit,
   toValidationSettings,
+  type RsglDocumentDependencies,
   type RsglValidationSettings
 } from "./serverCore";
+import { DirtyDiagnosticScheduler } from "./diagnosticScheduler";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const semanticCache = RsglWorkspaceSemanticCache.create();
 const projectTargetCache = new RsglProjectTargetCache();
-const dependenciesByDocument = new Map<string, Set<string>>();
+// Targeted watchers provide low-latency invalidation, while TTL/version checks
+// remain the correctness fallback for paths excluded by VS Code watcher rules.
+const workspaceValidationCache = new RsglWorkspaceValidationCache();
+const dependenciesByDocument = new Map<string, RsglDocumentDependencies>();
+const dependencyVerificationUris = new Set<string>();
 let publishedDependencyPaths = "";
 
 let validationSettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
+
+const diagnosticScheduler = new DirtyDiagnosticScheduler<string>({
+  delayMs: 150,
+  run: uri => {
+    const document = documents.get(uri);
+    if (document) {
+      validateDocument(document);
+    }
+  },
+  onIdle: async () => {
+    await connection.languages.semanticTokens.refresh();
+    if (dependencyVerificationUris.size === 0) {
+      return;
+    }
+    const uris = [...dependencyVerificationUris];
+    dependencyVerificationUris.clear();
+    diagnosticScheduler.schedule(uris, 0);
+  }
+});
 
 semanticCache.setOpenTextDocumentProvider(fileName => openDocumentForFileName(fileName));
 
@@ -89,47 +122,101 @@ connection.onInitialize(params => {
 
 connection.onDidChangeConfiguration(params => {
   validationSettings = toValidationSettings(params.settings);
-  refreshOpenDocuments();
+  projectTargetCache.invalidateAll();
+  workspaceValidationCache.invalidateAll();
+  scheduleAllOpenDocuments(0);
 });
 
 documents.onDidOpen(event => {
   invalidateDocument(event.document);
-  refreshOpenDocuments();
+  scheduleAffectedDocuments(fileNameFromUri(event.document.uri), event.document.uri, 0);
 });
 documents.onDidChangeContent(event => {
   invalidateDocument(event.document);
-  scheduleOpenDocumentRefresh();
+  scheduleAffectedDocuments(fileNameFromUri(event.document.uri), event.document.uri);
 });
 documents.onDidClose(event => {
-  semanticCache.invalidatePath(fileNameFromUri(event.document.uri));
+  const fileName = fileNameFromUri(event.document.uri);
+  diagnosticScheduler.drop(event.document.uri);
+  dependencyVerificationUris.delete(event.document.uri);
+  semanticCache.invalidatePath(fileName);
   dependenciesByDocument.delete(event.document.uri);
   publishDependencyPaths();
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
-  refreshOpenDocuments(event.document.uri);
+  scheduleAffectedDocuments(fileName, undefined, 0);
 });
 
 connection.onDidChangeWatchedFiles(params => {
   const changedFileNames = params.changes.map(change => fileNameFromUri(change.uri));
-  if (handleSemanticWatchedFileBatch(changedFileNames, {
-    invalidatePath: fileName => semanticCache.invalidatePath(fileName),
-    invalidateProjectConfiguration: () => projectTargetCache.invalidateAll(),
-    refresh: refreshOpenDocuments
-  })) {
-    return;
-  }
-
   const affectedUris = new Set<string>();
   for (const changedFileName of changedFileNames) {
     for (const uri of documentsDependingOnPath(dependenciesByDocument, changedFileName)) {
       affectedUris.add(uri);
     }
-  }
-  for (const uri of affectedUris) {
-    const document = documents.get(uri);
-    if (document) {
-      validateDocument(document);
+    const changedDocument = findOpenDocument(changedFileName);
+    if (changedDocument) {
+      affectedUris.add(changedDocument.uri);
     }
   }
+  scheduleWatchedPathInvalidation(changedFileNames, affectedUris);
+});
+
+connection.onNotification(
+  rsglDependencyStructureChangedNotification,
+  (notification: RsglDependencyStructureChangedNotification) => {
+    const changedFileNames = Array.isArray(notification?.paths)
+      ? notification.paths.filter((item): item is string => typeof item === "string" && item.length > 0)
+      : [];
+    const affectedUris = new Set<string>();
+    const invalidationPaths = new Map<string, string>();
+    for (const changedFileName of changedFileNames) {
+      invalidationPaths.set(normalizePathKey(changedFileName), changedFileName);
+      for (const uri of documentsStructurallyDependingOnPath(
+        dependenciesByDocument,
+        changedFileName
+      )) {
+        affectedUris.add(uri);
+      }
+      for (const dependencyPath of dependencyInvalidationPathsForStructuralChange(
+        dependenciesByDocument,
+        changedFileName
+      )) {
+        invalidationPaths.set(normalizePathKey(dependencyPath), dependencyPath);
+      }
+    }
+    scheduleWatchedPathInvalidation([...invalidationPaths.values()], affectedUris);
+  }
+);
+
+function scheduleWatchedPathInvalidation(
+  invalidationPaths: readonly string[],
+  affectedUris: ReadonlySet<string>
+): void {
+  let configurationChanged = false;
+  for (const invalidationPath of invalidationPaths) {
+    workspaceValidationCache.invalidatePath(invalidationPath);
+    if (path.basename(invalidationPath).toLowerCase() === "rsgl.config.json") {
+      configurationChanged = true;
+    } else if (path.extname(invalidationPath).toLowerCase() === ".rsgl") {
+      semanticCache.invalidatePath(invalidationPath);
+    }
+  }
+  if (configurationChanged) {
+    projectTargetCache.invalidateAll();
+    semanticCache.invalidateAll();
+  }
+  if (affectedUris.size === 0 && configurationChanged) {
+    scheduleAllOpenDocuments(0);
+  } else {
+    diagnosticScheduler.schedule(affectedUris, 0);
+  }
+}
+
+connection.onNotification(rsglRefreshWorkspaceNotification, () => {
+  semanticCache.invalidateAll();
+  projectTargetCache.invalidateAll();
+  workspaceValidationCache.invalidateAll();
+  scheduleAllOpenDocuments(0);
 });
 
 connection.onCompletion(params => {
@@ -258,26 +345,25 @@ function validateDocument(document: TextDocument): void {
     onProjectConfigWatchPaths: paths => {
       projectConfigWatchPaths = paths;
     },
-    settings: validationSettings
+    settings: validationSettings,
+    validationCache: workspaceValidationCache
   });
-  dependenciesByDocument.set(
-    document.uri,
-    dependencyPathsForDocument(compileDependencies, projectConfigWatchPaths)
-  );
+  const semanticWatchPaths = semanticDependencyPaths(fileName);
+  const nextDependencies = documentDependenciesForCompile(compileDependencies, [
+    ...projectConfigWatchPaths,
+    ...semanticWatchPaths
+  ]);
+  const previousDependencies = dependenciesByDocument.get(document.uri);
+  dependenciesByDocument.set(document.uri, nextDependencies);
   publishDependencyPaths();
   connection.sendDiagnostics({ uri: document.uri, diagnostics });
-}
-
-function refreshOpenDocuments(excludeUri?: string): void {
-  cancelScheduledOpenDocumentRefresh();
-  for (const document of documents.all()) {
-    if (document.uri === excludeUri) {
-      continue;
-    }
-    validateDocument(document);
+  if (documentDependenciesExpanded(previousDependencies, nextDependencies)) {
+    // Verify once after the dependency graph expands. Watchers may have fired
+    // while this compile was still discovering paths owned by this document.
+    // Queue after the current batch becomes idle so one document cannot keep
+    // invalidating the scheduler generation while its peers are still dirty.
+    dependencyVerificationUris.add(document.uri);
   }
-  // Cross-file edits can reclassify identifiers in other open documents.
-  connection.languages.semanticTokens.refresh();
 }
 
 function invalidateDocument(document: TextDocument): void {
@@ -293,20 +379,38 @@ function completionItemsForDocument(document: TextDocument, offset: number): Com
   );
 }
 
-let openDocumentRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-function scheduleOpenDocumentRefresh(delay = 150): void {
-  cancelScheduledOpenDocumentRefresh();
-  openDocumentRefreshTimer = setTimeout(() => {
-    openDocumentRefreshTimer = null;
-    refreshOpenDocuments();
-  }, delay);
+function scheduleAllOpenDocuments(delay = 150): void {
+  diagnosticScheduler.schedule(documents.all().map(document => document.uri), delay);
 }
 
-function cancelScheduledOpenDocumentRefresh(): void {
-  if (openDocumentRefreshTimer) {
-    clearTimeout(openDocumentRefreshTimer);
-    openDocumentRefreshTimer = null;
+function scheduleAffectedDocuments(
+  changedFileName: string,
+  explicitUri?: string,
+  delay = 150
+): void {
+  const affected = new Set(documentsDependingOnPath(dependenciesByDocument, changedFileName));
+  if (explicitUri) {
+    affected.add(explicitUri);
+  }
+  const changedDocument = findOpenDocument(changedFileName);
+  if (changedDocument) {
+    affected.add(changedDocument.uri);
+  }
+  diagnosticScheduler.schedule(affected, delay);
+}
+
+function semanticDependencyPaths(fileName: string): string[] {
+  try {
+    const semantic = loadSemanticProgram(fileName);
+    const paths = new Set(semantic.files.map(file => file.fileName));
+    for (const missing of semantic.program.importGraph.missing) {
+      if (missing.source.startsWith(".")) {
+        paths.add(path.resolve(path.dirname(missing.from), missing.source));
+      }
+    }
+    return [...paths];
+  } catch {
+    return [fileName];
   }
 }
 
@@ -338,28 +442,38 @@ function loadSemanticProgram(
 
 function publishDependencyPaths(): void {
   const paths = dependencyPathsForDocuments(dependenciesByDocument);
-  const identity = JSON.stringify(paths);
+  const requiredExactWatchPaths = requiredExactWatchPathsForDocuments(dependenciesByDocument);
+  const patterns = dependencyPatternsForDocuments(dependenciesByDocument);
+  const identity = JSON.stringify({ paths, requiredExactWatchPaths, patterns });
   if (identity === publishedDependencyPaths) {
     return;
   }
   publishedDependencyPaths = identity;
-  const notification: RsglDependencyPathsNotification = { paths };
+  const notification: RsglDependencyPathsNotification = {
+    paths,
+    requiredExactWatchPaths,
+    patterns
+  };
   void connection.sendNotification(rsglDependencyPathsNotification, notification);
 }
 
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {
-  const document = findByNormalizedPath(
-    documents.all(),
-    path.resolve(fileName),
-    item => item.uri.startsWith("file:") ? path.resolve(fileNameFromUri(item.uri)) : null
-  );
+  const document = findOpenDocument(fileName);
   return document
     ? {
-      fileName: normalizeFileName(path.resolve(fileName)),
+      fileName: normalizeDisplayFileName(path.resolve(fileName)),
       version: document.version,
       getText: () => document.getText()
     }
     : null;
+}
+
+function findOpenDocument(fileName: string): TextDocument | null {
+  return findByNormalizedPath(
+    documents.all(),
+    path.resolve(fileName),
+    item => item.uri.startsWith("file:") ? path.resolve(fileNameFromUri(item.uri)) : null
+  ) ?? null;
 }
 
 async function loadDefinitionDocument(fileName: string): Promise<TextDocument | null> {

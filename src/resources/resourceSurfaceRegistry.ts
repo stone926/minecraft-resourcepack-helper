@@ -41,6 +41,13 @@ export interface ResourceSchemaRegistration {
   url: string;
 }
 
+export interface ResourceIncomingReferenceRoot {
+  /** Assets-relative directory prefix removed from candidate reference text. */
+  root: string;
+  /** Additional variable path segments removed after the root (for layered assets). */
+  stripLeadingSegments?: number;
+}
+
 export type JsonReferenceExtractor = (
   ast: JsonDocumentNode,
   fileName: string
@@ -73,6 +80,7 @@ export interface ResourceSurfaceDescriptor<K extends string = string> {
   referenceExtraction?: ResourceReferenceExtraction;
   referenceTargets?: readonly ResourceReferenceKind[];
   graphFileExtensions?: readonly string[];
+  incomingReferenceRoots?: readonly ResourceIncomingReferenceRoot[];
   graphPreviewContext?: ResourceGraphPreviewContext;
   /** Selects the structural semantic diagnostics handler for this surface. */
   semanticDiagnostics?: ResourceSemanticDiagnosticsKind;
@@ -132,6 +140,7 @@ const referenceSurfaceRegistry = [
     referenceExtraction: { mode: "json", extract: (ast: JsonDocumentNode) => getModelReferences(ast, "models") },
     referenceTargets: ["model", "texture"],
     graphFileExtensions: ["json"],
+    incomingReferenceRoots: [{ root: "models" }],
     manifestWhenClauses: [modelPreviewWhen],
     graphPreviewContext: "modelResource",
     semanticDiagnostics: "model",
@@ -159,7 +168,10 @@ const referenceSurfaceRegistry = [
     "%schema.font.url%",
     getFontReferences,
     ["font", "fontFile", "texture"],
-    { watcherPatterns: ["**/assets/*/font/**/*"] }
+    {
+      watcherPatterns: ["**/assets/*/font/**/*"],
+      incomingReferenceRoots: [{ root: "font" }]
+    }
   ),
   jsonReferenceSurface("waypointStyle", "waypoint_style", "**/waypoint_style/**/*.json", "%schema.waypointStyle.url%", getWaypointStyleReferences, ["texture"]),
   jsonReferenceSurface(
@@ -182,6 +194,7 @@ const referenceSurfaceRegistry = [
     referenceExtraction: { mode: "json", extract: getSoundReferences },
     referenceTargets: ["sound"],
     graphFileExtensions: ["json"],
+    incomingReferenceRoots: [{ root: "sounds" }],
     semanticDiagnostics: "sounds",
     fileNamePattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i
   },
@@ -222,15 +235,37 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
     watcherPatterns: ["**/assets/*/shaders/**/*.glsl"],
     capabilities: ["graph"],
     graphFileExtensions: ["glsl", "vsh", "fsh"],
+    incomingReferenceRoots: [
+      { root: "shaders" },
+      { root: "shaders/core" },
+      { root: "shaders/include" }
+    ],
     fileNamePattern: /[\\/]assets[\\/][^\\/]+[\\/]shaders[\\/]include[\\/].+\.(?:glsl|vsh|fsh)$/i
   },
-  { id: "assetJsonWatcher", watcherPatterns: ["**/assets/**/*.json"] },
+  {
+    id: "assetJsonWatcher",
+    watcherPatterns: ["**/assets/**/*.json"],
+    incomingReferenceRoots: [{ root: "" }]
+  },
   {
     id: "textureAssets",
     watcherPatterns: [
       "**/assets/*/textures/**/*.png",
       "**/assets/*/citresewn/*.png",
       "**/assets/*/citresewn/**/*.png"
+    ],
+    incomingReferenceRoots: [
+      { root: "textures" },
+      { root: "textures/particle" },
+      { root: "textures/entity" },
+      { root: "textures/entity/bed" },
+      { root: "textures/entity/chest" },
+      { root: "textures/entity/shulker" },
+      { root: "textures/entity/signs" },
+      { root: "textures/entity/signs/hanging" },
+      { root: "textures/effect" },
+      { root: "textures/gui/sprites/hud/locator_bar_dot" },
+      { root: "textures/entity/equipment", stripLeadingSegments: 1 }
     ],
     manifestWhenClauses: [citGenerationWhen]
   },
@@ -269,6 +304,15 @@ export function getResourceWatcherPatterns(
   return uniqueValues(registry.flatMap(surface => surface.watcherPatterns ?? []));
 }
 
+/**
+ * Broad, one-result discovery pattern used only for a folded directory
+ * operation. Keep this structural boundary beside the resource descriptors so
+ * registration modules do not grow a second resource-surface definition.
+ */
+export function getResourceStructureDiscoveryGlob(): string {
+  return "{**/pack.mcmeta,**/assets/**}";
+}
+
 export function getResourceSchemaRegistrations(
   registry: readonly ResourceSurfaceDescriptor[] = resourceSurfaceRegistry
 ): ResourceSchemaRegistration[] {
@@ -293,6 +337,23 @@ export function getResourceGraphDiscoveryGlob(
   return extensions.length === 1
     ? `**/assets/**/*.${extensions[0]}`
     : `**/assets/**/*.{${extensions.join(",")}}`;
+}
+
+export function getResourceIncomingReferenceRoots(
+  registry: readonly ResourceSurfaceDescriptor[] = resourceSurfaceRegistry
+): ResourceIncomingReferenceRoot[] {
+  const roots = new Map<string, ResourceIncomingReferenceRoot>();
+  for (const descriptor of registry) {
+    for (const root of descriptor.incomingReferenceRoots ?? []) {
+      const normalizedRoot = root.root.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+      const normalized = {
+        root: normalizedRoot,
+        ...(root.stripLeadingSegments ? { stripLeadingSegments: root.stripLeadingSegments } : {})
+      };
+      roots.set(`${normalized.root}\0${normalized.stripLeadingSegments ?? 0}`, normalized);
+    }
+  }
+  return [...roots.values()];
 }
 
 export function getResourceGraphPreviewContext(
@@ -379,6 +440,7 @@ function jsonReferenceSurface<const K extends string>(
     manifestWhenClauses?: readonly string[];
     graphPreviewContext?: ResourceGraphPreviewContext;
     semanticDiagnostics?: ResourceSemanticDiagnosticsKind;
+    incomingReferenceRoots?: readonly ResourceIncomingReferenceRoot[];
   } = {}
 ): ResourceSurfaceDescriptor<K> & { documentKind: K } {
   return {
@@ -392,6 +454,7 @@ function jsonReferenceSurface<const K extends string>(
     referenceExtraction: { mode: "json", extract },
     referenceTargets,
     graphFileExtensions: ["json"],
+    incomingReferenceRoots: options.incomingReferenceRoots,
     manifestWhenClauses: options.manifestWhenClauses,
     graphPreviewContext: options.graphPreviewContext,
     semanticDiagnostics: options.semanticDiagnostics,

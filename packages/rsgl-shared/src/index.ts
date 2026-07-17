@@ -1,10 +1,27 @@
 export const rsglExtensionId = "stone926.rsgl";
 export const rsglFileGlob = "**/*.rsgl";
 
-/** Server-to-client notification carrying the current compiled JSON inputs. */
+/** Server-to-client notification carrying current exact and patterned watch dependencies. */
 export const rsglDependencyPathsNotification = "rsgl/dependencyPaths";
+/** Client-to-server notification for targeted dependency-directory events. */
+export const rsglDependencyStructureChangedNotification = "rsgl/dependencyStructureChanged";
+/** Client-to-server request to discard unwatched external-resource state. */
+export const rsglRefreshWorkspaceNotification = "rsgl/refreshWorkspace";
+
+export interface RsglDependencyWatchPattern {
+  basePath: string;
+  pattern: string;
+}
 
 export interface RsglDependencyPathsNotification {
+  /** Complete exact dependency union used for structural invalidation. */
+  paths: string[];
+  /** Ownership-aware exact paths that require individual content watchers. */
+  requiredExactWatchPaths: string[];
+  patterns?: RsglDependencyWatchPattern[];
+}
+
+export interface RsglDependencyStructureChangedNotification {
   paths: string[];
 }
 
@@ -14,7 +31,8 @@ export const rsglCommands = {
   buildDirectory: "rsgl.buildDirectory",
   previewDirectoryBuild: "rsgl.previewDirectoryBuild",
   buildWorkspace: "rsgl.buildWorkspace",
-  previewWorkspaceBuild: "rsgl.previewWorkspaceBuild"
+  previewWorkspaceBuild: "rsgl.previewWorkspaceBuild",
+  refreshWorkspace: "rsgl.refreshWorkspace"
 } as const;
 
 export const rsglConfigKeys = {

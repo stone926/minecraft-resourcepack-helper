@@ -7,6 +7,7 @@ import {
   type ValueNode
 } from "@humanwhocodes/momoa";
 import type { TextRange } from "../../parser";
+import { rsglPathKey } from "../../pathIdentity";
 import type { JsonValue } from "../ir";
 import { appendGeneratedPath } from "../sourcePaths";
 import {
@@ -71,7 +72,7 @@ export function createCachedBaseDocumentLoader(loader: BaseDocumentLoader): Base
   return {
     load(request, sourceFile, sourceRange) {
       const resolvedPath = resolveBaseDocumentPath(request, sourceFile);
-      const key = normalizeCacheKey(resolvedPath);
+      const key = rsglPathKey(resolvedPath);
       const cached = cache.get(key);
       if (cached) {
         if ("error" in cached) {
@@ -143,11 +144,6 @@ function usableFileName(fileName: string | undefined): string | undefined {
     return undefined;
   }
   return path.resolve(fileName);
-}
-
-function normalizeCacheKey(fileName: string): string {
-  const normalized = path.normalize(path.resolve(fileName));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function errorMessage(error: unknown): string {

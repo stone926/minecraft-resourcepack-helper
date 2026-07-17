@@ -9,60 +9,43 @@ import {
   TableDeclNode,
   TopLevelStatementNode
 } from "../parser";
-import { compileAtlasSpecialStatement } from "./atlasSugar";
-import { BlockstateCompileOptions, compileBlockstateResource } from "./blockstateCompiler";
+import type { BlockstateCompileOptions } from "./blockstateCompiler";
 import {
-  bindRsglProgram,
   type RsglType
 } from "../semantic";
 import {
   RsglExternalValueDefinition,
   RsglModuleCompileEnvironment,
   RsglTemplateDefinition,
-  createProgramCompileEnvironments,
   createTemplateDefinition,
   refreshTemplateDefinitionFingerprint
 } from "./environment";
-import { compileEquipmentLayerStatement } from "./equipmentSugar";
 import {
   childEvaluationContext,
   EvaluationContext,
-  type EvaluationResult,
   EvaluationValue,
   RawGlobLoader,
   bindEvaluationResult,
   evaluateCompileTimeCondition,
-  evaluateExpressionResult,
-  hasEvaluationValueBinding
+  evaluateExpressionResult
 } from "./evaluate";
 import type { BaseDocumentLoader, CompileDependency } from "./base/types";
 import {
   DEFAULT_MAX_ITEM_MODEL_DEPTH,
-  resolveRsglCompileConfiguration,
-  type ResolvedRsglCompileConfiguration
 } from "./compileConfiguration";
-import { executeItemResourceBody, type ItemOperationExecutorHost } from "./itemOperationExecutor";
 import {
-  JsonValue,
   ResourceUnit,
-  RsglCompileDiagnostic,
-  RsglCompileResult,
-  RsglMapping,
-  RsglValidationReferenceOrigin
+  RsglCompileResult
 } from "./ir";
-import { compileJsonResourceUseFragment, JsonResourceFragmentKind } from "./jsonResourceFragments";
 import { createLoopContext as createEvaluationLoopContext, forEachLoopContext } from "./looping";
-import { compileModelGeometryStatement, type ModelGeometryDslOptions } from "./modelGeometryDsl";
 import {
   compileOverlayDecl,
-  compilePackResource,
-  compilePackSpecialStatement,
   pushOverlayPackUnit,
   PackOverlayCompileOptions,
   RsglOverlayEntry
 } from "./packOverlayCompiler";
-import { ResourceBodyCompileOptions, ResourceBodyFragment, ResourceBodyMapping, ResourceBodySpecialResult, resourceBodyToObject } from "./resourceBody";
-import { compileResourceDeclaration, ResourceDeclarationCompilerHost } from "./resourceCompiler";
+import type { ResourceBodyFragment } from "./resourceBody";
+import { compileResourceDeclaration } from "./resourceCompiler";
 import type { RsglTargetPackFormat } from "./targetConfig";
 import {
   createTemplateExpansion,
@@ -71,26 +54,23 @@ import {
   TemplateExpansion,
   TemplateExpansionOptions
 } from "./templateExpansion";
-import { createRsglStdlibPreludeSourceFiles } from "../stdlib";
-import {
-  normalizeFileName,
-  normalizeJsonValue
-} from "./compilerHelpers";
+import { normalizeJsonValue } from "./compilerHelpers";
 import { uniqueValues } from "../../../mc-assets/src";
-import {
-  isRsglGenericJsonResourceKind,
-  type RsglResourceKind
-} from "../resourceKinds";
+import type { RsglResourceKind } from "../resourceKinds";
 import {
   templateOutputMetadataForDeclaration,
   type RsglTemplateCallerContext,
   type TemplateOutputDispatch
 } from "../templateOutput";
 import { RsglTemplateDispatchCache } from "./templateDispatchCache";
-import type { JsonValueSinkOptions } from "./jsonValueLowerer";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import { finalizeResourceValueObservations } from "./resourceValueObservationFinalization";
 import { EvaluationItemBudget } from "./evaluationItemBudget";
+import { createRsglStdlibPreludeTemplates } from "./stdlibPrelude";
+import { CompilerOutputAccumulator } from "./compilerOutputAccumulator";
+import { ResourceBodyLowering } from "./resourceBodyLowering";
+
+export { createRsglStdlibPreludeTemplates } from "./stdlibPrelude";
 
 interface RsglCompilerOptions {
   fileName: string;
@@ -115,16 +95,9 @@ interface JsonValueLoweringSession {
   resourceValueObservations: RsglResourceValueObservation[];
 }
 
-interface CachedResourceExpressionResult {
-  context: EvaluationContext;
-  result: EvaluationResult;
-}
-
 export class RsglCompiler {
-  private readonly units: ResourceUnit[] = [];
-  private readonly diagnostics: RsglCompileDiagnostic[] = [];
-  private readonly dependencies: CompileDependency[] = [];
-  private readonly dependencyKeys = new Set<string>();
+  private readonly output: CompilerOutputAccumulator;
+  private readonly resourceBodies: ResourceBodyLowering;
   private readonly templates = new Map<string, RsglTemplateDefinition>();
   private readonly templateDispatchCache = new RsglTemplateDispatchCache();
   private readonly overlayEntries: RsglOverlayEntry[] = [];
@@ -140,6 +113,41 @@ export class RsglCompiler {
         ? [statement.name.text]
         : []
     ));
+    this.output = new CompilerOutputAccumulator({
+      fileName: options.fileName,
+      onDependency: options.onDependency
+    });
+    this.resourceBodies = new ResourceBodyLowering({
+      fileName: options.fileName,
+      maxItemModelDepth: options.maxItemModelDepth,
+      moduleValueBindingNames: this.moduleValueBindingNames,
+      blockstateCompileOptions: () => this.blockstateCompileOptions(),
+      packOverlayOptions: () => this.packOverlayOptions(),
+      compileResourceBodyFragment: (statement, context, kind) =>
+        this.compileResourceBodyFragment(statement, context, kind),
+      findTemplateDefinition: (expression, context) =>
+        this.findTemplateDefinition(expression, context),
+      createTemplateExpansion: (expression, context, definition) =>
+        this.createTemplateExpansion(expression, context, definition),
+      resolveTemplateDispatch: (definition, callerContext) =>
+        this.resolveTemplateDispatch(definition, callerContext),
+      sourceMap: (outputPath, node, context, mappings) =>
+        this.output.sourceMap(outputPath, node, context, mappings),
+      sourceMapping: (generatedPath, sourceRange, context) =>
+        this.output.sourceMapping(generatedPath, sourceRange, context),
+      onError: (code, message, range, fileName) =>
+        this.output.error(code, message, range, fileName),
+      onWarning: (code, message, range, fileName) =>
+        this.output.warning(code, message, range, fileName),
+      onInvalidJsonValue: () => {
+        if (this.activeJsonValueLoweringSession) {
+          this.activeJsonValueLoweringSession.invalid = true;
+        }
+      },
+      onResourceValueObservation: observation => {
+        this.activeJsonValueLoweringSession?.resourceValueObservations.push(observation);
+      }
+    });
   }
 
   public compile(): RsglCompileResult {
@@ -195,7 +203,7 @@ export class RsglCompiler {
       this.compileStatement(statement, context);
     }
     pushOverlayPackUnit(this.packOverlayOptions());
-    return { units: this.units, diagnostics: this.diagnostics, dependencies: this.dependencies };
+    return this.output.result();
   }
 
   private compileStatement(statement: TopLevelStatementNode, context: RsglCompileContext): void {
@@ -251,13 +259,12 @@ export class RsglCompiler {
       }
     };
     this.activeJsonValueLoweringSession = session;
-    const resourceExpressionResults = new Map<ExprNode, CachedResourceExpressionResult>();
     let compiledUnits: ResourceUnit[];
     try {
       compiledUnits = compileResourceDeclaration(
         statement,
         resourceContext,
-        this.resourceDeclarationCompilerHost(resourceExpressionResults)
+        this.resourceBodies.resourceDeclarationCompilerHost()
       );
     } finally {
       this.activeJsonValueLoweringSession = previousSession;
@@ -266,7 +273,7 @@ export class RsglCompiler {
       return;
     }
     for (const unit of compiledUnits) {
-      const referenceOrigins = this.detachValidationOrigins(unit);
+      const referenceOrigins = this.output.detachValidationOrigins(unit);
       if (unit.kind === "model" && externalTextureVariables.length > 0) {
         unit.validation = { ...unit.validation, externalTextureVariables };
       }
@@ -290,74 +297,8 @@ export class RsglCompiler {
           referenceOrigins: [...(unit.validation?.referenceOrigins ?? []), ...referenceOrigins]
         };
       }
-      this.pushUnit(unit);
+      this.output.pushUnit(unit);
     }
-  }
-
-  private detachValidationOrigins(unit: ResourceUnit): RsglValidationReferenceOrigin[] {
-    const origins: RsglValidationReferenceOrigin[] = [];
-    const mappings = unit.sourceMap.mappings.flatMap(mapping => {
-      if (!mapping.validationOrigin) {
-        if (mapping.validationOnly) {
-          return [];
-        }
-        return [mapping];
-      }
-      const { validationOrigin, validationOnly, ...publicMapping } = mapping;
-      // Some producers pass an EvaluationPathOrigin through the narrower
-      // EvaluationOrigin contract. Its relative path belongs to the value
-      // before a sugar/backend transform; the mapping path is the authoritative
-      // final JSON location.
-      origins.push({ ...validationOrigin, generatedPath: mapping.generatedPath });
-      return validationOnly ? [] : [publicMapping];
-    });
-    if (origins.length > 0) {
-      unit.sourceMap = { ...unit.sourceMap, mappings };
-    }
-    return origins;
-  }
-
-  private resourceDeclarationCompilerHost(
-    expressionResults: Map<ExprNode, CachedResourceExpressionResult>
-  ): ResourceDeclarationCompilerHost {
-    return {
-      fileName: this.options.fileName,
-      compileBlockstate: (statement, context) =>
-        compileBlockstateResource(statement, context, this.blockstateCompileOptions()),
-      compilePack: (statement, context) =>
-        compilePackResource(statement, context, this.packOverlayOptions()),
-      compileBody: (body, context, resourceKind) =>
-        this.resourceBodyToObjectWithMappings(
-          body,
-          context,
-          { ...this.resourceBodyFragmentOptions(resourceKind), allowBase: true }
-        ),
-      compileItemBody: (body, context) => this.compileItemBody(body, context),
-      compileJsonBody: (body, context, fragmentKind) =>
-        this.resourceBodyToObjectWithMappings(
-          body,
-          context,
-          { ...this.jsonResourceFragmentOptions(fragmentKind), allowBase: true }
-        ),
-      compileRawBody: (body, context, resourceKind) =>
-        this.resourceBodyToObjectWithRawMappings(
-          body,
-          context,
-          { ...this.resourceBodyFragmentOptions(resourceKind), allowBase: true }
-        ),
-      onError: (code, message, range) => this.error(code, message, range),
-      sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
-      sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context),
-      evaluateResult: (expression, context) => {
-        const cached = expressionResults.get(expression);
-        if (cached?.context === context) {
-          return cached.result;
-        }
-        const result = evaluateExpressionResult(expression, context);
-        expressionResults.set(expression, { context, result });
-        return result;
-      }
-    };
   }
 
   private compileLetDecl(statement: LetDeclNode, context: RsglCompileContext): void {
@@ -408,7 +349,7 @@ export class RsglCompiler {
   private compileUseDecl(expression: ExprNode, context: RsglCompileContext): void {
     const definition = this.findTemplateDefinition(expression, context);
     if (!definition) {
-      this.error("rsgl.unknownTemplate", "Top-level use must expand a known template.", expression.range);
+      this.output.error("rsgl.unknownTemplate", "Top-level use must expand a known template.", expression.range);
       return;
     }
     const dispatch = this.resolveTemplateDispatch(definition, { kind: "resources" });
@@ -420,7 +361,7 @@ export class RsglCompiler {
       return;
     }
     if (definition.node.body.kind !== "Block") {
-      this.error(
+      this.output.error(
         "rsgl.invalidTemplateContext",
         `Template '${definition.name}' expands resource body content and must be used inside a resource declaration.`,
         expression.range
@@ -448,17 +389,17 @@ export class RsglCompiler {
       return { content: {}, mappings: [] };
     }
     if (definition.node.body.kind !== "ResourceBody") {
-      this.error(
+      this.output.error(
         "rsgl.invalidTemplateContext",
         `Template '${definition.name}' emits resources and cannot be used inside a resource body.`,
         useStatement.range
       );
       return undefined;
     }
-    const body = this.resourceBodyToObjectWithRawMappings(
+    const body = this.resourceBodies.compileTemplateFragmentBody(
       definition.node.body,
       expansion.context,
-      { ...this.resourceBodyFragmentOptions(kind), allowBase: false }
+      kind
     );
     return {
       content: body.content,
@@ -486,7 +427,7 @@ export class RsglCompiler {
     if (body.kind !== "Block") {
       return;
     }
-    forEachLoopContext(statement, context, (code, message, range) => this.error(code, message, range), loopContext => {
+    forEachLoopContext(statement, context, (code, message, range) => this.output.error(code, message, range), loopContext => {
       this.compileBlock(body, loopContext);
     });
   }
@@ -536,8 +477,8 @@ export class RsglCompiler {
       expansionStack: [],
       baseDocumentLoader: this.options.baseDocumentLoader,
       globLoader: this.options.globLoader,
-      onDependency: dependency => this.recordDependency(dependency),
-      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
+      onDependency: dependency => this.output.recordDependency(dependency),
+      onError: (code, message, range, fileName) => this.output.error(code, message, range, fileName),
       resolvedExpectedTypes: this.options.resolvedExpectedTypes
         ?? this.options.environment?.resolvedExpectedTypes,
       templates: this.templates
@@ -566,232 +507,6 @@ export class RsglCompiler {
     };
   }
 
-  private pushUnit(unit: ResourceUnit | null): void {
-    if (unit) {
-      this.units.push(unit);
-    }
-  }
-
-  private resourceBodyToObject(
-    body: ResourceDeclNode["body"],
-    context: RsglCompileContext,
-    options: ResourceBodyCompileOptions = {}
-  ): Record<string, JsonValue> {
-    if (body.kind !== "ResourceBody") {
-      this.error(
-        "rsgl.invalidResourceBody",
-        "A blockstate root body cannot be compiled by the generic resource-body compiler.",
-        body.range
-      );
-      return {};
-    }
-    return resourceBodyToObject(body, context, {
-      ...options,
-      onError: (code, message, range, fileName) => this.error(code, message, range, fileName)
-    });
-  }
-
-  private resourceBodyToObjectWithMappings(
-    body: ResourceDeclNode["body"],
-    context: RsglCompileContext,
-    options: ResourceBodyCompileOptions = {}
-  ): { content: Record<string, JsonValue>; mappings: RsglMapping[] } {
-    const bodyWithRawMappings = this.resourceBodyToObjectWithRawMappings(body, context, options);
-    return {
-      content: bodyWithRawMappings.content,
-      mappings: bodyWithRawMappings.mappings.map(mapping => ({
-        ...this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context),
-        ...(mapping.validationOrigin ? { validationOrigin: mapping.validationOrigin } : {}),
-        ...(mapping.validationOnly ? { validationOnly: true } : {})
-      }))
-    };
-  }
-
-  private resourceBodyToObjectWithRawMappings(
-    body: ResourceDeclNode["body"],
-    context: RsglCompileContext,
-    options: ResourceBodyCompileOptions = {}
-  ): { content: Record<string, JsonValue>; mappings: ResourceBodyMapping[] } {
-    if (body.kind !== "ResourceBody") {
-      this.error(
-        "rsgl.invalidResourceBody",
-        "A blockstate root body cannot be compiled by the generic resource-body compiler.",
-        body.range
-      );
-      return { content: {}, mappings: [] };
-    }
-    const mappings: ResourceBodyMapping[] = [];
-    const content = resourceBodyToObject(body, context, {
-      ...options,
-      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
-      onMapping: mapping => {
-        mappings.push(mapping);
-        options.onMapping?.(mapping);
-      }
-    });
-    return { content, mappings };
-  }
-
-  private compileItemBody(
-    body: ResourceDeclNode["body"],
-    context: RsglCompileContext
-  ): { content: Record<string, JsonValue>; mappings: RsglMapping[] } {
-    if (body.kind !== "ResourceBody") {
-      this.error(
-        "rsgl.invalidItemBody",
-        "An item declaration requires a resource body.",
-        body.range
-      );
-      return { content: {}, mappings: [] };
-    }
-    const compiled = executeItemResourceBody(body, context, this.itemOperationExecutorHost());
-    return {
-      content: compiled.content,
-      mappings: compiled.mappings.map(mapping => ({
-        ...this.sourceMapping(mapping.generatedPath, mapping.sourceRange, mapping.context),
-        ...(mapping.validationOrigin ? { validationOrigin: mapping.validationOrigin } : {}),
-        ...(mapping.validationOnly ? { validationOnly: true } : {})
-      }))
-    };
-  }
-
-  private itemOperationExecutorHost(): ItemOperationExecutorHost {
-    return {
-      ...this.jsonValueSinkOptions(),
-      maxItemModelDepth: this.options.maxItemModelDepth ?? DEFAULT_MAX_ITEM_MODEL_DEPTH,
-      resourceBodyOptions: this.resourceBodyFragmentOptions("item"),
-      resolveTemplate: (expression, context) => this.findTemplateDefinition(expression, context),
-      expandTemplate: (expression, context, definition) =>
-        this.createTemplateExpansion(expression, context, definition),
-      resolveTemplateDispatch: (definition, callerContext) =>
-        this.resolveTemplateDispatch(definition, callerContext),
-      onWarning: (code, message, range, fileName) =>
-        this.warning(code, message, range, fileName)
-    };
-  }
-
-  private jsonValueSinkOptions(): JsonValueSinkOptions {
-    return {
-      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
-      onInvalidJsonValue: () => {
-        if (this.activeJsonValueLoweringSession) {
-          this.activeJsonValueLoweringSession.invalid = true;
-        }
-      },
-      onResourceValueObservation: observation => {
-        this.activeJsonValueLoweringSession?.resourceValueObservations.push(observation);
-      }
-    };
-  }
-
-  private modelGeometryDslOptions(): ModelGeometryDslOptions {
-    return {
-      ...this.jsonValueSinkOptions(),
-      compileModelBody: (body, context) => {
-        // A transform body is a lexical block. Clone only the variable map so
-        // declarations in the body cannot escape, while retaining the shared
-        // evaluation budget, trace, diagnostics, and provenance state.
-        const bodyContext = childEvaluationContext(context, {});
-        const compiled = this.resourceBodyToObjectWithRawMappings(body, bodyContext, {
-          ...this.resourceBodyFragmentOptions("model"),
-          allowBase: false
-        });
-        return { content: compiled.content, mappings: compiled.mappings };
-      }
-    };
-  }
-
-  private resourceBodyFragmentOptions(kind: Exclude<RsglResourceKind, "blockstate">): ResourceBodyCompileOptions {
-    return {
-      ...this.jsonValueSinkOptions(),
-      onUseFragment: (useStatement, fragmentContext) => {
-        const templateFragment = this.compileResourceBodyFragment(useStatement, fragmentContext, kind);
-        if (templateFragment) {
-          return templateFragment;
-        }
-        const calleeName = useStatement.expression.kind === "CallExpr"
-          && useStatement.expression.callee.kind === "IdentifierExpr"
-          ? useStatement.expression.callee.name.text
-          : undefined;
-        if (
-          calleeName
-          && (
-            this.moduleValueBindingNames.has(calleeName)
-            || hasEvaluationValueBinding(fragmentContext, calleeName)
-          )
-        ) {
-          return undefined;
-        }
-        if (kind !== "model" && kind !== "item" && isJsonResourceFragmentKind(kind)) {
-          return compileJsonResourceUseFragment(
-            kind,
-            useStatement,
-            fragmentContext,
-            this.jsonValueSinkOptions()
-          );
-        }
-        return undefined;
-      },
-      onSpecialStatement: (statement, fragmentContext) => {
-        if (kind === "model") {
-          return compileModelGeometryStatement(
-            statement,
-            fragmentContext,
-            this.modelGeometryDslOptions()
-          );
-        }
-        return undefined;
-      }
-    };
-  }
-
-  private packResourceBodyOptions(): ResourceBodyCompileOptions {
-    return {
-      ...this.resourceBodyFragmentOptions("pack"),
-      onSpecialStatement: (statement, context) => compilePackSpecialStatement(statement, context, this.packOverlayOptions())
-    };
-  }
-
-  private jsonResourceFragmentOptions(kind: JsonResourceFragmentKind): ResourceBodyCompileOptions {
-    const baseOptions = this.resourceBodyFragmentOptions(kind);
-    if (kind !== "atlas" && kind !== "equipment") {
-      return baseOptions;
-    }
-    return {
-      ...baseOptions,
-      onSpecialStatement: (statement, context) =>
-        this.compileJsonResourceSpecialStatement(kind, statement, context)
-        ?? baseOptions.onSpecialStatement?.(statement, context)
-    };
-  }
-
-  private compileJsonResourceSpecialStatement(
-    kind: JsonResourceFragmentKind,
-    statement: ResourceStatementNode,
-    context: RsglCompileContext
-  ): ResourceBodySpecialResult | undefined {
-    if (kind === "atlas") {
-      return compileAtlasSpecialStatement(
-        statement,
-        context,
-        (body, bodyContext) => this.resourceBodyToObjectWithRawMappings(
-          body,
-          bodyContext,
-          {
-            ...this.resourceBodyFragmentOptions("atlas"),
-            allowBase: false,
-            generatedPathPrefix: "/sources/0"
-          }
-        ),
-        this.jsonValueSinkOptions()
-      );
-    }
-    if (kind === "equipment" && statement.kind === "EquipmentLayerStmt") {
-      return compileEquipmentLayerStatement(statement, context, this.jsonValueSinkOptions());
-    }
-    return undefined;
-  }
-
   private blockstateCompileOptions(): BlockstateCompileOptions {
     return {
       resolveTemplate: (statement, context) => this.findTemplateDefinition(statement.expression, context),
@@ -799,9 +514,9 @@ export class RsglCompiler {
         this.createTemplateExpansion(statement.expression, context, definition),
       resolveTemplateDispatch: (definition, callerContext) =>
         this.resolveTemplateDispatch(definition, callerContext),
-      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
-      sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings),
-      sourceMapping: (generatedPath, sourceRange, context) => this.sourceMapping(generatedPath, sourceRange, context),
+      onError: (code, message, range, fileName) => this.output.error(code, message, range, fileName),
+      sourceMap: (outputPath, node, context, mappings) => this.output.sourceMap(outputPath, node, context, mappings),
+      sourceMapping: (generatedPath, sourceRange, context) => this.output.sourceMapping(generatedPath, sourceRange, context),
       onResourceValueObservation: observation => {
         this.activeJsonValueLoweringSession?.resourceValueObservations.push(observation);
       }
@@ -813,12 +528,10 @@ export class RsglCompiler {
       templates: this.templates,
       baseDocumentLoader: this.options.baseDocumentLoader,
       globLoader: this.options.globLoader,
-      onDependency: dependency => this.recordDependency(dependency),
+      onDependency: dependency => this.output.recordDependency(dependency),
       createChildContext: (context, values, metadata) => this.createChildContext(context, values, metadata),
-      onError: (code, message, range, fileName) => this.error(code, message, range, fileName),
-      onDiagnostic: diagnostic => {
-        this.diagnostics.push(diagnostic);
-      }
+      onError: (code, message, range, fileName) => this.output.error(code, message, range, fileName),
+      onDiagnostic: diagnostic => this.output.addDiagnostic(diagnostic)
     };
   }
 
@@ -833,116 +546,28 @@ export class RsglCompiler {
     return this.templateDispatchCache.resolve(definition, callerContext);
   }
 
-  private recordDependency(dependency: CompileDependency): void {
-    const key = compileDependencyKey(dependency);
-    if (this.dependencyKeys.has(key)) {
-      return;
-    }
-    this.dependencyKeys.add(key);
-    this.dependencies.push(dependency);
-    this.options.onDependency?.(dependency);
-  }
-
   private packOverlayOptions(): PackOverlayCompileOptions {
     return {
       fileName: this.options.fileName,
       targetPackFormat: this.options.targetPackFormat,
-      units: this.units,
+      units: this.output.units,
       overlayEntries: this.overlayEntries,
-      onError: (code, message, range) => this.error(code, message, range),
+      onError: (code, message, range) => this.output.error(code, message, range),
       compileBlock: (body, context) => this.compileBlock(body, context),
       createChildContext: (context, values, metadata) => this.createChildContext(context, values, metadata),
-      compilePackBody: (body, context) => this.resourceBodyToObject(
+      compilePackBody: (body, context) => this.resourceBodies.resourceBodyToObject(
         body,
         context,
-        { ...this.packResourceBodyOptions(), allowBase: false }
+        { ...this.resourceBodies.packResourceBodyOptions(), allowBase: false }
       ),
-      compilePackBodyWithMappings: (body, context) => this.resourceBodyToObjectWithMappings(
+      compilePackBodyWithMappings: (body, context) => this.resourceBodies.resourceBodyToObjectWithMappings(
         body,
         context,
-        { ...this.packResourceBodyOptions(), allowBase: true }
+        { ...this.resourceBodies.packResourceBodyOptions(), allowBase: true }
       ),
-      sourceMap: (outputPath, node, context, mappings) => this.sourceMap(outputPath, node, context, mappings)
+      sourceMap: (outputPath, node, context, mappings) =>
+        this.output.sourceMap(outputPath, node, context, mappings)
     };
   }
-
-  private sourceMap(
-    outputPath: string,
-    node: { range: { start: number; end: number } },
-    context: RsglCompileContext,
-    mappings: RsglMapping[] = []
-  ) {
-    return {
-      generatedFile: outputPath,
-      mappings: [
-        this.sourceMapping("", node.range, context),
-        ...mappings
-      ]
-    };
-  }
-
-  private sourceMapping(
-    generatedPath: string,
-    sourceRange: { start: number; end: number },
-    context: Pick<RsglCompileContext, "sourceFile" | "mappingReason" | "expansionStack">
-  ): RsglMapping {
-    return {
-      generatedPath,
-      sourceFile: context.sourceFile ?? this.options.fileName,
-      sourceRange,
-      reason: context.mappingReason ?? "direct",
-      expansionStack: context.expansionStack ?? []
-    };
-  }
-
-  private error(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
-    this.diagnostics.push({ code, message, range, severity: "error", ...(fileName ? { fileName } : {}) });
-  }
-
-  private warning(code: string, message: string, range: { start: number; end: number }, fileName?: string): void {
-    this.diagnostics.push({ code, message, range, severity: "warning", ...(fileName ? { fileName } : {}) });
-  }
-}
-
-function compileDependencyKey(dependency: CompileDependency): string {
-  const normalizedPath = normalizeDependencyIdentity(dependency.path);
-  const normalizedSource = normalizeDependencyIdentity(dependency.sourceFile);
-  return [
-    normalizedPath,
-    dependency.reason,
-    normalizedSource,
-    dependency.sourceRange.start,
-    dependency.sourceRange.end
-  ].join("\0");
-}
-
-function normalizeDependencyIdentity(fileName: string): string {
-  const normalized = normalizeFileName(fileName);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
-function isJsonResourceFragmentKind(
-  kind: Exclude<RsglResourceKind, "blockstate">
-): kind is JsonResourceFragmentKind {
-  return kind === "mcmeta" || isRsglGenericJsonResourceKind(kind);
-}
-
-export function createRsglStdlibPreludeTemplates(
-  stdlibRoot?: string,
-  configuration: ResolvedRsglCompileConfiguration = resolveRsglCompileConfiguration()
-): RsglTemplateDefinition[] {
-  const files = createRsglStdlibPreludeSourceFiles({ stdlibRoot });
-  if (files.length === 0) {
-    return [];
-  }
-
-  const program = bindRsglProgram(files, { stdlibRoot });
-  const environments = createProgramCompileEnvironments(
-    program,
-    configuration
-  );
-  return program.models.flatMap(model =>
-    Array.from(environments.get(normalizeFileName(model.fileName))?.exportedTemplates.values() ?? [])
-  );
 }
 

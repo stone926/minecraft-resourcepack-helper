@@ -1,8 +1,8 @@
 import type { ExprNode, RsglDiagnostic } from "../parser";
 import { checkBlockstateModelSpec } from "./blockstateModelSpecChecker";
-import { checkBlockstatePredicate } from "./blockstatePredicateChecker";
 import { checkBlockstateSelector } from "./blockstateSelectorChecker";
 import { fileDiagnostic } from "./diagnostics";
+import { checkBlockstatePredicate } from "./expressionChecker";
 import { scopeWithLinkedGlobalFallback } from "./linkedScope";
 import type {
   RsglFileDiagnostic,

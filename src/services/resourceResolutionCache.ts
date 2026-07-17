@@ -21,16 +21,23 @@ export interface ResourceResolutionCacheHost {
   pathExists(fileName: string): boolean;
   getPackRoot(fileName: string): string | null;
   getPackMetadata(packRoot: string): PackMetadata;
+  canReuseVerifiedPaths?(fileNames: readonly string[], verifiedAt: number): boolean;
+  verificationTimestamp?(): number;
+}
+
+interface VerifiedResourceCacheEntry<T> extends CacheEntry<T> {
+  readonly verificationPaths: readonly string[];
+  readonly verifiedAt: number;
 }
 
 export class ResourceResolutionCache {
   private readonly resourceLocationCache = new LruCache<string, ResourceLocation>(4096);
-  private readonly resourceRootCandidatesCache = new LruCache<string, CacheEntry<string[]>>(
+  private readonly resourceRootCandidatesCache = new LruCache<string, VerifiedResourceCacheEntry<string[]>>(
     4096,
     key => this.resourceRootCandidateDependencies.release(key)
   );
   private readonly resourceRootCandidateDependencies = new DependencyIndex();
-  private readonly resourceResolutionCache = new LruCache<string, CacheEntry<string | null>>(
+  private readonly resourceResolutionCache = new LruCache<string, VerifiedResourceCacheEntry<string | null>>(
     8192,
     key => this.resourceResolutionDependencies.release(key)
   );
@@ -55,7 +62,7 @@ export class ResourceResolutionCache {
     ].join("\0");
     const generation = this.state.getResourceFsGeneration();
     const cached = this.resourceRootCandidatesCache.get(key);
-    if (cached && cached.generation === generation) {
+    if (cached && cached.generation === generation && this.canReuse(cached)) {
       this.metrics.hit("resourceRootCandidates");
       return cached.value;
     }
@@ -75,8 +82,14 @@ export class ResourceResolutionCache {
         resourcePath
       }
     );
-    this.resourceRootCandidatesCache.set(key, { generation, value: candidates });
-    this.resourceRootCandidateDependencies.register(key, this.getResourceRootDependencyFiles(request));
+    const verificationPaths = this.getResourceRootDependencyFiles(request);
+    this.resourceRootCandidatesCache.set(key, {
+      generation,
+      value: candidates,
+      verificationPaths,
+      verifiedAt: this.verificationTimestamp()
+    });
+    this.resourceRootCandidateDependencies.register(key, verificationPaths);
     return candidates;
   }
 
@@ -100,7 +113,7 @@ export class ResourceResolutionCache {
     ].join("\0");
     const generation = this.state.getResourceFsGeneration();
     const cached = this.resourceResolutionCache.get(key);
-    if (cached && cached.generation === generation) {
+    if (cached && cached.generation === generation && this.canReuse(cached)) {
       this.metrics.hit("resourceResolution");
       return cached.value;
     }
@@ -112,11 +125,17 @@ export class ResourceResolutionCache {
       getRootCandidates: (resourceRequest, resourcePath, namespace) =>
         this.getResourceRootCandidates(resourceRequest, resourcePath, namespace)
     });
-    this.resourceResolutionCache.set(key, { generation, value: resolution.fileName });
-    this.resourceResolutionDependencies.register(key, [
+    const verificationPaths = [
       ...this.getResourceRootDependencyFiles(request),
       ...resolution.candidates
-    ]);
+    ];
+    this.resourceResolutionCache.set(key, {
+      generation,
+      value: resolution.fileName,
+      verificationPaths,
+      verifiedAt: this.verificationTimestamp()
+    });
+    this.resourceResolutionDependencies.register(key, verificationPaths);
     return resolution.fileName;
   }
 
@@ -182,11 +201,20 @@ export class ResourceResolutionCache {
   }
 
   private getResourceRootDependencyFiles(request: ResourceFileRequest): string[] {
+    const sourcePackRoot = this.host.getPackRoot(request.sourceFileName);
     return uniqueValues([
       request.sourceFileName,
-      ...getAncestorPackMetadataCandidates(request.sourceFileName),
+      ...getAncestorPackMetadataCandidates(request.sourceFileName, sourcePackRoot),
       ...(request.resourcePackRoots ?? []).map(root => path.join(root, "pack.mcmeta"))
     ]);
+  }
+
+  private canReuse(entry: VerifiedResourceCacheEntry<unknown>): boolean {
+    return this.host.canReuseVerifiedPaths?.(entry.verificationPaths, entry.verifiedAt) ?? true;
+  }
+
+  private verificationTimestamp(): number {
+    return this.host.verificationTimestamp?.() ?? 0;
   }
 }
 
@@ -194,14 +222,15 @@ function normalizeOptionalPath(value: string | null | undefined): string {
   return value ? normalizePathKey(value) : "";
 }
 
-function getAncestorPackMetadataCandidates(fileName: string): string[] {
+function getAncestorPackMetadataCandidates(fileName: string, stopAt: string | null): string[] {
   let directory = path.dirname(path.normalize(fileName));
   const root = path.parse(directory).root;
+  const normalizedStop = stopAt ? path.normalize(stopAt) : null;
   const candidates: string[] = [];
 
   while (true) {
     candidates.push(path.join(directory, "pack.mcmeta"));
-    if (directory === root) {
+    if (directory === root || directory === normalizedStop) {
       return candidates;
     }
     directory = path.dirname(directory);

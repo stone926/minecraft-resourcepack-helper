@@ -1,5 +1,4 @@
-import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
+import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import {
   getRsglCompletionItemsForContext,
   type RsglCompletionItem,
@@ -271,6 +270,6 @@ export function semanticModelForFile(
   semanticProgram: RsglWorkspaceSemanticProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = normalizePathKey(path.resolve(fileName));
-  return semanticProgram.program.models.find(model => normalizePathKey(path.resolve(model.fileName)) === key);
+  const key = rsglPathKey(resolveRsglPath(fileName));
+  return semanticProgram.program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
 }

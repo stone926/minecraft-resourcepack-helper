@@ -1,13 +1,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { TextRange } from "../parser";
+import type { TextRange } from "../parser";
+import { isRsglPathInsideOrEqual } from "../pathIdentity";
 import type {
   EvaluationContext,
   RawGlobLimitExceeded,
   RawGlobLoadLimits,
   RawGlobLoadResult,
   RawGlobLoader
-} from "./evaluate";
+} from "./evaluationTypes";
 import { MAX_EVALUATION_ITEMS_PER_ALLOCATION } from "./evaluationItemBudget";
 
 export interface RsglFileGlobLoaderOptions {
@@ -18,6 +19,12 @@ export interface RsglFileGlobLoaderOptions {
 interface ResolvedGlobPattern {
   absolutePattern: string;
   outputBaseDirectory?: string;
+  packMetadataPaths: string[];
+}
+
+interface PackRootResolution {
+  root?: string;
+  metadataPaths: string[];
 }
 
 const wildcardPattern = /[*?]/;
@@ -41,9 +48,20 @@ function loadGlob(
   const resolved = resolveGlobPattern(pattern, context.sourceFile, options.fallbackFileName);
   const matcher = globToRegex(normalizeSlashes(resolved.absolutePattern));
   const collectionLimits = normalizeCollectionLimits(limits);
+  const searchRoot = searchRootForPattern(resolved.absolutePattern);
+  for (const metadataPath of resolved.packMetadataPaths) {
+    recordGlobExactDependency(context, options.fallbackFileName, range, metadataPath);
+  }
+  recordGlobPatternDependency(
+    context,
+    options.fallbackFileName,
+    range,
+    searchRoot,
+    resolved.absolutePattern
+  );
   const collected = wildcardPattern.test(resolved.absolutePattern)
     ? collectMatchingFiles(
-      searchRootForPattern(resolved.absolutePattern),
+      searchRoot,
       matcher,
       collectionLimits
     )
@@ -54,6 +72,9 @@ function loadGlob(
   const matches = collected.sort((left, right) =>
     normalizeSlashes(left).localeCompare(normalizeSlashes(right))
   );
+  for (const match of matches) {
+    recordGlobExactDependency(context, options.fallbackFileName, range, match);
+  }
   for (let index = 0; index < matches.length; index += 1) {
     matches[index] = formatGlobMatch(matches[index], resolved.outputBaseDirectory);
   }
@@ -63,22 +84,27 @@ function loadGlob(
 function resolveGlobPattern(pattern: string, sourceFile: string | undefined, fallbackFileName: string | undefined): ResolvedGlobPattern {
   if (path.isAbsolute(pattern)) {
     const absolutePattern = path.normalize(pattern);
-    const packRoot = findPackRoot(path.dirname(firstStaticPathSegment(absolutePattern)));
+    const packRoot = resolvePackRoot(searchRootForPattern(absolutePattern));
     return {
       absolutePattern,
-      outputBaseDirectory: packRoot
+      outputBaseDirectory: packRoot.root,
+      packMetadataPaths: packRoot.metadataPaths
     };
   }
 
   const baseFile = usableFileName(sourceFile) ?? usableFileName(fallbackFileName);
   const sourceDirectory = baseFile ? path.dirname(baseFile) : process.cwd();
   const normalizedPattern = normalizeSlashes(pattern);
+  const packRoot = isPackRelativePattern(normalizedPattern)
+    ? resolvePackRoot(sourceDirectory)
+    : { metadataPaths: [] };
   const baseDirectory = isPackRelativePattern(normalizedPattern)
-    ? findPackRoot(sourceDirectory) ?? inferredPackRoot(sourceDirectory)
+    ? packRoot.root ?? inferredPackRoot(sourceDirectory)
     : sourceDirectory;
   return {
     absolutePattern: path.resolve(baseDirectory, pattern),
-    outputBaseDirectory: baseDirectory
+    outputBaseDirectory: baseDirectory,
+    packMetadataPaths: packRoot.metadataPaths
   };
 }
 
@@ -92,32 +118,25 @@ function inferredPackRoot(sourceDirectory: string): string {
     : sourceDirectory;
 }
 
-function findPackRoot(startDirectory: string): string | undefined {
+function resolvePackRoot(startDirectory: string): PackRootResolution {
   let current = path.resolve(startDirectory);
+  const metadataPaths: string[] = [];
   while (true) {
-    if (fs.existsSync(path.join(current, "pack.mcmeta"))) {
-      return current;
+    const metadataPath = path.join(current, "pack.mcmeta");
+    metadataPaths.push(metadataPath);
+    if (fs.existsSync(metadataPath)) {
+      return { root: current, metadataPaths };
     }
     const parent = path.dirname(current);
     if (parent === current) {
-      return undefined;
+      return { metadataPaths };
     }
     current = parent;
   }
 }
 
-function firstStaticPathSegment(pattern: string): string {
-  const normalized = normalizeSlashes(pattern);
-  const wildcardIndex = normalized.search(wildcardPattern);
-  if (wildcardIndex < 0) {
-    return pattern;
-  }
-  const prefix = normalized.slice(0, wildcardIndex);
-  const slashIndex = prefix.lastIndexOf("/");
-  return slashIndex >= 0 ? path.normalize(prefix.slice(0, slashIndex)) : process.cwd();
-}
-
-function searchRootForPattern(pattern: string): string {
+/** @internal Exported for focused filesystem-root regression tests. */
+export function searchRootForPattern(pattern: string): string {
   const normalized = normalizeSlashes(pattern);
   const wildcardIndex = normalized.search(wildcardPattern);
   if (wildcardIndex < 0) {
@@ -125,7 +144,47 @@ function searchRootForPattern(pattern: string): string {
   }
   const prefix = normalized.slice(0, wildcardIndex);
   const slashIndex = prefix.lastIndexOf("/");
-  return slashIndex >= 0 ? path.normalize(prefix.slice(0, slashIndex)) : process.cwd();
+  if (slashIndex < 0) {
+    return process.cwd();
+  }
+  const candidate = prefix.slice(0, slashIndex);
+  const filesystemRoot = normalizeSlashes(path.parse(path.normalize(pattern)).root);
+  return path.normalize(
+    filesystemRoot && candidate.length < filesystemRoot.length
+      ? filesystemRoot
+      : candidate
+  );
+}
+
+function recordGlobPatternDependency(
+  context: EvaluationContext,
+  fallbackFileName: string | undefined,
+  sourceRange: TextRange,
+  searchRoot: string,
+  absolutePattern: string
+): void {
+  const relativePattern = normalizeSlashes(path.relative(searchRoot, absolutePattern));
+  context.onDependency?.({
+    path: path.resolve(searchRoot),
+    reason: "glob",
+    sourceFile: context.sourceFile ?? fallbackFileName ?? "<anonymous>",
+    sourceRange,
+    globPattern: relativePattern || path.basename(absolutePattern)
+  });
+}
+
+function recordGlobExactDependency(
+  context: EvaluationContext,
+  fallbackFileName: string | undefined,
+  sourceRange: TextRange,
+  fileName: string
+): void {
+  context.onDependency?.({
+    path: path.resolve(fileName),
+    reason: "glob",
+    sourceFile: context.sourceFile ?? fallbackFileName ?? "<anonymous>",
+    sourceRange
+  });
 }
 
 function collectMatchingFiles(
@@ -234,7 +293,7 @@ function globToRegex(pattern: string): RegExp {
 function formatGlobMatch(fileName: string, outputBaseDirectory: string | undefined): string {
   if (outputBaseDirectory) {
     const relative = path.relative(outputBaseDirectory, fileName);
-    if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
+    if (isRsglPathInsideOrEqual(fileName, outputBaseDirectory)) {
       return normalizeSlashes(relative);
     }
   }

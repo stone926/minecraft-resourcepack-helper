@@ -34,6 +34,14 @@ export interface RsglSoundMetadata {
 
 export type ValidationRange = RsglCompileDiagnostic["range"];
 
+/** Filesystem candidates considered while resolving one external resource. */
+export interface RsglExternalResourceResolution {
+  resolvedPath: string | null;
+  candidatePaths: readonly string[];
+  /** pack.mcmeta inputs that determine overlays, filters, and pack priority. */
+  metadataPaths?: readonly string[];
+}
+
 export interface RsglExternalResourceUsage {
   source: ExternResourceSource;
   resourceKind: ExternResourceKind;
@@ -43,6 +51,8 @@ export interface RsglExternalResourceUsage {
   sourceFile: string;
   range: ValidationRange;
   resolvedPath?: string;
+  candidatePaths?: readonly string[];
+  metadataPaths?: readonly string[];
 }
 
 export interface RsglCheckedResourceReference {
@@ -69,6 +79,13 @@ export interface RsglResourceValidationOptions {
   soundMetadata?: (id: string) => RsglSoundMetadata | null | undefined;
   blockstateSchema?: (id: ResourceId) => RsglBlockstateSchema | null | undefined;
   externResourceExists?: (source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => boolean;
+  /** Preferred resolver API; retains attempted paths when no candidate exists yet. */
+  externResourceResolution?: (
+    source: ExternResourceSource,
+    kind: RsglResourceExistenceKind,
+    id: string
+  ) => RsglExternalResourceResolution;
+  /** Compatibility resolver for hosts that only expose the winning path. */
   externResourcePath?: (source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => string | null;
   externResourceContent?: (source: ExternResourceSource, kind: RsglResourceContentKind, id: string) => JsonValue | null | undefined;
   externTextureMetadata?: (source: ExternResourceSource, id: string) => RsglTextureMetadata | null | undefined;

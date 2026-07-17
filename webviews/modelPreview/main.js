@@ -237,6 +237,8 @@ function dependencyKindLabel(kind) {
       return t("texture");
     case "textureMetadata":
       return t("texture metadata");
+    case "packMetadata":
+      return t("pack metadata");
     case "configuration":
       return t("configuration");
     default:

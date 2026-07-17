@@ -2,7 +2,5 @@
   "name": "@minecraft-resourcepack-helper/rsgl-core",
   "version": "1.0.0",
   "private": true,
-  "license": "Unlicense",
-  "main": "out/index.js",
-  "types": "out/index.d.ts"
+  "license": "Unlicense"
 }

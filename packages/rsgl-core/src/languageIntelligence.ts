@@ -1,5 +1,4 @@
-import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
+import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import {
   ArgumentNode,
   CallExprNode,
@@ -354,9 +353,9 @@ function semanticOccurrenceAtOffset(
   for (const record of model.exports) {
     for (const specifier of record.node.specifiers) {
       const symbol = record.source
-        ? exportMaps?.get(path.normalize(model.fileName))?.get(specifier.exported.text)
+        ? exportMaps?.get(rsglPathKey(model.fileName))?.get(specifier.exported.text)
         : model.scope.symbols.get(specifier.local.text)
-          ?? exportMaps?.get(path.normalize(model.fileName))?.get(specifier.exported.text);
+          ?? exportMaps?.get(rsglPathKey(model.fileName))?.get(specifier.exported.text);
       if (!symbol) {
         continue;
       }
@@ -370,11 +369,11 @@ function semanticOccurrenceAtOffset(
     for (const specifier of record.node.specifiers) {
       const alias = record.source
         ? program.typeAliasExportMaps
-          ?.get(path.normalize(model.fileName))
+          ?.get(rsglPathKey(model.fileName))
           ?.get(specifier.exported.text)
         : model.scope.typeAliases.get(specifier.local.text)
           ?? program.typeAliasExportMaps
-            ?.get(path.normalize(model.fileName))
+            ?.get(rsglPathKey(model.fileName))
             ?.get(specifier.exported.text);
       if (!alias) {
         continue;
@@ -483,8 +482,8 @@ function semanticModelForLanguageFile(
   program: RsglLanguageProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = normalizePathKey(path.resolve(fileName));
-  return program.models.find(model => normalizePathKey(path.resolve(model.fileName)) === key);
+  const key = rsglPathKey(resolveRsglPath(fileName));
+  return program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
 }
 
 function touchesRange(range: TextRange, offset: number): boolean {

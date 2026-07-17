@@ -1,5 +1,3 @@
-import { StandaloneExpressionParser } from "./expressionParser";
-import { lexRsgl } from "./lexer";
 import {
   ExprNode,
   ObjectPropertyNode,
@@ -9,8 +7,16 @@ import {
   TemplateStringPart
 } from "./types";
 
+export interface TemplateExpressionParseResult {
+  expression: ExprNode;
+  diagnostics: readonly RsglDiagnostic[];
+}
+
+export type TemplateExpressionParser = (text: string) => TemplateExpressionParseResult;
+
 export function parseTemplateStringParts(
   token: RsglToken,
+  parseExpression: TemplateExpressionParser,
   onDiagnostic?: (diagnostic: RsglDiagnostic) => void
 ): TemplateStringPart[] {
   const raw = token.text;
@@ -34,6 +40,7 @@ export function parseTemplateStringParts(
         kind: "expression",
         expression: parseStandaloneExpression(
           expressionText,
+          parseExpression,
           token.offset + 1 + exprStart,
           onDiagnostic
         ),
@@ -59,13 +66,13 @@ export function parseTemplateStringParts(
 
 function parseStandaloneExpression(
   text: string,
+  parseExpression: TemplateExpressionParser,
   baseOffset: number,
   onDiagnostic?: (diagnostic: RsglDiagnostic) => void
 ): ExprNode {
-  const lexResult = lexRsgl(text);
-  const parser = new StandaloneExpressionParser(lexResult.tokens, lexResult.diagnostics);
-  const expression = offsetExpressionRanges(parser.parse(), baseOffset);
-  for (const diagnostic of parser.getDiagnostics()) {
+  const parsed = parseExpression(text);
+  const expression = offsetExpressionRanges(parsed.expression, baseOffset);
+  for (const diagnostic of parsed.diagnostics) {
     onDiagnostic?.({
       ...diagnostic,
       range: offsetRange(diagnostic.range, baseOffset)

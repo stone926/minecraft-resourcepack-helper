@@ -1,5 +1,4 @@
-import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
+import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import type { ItemModelFormat } from "./itemModelSchema";
 import { loadRsglProjectConfigForSource } from "./rsglConfig";
 import { normalizeRsglProjectTarget } from "./compiler/targetConfig";
@@ -15,7 +14,7 @@ export class RsglProjectTargetCache {
   public projectItemModelTargetFormatForSource(
     sourceFileName: string
   ): ItemModelFormat | undefined {
-    const key = normalizePathKey(path.resolve(sourceFileName));
+    const key = rsglPathKey(resolveRsglPath(sourceFileName));
     const cached = this.targetsBySource.get(key);
     if (cached !== undefined) {
       return cached ? [...cached] : undefined;

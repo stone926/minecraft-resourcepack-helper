@@ -1,0 +1,10 @@
+{
+  "name": "minecraft-resourcepack-helper-vsce-publisher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lockfile boundary for the offline VS Code Marketplace publishing client",
+  "license": "Unlicense",
+  "dependencies": {
+    "@vscode/vsce": "3.9.2"
+  }
+}

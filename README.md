@@ -24,7 +24,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 - Extra semantic checks for `pack.mcmeta`, `pack.png`, colormap PNG sizes, `sounds.json`, post-effect targets, model parent/texture-variable chains, and `assets/<namespace>/texts/{splashes,end,postcredits}.txt`.
 - English and Simplified Chinese localization for extension commands, runtime prompts, diagnostics, resource graph labels, model preview issues, and model preview webview controls.
 - Commands for scaffolding a modern resource pack with namespace folders, a default `pack.png`, and `min_format`/`max_format` pack metadata.
-- RSGL support through the companion `stone926.rsgl` extension, which is installed as an extension dependency and owns `.rsgl` language features, build commands, and the bundled language server.
+- Optional RSGL support through the companion `stone926.rsgl` extension, which is included in this extension pack and owns `.rsgl` language features, build commands, and the bundled language server.
 
 ## Quick Start
 
@@ -34,7 +34,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 4. Optional: configure `McResHelper.resourcePackLoadOrder` with absolute paths to lower-priority resource pack roots.
 5. Open a supported resource pack file and use Go to Definition, path suggestions, diagnostics, the Minecraft Resources activity bar view, or model preview for model JSON files.
 
-The extension activates automatically when the workspace contains `pack.mcmeta`. Installing Minecraft Resourcepack Helper also installs the RSGL companion extension through VS Code extension dependencies.
+The extension activates automatically when the workspace contains `pack.mcmeta`. The Marketplace install also offers the RSGL companion through an extension pack; it can be removed independently, and Minecraft Resourcepack Helper continues to work without it.
 
 ## Resource Resolution
 
@@ -105,13 +105,14 @@ The view has cached workspace indexes and can be refreshed manually with **McRes
 
 ## RSGL
 
-RSGL support is split into a separate VS Code extension: `stone926.rsgl`. Minecraft Resourcepack Helper depends on it, so users who install the main extension receive RSGL automatically.
+RSGL support is split into a separate VS Code extension: `stone926.rsgl`. It is included in the main extension's extension pack for convenient installation, but it is not a runtime dependency and can be removed independently.
 
 The RSGL extension owns:
 
 - `.rsgl` language registration, syntax highlighting, language configuration, diagnostics, completion, hover, and formatting.
 - RSGL build and preview commands such as **RSGL: Build Resourcepack JSON**, **RSGL: Preview Build**, **RSGL: Build Source Directory**, and workspace build variants.
-- Settings under the `rsgl.*` namespace, including output directory, Minecraft target version, vanilla assets fallback, lower-priority packs, source maps, and generated JSON validation.
+- VS Code settings under the `rsgl.*` namespace for the output directory, vanilla assets fallback, and lower-priority resource packs.
+- Project compiler options in `rsgl.config.json`, including the Minecraft target, source maps, generated JSON validation, source roots, and evaluation limits.
 - The bundled RSGL language server plus shared compiler/core packages.
 
 The current language surface accepts canonical syntax only, including explicit `model` / `variants` / `multipart` / `choice` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
@@ -170,9 +171,12 @@ npm run benchmark:model-preview
 npm run compile:rsgl-extension
 npm run package:main:vsix
 npm run package:rsgl:vsix
+npm run package:rsgl-cli
 ```
 
 The repository contains the main extension at the root, shared RSGL packages under `packages/rsgl-*`, and the standalone RSGL VS Code extension under `extensions/vscode-rsgl`. RSGL unit tests live with the core package in `packages/rsgl-core/test/unit`.
+
+The three public products release independently: the main extension uses `vX.Y.Z`, the RSGL extension uses `rsgl-vX.Y.Z`, and the npm CLI uses `rsgl-cli-vX.Y.Z`. Use `npm run release:main`, `npm run release:rsgl`, or `npm run release:rsgl-cli` so only that product's manifest, changelog, artifact, and tag are advanced. The prepared RSGL 1.0.0 first releases use `npm run release:rsgl:current` and `npm run release:rsgl-cli:current`; later release commands increment only their selected product by one patch unless an explicit version is supplied to `scripts/release.mjs`.
 
 ## Links
 

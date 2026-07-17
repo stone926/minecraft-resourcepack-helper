@@ -1,5 +1,4 @@
-import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
+import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import {
   MemberExprNode,
   RsglModule,
@@ -269,15 +268,15 @@ function semanticModelForMemberFile(
   program: RsglMemberLanguageProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = normalizePathKey(path.resolve(fileName));
-  return program.models.find(model => normalizePathKey(path.resolve(model.fileName)) === key);
+  const key = rsglPathKey(resolveRsglPath(fileName));
+  return program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
 }
 
 function deduplicateLocations(
   locations: readonly RsglMemberDefinitionLocation[]
 ): RsglMemberDefinitionLocation[] {
   return [...new Map(locations.map(location => [
-    `${normalizePathKey(path.resolve(location.fileName))}:${location.range.start}:${location.range.end}`,
+    `${rsglPathKey(resolveRsglPath(location.fileName))}:${location.range.start}:${location.range.end}`,
     location
   ])).values()];
 }
@@ -286,7 +285,7 @@ function compareLocations(
   left: RsglMemberDefinitionLocation,
   right: RsglMemberDefinitionLocation
 ): number {
-  return normalizePathKey(path.resolve(left.fileName)).localeCompare(normalizePathKey(path.resolve(right.fileName)))
+  return rsglPathKey(resolveRsglPath(left.fileName)).localeCompare(rsglPathKey(resolveRsglPath(right.fileName)))
     || left.range.start - right.range.start;
 }
 

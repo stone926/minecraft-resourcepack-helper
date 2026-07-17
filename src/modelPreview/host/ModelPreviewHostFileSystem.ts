@@ -23,6 +23,14 @@ export class ModelPreviewHostFileSystem implements ModelPreviewFileSystem {
     return workspaceResourceCache.getPathExists(fileName);
   }
 
+  getResourceGeneration(): number {
+    return workspaceResourceCache.getResourceMutationGeneration();
+  }
+
+  hasAnyResourceChangedSince(generation: number, fileNames: readonly string[]): boolean {
+    return workspaceResourceCache.hasAnyResourceChangedSince(generation, fileNames);
+  }
+
   fileVersion(fileName: string): string | null {
     return workspaceResourceCache.getFileVersion(fileName);
   }

@@ -3,8 +3,8 @@ import type {
   EvaluationResult,
   EvaluationValue,
   LambdaValue
-} from "./evaluate";
-import { normalizeJsonValue } from "./compilerHelpers";
+} from "./evaluationTypes";
+import { normalizeJsonValue } from "./evaluationJsonValues";
 import type { EvaluationItemBudget } from "./evaluationItemBudget";
 import type { JsonValue } from "./ir";
 import {

@@ -28,6 +28,7 @@ import {
 
 export type {
   RsglExternalResourceUsage,
+  RsglExternalResourceResolution,
   RsglResourceContentKind,
   RsglResourceExistenceKind,
   RsglResourceValidationOptions,

@@ -9,6 +9,7 @@
   "command.title.createNewResourcePack": "McResHelper: 在当前文件夹下创建新资源包",
   "command.title.createNewResourcePackRoot": "McResHelper: 以当前文件夹为根目录创建新资源包",
   "command.title.refreshResourceGraph": "McResHelper: 刷新资源映射",
+  "command.title.refreshResources": "McResHelper: 刷新资源缓存与诊断",
   "command.title.openModelPreview": "McResHelper: 打开模型预览",
   "command.title.exportModelPreviewImage": "McResHelper: 导出模型预览图片",
   "command.title.openResourceGraphModelPreview": "McResHelper: 从资源图打开模型预览",

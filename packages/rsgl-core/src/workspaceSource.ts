@@ -12,6 +12,11 @@ import {
   readRsglStdlibVirtualSource,
   rsglStdlibVirtualFileName
 } from "./stdlib";
+import {
+  normalizeRsglPath,
+  resolveRsglPath,
+  rsglPathKey
+} from "./pathIdentity";
 
 export interface RsglTextDocumentLike {
   fileName: string;
@@ -22,6 +27,15 @@ export interface RsglTextDocumentLike {
 export interface RsglWorkspaceSourceCacheOptions {
   encoding?: BufferEncoding;
   fileSystem?: RsglWorkspaceSourceFileSystem;
+  /**
+   * Trusts callers to invalidate disk paths from a covering file watcher.
+   * Cached disk sources then require no stat/read on a hot hit.
+   */
+  watcherTrusted?: boolean;
+  /** Verification interval for disk paths not covered by a trusted watcher. */
+  verificationTtlMs?: number;
+  /** Injectable monotonic-ish clock used by verification-cache tests. */
+  clock?: () => number;
 }
 
 export type RsglOpenTextDocumentProvider = (fileName: string) => RsglTextDocumentLike | null;
@@ -38,8 +52,10 @@ export interface RsglWorkspaceSourceFileSystem {
 }
 
 interface RsglCachedSourceFile {
+  kind: "disk" | "open" | "virtual";
   versionKey: string;
   sourceFile: RsglSourceFile;
+  verifiedAtMs?: number;
 }
 
 interface RsglSourceReadResult {
@@ -51,9 +67,13 @@ export class RsglWorkspaceSourceCache {
   private readonly sourceFiles = new Map<string, RsglCachedSourceFile>();
   private openTextDocumentProvider: RsglOpenTextDocumentProvider | null = null;
   private readonly fileSystem: RsglWorkspaceSourceFileSystem;
+  private readonly verificationTtlMs: number;
+  private readonly clock: () => number;
 
   public constructor(private readonly options: RsglWorkspaceSourceCacheOptions = {}) {
     this.fileSystem = options.fileSystem ?? nodeSourceFileSystem;
+    this.verificationTtlMs = normalizedVerificationTtl(options.verificationTtlMs);
+    this.clock = options.clock ?? Date.now;
   }
 
   public setOpenTextDocumentProvider(provider: RsglOpenTextDocumentProvider | null): void {
@@ -62,7 +82,7 @@ export class RsglWorkspaceSourceCache {
   }
 
   public invalidatePath(fileName: string): void {
-    this.sourceFiles.delete(normalizeFileName(path.resolve(fileName)));
+    this.sourceFiles.delete(rsglPathKey(resolveRsglPath(fileName)));
   }
 
   public invalidateAll(): void {
@@ -75,10 +95,11 @@ export class RsglWorkspaceSourceCache {
 
     const visit = (fileName: string): void => {
       const normalizedFileName = normalizeSourceFileName(fileName);
-      if (visited.has(normalizedFileName)) {
+      const fileKey = rsglPathKey(normalizedFileName);
+      if (visited.has(fileKey)) {
         return;
       }
-      visited.add(normalizedFileName);
+      visited.add(fileKey);
 
       const sourceFile = this.readSourceFile(normalizedFileName);
       if (!sourceFile) {
@@ -87,7 +108,7 @@ export class RsglWorkspaceSourceCache {
       files.push(sourceFile);
 
       for (const source of collectRsglModuleSources(sourceFile.module)) {
-        const resolved = resolveModuleSourceFileName(normalizedFileName, source);
+        const resolved = resolveModuleSourceFileName(sourceFile.fileName, source);
         if (resolved) {
           visit(resolved);
         }
@@ -104,10 +125,11 @@ export class RsglWorkspaceSourceCache {
 
     const visit = (fileName: string): void => {
       const normalizedFileName = normalizeSourceFileName(fileName);
-      if (visited.has(normalizedFileName)) {
+      const fileKey = rsglPathKey(normalizedFileName);
+      if (visited.has(fileKey)) {
         return;
       }
-      visited.add(normalizedFileName);
+      visited.add(fileKey);
 
       const sourceFile = this.readSourceFile(normalizedFileName);
       if (!sourceFile) {
@@ -116,7 +138,7 @@ export class RsglWorkspaceSourceCache {
       files.push(sourceFile);
 
       for (const source of collectRsglModuleSources(sourceFile.module)) {
-        const resolved = resolveModuleSourceFileName(normalizedFileName, source);
+        const resolved = resolveModuleSourceFileName(sourceFile.fileName, source);
         if (resolved) {
           visit(resolved);
         }
@@ -130,80 +152,110 @@ export class RsglWorkspaceSourceCache {
   }
 
   private readSourceFile(fileName: string): RsglSourceFile | null {
-    const normalizedFileName = normalizeFileName(isVirtualSourceFileName(fileName) ? fileName : path.resolve(fileName));
-    const cached = this.sourceFiles.get(normalizedFileName);
-    const trustedVersionKey = this.currentTrustedVersionKey(normalizedFileName);
-    if (cached && trustedVersionKey && cached.versionKey === trustedVersionKey) {
+    const normalizedFileName = normalizeSourceFileName(fileName);
+    const fileKey = rsglPathKey(normalizedFileName);
+    const cached = this.sourceFiles.get(fileKey);
+    const canonicalFileName = cached?.sourceFile.fileName ?? normalizedFileName;
+
+    if (cached?.kind === "virtual") {
       return cached.sourceFile;
     }
 
-    const readResult = this.readText(normalizedFileName);
-    if (!readResult) {
-      this.sourceFiles.delete(normalizedFileName);
-      return null;
+    const virtualText = readRsglStdlibVirtualSource(canonicalFileName);
+    if (virtualText !== null) {
+      return this.cacheReadResult(fileKey, canonicalFileName, cached, {
+        text: virtualText,
+        versionKey: `rsgl-stdlib:${hashText(virtualText)}`
+      }, "virtual");
     }
 
-    if (cached?.versionKey === readResult.versionKey) {
-      return cached.sourceFile;
-    }
-
-    const sourceFile = {
-      fileName: normalizedFileName,
-      module: parseRsgl(readResult.text)
-    };
-    this.sourceFiles.set(normalizedFileName, { versionKey: readResult.versionKey, sourceFile });
-    return sourceFile;
-  }
-
-  private readText(fileName: string): RsglSourceReadResult | null {
-    const stdlibText = readRsglStdlibVirtualSource(fileName);
-    if (stdlibText !== null) {
-      return {
-        text: stdlibText,
-        versionKey: `rsgl-stdlib:${hashText(stdlibText)}`
-      };
-    }
-
-    const openDocument = this.openTextDocumentProvider?.(fileName);
+    const openDocument = this.openTextDocumentProvider?.(canonicalFileName);
     if (openDocument) {
+      const trustedVersionKey = typeof openDocument.version === "number"
+        ? `open:${openDocument.version}`
+        : null;
+      if (
+        cached?.kind === "open"
+        && trustedVersionKey
+        && cached.versionKey === trustedVersionKey
+      ) {
+        return cached.sourceFile;
+      }
       const text = openDocument.getText();
-      return {
+      return this.cacheReadResult(fileKey, canonicalFileName, cached, {
         text,
         versionKey: openDocumentVersionKey(openDocument, text)
-      };
+      }, "open");
+    }
+
+    return this.readDiskSource(fileKey, canonicalFileName, cached);
+  }
+
+  private readDiskSource(
+    fileKey: string,
+    fileName: string,
+    cached: RsglCachedSourceFile | undefined
+  ): RsglSourceFile | null {
+    if (cached?.kind === "disk" && this.options.watcherTrusted) {
+      return cached.sourceFile;
+    }
+
+    const now = this.clock();
+    if (
+      cached?.kind === "disk"
+      && cached.verifiedAtMs !== undefined
+      && now >= cached.verifiedAtMs
+      && now - cached.verifiedAtMs < this.verificationTtlMs
+    ) {
+      return cached.sourceFile;
     }
 
     try {
       const stat = this.fileSystem.statFile(fileName);
       if (!stat.isFile()) {
+        this.sourceFiles.delete(fileKey);
         return null;
       }
+      const versionKey = fsVersionKey(stat);
+      if (cached?.kind === "disk" && cached.versionKey === versionKey) {
+        cached.verifiedAtMs = now;
+        return cached.sourceFile;
+      }
       const text = this.fileSystem.readTextFile(fileName, this.options.encoding ?? "utf8");
-      return {
+      return this.cacheReadResult(fileKey, fileName, cached, {
         text,
-        versionKey: fsVersionKey(stat)
-      };
+        versionKey
+      }, "disk", now);
     } catch {
+      this.sourceFiles.delete(fileKey);
       return null;
     }
   }
 
-  private currentTrustedVersionKey(fileName: string): string | null {
-    const openDocument = this.openTextDocumentProvider?.(fileName);
-    if (openDocument && typeof openDocument.version === "number") {
-      return `open:${openDocument.version}`;
+  private cacheReadResult(
+    fileKey: string,
+    fileName: string,
+    cached: RsglCachedSourceFile | undefined,
+    readResult: RsglSourceReadResult,
+    kind: RsglCachedSourceFile["kind"],
+    verifiedAtMs?: number
+  ): RsglSourceFile {
+    if (cached?.kind === kind && cached.versionKey === readResult.versionKey) {
+      cached.verifiedAtMs = verifiedAtMs;
+      return cached.sourceFile;
     }
 
-    if (openDocument) {
-      return null;
-    }
-
-    try {
-      const stat = this.fileSystem.statFile(fileName);
-      return stat.isFile() ? fsVersionKey(stat) : null;
-    } catch {
-      return null;
-    }
+    const sourceFile = {
+      fileName,
+      module: parseRsgl(readResult.text)
+    };
+    this.sourceFiles.set(fileKey, {
+      kind,
+      versionKey: readResult.versionKey,
+      sourceFile,
+      ...(verifiedAtMs === undefined ? {} : { verifiedAtMs })
+    });
+    return sourceFile;
   }
 }
 
@@ -232,16 +284,12 @@ function isVirtualSourceFileName(fileName: string): boolean {
   return readRsglStdlibVirtualSource(fileName) !== null;
 }
 
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
-}
-
 function normalizeSourceFileName(fileName: string): string {
-  return normalizeFileName(isVirtualSourceFileName(fileName) ? fileName : path.resolve(fileName));
+  return isVirtualSourceFileName(fileName) ? normalizeRsglPath(fileName) : resolveRsglPath(fileName);
 }
 
 function enumerateRsglFiles(rootDirectory: string): string[] {
-  const normalizedRoot = path.resolve(rootDirectory);
+  const normalizedRoot = resolveRsglPath(rootDirectory);
   const result: string[] = [];
 
   const visitDirectory = (directory: string): void => {
@@ -261,7 +309,7 @@ function enumerateRsglFiles(rootDirectory: string): string[] {
             visitDirectory(fileName);
           }
         } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".rsgl") {
-          result.push(normalizeFileName(fileName));
+          result.push(normalizeRsglPath(fileName));
         }
       });
   };
@@ -297,6 +345,14 @@ function openDocumentVersionKey(document: RsglTextDocumentLike, text: string): s
   return typeof document.version === "number"
     ? `open:${document.version}`
     : `open:unknown:${hashText(text)}`;
+}
+
+const DEFAULT_VERIFICATION_TTL_MS = 1_000;
+
+function normalizedVerificationTtl(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, value)
+    : DEFAULT_VERIFICATION_TTL_MS;
 }
 
 const nodeSourceFileSystem: RsglWorkspaceSourceFileSystem = {

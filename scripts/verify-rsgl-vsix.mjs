@@ -44,10 +44,7 @@ function extractVsix(fileName, destination) {
 async function verifyLanguageServer(extensionRoot) {
   const serverModule = path.join(
     extensionRoot,
-    "out",
-    "packages",
-    "rsgl-lsp",
-    "src",
+    "bundle",
     "server.js",
   );
   if (!existsSync(serverModule)) {

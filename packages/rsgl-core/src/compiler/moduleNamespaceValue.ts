@@ -3,7 +3,7 @@ import type {
   EvaluationPathOrigin,
   EvaluationValue,
   EvaluationValueIssue
-} from "./evaluate";
+} from "./evaluationTypes";
 import type { RsglTemplateDefinition } from "./environment";
 
 export interface ModuleNamespaceValueOptions {

@@ -138,14 +138,17 @@ export class ModelResourceCache {
     fileName: string,
     configurationKey: string,
     model: Promise<ResolvedModel | null>,
-    getVersion: (fileName: string) => string | null
+    dependencyVersions: ReadonlyMap<string, string | null>
   ): void {
     const key = normalizePathKey(fileName);
+    const normalizedDependencyVersions = new Map(
+      [...dependencyVersions].map(([dependency, version]) => [normalizePathKey(dependency), version])
+    );
     const entry: PreviewResolvedModelCacheEntry = {
       model,
       configurationKey,
-      dependencyKeys: new Set([key]),
-      dependencyVersions: null
+      dependencyKeys: new Set([key, ...normalizedDependencyVersions.keys()]),
+      dependencyVersions: normalizedDependencyVersions
     };
     entry.model = model.then(resolvedModel => {
       if (this.previewResolvedModels.peek(key) === entry) {
@@ -153,10 +156,10 @@ export class ModelResourceCache {
           fileName,
           ...(resolvedModel?.dependencies.map(dependency => dependency.fileName) ?? [])
         ]);
-        entry.dependencyKeys = new Set([...dependencies].map(dependency => normalizePathKey(dependency)));
-        entry.dependencyVersions = new Map(
-          [...dependencies].map(dependency => [normalizePathKey(dependency), getVersion(dependency)])
-        );
+        entry.dependencyKeys = new Set([
+          ...entry.dependencyKeys,
+          ...[...dependencies].map(dependency => normalizePathKey(dependency))
+        ]);
       }
       return resolvedModel;
     });

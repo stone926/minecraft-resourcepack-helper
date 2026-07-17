@@ -1,6 +1,9 @@
-import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
 import { resolveRsglCompileConfiguration } from "./compiler/compileConfiguration";
+import {
+  isRsglPathInsideOrEqual,
+  resolveRsglPath,
+  rsglPathKey
+} from "./pathIdentity";
 import {
   bindRsglProgram,
   RsglProgram,
@@ -51,8 +54,8 @@ export class RsglWorkspaceSemanticCache {
   }
 
   public invalidatePath(fileName: string): void {
-    const normalizedFileName = normalizeFileName(path.resolve(fileName));
-    const key = normalizePathKey(normalizedFileName);
+    const normalizedFileName = resolveRsglPath(fileName);
+    const key = rsglPathKey(normalizedFileName);
     this.sourceCache.invalidatePath(normalizedFileName);
 
     for (const [programKey, cached] of this.programs) {
@@ -74,7 +77,7 @@ export class RsglWorkspaceSemanticCache {
     entryFileName: string,
     options: RsglWorkspaceSemanticLoadOptions = {}
   ): RsglWorkspaceSemanticProgram {
-    const normalizedEntryFileName = normalizeFileName(path.resolve(entryFileName));
+    const normalizedEntryFileName = resolveRsglPath(entryFileName);
     const files = this.sourceCache.loadProgramFromEntry(normalizedEntryFileName);
     return this.loadProgram("entry", normalizedEntryFileName, files, {
       entryFileName: normalizedEntryFileName,
@@ -87,11 +90,11 @@ export class RsglWorkspaceSemanticCache {
     rootDirectory: string,
     options: RsglWorkspaceSemanticLoadOptions = {}
   ): RsglWorkspaceSemanticProgram {
-    const normalizedRootDirectory = normalizeFileName(path.resolve(rootDirectory));
+    const normalizedRootDirectory = resolveRsglPath(rootDirectory);
     const files = this.sourceCache.loadProgramFromDirectory(normalizedRootDirectory);
     return this.loadProgram("directory", normalizedRootDirectory, files, {
       rootDirectory: normalizedRootDirectory,
-      rootDirectoryKey: normalizePathKey(normalizedRootDirectory),
+      rootDirectoryKey: rsglPathKey(normalizedRootDirectory),
       semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
         ?? defaultSemanticConfigurationFingerprint
     });
@@ -112,7 +115,7 @@ export class RsglWorkspaceSemanticCache {
       semanticConfigurationFingerprint: string;
     }
   ): RsglWorkspaceSemanticProgram {
-    const programKey = `${sourceKind}:${normalizePathKey(sourceName)}`;
+    const programKey = `${sourceKind}:${rsglPathKey(sourceName)}`;
     const signature = this.createProgramSignature(files, options.semanticConfigurationFingerprint);
     const cached = this.programs.get(programKey);
     if (cached?.signature === signature) {
@@ -131,7 +134,7 @@ export class RsglWorkspaceSemanticCache {
     };
     this.programs.set(programKey, {
       signature,
-      dependencyKeys: new Set(files.map(file => normalizePathKey(file.fileName))),
+      dependencyKeys: new Set(files.map(file => rsglPathKey(file.fileName))),
       rootDirectoryKey: options.rootDirectoryKey,
       result
     });
@@ -144,7 +147,7 @@ export class RsglWorkspaceSemanticCache {
   ): string {
     return [
       `config:${semanticConfigurationFingerprint.length}:${semanticConfigurationFingerprint}`,
-      ...files.map(file => `${normalizePathKey(file.fileName)}@${this.sourceFileId(file)}`)
+      ...files.map(file => `${rsglPathKey(file.fileName)}@${this.sourceFileId(file)}`)
     ].join("|");
   }
 
@@ -159,11 +162,6 @@ export class RsglWorkspaceSemanticCache {
   }
 }
 
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
-}
-
 function isPathInsideOrEqual(fileName: string, directoryKey: string): boolean {
-  const relative = path.relative(directoryKey, normalizePathKey(fileName));
-  return relative === "" || (relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative));
+  return isRsglPathInsideOrEqual(fileName, directoryKey);
 }

@@ -16,6 +16,11 @@ import {
   parseJsonAst
 } from "../utils/jsonAst";
 import { LruCache } from "./lruCache";
+import {
+  FileFreshnessPolicy,
+  type FileFreshnessPolicyOptions,
+  type WatcherTrustProvider
+} from "./fileFreshnessPolicy";
 import { ResourceCacheMetrics } from "./resourceCacheMetrics";
 import type {
   CacheEntry,
@@ -30,59 +35,104 @@ interface DocumentAstCacheEntry {
   ast: JsonDocumentNode | null;
 }
 
+interface PathExistsCacheEntry extends CacheEntry<boolean> {
+  verifiedAt: number;
+}
+
+interface FreshnessCacheEntry<T> extends CacheEntry<T> {
+  readonly verificationPaths: readonly string[];
+  readonly verifiedAt: number;
+}
+
 export type OpenTextDocumentProvider = (fileName: string) => CacheTextDocument | null;
 
 const emptyPackMetadata: PackMetadata = { overlays: [], filters: [] };
 
 export class FileSystemResourceCache {
   private openTextDocumentProvider: OpenTextDocumentProvider | null = null;
-  private readonly pathExistsCache = new LruCache<string, CacheEntry<boolean>>(8192);
-  private readonly directoryEntriesCache = new LruCache<string, Promise<CacheEntry<Dirent[] | null>>>(1024);
-  private readonly directoryEntriesSyncCache = new LruCache<string, CacheEntry<Dirent[] | null>>(1024);
+  private readonly pathExistsCache = new LruCache<string, PathExistsCacheEntry>(8192);
+  private readonly directoryEntriesCache = new LruCache<string, VersionedCacheEntry<Promise<Dirent[] | null>>>(1024);
+  private readonly directoryEntriesSyncCache = new LruCache<string, VersionedCacheEntry<Dirent[] | null>>(1024);
   private readonly documentAstCache = new LruCache<string, DocumentAstCacheEntry>(1024);
   private readonly fileAstCache = new LruCache<string, VersionedCacheEntry<JsonDocumentNode | null>>(1024);
-  private readonly packRootCache = new LruCache<string, CacheEntry<string | null>>(4096);
+  private readonly packRootCache = new LruCache<string, FreshnessCacheEntry<string | null>>(4096);
   private readonly packMetadataCache = new LruCache<string, VersionedCacheEntry<PackMetadata>>(256);
   private readonly soundEventsCache = new LruCache<string, VersionedCacheEntry<Set<string> | null>>(512);
 
   constructor(
     private readonly state: ResourceCacheGenerationState,
-    private readonly metrics: ResourceCacheMetrics
-  ) {}
+    private readonly metrics: ResourceCacheMetrics,
+    freshnessOptions: FileFreshnessPolicyOptions = {}
+  ) {
+    this.freshness = new FileFreshnessPolicy(freshnessOptions);
+  }
+
+  private readonly freshness: FileFreshnessPolicy;
 
   setOpenTextDocumentProvider(provider: OpenTextDocumentProvider | null): void {
     this.openTextDocumentProvider = provider;
   }
 
+  setWatcherTrustProvider(provider: WatcherTrustProvider | null): void {
+    this.freshness.setWatcherTrustProvider(provider);
+    this.invalidateAll();
+  }
+
   getPathExists(fileName: string): boolean {
-    return this.getGenerationalValue("pathExists", this.pathExistsCache, normalizePathKey(fileName), () => fs.existsSync(fileName));
+    const key = normalizePathKey(fileName);
+    const generation = this.state.getResourceFsGeneration();
+    const cached = this.pathExistsCache.get(key);
+    if (
+      cached
+      && cached.generation === generation
+      && this.freshness.canReuseVerifiedValue(fileName, cached.verifiedAt)
+    ) {
+      this.metrics.hit("pathExists");
+      return cached.value;
+    }
+
+    this.metrics.miss("pathExists");
+    const value = fs.existsSync(fileName);
+    this.pathExistsCache.set(key, {
+      generation,
+      value,
+      verifiedAt: this.freshness.verificationTimestamp()
+    });
+    return value;
   }
 
   getDirectoryEntries(directory: string): Promise<Dirent[] | null> {
     const key = normalizePathKey(directory);
-    const generation = this.state.getResourceFsGeneration();
+    const version = this.getFileVersion(directory) ?? `missing:${this.state.getResourceFsGeneration()}`;
     const cached = this.directoryEntriesCache.get(key);
-    if (cached) {
+    if (cached && cached.version === version) {
       this.metrics.hit("directoryEntries");
-      return cached.then(entry => entry.generation === this.state.getResourceFsGeneration()
-        ? entry.value
-        : this.readDirectoryEntries(directory));
+      return cached.value;
     }
 
     this.metrics.miss("directoryEntries");
     const value = this.readDirectoryEntries(directory);
-    this.directoryEntriesCache.set(key, value.then(entries => ({ generation, value: entries })));
+    this.directoryEntriesCache.set(key, { version, value });
     return value;
   }
 
   getDirectoryEntriesSync(directory: string): Dirent[] | null {
-    return this.getGenerationalValue("directoryEntriesSync", this.directoryEntriesSyncCache, normalizePathKey(directory), () => {
-      try {
-        return fs.readdirSync(directory, { withFileTypes: true });
-      } catch {
-        return null;
-      }
-    });
+    const key = normalizePathKey(directory);
+    const version = this.getFileVersion(directory) ?? `missing:${this.state.getResourceFsGeneration()}`;
+    const cached = this.directoryEntriesSyncCache.get(key);
+    if (cached && cached.version === version) {
+      this.metrics.hit("directoryEntriesSync");
+      return cached.value;
+    }
+    this.metrics.miss("directoryEntriesSync");
+    let value: Dirent[] | null;
+    try {
+      value = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      value = null;
+    }
+    this.directoryEntriesSyncCache.set(key, { version, value });
+    return value;
   }
 
   getJsonAst(document: CacheTextDocument): JsonDocumentNode | null {
@@ -120,26 +170,40 @@ export class FileSystemResourceCache {
       return `open:${openDocument.version}`;
     }
 
-    try {
-      const stat = fs.statSync(fileName);
-      return `${stat.mtimeMs}:${stat.size}`;
-    } catch {
-      return null;
-    }
+    return this.freshness.getFileVersion(fileName);
+  }
+
+  canReuseVerifiedPaths(fileNames: readonly string[], verifiedAt: number): boolean {
+    return this.freshness.canReuseVerifiedPaths(fileNames, verifiedAt);
+  }
+
+  verificationTimestamp(): number {
+    return this.freshness.verificationTimestamp();
   }
 
   getPackRoot(fileName: string): string | null {
-    return this.getGenerationalValue("packRoot", this.packRootCache, normalizePathKey(fileName), () =>
-      findPackRoot(fileName, { pathExists: candidate => this.getPathExists(candidate) }));
+    return this.getFreshGenerationalValue(
+      "packRoot",
+      this.packRootCache,
+      normalizePathKey(fileName),
+      ancestorPackMetadataCandidates(fileName),
+      () => findPackRoot(fileName, { pathExists: candidate => this.getPathExists(candidate) })
+    );
   }
 
   getPackRootWithin(fileName: string, workspaceRoot: string): string | null {
     const normalizedWorkspaceRoot = path.normalize(workspaceRoot);
     const key = `${normalizePathKey(fileName)}\0${normalizePathKey(normalizedWorkspaceRoot)}`;
-    return this.getGenerationalValue("packRoot", this.packRootCache, key, () => findPackRoot(fileName, {
-      pathExists: candidate => this.getPathExists(candidate),
-      stopAt: normalizedWorkspaceRoot
-    }));
+    return this.getFreshGenerationalValue(
+      "packRoot",
+      this.packRootCache,
+      key,
+      ancestorPackMetadataCandidates(fileName, normalizedWorkspaceRoot),
+      () => findPackRoot(fileName, {
+        pathExists: candidate => this.getPathExists(candidate),
+        stopAt: normalizedWorkspaceRoot
+      })
+    );
   }
 
   getPackMetadata(packRoot: string): PackMetadata {
@@ -171,6 +235,7 @@ export class FileSystemResourceCache {
   }
 
   invalidateAll(): void {
+    this.freshness.invalidateAll();
     this.pathExistsCache.clear();
     this.directoryEntriesCache.clear();
     this.directoryEntriesSyncCache.clear();
@@ -182,6 +247,7 @@ export class FileSystemResourceCache {
   }
 
   invalidatePath(fileName: string): void {
+    this.freshness.invalidatePath(fileName);
     const key = normalizePathKey(fileName);
     this.pathExistsCache.delete(key);
     this.fileAstCache.delete(key);
@@ -196,6 +262,7 @@ export class FileSystemResourceCache {
   }
 
   invalidateDocument(document: CacheTextDocument): void {
+    this.freshness.invalidatePath(document.fileName);
     this.documentAstCache.delete(documentKey(document));
     this.fileAstCache.delete(normalizePathKey(document.fileName));
     this.soundEventsCache.delete(normalizePathKey(document.fileName));
@@ -273,6 +340,35 @@ export class FileSystemResourceCache {
     return value;
   }
 
+  private getFreshGenerationalValue<T>(
+    cacheName: string,
+    cache: LruCache<string, FreshnessCacheEntry<T>>,
+    key: string,
+    verificationPaths: readonly string[],
+    compute: () => T
+  ): T {
+    const generation = this.state.getResourceFsGeneration();
+    const cached = cache.get(key);
+    if (
+      cached
+      && cached.generation === generation
+      && this.freshness.canReuseVerifiedPaths(cached.verificationPaths, cached.verifiedAt)
+    ) {
+      this.metrics.hit(cacheName);
+      return cached.value;
+    }
+
+    this.metrics.miss(cacheName);
+    const value = compute();
+    cache.set(key, {
+      generation,
+      value,
+      verificationPaths,
+      verifiedAt: this.freshness.verificationTimestamp()
+    });
+    return value;
+  }
+
   private deleteDirectoryEntriesForAncestors(fileName: string): void {
     let directory = path.dirname(path.normalize(fileName));
     const root = path.parse(directory).root;
@@ -299,4 +395,18 @@ function parsePackMetadataSafely(text: string): PackMetadata {
 
 function documentKey(document: CacheTextDocument): string {
   return document.uri ? document.uri.toString() : normalizePathKey(document.fileName);
+}
+
+function ancestorPackMetadataCandidates(fileName: string, stopAt?: string): string[] {
+  let directory = path.dirname(path.normalize(fileName));
+  const root = path.parse(directory).root;
+  const normalizedStop = stopAt ? path.normalize(stopAt) : null;
+  const candidates: string[] = [];
+  while (true) {
+    candidates.push(path.join(directory, "pack.mcmeta"));
+    if (directory === root || directory === normalizedStop) {
+      return candidates;
+    }
+    directory = path.dirname(directory);
+  }
 }

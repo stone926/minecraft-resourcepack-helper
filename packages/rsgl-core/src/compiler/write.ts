@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRsglPathInsideOrEqual } from "../pathIdentity";
 import { RsglCopyEmittedFile, RsglEmittedFile } from "./emit";
 
 export type RsglWriteStatus = "create" | "update" | "unchanged";
@@ -126,8 +127,7 @@ export function resolveRsglOutputPath(outputRoot: string, outputPath: string): s
   }
   const normalizedOutput = outputPath.replace(/[\\/]+/g, path.sep);
   const resolved = path.resolve(outputRoot, normalizedOutput);
-  const relative = path.relative(outputRoot, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  if (!isRsglPathInsideOrEqual(resolved, outputRoot)) {
     throw new Error(`Unsafe RSGL output path '${outputPath}'.`);
   }
   return resolved;

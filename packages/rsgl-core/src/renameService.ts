@@ -1,6 +1,5 @@
-import * as path from "node:path";
-import { normalizePathKey } from "../../mc-assets/src";
 import type { MemberExprNode, TextRange } from "./parser";
+import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import { walkRsglModule } from "./parser/astTraversal";
 import { createRsglExportMaps } from "./semantic/exportResolution";
 import { resolveModuleNamespaceExpressionMember } from "./semantic/moduleNamespace";
@@ -187,7 +186,7 @@ function namespaceMemberEdits(
   }
 
   for (const model of program.models) {
-    const modelFile = normalizeFileName(model.fileName);
+    const modelFile = rsglPathKey(model.fileName);
     const modelExports = exportMaps.get(modelFile);
     for (const record of model.exports) {
       for (const specifier of record.node.specifiers) {
@@ -219,11 +218,11 @@ function namespaceMemberEdits(
 
     for (const record of model.imports) {
       const edge = program.importGraph.edges.find(candidate =>
-        candidate.from === modelFile
+        rsglPathKey(candidate.from) === modelFile
         && candidate.source === record.source
-        && normalizeFileName(record.resolvedFileName ?? candidate.to) === candidate.to
+        && rsglPathKey(record.resolvedFileName ?? candidate.to) === rsglPathKey(candidate.to)
       );
-      const targetExports = edge ? exportMaps.get(edge.to) : undefined;
+      const targetExports = edge ? exportMaps.get(rsglPathKey(edge.to)) : undefined;
       for (const [index, item] of record.namedImports.entries()) {
         if (
           item.imported !== oldName
@@ -274,14 +273,17 @@ function collectNamespaceMemberPropertyEdits(
 function normalizeRenameEdits(edits: readonly RsglRenameEdit[]): RsglRenameEdit[] {
   const unique = new Map<string, RsglRenameEdit>();
   for (const edit of edits) {
-    const key = `${normalizeFileName(edit.fileName)}\0${edit.range.start}\0${edit.range.end}`;
+    const key = `${rsglPathKey(resolveRsglPath(edit.fileName))}\0${edit.range.start}\0${edit.range.end}`;
     const existing = unique.get(key);
     if (!existing || existing.newText === edit.newText) {
       unique.set(key, edit);
     }
   }
   return [...unique.values()].sort((left, right) =>
-    normalizeFileName(left.fileName).localeCompare(normalizeFileName(right.fileName), "en")
+    rsglPathKey(resolveRsglPath(left.fileName)).localeCompare(
+      rsglPathKey(resolveRsglPath(right.fileName)),
+      "en"
+    )
     || left.range.start - right.range.start
     || left.range.end - right.range.end
   );
@@ -295,8 +297,8 @@ function semanticModelForFile(
   models: readonly RsglSemanticModel[],
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = normalizePathKey(path.resolve(fileName));
-  return models.find(model => normalizePathKey(path.resolve(model.fileName)) === key);
+  const key = rsglPathKey(resolveRsglPath(fileName));
+  return models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
 }
 
 function containsOffset(range: TextRange, offset: number): boolean {
@@ -309,10 +311,6 @@ function sameRange(left: TextRange, right: TextRange): boolean {
 
 function rangeLength(range: TextRange): number {
   return Math.max(0, range.end - range.start);
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(path.resolve(fileName));
 }
 
 function isIdentifierName(value: string): boolean {

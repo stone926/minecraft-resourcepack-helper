@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./out",
+    "tsBuildInfoFile": "./out/.tsbuildinfo/tests.tsbuildinfo",
+    "types": [
+      "node",
+      "vscode",
+      "mocha"
+    ]
+  },
+  "include": [
+    "src/test/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "extensions/*/test/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "references": [
+    { "path": "./tsconfig.main.json" },
+    { "path": "./packages/mc-assets" },
+    { "path": "./packages/rsgl-core" },
+    { "path": "./packages/rsgl-shared" },
+    { "path": "./packages/rsgl-lsp" },
+    { "path": "./packages/rsgl-cli" },
+    { "path": "./extensions/vscode-rsgl" }
+  ]
+}

@@ -1,12 +1,12 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import {
   applyRsglEmittedFiles,
   type RsglBuildWriteHost
-} from "../../../../extensions/vscode-rsgl/src/commands/asyncBuildWriter";
-import type { RsglEmittedFile } from "../../src/compiler";
-import { createTempDir } from "./helpers/fs";
+} from "../../src/commands/asyncBuildWriter";
+import type { RsglEmittedFile } from "../../../../packages/rsgl-core/src/compiler";
 
 describe("RSGL async build writer", () => {
   it("writes text and copy outputs asynchronously with accurate summaries", async () => {
@@ -78,3 +78,7 @@ describe("RSGL async build writer", () => {
     assert.strictEqual(reads, 0);
   });
 });
+
+function createTempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}

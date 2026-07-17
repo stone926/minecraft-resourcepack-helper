@@ -19,10 +19,10 @@ import {
   checkBlockstateModelSpec,
   checkBlockstateRandomWeight
 } from "./blockstateModelSpecChecker";
-import { checkBlockstatePredicate } from "./blockstatePredicateChecker";
 import { checkBlockstateSelector } from "./blockstateSelectorChecker";
 import { diagnostic } from "./diagnostics";
 import {
+  checkBlockstatePredicate,
   checkCompileTimeCondition,
   checkExpression,
   checkLocalLetDecl,

@@ -249,6 +249,9 @@ describe("RSGL compiler emit and write pipeline", () => {
         kind: "copy",
         sourcePath: sourceFile
       });
+      const copyDependencies = result.dependencies.filter(dependency => dependency.reason === "copy");
+      assert.strictEqual(copyDependencies.length, 2);
+      assert.ok(copyDependencies.every(dependency => dependency.path === sourceFile));
 
       const files = emitRsglFiles(result.units, { sourceMaps: true, manifest: true });
       const copyFile = files.find(file => file.outputPath === "pack.png");
@@ -286,6 +289,12 @@ describe("RSGL compiler emit and write pipeline", () => {
       assert.ok(codes.includes("rsgl.invalidCopySource"));
       assert.ok(codes.includes("rsgl.invalidCopyResourceField"));
       assert.ok(codes.includes("rsgl.copySourceNotFound"));
+      assert.deepStrictEqual(
+        result.dependencies
+          .filter(dependency => dependency.reason === "copy")
+          .map(dependency => dependency.path),
+        [path.join(root, "missing.bin")]
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

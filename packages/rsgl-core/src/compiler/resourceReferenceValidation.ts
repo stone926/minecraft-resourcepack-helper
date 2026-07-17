@@ -4,6 +4,7 @@ import {
   type ExternResourceSource,
   type RsglExternDeclaration
 } from "../externDeclarations";
+import { rsglPathKey } from "../pathIdentity";
 import { getExternResourceKindForTargetKind } from "../resourceKinds";
 import type { ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import {
@@ -14,6 +15,7 @@ import {
 } from "./validationDiagnostics";
 import type {
   RsglCheckedResourceReference,
+  RsglExternalResourceResolution,
   RsglResourceExistenceKind,
   RsglResourceValidationOptions,
   ValidationRange
@@ -112,13 +114,14 @@ export function checkResourceExists(
   const skipExistenceCheck = declaration.skipExistenceCheck
     || declaration.checkExistence === false
     || (declaration.checkExistence === undefined && options.checkExternExistence === false);
-  const resolvedPath = skipExistenceCheck
-    ? null
-    : options.externResourcePath?.(declaration.source, kind, lookupId);
+  const resolution = skipExistenceCheck
+    ? undefined
+    : resolveExternalResource(options, declaration.source, kind, lookupId);
+  const resolvedPath = skipExistenceCheck ? null : resolution?.resolvedPath;
   const exists = skipExistenceCheck
     ? true
-    : resolvedPath !== undefined
-      ? resolvedPath !== null
+    : resolution !== undefined
+      ? resolution.resolvedPath !== null
       : options.externResourceExists
         ? options.externResourceExists(declaration.source, kind, lookupId)
         : (options.resourceExists?.(kind, lookupId) ?? false);
@@ -130,7 +133,13 @@ export function checkResourceExists(
     skipExistenceCheck,
     sourceFile,
     range,
-    ...(resolvedPath ? { resolvedPath } : {})
+    ...(resolvedPath ? { resolvedPath } : {}),
+    ...(resolution?.candidatePaths.length
+      ? { candidatePaths: resolution.candidatePaths }
+      : {}),
+    ...(resolution?.metadataPaths?.length
+      ? { metadataPaths: resolution.metadataPaths }
+      : {})
   });
   if (exists) {
     return { available: true, external: true, canonicalId: id, lookupId, source: declaration.source };
@@ -178,13 +187,14 @@ export function checkInheritedExternalResourceExists(
     return true;
   }
   const skipExistenceCheck = options.checkExternExistence === false;
-  const resolvedPath = skipExistenceCheck
-    ? null
-    : options.externResourcePath?.(source, kind, id);
+  const resolution = skipExistenceCheck
+    ? undefined
+    : resolveExternalResource(options, source, kind, id);
+  const resolvedPath = skipExistenceCheck ? null : resolution?.resolvedPath;
   const exists = skipExistenceCheck
     ? true
-    : resolvedPath !== undefined
-      ? resolvedPath !== null
+    : resolution !== undefined
+      ? resolution.resolvedPath !== null
       : options.externResourceExists
         ? options.externResourceExists(source, kind, id)
         : (options.resourceExists?.(kind, id) ?? fallbackExists);
@@ -198,7 +208,13 @@ export function checkInheritedExternalResourceExists(
       skipExistenceCheck,
       sourceFile,
       range,
-      ...(resolvedPath ? { resolvedPath } : {})
+      ...(resolvedPath ? { resolvedPath } : {}),
+      ...(resolution?.candidatePaths.length
+        ? { candidatePaths: resolution.candidatePaths }
+        : {}),
+      ...(resolution?.metadataPaths?.length
+        ? { metadataPaths: resolution.metadataPaths }
+        : {})
     });
   }
   if (!exists) {
@@ -296,6 +312,24 @@ function pushResourceDiagnostic(
 }
 
 function normalizeValidationFileName(fileName: string): string {
-  const normalized = fileName.replaceAll("\\", "/");
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return rsglPathKey(fileName);
+}
+
+function resolveExternalResource(
+  options: RsglResourceValidationOptions,
+  source: ExternResourceSource,
+  kind: RsglResourceExistenceKind,
+  id: string
+): RsglExternalResourceResolution | undefined {
+  const resolution = options.externResourceResolution?.(source, kind, id);
+  if (resolution) {
+    return resolution;
+  }
+  const resolvedPath = options.externResourcePath?.(source, kind, id);
+  return resolvedPath === undefined
+    ? undefined
+    : {
+        resolvedPath,
+        candidatePaths: resolvedPath ? [resolvedPath] : []
+      };
 }

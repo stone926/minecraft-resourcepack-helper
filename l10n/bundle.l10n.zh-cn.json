@@ -167,6 +167,7 @@
   "missing": "缺失",
   "model": "模型",
   "model: {0}": "模型：{0}",
+  "pack metadata": "资源包元数据",
   "pack.mcmeta min_format must be less than or equal to max_format.": "pack.mcmeta 的 min_format 必须小于或等于 max_format。",
   "pack.mcmeta must use min_format and max_format together for 1.21.9+ resource pack formats.": "1.21.9+ 资源包格式的 pack.mcmeta 必须同时使用 min_format 和 max_format。",
   "pack.png is missing; Minecraft will use the default unknown pack icon.": "缺少 pack.png；Minecraft 将使用默认未知资源包图标。",

@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { normalizePathKey } from "../../../mc-assets/src";
 import { RsglWorkspaceSourceCache, type RsglWorkspaceSourceFileSystem } from "../../src/workspaceSource";
 import { bindRsglProgram, RsglSourceFile } from "../../src/semantic";
 import { createTempDir } from "./helpers/fs";
@@ -70,13 +71,17 @@ describe("RSGL workspace source cache", () => {
     const io = createCountingSourceFileSystem({
       [mainFile]: { text: "let value = 1", mtimeMs: 1 }
     });
-    const cache = new RsglWorkspaceSourceCache({ fileSystem: io.fileSystem });
+    const cache = new RsglWorkspaceSourceCache({
+      fileSystem: io.fileSystem,
+      verificationTtlMs: 0
+    });
 
     const first = cache.loadProgramFromEntry(mainFile)[0];
     const second = cache.loadProgramFromEntry(mainFile)[0];
 
     assert.strictEqual(readLetNumber(first), 1);
     assert.strictEqual(second, first);
+    assert.strictEqual(io.stats, 2);
     assert.strictEqual(io.reads, 1);
 
     io.write(mainFile, "let value = 2", 2);
@@ -84,6 +89,104 @@ describe("RSGL workspace source cache", () => {
 
     assert.strictEqual(readLetNumber(third), 2);
     assert.notStrictEqual(third, first);
+    assert.strictEqual(io.stats, 3);
+    assert.strictEqual(io.reads, 2);
+  });
+
+  it("performs no disk I/O on watcher-trusted cache hits until invalidated", () => {
+    const mainFile = path.resolve("virtual-source-cache", "watcher-trusted.rsgl");
+    const io = createCountingSourceFileSystem({
+      [mainFile]: { text: "let value = 1", mtimeMs: 1 }
+    });
+    const cache = new RsglWorkspaceSourceCache({
+      fileSystem: io.fileSystem,
+      watcherTrusted: true
+    });
+
+    const first = cache.loadProgramFromEntry(mainFile)[0];
+    io.write(mainFile, "let value = 2", 2);
+    const cached = cache.loadProgramFromEntry(mainFile)[0];
+
+    assert.strictEqual(cached, first);
+    assert.strictEqual(readLetNumber(cached), 1);
+    assert.strictEqual(io.stats, 1);
+    assert.strictEqual(io.reads, 1);
+
+    cache.invalidatePath(mainFile);
+    const refreshed = cache.loadProgramFromEntry(mainFile)[0];
+
+    assert.strictEqual(readLetNumber(refreshed), 2);
+    assert.notStrictEqual(refreshed, first);
+    assert.strictEqual(io.stats, 2);
+    assert.strictEqual(io.reads, 2);
+  });
+
+  it("uses TTL verification and reads only after the disk version changes", () => {
+    const mainFile = path.resolve("virtual-source-cache", "ttl-verified.rsgl");
+    const io = createCountingSourceFileSystem({
+      [mainFile]: { text: "let value = 1", mtimeMs: 1 }
+    });
+    let now = 10_000;
+    const cache = new RsglWorkspaceSourceCache({
+      fileSystem: io.fileSystem,
+      verificationTtlMs: 100,
+      clock: () => now
+    });
+
+    const first = cache.loadProgramFromEntry(mainFile)[0];
+    const withinTtl = cache.loadProgramFromEntry(mainFile)[0];
+
+    assert.strictEqual(withinTtl, first);
+    assert.strictEqual(io.stats, 1);
+    assert.strictEqual(io.reads, 1);
+
+    now += 100;
+    const verified = cache.loadProgramFromEntry(mainFile)[0];
+
+    assert.strictEqual(verified, first);
+    assert.strictEqual(io.stats, 2, "TTL expiry should stat the file once");
+    assert.strictEqual(io.reads, 1, "an unchanged version must not be read again");
+
+    io.write(mainFile, "let value = 2", 2);
+    now += 99;
+    assert.strictEqual(cache.loadProgramFromEntry(mainFile)[0], first);
+    assert.strictEqual(io.stats, 2);
+    assert.strictEqual(io.reads, 1);
+
+    now += 1;
+    const refreshed = cache.loadProgramFromEntry(mainFile)[0];
+
+    assert.strictEqual(readLetNumber(refreshed), 2);
+    assert.notStrictEqual(refreshed, first);
+    assert.strictEqual(io.stats, 3);
+    assert.strictEqual(io.reads, 2);
+  });
+
+  it("uses one cache identity for Windows path-case variants", function () {
+    if (process.platform !== "win32") {
+      this.skip();
+    }
+
+    const mainFile = path.resolve("virtual-source-cache", "Main.rsgl");
+    const caseVariant = mainFile.toUpperCase();
+    const io = createCountingSourceFileSystem({
+      [mainFile]: { text: "let value = 1", mtimeMs: 1 }
+    });
+    const cache = new RsglWorkspaceSourceCache({ fileSystem: io.fileSystem });
+
+    const first = cache.loadProgramFromEntry(mainFile)[0];
+    const second = cache.loadProgramFromEntry(caseVariant)[0];
+
+    assert.strictEqual(second, first, "case variants must reuse the first parsed source value");
+    assert.strictEqual(second.fileName, path.normalize(mainFile), "identity keys must not replace the display path");
+    assert.strictEqual(io.reads, 1);
+
+    io.write(mainFile, "let value = 2", 1);
+    cache.invalidatePath(caseVariant);
+    const refreshed = cache.loadProgramFromEntry(mainFile)[0];
+
+    assert.notStrictEqual(refreshed, first);
+    assert.strictEqual(readLetNumber(refreshed), 2);
     assert.strictEqual(io.reads, 2);
   });
 
@@ -115,11 +218,13 @@ describe("RSGL workspace source cache", () => {
 function createCountingSourceFileSystem(initialFiles: Record<string, { text: string; mtimeMs: number }>): {
   fileSystem: RsglWorkspaceSourceFileSystem;
   reads: number;
+  stats: number;
   write(fileName: string, text: string, mtimeMs: number): void;
 } {
   const files = new Map<string, { text: string; mtimeMs: number }>();
   const counters = {
-    reads: 0
+    reads: 0,
+    stats: 0
   };
 
   for (const [fileName, file] of Object.entries(initialFiles)) {
@@ -130,11 +235,15 @@ function createCountingSourceFileSystem(initialFiles: Record<string, { text: str
     get reads() {
       return counters.reads;
     },
+    get stats() {
+      return counters.stats;
+    },
     write(fileName, text, mtimeMs) {
       files.set(normalize(fileName), { text, mtimeMs });
     },
     fileSystem: {
       statFile(fileName) {
+        counters.stats++;
         const file = files.get(normalize(fileName));
         if (!file) {
           throw new Error(`Missing file: ${fileName}`);
@@ -158,7 +267,7 @@ function createCountingSourceFileSystem(initialFiles: Record<string, { text: str
 }
 
 function normalize(fileName: string): string {
-  return path.normalize(path.resolve(fileName));
+  return normalizePathKey(path.resolve(fileName));
 }
 
 function readLetNumber(sourceFile: RsglSourceFile | undefined): number | undefined {

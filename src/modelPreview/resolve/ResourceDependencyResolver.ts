@@ -10,6 +10,7 @@ import {
 } from "../../../packages/mc-assets/src";
 import { modelSourceForFile } from "../../services/modelParentChain";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
+import { collectPotentialPackMetadataFileNames } from "./PackMetadataDependencies";
 
 export interface ResolvedResourceFile {
   fileName: string;
@@ -22,7 +23,8 @@ export class ResourceDependencyResolver {
 
   constructor(
     private readonly fileSystem: ModelPreviewFileSystem,
-    private readonly configuration: ModelPreviewConfiguration
+    private readonly configuration: ModelPreviewConfiguration,
+    private readonly observeDependency?: (fileName: string) => void
   ) { }
 
   resolveModelFileName(resourcePath: string, sourceFileName: string): ResolvedResourceFile | null {
@@ -54,6 +56,7 @@ export class ResourceDependencyResolver {
     }
 
     const candidates = this.getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension);
+    candidates.forEach(candidate => this.observeDependency?.(candidate));
     const request = createResourceFileRequest(
       resourcePath,
       sourceFileName,
@@ -93,6 +96,8 @@ export class ResourceDependencyResolver {
       return cached;
     }
 
+    collectPotentialPackMetadataFileNames(sourceFileName, this.configuration)
+      .forEach(candidate => this.observeDependency?.(candidate));
     const candidates = getResourceFileCandidatesUncached(
       resourcePath,
       sourceFileName,

@@ -8,17 +8,9 @@ import {
 import createNewResourcePack from "../commands/createNewResourcePack";
 import createNewResourcePackRoot from "../commands/createNewResourcePackRoot";
 import openDefaultMcAssetsPath from "../commands/openDefaultMcAssetsPath";
-import {
-  captureModelPreviewImageCommand,
-  exportModelPreviewImageCommand
-} from "../modelPreview/commands/exportModelPreviewImage";
-import { openModelPreviewCommand } from "../modelPreview/commands/openModelPreview";
-import { ModelPreviewHostFileSystem } from "../modelPreview/host/ModelPreviewHostFileSystem";
-import { ModelPreviewService } from "../modelPreview/service/ModelPreviewService";
+import type { ModelPreviewCommandRuntime } from "../modelPreview/commands/modelPreviewCommandRuntime";
 import { triggerResourceCompletionCommand } from "../providers/resourceCompletionProvider";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { getResourceConfiguration } from "../utils/resourceConfiguration";
-import { getResourceGraphNodeUri } from "../views/resourceGraphTreeItem";
 
 export function registerCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -46,19 +38,20 @@ export function registerCommands(context: vscode.ExtensionContext): void {
 }
 
 function registerModelPreviewCommands(context: vscode.ExtensionContext): void {
-  const modelPreviewService = new ModelPreviewService({
-    fileSystem: new ModelPreviewHostFileSystem(),
-    configuration: getResourceConfiguration,
-    artifactCache: workspaceResourceCache.modelPreviewArtifacts
-  });
-  const openModelPreview = openModelPreviewCommand(context.extensionUri, modelPreviewService);
+  let runtimePromise: Promise<ModelPreviewCommandRuntime> | undefined;
+  const runtime = () => runtimePromise ??= import("../modelPreview/commands/modelPreviewCommandRuntime.js")
+    .then(module => module.createModelPreviewCommandRuntime(context.extensionUri));
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("McResHelper.openModelPreview", openModelPreview),
-    vscode.commands.registerCommand("McResHelper.openResourceGraphModelPreview", (node?: unknown) => {
-      const uri = getResourceGraphNodeUri(node);
-      return openModelPreview(uri ?? undefined);
-    }),
+    vscode.commands.registerCommand(
+      "McResHelper.openModelPreview",
+      async (...args: Parameters<ModelPreviewCommandRuntime["open"]>) => (await runtime()).open(...args)
+    ),
+    vscode.commands.registerCommand(
+      "McResHelper.openResourceGraphModelPreview",
+      async (...args: Parameters<ModelPreviewCommandRuntime["openGraphNode"]>) =>
+        (await runtime()).openGraphNode(...args)
+    ),
     vscode.commands.registerCommand(
       "McResHelper.openUnsupportedModelPreviewResource",
       () => vscode.window.showInformationMessage(
@@ -67,11 +60,13 @@ function registerModelPreviewCommands(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand(
       "McResHelper.exportModelPreviewImage",
-      exportModelPreviewImageCommand(context.extensionUri, modelPreviewService)
+      async (...args: Parameters<ModelPreviewCommandRuntime["exportImage"]>) =>
+        (await runtime()).exportImage(...args)
     ),
     vscode.commands.registerCommand(
       "McResHelper.captureModelPreviewImage",
-      captureModelPreviewImageCommand(context.extensionUri, modelPreviewService)
+      async (...args: Parameters<ModelPreviewCommandRuntime["captureImage"]>) =>
+        (await runtime()).captureImage(...args)
     )
   );
 }

@@ -20,31 +20,8 @@ import { evaluationScalarText } from "./evaluatedResourceValues";
 import { parseResourceId } from "./resourceIds";
 import type { RsglResourceValidationOptions } from "./validation";
 import type { RsglTargetPackFormat } from "./targetConfig";
-
-export function normalizeJsonValue(value: unknown): JsonValue {
-  if (value === undefined || isLambdaLikeValue(value)) {
-    return null;
-  }
-  return value as JsonValue;
-}
-
-function isLambdaLikeValue(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const candidate = value as {
-    kind?: string;
-    parameters?: unknown;
-    body?: unknown;
-    context?: unknown;
-    impureCalls?: unknown;
-  };
-  return candidate.kind === "lambda"
-    && Array.isArray(candidate.parameters)
-    && Boolean(candidate.body && typeof candidate.body === "object")
-    && Boolean(candidate.context && typeof candidate.context === "object")
-    && Array.isArray(candidate.impureCalls);
-}
+import { rsglPathKey } from "../pathIdentity";
+export { normalizeJsonValue } from "./evaluationJsonValues";
 
 export function staticText(expression: ExprNode, context: EvaluationContext): string | null {
   return evaluationScalarText(evaluateExpression(expression, context));
@@ -310,8 +287,8 @@ export function selectProgramModels(program: RsglProgram, entryFileName: string 
   if (!entryFileName) {
     return program.models;
   }
-  const normalizedEntry = normalizeFileName(entryFileName);
-  return program.models.filter(model => normalizeFileName(model.fileName) === normalizedEntry);
+  const entryKey = rsglPathKey(entryFileName);
+  return program.models.filter(model => rsglPathKey(model.fileName) === entryKey);
 }
 
 export function detectOutputConflicts(units: ResourceUnit[]): RsglCompileDiagnostic[] {
@@ -360,10 +337,6 @@ export function createCompileGlobLoader(fallbackFileName: string, diagnostics: R
   });
 }
 
-export function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
-}
-
 export function moduleSyntaxDiagnostics(module: RsglModule, fileName: string | undefined): RsglCompileDiagnostic[] {
   return module.diagnostics.map(diagnostic => ({
     code: diagnostic.code,
@@ -400,14 +373,14 @@ export function selectProgramTargetModels(
 
   const outgoing = new Map<string, string[]>();
   for (const edge of program.importGraph.edges) {
-    const from = normalizeFileName(edge.from);
+    const from = rsglPathKey(edge.from);
     const targets = outgoing.get(from) ?? [];
-    targets.push(normalizeFileName(edge.to));
+    targets.push(rsglPathKey(edge.to));
     outgoing.set(from, targets);
   }
 
   const reachable = new Set<string>();
-  const pending = [normalizeFileName(entryFileName)];
+  const pending = [rsglPathKey(entryFileName)];
   while (pending.length > 0) {
     const current = pending.pop()!;
     if (reachable.has(current)) {
@@ -417,5 +390,5 @@ export function selectProgramTargetModels(
     pending.push(...(outgoing.get(current) ?? []));
   }
 
-  return program.models.filter(model => reachable.has(normalizeFileName(model.fileName)));
+  return program.models.filter(model => reachable.has(rsglPathKey(model.fileName)));
 }

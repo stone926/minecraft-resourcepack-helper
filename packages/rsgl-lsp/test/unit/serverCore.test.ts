@@ -8,10 +8,12 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
+  RsglWorkspaceValidationCache,
   parseRsgl,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
   type RsglSemanticToken,
+  type RsglValidationFileSystem,
   type RsglSymbol
 } from "../../../rsgl-core/src";
 import {
@@ -24,15 +26,22 @@ import {
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
   definitionLocationForDocument,
+  dependencyInvalidationPathsForStructuralChange,
   dependencyPathsForDocument,
   dependencyPathsForDocuments,
+  dependencyPatternsForDocuments,
+  documentDependenciesEqual,
+  documentDependenciesExpanded,
+  documentDependenciesForCompile,
   documentsDependingOnPath,
+  documentsStructurallyDependingOnPath,
   encodeSemanticTokens,
   formattingEditsForDocument,
   handleSemanticWatchedFileBatch,
   identifierAtOffset,
   normalizeDependencyPath,
   prepareRenameForDocument,
+  requiredExactWatchPathsForDocuments,
   renameEditsForDocument,
   toLspDefinitionLocation,
   toLspDiagnostic,
@@ -633,6 +642,242 @@ describe("RSGL LSP server core", () => {
     assert.deepStrictEqual(documentsDependingOnPath(index, path.join(root, "unrelated.bin")), []);
   });
 
+  it("routes glob create, change, and delete paths only to matching documents", () => {
+    const root = path.join(os.tmpdir(), "rsgl-pattern-dependency-index");
+    const sourceFile = path.join(root, "main.rsgl");
+    const firstDependencies = documentDependenciesForCompile([{
+      path: path.join(root, "generated", "nested"),
+      globPattern: "**/*.json",
+      reason: "glob",
+      sourceFile,
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const secondDependencies = documentDependenciesForCompile([{
+      path: path.join(root, "other"),
+      globPattern: "*.png",
+      reason: "glob",
+      sourceFile: path.join(root, "second.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const index = new Map([
+      ["file:///one.rsgl", firstDependencies],
+      ["file:///two.rsgl", secondDependencies]
+    ]);
+    const events = {
+      create: path.join(root, "generated", "nested", "created.json"),
+      change: path.join(root, "generated", "nested", "deeper", "changed.json"),
+      delete: path.join(root, "generated", "nested", "deleted.json")
+    };
+
+    for (const [kind, fileName] of Object.entries(events)) {
+      assert.deepStrictEqual(
+        documentsDependingOnPath(index, fileName),
+        ["file:///one.rsgl"],
+        `${kind} must dirty only the document owning the matching glob`
+      );
+    }
+    assert.deepStrictEqual(
+      documentsDependingOnPath(index, path.join(root, "generated", "nested", "ignored.png")),
+      []
+    );
+  });
+
+  it("routes deep creates for embedded RSGL globstars after client-side widening", () => {
+    const root = path.join(os.tmpdir(), "rsgl-embedded-globstar-index");
+    const rootRecursive = documentDependenciesForCompile([{
+      path: root,
+      globPattern: "**.json",
+      reason: "glob",
+      sourceFile: path.join(root, "root-recursive.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const nestedRecursive = documentDependenciesForCompile([{
+      path: root,
+      globPattern: "foo/**bar",
+      reason: "glob",
+      sourceFile: path.join(root, "nested-recursive.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const index = new Map([
+      ["file:///root-recursive.rsgl", rootRecursive],
+      ["file:///nested-recursive.rsgl", nestedRecursive]
+    ]);
+
+    assert.deepStrictEqual(
+      documentsDependingOnPath(index, path.join(root, "deep", "created.json")),
+      ["file:///root-recursive.rsgl"]
+    );
+    assert.deepStrictEqual(
+      documentsDependingOnPath(index, path.join(root, "foo", "deep", "ends-with-bar")),
+      ["file:///nested-recursive.rsgl"]
+    );
+    assert.deepStrictEqual(
+      documentsDependingOnPath(index, path.join(root, "foo", "deep", "ignored.txt")),
+      []
+    );
+  });
+
+  it("routes directory delete and move-equivalent structure events without broad invalidation", () => {
+    const root = path.join(os.tmpdir(), "rsgl-structural-dependency-index");
+    const exactPath = path.join(root, "pack", "models", "nested", "model.json");
+    const recursiveBase = path.join(root, "generated");
+    const crossOwnerExactPath = path.join(recursiveBase, "direct.json", "child.png");
+    const flatBase = path.join(root, "flat");
+    const exactDependencies = documentDependenciesForCompile([{
+      path: exactPath,
+      reason: "extern",
+      sourceFile: path.join(root, "exact.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const recursiveDependencies = documentDependenciesForCompile([{
+      path: recursiveBase,
+      globPattern: "**/*.json",
+      reason: "glob",
+      sourceFile: path.join(root, "recursive.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const flatDependencies = documentDependenciesForCompile([{
+      path: flatBase,
+      globPattern: "*.json",
+      reason: "glob",
+      sourceFile: path.join(root, "flat.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const crossOwnerDependencies = documentDependenciesForCompile([{
+      path: crossOwnerExactPath,
+      reason: "extern",
+      sourceFile: path.join(root, "cross-owner.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const index = new Map([
+      ["file:///exact.rsgl", exactDependencies],
+      ["file:///recursive.rsgl", recursiveDependencies],
+      ["file:///flat.rsgl", flatDependencies],
+      ["file:///cross-owner.rsgl", crossOwnerDependencies]
+    ]);
+
+    const deletedExactDirectory = path.join(root, "pack", "models");
+    assert.deepStrictEqual(
+      documentsStructurallyDependingOnPath(index, deletedExactDirectory),
+      ["file:///exact.rsgl"]
+    );
+    assert.deepStrictEqual(
+      dependencyInvalidationPathsForStructuralChange(index, deletedExactDirectory),
+      [normalizeDependencyPath(exactPath)]
+    );
+
+    for (const movedDirectory of [
+      path.join(recursiveBase, "moved-out"),
+      path.join(recursiveBase, "moved-in")
+    ]) {
+      assert.deepStrictEqual(
+        documentsStructurallyDependingOnPath(index, movedDirectory),
+        ["file:///recursive.rsgl"]
+      );
+      assert.deepStrictEqual(
+        dependencyInvalidationPathsForStructuralChange(index, movedDirectory),
+        [normalizeDependencyPath(recursiveBase)]
+      );
+      assert.deepStrictEqual(documentsDependingOnPath(index, movedDirectory), []);
+    }
+
+    const directlyMatchingDirectory = path.dirname(crossOwnerExactPath);
+    assert.deepStrictEqual(
+      documentsDependingOnPath(index, directlyMatchingDirectory),
+      ["file:///recursive.rsgl"]
+    );
+    assert.deepStrictEqual(
+      documentsStructurallyDependingOnPath(index, directlyMatchingDirectory),
+      ["file:///recursive.rsgl", "file:///cross-owner.rsgl"]
+    );
+    assert.deepStrictEqual(
+      dependencyInvalidationPathsForStructuralChange(index, directlyMatchingDirectory),
+      [normalizeDependencyPath(recursiveBase), normalizeDependencyPath(crossOwnerExactPath)].sort()
+    );
+
+    assert.deepStrictEqual(
+      documentsStructurallyDependingOnPath(index, path.join(flatBase, "nested")),
+      []
+    );
+    assert.deepStrictEqual(
+      documentsStructurallyDependingOnPath(index, flatBase),
+      ["file:///flat.rsgl"]
+    );
+    assert.deepStrictEqual(
+      documentsStructurallyDependingOnPath(index, path.join(root, "unrelated")),
+      []
+    );
+  });
+
+  it("invalidates watcher-trusted exact cache entries expanded from a directory event", () => {
+    const root = path.join(os.tmpdir(), "rsgl-structural-cache-invalidation");
+    const movedDirectory = path.join(root, "incoming");
+    const exactPath = path.join(movedDirectory, "model.json");
+    let present = false;
+    const fileSystem: RsglValidationFileSystem = {
+      exists: fileName => present && normalizeDependencyPath(fileName) === normalizeDependencyPath(exactPath),
+      isDirectory: () => false,
+      readJson: () => null,
+      readPngMetadata: () => null,
+      readOggMetadata: () => null
+    };
+    const cache = new RsglWorkspaceValidationCache({ fileSystem, watcherTrusted: true });
+    const dependencies = documentDependenciesForCompile([{
+      path: exactPath,
+      reason: "extern",
+      sourceFile: path.join(root, "main.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const index = new Map([["file:///main.rsgl", dependencies]]);
+
+    assert.strictEqual(cache.exists(exactPath), false);
+    present = true;
+    assert.strictEqual(cache.exists(exactPath), false);
+    for (const invalidationPath of dependencyInvalidationPathsForStructuralChange(
+      index,
+      movedDirectory
+    )) {
+      cache.invalidatePath(invalidationPath);
+    }
+    assert.strictEqual(cache.exists(exactPath), true);
+  });
+
+  it("routes a newly created missing external candidate through its exact dependency", () => {
+    const root = path.join(os.tmpdir(), "rsgl-missing-external-index");
+    const missingCandidate = path.join(root, "assets", "minecraft", "models", "future.json");
+    const dependencies = documentDependenciesForCompile([{
+      path: missingCandidate,
+      reason: "extern",
+      sourceFile: path.join(root, "main.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+
+    assert.deepStrictEqual(
+      documentsDependingOnPath(new Map([["file:///main.rsgl", dependencies]]), missingCandidate),
+      ["file:///main.rsgl"]
+    );
+  });
+
+  it("routes pack metadata create, change, and delete events through exact dependencies", () => {
+    const root = path.join(os.tmpdir(), "rsgl-pack-metadata-index");
+    const metadataPath = path.join(root, "nested-pack", "pack.mcmeta");
+    const dependencies = documentDependenciesForCompile([{
+      path: metadataPath,
+      reason: "extern",
+      sourceFile: path.join(root, "main.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const index = new Map([["file:///main.rsgl", dependencies]]);
+
+    for (const kind of ["create", "change", "delete"]) {
+      assert.deepStrictEqual(
+        documentsDependingOnPath(index, metadataPath),
+        ["file:///main.rsgl"],
+        `${kind} must dirty the document whose resolution used this pack metadata candidate`
+      );
+    }
+  });
+
   it("publishes a stable dependency union across all open documents", () => {
     const root = path.join(os.tmpdir(), "rsgl-dependency-union");
     const first = normalizeDependencyPath(path.join(root, "first.json"));
@@ -643,6 +888,105 @@ describe("RSGL LSP server core", () => {
     ]);
 
     assert.deepStrictEqual(dependencyPathsForDocuments(index), [first, shared].sort());
+  });
+
+  it("publishes stable pattern selectors and compares dependency generations by identity", () => {
+    const root = path.join(os.tmpdir(), "rsgl-dependency-pattern-union");
+    const first = documentDependenciesForCompile([{
+      path: path.join(root, "future"),
+      globPattern: "*.json",
+      reason: "glob",
+      sourceFile: path.join(root, "one.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    const equivalent = documentDependenciesForCompile([{
+      path: path.join(root, "future"),
+      globPattern: "*.json",
+      reason: "glob",
+      sourceFile: path.join(root, "two.rsgl"),
+      sourceRange: { start: 2, end: 3 }
+    }], []);
+    const index = new Map([
+      ["file:///one.rsgl", first],
+      ["file:///two.rsgl", equivalent]
+    ]);
+
+    assert.deepStrictEqual(dependencyPatternsForDocuments(index), [{
+      basePath: path.resolve(root, "future"),
+      pattern: "*.json"
+    }]);
+    assert.strictEqual(documentDependenciesEqual(first, equivalent), true);
+    assert.strictEqual(documentDependenciesEqual(undefined, first), false);
+    assert.strictEqual(documentDependenciesExpanded(undefined, first), true);
+    assert.strictEqual(documentDependenciesExpanded(first, equivalent), false);
+
+    const removed = documentDependenciesForCompile([], []);
+    assert.strictEqual(documentDependenciesExpanded(first, removed), false);
+
+    const expanded = documentDependenciesForCompile([{
+      path: path.join(root, "future"),
+      globPattern: "*.json",
+      reason: "glob",
+      sourceFile: path.join(root, "one.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }, {
+      path: path.join(root, "new.json"),
+      reason: "extern",
+      sourceFile: path.join(root, "one.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    assert.strictEqual(documentDependenciesExpanded(first, expanded), true);
+  });
+
+  it("suppresses same-document glob matches without hiding cross-document exact watchers", () => {
+    const root = path.join(os.tmpdir(), "rsgl-owned-exact-watchers");
+    const sourceFile = path.join(root, "glob-owner.rsgl");
+    const matchedPaths = Array.from({ length: 128 }, (_, index) =>
+      path.join(root, "generated", `match-${index}.json`)
+    );
+    const unrelatedExact = path.join(root, "copy-source.png");
+    const sameDocument = documentDependenciesForCompile([
+      {
+        path: path.join(root, "generated"),
+        globPattern: "**/*.json",
+        reason: "glob",
+        sourceFile,
+        sourceRange: { start: 0, end: 1 }
+      },
+      ...matchedPaths.map((matchedPath, index) => ({
+        path: matchedPath,
+        reason: "glob" as const,
+        sourceFile,
+        sourceRange: { start: index + 1, end: index + 2 }
+      })),
+      {
+        path: unrelatedExact,
+        reason: "copy",
+        sourceFile,
+        sourceRange: { start: 200, end: 201 }
+      }
+    ], []);
+
+    assert.strictEqual(dependencyPathsForDocuments(
+      new Map([["file:///glob-owner.rsgl", sameDocument]])
+    ).length, matchedPaths.length + 1);
+    assert.deepStrictEqual(requiredExactWatchPathsForDocuments(
+      new Map([["file:///glob-owner.rsgl", sameDocument]])
+    ), [normalizeDependencyPath(unrelatedExact)]);
+
+    const crossDocument = documentDependenciesForCompile([{
+      path: matchedPaths[0],
+      reason: "extern",
+      sourceFile: path.join(root, "exact-owner.rsgl"),
+      sourceRange: { start: 0, end: 1 }
+    }], []);
+    assert.deepStrictEqual(requiredExactWatchPathsForDocuments(new Map([
+      ["file:///glob-owner.rsgl", sameDocument],
+      ["file:///exact-owner.rsgl", crossDocument]
+    ])), [
+      normalizeDependencyPath(unrelatedExact),
+      normalizeDependencyPath(matchedPaths[0])
+    ].sort());
   });
 
   it("merges compile dependencies with exact project-config watch candidates", () => {
@@ -1131,7 +1475,9 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("connection.onRenameRequest"));
     assert.ok(serverSource.includes("codeActionKinds: [CodeActionKind.QuickFix]"));
     assert.ok(serverSource.includes("connection.onCodeAction"));
-    assert.ok(serverSource.includes("scheduleOpenDocumentRefresh();"));
+    assert.ok(serverSource.includes("new DirtyDiagnosticScheduler<string>"));
+    assert.ok(serverSource.includes("scheduleAffectedDocuments("));
+    assert.ok(serverSource.includes("diagnosticScheduler.drop("));
     assert.strictEqual(serverSource.includes('path.extname(changedFileName).toLowerCase() !== ".json"'), false);
   });
 

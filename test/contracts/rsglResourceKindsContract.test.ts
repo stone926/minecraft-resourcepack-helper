@@ -1,15 +1,15 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { minecraftResourceTarget } from "../../../mc-assets/src";
-import { topLevelRsglCompletions } from "../../src/completionData";
+import { minecraftResourceTarget } from "../../packages/mc-assets/src";
+import { topLevelRsglCompletions } from "../../packages/rsgl-core/src/completionData";
 import {
   canonicalizeAndValidateResourceUnits,
   compileRsglModule,
   emitRsglFiles
-} from "../../src/compiler";
-import { parseRsgl } from "../../src/parser";
-import { resourceKeywords } from "../../src/parser/keywords";
+} from "../../packages/rsgl-core/src/compiler";
+import { parseRsgl } from "../../packages/rsgl-core/src/parser";
+import { resourceKeywords } from "../../packages/rsgl-core/src/parser/keywords";
 import {
   externOnlyKinds,
   externResourceKindDescription,
@@ -22,7 +22,7 @@ import {
   rsglResourceCompletionDescriptors,
   rsglResourceKindDescriptors,
   rsglResourceKinds
-} from "../../src/resourceKinds";
+} from "../../packages/rsgl-core/src/resourceKinds";
 import { readGrammar, tokenizeGrammar } from "./helpers/textMateGrammar";
 
 describe("RSGL resource kind descriptors", () => {
@@ -176,7 +176,7 @@ describe("RSGL resource kind descriptors", () => {
 
     assert.match(
       compilerSource,
-      /compileResourceDeclaration\(\s*statement,\s*resourceContext,\s*this\.resourceDeclarationCompilerHost\([^)]*\)\s*\)/
+      /compileResourceDeclaration\(\s*statement,\s*resourceContext,\s*this\.resourceBodies\.resourceDeclarationCompilerHost\([^)]*\)\s*\)/
     );
     assert.strictEqual(compilerSource.includes("private compileModel("), false);
     assert.ok(resourceCompilerSource.includes("satisfies Record<RsglResourceCompileHandler, ResourceCompileHandler>"));

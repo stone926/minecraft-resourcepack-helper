@@ -8,12 +8,10 @@ import {
 import type {
   EvaluationContext,
   EvaluationOrigin,
+  EvaluationPathOrigin,
+  EvaluationResult,
   EvaluationValue
-} from "./evaluate";
-import {
-  evaluateExpressionResult,
-  originForEvaluationPath
-} from "./evaluate";
+} from "./evaluationTypes";
 import type { JsonValue } from "./ir";
 import type { RsglCompileContext } from "./templateExpansion";
 
@@ -65,6 +63,23 @@ export interface BlockstatePredicateLoweringHost {
     range: TextRange,
     fileName?: string
   ): void;
+}
+
+/**
+ * Evaluator capabilities required by predicate lowering.
+ *
+ * Keeping this boundary explicit prevents the evaluator and the predicate
+ * runtime from importing each other during module initialization.
+ */
+export interface BlockstatePredicateEvaluationHost {
+  evaluateExpressionResult(
+    expression: ExprNode,
+    context: EvaluationContext
+  ): EvaluationResult;
+  originForEvaluationPath(
+    origins: readonly EvaluationPathOrigin[],
+    generatedPath: string
+  ): EvaluationOrigin | undefined;
 }
 
 export const stateNamespaceValue: StateNamespaceValue = Object.freeze<StateNamespaceValue>({
@@ -246,10 +261,11 @@ export function evaluateStatePredicateUnary(
 export function lowerBlockstatePredicate(
   expression: ExprNode,
   context: RsglCompileContext,
-  host: BlockstatePredicateLoweringHost
+  host: BlockstatePredicateLoweringHost,
+  evaluationHost: BlockstatePredicateEvaluationHost
 ): LoweredBlockstatePredicate | undefined {
   let failed = false;
-  const result = evaluateExpressionResult(expression, {
+  const result = evaluationHost.evaluateExpressionResult(expression, {
     ...context,
     onEvaluationFailure: () => {
       failed = true;
@@ -304,12 +320,12 @@ export function lowerBlockstatePredicate(
   }
 
   const value = lowerPredicateIr(normalized);
+  const rootOrigin = evaluationHost.originForEvaluationPath(result.pathOrigins, "")
+    ?? result.origin;
   return {
     value,
     canonicalKey: canonicalJson(value),
-    ...(originForEvaluationPath(result.pathOrigins, "") ?? result.origin
-      ? { origin: originForEvaluationPath(result.pathOrigins, "") ?? result.origin }
-      : {})
+    ...(rootOrigin ? { origin: rootOrigin } : {})
   };
 }
 

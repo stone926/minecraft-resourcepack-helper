@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import { createHash } from "node:crypto";
 import {
   ExprNode,
@@ -42,6 +41,7 @@ import {
 } from "../templateOutput";
 import { EvaluationItemBudget } from "./evaluationItemBudget";
 import { ModuleNamespaceValue, isModuleNamespaceValue } from "./moduleNamespaceValue";
+import { RsglPathKeyMap, rsglPathKey } from "../pathIdentity";
 
 export interface RsglModuleCompileEnvironment {
   fileName: string;
@@ -140,13 +140,13 @@ export function createProgramCompileEnvironments(
     & Partial<Pick<ResolvedRsglCompileConfiguration, "semanticFingerprint">>,
   options: RsglCompileEnvironmentOptions = {}
 ): Map<string, RsglModuleCompileEnvironment> {
-  const modelsByFile = new Map(program.models.map(model => [normalizeFileName(model.fileName), model]));
+  const modelsByFile = new RsglPathKeyMap(program.models.map(model => [model.fileName, model] as const));
   const exportMaps = createRsglExportMaps(program.models, program.importGraph).maps;
-  const environments = new Map<string, RsglModuleCompileEnvironment>();
+  const environments = new RsglPathKeyMap<RsglModuleCompileEnvironment>();
   const evaluationItemBudget = options.evaluationItemBudget ?? new EvaluationItemBudget();
 
   const createEnvironment = (model: RsglSemanticModel): RsglModuleCompileEnvironment => {
-    const fileName = normalizeFileName(model.fileName);
+    const fileName = rsglPathKey(model.fileName);
     const cached = environments.get(fileName);
     if (cached) {
       return cached;
@@ -375,7 +375,7 @@ function collectExportedEnvironmentBindings(
   exportMaps: Map<string, Map<string, RsglSymbol>>,
   createEnvironment: (model: RsglSemanticModel) => RsglModuleCompileEnvironment
 ): void {
-  const semanticExports = exportMaps.get(normalizeFileName(model.fileName)) ?? new Map();
+  const semanticExports = exportMaps.get(rsglPathKey(model.fileName)) ?? new Map();
   for (const [exportedName, symbol] of semanticExports) {
     if (symbol && typeof symbol === "object" && "name" in symbol) {
       const localName = String(symbol.name);
@@ -571,9 +571,11 @@ function resolveModuleTargetModel(
   program: RsglProgram,
   modelsByFile: Map<string, RsglSemanticModel>
 ): RsglSemanticModel | undefined {
-  const currentFile = normalizeFileName(model.fileName);
-  const targetFile = program.importGraph.edges.find(edge => edge.from === currentFile && edge.source === source)?.to;
-  return targetFile ? modelsByFile.get(normalizeFileName(targetFile)) : undefined;
+  const currentFile = rsglPathKey(model.fileName);
+  const targetFile = program.importGraph.edges.find(edge =>
+    rsglPathKey(edge.from) === currentFile && edge.source === source
+  )?.to;
+  return targetFile ? modelsByFile.get(rsglPathKey(targetFile)) : undefined;
 }
 
 function aliasTemplate(template: RsglTemplateDefinition, name: string): RsglTemplateDefinition {
@@ -717,7 +719,7 @@ function calculateTemplateDefinitionFingerprint(
 
 function templateDefinitionSourceIdentity(definition: RsglTemplateDefinition): string {
   return JSON.stringify([
-    normalizeFileName(definition.fileName),
+    rsglPathKey(definition.fileName),
     definition.node.name?.text ?? definition.name,
     definition.node.range.start,
     definition.node.range.end
@@ -792,10 +794,6 @@ function qualifiedTemplateDefinition(
 
 function importedNamespaceName(record: RsglSemanticModel["imports"][number]): string | undefined {
   return record.namespaceName ?? record.node.namespaceName?.text;
-}
-
-function normalizeFileName(fileName: string): string {
-  return path.normalize(fileName);
 }
 
 function isLetDeclNode(node: unknown): node is LetDeclNode {

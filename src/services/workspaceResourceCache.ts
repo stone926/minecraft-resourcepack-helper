@@ -8,6 +8,10 @@ import type {
 } from "../../packages/mc-assets/src";
 import type { JsonDocumentNode } from "../utils/jsonAst";
 import { FileSystemResourceCache, type OpenTextDocumentProvider } from "./fileSystemResourceCache";
+import type {
+  FileFreshnessPolicyOptions,
+  WatcherTrustProvider
+} from "./fileFreshnessPolicy";
 import { MediaMetadataCache } from "./mediaMetadataCache";
 import { ModelPreviewArtifactCache } from "./modelPreviewArtifactCache";
 import { ModelResourceCache } from "./modelResourceCache";
@@ -23,6 +27,7 @@ import type {
   ResourceConfiguration
 } from "./resourceCacheTypes";
 import { ResourceResolutionCache } from "./resourceResolutionCache";
+import { ResourceMutationTracker } from "./resourceMutationTracker";
 
 /**
  * Coordination facade for workspace resource caches.
@@ -35,6 +40,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   private configurationVersion = 0;
   private resourceFsGeneration = 0;
   private resourceIndexGeneration = 0;
+  private readonly resourceMutations = new ResourceMutationTracker();
   private readonly metrics = new ResourceCacheMetrics();
   private readonly fileSystem: FileSystemResourceCache;
   private readonly resourceResolution: ResourceResolutionCache;
@@ -42,12 +48,15 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   private readonly mediaMetadata: MediaMetadataCache;
   readonly modelPreviewArtifacts: ModelPreviewArtifactCache;
 
-  constructor() {
-    this.fileSystem = new FileSystemResourceCache(this, this.metrics);
+  constructor(freshnessOptions: FileFreshnessPolicyOptions = {}) {
+    this.fileSystem = new FileSystemResourceCache(this, this.metrics, freshnessOptions);
     this.resourceResolution = new ResourceResolutionCache({
       pathExists: fileName => this.fileSystem.getPathExists(fileName),
       getPackRoot: fileName => this.fileSystem.getPackRoot(fileName),
-      getPackMetadata: packRoot => this.fileSystem.getPackMetadata(packRoot)
+      getPackMetadata: packRoot => this.fileSystem.getPackMetadata(packRoot),
+      canReuseVerifiedPaths: (fileNames, verifiedAt) =>
+        this.fileSystem.canReuseVerifiedPaths(fileNames, verifiedAt),
+      verificationTimestamp: () => this.fileSystem.verificationTimestamp()
     }, this, this.metrics);
     this.models = new ModelResourceCache({
       resolveResourcePath: request => this.resourceResolution.resolveResourcePath(request),
@@ -64,6 +73,10 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     this.fileSystem.setOpenTextDocumentProvider(provider);
   }
 
+  setWatcherTrustProvider(provider: WatcherTrustProvider | null): void {
+    this.fileSystem.setWatcherTrustProvider(provider);
+  }
+
   getConfigurationVersion(): number {
     return this.configurationVersion;
   }
@@ -74,6 +87,19 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
 
   getResourceIndexGeneration(): number {
     return this.resourceIndexGeneration;
+  }
+
+  /**
+   * Monotonic generation for any resource state mutation, including unsaved
+   * document edits. Async consumers use it to reject results assembled across
+   * two different filesystem snapshots.
+   */
+  getResourceMutationGeneration(): number {
+    return this.resourceMutations.currentGeneration();
+  }
+
+  hasAnyResourceChangedSince(generation: number, fileNames: Iterable<string>): boolean {
+    return this.resourceMutations.hasAnyChangedSince(generation, fileNames);
   }
 
   getPathExists(fileName: string): boolean {
@@ -159,6 +185,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   }
 
   invalidateAll(): void {
+    this.resourceMutations.recordGlobal();
     this.resourceFsGeneration++;
     this.resourceIndexGeneration++;
     this.fileSystem.invalidateAll();
@@ -168,6 +195,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   }
 
   invalidatePath(fileName: string): void {
+    this.resourceMutations.recordPath(fileName);
     this.resourceIndexGeneration++;
     this.fileSystem.invalidatePath(fileName);
     this.resourceResolution.invalidatePath(fileName);
@@ -176,6 +204,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   }
 
   invalidateDocument(document: CacheTextDocument): void {
+    this.resourceMutations.recordPath(document.fileName);
     this.fileSystem.invalidateDocument(document);
     this.resourceResolution.invalidateDocument(document.fileName);
     this.models.invalidatePath(document.fileName);
@@ -183,6 +212,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   }
 
   invalidateConfiguration(): void {
+    this.resourceMutations.recordGlobal();
     this.configurationVersion++;
     this.fileSystem.invalidateConfiguration();
     this.resourceResolution.invalidateConfiguration();
