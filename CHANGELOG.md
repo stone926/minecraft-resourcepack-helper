@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-07-18
+
 - fix: write validated release metadata directly to GitHub Actions outputs without leaking Git command output.
 - fix: isolate RSGL CLI packaging and install verification from Windows command parsing and shared npm caches.
 
