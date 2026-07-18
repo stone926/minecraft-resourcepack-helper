@@ -2,26 +2,35 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { errorMsg, promptMsg } from "../../commands/constants";
-import type { LocalizedMessage } from "../../i18n/messages";
+import { lm, type LocalizedMessage } from "../../i18n/messages";
 import { readCombinedModelPreviewScript } from "./helpers/webviewScripts";
 
 interface PackageJson {
   displayName?: string;
   description?: string;
   contributes?: {
-    configuration?: {
-      title?: string;
-    };
+    commands?: Array<Record<string, unknown>>;
+    configuration?: Record<string, unknown> | Array<Record<string, unknown>>;
+    jsonValidation?: Array<Record<string, unknown>>;
+    views?: Record<string, Array<Record<string, unknown>>>;
+    viewsContainers?: Record<string, Array<Record<string, unknown>>>;
   };
 }
 
+interface LocalizedManifestField {
+  location: string;
+  value: unknown;
+}
+
 describe("i18n", () => {
-  it("localizes core user-facing package metadata", () => {
+  it("localizes every user-facing manifest field", () => {
     const packageJson = readJsonFile<PackageJson>(path.join(process.cwd(), "package.json"));
 
-    assertIsPackageNlsReference(packageJson.displayName, "displayName");
-    assertIsPackageNlsReference(packageJson.description, "description");
-    assertIsPackageNlsReference(packageJson.contributes?.configuration?.title, "contributes.configuration.title");
+    const fields = collectLocalizedManifestFields(packageJson);
+    assert.ok(fields.length > 0, "package.json should expose localizable fields");
+    for (const field of fields) {
+      assertIsPackageNlsReference(field.value, field.location);
+    }
   });
 
   it("keeps package localization bundles aligned with package.json placeholders", () => {
@@ -47,10 +56,46 @@ describe("i18n", () => {
     assert.deepStrictEqual(missingKeys(zhBundle, runtimeKeys), []);
     assert.deepStrictEqual(extraKeys(defaultBundle, runtimeKeys), []);
     assert.deepStrictEqual(Object.keys(zhBundle).sort(), Object.keys(defaultBundle).sort());
+    for (const [key, value] of Object.entries(defaultBundle)) {
+      assert.strictEqual(value, key, `default runtime translation should match its source key: ${key}`);
+    }
   });
 
-  it("rejects runtime l10n calls that cannot be collected statically", () => {
+  it("keeps localization placeholders aligned and translations non-empty", () => {
+    for (const [defaultFile, translatedFile, identicalAllowlist] of [
+      ["package.nls.json", "package.nls.zh-cn.json", new Set<string>()],
+      [path.join("l10n", "bundle.l10n.json"), path.join("l10n", "bundle.l10n.zh-cn.json"), new Set(["3/4"])]
+    ] as const) {
+      const defaultBundle = readJsonFile<Record<string, string>>(path.join(process.cwd(), defaultFile));
+      const translatedBundle = readJsonFile<Record<string, string>>(path.join(process.cwd(), translatedFile));
+
+      for (const [key, defaultValue] of Object.entries(defaultBundle)) {
+        const translatedValue = translatedBundle[key];
+        assert.ok(defaultValue.trim(), `${defaultFile}:${key} should not be empty`);
+        assert.ok(translatedValue?.trim(), `${translatedFile}:${key} should not be empty`);
+        assert.deepStrictEqual(
+          collectPlaceholders(translatedValue).sort(),
+          collectPlaceholders(defaultValue).sort(),
+          `${translatedFile}:${key} should preserve indexed placeholders`
+        );
+        if (!identicalAllowlist.has(key)) {
+          assert.notStrictEqual(translatedValue, defaultValue, `${translatedFile}:${key} should be translated`);
+        }
+      }
+    }
+  });
+
+  it("rejects unallowlisted runtime message keys that cannot be collected statically", () => {
     assert.deepStrictEqual(collectNonStaticL10nCalls(), []);
+  });
+
+  it("does not collect test-only localization calls as production bundle keys", () => {
+    const testOnlyMessage = lm("I18N test-only localization collector sentinel");
+    assert.strictEqual(collectRuntimeL10nKeys().has(testOnlyMessage.message), false);
+  });
+
+  it("rejects raw string arrays used as Quick Pick choices", () => {
+    assert.deepStrictEqual(collectRawQuickPickStringArrays(), []);
   });
 
   it("keeps model preview webview UI strings behind l10n helpers", () => {
@@ -81,8 +126,97 @@ describe("i18n", () => {
   });
 });
 
-function assertIsPackageNlsReference(value: string | undefined, label: string): void {
-  assert.match(value ?? "", /^%[^%]+%$/, `${label} should use a package.nls placeholder`);
+function collectLocalizedManifestFields(packageJson: PackageJson): LocalizedManifestField[] {
+  const fields: LocalizedManifestField[] = [
+    { location: "displayName", value: packageJson.displayName },
+    { location: "description", value: packageJson.description }
+  ];
+  const contributes = packageJson.contributes;
+  if (!contributes) {
+    return fields;
+  }
+
+  for (const [index, command] of (contributes.commands ?? []).entries()) {
+    collectKnownStringFields(command, `contributes.commands[${index}]`, ["title", "shortTitle", "category"], fields);
+  }
+  for (const [container, views] of Object.entries(contributes.viewsContainers ?? {})) {
+    views.forEach((view, index) => collectKnownStringFields(
+      view,
+      `contributes.viewsContainers.${container}[${index}]`,
+      ["title"],
+      fields
+    ));
+  }
+  for (const [container, views] of Object.entries(contributes.views ?? {})) {
+    views.forEach((view, index) => collectKnownStringFields(
+      view,
+      `contributes.views.${container}[${index}]`,
+      ["name"],
+      fields
+    ));
+  }
+  (contributes.jsonValidation ?? []).forEach((registration, index) => collectKnownStringFields(
+    registration,
+    `contributes.jsonValidation[${index}]`,
+    ["url"],
+    fields
+  ));
+
+  collectConfigurationLocalizedFields(contributes.configuration, "contributes.configuration", fields);
+  return fields;
+}
+
+function collectKnownStringFields(
+  value: Record<string, unknown>,
+  location: string,
+  keys: string[],
+  fields: LocalizedManifestField[]
+): void {
+  for (const key of keys) {
+    if (key in value) {
+      fields.push({ location: `${location}.${key}`, value: value[key] });
+    }
+  }
+}
+
+const configurationLocalizedKeys = new Set([
+  "title",
+  "description",
+  "markdownDescription",
+  "deprecationMessage",
+  "enumDescriptions",
+  "markdownEnumDescriptions"
+]);
+
+function collectConfigurationLocalizedFields(
+  value: unknown,
+  location: string,
+  fields: LocalizedManifestField[]
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectConfigurationLocalizedFields(item, `${location}[${index}]`, fields));
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    const childLocation = `${location}.${key}`;
+    if (configurationLocalizedKeys.has(key) && typeof child === "string") {
+      fields.push({ location: childLocation, value: child });
+      continue;
+    }
+    if (configurationLocalizedKeys.has(key) && Array.isArray(child)) {
+      child.forEach((item, index) => fields.push({ location: `${childLocation}[${index}]`, value: item }));
+      continue;
+    }
+    collectConfigurationLocalizedFields(child, childLocation, fields);
+  }
+}
+
+function assertIsPackageNlsReference(value: unknown, label: string): void {
+  assert.match(typeof value === "string" ? value : "", /^%[^%]+%$/, `${label} should use a package.nls placeholder`);
 }
 
 function collectPackageNlsKeys(value: unknown): Set<string> {
@@ -118,7 +252,7 @@ function collectRuntimeL10nKeys(): Set<string> {
     ...Object.values(promptMsg).map(messageKey)
   ]);
 
-  for (const file of collectTypeScriptFiles(path.join(process.cwd(), "src"))) {
+  for (const file of collectProductionTypeScriptFiles()) {
     const source = fs.readFileSync(file, "utf8");
     for (const match of source.matchAll(/vscode\.l10n\.t\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) {
       keys.add(unescapeStringLiteral(match[2]));
@@ -137,8 +271,9 @@ function collectRuntimeL10nKeys(): Set<string> {
 function collectNonStaticL10nCalls(): string[] {
   const calls: string[] = [];
   const root = path.join(process.cwd(), "src");
-  for (const file of collectTypeScriptFiles(root)) {
-    if (path.relative(root, file).replaceAll(path.sep, "/") === "i18n/runtime.ts") {
+  for (const file of collectProductionTypeScriptFiles()) {
+    const relativeFile = path.relative(root, file).replaceAll(path.sep, "/");
+    if (relativeFile === "i18n/runtime.ts" || relativeFile === "i18n/messages.ts") {
       continue;
     }
 
@@ -147,8 +282,39 @@ function collectNonStaticL10nCalls(): string[] {
       const index = match.index ?? 0;
       calls.push(`${path.relative(process.cwd(), file)}:${lineNumberAt(source, index)}`);
     }
+    for (const match of source.matchAll(/\blm\(\s*([A-Za-z_$][\w.$]*)/g)) {
+      const signature = `${relativeFile}:${match[1]}`;
+      if (!nonStaticLmCallAllowlist.has(signature)) {
+        const index = match.index ?? 0;
+        calls.push(`${path.relative(process.cwd(), file)}:${lineNumberAt(source, index)}`);
+      }
+    }
   }
   return calls.sort();
+}
+
+const nonStaticLmCallAllowlist = new Set([
+  // The webview sends stable code/args pairs; modelPreviewWebviewMessages registers every accepted code.
+  "modelPreview/host/ModelPreviewPanel.ts:message.code"
+]);
+
+function collectRawQuickPickStringArrays(): string[] {
+  const calls: string[] = [];
+  for (const file of collectProductionTypeScriptFiles()) {
+    const source = fs.readFileSync(file, "utf8");
+    for (const match of source.matchAll(/\.showQuickPick\(\s*\[\s*["'`]/g)) {
+      calls.push(`${path.relative(process.cwd(), file)}:${lineNumberAt(source, match.index ?? 0)}`);
+    }
+  }
+  return calls.sort();
+}
+
+function collectProductionTypeScriptFiles(): string[] {
+  const root = path.join(process.cwd(), "src");
+  return collectTypeScriptFiles(root).filter(file => {
+    const relative = path.relative(root, file);
+    return relative !== "test" && !relative.startsWith(`test${path.sep}`);
+  });
 }
 
 function collectTypeScriptFiles(root: string): string[] {
@@ -188,4 +354,8 @@ function lineNumberAt(source: string, index: number): number {
 
 function unescapeStringLiteral(value: string): string {
   return value.replace(/\\([\\'"`])/g, "$1");
+}
+
+function collectPlaceholders(value: string): string[] {
+  return value.match(/\{\d+\}/g) ?? [];
 }

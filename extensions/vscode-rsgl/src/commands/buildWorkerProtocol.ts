@@ -1,11 +1,13 @@
 import type {
+  RsglBuildPreviewMessages,
   RsglBuildPreviewResult,
   RsglPreparedBuildResult
 } from "../../../../packages/rsgl-core/src/build";
 import type {
   CompileDependency,
   RsglCompileDiagnostic,
-  RsglEmittedFile
+  RsglEmittedFile,
+  RsglWriteErrorCode
 } from "../../../../packages/rsgl-core/src/compiler";
 import type { RsglGlobalExternConfigEntry } from "../../../../packages/rsgl-core/src/externDeclarations";
 import type { RsglCompileConfigurationOptions } from "../../../../packages/rsgl-core/src/compiler/compileConfiguration";
@@ -29,6 +31,7 @@ export interface RsglWorkerBuildContext {
   outputRoot: string;
   sourceMaps?: boolean;
   manifest?: boolean;
+  previewMessages?: RsglBuildPreviewMessages;
 }
 
 export interface RsglWorkerCompileDirectoryContext {
@@ -86,8 +89,14 @@ export interface RsglWorkerCancelled {
   type: "cancelled";
 }
 
+export type RsglWorkerFailureCode = RsglWriteErrorCode | "rsgl.unknown";
+
+export type RsglWorkerFailureArg = string | number | boolean;
+
 export interface RsglWorkerFailure {
   type: "error";
+  code: RsglWorkerFailureCode;
+  args: RsglWorkerFailureArg[];
   message: string;
   stack?: string;
 }

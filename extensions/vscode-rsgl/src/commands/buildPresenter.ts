@@ -1,11 +1,12 @@
 import * as vscode from "vscode";
 import type { RsglBuildPreviewResult, RsglBuildResult } from "../../../../packages/rsgl-core/src/build";
-import type { RsglDirectoryBuildContext, RsglSkippedSourceRoot } from "./buildContexts";
-
-export interface RsglWorkspaceBuildEntry<T extends RsglBuildResult> {
-  context: RsglDirectoryBuildContext;
-  result: T;
-}
+import type { RsglSkippedSourceRoot } from "./buildContexts";
+import { localizedWorkspaceBuildPreviewMessages } from "./buildPreviewMessages";
+import {
+  formatWorkspaceBuildPreview,
+  summarizeWorkspaceBuild,
+  type RsglWorkspaceBuildEntry
+} from "./workspaceBuildPreview";
 
 export function runRsglBuildProgress<T>(
   title: string,
@@ -38,7 +39,7 @@ export async function showBuildPreview(result: RsglBuildPreviewResult): Promise<
 
   const preview = await vscode.workspace.openTextDocument({
     language: "markdown",
-    content: result.preview ?? ""
+    content: result.preview ?? vscode.l10n.t("No preview available.")
   });
   await vscode.window.showTextDocument(preview, { preview: true });
 }
@@ -75,7 +76,7 @@ export async function showWorkspaceBuildPreview(
 
   const preview = await vscode.workspace.openTextDocument({
     language: "markdown",
-    content: formatWorkspaceBuildPreview(entries, skipped)
+    content: formatWorkspaceBuildPreview(entries, skipped, localizedWorkspaceBuildPreviewMessages())
   });
   await vscode.window.showTextDocument(preview, { preview: true });
 }
@@ -89,53 +90,7 @@ async function showBuildErrors(result: RsglBuildResult): Promise<boolean> {
   return true;
 }
 
-function formatWorkspaceBuildPreview(
-  entries: Array<RsglWorkspaceBuildEntry<RsglBuildPreviewResult>>,
-  skipped: RsglSkippedSourceRoot[]
-): string {
-  const summary = summarizeWorkspaceBuild(entries);
-  const lines = [
-    "# RSGL Workspace Build Preview",
-    "",
-    `Summary: ${entries.length} source directories, ${summary.create} create, ${summary.update} update, ${summary.unchanged} unchanged, ${skipped.length} skipped`,
-    ""
-  ];
-
-  if (skipped.length > 0) {
-    lines.push("## Skipped Source Directories", "");
-    for (const skippedRoot of skipped) {
-      lines.push(`- ${skippedRoot.sourceRoot}: ${skippedRoot.reason}`);
-    }
-    lines.push("");
-  }
-
-  for (const entry of entries) {
-    lines.push(`## ${entry.context.sourceRoot}`, "");
-    lines.push(...nestMarkdownHeadings(entry.result.preview ?? "No preview."));
-    lines.push("");
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-function summarizeWorkspaceBuild(entries: Array<RsglWorkspaceBuildEntry<RsglBuildResult>>): { create: number; update: number; unchanged: number } {
-  return entries.reduce((summary, entry) => {
-    const planSummary = entry.result.plan?.summary ?? { create: 0, update: 0, unchanged: 0 };
-    summary.create += planSummary.create;
-    summary.update += planSummary.update;
-    summary.unchanged += planSummary.unchanged;
-    return summary;
-  }, { create: 0, update: 0, unchanged: 0 });
-}
-
 function workspaceErrorCount(entries: Array<RsglWorkspaceBuildEntry<RsglBuildResult>>): number {
   return entries.reduce((count, entry) =>
     count + entry.result.diagnostics.filter(diagnostic => diagnostic.severity === "error").length, 0);
-}
-
-function nestMarkdownHeadings(markdown: string): string[] {
-  const trimmed = markdown.trimEnd();
-  if (trimmed.length === 0) {
-    return ["No preview."];
-  }
-  return trimmed.split(/\r?\n/).map(line => line.startsWith("#") ? `#${line}` : line);
 }

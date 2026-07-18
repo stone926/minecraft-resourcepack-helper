@@ -54,13 +54,13 @@
       }
     },
     "gui_light": {
-      "title": "gui_light",
+      "title": "GUI 光照模式",
       "description": "仅在gui中使用。可以是front或side。设为side，模型会被渲染为长方体形状。设为front，模型会以平面材质填满一整格",
       "type": "string",
       "enum": ["side", "front"]
     },
     "overrides": {
-      "title": "overrides",
+      "title": "模型覆盖规则",
       "description": "指定基于物品情况标签而覆写不同模型的情况。Java版1.21.4起已由 assets/<namespace>/items/*.json 中的物品模型映射替代。",
       "deprecationMessage": "models/item overrides 在 Java版1.21.4+ 已弃用，请使用 items 目录中的物品模型映射。",
       "type": "array",
@@ -128,7 +128,7 @@
                 "minimum": 0
               },
               "lefthanded": {
-                "title": "lefthanded",
+                "title": "左手模式",
                 "description": "指定被左手玩家使用的模型，会影响其在物品栏的显示样式，以及玩家拿起或穿在身上时的视觉样式",
                 "type": "number",
                 "enum": [0, 1]

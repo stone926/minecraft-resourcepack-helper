@@ -5,6 +5,7 @@
   "$ref": "#/definitions/text_component",
   "definitions": {
     "text_component": {
+      "title": "Text component",
       "oneOf": [
       {
         "type": [
@@ -95,7 +96,8 @@
                   "type": "entities",
                   "isScoreHolder": true
                 },
-                "title": "Entity selector whose score to show"
+                "title": "Entity selector whose score to show",
+                "description": "Entity selector used to look up the score"
               },
               "objective": {
                 "type": "string",
@@ -166,6 +168,7 @@
           "keybind": {
             "type": "string",
             "title": "The name of the keybind to show",
+            "description": "Key binding name to display; it must start with key.",
             "pattern": "^key\\."
           }
         },
@@ -208,7 +211,8 @@
               "params": {
                 "dimension": 3
               },
-              "title": "The coordinates of the block which uses the same format as /setblock"
+              "title": "The coordinates of the block which uses the same format as /setblock",
+              "description": "Block coordinates using the same format as /setblock"
             }
           },
           "required": [
@@ -310,6 +314,7 @@
         },
         "color": {
           "title": "The colour of the text",
+          "description": "The display colour of the text",
           "oneOf": [
           {
             "enum": [
@@ -333,7 +338,8 @@
           },
           {
             "type": "string",
-            "pattern": "#[0-9a-fA-F]{1,6}"
+            "pattern": "#[0-9a-fA-F]{1,6}",
+            "description": "Hexadecimal colour value in #RRGGBB format"
           }]
         },
         "font": {
@@ -348,18 +354,22 @@
         },
         "bold": {
           "title": "Whether to have the text bold",
+          "description": "Whether to display the text in bold",
           "type": "boolean"
         },
         "italic": {
           "title": "Whether to have the text in italics",
+          "description": "Whether to display the text in italics",
           "type": "boolean"
         },
         "underlined": {
           "title": "Whether to have the text underlined",
+          "description": "Whether to underline the text",
           "type": "boolean"
         },
         "strikethrough": {
           "title": "Whether to have the text strikethroughed",
+          "description": "Whether to display the text with a strikethrough",
           "type": "boolean"
         },
         "obfuscated": {
@@ -509,6 +519,7 @@
         },
         "hover_event": {
           "type": "object",
+          "title": "Hover event",
           "additionalProperties": false,
           "description": "What to show upon a hover",
           "properties": {
@@ -522,7 +533,8 @@
               "action": {
                 "enum": [
                   "show_text"
-                ]
+                ],
+                "description": "Shows a text component"
               },
               "contents": {
                 "$ref": "#/definitions/text_component"
@@ -537,24 +549,29 @@
               "action": {
                 "enum": [
                   "show_entity"
-                ]
+                ],
+                "description": "Shows entity information"
               },
               "contents": {
                 "type": "object",
                 "properties": {
                   "id": {
                     "type": "string",
-                    "parser": "Uuid"
+                    "parser": "Uuid",
+                    "title": "Entity UUID"
                   },
                   "name": {
-                    "$ref": "#/definitions/text_component"
+                    "$ref": "#/definitions/text_component",
+                    "title": "Entity name"
                   },
                   "type": {
                     "type": "string",
                     "parser": "Identity",
                     "params": {
                       "registry": "minecraft:entity_type"
-                    }
+                    },
+                    "title": "Entity type",
+                    "description": "Namespaced entity type ID, such as minecraft:creeper"
                   }
                 }
               },
@@ -565,7 +582,8 @@
                   "type": "Compound",
                   "category": "minecraft:entity",
                   "id": "spgoding:i-am-guaranteed-not-to-exist"
-                }
+                },
+                "title": "SNBT entity data"
               }
             }
           },
@@ -574,7 +592,8 @@
               "action": {
                 "enum": [
                   "show_item"
-                ]
+                ],
+                "description": "Shows item information"
               },
               "contents": {
                 "type": "object",
@@ -584,12 +603,14 @@
                     "parser": "Identity",
                     "params": {
                       "registry": "minecraft:item"
-                    }
+                    },
+                    "title": "Namespaced item ID"
                   },
                   "count": {
                     "type": "number",
                     "minimum": 1,
-                    "maximum": 64
+                    "maximum": 64,
+                    "title": "Item count"
                   },
                   "tag": {
                     "type": "string",
@@ -601,7 +622,8 @@
                       {
                         "Child": "id"
                       }]
-                    }
+                    },
+                    "title": "Item NBT data"
                   }
                 }
               },
@@ -612,7 +634,8 @@
                   "type": "Compound",
                   "category": "minecraft:item",
                   "id": "spgoding:i-am-guaranteed-not-to-exist"
-                }
+                },
+                "title": "SNBT item data"
               }
             }
           }],

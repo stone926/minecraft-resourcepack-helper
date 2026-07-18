@@ -413,6 +413,20 @@
             "properties": {
               "action": {
                 "enum": [
+                  "change_page"
+                ],
+                "description": "切换书页到指定页"
+              },
+              "value": {
+                "type": "string",
+                "title": "页码"
+              }
+            }
+          },
+          {
+            "properties": {
+              "action": {
+                "enum": [
                   "suggest_command"
                 ],
                 "description": "将 value 中的内容填入玩家的聊天输入框"
@@ -424,20 +438,6 @@
                   "leadingSlash": true
                 },
                 "title": "建议的命令"
-              }
-            }
-          },
-          {
-            "properties": {
-              "action": {
-                "enum": [
-                  "change_page"
-                ],
-                "description": "切换书页到指定页"
-              },
-              "value": {
-                "type": "string",
-                "title": "页码"
               }
             }
           },

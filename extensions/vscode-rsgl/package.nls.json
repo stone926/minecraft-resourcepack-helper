@@ -5,6 +5,7 @@
   "config.desc.outDir": "Output directory for generated resource pack files. Empty uses the nearest pack.mcmeta directory.",
   "config.desc.defaultAssetsPath": "Fallback vanilla assets path used when validating generated references. Empty disables the vanilla assets fallback.",
   "config.desc.resourcePackLoadOrder": "Additional resource pack roots used when validating generated references.",
+  "schema.rsglConfig.url": "./schemas/en/rsgl-config.schema.json",
   "command.title.build": "RSGL: Build Resourcepack JSON",
   "command.title.previewBuild": "RSGL: Preview Build",
   "command.title.buildDirectory": "RSGL: Build Source Directory",

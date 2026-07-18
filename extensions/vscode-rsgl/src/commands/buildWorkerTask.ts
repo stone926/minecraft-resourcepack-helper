@@ -98,6 +98,7 @@ function createBuildOptions(
     outputRoot: context.outputRoot,
     sourceMaps: context.sourceMaps,
     manifest: context.manifest,
+    previewMessages: context.previewMessages,
     isCancellationRequested,
     ...createValidationOptions(context)
   };

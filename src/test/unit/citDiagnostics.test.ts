@@ -84,7 +84,7 @@ describe("CIT diagnostics", () => {
       "blend=add"
     ].join("\n"));
 
-    assert.ok(diagnostics.some(message => message.includes("nbt.display.Name") && message.includes("runtime status 'legacy'")));
+    assert.ok(diagnostics.some(message => message.includes("nbt.display.Name") && message.includes("legacy runtime behavior")));
     assert.ok(diagnostics.some(message => message.includes("blend") && message.includes("not ported yet")));
   });
 

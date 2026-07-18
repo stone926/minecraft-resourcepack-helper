@@ -1,6 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
   resolveRsglOutputPath,
   type RsglEmittedFile,
   type RsglWritePlan,
@@ -52,16 +54,13 @@ export async function applyRsglEmittedFiles(
     let entry: RsglWritePlanEntry;
     if (isCopyFile(file)) {
       const [previousContent, nextContent] = await Promise.all([
-        host.readBytes(absolutePath),
-        host.readBytes(file.copyFrom)
+        readOutputBytes(host, absolutePath),
+        readCopySourceBytes(host, file.copyFrom)
       ]);
-      if (!nextContent) {
-        throw new Error(`Unable to read RSGL copy source '${file.copyFrom}'.`);
-      }
       const status = binaryWriteStatus(previousContent, nextContent);
       entry = { ...file, absolutePath, status };
     } else {
-      const previousContent = await host.readText(absolutePath);
+      const previousContent = await readOutputText(host, absolutePath);
       const status = textWriteStatus(previousContent, file.content);
       entry = { ...file, absolutePath, status };
     }
@@ -81,7 +80,14 @@ export async function applyRsglEmittedFiles(
     }
 
     if (isCopyFile(file)) {
-      await host.copyFile(file.copyFrom, absolutePath);
+      try {
+        await host.copyFile(file.copyFrom, absolutePath);
+      } catch (error) {
+        if (isFileNotFoundError(error)) {
+          throw new RsglCopySourceReadError(file.copyFrom, { cause: error });
+        }
+        throw error;
+      }
     } else {
       await host.writeText(absolutePath, file.content);
     }
@@ -95,6 +101,43 @@ export async function applyRsglEmittedFiles(
     entries,
     summary
   };
+}
+
+async function readCopySourceBytes(host: RsglBuildWriteHost, fileName: string): Promise<Uint8Array> {
+  try {
+    const content = await host.readBytes(fileName);
+    if (!content) {
+      throw new RsglCopySourceReadError(fileName);
+    }
+    return content;
+  } catch (error) {
+    if (error instanceof RsglCopySourceReadError) {
+      throw error;
+    }
+    throw new RsglCopySourceReadError(fileName, { cause: error });
+  }
+}
+
+async function readOutputBytes(
+  host: RsglBuildWriteHost,
+  fileName: string
+): Promise<Uint8Array | undefined> {
+  try {
+    return await host.readBytes(fileName);
+  } catch (error) {
+    throw new RsglOutputFileReadError(fileName, { cause: error });
+  }
+}
+
+async function readOutputText(
+  host: RsglBuildWriteHost,
+  fileName: string
+): Promise<string | undefined> {
+  try {
+    return await host.readText(fileName);
+  } catch (error) {
+    throw new RsglOutputFileReadError(fileName, { cause: error });
+  }
 }
 
 function isCopyFile(file: RsglEmittedFile): file is RsglEmittedFile & { copyFrom: string } {
@@ -117,10 +160,16 @@ async function readOptionalFile(fileName: string, encoding?: "utf8"): Promise<st
   try {
     return encoding ? await fs.readFile(fileName, encoding) : await fs.readFile(fileName);
   } catch (error) {
-    const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
+    if (isFileNotFoundError(error)) {
       return undefined;
     }
     throw error;
   }
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "ENOENT";
 }

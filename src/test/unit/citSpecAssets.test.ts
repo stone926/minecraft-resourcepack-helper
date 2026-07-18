@@ -62,6 +62,33 @@ describe("CIT spec assets", () => {
     }
   });
 
+  it("localizes every CIT hover and completion annotation", () => {
+    for (const relPath of requiredFiles) {
+      const enEntries = collectLocalizedStrings(readJsonFile<unknown>(path.join(EN_CIT, relPath)));
+      const zhEntries = collectLocalizedStrings(readJsonFile<unknown>(path.join(ZH_CIT, relPath)));
+
+      assert.deepStrictEqual([...zhEntries.keys()].sort(), [...enEntries.keys()].sort(), relPath);
+      for (const [location, enValue] of enEntries) {
+        const zhValue = zhEntries.get(location) ?? "";
+        assert.ok(enValue.trim(), `${relPath}.${location}: EN value should not be empty`);
+        assert.ok(zhValue.trim(), `${relPath}.${location}: ZH value should not be empty`);
+        assert.ok(!/[\u4e00-\u9fff]/.test(enValue), `${relPath}.${location}: EN value contains Chinese`);
+        if (/[A-Za-z]/.test(enValue)) {
+          assert.ok(/[\u4e00-\u9fff]/.test(zhValue), `${relPath}.${location}: ZH value should contain Chinese`);
+        }
+      }
+    }
+  });
+
+  it("falls back to English for unsupported Chinese locales", () => {
+    const service = new CitSpecService(CIT_ASSETS);
+    const english = service.getCitSpec("item", "en").keys.get("texture")?.title;
+    const simplifiedChinese = service.getCitSpec("item", "zh-cn").keys.get("texture")?.title;
+
+    assert.notStrictEqual(simplifiedChinese, english);
+    assert.strictEqual(service.getCitSpec("item", "zh-tw").keys.get("texture")?.title, english);
+  });
+
   it("does not conflict when fragments are merged", () => {
     const service = new CitSpecService(CIT_ASSETS);
     for (const locale of ["en", "zh-cn"]) {
@@ -107,6 +134,32 @@ function readJsonFile<T>(file: string): T {
 }
 
 const localizedKeys = new Set(["title", "description", "runtimeNote"]);
+
+function collectLocalizedStrings(value: unknown): Map<string, string> {
+  const entries = new Map<string, string>();
+
+  function visit(child: unknown, location: string): void {
+    if (Array.isArray(child)) {
+      child.forEach((item, index) => visit(item, `${location}[${index}]`));
+      return;
+    }
+    if (!child || typeof child !== "object") {
+      return;
+    }
+
+    for (const [key, nested] of Object.entries(child)) {
+      const nestedLocation = location ? `${location}.${key}` : key;
+      if (localizedKeys.has(key) && typeof nested === "string") {
+        entries.set(nestedLocation, nested);
+      } else {
+        visit(nested, nestedLocation);
+      }
+    }
+  }
+
+  visit(value, "");
+  return entries;
+}
 
 function compareStructures(en: unknown, zh: unknown, location: string): void {
   if (typeof en !== typeof zh) {

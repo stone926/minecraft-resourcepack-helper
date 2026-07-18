@@ -9,6 +9,8 @@ import type {
   RsglWorkerResponse,
   RsglWorkerTaskKind
 } from "./buildWorkerProtocol";
+import { RsglBuildWorkerExitError } from "./buildUiErrors";
+import { deserializeRsglWorkerFailure } from "./buildWorkerFailure";
 
 export interface RsglWorkerCancellationToken {
   readonly isCancellationRequested: boolean;
@@ -98,7 +100,7 @@ export function runRsglWorkerTask<K extends RsglWorkerTaskKind>(
       transport.onceMessage(response => {
         const completedTransport = transport;
         if (response.type === "error") {
-          finish(null, workerError(response.message, response.stack));
+          finish(null, deserializeRsglWorkerFailure(response));
         } else {
           finish(response as RsglWorkerOutcome<K>);
         }
@@ -115,7 +117,7 @@ export function runRsglWorkerTask<K extends RsglWorkerTaskKind>(
         if (cancelling) {
           finish({ type: "cancelled" });
         } else {
-          finish(null, new Error(`RSGL build worker exited before returning a result (code ${code}).`));
+          finish(null, new RsglBuildWorkerExitError(code));
         }
       });
 
@@ -144,12 +146,4 @@ function createNodeWorkerTransport(): RsglWorkerTransport {
     removeAllListeners: () => worker.removeAllListeners(),
     terminate: () => worker.terminate()
   };
-}
-
-function workerError(message: string, stack: string | undefined): Error {
-  const error = new Error(message);
-  if (stack) {
-    error.stack = stack;
-  }
-  return error;
 }

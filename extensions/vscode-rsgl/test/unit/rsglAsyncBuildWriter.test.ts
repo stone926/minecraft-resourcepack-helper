@@ -6,6 +6,11 @@ import {
   applyRsglEmittedFiles,
   type RsglBuildWriteHost
 } from "../../src/commands/asyncBuildWriter";
+import {
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
+  RsglUnsafeOutputPathError
+} from "../../src/commands/buildUiErrors";
 import type { RsglEmittedFile } from "../../../../packages/rsgl-core/src/compiler";
 
 describe("RSGL async build writer", () => {
@@ -74,8 +79,114 @@ describe("RSGL async build writer", () => {
       "pack",
       { isCancellationRequested: false },
       host
-    ), /Unsafe RSGL output path/);
+    ), error => error instanceof RsglUnsafeOutputPathError && error.outputPath === "../escape.json");
     assert.strictEqual(reads, 0);
+  });
+
+  it("reports an unreadable existing output as a structured UI error", async () => {
+    const readFailure = new Error("technical read failure");
+    const host: RsglBuildWriteHost = {
+      readText: async () => { throw readFailure; },
+      readBytes: async () => undefined,
+      createDirectory: async () => undefined,
+      writeText: async () => undefined,
+      copyFile: async () => undefined
+    };
+    const outputRoot = path.resolve("pack");
+    const expectedFileName = path.join(outputRoot, "generated.json");
+
+    await assert.rejects(() => applyRsglEmittedFiles(
+      [{ outputPath: "generated.json", content: "{}", kind: "resource" }],
+      outputRoot,
+      { isCancellationRequested: false },
+      host
+    ), error =>
+      error instanceof RsglOutputFileReadError &&
+      error.fileName === expectedFileName &&
+      error.cause === readFailure
+    );
+  });
+
+  it("reports an unreadable copy source as a structured UI error", async () => {
+    const copyFrom = path.resolve("missing-pack.png");
+    const readFailure = new Error("technical copy-source read failure");
+    const host: RsglBuildWriteHost = {
+      readText: async () => undefined,
+      readBytes: async fileName => {
+        if (fileName === copyFrom) {
+          throw readFailure;
+        }
+        return undefined;
+      },
+      createDirectory: async () => undefined,
+      writeText: async () => undefined,
+      copyFile: async () => undefined
+    };
+
+    await assert.rejects(() => applyRsglEmittedFiles(
+      [{ outputPath: "pack.png", copyFrom, kind: "resource" }],
+      "pack",
+      { isCancellationRequested: false },
+      host
+    ), error =>
+      error instanceof RsglCopySourceReadError &&
+      error.copyFrom === copyFrom &&
+      error.cause === readFailure
+    );
+  });
+
+  it("reports an unreadable existing binary output as a structured UI error", async () => {
+    const outputRoot = path.resolve("pack");
+    const outputFile = path.join(outputRoot, "pack.png");
+    const copyFrom = path.resolve("source-pack.png");
+    const readFailure = new Error("technical binary output read failure");
+    const host: RsglBuildWriteHost = {
+      readText: async () => undefined,
+      readBytes: async fileName => {
+        if (fileName === copyFrom) {
+          return new Uint8Array([1, 2, 3]);
+        }
+        throw readFailure;
+      },
+      createDirectory: async () => undefined,
+      writeText: async () => undefined,
+      copyFile: async () => undefined
+    };
+
+    await assert.rejects(() => applyRsglEmittedFiles(
+      [{ outputPath: "pack.png", copyFrom, kind: "resource" }],
+      outputRoot,
+      { isCancellationRequested: false },
+      host
+    ), error =>
+      error instanceof RsglOutputFileReadError &&
+      error.fileName === outputFile &&
+      error.cause === readFailure
+    );
+  });
+
+  it("preserves a structured copy-source error when the source disappears before commit", async () => {
+    const copyFailure = Object.assign(new Error("technical ENOENT detail"), { code: "ENOENT" });
+    let readCount = 0;
+    const host: RsglBuildWriteHost = {
+      readText: async () => undefined,
+      readBytes: async () => readCount++ === 0 ? undefined : new Uint8Array([1, 2, 3]),
+      createDirectory: async () => undefined,
+      writeText: async () => undefined,
+      copyFile: async () => { throw copyFailure; }
+    };
+    const copyFrom = path.resolve("vanishing-pack.png");
+
+    await assert.rejects(() => applyRsglEmittedFiles(
+      [{ outputPath: "pack.png", copyFrom, kind: "resource" }],
+      "pack",
+      { isCancellationRequested: false },
+      host
+    ), error =>
+      error instanceof RsglCopySourceReadError &&
+      error.copyFrom === copyFrom &&
+      error.cause === copyFailure
+    );
   });
 });
 

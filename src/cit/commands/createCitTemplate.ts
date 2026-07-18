@@ -4,13 +4,13 @@ import { createCitTemplate, type CitTemplateType } from "./citTemplate";
 
 export default async function createCitTemplateCommand(): Promise<vscode.Uri | null> {
   const selectedType = await vscode.window.showQuickPick(
-    ["item", "armor", "elytra", "enchantment"] as const,
+    getCitTemplateTypeItems(),
     { title: vscode.l10n.t("Select CIT type") }
   );
   if (!selectedType) {
     return null;
   }
-  const type = selectedType as CitTemplateType;
+  const type = selectedType.type;
 
   const defaultUri = getDefaultCitUri(type);
   const target = await vscode.window.showSaveDialog({
@@ -29,6 +29,19 @@ export default async function createCitTemplateCommand(): Promise<vscode.Uri | n
   const document = await vscode.workspace.openTextDocument(target);
   await vscode.window.showTextDocument(document);
   return target;
+}
+
+interface CitTemplateTypeQuickPickItem extends vscode.QuickPickItem {
+  type: CitTemplateType;
+}
+
+function getCitTemplateTypeItems(): CitTemplateTypeQuickPickItem[] {
+  return [
+    { label: vscode.l10n.t("Item"), type: "item" },
+    { label: vscode.l10n.t("Armor"), type: "armor" },
+    { label: vscode.l10n.t("Elytra"), type: "elytra" },
+    { label: vscode.l10n.t("Enchantment"), type: "enchantment" }
+  ];
 }
 
 function getDefaultCitUri(type: CitTemplateType): vscode.Uri | undefined {

@@ -499,28 +499,29 @@ describe("schema assets", () => {
     }
   });
 
-  it("zh-cn schemas have no untranslated English titles", () => {
-    for (const file of collectJsonFiles(ZH_LINTER)) {
-      const schema = readJsonFile<JsonObject>(file);
-      const title = String(schema.title ?? "");
-      const relPath = path.relative(ZH_LINTER, file);
-      assert.ok(
-        /[\u4e00-\u9fff]/.test(title),
-        `ZH schema title should contain Chinese: ${relPath} — "${title}"`
-      );
-    }
-  });
+  it("localizes every nested schema annotation", () => {
+    for (const enFile of collectJsonFiles(EN_LINTER)) {
+      const relPath = path.relative(EN_LINTER, enFile);
+      const zhFile = path.join(ZH_LINTER, relPath);
+      const enEntries = collectLocalizedSchemaStrings(readJsonFile<unknown>(enFile));
+      const zhEntries = collectLocalizedSchemaStrings(readJsonFile<unknown>(zhFile));
 
-  it("en schemas have no Chinese characters in user-visible strings", () => {
-    for (const file of collectJsonFiles(EN_LINTER)) {
-      const schema = readJsonFile<JsonObject>(file);
-      const relPath = path.relative(EN_LINTER, file);
-      for (const key of ["title", "description"]) {
-        const value = String(schema[key] ?? "");
-        assert.ok(
-          !/[\u4e00-\u9fff]/.test(value),
-          `EN schema ${key} should not contain Chinese: ${relPath} — "${value}"`
-        );
+      assert.deepStrictEqual(
+        [...zhEntries.keys()].sort(),
+        [...enEntries.keys()].sort(),
+        `${relPath}: localized schema fields should be paired`
+      );
+      for (const [location, enValue] of enEntries) {
+        const zhValue = zhEntries.get(location) ?? "";
+        assert.ok(enValue.trim(), `${relPath}${location}: EN localized value should not be empty`);
+        assert.ok(zhValue.trim(), `${relPath}${location}: ZH localized value should not be empty`);
+        assert.ok(!/[\u4e00-\u9fff]/.test(enValue), `${relPath}${location}: EN text contains Chinese — "${enValue}"`);
+        if (/[A-Za-z]/.test(enValue)) {
+          assert.ok(
+            /[\u4e00-\u9fff]/.test(zhValue),
+            `${relPath}${location}: ZH text should contain Chinese — "${zhValue}"`
+          );
+        }
       }
     }
   });
@@ -604,14 +605,15 @@ function findMisspelledSchemaKeywords(
   }
 }
 
-const I18N_KEYS = new Set([
+const LOCALIZED_SCHEMA_VALUE_KEYS = new Set([
   "title",
   "description",
   "markdownDescription",
   "deprecationMessage",
   "label",
-  "prefix",
-  "__comment",
+  "errorMessage",
+  "enumDescriptions",
+  "markdownEnumDescriptions"
 ]);
 
 function compareSchemaStructures(
@@ -634,6 +636,7 @@ function compareSchemaStructures(
   }
 
   if (Array.isArray(en)) {
+    assert.ok(Array.isArray(zh), `${filePath}${jsonPath}: ZH should be an array`);
     const enArr = en as unknown[];
     const zhArr = zh as unknown[];
     if (enArr.length !== zhArr.length) {
@@ -653,15 +656,23 @@ function compareSchemaStructures(
           assert.fail(`${filePath}${jsonPath}: EN missing array value "${String(v)}"`);
         }
       }
+    } else {
+      enArr.forEach((value, index) => compareSchemaStructures(
+        value,
+        zhArr[index],
+        filePath,
+        `${jsonPath}[${index}]`
+      ));
     }
     return;
   }
 
+  assert.ok(zh && typeof zh === "object" && !Array.isArray(zh), `${filePath}${jsonPath}: ZH should be an object`);
   const enObj = en as JsonObject;
   const zhObj = zh as JsonObject;
 
-  const enKeys = new Set(Object.keys(enObj).filter(k => !I18N_KEYS.has(k) && k !== "body" && k !== "defaultSnippets"));
-  const zhKeys = new Set(Object.keys(zhObj).filter(k => !I18N_KEYS.has(k) && k !== "body" && k !== "defaultSnippets"));
+  const enKeys = new Set(Object.keys(enObj));
+  const zhKeys = new Set(Object.keys(zhObj));
 
   for (const key of enKeys) {
     if (!zhKeys.has(key)) {
@@ -677,6 +688,65 @@ function compareSchemaStructures(
   for (const key of enKeys) {
     const enVal = enObj[key];
     const zhVal = zhObj[key];
+    if (isLocalizedSchemaValue(key, enVal, zhVal, jsonPath)) {
+      assertLocalizedSchemaValue(enVal, `${filePath}${jsonPath}.${key}: EN`);
+      assertLocalizedSchemaValue(zhVal, `${filePath}${jsonPath}.${key}: ZH`);
+      continue;
+    }
     compareSchemaStructures(enVal, zhVal, filePath, `${jsonPath}.${key}`);
   }
+}
+
+function collectLocalizedSchemaStrings(value: unknown): Map<string, string> {
+  const entries = new Map<string, string>();
+
+  function visit(child: unknown, location: string): void {
+    if (Array.isArray(child)) {
+      child.forEach((item, index) => visit(item, `${location}[${index}]`));
+      return;
+    }
+    if (!child || typeof child !== "object") {
+      return;
+    }
+
+    for (const [key, nested] of Object.entries(child)) {
+      const nestedLocation = `${location}.${key}`;
+      if (typeof nested === "string" && isLocalizedSchemaKeyword(key, location)) {
+        entries.set(nestedLocation, nested);
+      } else if (isStringArray(nested) && isLocalizedSchemaKeyword(key, location)) {
+        nested.forEach((item, index) => entries.set(`${nestedLocation}[${index}]`, item));
+      } else {
+        visit(nested, nestedLocation);
+      }
+    }
+  }
+
+  visit(value, "");
+  return entries;
+}
+
+function isLocalizedSchemaValue(key: string, en: unknown, zh: unknown, jsonPath: string): boolean {
+  if (!isLocalizedSchemaKeyword(key, jsonPath)) {
+    return false;
+  }
+  return typeof en === "string" || typeof zh === "string" ||
+    isStringArray(en) || isStringArray(zh);
+}
+
+function isLocalizedSchemaKeyword(key: string, jsonPath: string): boolean {
+  return LOCALIZED_SCHEMA_VALUE_KEYS.has(key) &&
+    !(jsonPath.includes(".defaultSnippets[") && jsonPath.includes(".body"));
+}
+
+function assertLocalizedSchemaValue(value: unknown, location: string): void {
+  if (typeof value === "string") {
+    assert.ok(value.trim(), `${location} should not be empty`);
+    return;
+  }
+  assert.ok(isStringArray(value), `${location} should be a string or string array`);
+  assert.ok(value.length > 0 && value.every(item => item.trim()), `${location} should not contain empty values`);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === "string");
 }

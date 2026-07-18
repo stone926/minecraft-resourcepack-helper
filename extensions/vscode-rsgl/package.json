@@ -64,7 +64,7 @@
     "jsonValidation": [
       {
         "fileMatch": "**/rsgl.config.json",
-        "url": "./schemas/rsgl-config.schema.json"
+        "url": "%schema.rsglConfig.url%"
       }
     ],
     "commands": [

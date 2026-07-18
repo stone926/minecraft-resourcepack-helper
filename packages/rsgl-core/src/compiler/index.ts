@@ -71,6 +71,13 @@ export type {
 export type { RsglExternalResourceResolution, RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
 export { createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
+export {
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
+  RsglUnsafeOutputPathError,
+  rsglWriteErrorCodes
+} from "./writeErrors";
+export type { RsglWriteErrorCode } from "./writeErrors";
 export type {
   ExpansionFrame,
   BinaryCopyRef,

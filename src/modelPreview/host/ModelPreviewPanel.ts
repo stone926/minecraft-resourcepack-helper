@@ -14,6 +14,7 @@ import type { WebviewToHost, ScreenshotOptions } from "./ModelPreviewMessages";
 import { getModelPreviewLocalResourceRoots, ModelPreviewWebview } from "./ModelPreviewWebview";
 import { ModelPreviewWatcher } from "./ModelPreviewWatcher";
 import { isModelPreviewFileName } from "./modelPreviewFiles";
+import { getModelPreviewExportErrorMessage } from "./modelPreviewErrorPresentation";
 
 interface PendingScreenshot {
   resolve: (value: string) => void;
@@ -240,7 +241,10 @@ export class ModelPreviewPanel implements vscode.Disposable {
 
     if (message.type === "exportImage") {
       void this.exportImage(message.options).catch(error => {
-        void vscode.window.showErrorMessage(vscode.l10n.t("Model preview export failed: {0}", String(error)));
+        const errorMessage = getModelPreviewExportErrorMessage(error);
+        if (errorMessage) {
+          void vscode.window.showErrorMessage(localize(errorMessage));
+        }
       });
       return;
     }

@@ -145,7 +145,11 @@ describe("RSGL extension manifest contract", () => {
     );
     assert.ok(registration?.url);
 
-    const schemaPath = path.resolve(rsglPackageRoot, registration.url);
+    const packageNls = JSON.parse(
+      fs.readFileSync(path.join(rsglPackageRoot, "package.nls.json"), "utf8")
+    ) as Record<string, string>;
+    const schemaUrl = resolvePackageNlsValue(registration.url, packageNls);
+    const schemaPath = path.resolve(rsglPackageRoot, schemaUrl);
     const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as {
       additionalProperties?: boolean;
       properties?: Record<string, {
@@ -286,3 +290,14 @@ describe("RSGL extension manifest contract", () => {
     assert.match(sharedSource, /refreshWorkspace:\s*"rsgl\.refreshWorkspace"/);
   });
 });
+
+function resolvePackageNlsValue(value: string, bundle: Record<string, string>): string {
+  const match = /^%([^%]+)%$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  const localized = bundle[match[1]];
+  assert.ok(localized, `package.nls.json is missing ${match[1]}`);
+  return localized;
+}

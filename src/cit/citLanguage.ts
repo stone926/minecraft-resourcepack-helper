@@ -15,7 +15,14 @@ import {
   type CitPropertyEntry
 } from "./citPropertiesParser";
 import { citSpecService } from "./citSpecService";
-import type { CitResourceKind, ResolvedCitSpec, ResolvedCitSpecKey } from "./citSpecTypes";
+import type {
+  CitResourceKind,
+  CitRuntimeStatus,
+  CitType,
+  CitValueType,
+  ResolvedCitSpec,
+  ResolvedCitSpecKey
+} from "./citSpecTypes";
 
 export type CitLanguageDocument = CitPropertiesDocument;
 
@@ -45,12 +52,12 @@ export interface CitHoverInfo {
   key: string;
   title: string;
   description: string;
-  valueType: string;
-  appliesTo: string[];
+  valueType: CitValueType;
+  appliesTo: Array<CitType | "base">;
   defaultValue?: string;
   aliases: string[];
   citResewnOnly: boolean;
-  runtimeStatus?: string;
+  runtimeStatus?: CitRuntimeStatus;
   runtimeNote?: string;
 }
 

@@ -10,6 +10,13 @@ import {
 import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "../configuration";
 import { applyRsglEmittedFiles } from "./asyncBuildWriter";
 import {
+  RsglBuildWorkerExitError,
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
+  RsglUnsafeOutputPathError
+} from "./buildUiErrors";
+import { localizedRsglBuildPreviewMessages } from "./buildPreviewMessages";
+import {
   isDirectoryBuildContext,
   resolveDirectoryBuildContext,
   resolveFileBuildContext,
@@ -21,8 +28,7 @@ import {
   showBuildPreview,
   showBuildResult,
   showWorkspaceBuildPreview,
-  showWorkspaceBuildResult,
-  type RsglWorkspaceBuildEntry
+  showWorkspaceBuildResult
 } from "./buildPresenter";
 import { runRsglWorkerTask } from "./buildWorkerClient";
 import type {
@@ -30,6 +36,7 @@ import type {
   RsglWorkerCompileConfiguration,
   RsglWorkerValidationConfiguration
 } from "./buildWorkerProtocol";
+import type { RsglWorkspaceBuildEntry } from "./workspaceBuildPreview";
 
 export async function buildActiveRsglResourcePack(uri?: vscode.Uri): Promise<void> {
   const context = await resolveFileBuildContext(uri);
@@ -166,7 +173,7 @@ async function prepareAndWriteBuild(
       : null;
   } catch (error) {
     void vscode.window.showErrorMessage(
-      vscode.l10n.t("RSGL build failed: {0}", error instanceof Error ? error.message : String(error))
+      vscode.l10n.t("RSGL build failed: {0}", localizeBuildUiError(error))
     );
     return null;
   }
@@ -179,17 +186,39 @@ async function prepareBuildPreview(
   try {
     const outcome = await runRsglWorkerTask({
       kind: "previewBuild",
-      payload: createWorkerBuildPayload(context)
+      payload: {
+        ...createWorkerBuildPayload(context),
+        previewMessages: localizedRsglBuildPreviewMessages()
+      }
     }, token);
     return outcome.type === "cancelled" || token.isCancellationRequested || outcome.result.cancelled
       ? null
       : outcome.result;
   } catch (error) {
     void vscode.window.showErrorMessage(
-      vscode.l10n.t("RSGL build preview failed: {0}", error instanceof Error ? error.message : String(error))
+      vscode.l10n.t("RSGL build preview failed: {0}", localizeBuildUiError(error))
     );
     return null;
   }
+}
+
+function localizeBuildUiError(error: unknown): string {
+  if (error instanceof RsglCopySourceReadError) {
+    return vscode.l10n.t("Unable to read RSGL copy source '{0}'.", error.copyFrom);
+  }
+  if (error instanceof RsglOutputFileReadError) {
+    return vscode.l10n.t("Unable to read RSGL output file '{0}'.", error.fileName);
+  }
+  if (error instanceof RsglUnsafeOutputPathError) {
+    return vscode.l10n.t("Unsafe RSGL output path '{0}'.", error.outputPath);
+  }
+  if (error instanceof RsglBuildWorkerExitError) {
+    return vscode.l10n.t(
+      "RSGL build worker exited before returning a result (code {0}).",
+      error.exitCode
+    );
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 function createWorkerBuildPayload(

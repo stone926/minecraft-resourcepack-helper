@@ -1,56 +1,56 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://stone926.github.io/rsgl/schemas/rsgl-config.schema.json",
-  "title": "RSGL Project Configuration",
-  "description": "Project settings for RSGL compilation, output, external resources, and evaluation limits.",
+  "title": "RSGL 项目配置",
+  "description": "用于配置 RSGL 编译、输出、外部资源和求值限制的项目设置。",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "root": {
       "type": "string",
-      "description": "RSGL source root, resolved relative to this configuration file."
+      "description": "RSGL 源目录根路径，相对于此配置文件解析。"
     },
     "outDir": {
       "type": "string",
-      "description": "Generated resource-pack output directory, resolved relative to this configuration file."
+      "description": "生成的资源包输出目录，相对于此配置文件解析。"
     },
     "emitSourceMap": {
       "type": "boolean",
-      "description": "Whether builds emit RSGL source maps."
+      "description": "构建时是否生成 RSGL 源映射。"
     },
     "manifest": {
       "type": "boolean",
-      "description": "Whether builds emit the RSGL manifest."
+      "description": "构建时是否生成 RSGL 清单。"
     },
     "defaultAssetsPath": {
       "type": [
         "string",
         "null"
       ],
-      "description": "Default Minecraft assets root used for vanilla resource validation, or null to disable it."
+      "description": "校验原版资源时使用的默认 Minecraft assets 根目录；设为 null 可禁用。"
     },
     "resourcePackRoots": {
       "type": "array",
-      "description": "Resource-pack roots in custom-pack load order, resolved relative to this configuration file.",
+      "description": "按自定义资源包加载顺序排列的资源包根目录，相对于此配置文件解析。",
       "items": {
         "type": "string"
       }
     },
     "extern": {
       "type": "array",
-      "description": "Project-wide external resource declarations.",
+      "description": "项目范围的外部资源声明。",
       "items": {
         "$ref": "#/definitions/externEntry"
       }
     },
     "checkExternExistence": {
       "type": "boolean",
-      "description": "Whether external declarations check that matched resources exist."
+      "description": "外部资源声明是否检查匹配的资源确实存在。"
     },
     "namespace": {
       "type": "string",
       "pattern": "^(?!\\.\\.$)[a-z0-9_.-]+$",
-      "description": "Project default Minecraft namespace. A namespace declaration in an RSGL file overrides this default."
+      "description": "项目默认的 Minecraft 命名空间。RSGL 文件中的 namespace 声明会覆盖此默认值。"
     },
     "target": {
       "$ref": "#/definitions/target"
@@ -60,20 +60,20 @@
       "minimum": 1,
       "maximum": 9007199254740991,
       "default": 100000,
-      "description": "Maximum compile-time evaluation and expansion work items."
+      "description": "编译期求值和展开所允许的最大工作项数量。"
     },
     "maxItemModelDepth": {
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991,
       "default": 128,
-      "description": "Maximum expanded recursive item-model depth, measured in edges from root depth 0."
+      "description": "递归物品模型展开后的最大深度，以根深度 0 起算的边数衡量。"
     }
   },
   "definitions": {
     "target": {
       "type": "object",
-      "description": "Project-wide Java resource-pack target constraint. Specify exactly one of format or mc.",
+      "description": "项目范围的 Java 资源包目标约束。format 与 mc 必须且只能指定一个。",
       "additionalProperties": false,
       "required": [
         "edition"
@@ -81,10 +81,10 @@
       "properties": {
         "edition": {
           "const": "java",
-          "description": "Minecraft edition targeted by this project."
+          "description": "此项目面向的 Minecraft 版本类型。"
         },
         "format": {
-          "description": "Java resource-pack format as a positive major version or an exact [major, minor] pair.",
+          "description": "Java 资源包格式，可以是正整数主版本，也可以是精确的 [主版本, 次版本] 数组。",
           "oneOf": [
             {
               "type": "integer",
@@ -114,7 +114,7 @@
         "mc": {
           "type": "string",
           "pattern": "^\\d+\\.\\d+(?:\\.\\d+)?$",
-          "description": "Minecraft Java version resolved to its resource-pack format, for example 1.21.4."
+          "description": "用于解析资源包格式的 Minecraft Java 版本，例如 1.21.4。"
         }
       },
       "oneOf": [
@@ -141,6 +141,7 @@
       "properties": {
         "source": {
           "type": "string",
+          "description": "资源查找来源：自定义资源包根目录或原版 Minecraft assets。",
           "enum": [
             "custom",
             "vanilla"
@@ -148,6 +149,7 @@
         },
         "kind": {
           "type": "string",
+          "description": "此外部声明所匹配的资源类型。",
           "enum": [
             "model",
             "blockstate",
@@ -163,13 +165,15 @@
         },
         "patterns": {
           "type": "array",
+          "description": "此外部声明所匹配的资源 ID 模式。",
           "minItems": 1,
           "items": {
             "type": "string"
           }
         },
         "checkExistence": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "是否检查匹配的资源确实存在；此设置会覆盖项目范围的选项。"
         }
       }
     }

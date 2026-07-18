@@ -211,12 +211,11 @@ function validateRuntimeStatus(entry: CitPropertyEntry, spec: ResolvedCitSpecKey
     return [];
   }
 
-  const status = spec.runtimeStatus;
   return [createDiagnostic(
     entry.keyRange,
     spec.runtimeNote
-      ? lm("CIT key '{0}' has runtime status '{1}'. {2}", entry.key, status, spec.runtimeNote)
-      : lm("CIT key '{0}' has runtime status '{1}'.", entry.key, status),
+      ? lm("CIT key '{0}' uses legacy runtime behavior. {1}", entry.key, spec.runtimeNote)
+      : lm("CIT key '{0}' uses legacy runtime behavior.", entry.key),
     "warning"
   )];
 }

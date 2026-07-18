@@ -1,7 +1,17 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createRsglWritePlan, emitRsglFiles, parseResourceId, stableJsonStringify, type JsonValue, writeRsglFiles } from "../../src/compiler";
+import {
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
+  RsglUnsafeOutputPathError,
+  createRsglWritePlan,
+  emitRsglFiles,
+  parseResourceId,
+  stableJsonStringify,
+  type JsonValue,
+  writeRsglFiles
+} from "../../src/compiler";
 import {
   compileSource,
   compileSourceWithUncheckedExterns,
@@ -435,7 +445,28 @@ describe("RSGL compiler emit and write pipeline", () => {
 
       assert.throws(
         () => createRsglWritePlan([{ ...files[0], outputPath: "../outside.json" }], root),
-        /Unsafe RSGL output path/
+        error => error instanceof RsglUnsafeOutputPathError && error.outputPath === "../outside.json"
+      );
+
+      const missingCopySource = path.join(root, "missing-pack.png");
+      assert.throws(
+        () => createRsglWritePlan([{
+          outputPath: "pack.png",
+          copyFrom: missingCopySource,
+          kind: "resource"
+        }], root),
+        error => error instanceof RsglCopySourceReadError && error.copyFrom === missingCopySource
+      );
+
+      const unreadableOutput = path.join(root, "unreadable.json");
+      fs.mkdirSync(unreadableOutput);
+      assert.throws(
+        () => createRsglWritePlan([{
+          outputPath: "unreadable.json",
+          content: "{}",
+          kind: "resource"
+        }], root),
+        error => error instanceof RsglOutputFileReadError && error.fileName === unreadableOutput
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

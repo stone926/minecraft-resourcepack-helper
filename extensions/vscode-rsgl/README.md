@@ -1,5 +1,7 @@
 # RSGL - Resourcepack Generation Language
 
+[中文说明](README_CN.md)
+
 Standalone VS Code extension for editing, validating, and building Minecraft Java Edition resource packs from `.rsgl` source files.
 
 ## Features

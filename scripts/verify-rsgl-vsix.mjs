@@ -18,7 +18,9 @@ if (!existsSync(vsixPath)) {
 const extractionRoot = mkdtempSync(path.join(tmpdir(), "rsgl-vsix-smoke-"));
 try {
   extractVsix(vsixPath, extractionRoot);
-  await verifyLanguageServer(path.join(extractionRoot, "extension"));
+  const extensionRoot = path.join(extractionRoot, "extension");
+  verifyBundledDocumentation(extensionRoot);
+  await verifyLanguageServer(extensionRoot);
   console.log(`RSGL VSIX runtime smoke passed: ${vsixPath}`);
 } finally {
   rmSync(extractionRoot, { recursive: true, force: true });
@@ -38,6 +40,15 @@ function extractVsix(fileName, destination) {
       result.error?.message,
       result.stderr,
     ].filter(Boolean).join("\n"));
+  }
+}
+
+function verifyBundledDocumentation(extensionRoot) {
+  for (const relativePath of ["readme.md", "README_CN.md"]) {
+    const documentationPath = path.join(extensionRoot, relativePath);
+    if (!existsSync(documentationPath)) {
+      fail(`RSGL VSIX is missing its localized documentation: ${documentationPath}`);
+    }
   }
 }
 

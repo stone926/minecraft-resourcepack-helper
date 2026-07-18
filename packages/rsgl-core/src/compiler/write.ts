@@ -2,6 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRsglPathInsideOrEqual } from "../pathIdentity";
 import { RsglCopyEmittedFile, RsglEmittedFile } from "./emit";
+import {
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
+  RsglUnsafeOutputPathError
+} from "./writeErrors";
 
 export type RsglWriteStatus = "create" | "update" | "unchanged";
 
@@ -85,10 +90,8 @@ function createPlanEntry(
 ): RsglWritePlanEntry {
   const absolutePath = resolveRsglOutputPath(outputRoot, file.outputPath);
   if (isCopyFile(file)) {
-    const previousContent = fs.existsSync(absolutePath)
-      ? fs.readFileSync(absolutePath)
-      : undefined;
-    const nextContent = fs.readFileSync(file.copyFrom);
+    const previousContent = readExistingOutputFile(absolutePath);
+    const nextContent = readCopySource(file.copyFrom);
     const status = previousContent === undefined
       ? "create"
       : Buffer.compare(previousContent, nextContent) === 0 ? "unchanged" : "update";
@@ -99,9 +102,7 @@ function createPlanEntry(
     };
   }
 
-  const previousContent = fs.existsSync(absolutePath)
-    ? fs.readFileSync(absolutePath, encoding)
-    : undefined;
+  const previousContent = readExistingOutputFile(absolutePath, encoding);
   const status = previousContent === undefined
     ? "create"
     : previousContent === file.content ? "unchanged" : "update";
@@ -123,14 +124,38 @@ function isCopyFile(file: RsglEmittedFile): file is RsglCopyEmittedFile {
 
 export function resolveRsglOutputPath(outputRoot: string, outputPath: string): string {
   if (path.isAbsolute(outputPath)) {
-    throw new Error(`Unsafe RSGL output path '${outputPath}'.`);
+    throw new RsglUnsafeOutputPathError(outputPath);
   }
   const normalizedOutput = outputPath.replace(/[\\/]+/g, path.sep);
   const resolved = path.resolve(outputRoot, normalizedOutput);
   if (!isRsglPathInsideOrEqual(resolved, outputRoot)) {
-    throw new Error(`Unsafe RSGL output path '${outputPath}'.`);
+    throw new RsglUnsafeOutputPathError(outputPath);
   }
   return resolved;
+}
+
+function readCopySource(fileName: string): Buffer {
+  try {
+    return fs.readFileSync(fileName);
+  } catch (error) {
+    throw new RsglCopySourceReadError(fileName, { cause: error });
+  }
+}
+
+function readExistingOutputFile(fileName: string): Buffer | undefined;
+function readExistingOutputFile(fileName: string, encoding: BufferEncoding): string | undefined;
+function readExistingOutputFile(
+  fileName: string,
+  encoding?: BufferEncoding
+): Buffer | string | undefined {
+  if (!fs.existsSync(fileName)) {
+    return undefined;
+  }
+  try {
+    return encoding ? fs.readFileSync(fileName, encoding) : fs.readFileSync(fileName);
+  } catch (error) {
+    throw new RsglOutputFileReadError(fileName, { cause: error });
+  }
 }
 
 function createLineDiff(previous: string, next: string): RsglWriteDiff {

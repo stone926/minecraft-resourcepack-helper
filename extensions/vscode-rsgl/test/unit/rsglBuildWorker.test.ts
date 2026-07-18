@@ -7,6 +7,14 @@ import {
   type RsglWorkerCancellationToken,
   type RsglWorkerTransport
 } from "../../src/commands/buildWorkerClient";
+import {
+  RsglBuildWorkerExitError,
+  RsglCopySourceReadError,
+  RsglOutputFileReadError,
+  RsglUnsafeOutputPathError
+} from "../../src/commands/buildUiErrors";
+import { serializeRsglWorkerFailure } from "../../src/commands/buildWorkerFailure";
+import { defaultRsglBuildPreviewMessages } from "../../../../packages/rsgl-core/src/build";
 import type {
   RsglWorkerRequestEnvelope,
   RsglWorkerResponse
@@ -67,6 +75,70 @@ describe("RSGL build worker client", () => {
         assert.strictEqual(outcome.result.success, true);
         assert.strictEqual(outcome.result.emittedFiles.length, 3);
       }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes a serializable localized preview dictionary through the worker", async () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-worker-preview-");
+    const entry = path.join(root, "main.rsgl");
+
+    try {
+      fs.writeFileSync(entry, [
+        "text texts/end {",
+        "  content \"Hello PLAYERNAME\"",
+        "}"
+      ].join("\n"));
+
+      const outcome = await runRsglWorkerTask({
+        kind: "previewBuild",
+        payload: {
+          source: { kind: "file", path: entry },
+          validationAnchor: entry,
+          outputRoot: path.join(root, "pack"),
+          previewMessages: {
+            ...defaultRsglBuildPreviewMessages,
+            title: "本地化构建预览",
+            entry: "入口：{0}"
+          }
+        }
+      });
+
+      assert.strictEqual(outcome.type, "success");
+      if (outcome.type === "success") {
+        assert.match(outcome.result.preview ?? "", /^# 本地化构建预览$/m);
+        assert.match(outcome.result.preview ?? "", /^入口：/m);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves a known preview write-plan failure across the real worker boundary", async () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-worker-preview-error-");
+    const entry = path.join(root, "main.rsgl");
+    const outputRoot = path.join(root, "pack");
+    const unreadableOutput = path.join(outputRoot, "assets", "minecraft", "texts", "end.txt");
+
+    try {
+      fs.writeFileSync(entry, [
+        "text texts/end {",
+        "  content \"Hello PLAYERNAME\"",
+        "}"
+      ].join("\n"));
+      fs.mkdirSync(unreadableOutput, { recursive: true });
+
+      await assert.rejects(() => runRsglWorkerTask({
+        kind: "previewBuild",
+        payload: {
+          source: { kind: "file", path: entry },
+          validationAnchor: entry,
+          outputRoot
+        }
+      }), error =>
+        error instanceof RsglOutputFileReadError && error.fileName === unreadableOutput
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -177,7 +249,53 @@ describe("RSGL build worker client", () => {
     await nextTurn();
     assert.strictEqual(created, false);
   });
+
+  it("reports a structured error when the worker exits before responding", async () => {
+    const transport = new FakeWorkerTransport();
+    const promise = runRsglWorkerTask(compileRequest(), undefined, () => transport);
+
+    await nextTurn();
+    transport.emitExit(17);
+
+    await assert.rejects(promise, error =>
+      error instanceof RsglBuildWorkerExitError && error.exitCode === 17
+    );
+  });
+
+  it("round-trips stable worker failure codes and preserves unknown technical details", async () => {
+    await assertWorkerFailureRoundTrip(
+      new RsglCopySourceReadError("C:\\sources\\pack.png"),
+      error => error instanceof RsglCopySourceReadError && error.copyFrom === "C:\\sources\\pack.png"
+    );
+    await assertWorkerFailureRoundTrip(
+      new RsglOutputFileReadError("C:\\pack\\generated.json"),
+      error => error instanceof RsglOutputFileReadError && error.fileName === "C:\\pack\\generated.json"
+    );
+    await assertWorkerFailureRoundTrip(
+      new RsglUnsafeOutputPathError("../escape.json"),
+      error => error instanceof RsglUnsafeOutputPathError && error.outputPath === "../escape.json"
+    );
+    await assertWorkerFailureRoundTrip(
+      new Error("technical worker detail"),
+      error => error instanceof Error && error.message === "technical worker detail"
+    );
+  });
 });
+
+async function assertWorkerFailureRoundTrip(
+  error: Error,
+  validate: (error: unknown) => boolean
+): Promise<void> {
+  const transport = new FakeWorkerTransport();
+  const promise = runRsglWorkerTask(compileRequest(), undefined, () => transport);
+
+  await nextTurn();
+  const failure = serializeRsglWorkerFailure(error);
+  assert.ok(failure.args.length > 0);
+  transport.emitMessage(failure);
+
+  await assert.rejects(promise, validate);
+}
 
 function compileRequest() {
   return {
@@ -243,6 +361,10 @@ class FakeWorkerTransport implements RsglWorkerTransport {
 
   emitMessage(response: RsglWorkerResponse): void {
     this.messageListener?.(response);
+  }
+
+  emitExit(code: number): void {
+    this.exitListener?.(code);
   }
 }
 

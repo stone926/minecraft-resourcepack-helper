@@ -149,7 +149,7 @@ export class CitSpecService {
 
   private normalizeLocale(locale?: string): string {
     const normalized = (locale ?? "en").toLowerCase();
-    if (normalized === "zh-cn" || normalized.startsWith("zh")) {
+    if (normalized === "zh-cn") {
       return "zh-cn";
     }
     return "en";

@@ -1,4 +1,5 @@
 import { parentPort } from "node:worker_threads";
+import { serializeRsglWorkerFailure } from "./buildWorkerFailure";
 import { executeRsglWorkerTask } from "./buildWorkerTask";
 import type {
   RsglAnyWorkerResponse,
@@ -16,11 +17,7 @@ if (workerPort) {
         () => Atomics.load(cancellationState, 0) !== 0
       );
     } catch (error) {
-      response = {
-        type: "error",
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      };
+      response = serializeRsglWorkerFailure(error);
     }
     workerPort.postMessage(response);
     workerPort.close();
