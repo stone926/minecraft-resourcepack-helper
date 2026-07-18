@@ -54,10 +54,18 @@ describe("independent release contracts", () => {
     const manifest = readJson<Manifest>(path.join(root, "package.json"));
     const scripts = manifest.scripts ?? {};
 
-    assert.strictEqual(scripts["build:rsgl"], "npm run typecheck:rsgl && npm run bundle:rsgl");
-    assert.strictEqual(scripts["build:rsgl-cli"], "npm run typecheck:rsgl-cli && npm run bundle:rsgl-cli");
-    assert.strictEqual(scripts["package:rsgl-cli"], "node scripts/package-rsgl-cli.mjs");
-    assert.strictEqual(scripts["verify:rsgl-cli"], "node scripts/verify-rsgl-cli-package.mjs");
+    assert.deepStrictEqual(
+      Object.keys(scripts).filter(name => name === "build" || name.startsWith("build:")).sort(),
+      ["build", "build:main", "build:rsgl", "build:rsgl-cli", "build:test"]
+    );
+    assert.deepStrictEqual(
+      Object.keys(scripts).filter(name => name.startsWith("package:")).sort(),
+      ["package:main:vsix", "package:rsgl-cli", "package:rsgl:vsix"]
+    );
+    assert.deepStrictEqual(
+      Object.keys(scripts).filter(name => name.startsWith("verify:") && name !== "verify:build-budgets").sort(),
+      ["verify:main:vsix", "verify:rsgl-cli", "verify:rsgl:vsix"]
+    );
     const expectedReleaseScripts = {
       "release:main": "node scripts/release.mjs main",
       "release:rsgl": "node scripts/release.mjs rsgl",
@@ -75,12 +83,21 @@ describe("independent release contracts", () => {
 
     for (const removed of [
       "compile:rsgl-extension",
+      "compile",
+      "compile:all",
+      "compile:test",
       "package:vsix",
+      "verify:vsix-budgets",
       "deploy",
       "push"
     ]) {
       assert.strictEqual(scripts[removed], undefined, `${removed} must not bypass canonical commands`);
     }
+    assert.deepStrictEqual(
+      Object.keys(scripts).filter(name => /^(?:compile(?::|$)|typecheck:|bundle:)/.test(name)),
+      [],
+      "legacy build aliases must not be reintroduced"
+    );
   });
 
   it("uses official npm registry URLs in committed lockfiles", () => {
@@ -108,44 +125,56 @@ describe("independent release contracts", () => {
     assert.match(reusable, /package:main:vsix/);
     assert.match(reusable, /package:rsgl:vsix/);
     assert.match(reusable, /package:rsgl-cli/);
-    assert.match(reusable, /verify:build-budgets/);
-    assert.match(reusable, /verify:vsix-budgets -- --main-vsix/);
-    assert.match(reusable, /verify:vsix-budgets -- --rsgl-vsix/);
+    assert.match(reusable, /verify:main:vsix/);
+    assert.match(reusable, /verify:rsgl:vsix/);
+    assert.match(reusable, /verify:rsgl-cli/);
+    assert.strictEqual(reusable.includes("verify:build-budgets"), false);
+    assert.strictEqual(reusable.includes("verify:vsix-budgets"), false);
     assertSingleCommandStep(
       reusable,
       "Package main extension",
-      "npm run package:main:vsix"
+      "npm run package:main:vsix -- --out"
     );
     assertSingleCommandStep(
       reusable,
       "Verify main extension package",
-      "npm run verify:vsix-budgets -- --main-vsix"
+      "npm run verify:main:vsix --"
     );
     assertSingleCommandStep(
       reusable,
       "Package RSGL extension",
-      "npm run package:rsgl:vsix"
+      "npm run package:rsgl:vsix -- --out"
     );
     assertSingleCommandStep(
       reusable,
       "Verify RSGL extension package",
-      "npm run verify:rsgl:vsix"
-    );
-    assertSingleCommandStep(
-      reusable,
-      "Verify RSGL extension package budget",
-      "npm run verify:vsix-budgets -- --rsgl-vsix"
+      "npm run verify:rsgl:vsix --"
     );
     assertSingleCommandStep(
       reusable,
       "Package RSGL CLI",
-      "npm run package:rsgl-cli"
+      "npm run package:rsgl-cli -- --out"
     );
     assertSingleCommandStep(
       reusable,
       "Verify RSGL CLI package",
-      "npm run verify:rsgl-cli"
+      "npm run verify:rsgl-cli --"
     );
+    assertSingleCommandStep(
+      release,
+      "Package selected product",
+      "node scripts/artifact.mjs package"
+    );
+    assertSingleCommandStep(
+      release,
+      "Verify selected product",
+      "node scripts/artifact.mjs verify"
+    );
+    assert.ok(
+      release.indexOf("artifact.mjs package") < release.indexOf("artifact.mjs verify"),
+      "immutable artifact verification must follow packaging"
+    );
+    assert.strictEqual(release.includes('case "${PRODUCT}"'), false);
     assert.match(release, /- "v\*"/);
     assert.match(release, /- "rsgl-v\*"/);
     assert.match(release, /- "rsgl-cli-v\*"/);
@@ -158,11 +187,6 @@ describe("independent release contracts", () => {
       false
     );
 
-    const budgets = read("scripts/verify-build-budgets.mjs");
-    assert.match(budgets, /const verifyAll = !argumentsByName\.mainVsix && !argumentsByName\.rsglVsix/);
-    assert.match(budgets, /if \(verifyAll \|\| argumentsByName\.mainVsix\)/);
-    assert.match(budgets, /if \(verifyAll \|\| argumentsByName\.rsglVsix\)/);
-    assert.match(budgets, /if \(verifyAll\) \{\s*verifyBundle\("rsglCli"/);
   });
 
   it("keeps build credentials read-only and publishes only a verified immutable artifact", () => {

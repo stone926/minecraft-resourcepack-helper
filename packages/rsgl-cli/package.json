@@ -36,7 +36,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "prepack": "npm --prefix ../.. run build:rsgl-cli"
+    "prepack": "node ../../scripts/build.mjs rsgl-cli"
   },
   "publishConfig": {
     "access": "public",

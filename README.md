@@ -159,7 +159,7 @@ The resource-pack creation commands prompt for pack name, namespace, target reso
 
 ```bash
 npm install
-npm run compile:all
+npm run build
 npm run lint
 npm test
 ```

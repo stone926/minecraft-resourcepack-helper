@@ -14,7 +14,9 @@ const coreFile = path.join(repositoryRoot, "out", "packages", "rsgl-core", "src"
 const profileName = parseProfile(process.argv.slice(2));
 
 if (!fs.existsSync(coreFile)) {
-  throw new Error(`Missing compiled RSGL core at ${coreFile}. Run npm run compile first.`);
+  throw new Error(
+    `Missing compiled RSGL core at ${coreFile}. Run npm run build -- --typecheck-only first.`
+  );
 }
 
 const coreNamespace = await import(pathToFileURL(coreFile).href);

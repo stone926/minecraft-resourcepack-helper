@@ -68,16 +68,13 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Verify activation and bundle budgets
-        run: npm run verify:build-budgets
-
       - name: Package main extension
         if: inputs.product == 'all' || inputs.product == 'main'
         run: npm run package:main:vsix -- --out dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
 
       - name: Verify main extension package
         if: inputs.product == 'all' || inputs.product == 'main'
-        run: npm run verify:vsix-budgets -- --main-vsix dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
+        run: npm run verify:main:vsix -- dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
 
       - name: Package RSGL extension
         if: inputs.product == 'all' || inputs.product == 'rsgl'
@@ -86,10 +83,6 @@ jobs:
       - name: Verify RSGL extension package
         if: inputs.product == 'all' || inputs.product == 'rsgl'
         run: npm run verify:rsgl:vsix -- dist/rsgl-${{ runner.os }}.vsix
-
-      - name: Verify RSGL extension package budget
-        if: inputs.product == 'all' || inputs.product == 'rsgl'
-        run: npm run verify:vsix-budgets -- --rsgl-vsix dist/rsgl-${{ runner.os }}.vsix
 
       - name: Package RSGL CLI
         if: inputs.product == 'all' || inputs.product == 'rsgl-cli'

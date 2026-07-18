@@ -1,19 +1,10 @@
 import * as assert from "node:assert";
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 describe("model preview benchmark script", () => {
   it("loads the compiled preview service and emits every benchmark fixture", () => {
     const root = process.cwd();
-    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
-      scripts?: Record<string, string>;
-    };
-    assert.strictEqual(
-      packageJson.scripts?.["benchmark:model-preview"],
-      "npm run compile && node scripts/model-preview-benchmark.mjs"
-    );
-
     const result = spawnSync(process.execPath, [path.join(root, "scripts", "model-preview-benchmark.mjs")], {
       cwd: root,
       encoding: "utf8"

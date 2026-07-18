@@ -3,11 +3,18 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
+  hasChangelogSection,
+  insertReleaseSection,
+  selectReleaseNotes
+} from "./release-changelog.mjs";
+import {
   releaseTag,
   releaseTarget,
   targetDirectory
 } from "./release-targets.mjs";
 import { captureGitRemote, pushReleaseRefs } from "./release-push.mjs";
+import { resolveNextReleaseVersion } from "./release-version.mjs";
+import { resolveNpmInvocation } from "./npm-invocation.mjs";
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter(argument => argument.startsWith("--")));
@@ -37,7 +44,9 @@ const manifest = readJson(target.manifestPath);
 const currentVersion = manifest.version;
 const nextVersion = releaseInput === "current"
   ? currentVersion
-  : resolveNextVersion(currentVersion, releaseInput);
+  : resolveNextReleaseVersion(currentVersion, releaseInput, {
+    manifestPath: target.manifestPath
+  });
 const tagName = releaseTag(target, nextVersion);
 const taggingCurrentVersion = nextVersion === currentVersion;
 
@@ -75,7 +84,7 @@ async function main() {
   if (!skipTests) {
     run("npm", ["test"]);
   }
-  run("npm", ["run", "compile:all"]);
+  run(process.execPath, ["scripts/build.mjs", "all"]);
 
   if (!taggingCurrentVersion) {
     updateTargetVersion(nextVersion);
@@ -119,110 +128,34 @@ function updateTargetVersion(version) {
   }
 }
 
-function resolveNextVersion(version, input) {
-  const parsed = parseVersion(version);
-  if (!parsed) {
-    fail(`${target.manifestPath} version is not a plain semver version: ${version}`);
-  }
-  if (input === "major") {
-    return `${parsed.major + 1}.0.0`;
-  }
-  if (input === "minor") {
-    return `${parsed.major}.${parsed.minor + 1}.0`;
-  }
-  if (input === "patch") {
-    return `${parsed.major}.${parsed.minor}.${parsed.patch + 1}`;
-  }
-  const exact = parseVersion(input);
-  if (!exact) {
-    fail(`Invalid release version or bump type: ${input}`);
-  }
-  if (compareVersions(exact, parsed) <= 0) {
-    fail(`Next version ${input} must be greater than current version ${version}.`);
-  }
-  return input;
-}
-
-function parseVersion(value) {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
-  return match
-    ? { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) }
-    : null;
-}
-
-function compareVersions(left, right) {
-  for (const key of ["major", "minor", "patch"]) {
-    if (left[key] !== right[key]) {
-      return left[key] - right[key];
-    }
-  }
-  return 0;
-}
-
 function releaseNotesForTarget(changelogPath, version) {
   if (!existsSync(changelogPath)) {
     return ["- Maintenance release."];
   }
-  const content = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n");
-  if (taggingCurrentVersion) {
-    const existing = findChangelogSection(content, version)?.body.trim();
-    return existing
-      ? existing.split(/\r?\n/).map(line => line.trimEnd()).filter(Boolean)
-      : ["- Maintenance release."];
-  }
-  const unreleased = findChangelogSection(content, "Unreleased")?.body.trim();
-  if (unreleased) {
-    return unreleased.split(/\r?\n/).map(line => line.trimEnd()).filter(Boolean);
-  }
-  return ["- Maintenance release."];
+  return selectReleaseNotes(readFileSync(changelogPath, "utf8"), {
+    version,
+    taggingCurrentVersion
+  });
 }
 
 function updateChangelog(changelogPath, version, notes) {
   const date = new Date().toISOString().slice(0, 10);
-  const entry = `## [${version}] - ${date}\n\n${notes.join("\n")}\n\n`;
-  let content = existsSync(changelogPath)
-    ? readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
+  const content = existsSync(changelogPath)
+    ? readFileSync(changelogPath, "utf8")
     : "# Changelog\n\n## [Unreleased]\n\n";
   if (content.includes(`## [${version}]`)) {
     fail(`${changelogPath} already contains an entry for ${version}.`);
   }
-  if (!content.startsWith("# Changelog")) {
-    content = `# Changelog\n\n${content}`;
-  }
-  const unreleased = findChangelogSection(content, "Unreleased");
-  if (unreleased) {
-    const beforeBody = content.slice(0, unreleased.bodyStart);
-    const afterBody = content.slice(unreleased.bodyEnd).trimStart();
-    content = `${beforeBody}\n${entry}${afterBody}`;
-  } else {
-    const firstVersion = content.search(/\n## \[/);
-    content = firstVersion < 0
-      ? `${content.trimEnd()}\n\n${entry}`
-      : `${content.slice(0, firstVersion).trimEnd()}\n\n${entry}${content.slice(firstVersion).trimStart()}`;
-  }
-  writeFileSync(changelogPath, `${content.trimEnd()}\n`, "utf8");
-}
-
-function findChangelogSection(content, title) {
-  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`^## \\[${escaped}\\][^\\n]*\\n`, "m").exec(content);
-  if (!match) {
-    return null;
-  }
-  const bodyStart = match.index + match[0].length;
-  const nextHeading = /^## \[/gm;
-  nextHeading.lastIndex = bodyStart;
-  const next = nextHeading.exec(content);
-  return {
-    body: content.slice(bodyStart, next?.index ?? content.length),
-    bodyStart,
-    bodyEnd: next?.index ?? content.length
-  };
+  writeFileSync(changelogPath, insertReleaseSection(content, {
+    version,
+    date,
+    notes
+  }), "utf8");
 }
 
 function changelogHasVersion(changelogPath, version) {
   return existsSync(changelogPath)
-    && Boolean(findChangelogSection(readFileSync(changelogPath, "utf8"), version));
+    && hasChangelogSection(readFileSync(changelogPath, "utf8"), version);
 }
 
 function printPlan(notes, branchName) {
@@ -235,7 +168,7 @@ function printPlan(notes, branchName) {
   }
   console.log("Steps:");
   console.log(skipTests ? "- tests skipped" : "- npm test");
-  console.log("- npm run compile:all");
+  console.log("- node scripts/build.mjs all");
   if (!taggingCurrentVersion) {
     console.log(`- update only ${target.manifestPath}${target.lockPath ? `, ${target.lockPath}` : ""}, and ${target.changelogPath}`);
     console.log("- create a target-specific release commit");
@@ -330,39 +263,17 @@ function readJson(fileName) {
 
 function run(command, commandArgs) {
   console.log(`> ${[command, ...commandArgs].join(" ")}`);
-  const invocation = resolveInvocation(command, commandArgs);
+  const invocation = command === "npm"
+    ? resolveNpmInvocation(commandArgs)
+    : { file: command, args: commandArgs };
   execFileSync(invocation.file, invocation.args, { stdio: "inherit" });
 }
 
 function capture(command, commandArgs) {
-  const invocation = resolveInvocation(command, commandArgs);
-  try {
-    return execFileSync(invocation.file, invocation.args, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
-    }).trim();
-  } catch (error) {
-    if (command === "git" && commandArgs[0] === "ls-remote") {
-      throw error;
-    }
-    throw error;
-  }
-}
-
-function resolveInvocation(command, commandArgs) {
-  if (process.platform === "win32" && command === "npm") {
-    return {
-      file: "cmd.exe",
-      args: ["/d", "/s", "/c", ["npm", ...commandArgs].map(quoteCmdArg).join(" ")]
-    };
-  }
-  return { file: command, args: commandArgs };
-}
-
-function quoteCmdArg(value) {
-  return /^[A-Za-z0-9_./:=@+\\-]+$/.test(value)
-    ? value
-    : `"${value.replace(/"/g, '\\"')}"`;
+  return execFileSync(command, commandArgs, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
 }
 
 function fail(message) {

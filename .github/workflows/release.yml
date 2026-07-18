@@ -123,27 +123,14 @@ jobs:
         env:
           PRODUCT: ${{ needs.contract.outputs.product }}
           ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
-        run: |
-          mkdir -p release
-          case "${PRODUCT}" in
-            main)
-              npm run package:main:vsix -- --out "release/${ASSET_NAME}"
-              npm run verify:vsix-budgets -- --main-vsix "release/${ASSET_NAME}"
-              ;;
-            rsgl)
-              npm run package:rsgl:vsix -- --out "release/${ASSET_NAME}"
-              npm run verify:rsgl:vsix -- "release/${ASSET_NAME}"
-              npm run verify:vsix-budgets -- --rsgl-vsix "release/${ASSET_NAME}"
-              ;;
-            rsgl-cli)
-              npm run package:rsgl-cli -- --out "release/${ASSET_NAME}"
-              npm run verify:rsgl-cli -- "release/${ASSET_NAME}"
-              ;;
-            *)
-              echo "Unsupported product: ${PRODUCT}"
-              exit 1
-              ;;
-          esac
+        run: node scripts/artifact.mjs package "${PRODUCT}" --out "release/${ASSET_NAME}"
+
+      - name: Verify selected product
+        shell: bash
+        env:
+          PRODUCT: ${{ needs.contract.outputs.product }}
+          ASSET_NAME: ${{ needs.contract.outputs.asset_name }}
+        run: node scripts/artifact.mjs verify "${PRODUCT}" "release/${ASSET_NAME}"
 
       - name: Generate release notes
         env:

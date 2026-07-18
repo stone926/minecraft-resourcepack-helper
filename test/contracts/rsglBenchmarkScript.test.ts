@@ -1,19 +1,10 @@
 import * as assert from "node:assert";
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 describe("RSGL benchmark script", () => {
   it("runs deterministic synthetic smoke scenarios and emits validated CSV metrics", () => {
     const root = process.cwd();
-    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
-      scripts?: Record<string, string>;
-    };
-    assert.strictEqual(
-      packageJson.scripts?.["benchmark:rsgl"],
-      "npm run compile && node scripts/rsgl-benchmark.mjs"
-    );
-
     const result = spawnSync(
       process.execPath,
       [path.join(root, "scripts", "rsgl-benchmark.mjs"), "--smoke"],

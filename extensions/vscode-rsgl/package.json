@@ -36,11 +36,8 @@
   "main": "./bundle/extension.js",
   "l10n": "./l10n",
   "scripts": {
-    "vscode:prepublish": "npm run build",
-    "typecheck": "tsc -b ./tsconfig.json",
-    "bundle": "node ../../scripts/build-bundles.mjs rsgl",
-    "build": "npm run typecheck && npm run bundle",
-    "compile": "npm run build",
+    "vscode:prepublish": "node ../../scripts/build.mjs rsgl",
+    "build": "node ../../scripts/build.mjs rsgl",
     "watch": "tsc -b ./tsconfig.json --watch"
   },
   "contributes": {

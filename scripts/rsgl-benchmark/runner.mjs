@@ -92,7 +92,9 @@ function csvCell(value) {
 function assertCoreApi(core) {
   for (const name of ["parseRsgl", "bindRsglModule", "compileRsglModule"]) {
     if (typeof core[name] !== "function") {
-      throw new Error(`Compiled RSGL core is missing '${name}'. Run npm run compile first.`);
+      throw new Error(
+        `Compiled RSGL core is missing '${name}'. Run npm run build -- --typecheck-only first.`
+      );
     }
   }
 }

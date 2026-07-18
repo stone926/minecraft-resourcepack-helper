@@ -27,7 +27,7 @@ requireFile(configFile, [
 
 const core = await loadCommonJsModule(
   path.join(repositoryRoot, "out", "packages", "rsgl-core", "src", "index.js"),
-  "Run `npm run compile` before invoking this script directly."
+  "Run `npm run build -- --typecheck-only` before invoking this script directly."
 );
 
 const config = core.readRsglProjectConfig(configFile);

@@ -24,19 +24,24 @@ describe("repository build graph", () => {
     }
   });
 
-  it("runs every owned test suite and bundles each distributable entry point", () => {
+  it("runs every owned test suite through the canonical build surface", () => {
     const root = process.cwd();
     const manifest = readJson<{ scripts?: Record<string, string>; main?: string }>(path.join(root, "package.json"));
     const testCommand = manifest.scripts?.test ?? "";
+    const scripts = manifest.scripts ?? {};
 
     assert.strictEqual(manifest.main, "./bundle/extension.js");
     assert.ok(testCommand.includes("out/src/test"));
     assert.ok(testCommand.includes("out/packages/**/test"));
     assert.ok(testCommand.includes("out/extensions/**/test"));
     assert.ok(testCommand.includes("out/test"));
-    assert.strictEqual(manifest.scripts?.["build:rsgl-cli"],
-      "npm run typecheck:rsgl-cli && npm run bundle:rsgl-cli");
-    assert.strictEqual(manifest.scripts?.["package:rsgl-cli"], "node scripts/package-rsgl-cli.mjs");
+    assert.deepStrictEqual(
+      Object.keys(scripts).filter(name => name === "build" || name.startsWith("build:")).sort(),
+      ["build", "build:main", "build:rsgl", "build:rsgl-cli", "build:test"]
+    );
+    assert.ok(Object.values(scripts)
+      .filter(command => command.includes("scripts/build.mjs"))
+      .every(command => !command.includes("npm run")));
 
     const bundleScript = fs.readFileSync(path.join(root, "scripts", "build-bundles.mjs"), "utf8");
     for (const entryPoint of [

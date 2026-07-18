@@ -5,35 +5,114 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const scriptFile = fileURLToPath(import.meta.url);
+const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const budgets = JSON.parse(readFileSync(path.join(scriptDirectory, "build-budgets.json"), "utf8"));
-const argumentsByName = parseArguments(process.argv.slice(2));
-const verifyAll = !argumentsByName.mainVsix && !argumentsByName.rsglVsix;
 
-if (verifyAll || argumentsByName.mainVsix) {
-  verifyActivationBudget("main", "src/extension.ts");
-  verifyBundle("main", "bundle/extension.js");
-  verifyColdActivationBudget("main", "bundle/extension.js");
-}
-if (argumentsByName.mainVsix) {
-  verifyVsixBudget("main", argumentsByName.mainVsix);
+const supportedTargets = Object.freeze(["main", "rsgl", "rsgl-cli"]);
+
+export function parseBudgetArguments(args) {
+  let target = "all";
+  let artifactPath;
+  let hasTarget = false;
+  let hasArtifact = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--target") {
+      if (hasTarget) {
+        throw new Error("--target may only be specified once.");
+      }
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing target after --target.");
+      }
+      target = value;
+      hasTarget = true;
+      index += 1;
+      continue;
+    }
+    if (argument === "--artifact") {
+      if (hasArtifact) {
+        throw new Error("--artifact may only be specified once.");
+      }
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing path after --artifact.");
+      }
+      artifactPath = value;
+      hasArtifact = true;
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  budgetTargets(target);
+  if (artifactPath && target !== "main" && target !== "rsgl") {
+    throw new Error("--artifact requires --target main or --target rsgl.");
+  }
+  return { target, artifactPath };
 }
 
-if (verifyAll || argumentsByName.rsglVsix) {
-  verifyActivationBudget("rsgl", "extensions/vscode-rsgl/src/extension.ts");
-  verifyBundle("rsglExtension", "extensions/vscode-rsgl/bundle/extension.js");
-  verifyBundle("rsglServer", "extensions/vscode-rsgl/bundle/server.js");
-  verifyBundle("rsglWorker", "extensions/vscode-rsgl/bundle/worker.js");
-  verifyRsglBundleIsolation();
-  verifyColdActivationBudget("rsgl", "extensions/vscode-rsgl/bundle/extension.js");
+export function budgetTargets(target) {
+  if (target === "all") {
+    return [...supportedTargets];
+  }
+  if (!supportedTargets.includes(target)) {
+    throw new Error(
+      `Unknown budget target '${target}'. Expected all, ${supportedTargets.join(", ")}.`
+    );
+  }
+  return [target];
 }
-if (argumentsByName.rsglVsix) {
-  verifyVsixBudget("rsgl", argumentsByName.rsglVsix);
+
+export function createBudgetPlan(options = {}) {
+  const target = options.target ?? "all";
+  const artifactPath = options.artifactPath;
+  const targets = budgetTargets(target);
+  if (artifactPath !== undefined
+    && (typeof artifactPath !== "string" || artifactPath.length === 0)) {
+    throw new Error("An artifact path must be a non-empty string.");
+  }
+  if (artifactPath !== undefined && target !== "main" && target !== "rsgl") {
+    throw new Error("An artifact path requires the main or rsgl budget target.");
+  }
+  return targets.map(selectedTarget => Object.freeze({
+    target: selectedTarget,
+    artifactPath: selectedTarget === target ? artifactPath : undefined
+  }));
 }
-if (verifyAll) {
-  verifyBundle("rsglCli", "packages/rsgl-cli/dist/rsgl.js");
-  verifyCliBundle();
+
+export function verifyBuildBudgets(options = {}) {
+  for (const step of createBudgetPlan(options)) {
+    if (step.target === "main") {
+      verifyActivationBudget("main", "src/extension.ts");
+      verifyBundle("main", "bundle/extension.js");
+      verifyColdActivationBudget("main", "bundle/extension.js");
+      if (step.artifactPath !== undefined) {
+        verifyVsixBudget("main", step.artifactPath);
+      }
+      continue;
+    }
+    if (step.target === "rsgl") {
+      verifyActivationBudget("rsgl", "extensions/vscode-rsgl/src/extension.ts");
+      verifyBundle("rsglExtension", "extensions/vscode-rsgl/bundle/extension.js");
+      verifyBundle("rsglServer", "extensions/vscode-rsgl/bundle/server.js");
+      verifyBundle("rsglWorker", "extensions/vscode-rsgl/bundle/worker.js");
+      verifyRsglBundleIsolation();
+      verifyColdActivationBudget("rsgl", "extensions/vscode-rsgl/bundle/extension.js");
+      if (step.artifactPath !== undefined) {
+        verifyVsixBudget("rsgl", step.artifactPath);
+      }
+      continue;
+    }
+    if (step.target === "rsgl-cli") {
+      verifyBundle("rsglCli", "packages/rsgl-cli/dist/rsgl.js");
+      verifyCliBundle();
+    }
+  }
 }
 
 function verifyActivationBudget(name, entryPoint) {
@@ -176,20 +255,16 @@ function assertWithinBudget(label, actual, maximum) {
   console.log(`${label}: ${actual}/${maximum}`);
 }
 
-function parseArguments(args) {
-  const result = {};
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--main-vsix" || argument === "--rsgl-vsix") {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error(`Missing path after ${argument}.`);
-      }
-      result[argument === "--main-vsix" ? "mainVsix" : "rsglVsix"] = value;
-      index += 1;
-      continue;
-    }
-    throw new Error(`Unknown argument: ${argument}`);
+function isMainModule() {
+  if (!process.argv[1]) {
+    return false;
   }
-  return result;
+  const invoked = path.resolve(process.argv[1]);
+  return process.platform === "win32"
+    ? invoked.toLowerCase() === scriptFile.toLowerCase()
+    : invoked === scriptFile;
+}
+
+if (isMainModule()) {
+  verifyBuildBudgets(parseBudgetArguments(process.argv.slice(2)));
 }

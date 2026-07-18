@@ -21,7 +21,11 @@ describe("release contract step output", () => {
 
     const scriptsDirectory = path.join(temporaryRoot, "scripts");
     fs.mkdirSync(scriptsDirectory, { recursive: true });
-    for (const script of ["release-contract.mjs", "release-targets.mjs"]) {
+    for (const script of [
+      "release-changelog.mjs",
+      "release-contract.mjs",
+      "release-targets.mjs"
+    ]) {
       fs.copyFileSync(
         path.join(repositoryRoot, "scripts", script),
         path.join(scriptsDirectory, script)
@@ -40,7 +44,13 @@ describe("release contract step output", () => {
     );
 
     runGit(["init", "--quiet"]);
-    runGit(["add", "package.json", "scripts/release-contract.mjs", "scripts/release-targets.mjs"]);
+    runGit([
+      "add",
+      "package.json",
+      "scripts/release-changelog.mjs",
+      "scripts/release-contract.mjs",
+      "scripts/release-targets.mjs"
+    ]);
     runGit([
       "-c", "user.name=Release Contract Test",
       "-c", "user.email=release-contract@example.invalid",

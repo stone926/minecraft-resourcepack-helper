@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { changelogSection } from "./release-changelog.mjs";
 import {
   parseReleaseTag,
   releaseAssetName
@@ -109,7 +110,7 @@ function writeReleaseNotes(args) {
   const { target, version } = parseReleaseTag(tag);
   const changelog = resolveRepoPath(target.changelogPath);
   const notes = existsSync(changelog)
-    ? changelogSection(readFileSync(changelog, "utf8"), version)
+    ? (changelogSection(readFileSync(changelog, "utf8"), version)?.trim() ?? "")
     : "";
   writeFileSync(output, `${notes || `Release ${tag}`}\n`, "utf8");
 }
@@ -132,20 +133,6 @@ function verifyGitTag(tag) {
     fail(`Release tag ${tag} points to ${tagCommit}, but the checked-out commit is ${headCommit}.`);
   }
   return headCommit;
-}
-
-function changelogSection(content, version) {
-  const normalized = content.replace(/\r\n/g, "\n");
-  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const heading = new RegExp(`^## \\[${escapedVersion}\\][^\\n]*\\n`, "m").exec(normalized);
-  if (!heading) {
-    return "";
-  }
-  const bodyStart = heading.index + heading[0].length;
-  const nextHeading = /^## \[/gm;
-  nextHeading.lastIndex = bodyStart;
-  const next = nextHeading.exec(normalized);
-  return normalized.slice(bodyStart, next?.index ?? normalized.length).trim();
 }
 
 function sha256(fileName) {

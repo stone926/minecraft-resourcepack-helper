@@ -40,8 +40,10 @@ describe("independent extension package isolation", () => {
     assert.strictEqual(rsglManifest.private, true);
     assert.strictEqual(mainManifest.license, "Unlicense");
     assert.strictEqual(rsglManifest.license, "Unlicense");
-    assert.strictEqual(mainManifest.scripts?.["vscode:prepublish"], "npm run build:main");
-    assert.strictEqual(rsglManifest.scripts?.["vscode:prepublish"], "npm run build");
+    assert.match(mainManifest.scripts?.["vscode:prepublish"] ?? "", /scripts\/build\.mjs main$/);
+    assert.match(rsglManifest.scripts?.["vscode:prepublish"] ?? "", /scripts\/build\.mjs rsgl$/);
+    assert.strictEqual(mainManifest.scripts?.["vscode:prepublish"]?.includes("npm run"), false);
+    assert.strictEqual(rsglManifest.scripts?.["vscode:prepublish"]?.includes("npm run"), false);
     assert.ok(rsglManifest.dependencies?.["@humanwhocodes/momoa"]);
     assert.ok(fs.existsSync(path.join(root, "extensions", "vscode-rsgl", "LICENSE")));
 
@@ -61,7 +63,8 @@ describe("independent extension package isolation", () => {
     assert.strictEqual(cliManifest.main, "dist/rsgl.js");
     assert.strictEqual(cliManifest.bin?.rsgl, "dist/rsgl.js");
     assert.ok(cliManifest.files?.includes("dist/**"));
-    assert.strictEqual(cliManifest.scripts?.prepack, "npm --prefix ../.. run build:rsgl-cli");
+    assert.match(cliManifest.scripts?.prepack ?? "", /scripts\/build\.mjs rsgl-cli$/);
+    assert.strictEqual(cliManifest.scripts?.prepack?.includes("npm "), false);
     assert.strictEqual(cliManifest.publishConfig?.access, "public");
     assert.strictEqual(cliManifest.publishConfig?.provenance, true);
     for (const fileName of ["README.md", "CHANGELOG.md", "LICENSE"]) {

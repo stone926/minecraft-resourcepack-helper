@@ -4,9 +4,9 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "npm: compile",
+			"label": "npm: build",
 			"type": "npm",
-			"script": "compile",
+			"script": "build",
 			"problemMatcher": "$tsc",
 			"presentation": {
 				"reveal": "never"
@@ -17,9 +17,9 @@
 			}
 		},
 		{
-			"label": "npm: compile:rsgl-extension",
+			"label": "npm: build:rsgl",
 			"type": "npm",
-			"script": "compile:rsgl-extension",
+			"script": "build:rsgl",
 			"problemMatcher": "$tsc",
 			"presentation": {
 				"reveal": "never"
@@ -27,19 +27,9 @@
 			"group": "build"
 		},
 		{
-			"label": "npm: compile:all",
+			"label": "npm: build:test",
 			"type": "npm",
-			"script": "compile:all",
-			"problemMatcher": "$tsc",
-			"presentation": {
-				"reveal": "never"
-			},
-			"group": "build"
-		},
-		{
-			"label": "npm: compile:test",
-			"type": "npm",
-			"script": "compile:test",
+			"script": "build:test",
 			"problemMatcher": "$tsc",
 			"presentation": {
 				"reveal": "never"

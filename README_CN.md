@@ -159,7 +159,7 @@ RSGL 命令由配套 RSGL 扩展提供，使用 `RSGL:` 命令前缀，不再使
 
 ```bash
 npm install
-npm run compile:all
+npm run build
 npm run lint
 npm test
 ```

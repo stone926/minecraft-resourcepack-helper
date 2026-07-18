@@ -17,7 +17,7 @@
 				"${workspaceFolder}/out/**/*.js",
 				"${workspaceFolder}/extensions/vscode-rsgl/out/**/*.js"
 			],
-			"preLaunchTask": "npm: compile:all"
+			"preLaunchTask": "npm: build"
 		},
 		{
 			"name": "Debug Unit Tests",
@@ -34,7 +34,7 @@
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
 			],
-			"preLaunchTask": "npm: compile:test",
+			"preLaunchTask": "npm: build:test",
 			"skipFiles": [
 				"<node_internals>/**"
 			]
