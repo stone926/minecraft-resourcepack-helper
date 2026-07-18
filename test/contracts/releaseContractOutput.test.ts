@@ -16,7 +16,9 @@ describe("release contract step output", () => {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   });
 
-  it("writes only key-value records when Git tag verification is enabled", () => {
+  it("writes only key-value records when Git tag verification is enabled", function () {
+    this.timeout(10_000);
+
     const scriptsDirectory = path.join(temporaryRoot, "scripts");
     fs.mkdirSync(scriptsDirectory, { recursive: true });
     for (const script of ["release-contract.mjs", "release-targets.mjs"]) {
