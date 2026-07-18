@@ -11,7 +11,7 @@
     "hans000"
   ],
   "description": "%extension.description%",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "license": "Unlicense",
   "engines": {
     "vscode": "^1.125.0"

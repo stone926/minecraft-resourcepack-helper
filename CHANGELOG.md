@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-07-18
+
 - refactor: add watcher-backed hot caches with TTL/mtime verification, explicit resource refresh, and incremental resource-graph updates.
 - refactor: separate CIT resource planning from VS Code filesystem/UI application logic and derive graph prefilters from the resource registry.
 - fix: make model previews reject mixed resource snapshots and track missing, fallback, pack-metadata, parent, and texture candidates precisely.
