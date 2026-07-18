@@ -72,7 +72,14 @@ describe("independent release contracts", () => {
     const cliVerifier = read("scripts/verify-rsgl-cli-package.mjs");
     assert.match(cliVerifier, /"node_modules",\s*"\.bin"/);
     assert.match(cliVerifier, /process\.platform === "win32" \? "rsgl\.cmd" : "rsgl"/);
-    assert.match(cliVerifier, /runInstalledBin\(shim, \["--help"\]/);
+    assert.match(cliVerifier, /runInstalledCli\(entry, shim, \["--help"\]/);
+    assert.match(cliVerifier, /resolveInstalledCliInvocation\(entry, shim, args\)/);
+    assert.strictEqual(cliVerifier.includes('file: "cmd.exe"'), false);
+
+    const cliInvocation = read("scripts/installed-cli-invocation.mjs");
+    assert.match(cliInvocation, /platform === "win32"/);
+    assert.match(cliInvocation, /file: options\.nodeExecutable \?\? process\.execPath/);
+    assert.match(cliInvocation, /return \{ file: shim, args \}/);
   });
 
   it("uses official npm registry URLs in committed lockfiles", () => {

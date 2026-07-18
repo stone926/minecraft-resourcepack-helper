@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { resolveInstalledCliInvocation } from "./installed-cli-invocation.mjs";
 import { npmEnvironmentWithCache, resolveNpmInvocation } from "./npm-invocation.mjs";
 
 const [archiveArgument] = process.argv.slice(2);
@@ -52,7 +53,7 @@ try {
   if (!existsSync(shim)) {
     throw new Error(`Installed RSGL CLI shim is missing: ${shim}`);
   }
-  const result = runInstalledBin(shim, ["--help"], installationRoot);
+  const result = runInstalledCli(entry, shim, ["--help"], installationRoot);
   if (result.error || result.status !== 0 || !result.stdout.includes("Usage: rsgl")) {
     throw new Error([
       "Installed RSGL CLI failed its --help smoke test.",
@@ -75,22 +76,11 @@ function runNpm(args, cwd, cacheRoot) {
   });
 }
 
-function runInstalledBin(shim, args, cwd) {
-  const command = process.platform === "win32"
-    ? {
-      file: "cmd.exe",
-      args: ["/d", "/s", "/c", [shim, ...args].map(quoteCmdArg).join(" ")]
-    }
-    : { file: shim, args };
-  return spawnSync(command.file, command.args, {
+function runInstalledCli(entry, shim, args, cwd) {
+  const invocation = resolveInstalledCliInvocation(entry, shim, args);
+  return spawnSync(invocation.file, invocation.args, {
     cwd,
     encoding: "utf8",
     windowsHide: true
   });
-}
-
-function quoteCmdArg(value) {
-  return /^[A-Za-z0-9_./:=@+\\-]+$/.test(value)
-    ? value
-    : `"${value.replace(/"/g, '\\"')}"`;
 }

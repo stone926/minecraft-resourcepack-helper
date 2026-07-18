@@ -17,8 +17,18 @@ interface NpmInvocationModule {
   ): NodeJS.ProcessEnv;
 }
 
+interface InstalledCliInvocationModule {
+  resolveInstalledCliInvocation(
+    entry: string,
+    shim: string,
+    args: string[],
+    options?: { platform?: NodeJS.Platform; nodeExecutable?: string }
+  ): { file: string; args: string[] };
+}
+
 describe("npm process invocation", () => {
   let npmInvocation: NpmInvocationModule;
+  let installedCliInvocation: InstalledCliInvocationModule;
   let temporaryRoot: string;
 
   before(async () => {
@@ -28,6 +38,12 @@ describe("npm process invocation", () => {
       "npm-invocation.mjs"
     )).href;
     npmInvocation = await import(moduleUrl) as NpmInvocationModule;
+    const installedCliModuleUrl = pathToFileURL(path.join(
+      process.cwd(),
+      "scripts",
+      "installed-cli-invocation.mjs"
+    )).href;
+    installedCliInvocation = await import(installedCliModuleUrl) as InstalledCliInvocationModule;
   });
 
   beforeEach(() => {
@@ -92,6 +108,36 @@ describe("npm process invocation", () => {
     assert.match(invocation.args[3], /"C:\\an archive\\cli\.tgz"/);
   });
 
+  it("executes the JS entry on Windows and preserves shim coverage on POSIX", () => {
+    const entry = "C:\\install path\\node_modules\\rsgl\\dist\\rsgl.js";
+    const windowsShim = "C:\\install path\\node_modules\\.bin\\rsgl.cmd";
+    assert.deepStrictEqual(
+      installedCliInvocation.resolveInstalledCliInvocation(
+        entry,
+        windowsShim,
+        ["--help"],
+        { platform: "win32", nodeExecutable: "C:\\node path\\node.exe" }
+      ),
+      {
+        file: "C:\\node path\\node.exe",
+        args: [entry, "--help"]
+      }
+    );
+
+    assert.deepStrictEqual(
+      installedCliInvocation.resolveInstalledCliInvocation(
+        "/tmp/install path/rsgl.js",
+        "/tmp/install path/node_modules/.bin/rsgl",
+        ["--help"],
+        { platform: "linux" }
+      ),
+      {
+        file: "/tmp/install path/node_modules/.bin/rsgl",
+        args: ["--help"]
+      }
+    );
+  });
+
   it("packages through a foreground npm process with an isolated cache", () => {
     const fakeNpmDirectory = path.join(temporaryRoot, "npm tool", "bin");
     const fakeNpmCli = path.join(fakeNpmDirectory, "npm-cli.js");
@@ -140,5 +186,44 @@ describe("npm process invocation", () => {
     assert.notStrictEqual(record.cache, environment.npm_config_cache);
     assert.strictEqual(path.basename(record.cache), "npm-cache");
     assert.ok(!fs.existsSync(record.cache), "temporary npm cache should be removed after packaging");
+  });
+
+  it("verifies the installed CLI without executing the Windows batch shim", () => {
+    const fakeNpmDirectory = path.join(temporaryRoot, "npm verifier", "bin");
+    const fakeNpmCli = path.join(fakeNpmDirectory, "npm-cli.js");
+    const archivePath = path.join(temporaryRoot, "archive with spaces", "rsgl-cli.tgz");
+    fs.mkdirSync(fakeNpmDirectory, { recursive: true });
+    fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+    fs.writeFileSync(archivePath, "archive fixture", "utf8");
+    fs.writeFileSync(fakeNpmCli, [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const installationRoot = process.cwd();",
+      "const installedRoot = path.join(installationRoot, 'node_modules',",
+      "  '@minecraft-resourcepack-helper', 'rsgl-cli');",
+      "const entry = path.join(installedRoot, 'dist', 'rsgl.js');",
+      "const shimRoot = path.join(installationRoot, 'node_modules', '.bin');",
+      "fs.mkdirSync(path.dirname(entry), { recursive: true });",
+      "fs.mkdirSync(shimRoot, { recursive: true });",
+      "fs.writeFileSync(path.join(installedRoot, 'package.json'),",
+      "  JSON.stringify({ bin: { rsgl: 'dist/rsgl.js' } }));",
+      "fs.writeFileSync(entry, `console.log('Usage: rsgl [options]');\\n`);",
+      "fs.writeFileSync(path.join(shimRoot, 'rsgl.cmd'), '@exit /b 99\\r\\n');",
+      "const unixShim = path.join(shimRoot, 'rsgl');",
+      "fs.writeFileSync(unixShim, '#!/bin/sh\\nprintf \"Usage: rsgl [options]\\\\n\"\\n');",
+      "fs.chmodSync(unixShim, 0o755);"
+    ].join("\n"), "utf8");
+
+    const environment = Object.fromEntries(Object.entries(process.env)
+      .filter(([name]) => name.toLowerCase() !== "npm_config_cache"));
+    environment.npm_execpath = fakeNpmCli;
+
+    const stdout = execFileSync(
+      process.execPath,
+      [path.join(process.cwd(), "scripts", "verify-rsgl-cli-package.mjs"), archivePath],
+      { cwd: process.cwd(), env: environment, encoding: "utf8" }
+    );
+
+    assert.match(stdout, /RSGL CLI package smoke passed:/);
   });
 });
