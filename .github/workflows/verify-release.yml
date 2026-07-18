@@ -74,22 +74,31 @@ jobs:
 
       - name: Package main extension
         if: inputs.product == 'all' || inputs.product == 'main'
-        run: |
-          npm run package:main:vsix -- --out dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
-          npm run verify:vsix-budgets -- --main-vsix dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
+        run: npm run package:main:vsix -- --out dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
 
-      - name: Package and verify RSGL extension
+      - name: Verify main extension package
+        if: inputs.product == 'all' || inputs.product == 'main'
+        run: npm run verify:vsix-budgets -- --main-vsix dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
+
+      - name: Package RSGL extension
         if: inputs.product == 'all' || inputs.product == 'rsgl'
-        run: |
-          npm run package:rsgl:vsix -- --out dist/rsgl-${{ runner.os }}.vsix
-          npm run verify:rsgl:vsix -- dist/rsgl-${{ runner.os }}.vsix
-          npm run verify:vsix-budgets -- --rsgl-vsix dist/rsgl-${{ runner.os }}.vsix
+        run: npm run package:rsgl:vsix -- --out dist/rsgl-${{ runner.os }}.vsix
 
-      - name: Package and verify RSGL CLI
+      - name: Verify RSGL extension package
+        if: inputs.product == 'all' || inputs.product == 'rsgl'
+        run: npm run verify:rsgl:vsix -- dist/rsgl-${{ runner.os }}.vsix
+
+      - name: Verify RSGL extension package budget
+        if: inputs.product == 'all' || inputs.product == 'rsgl'
+        run: npm run verify:vsix-budgets -- --rsgl-vsix dist/rsgl-${{ runner.os }}.vsix
+
+      - name: Package RSGL CLI
         if: inputs.product == 'all' || inputs.product == 'rsgl-cli'
-        run: |
-          npm run package:rsgl-cli -- --out dist/rsgl-cli-${{ runner.os }}.tgz
-          npm run verify:rsgl-cli -- dist/rsgl-cli-${{ runner.os }}.tgz
+        run: npm run package:rsgl-cli -- --out dist/rsgl-cli-${{ runner.os }}.tgz
+
+      - name: Verify RSGL CLI package
+        if: inputs.product == 'all' || inputs.product == 'rsgl-cli'
+        run: npm run verify:rsgl-cli -- dist/rsgl-cli-${{ runner.os }}.tgz
 
       - name: Upload smoke-test packages
         if: inputs.upload_artifacts

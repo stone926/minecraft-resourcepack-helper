@@ -178,6 +178,8 @@ The repository contains the main extension at the root, shared RSGL packages und
 
 The three public products release independently: the main extension uses `vX.Y.Z`, the RSGL extension uses `rsgl-vX.Y.Z`, and the npm CLI uses `rsgl-cli-vX.Y.Z`. Use `npm run release:main`, `npm run release:rsgl`, or `npm run release:rsgl-cli` so only that product's manifest, changelog, artifact, and tag are advanced. The prepared RSGL 1.0.0 first releases use `npm run release:rsgl:current` and `npm run release:rsgl-cli:current`; later release commands increment only their selected product by one patch unless an explicit version is supplied to `scripts/release.mjs`.
 
+The release script atomically pushes the current branch and exactly one target tag, with bounded retries only for transport failures. If the remote connection still fails after creating the local release commit/tag, and that tag still points exactly to HEAD, resume with `node scripts/release.mjs <main|rsgl|rsgl-cli> current --resume`; do not push only the branch, because that does not start the tag workflow.
+
 ## Links
 
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)

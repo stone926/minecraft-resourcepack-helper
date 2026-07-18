@@ -7,11 +7,12 @@ import {
   releaseTarget,
   targetDirectory
 } from "./release-targets.mjs";
+import { captureGitRemote, pushReleaseRefs } from "./release-push.mjs";
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter(argument => argument.startsWith("--")));
 const positional = args.filter(argument => !argument.startsWith("--"));
-const knownFlags = new Set(["--dry-run", "--skip-tests", "--no-push"]);
+const knownFlags = new Set(["--dry-run", "--skip-tests", "--no-push", "--resume"]);
 
 for (const flag of flags) {
   if (!knownFlags.has(flag)) {
@@ -21,7 +22,7 @@ for (const flag of flags) {
 if (positional.length > 2) {
   fail(
     "Usage: release.mjs [main|rsgl|rsgl-cli] [current|patch|minor|major|x.y.z] "
-      + "[--dry-run] [--skip-tests] [--no-push]"
+      + "[--dry-run] [--skip-tests] [--no-push] [--resume]"
   );
 }
 
@@ -30,6 +31,7 @@ const releaseInput = positional[1] ?? "patch";
 const dryRun = flags.has("--dry-run");
 const skipTests = flags.has("--skip-tests");
 const noPush = flags.has("--no-push");
+const resume = flags.has("--resume");
 const remoteName = "origin";
 const manifest = readJson(target.manifestPath);
 const currentVersion = manifest.version;
@@ -39,13 +41,22 @@ const nextVersion = releaseInput === "current"
 const tagName = releaseTag(target, nextVersion);
 const taggingCurrentVersion = nextVersion === currentVersion;
 
-main();
+if (resume && releaseInput !== "current") {
+  fail("--resume requires the explicit 'current' release input.");
+}
+if (resume && noPush) {
+  fail("--resume cannot be combined with --no-push.");
+}
 
-function main() {
+await main();
+
+async function main() {
   assertGitRepo();
   assertRemoteExists(remoteName);
   assertCleanWorkingTree();
-  assertTagDoesNotExist(tagName);
+  const branchName = currentBranch();
+  const initialCommit = capture("git", ["rev-parse", "HEAD"]);
+  await assertReleaseTagState(tagName, initialCommit);
   if (taggingCurrentVersion && releaseInput !== "current") {
     fail("Use the explicit 'current' release input when tagging the manifest's existing version.");
   }
@@ -54,7 +65,7 @@ function main() {
   }
 
   const notes = releaseNotesForTarget(target.changelogPath, currentVersion);
-  printPlan(notes);
+  printPlan(notes, branchName);
 
   if (dryRun) {
     console.log("Dry run complete. No files were changed.");
@@ -75,13 +86,23 @@ function main() {
     run("git", ["commit", "-m", `chore(release): ${target.id} ${tagName}`]);
   }
 
-  run("git", ["tag", "-a", tagName, "-m", tagName]);
+  if (!resume) {
+    run("git", ["tag", "-a", tagName, "-m", tagName]);
+  }
   if (noPush) {
     console.log(`Created local tag ${tagName}. Push it when ready.`);
     return;
   }
-  run("git", ["push", remoteName, "HEAD"]);
-  run("git", ["push", remoteName, `refs/tags/${tagName}`]);
+  const releaseCommit = capture("git", ["rev-parse", "HEAD"]);
+  const releaseTagObject = capture("git", ["rev-parse", `refs/tags/${tagName}`]);
+  await pushReleaseRefs({
+    remoteName,
+    branchName,
+    tagName,
+    expectedCommit: releaseCommit,
+    expectedTagObject: releaseTagObject,
+    resumeCommand: `node scripts/release.mjs ${target.id} current --resume --skip-tests`
+  });
   console.log(`Pushed ${tagName}. The independent ${target.displayName} release workflow will publish it.`);
 }
 
@@ -204,7 +225,7 @@ function changelogHasVersion(changelogPath, version) {
     && Boolean(findChangelogSection(readFileSync(changelogPath, "utf8"), version));
 }
 
-function printPlan(notes) {
+function printPlan(notes, branchName) {
   console.log(`Release target: ${target.displayName}`);
   console.log(`Version: ${currentVersion}${taggingCurrentVersion ? " (tag current)" : ` -> ${nextVersion}`}`);
   console.log(`Tag: ${tagName}`);
@@ -219,8 +240,10 @@ function printPlan(notes) {
     console.log(`- update only ${target.manifestPath}${target.lockPath ? `, ${target.lockPath}` : ""}, and ${target.changelogPath}`);
     console.log("- create a target-specific release commit");
   }
-  console.log(`- create annotated tag ${tagName}`);
-  console.log(noPush ? "- skip push" : `- push HEAD and only ${tagName} to ${remoteName}`);
+  console.log(resume ? `- reuse annotated local tag ${tagName}` : `- create annotated tag ${tagName}`);
+  console.log(noPush
+    ? "- skip push"
+    : `- atomically push ${branchName} and only ${tagName} to ${remoteName} (transport retry enabled)`);
 }
 
 function assertGitRepo() {
@@ -241,13 +264,64 @@ function assertCleanWorkingTree() {
   }
 }
 
-function assertTagDoesNotExist(tag) {
-  if (capture("git", ["tag", "--list", tag])) {
-    fail(`Tag already exists locally: ${tag}`);
+function currentBranch() {
+  const branch = capture("git", ["branch", "--show-current"]);
+  if (!branch) {
+    fail("Release requires a checked-out branch; detached HEAD cannot be pushed safely.");
   }
-  if (capture("git", ["ls-remote", "--tags", remoteName, `refs/tags/${tag}`])) {
-    fail(`Tag already exists on ${remoteName}: ${tag}`);
+  return branch;
+}
+
+async function assertReleaseTagState(tag, expectedCommit) {
+  const localTag = capture("git", ["tag", "--list", tag]);
+  const remoteOutput = await captureGitRemote([
+    "ls-remote",
+    "--tags",
+    remoteName,
+    `refs/tags/${tag}`,
+    `refs/tags/${tag}^{}`
+  ]);
+  const remoteState = remoteTagState(remoteOutput, tag);
+
+  if (!resume) {
+    if (localTag) {
+      fail(`Tag already exists locally: ${tag}`);
+    }
+    if (remoteState.object) {
+      fail(`Tag already exists on ${remoteName}: ${tag}`);
+    }
+    return;
   }
+
+  if (!localTag) {
+    fail(`Cannot resume because the local tag does not exist: ${tag}`);
+  }
+  if (capture("git", ["cat-file", "-t", `refs/tags/${tag}`]) !== "tag") {
+    fail(`Cannot resume because ${tag} is not an annotated tag.`);
+  }
+  const localCommit = capture("git", ["rev-list", "-n", "1", tag]);
+  const localObject = capture("git", ["rev-parse", `refs/tags/${tag}`]);
+  if (localCommit !== expectedCommit) {
+    fail(`Cannot resume because ${tag} points to ${localCommit}, not HEAD ${expectedCommit}.`);
+  }
+  if (remoteState.object && remoteState.object !== localObject) {
+    fail(`Cannot resume because ${remoteName}/${tag} is not the same annotated tag object.`);
+  }
+  if (remoteState.commit && remoteState.commit !== expectedCommit) {
+    fail(`Cannot resume because ${remoteName}/${tag} points to ${remoteState.commit}.`);
+  }
+}
+
+function remoteTagState(output, tag) {
+  const refs = new Map(output
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(line => line.trim().split(/\s+/, 2)));
+  const object = refs.get(`refs/tags/${tag}`) ?? "";
+  return {
+    object,
+    commit: refs.get(`refs/tags/${tag}^{}`) ?? object
+  };
 }
 
 function readJson(fileName) {

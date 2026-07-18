@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareVsixPackageArguments } from "./vsix-package-output.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -26,7 +27,7 @@ if (!target) {
   process.exit(1);
 }
 
-const args = normalizeOutputArgs(rawArgs);
+const args = prepareVsixPackageArguments(rawArgs, repoRoot);
 const vsce = path.join(repoRoot, "node_modules", "@vscode", "vsce", "vsce");
 const sourceDateEpoch = resolveSourceDateEpoch();
 
@@ -72,28 +73,4 @@ function validateSourceDateEpoch(value, source) {
     throw new Error(`${source} must be a Unix timestamp supported by ZIP (1980 through 2107).`);
   }
   return value;
-}
-
-function normalizeOutputArgs(args) {
-  const normalized = [...args];
-
-  for (let index = 0; index < normalized.length; index += 1) {
-    const arg = normalized[index];
-
-    if ((arg === "--out" || arg === "-o") && normalized[index + 1]) {
-      normalized[index + 1] = resolveRepoRelativePath(normalized[index + 1]);
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith("--out=")) {
-      normalized[index] = `--out=${resolveRepoRelativePath(arg.slice("--out=".length))}`;
-    }
-  }
-
-  return normalized;
-}
-
-function resolveRepoRelativePath(value) {
-  return path.isAbsolute(value) ? value : path.join(repoRoot, value);
 }

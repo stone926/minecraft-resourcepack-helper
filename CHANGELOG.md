@@ -9,6 +9,7 @@
 - fix: make model previews reject mixed resource snapshots and track missing, fallback, pack-metadata, parent, and texture candidates precisely.
 - build: split project-reference builds, bundle extension entry points, enforce activation/VSIX budgets, and publish RSGL through the optional extension pack.
 - release: give the main extension, RSGL extension, and RSGL CLI independent, reproducible, digest-verified cross-platform release contracts.
+- fix: create VSIX output directories in clean CI checkouts and make release ref pushes atomic, retryable, and resumable.
 
 ## [2.3.1] - 2026-07-01
 

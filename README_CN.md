@@ -178,6 +178,8 @@ npm run package:rsgl-cli
 
 三个公开产品独立发布：主扩展使用 `vX.Y.Z`，RSGL 扩展使用 `rsgl-vX.Y.Z`，npm CLI 使用 `rsgl-cli-vX.Y.Z`。分别使用 `npm run release:main`、`npm run release:rsgl` 或 `npm run release:rsgl-cli`，只推进对应产品的 manifest、changelog、artifact 和 tag。已准备好的 RSGL 1.0.0 首发应使用 `npm run release:rsgl:current` 与 `npm run release:rsgl-cli:current`；后续命令默认只为选中的产品递增一个补丁版本，也可直接向 `scripts/release.mjs` 传入目标版本。
 
+发布脚本会原子推送当前分支和唯一的目标 tag，并只对网络传输错误进行有限重试。若远端连接在本地 release commit/tag 创建后仍失败，且该 tag 仍精确指向 HEAD，请使用 `node scripts/release.mjs <main|rsgl|rsgl-cli> current --resume` 恢复；不要只手动推送分支，否则 tag workflow 不会启动。
+
 ## 链接
 
 - [VS Code 扩展市场](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)

@@ -103,6 +103,41 @@ describe("independent release contracts", () => {
     assert.match(reusable, /verify:build-budgets/);
     assert.match(reusable, /verify:vsix-budgets -- --main-vsix/);
     assert.match(reusable, /verify:vsix-budgets -- --rsgl-vsix/);
+    assertSingleCommandStep(
+      reusable,
+      "Package main extension",
+      "npm run package:main:vsix"
+    );
+    assertSingleCommandStep(
+      reusable,
+      "Verify main extension package",
+      "npm run verify:vsix-budgets -- --main-vsix"
+    );
+    assertSingleCommandStep(
+      reusable,
+      "Package RSGL extension",
+      "npm run package:rsgl:vsix"
+    );
+    assertSingleCommandStep(
+      reusable,
+      "Verify RSGL extension package",
+      "npm run verify:rsgl:vsix"
+    );
+    assertSingleCommandStep(
+      reusable,
+      "Verify RSGL extension package budget",
+      "npm run verify:vsix-budgets -- --rsgl-vsix"
+    );
+    assertSingleCommandStep(
+      reusable,
+      "Package RSGL CLI",
+      "npm run package:rsgl-cli"
+    );
+    assertSingleCommandStep(
+      reusable,
+      "Verify RSGL CLI package",
+      "npm run verify:rsgl-cli"
+    );
     assert.match(release, /- "v\*"/);
     assert.match(release, /- "rsgl-v\*"/);
     assert.match(release, /- "rsgl-cli-v\*"/);
@@ -222,4 +257,19 @@ function jobSection(workflow: string, jobName: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertSingleCommandStep(workflow: string, stepName: string, command: string): void {
+  const normalized = workflow.replace(/\r\n/g, "\n");
+  const marker = `      - name: ${stepName}\n`;
+  const start = normalized.indexOf(marker);
+  assert.notStrictEqual(start, -1, `Missing workflow step: ${stepName}`);
+  const nextStep = /^ {6}- name: /gm;
+  nextStep.lastIndex = start + marker.length;
+  const next = nextStep.exec(normalized);
+  const step = normalized.slice(start, next?.index ?? normalized.length);
+  const runLines = step.match(/^\s*run:\s*(.+)$/gm) ?? [];
+  assert.strictEqual(runLines.length, 1, `${stepName} must contain one run command`);
+  assert.ok(runLines[0].includes(command), `${stepName} must run ${command}`);
+  assert.strictEqual(step.includes("run: |"), false, `${stepName} must fail at its command boundary`);
 }
