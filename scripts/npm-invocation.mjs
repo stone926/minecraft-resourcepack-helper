@@ -1,0 +1,55 @@
+import path from "node:path";
+
+/**
+ * Resolve npm without relying on Windows to discover npm.cmd through cmd.exe.
+ * npm exposes the JavaScript CLI entry point to every npm script, so the same
+ * Node executable can launch it directly on every platform.
+ */
+export function resolveNpmInvocation(args, options = {}) {
+  const environment = options.environment ?? process.env;
+  const platform = options.platform ?? process.platform;
+  const nodeExecutable = options.nodeExecutable ?? process.execPath;
+  const npmExecPath = environment.npm_execpath;
+
+  if (typeof npmExecPath === "string" && isNpmCliEntry(npmExecPath)) {
+    return {
+      file: nodeExecutable,
+      args: [npmExecPath, ...args]
+    };
+  }
+
+  if (platform === "win32") {
+    return {
+      file: environment.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", ["npm", ...args].map(quoteCmdArgument).join(" ")]
+    };
+  }
+
+  return { file: "npm", args };
+}
+
+/**
+ * npm uses its cache even when packing or installing a local archive. Give
+ * release smoke tests a disposable cache so a stale or partially restored
+ * runner cache cannot make otherwise local packaging fail.
+ */
+export function npmEnvironmentWithCache(cacheDirectory, environment = process.env) {
+  const result = {};
+  for (const [name, value] of Object.entries(environment)) {
+    if (name.toLowerCase() !== "npm_config_cache" && value !== undefined) {
+      result[name] = value;
+    }
+  }
+  result.npm_config_cache = path.resolve(cacheDirectory);
+  return result;
+}
+
+function isNpmCliEntry(fileName) {
+  return /(?:^|[\\/])npm-cli\.js$/i.test(fileName);
+}
+
+function quoteCmdArgument(value) {
+  return /^[A-Za-z0-9_./:=@+\\-]+$/.test(value)
+    ? value
+    : `"${value.replace(/"/g, '""')}"`;
+}

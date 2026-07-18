@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { npmEnvironmentWithCache, resolveNpmInvocation } from "./npm-invocation.mjs";
 
 const [archiveArgument] = process.argv.slice(2);
 if (!archiveArgument) {
@@ -25,7 +26,7 @@ try {
     "--no-fund",
     "--package-lock=false",
     archive
-  ], installationRoot);
+  ], installationRoot, path.join(installationRoot, ".npm-cache"));
 
   const installedRoot = path.join(
     installationRoot,
@@ -65,13 +66,13 @@ try {
   rmSync(installationRoot, { recursive: true, force: true });
 }
 
-function runNpm(args, cwd) {
-  if (process.platform === "win32") {
-    const commandLine = ["npm", ...args].map(quoteCmdArg).join(" ");
-    execFileSync("cmd.exe", ["/d", "/s", "/c", commandLine], { cwd, stdio: "inherit" });
-    return;
-  }
-  execFileSync("npm", args, { cwd, stdio: "inherit" });
+function runNpm(args, cwd, cacheRoot) {
+  const invocation = resolveNpmInvocation(args);
+  execFileSync(invocation.file, invocation.args, {
+    cwd,
+    stdio: "inherit",
+    env: npmEnvironmentWithCache(cacheRoot)
+  });
 }
 
 function runInstalledBin(shim, args, cwd) {

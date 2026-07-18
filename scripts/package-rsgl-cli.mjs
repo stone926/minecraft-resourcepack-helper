@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { npmEnvironmentWithCache, resolveNpmInvocation } from "./npm-invocation.mjs";
 import { npmArchiveBaseName } from "./release-targets.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,14 +26,22 @@ const defaultOutput = path.join(
 );
 const output = resolveOutput(process.argv.slice(2));
 const temporaryRoot = mkdtempSync(path.join(tmpdir(), "rsgl-cli-pack-"));
+const archiveRoot = path.join(temporaryRoot, "archive");
+const npmCacheRoot = path.join(temporaryRoot, "npm-cache");
 
 try {
-  runNpm(["pack", "--silent", "--pack-destination", temporaryRoot], packageRoot);
-  const archives = readdirSync(temporaryRoot).filter(fileName => fileName.endsWith(".tgz"));
+  mkdirSync(archiveRoot, { recursive: true });
+  mkdirSync(npmCacheRoot, { recursive: true });
+  runNpm(
+    ["pack", "--foreground-scripts", "--pack-destination", archiveRoot],
+    packageRoot,
+    npmCacheRoot
+  );
+  const archives = readdirSync(archiveRoot).filter(fileName => fileName.endsWith(".tgz"));
   if (archives.length !== 1) {
     throw new Error(`Expected npm pack to create one archive, received ${archives.length}.`);
   }
-  const source = path.join(temporaryRoot, archives[0]);
+  const source = path.join(archiveRoot, archives[0]);
   if (!existsSync(source)) {
     throw new Error(`npm pack did not create ${source}.`);
   }
@@ -56,19 +65,11 @@ function resolveOutput(args) {
   throw new Error("Usage: package-rsgl-cli.mjs [--out <archive.tgz>]");
 }
 
-function runNpm(args, cwd) {
-  if (process.platform === "win32") {
-    execFileSync("cmd.exe", ["/d", "/s", "/c", ["npm", ...args].map(quoteCmdArg).join(" ")], {
-      cwd,
-      stdio: "inherit"
-    });
-    return;
-  }
-  execFileSync("npm", args, { cwd, stdio: "inherit" });
-}
-
-function quoteCmdArg(value) {
-  return /^[A-Za-z0-9_./:=@+\\-]+$/.test(value)
-    ? value
-    : `"${value.replace(/"/g, '\\"')}"`;
+function runNpm(args, cwd, cacheRoot) {
+  const invocation = resolveNpmInvocation(args);
+  execFileSync(invocation.file, invocation.args, {
+    cwd,
+    stdio: "inherit",
+    env: npmEnvironmentWithCache(cacheRoot)
+  });
 }

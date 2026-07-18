@@ -2,7 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -59,9 +59,22 @@ function describeRelease(args) {
       : {}),
     ...(commit ? { commit } : {})
   };
-  for (const [key, value] of Object.entries(values)) {
-    process.stdout.write(`${key}=${value}\n`);
+  const output = serializeStepOutputs(values);
+  if (args.has("output")) {
+    appendFileSync(resolveRepoPath(requiredOption(args, "output")), output, "utf8");
+  } else {
+    process.stdout.write(output);
   }
+}
+
+function serializeStepOutputs(values) {
+  return Object.entries(values).map(([key, value]) => {
+    const serialized = String(value);
+    if (/[\r\n]/.test(serialized)) {
+      fail(`Release output ${key} must be a single line.`);
+    }
+    return `${key}=${serialized}\n`;
+  }).join("");
 }
 
 function marketplaceCoordinates(manifest, manifestPath) {
@@ -113,7 +126,6 @@ function verifyReleaseDigest(args) {
 }
 
 function verifyGitTag(tag) {
-  runGit(["show-ref", "--verify", `refs/tags/${tag}`]);
   const tagCommit = captureGit(["rev-list", "-n", "1", `refs/tags/${tag}`]);
   const headCommit = captureGit(["rev-parse", "HEAD"]);
   if (tagCommit !== headCommit) {
@@ -175,10 +187,6 @@ function requiredOption(options, name) {
 
 function resolveRepoPath(value) {
   return path.isAbsolute(value) ? value : path.join(repoRoot, value);
-}
-
-function runGit(args) {
-  execFileSync("git", args, { cwd: repoRoot, stdio: "inherit" });
 }
 
 function captureGit(args) {

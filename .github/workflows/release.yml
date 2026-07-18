@@ -52,7 +52,7 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-        run: node scripts/release-contract.mjs describe --tag "${RELEASE_TAG}" --verify-git >> "${GITHUB_OUTPUT}"
+        run: node scripts/release-contract.mjs describe --tag "${RELEASE_TAG}" --verify-git --output "${GITHUB_OUTPUT}"
 
   verify:
     name: Cross-platform release gate

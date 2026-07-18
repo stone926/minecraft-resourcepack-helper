@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- fix: write validated release metadata directly to GitHub Actions outputs without leaking Git command output.
+- fix: isolate RSGL CLI packaging and install verification from Windows command parsing and shared npm caches.
+
 ## [2.3.2] - 2026-07-18
 
 - refactor: add watcher-backed hot caches with TTL/mtime verification, explicit resource refresh, and incremental resource-graph updates.
