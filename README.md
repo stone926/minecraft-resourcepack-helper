@@ -168,7 +168,7 @@ Useful focused commands:
 
 ```bash
 npm run benchmark:model-preview
-npm run compile:rsgl-extension
+npm run build:rsgl
 npm run package:main:vsix
 npm run package:rsgl:vsix
 npm run package:rsgl-cli

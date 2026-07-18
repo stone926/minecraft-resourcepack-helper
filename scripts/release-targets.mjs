@@ -8,8 +8,7 @@ export const releaseTargets = Object.freeze({
     manifestPath: "package.json",
     lockPath: "package-lock.json",
     changelogPath: "CHANGELOG.md",
-    publishKind: "marketplace",
-    packageScript: "package:main:vsix"
+    publishKind: "marketplace"
   }),
   rsgl: Object.freeze({
     id: "rsgl",
@@ -18,8 +17,7 @@ export const releaseTargets = Object.freeze({
     manifestPath: "extensions/vscode-rsgl/package.json",
     lockPath: "extensions/vscode-rsgl/package-lock.json",
     changelogPath: "extensions/vscode-rsgl/CHANGELOG.md",
-    publishKind: "marketplace",
-    packageScript: "package:rsgl:vsix"
+    publishKind: "marketplace"
   }),
   "rsgl-cli": Object.freeze({
     id: "rsgl-cli",
@@ -28,8 +26,7 @@ export const releaseTargets = Object.freeze({
     manifestPath: "packages/rsgl-cli/package.json",
     lockPath: null,
     changelogPath: "packages/rsgl-cli/CHANGELOG.md",
-    publishKind: "npm",
-    packageScript: "package:rsgl-cli"
+    publishKind: "npm"
   })
 });
 

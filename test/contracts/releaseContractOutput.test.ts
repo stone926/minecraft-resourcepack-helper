@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -92,6 +92,84 @@ describe("release contract step output", () => {
     assert.ok(command);
     assert.ok(command.includes('--output "${GITHUB_OUTPUT}"'));
     assert.strictEqual(command.includes(">>"), false);
+  });
+
+  it("accepts the documented notes and digest options", () => {
+    const version = JSON.parse(
+      fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8")
+    ).version as string;
+    const notesOutput = path.join(temporaryRoot, "release-notes.md");
+    execFileSync(
+      process.execPath,
+      [
+        path.join(repositoryRoot, "scripts", "release-contract.mjs"),
+        "notes",
+        "--tag", `v${version}`,
+        "--output", notesOutput
+      ],
+      { cwd: repositoryRoot, stdio: "pipe" }
+    );
+    assert.ok(fs.readFileSync(notesOutput, "utf8").length > 0);
+
+    const asset = path.join(temporaryRoot, "fixture.tgz");
+    const sumsOutput = path.join(temporaryRoot, "SHA256SUMS");
+    fs.writeFileSync(asset, "release fixture", "utf8");
+    const digest = execFileSync(
+      process.execPath,
+      [
+        path.join(repositoryRoot, "scripts", "release-contract.mjs"),
+        "digest",
+        "--asset", asset,
+        "--output", sumsOutput
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" }
+    ).trim();
+    assert.match(digest, /^[a-f0-9]{64}$/);
+    assert.strictEqual(
+      fs.readFileSync(sumsOutput, "utf8"),
+      `${digest}  fixture.tgz\n`
+    );
+  });
+
+  it("rejects unknown, cross-command, duplicate, and removed options", () => {
+    const version = JSON.parse(
+      fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8")
+    ).version as string;
+    const tag = `v${version}`;
+    const asset = path.join(temporaryRoot, "fixture.tgz");
+    const output = path.join(temporaryRoot, "output.txt");
+    fs.writeFileSync(asset, "release fixture", "utf8");
+
+    for (const { args, error } of [
+      {
+        args: ["describe", "--tag", tag, "--ouptut", output],
+        error: /Unknown option --ouptut for describe\./
+      },
+      {
+        args: ["notes", "--tag", tag, "--verify-git", "--output", output],
+        error: /Unknown option --verify-git for notes\./
+      },
+      {
+        args: ["digest", "--asset", asset, "--tag", tag, "--output", output],
+        error: /Unknown option --tag for digest\./
+      },
+      {
+        args: ["digest", "--asset", asset, "--asset", asset, "--output", output],
+        error: /Duplicate option --asset for digest\./
+      },
+      {
+        args: ["verify", "--asset", asset, "--sha256", "0".repeat(64)],
+        error: /Usage: release-contract\.mjs <describe\|notes\|digest>/
+      }
+    ]) {
+      const result = spawnSync(
+        process.execPath,
+        [path.join(repositoryRoot, "scripts", "release-contract.mjs"), ...args],
+        { cwd: repositoryRoot, encoding: "utf8" }
+      );
+      assert.notStrictEqual(result.status, 0, args.join(" "));
+      assert.match(result.stderr, error);
+    }
   });
 
   function runGit(args: string[], stdout: "ignore" | "pipe" = "ignore"): string {

@@ -50,36 +50,37 @@ describe("independent release contracts", () => {
     }
   });
 
-  it("keeps target-specific release and packaging entry points stable", () => {
+  it("exposes only the supported target-specific release and packaging entry points", () => {
     const manifest = readJson<Manifest>(path.join(root, "package.json"));
     const scripts = manifest.scripts ?? {};
 
+    assert.strictEqual(scripts["build:rsgl"], "npm run typecheck:rsgl && npm run bundle:rsgl");
     assert.strictEqual(scripts["build:rsgl-cli"], "npm run typecheck:rsgl-cli && npm run bundle:rsgl-cli");
     assert.strictEqual(scripts["package:rsgl-cli"], "node scripts/package-rsgl-cli.mjs");
     assert.strictEqual(scripts["verify:rsgl-cli"], "node scripts/verify-rsgl-cli-package.mjs");
-    assert.strictEqual(scripts["release:main"], "node scripts/release.mjs main");
-    assert.strictEqual(scripts["release:rsgl"], "node scripts/release.mjs rsgl");
-    assert.strictEqual(scripts["release:rsgl:current"], "node scripts/release.mjs rsgl current");
-    assert.strictEqual(scripts["release:rsgl-cli"], "node scripts/release.mjs rsgl-cli");
-    assert.strictEqual(scripts["release:rsgl-cli:current"], "node scripts/release.mjs rsgl-cli current");
+    const expectedReleaseScripts = {
+      "release:main": "node scripts/release.mjs main",
+      "release:rsgl": "node scripts/release.mjs rsgl",
+      "release:rsgl:current": "node scripts/release.mjs rsgl current",
+      "release:rsgl-cli": "node scripts/release.mjs rsgl-cli",
+      "release:rsgl-cli:current": "node scripts/release.mjs rsgl-cli current"
+    };
+    assert.deepStrictEqual(
+      Object.keys(scripts).filter(name => name.startsWith("release")).sort(),
+      Object.keys(expectedReleaseScripts).sort()
+    );
+    for (const [name, command] of Object.entries(expectedReleaseScripts)) {
+      assert.strictEqual(scripts[name], command);
+    }
 
-    const releaseSource = read("scripts/release.mjs");
-    assert.match(releaseSource, /releaseTarget\(positional\[0\] \?\? "main"\)/);
-    assert.match(releaseSource, /target\.manifestPath/);
-    assert.match(releaseSource, /target\.changelogPath/);
-    assert.strictEqual(releaseSource.includes("RSGL_VERSION"), false);
-
-    const cliVerifier = read("scripts/verify-rsgl-cli-package.mjs");
-    assert.match(cliVerifier, /"node_modules",\s*"\.bin"/);
-    assert.match(cliVerifier, /process\.platform === "win32" \? "rsgl\.cmd" : "rsgl"/);
-    assert.match(cliVerifier, /runInstalledCli\(entry, shim, \["--help"\]/);
-    assert.match(cliVerifier, /resolveInstalledCliInvocation\(entry, shim, args\)/);
-    assert.strictEqual(cliVerifier.includes('file: "cmd.exe"'), false);
-
-    const cliInvocation = read("scripts/installed-cli-invocation.mjs");
-    assert.match(cliInvocation, /platform === "win32"/);
-    assert.match(cliInvocation, /file: options\.nodeExecutable \?\? process\.execPath/);
-    assert.match(cliInvocation, /return \{ file: shim, args \}/);
+    for (const removed of [
+      "compile:rsgl-extension",
+      "package:vsix",
+      "deploy",
+      "push"
+    ]) {
+      assert.strictEqual(scripts[removed], undefined, `${removed} must not bypass canonical commands`);
+    }
   });
 
   it("uses official npm registry URLs in committed lockfiles", () => {

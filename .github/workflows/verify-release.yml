@@ -58,7 +58,6 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             extensions/vscode-rsgl/package-lock.json
-            tools/vsce-publisher/package-lock.json
 
       - name: Install dependencies
         run: npm ci

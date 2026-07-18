@@ -11,12 +11,32 @@ import {
 } from "./release-targets.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const optionSchemas = Object.freeze({
+  describe: Object.freeze({
+    values: Object.freeze(["tag", "output"]),
+    flags: Object.freeze(["verify-git"])
+  }),
+  notes: Object.freeze({
+    values: Object.freeze(["tag", "output"]),
+    flags: Object.freeze([])
+  }),
+  digest: Object.freeze({
+    values: Object.freeze(["asset", "output"]),
+    flags: Object.freeze([])
+  })
+});
 
 main();
 
 function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
-  const args = parseOptions(rawArgs);
+  const schema = typeof command === "string" && Object.hasOwn(optionSchemas, command)
+    ? optionSchemas[command]
+    : undefined;
+  if (!schema) {
+    fail("Usage: release-contract.mjs <describe|notes|digest> [options]");
+  }
+  const args = parseOptions(rawArgs, command, schema);
   if (command === "describe") {
     describeRelease(args);
     return;
@@ -29,11 +49,6 @@ function main() {
     writeReleaseDigest(args);
     return;
   }
-  if (command === "verify") {
-    verifyReleaseDigest(args);
-    return;
-  }
-  fail("Usage: release-contract.mjs <describe|notes|digest|verify> [options]");
 }
 
 function describeRelease(args) {
@@ -50,8 +65,6 @@ function describeRelease(args) {
     product: target.id,
     version,
     tag,
-    manifest: target.manifestPath,
-    changelog: target.changelogPath,
     publish_kind: target.publishKind,
     asset_name: releaseAssetName(target, manifest, version),
     ...(target.publishKind === "marketplace"
@@ -112,19 +125,6 @@ function writeReleaseDigest(args) {
   process.stdout.write(`${digest}\n`);
 }
 
-function verifyReleaseDigest(args) {
-  const asset = resolveRepoPath(requiredOption(args, "asset"));
-  const expected = requiredOption(args, "sha256").toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(expected)) {
-    fail("Expected SHA-256 must contain exactly 64 hexadecimal characters.");
-  }
-  const actual = sha256(asset);
-  if (actual !== expected) {
-    fail(`SHA-256 mismatch for ${asset}: expected ${expected}, received ${actual}.`);
-  }
-  process.stdout.write(`${actual}\n`);
-}
-
 function verifyGitTag(tag) {
   const tagCommit = captureGit(["rev-list", "-n", "1", `refs/tags/${tag}`]);
   const headCommit = captureGit(["rev-parse", "HEAD"]);
@@ -156,7 +156,7 @@ function readJson(relativePath) {
   return JSON.parse(readFileSync(resolveRepoPath(relativePath), "utf8"));
 }
 
-function parseOptions(args) {
+function parseOptions(args, command, schema) {
   const options = new Map();
   for (let index = 0; index < args.length; index++) {
     const item = args[index];
@@ -164,7 +164,15 @@ function parseOptions(args) {
       fail(`Unexpected positional argument: ${item}`);
     }
     const key = item.slice(2);
-    if (key === "verify-git") {
+    const isFlag = schema.flags.includes(key);
+    const hasValue = schema.values.includes(key);
+    if (!isFlag && !hasValue) {
+      fail(`Unknown option --${key} for ${command}.`);
+    }
+    if (options.has(key)) {
+      fail(`Duplicate option --${key} for ${command}.`);
+    }
+    if (isFlag) {
       options.set(key, true);
       continue;
     }
