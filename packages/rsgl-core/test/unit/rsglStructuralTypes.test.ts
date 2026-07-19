@@ -106,19 +106,6 @@ describe("RSGL structural expression types", () => {
     assert.strictEqual(positionReference?.symbol?.type.kind, "Number");
   });
 
-  it("types ordered object destructuring for multi-binding loops", () => {
-    const model = bind([
-      "for label count in [{ label: \"first\", count: 1 }] {",
-      "  let typedLabel: String = label",
-      "  let typedCount: Number = count",
-      "}"
-    ]);
-
-    assert.deepStrictEqual(codes(model), []);
-    assert.strictEqual(symbolType(model, "typedLabel").kind, "String");
-    assert.strictEqual(symbolType(model, "typedCount").kind, "Number");
-  });
-
   it("types object loop bindings by field name and supports local aliases", () => {
     const model = bind([
       "for { label, count: amount } in [{ count: 1, label: \"first\" }] {",
@@ -230,14 +217,12 @@ describe("RSGL structural expression types", () => {
       "table values { first: 1, second: 2 }",
       "for value in values { let tableValue = value }",
       "for value in 1 { let scalarValue = value }",
-      "for left right in [1, 2] { let invalidPair = left }",
       "for { left, right } in [1, 2] { let invalidObjectPair = left }"
     ]);
 
     assert.deepStrictEqual(codes(model), [
       "rsgl.nonIterable",
       "rsgl.nonIterable",
-      "rsgl.invalidLoopDestructuring",
       "rsgl.invalidLoopDestructuring"
     ]);
   });

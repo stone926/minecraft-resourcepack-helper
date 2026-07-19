@@ -108,7 +108,9 @@ export abstract class StatementParser extends ExpressionParser {
 
   private parseForDimension(startToken: RsglToken): ForDimensionNode {
     const pattern = this.parseForBindingPattern();
-    this.expectText("in", "Expected 'in' in for statement.");
+    if (!this.expectText("in", "Expected 'in' in for statement.")) {
+      this.recoverForDimensionAfterMissingIn();
+    }
     const iterable = this.parseExpression({ stopTexts: [",", "{"] });
     return {
       kind: "ForDimension",
@@ -118,32 +120,35 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
+  /**
+   * Keeps a malformed dimension local without treating skipped identifiers as
+   * declarations. The existing expected-token diagnostic remains the only
+   * syntax error when a later `in` lets parsing resume unambiguously.
+   */
+  private recoverForDimensionAfterMissingIn(): void {
+    while (
+      !this.isAtEnd()
+      && this.current().text !== "in"
+      && this.current().text !== "{"
+      && this.current().text !== "}"
+    ) {
+      this.advance();
+    }
+    this.matchText("in");
+  }
+
   private parseForBindingPattern(): ForBindingPatternNode {
     if (this.current().text === "{") {
       return this.parseForObjectBindingPattern();
     }
 
     const start = this.current();
-    const bindings: IdentifierNode[] = [];
-    while (!this.isAtEnd() && this.current().text !== "in" && this.current().text !== "{") {
-      const mark = this.mark();
-      const binding = this.parseIdentifier("Expected loop binding.");
-      if (binding) {
-        bindings.push(binding);
-      }
-      this.consumeOptionalSeparator();
-      this.ensureProgress(mark, "Unable to parse loop binding; skipping token.");
+    if (start.text === "in") {
+      this.addDiagnosticAtCurrent("rsgl.expectedLoopBinding", "Expected loop binding before 'in'.");
+      return this.syntheticIdentifier(start, "");
     }
-
-    if (bindings.length === 1) {
-      return bindings[0];
-    }
-
-    return {
-      kind: "ForLegacyPositionalBindingPattern",
-      bindings,
-      ...this.nodeRanges(start, bindings.length > 0 ? this.previousOr(start) : start)
-    };
+    return this.parseIdentifier("Expected loop binding.")
+      ?? this.syntheticIdentifier(start, "");
   }
 
   private parseForObjectBindingPattern(): ForObjectBindingPatternNode {

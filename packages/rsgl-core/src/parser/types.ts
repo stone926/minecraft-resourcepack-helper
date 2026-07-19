@@ -551,8 +551,7 @@ export type ResourceDeclNode =
 
 export type ForBindingPatternNode =
   | IdentifierNode
-  | ForObjectBindingPatternNode
-  | ForLegacyPositionalBindingPatternNode;
+  | ForObjectBindingPatternNode;
 
 export interface ForObjectBindingPatternNode extends RsglNode {
   kind: "ForObjectBindingPattern";
@@ -567,15 +566,6 @@ export interface ForObjectBindingPropertyNode extends RsglNode {
   binding: IdentifierNode;
   /** True when `{ name }` supplies the equivalent `{ name: name }` binding. */
   shorthand: boolean;
-}
-
-/**
- * Compatibility form for the original insertion-order syntax
- * `for first, second in values`.
- */
-export interface ForLegacyPositionalBindingPatternNode extends RsglNode {
-  kind: "ForLegacyPositionalBindingPattern";
-  bindings: IdentifierNode[];
 }
 
 export interface ForDimensionNode extends RsglNode {

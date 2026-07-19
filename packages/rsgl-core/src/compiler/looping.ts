@@ -14,34 +14,25 @@ import {
   selectEvaluationPathOrigins,
   selectEvaluationValueIssues
 } from "./evaluate";
-import { jsonObjectEntries } from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
 import { ensureEvaluationItemsForExpansion } from "./evaluationItemAccounting";
 
 function selectLoopBindings(
   mappings: readonly ForBindingMapping[],
   value: EvaluationValue
-): {
-  bindings: Record<string, EvaluationValue>;
-  objectEntries: Array<[string, EvaluationValue]>;
-} {
+): Record<string, EvaluationValue> {
   const bindings = Object.create(null) as Record<string, EvaluationValue>;
   const objectValue = isJsonObject(value) ? value : undefined;
-  const objectEntries = objectValue && mappings.some(mapping => mapping.kind === "legacyPosition")
-    ? jsonObjectEntries(objectValue)
-    : [];
   for (const mapping of mappings) {
     if (mapping.kind === "wholeValue") {
       bindings[mapping.binding.text] = value;
-    } else if (mapping.kind === "objectProperty") {
+    } else {
       bindings[mapping.binding.text] = objectValue && Object.hasOwn(objectValue, mapping.property.text)
         ? objectValue[mapping.property.text] as EvaluationValue
         : undefined;
-    } else if (objectValue) {
-      bindings[mapping.binding.text] = objectEntries[mapping.index]?.[1];
     }
   }
-  return { bindings, objectEntries };
+  return bindings;
 }
 
 export function createLoopContext(
@@ -161,9 +152,11 @@ export function forEachLoopContext(
       const nextOrigins = new Map(bindingOrigins);
       const nextPathOrigins = new Map(bindingPathOrigins);
       const nextValueIssues = new Map(bindingValueIssues);
-      const selected = selectLoopBindings(bindingMappings, value);
+      const selectedBindings = selectLoopBindings(bindingMappings, value);
       for (const mapping of bindingMappings) {
-        const sourceProperty = loopBindingSourceProperty(mapping, selected.objectEntries);
+        const sourceProperty = mapping.kind === "objectProperty"
+          ? mapping.property.text
+          : undefined;
         const bindingItemOrigins = mapping.kind === "wholeValue"
           ? itemOrigins
           : sourceProperty !== undefined
@@ -200,7 +193,7 @@ export function forEachLoopContext(
       }
       walk(index + 1, {
         ...bindings,
-        ...selected.bindings
+        ...selectedBindings
       }, nextOrigins, nextPathOrigins, nextValueIssues);
     }
   };
@@ -210,16 +203,4 @@ export function forEachLoopContext(
 
 function escapeJsonPointerSegment(value: string): string {
   return value.replace(/~/g, "~0").replace(/\//g, "~1");
-}
-
-function loopBindingSourceProperty(
-  mapping: ForBindingMapping,
-  objectEntries: ReadonlyArray<readonly [string, EvaluationValue]>
-): string | undefined {
-  if (mapping.kind === "objectProperty") {
-    return mapping.property.text;
-  }
-  return mapping.kind === "legacyPosition"
-    ? objectEntries[mapping.index]?.[0]
-    : undefined;
 }

@@ -294,23 +294,20 @@ describe("RSGL parser", () => {
     }
   });
 
-  it("parses named object loop bindings, compact aliases, and legacy positions", () => {
+  it("parses named object loop bindings and compact aliases", () => {
     const source = [
       "for {name, models: m, compact:c} in [{}] {}",
-      "for outer in [1], {inner, renamed:r} in [{}] {}",
-      "for first, second in [{ first: 1, second: 2 }] {}"
+      "for outer in [1], {inner, renamed:r} in [{}] {}"
     ].join("\n");
     const module = parseRsgl(source);
 
     assert.deepStrictEqual(module.diagnostics, []);
-    const [namedLoop, multidimensionalLoop, legacyLoop] = module.statements;
+    const [namedLoop, multidimensionalLoop] = module.statements;
     assert.strictEqual(namedLoop.kind, "ForStmt");
     assert.strictEqual(multidimensionalLoop.kind, "ForStmt");
-    assert.strictEqual(legacyLoop.kind, "ForStmt");
     if (
       namedLoop.kind !== "ForStmt"
       || multidimensionalLoop.kind !== "ForStmt"
-      || legacyLoop.kind !== "ForStmt"
     ) {
       throw new Error("Expected for statements.");
     }
@@ -358,18 +355,88 @@ describe("RSGL parser", () => {
     assert.strictEqual(multidimensionalLoop.dimensions[0].pattern.kind, "Identifier");
     assert.strictEqual(multidimensionalLoop.dimensions[1].pattern.kind, "ForObjectBindingPattern");
 
-    const legacyPattern = legacyLoop.dimensions[0].pattern;
-    assert.strictEqual(legacyPattern.kind, "ForLegacyPositionalBindingPattern");
-    if (legacyPattern.kind === "ForLegacyPositionalBindingPattern") {
-      assert.deepStrictEqual(legacyPattern.bindings.map(binding => binding.text), ["first", "second"]);
-      assert.deepStrictEqual(forBindingMappings(legacyPattern).map(mapping => mapping.kind), [
-        "legacyPosition",
-        "legacyPosition"
-      ]);
-    }
-
     const emptyPattern = parseRsgl("for {} in [{}] {}");
     assert.ok(emptyPattern.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedLoopBinding"));
+  });
+
+  it("rejects multiple bare loop bindings", () => {
+    const commaSeparated = parseRsgl(
+      "for first, second in [{ first: 1, second: 2 }] {}"
+    );
+    assert.deepStrictEqual(
+      commaSeparated.diagnostics.map(diagnostic => diagnostic.code),
+      ["rsgl.expectedToken"]
+    );
+    const commaLoop = commaSeparated.statements[0];
+    assert.strictEqual(commaLoop.kind, "ForStmt");
+    if (commaLoop.kind === "ForStmt") {
+      assert.strictEqual(commaLoop.dimensions.length, 1);
+      assert.strictEqual(commaLoop.dimensions[0].pattern.kind, "Identifier");
+      if (commaLoop.dimensions[0].pattern.kind === "Identifier") {
+        assert.strictEqual(commaLoop.dimensions[0].pattern.text, "first");
+      }
+    }
+
+    const whitespaceSeparated = parseRsgl(
+      "for first second in [{ first: 1, second: 2 }] {}"
+    );
+    assert.deepStrictEqual(
+      whitespaceSeparated.diagnostics.map(diagnostic => diagnostic.code),
+      ["rsgl.expectedToken"]
+    );
+
+    const malformedSource = "for a, b in l1, c, d, in l2 {}";
+    const malformedMultidimensional = parseRsgl(malformedSource);
+    assert.deepStrictEqual(
+      malformedMultidimensional.diagnostics.map(diagnostic => diagnostic.code),
+      ["rsgl.expectedToken", "rsgl.expectedToken"]
+    );
+    assert.deepStrictEqual(
+      malformedMultidimensional.diagnostics.map(diagnostic =>
+        malformedSource.slice(diagnostic.range.start, diagnostic.range.end)
+      ),
+      [",", ","]
+    );
+    const malformedLoop = malformedMultidimensional.statements[0];
+    assert.strictEqual(malformedLoop.kind, "ForStmt");
+    if (malformedLoop.kind === "ForStmt") {
+      assert.strictEqual(malformedLoop.dimensions.length, 2);
+      assert.deepStrictEqual(
+        malformedLoop.dimensions.map(dimension =>
+          dimension.pattern.kind === "Identifier" ? dimension.pattern.text : undefined
+        ),
+        ["a", "c"]
+      );
+      assert.deepStrictEqual(
+        malformedLoop.dimensions.map(dimension =>
+          dimension.iterable.kind === "IdentifierExpr"
+            ? dimension.iterable.name.text
+            : undefined
+        ),
+        ["l1", "l2"]
+      );
+    }
+  });
+
+  it("keeps the for delimiter out of a missing binding", () => {
+    const module = parseRsgl("for in rows {}");
+
+    assert.deepStrictEqual(
+      module.diagnostics.map(diagnostic => diagnostic.code),
+      ["rsgl.expectedLoopBinding"]
+    );
+    const loop = module.statements[0];
+    assert.strictEqual(loop.kind, "ForStmt");
+    if (loop.kind === "ForStmt") {
+      assert.strictEqual(loop.dimensions[0].pattern.kind, "Identifier");
+      if (loop.dimensions[0].pattern.kind === "Identifier") {
+        assert.strictEqual(loop.dimensions[0].pattern.text, "");
+      }
+      assert.strictEqual(loop.dimensions[0].iterable.kind, "IdentifierExpr");
+      if (loop.dimensions[0].iterable.kind === "IdentifierExpr") {
+        assert.strictEqual(loop.dimensions[0].iterable.name.text, "rows");
+      }
+    }
   });
 
   it("rejects non-public template output dialects", () => {

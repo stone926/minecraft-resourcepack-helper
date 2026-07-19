@@ -74,7 +74,6 @@ export interface LoopBindingTypeResult {
 /** Describes how one for-loop dimension selects values from each iterable item. */
 export type LoopBindingSelection =
   | { kind: "value" }
-  | { kind: "positional"; bindingCount: number }
   | { kind: "properties"; properties: readonly string[] };
 
 export function resolveMemberType(
@@ -271,10 +270,7 @@ export function resolveLoopBindingTypes(
   if (selection.kind === "value") {
     return { bindingTypes: [elementType], issues: [] };
   }
-  if (selection.kind === "properties") {
-    return resolveNamedObjectBindings(elementType, selection.properties, budgetOptions);
-  }
-  return resolveDestructuredObjectBindings(elementType, bindingCount, budgetOptions);
+  return resolveNamedObjectBindings(elementType, selection.properties, budgetOptions);
 }
 
 export function staticIndexKey(expression: ExprNode): string | undefined {
@@ -291,53 +287,6 @@ export function staticIndexKey(expression: ExprNode): string | undefined {
     default:
       return undefined;
   }
-}
-
-function resolveDestructuredObjectBindings(
-  elementType: RsglType,
-  bindingCount: number,
-  budgetOptions?: RsglUnionBudgetOptions
-): LoopBindingTypeResult {
-  if (elementType.kind === "Union") {
-    const results = (elementType.options ?? [])
-      .map(option => resolveDestructuredObjectBindings(option, bindingCount, budgetOptions));
-    return {
-      bindingTypes: Array.from({ length: bindingCount }, (_, index) =>
-        combineRsglTypes(
-          results.map(result => result.bindingTypes[index] ?? unknownType),
-          false,
-          budgetOptions
-        )
-      ),
-      issues: deduplicateIterationIssues(
-        results.flatMap(result => result.issues),
-        budgetOptions
-      )
-    };
-  }
-  if (elementType.kind === "Any" || elementType.kind === "Json" || elementType.kind === "Unknown") {
-    return {
-      bindingTypes: Array.from({ length: bindingCount }, () =>
-        elementType.kind === "Unknown" ? unknownType : anyType
-      ),
-      issues: []
-    };
-  }
-  if (elementType.kind !== "Object") {
-    return invalidDestructuringResult(elementType, bindingCount);
-  }
-
-  const propertyTypes = Array.from(elementType.properties?.values() ?? []).map(accessedPropertyType);
-  const bindingTypes = Array.from({ length: bindingCount }, (_, index) =>
-    propertyTypes[index] ?? elementType.indexType ?? unknownType
-  );
-  const hasUnknownBinding = propertyTypes.length < bindingCount && !elementType.indexType;
-  return {
-    bindingTypes,
-    issues: hasUnknownBinding
-      ? [{ kind: "invalidDestructuring", actualType: elementType, bindingCount }]
-      : []
-  };
 }
 
 function resolveNamedObjectBindings(
@@ -473,12 +422,7 @@ function typeMayBeMissing(type: RsglType): boolean {
 }
 
 function loopBindingSelectionCount(selection: LoopBindingSelection): number {
-  if (selection.kind === "value") {
-    return 1;
-  }
-  return selection.kind === "positional"
-    ? selection.bindingCount
-    : selection.properties.length;
+  return selection.kind === "value" ? 1 : selection.properties.length;
 }
 
 function closestPropertyName(name: string, candidates: Iterable<string>): string | undefined {

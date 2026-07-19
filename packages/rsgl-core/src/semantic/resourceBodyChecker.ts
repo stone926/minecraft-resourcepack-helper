@@ -206,12 +206,10 @@ export class RsglResourceBodyChecker {
       const bindingMappings = forBindingMappings(dimension.pattern);
       const bindingSelection: LoopBindingSelection = dimension.pattern.kind === "Identifier"
         ? { kind: "value" }
-        : dimension.pattern.kind === "ForObjectBindingPattern"
-          ? {
-              kind: "properties",
-              properties: dimension.pattern.properties.map(property => property.property.text)
-            }
-          : { kind: "positional", bindingCount: bindingMappings.length };
+        : {
+            kind: "properties",
+            properties: dimension.pattern.properties.map(property => property.property.text)
+          };
       const bindingResult = resolveLoopBindingTypes(
         iterableType,
         bindingSelection,

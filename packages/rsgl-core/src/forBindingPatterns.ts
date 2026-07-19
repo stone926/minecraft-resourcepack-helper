@@ -12,33 +12,21 @@ export type ForBindingMapping =
       kind: "objectProperty";
       property: IdentifierNode;
       binding: IdentifierNode;
-    }
-  | {
-      kind: "legacyPosition";
-      index: number;
-      binding: IdentifierNode;
     };
 
 /**
  * Describes how one loop input value supplies each lexical binding. Keeping
  * this normalization independent from parsing, semantics, and evaluation
- * gives every consumer the same object-property versus legacy-position rules.
+ * gives every consumer the same whole-value versus object-property rules.
  */
 export function forBindingMappings(pattern: ForBindingPatternNode): ForBindingMapping[] {
   if (pattern.kind === "Identifier") {
     return [{ kind: "wholeValue", binding: pattern }];
   }
-  if (pattern.kind === "ForObjectBindingPattern") {
-    return pattern.properties.map(property => ({
-      kind: "objectProperty",
-      property: property.property,
-      binding: property.binding
-    }));
-  }
-  return pattern.bindings.map((binding, index) => ({
-    kind: "legacyPosition",
-    index,
-    binding
+  return pattern.properties.map(property => ({
+    kind: "objectProperty",
+    property: property.property,
+    binding: property.binding
   }));
 }
 
