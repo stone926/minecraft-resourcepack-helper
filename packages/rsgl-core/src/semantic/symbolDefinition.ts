@@ -1,4 +1,4 @@
-import type { TextRange } from "../parser";
+import type { RsglNode, TextRange } from "../parser";
 import type { RsglSemanticModel, RsglSymbol } from "./types";
 
 export interface RsglSymbolDefinitionLocation {
@@ -10,6 +10,12 @@ export interface RsglSymbolDefinition extends RsglSymbolDefinitionLocation {
   symbol: RsglSymbol;
 }
 
+export interface RsglSymbolDefinitionIndex {
+  definitionsByNode: ReadonlyMap<RsglNode, readonly RsglSymbolDefinition[]>;
+}
+
+const definitionIndexesByModels = new WeakMap<object, RsglSymbolDefinitionIndex>();
+
 /**
  * Resolves a linked import/re-export symbol back to the declaration that owns
  * its AST node. Import aliases deliberately reuse the original node during
@@ -17,9 +23,10 @@ export interface RsglSymbolDefinition extends RsglSymbolDefinitionLocation {
  */
 export function originalRsglSymbolDefinition(
   models: readonly RsglSemanticModel[],
-  symbol: RsglSymbol
+  symbol: RsglSymbol,
+  index?: RsglSymbolDefinitionIndex
 ): RsglSymbolDefinitionLocation | undefined {
-  const definition = originalRsglSymbolDeclaration(models, symbol);
+  const definition = originalRsglSymbolDeclaration(models, symbol, index);
   return definition
     ? { fileName: definition.fileName, range: definition.range }
     : undefined;
@@ -27,30 +34,59 @@ export function originalRsglSymbolDefinition(
 
 export function originalRsglSymbolDeclaration(
   models: readonly RsglSemanticModel[],
-  symbol: RsglSymbol
+  symbol: RsglSymbol,
+  index: RsglSymbolDefinitionIndex = createRsglSymbolDefinitionIndex(models)
 ): RsglSymbolDefinition | undefined {
   if (!symbol.node) {
     return undefined;
   }
 
-  const definitions = models.flatMap(model => model.symbols
-    .filter(candidate =>
-      candidate.node === symbol.node
-      && candidate.kind !== "import"
-      && candidate.kind !== "namespace"
-      && candidate.range
-    )
-    .map(candidate => ({
-      fileName: model.fileName,
-      range: candidate.range!,
-      symbol: candidate
-    })));
+  const definitions = [...(index.definitionsByNode.get(symbol.node) ?? [])];
 
-  return definitions.sort((left, right) =>
+  const exactNameDefinitions = definitions.filter(definition =>
+    definition.symbol.name === symbol.name
+  );
+  return (exactNameDefinitions.length > 0 ? exactNameDefinitions : definitions).sort((left, right) =>
     rangeLength(left.range) - rangeLength(right.range)
     || left.fileName.localeCompare(right.fileName, "en")
     || left.range.start - right.range.start
   )[0];
+}
+
+/**
+ * Collapses linked import/re-export wrappers to the declaration-owned symbol.
+ * Symbols without a source declaration (builtins and namespace aliases) retain
+ * their local identity.
+ */
+export function canonicalRsglSymbol(
+  models: readonly RsglSemanticModel[],
+  symbol: RsglSymbol,
+  index?: RsglSymbolDefinitionIndex
+): RsglSymbol {
+  return originalRsglSymbolDeclaration(models, symbol, index)?.symbol ?? symbol;
+}
+
+export function createRsglSymbolDefinitionIndex(
+  models: readonly RsglSemanticModel[]
+): RsglSymbolDefinitionIndex {
+  const cached = definitionIndexesByModels.get(models);
+  if (cached) {
+    return cached;
+  }
+  const definitionsByNode = new Map<RsglNode, RsglSymbolDefinition[]>();
+  for (const model of models) {
+    for (const symbol of model.symbols) {
+      if (!symbol.node || !symbol.range || symbol.kind === "import" || symbol.kind === "namespace") {
+        continue;
+      }
+      const definitions = definitionsByNode.get(symbol.node) ?? [];
+      definitions.push({ fileName: model.fileName, range: symbol.range, symbol });
+      definitionsByNode.set(symbol.node, definitions);
+    }
+  }
+  const index = { definitionsByNode };
+  definitionIndexesByModels.set(models, index);
+  return index;
 }
 
 function rangeLength(range: TextRange): number {

@@ -36,6 +36,8 @@ export interface RsglWorkspaceSourceCacheOptions {
   verificationTtlMs?: number;
   /** Injectable monotonic-ish clock used by verification-cache tests. */
   clock?: () => number;
+  /** Injectable directory enumerator used by cache and performance tests. */
+  enumerateRsglFiles?: (rootDirectory: string) => readonly string[];
 }
 
 export type RsglOpenTextDocumentProvider = (fileName: string) => RsglTextDocumentLike | null;
@@ -63,17 +65,25 @@ interface RsglSourceReadResult {
   versionKey: string;
 }
 
+interface RsglCachedDirectoryListing {
+  fileNames: readonly string[];
+  verifiedAtMs: number;
+}
+
 export class RsglWorkspaceSourceCache {
   private readonly sourceFiles = new Map<string, RsglCachedSourceFile>();
+  private readonly directoryListings = new Map<string, RsglCachedDirectoryListing>();
   private openTextDocumentProvider: RsglOpenTextDocumentProvider | null = null;
   private readonly fileSystem: RsglWorkspaceSourceFileSystem;
   private readonly verificationTtlMs: number;
   private readonly clock: () => number;
+  private readonly enumerateDirectoryFiles: (rootDirectory: string) => readonly string[];
 
   public constructor(private readonly options: RsglWorkspaceSourceCacheOptions = {}) {
     this.fileSystem = options.fileSystem ?? nodeSourceFileSystem;
     this.verificationTtlMs = normalizedVerificationTtl(options.verificationTtlMs);
     this.clock = options.clock ?? Date.now;
+    this.enumerateDirectoryFiles = options.enumerateRsglFiles ?? enumerateRsglFiles;
   }
 
   public setOpenTextDocumentProvider(provider: RsglOpenTextDocumentProvider | null): void {
@@ -83,10 +93,12 @@ export class RsglWorkspaceSourceCache {
 
   public invalidatePath(fileName: string): void {
     this.sourceFiles.delete(rsglPathKey(resolveRsglPath(fileName)));
+    this.directoryListings.clear();
   }
 
   public invalidateAll(): void {
     this.sourceFiles.clear();
+    this.directoryListings.clear();
   }
 
   public loadProgramFromEntry(entryFileName: string): RsglSourceFile[] {
@@ -145,10 +157,28 @@ export class RsglWorkspaceSourceCache {
       }
     };
 
-    for (const fileName of enumerateRsglFiles(rootDirectory)) {
+    for (const fileName of this.rsglFilesInDirectory(rootDirectory)) {
       visit(fileName);
     }
     return files;
+  }
+
+  private rsglFilesInDirectory(rootDirectory: string): readonly string[] {
+    const normalizedRoot = resolveRsglPath(rootDirectory);
+    const rootKey = rsglPathKey(normalizedRoot);
+    const cached = this.directoryListings.get(rootKey);
+    const now = this.clock();
+    if (
+      cached
+      && (this.options.watcherTrusted
+        || (now >= cached.verifiedAtMs
+          && now - cached.verifiedAtMs < this.verificationTtlMs))
+    ) {
+      return cached.fileNames;
+    }
+    const fileNames = [...this.enumerateDirectoryFiles(normalizedRoot)];
+    this.directoryListings.set(rootKey, { fileNames, verifiedAtMs: now });
+    return fileNames;
   }
 
   private readSourceFile(fileName: string): RsglSourceFile | null {

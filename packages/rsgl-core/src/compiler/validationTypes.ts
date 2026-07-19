@@ -55,6 +55,15 @@ export interface RsglExternalResourceUsage {
   metadataPaths?: readonly string[];
 }
 
+/** Canonical source occurrence captured before generated/extern resolution. */
+export interface RsglResourceReferenceUsage {
+  targetKind: RsglResourceExistenceKind;
+  /** Canonical physical lookup identity, including the namespace. */
+  id: string;
+  sourceFile: string;
+  range: ValidationRange;
+}
+
 export interface RsglCheckedResourceReference {
   available: boolean;
   external: boolean;
@@ -91,6 +100,8 @@ export interface RsglResourceValidationOptions {
   externTextureMetadata?: (source: ExternResourceSource, id: string) => RsglTextureMetadata | null | undefined;
   externSoundMetadata?: (source: ExternResourceSource, id: string) => RsglSoundMetadata | null | undefined;
   externBlockstateSchema?: (source: ExternResourceSource, id: ResourceId) => RsglBlockstateSchema | null | undefined;
+  /** @internal Compile-time navigation collector; never performs resource I/O. */
+  onResourceReferenceUsed?: (usage: RsglResourceReferenceUsage) => void;
   /** Internal compile-pipeline collector used to build concrete manifest dependencies. */
   onExternResourceUsed?: (usage: RsglExternalResourceUsage) => void;
   /** Internal generated-resource index used to exempt outputs from extern declarations. */

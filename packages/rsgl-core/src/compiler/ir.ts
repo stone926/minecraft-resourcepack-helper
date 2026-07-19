@@ -44,6 +44,8 @@ export interface ResourceUnit {
     externalTextureVariables?: string[];
     referenceOrigins?: RsglValidationReferenceOrigin[];
     resourceValueObservations?: RsglResourceValueObservation[];
+    /** Exact RSGL declaration sites that produced this concrete output. */
+    resourceDefinitionOrigins?: RsglResourceDefinitionOrigin[];
   };
   mergePolicy: MergePolicy;
   sourceMap: RsglSourceMap;
@@ -74,6 +76,11 @@ export interface RsglMapping {
 
 export interface RsglValidationReferenceOrigin {
   generatedPath: string;
+  sourceFile: string;
+  sourceRange: TextRange;
+}
+
+export interface RsglResourceDefinitionOrigin {
   sourceFile: string;
   sourceRange: TextRange;
 }

@@ -24,8 +24,9 @@ import {
   formatRsglText,
   getRsglProjectConfigWatchPaths,
   getRsglDocumentCompletionItems,
-  getRsglDocumentDefinitionLocation,
+  getRsglDocumentDefinitionLocations,
   getRsglDocumentHoverInfo,
+  getRsglDocumentReferenceLocations,
   getRsglDocumentRenameEdits,
   getRsglDocumentSignatureHelpInfo,
   getRsglDocumentSemanticTokens,
@@ -43,6 +44,7 @@ import {
   type RsglDiagnostic,
   type RsglDefinitionLocation,
   type RsglLanguageWorkspace,
+  type RsglReferenceLocation,
   type RsglResourceValidationOptions,
   type RsglRenameEdit,
   type RsglSemanticToken,
@@ -58,6 +60,13 @@ import {
 export interface RsglValidationSettings {
   defaultAssetsPath: string | null;
   resourcePackRoots: string[];
+}
+
+/** Filesystem-relevant subset of LSP initialization parameters. */
+export interface RsglWorkspaceInitializationParams {
+  workspaceFolders?: readonly { uri: string }[] | null;
+  rootUri?: string | null;
+  rootPath?: string | null;
 }
 
 /** Minimal transport-neutral view of an open text document. */
@@ -420,13 +429,23 @@ export function definitionLocationForDocument(
   offset: number,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): RsglDefinitionLocation | null {
+  return definitionLocationsForDocument(document, fileName, offset, deps)[0] ?? null;
+}
+
+/** Returns every offset-based definition target for protocol clients that support locations. */
+export function definitionLocationsForDocument(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): RsglDefinitionLocation[] {
   try {
-    return getRsglDocumentDefinitionLocation({
+    return getRsglDocumentDefinitionLocations({
       fileName,
       getText: () => document.getText()
-    }, offset, deps) ?? null;
+    }, offset, deps);
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -436,11 +455,70 @@ export function toLspDefinitionLocation(
   targetUri: string,
   definition: RsglDefinitionLocation
 ): Location {
+  return toLspOffsetLocation(targetDocument, targetUri, definition);
+}
+
+/** Converts all definition targets while loading each target document once. */
+export function toLspDefinitionLocations(
+  definitions: readonly RsglDefinitionLocation[],
+  loadDocument: (fileName: string) => Promise<RsglLocationTargetDocument | null>
+): Promise<Location[]> {
+  return toLspReferenceLocations(definitions, loadDocument);
+}
+
+/** Returns offset-based references; target-document conversion is intentionally separate. */
+export function referenceLocationsForDocument(
+  document: RsglLspDocument,
+  fileName: string,
+  offset: number,
+  includeDeclaration: boolean,
+  deps: RsglDocumentLanguageIntelligenceDeps
+): RsglReferenceLocation[] {
+  try {
+    return getRsglDocumentReferenceLocations({
+      fileName,
+      getText: () => document.getText()
+    }, offset, includeDeclaration, deps);
+  } catch {
+    return [];
+  }
+}
+
+/** A target text document used to map core offsets to LSP locations. */
+export interface RsglLocationTargetDocument extends RsglLspDocument {
+  uri: string;
+}
+
+/** Converts and preserves a stable list of cross-file core reference locations. */
+export async function toLspReferenceLocations(
+  locations: readonly RsglReferenceLocation[],
+  loadDocument: (fileName: string) => Promise<RsglLocationTargetDocument | null>
+): Promise<Location[]> {
+  const loadedDocuments: RsglLoadedTargetDocuments = new Map();
+  const result: Location[] = [];
+  for (const location of locations) {
+    const targetDocument = await loadTargetDocumentOnce(
+      location.fileName,
+      loadedDocuments,
+      loadDocument
+    );
+    if (targetDocument) {
+      result.push(toLspOffsetLocation(targetDocument, targetDocument.uri, location));
+    }
+  }
+  return result;
+}
+
+function toLspOffsetLocation(
+  targetDocument: RsglLspDocument,
+  targetUri: string,
+  location: Pick<RsglDefinitionLocation, "range">
+): Location {
   return {
     uri: targetUri,
     range: {
-      start: targetDocument.positionAt(clampOffset(targetDocument, definition.range.start)),
-      end: targetDocument.positionAt(clampOffset(targetDocument, definition.range.end))
+      start: targetDocument.positionAt(clampOffset(targetDocument, location.range.start)),
+      end: targetDocument.positionAt(clampOffset(targetDocument, location.range.end))
     }
   };
 }
@@ -490,9 +568,7 @@ export function renameEditsForDocument(
 }
 
 /** Target document required to convert one core offset edit into an LSP edit. */
-export interface RsglRenameTargetDocument extends RsglLspDocument {
-  uri: string;
-}
+export type RsglRenameTargetDocument = RsglLocationTargetDocument;
 
 /**
  * Converts a complete cross-file rename atomically. If any target document
@@ -503,26 +579,21 @@ export async function toLspWorkspaceEdit(
   loadDocument: (fileName: string) => Promise<RsglRenameTargetDocument | null>
 ): Promise<WorkspaceEdit | null> {
   try {
-    const loadedDocuments: Array<{ fileName: string; document: RsglRenameTargetDocument }> = [];
+    const loadedDocuments: RsglLoadedTargetDocuments = new Map();
     const changes = new Map<string, TextEdit[]>();
     for (const edit of edits) {
-      let target = loadedDocuments.find(candidate => sameFileName(candidate.fileName, edit.fileName));
-      if (!target) {
-        const document = await loadDocument(edit.fileName);
-        if (!document) {
-          return null;
-        }
-        target = { fileName: edit.fileName, document };
-        loadedDocuments.push(target);
+      const targetDocument = await loadTargetDocumentOnce(edit.fileName, loadedDocuments, loadDocument);
+      if (!targetDocument) {
+        return null;
       }
-      const documentEdits = changes.get(target.document.uri) ?? [];
-      if (!changes.has(target.document.uri)) {
-        changes.set(target.document.uri, documentEdits);
+      const documentEdits = changes.get(targetDocument.uri) ?? [];
+      if (!changes.has(targetDocument.uri)) {
+        changes.set(targetDocument.uri, documentEdits);
       }
       documentEdits.push({
         range: {
-          start: target.document.positionAt(clampOffset(target.document, edit.range.start)),
-          end: target.document.positionAt(clampOffset(target.document, edit.range.end))
+          start: targetDocument.positionAt(clampOffset(targetDocument, edit.range.start)),
+          end: targetDocument.positionAt(clampOffset(targetDocument, edit.range.end))
         },
         newText: edit.newText
       });
@@ -531,6 +602,27 @@ export async function toLspWorkspaceEdit(
   } catch {
     return null;
   }
+}
+
+type RsglLoadedTargetDocuments = Map<string, RsglLocationTargetDocument | null>;
+
+async function loadTargetDocumentOnce(
+  fileName: string,
+  loadedDocuments: RsglLoadedTargetDocuments,
+  loadDocument: (fileName: string) => Promise<RsglLocationTargetDocument | null>
+): Promise<RsglLocationTargetDocument | null> {
+  const fileKey = normalizePathKey(path.resolve(fileName));
+  if (loadedDocuments.has(fileKey)) {
+    return loadedDocuments.get(fileKey) ?? null;
+  }
+  let document: RsglLocationTargetDocument | null = null;
+  try {
+    document = await loadDocument(fileName);
+  } catch {
+    // Callers decide whether an unreadable target is skippable or atomic.
+  }
+  loadedDocuments.set(fileKey, document);
+  return document;
 }
 
 /** Injected collaborators for semantic token computation. */
@@ -690,11 +782,50 @@ export function fileNameFromUri(uri: string): string {
   return uri;
 }
 
+/**
+ * Resolves the explicit filesystem boundaries advertised by an LSP client.
+ * Workspace folders take precedence over the legacy single-root fields;
+ * unsupported URI schemes are ignored instead of becoming accidental paths.
+ */
+export function workspaceRootFileNamesFromInitialization(
+  params: RsglWorkspaceInitializationParams
+): string[] {
+  const workspaceFolders = uniqueResolvedFileNames(
+    (params.workspaceFolders ?? []).flatMap(folder => fileNameFromWorkspaceUri(folder.uri) ?? [])
+  );
+  if (workspaceFolders.length > 0) {
+    return workspaceFolders;
+  }
+
+  const rootUriFileName = params.rootUri ? fileNameFromWorkspaceUri(params.rootUri) : null;
+  if (rootUriFileName) {
+    return [rootUriFileName];
+  }
+  return params.rootPath ? [path.resolve(params.rootPath)] : [];
+}
+
 /** Normalizes a filesystem path for identity comparisons. */
 export function normalizeDisplayFileName(fileName: string): string {
   return path.normalize(fileName);
 }
 
-function sameFileName(left: string, right: string): boolean {
-  return normalizePathKey(path.resolve(left)) === normalizePathKey(path.resolve(right));
+function fileNameFromWorkspaceUri(uri: string): string | null {
+  try {
+    const parsed = new URL(uri);
+    return parsed.protocol === "file:" ? path.resolve(fileURLToPath(parsed)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function uniqueResolvedFileNames(fileNames: readonly string[]): string[] {
+  const unique = new Map<string, string>();
+  for (const fileName of fileNames) {
+    const resolved = path.resolve(fileName);
+    const key = normalizePathKey(resolved);
+    if (!unique.has(key)) {
+      unique.set(key, resolved);
+    }
+  }
+  return [...unique.values()];
 }

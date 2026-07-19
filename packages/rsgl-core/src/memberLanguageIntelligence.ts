@@ -1,6 +1,7 @@
 import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import {
   MemberExprNode,
+  ObjectExprNode,
   RsglModule,
   TextRange
 } from "./parser";
@@ -10,7 +11,6 @@ import {
   resolveVisibleRsglMemberProperties
 } from "./memberTypeResolver";
 import {
-  RsglObjectProperty,
   RsglModuleNamespaceMember,
   RsglModuleNamespaceMemberCategory,
   RsglProgram,
@@ -22,7 +22,19 @@ import {
   moduleNamespaceMembers,
   resolveModuleNamespaceExpressionMember
 } from "./semantic/moduleNamespace";
+import { objectKeyName } from "./semantic/contextualObjectChecking";
 import { originalRsglSymbolDefinition } from "./semantic/symbolDefinition";
+import {
+  compareMemberLocations,
+  createMemberDeclarationCatalog,
+  deduplicateMemberLocations,
+  locationsOfMemberProperty,
+  memberDeclarationLocationsAtOffset,
+  rsglMemberLocationKey,
+  type RsglMemberDefinitionLocation
+} from "./memberDeclarationCatalog";
+
+export type { RsglMemberDefinitionLocation } from "./memberDeclarationCatalog";
 
 type RsglMemberLanguageProgram = Pick<RsglProgram, "models">;
 
@@ -44,17 +56,19 @@ export interface RsglMemberAccessInfo extends RsglMemberPropertyInfo {
   range: TextRange;
 }
 
-/** Offset-based source location for an annotated record field. */
-export interface RsglMemberDefinitionLocation {
-  fileName: string;
+type ResolvedStructuralMemberProperty =
+  ReturnType<typeof resolveVisibleRsglMemberProperties>[number];
+
+interface ResolvedObjectPropertyOccurrence {
   range: TextRange;
+  property: ResolvedStructuralMemberProperty;
 }
 
 type ResolvedMemberAccess =
   | {
       kind: "property";
       expression: MemberExprNode;
-      property: ReturnType<typeof resolveVisibleRsglMemberProperties>[number];
+      property: ResolvedStructuralMemberProperty;
     }
   | {
       kind: "module";
@@ -137,27 +151,153 @@ export function getRsglMemberDefinitionLocation(
   offset: number
 ): RsglMemberDefinitionLocation | undefined {
   const resolved = resolvedMemberAccessAtOffset(program, fileName, sourceText, offset);
-  if (!resolved) {
-    return undefined;
-  }
-  if (resolved.kind === "module") {
+  if (resolved?.kind === "module") {
     return originalRsglSymbolDefinition(program.models, resolved.member.symbol)
       ?? (resolved.member.symbol.range
         ? { fileName: resolved.member.sourceFile, range: resolved.member.symbol.range }
         : undefined);
   }
-  const locations: RsglMemberDefinitionLocation[] = [];
-  for (const declaration of resolved.property.declarations) {
-    if (!declaration.declarationRange) {
-      continue;
+  const model = semanticModelForMemberFile(program, fileName);
+  const objectProperty = !resolved && model
+    ? contextualObjectPropertyAtOffset(model, offset)
+    : undefined;
+  const structuralProperty = resolved?.kind === "property"
+    ? resolved.property
+    : objectProperty?.property;
+  if (!structuralProperty) {
+    if (!model?.module.statements.some(statement =>
+      statement.kind === "TypeAliasDecl"
+      && touchesRange(statement.typeAnnotation.range, offset)
+    )) {
+      return undefined;
     }
-    const owners = ownersOfPropertyDeclaration(program, declaration);
-    for (const owner of owners) {
-      locations.push({ fileName: owner.fileName, range: declaration.declarationRange });
+    const catalog = createMemberDeclarationCatalog(program);
+    return memberDeclarationLocationsAtOffset(catalog, fileName, offset)
+      .sort((left, right) => compareMemberLocations(left, right))[0];
+  }
+  const catalog = createMemberDeclarationCatalog(program);
+  const locations = locationsOfMemberProperty(
+    catalog,
+    structuralProperty.name,
+    structuralProperty.declarations
+  );
+  return deduplicateMemberLocations(locations)
+    .sort((left, right) => compareMemberLocations(left, right))[0];
+}
+
+/** Finds declaration-linked structural field occurrences across a linked program. */
+export function getRsglMemberReferenceLocations(
+  program: RsglMemberLanguageProgram,
+  fileName: string,
+  offset: number,
+  includeDeclaration: boolean
+): RsglMemberDefinitionLocation[] | undefined {
+  const model = semanticModelForMemberFile(program, fileName);
+  if (!model) {
+    return undefined;
+  }
+  const resolved = resolvedMemberAccessAtOffset(program, fileName, "", offset);
+  if (resolved?.kind === "module") {
+    return undefined;
+  }
+
+  const catalog = createMemberDeclarationCatalog(program);
+  let targetLocations = resolved
+    ? locationsOfMemberProperty(catalog, resolved.property.name, resolved.property.declarations)
+    : memberDeclarationLocationsAtOffset(catalog, model.fileName, offset);
+  if (!resolved && targetLocations.length === 0) {
+    const objectProperty = contextualObjectPropertyAtOffset(model, offset);
+    if (objectProperty) {
+      targetLocations = locationsOfMemberProperty(
+        catalog,
+        objectProperty.property.name,
+        objectProperty.property.declarations
+      );
     }
   }
-  return deduplicateLocations(locations)
-    .sort((left, right) => compareLocations(left, right))[0];
+  if (targetLocations.length === 0) {
+    return undefined;
+  }
+
+  const targetKeys = new Set(targetLocations.map(rsglMemberLocationKey));
+  const locations = includeDeclaration ? [...targetLocations] : [];
+  for (const owner of program.models) {
+    walkRsglModule(owner.module, {
+      enterExpression(expression) {
+        if (expression.kind !== "MemberExpr") {
+          if (expression.kind === "ObjectExpr") {
+            for (const occurrence of contextualObjectPropertyOccurrences(owner, expression)) {
+              const definitions = locationsOfMemberProperty(
+                catalog,
+                occurrence.property.name,
+                occurrence.property.declarations
+              );
+              if (definitions.some(location => targetKeys.has(rsglMemberLocationKey(location)))) {
+                locations.push({ fileName: owner.fileName, range: occurrence.range });
+              }
+            }
+          }
+          return;
+        }
+        const candidate = resolveMemberAccess(owner, expression);
+        if (candidate?.kind !== "property") {
+          return;
+        }
+        const definitions = locationsOfMemberProperty(
+          catalog,
+          candidate.property.name,
+          candidate.property.declarations
+        );
+        if (definitions.some(location => targetKeys.has(rsglMemberLocationKey(location)))) {
+          locations.push({ fileName: owner.fileName, range: expression.property.range });
+        }
+      }
+    });
+  }
+  return deduplicateMemberLocations(locations)
+    .sort((left, right) => compareMemberLocations(left, right));
+}
+
+function contextualObjectPropertyAtOffset(
+  model: RsglSemanticModel,
+  offset: number
+): ResolvedObjectPropertyOccurrence | undefined {
+  const matches: ResolvedObjectPropertyOccurrence[] = [];
+  walkRsglModule(model.module, {
+    enterExpression(expression) {
+      if (expression.kind !== "ObjectExpr") {
+        return;
+      }
+      matches.push(...contextualObjectPropertyOccurrences(model, expression)
+        .filter(occurrence => touchesRange(occurrence.range, offset)));
+    }
+  });
+  return matches.sort((left, right) => rangeLength(left.range) - rangeLength(right.range))[0];
+}
+
+function contextualObjectPropertyOccurrences(
+  model: RsglSemanticModel,
+  expression: ObjectExprNode
+): ResolvedObjectPropertyOccurrence[] {
+  const expectedType = model.resolvedExpectedTypes.get(expression);
+  if (!expectedType) {
+    return [];
+  }
+  const properties = new Map(
+    resolveVisibleRsglMemberProperties(expectedType).map(property => [property.name, property])
+  );
+  const occurrences: ResolvedObjectPropertyOccurrence[] = [];
+  for (const entry of expression.properties) {
+    if (entry.kind !== "ObjectProperty") {
+      continue;
+    }
+    const name = objectKeyName(entry);
+    const property = name === null ? undefined : properties.get(name);
+    if (property) {
+      occurrences.push({ range: entry.key.range, property });
+    }
+  }
+  return occurrences;
 }
 
 function resolvedMemberAccessAtOffset(
@@ -174,6 +314,13 @@ function resolvedMemberAccessAtOffset(
   if (!expression || expression.property.text.length === 0) {
     return undefined;
   }
+  return resolveMemberAccess(model, expression);
+}
+
+function resolveMemberAccess(
+  model: RsglSemanticModel,
+  expression: MemberExprNode
+): ResolvedMemberAccess | undefined {
   const moduleMember = resolveModuleNamespaceExpressionMember(model, expression)?.member;
   if (moduleMember) {
     return { kind: "module", expression, member: moduleMember };
@@ -217,76 +364,12 @@ function isMemberPrefixCursor(
   return /^\s*\.[A-Za-z0-9_]*$/.test(sourceText.slice(expression.object.range.end, offset));
 }
 
-function ownersOfPropertyDeclaration(
-  program: RsglMemberLanguageProgram,
-  property: RsglObjectProperty
-): RsglSemanticModel[] {
-  const exact = program.models.filter(model => model.module.statements.some(statement => {
-    if (statement.kind !== "TypeAliasDecl" || !statement.name) {
-      return false;
-    }
-    const alias = model.scope.typeAliases.get(statement.name.text);
-    return alias?.node === statement && typeContainsProperty(alias.type, property, new Set());
-  }));
-  if (exact.length > 0 || !property.declarationRange) {
-    return exact;
-  }
-  return program.models.filter(model => model.module.statements.some(statement =>
-    statement.kind === "TypeAliasDecl"
-    && statement.range.start <= property.declarationRange!.start
-    && property.declarationRange!.end <= statement.range.end
-  ));
-}
-
-function typeContainsProperty(
-  type: RsglType | undefined,
-  target: RsglObjectProperty,
-  visited: Set<RsglType>
-): boolean {
-  if (!type || visited.has(type)) {
-    return false;
-  }
-  visited.add(type);
-  for (const property of type.properties?.values() ?? []) {
-    if (property === target || typeContainsProperty(property.type, target, visited)) {
-      return true;
-    }
-  }
-  if (type.elementType && typeContainsProperty(type.elementType, target, visited)) {
-    return true;
-  }
-  if (type.returnType && typeContainsProperty(type.returnType, target, visited)) {
-    return true;
-  }
-  return [
-    ...(type.options ?? []),
-    ...(type.parameters ?? [])
-  ].some(child => typeContainsProperty(child, target, visited));
-}
-
 function semanticModelForMemberFile(
   program: RsglMemberLanguageProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
   const key = rsglPathKey(resolveRsglPath(fileName));
   return program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
-}
-
-function deduplicateLocations(
-  locations: readonly RsglMemberDefinitionLocation[]
-): RsglMemberDefinitionLocation[] {
-  return [...new Map(locations.map(location => [
-    `${rsglPathKey(resolveRsglPath(location.fileName))}:${location.range.start}:${location.range.end}`,
-    location
-  ])).values()];
-}
-
-function compareLocations(
-  left: RsglMemberDefinitionLocation,
-  right: RsglMemberDefinitionLocation
-): number {
-  return rsglPathKey(resolveRsglPath(left.fileName)).localeCompare(rsglPathKey(resolveRsglPath(right.fileName)))
-    || left.range.start - right.range.start;
 }
 
 function touchesRange(range: TextRange, offset: number): boolean {

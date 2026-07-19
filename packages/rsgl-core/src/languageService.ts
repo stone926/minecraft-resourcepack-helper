@@ -34,6 +34,16 @@ import type { ItemModelFormat } from "./itemModelSchema";
 import { itemModelTargetFormatInModule } from "./itemModelTarget";
 import type { RsglWorkspaceSemanticProgram } from "./workspaceSemantic";
 import {
+  getRsglSemanticReferenceLocations,
+  isRsglResourceSemanticTargetAtOffset,
+  type RsglReferenceLocation
+} from "./referenceService";
+import {
+  getRsglResourceDefinitionLocationsAtOffset,
+  getRsglResourceReferenceLocationsAtOffset,
+  type RsglResourceNavigationIndex
+} from "./compiler/resourceNavigation";
+import {
   getRsglNamespaceRenameEdits,
   prepareRsglNamespaceRename,
   type RsglRenameEdit,
@@ -47,6 +57,19 @@ export interface RsglLanguageDocument {
 
 export interface RsglLanguageWorkspace {
   loadProgramFromEntry(fileName: string): RsglWorkspaceSemanticProgram;
+  /**
+   * Lazily loads the source-root program used by workspace-wide navigation.
+   * Implementations should cache this directory program and prefer open text.
+   */
+  loadProgramForNavigation?(fileName: string): RsglWorkspaceSemanticProgram;
+  /**
+   * Lazily compiles and caches canonical generated-resource navigation facts.
+   * A source-root program loaded for the same request is supplied for reuse.
+   */
+  loadResourceNavigation?(
+    fileName: string,
+    semanticProgram?: RsglWorkspaceSemanticProgram
+  ): RsglResourceNavigationIndex;
   /** Cached project fallback used only when the source has no target declaration. */
   projectItemModelTargetFormatForSource?(fileName: string): ItemModelFormat | undefined;
 }
@@ -152,14 +175,88 @@ export function getRsglDocumentSignatureHelpInfo(
   return getRsglSignatureHelpInfo(context.program, document.fileName, document.getText(), offset);
 }
 
-/** Resolves a touched local/imported/re-exported symbol to its declaration offsets. */
+/** Resolves every declaration target for a touched semantic or generated-resource symbol. */
+export function getRsglDocumentDefinitionLocations(
+  document: RsglLanguageDocument,
+  offset: number,
+  workspace: RsglLanguageWorkspace
+): RsglDefinitionLocation[] {
+  const context = semanticContextForRsglDocument(document, workspace);
+  const semanticDefinition = getRsglDefinitionLocation(
+    context.program,
+    document.fileName,
+    document.getText(),
+    offset
+  );
+  const resourceTarget = isRsglResourceSemanticTargetAtOffset(
+    context.program,
+    document.fileName,
+    offset
+  );
+  if (semanticDefinition && !resourceTarget) {
+    return [semanticDefinition];
+  }
+  const resourceIndex = resourceNavigationForDocument(document, workspace);
+  const resourceDefinitions = resourceIndex
+    ? getRsglResourceDefinitionLocationsAtOffset(
+      resourceIndex,
+      document.fileName,
+      offset
+    )
+    : [];
+  return resourceDefinitions.length > 0
+    ? resourceDefinitions
+    : semanticDefinition ? [semanticDefinition] : [];
+}
+
+/** Backward-compatible single-target view; protocol integrations should use the plural API. */
 export function getRsglDocumentDefinitionLocation(
   document: RsglLanguageDocument,
   offset: number,
   workspace: RsglLanguageWorkspace
 ): RsglDefinitionLocation | undefined {
-  const context = semanticContextForRsglDocument(document, workspace);
-  return getRsglDefinitionLocation(context.program, document.fileName, document.getText(), offset);
+  return getRsglDocumentDefinitionLocations(document, offset, workspace)[0];
+}
+
+/** Finds linked references across the source root, optionally including declarations. */
+export function getRsglDocumentReferenceLocations(
+  document: RsglLanguageDocument,
+  offset: number,
+  includeDeclaration: boolean,
+  workspace: RsglLanguageWorkspace
+): RsglReferenceLocation[] {
+  const context = navigationSemanticContextForRsglDocument(document, workspace);
+  const semanticReferences = getRsglSemanticReferenceLocations(
+    context.program,
+    document.fileName,
+    offset,
+    includeDeclaration
+  );
+  const resourceTarget = isRsglResourceSemanticTargetAtOffset(
+    context.program,
+    document.fileName,
+    offset
+  );
+  if (semanticReferences !== undefined && !resourceTarget) {
+    return semanticReferences;
+  }
+  const resourceIndex = resourceNavigationForDocument(
+    document,
+    workspace,
+    context.workspaceProgram
+  );
+  if (resourceIndex) {
+    const resourceReferences = getRsglResourceReferenceLocationsAtOffset(
+      resourceIndex,
+      document.fileName,
+      offset,
+      includeDeclaration
+    );
+    if (resourceReferences.length > 0 || resourceTarget) {
+      return resourceReferences;
+    }
+  }
+  return semanticReferences ?? [];
 }
 
 /** Prepares rename only for a module namespace alias or one of its members. */
@@ -197,7 +294,11 @@ export function semanticModelForRsglDocument(
 
 interface RsglDocumentSemanticContext {
   model: RsglSemanticModel;
-  program: Pick<RsglProgram, "models" | "importGraph" | "typeAliasExportMaps">;
+  program: Pick<
+    RsglProgram,
+    "models" | "importGraph" | "valueExportMaps" | "typeAliasExportMaps"
+  >;
+  workspaceProgram?: RsglWorkspaceSemanticProgram;
 }
 
 function semanticContextForRsglDocument(
@@ -226,6 +327,41 @@ function semanticContextForRsglDocument(
       }
     }
   };
+}
+
+function navigationSemanticContextForRsglDocument(
+  document: RsglLanguageDocument,
+  workspace: RsglLanguageWorkspace
+): RsglDocumentSemanticContext {
+  if (workspace.loadProgramForNavigation) {
+    try {
+      const semanticProgram = workspace.loadProgramForNavigation(document.fileName);
+      const model = semanticModelForFile(semanticProgram, document.fileName);
+      if (model) {
+        return {
+          model,
+          program: semanticProgram.program,
+          workspaceProgram: semanticProgram
+        };
+      }
+    } catch {
+      // References remain available over the entry closure or open document.
+    }
+  }
+  return semanticContextForRsglDocument(document, workspace);
+}
+
+function resourceNavigationForDocument(
+  document: RsglLanguageDocument,
+  workspace: RsglLanguageWorkspace,
+  semanticProgram?: RsglWorkspaceSemanticProgram
+): RsglResourceNavigationIndex | undefined {
+  try {
+    return workspace.loadResourceNavigation?.(document.fileName, semanticProgram);
+  } catch {
+    // Resource navigation is best-effort while the source is incomplete.
+    return undefined;
+  }
 }
 
 function completionNamespaceAt(

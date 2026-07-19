@@ -33,6 +33,19 @@ export type {
   RsglTargetPackFormat
 } from "./targetConfig";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
+export {
+  compileRsglResourceNavigation,
+  createRsglResourceNavigationIndex,
+  getRsglResourceDefinitionLocationsAtOffset,
+  getRsglResourceReferenceLocationsAtOffset
+} from "./resourceNavigation";
+export type {
+  RsglResourceNavigationBuildResult,
+  RsglResourceNavigationIndex,
+  RsglResourceNavigationLocation,
+  RsglResourceNavigationOccurrence,
+  RsglResourceNavigationTarget
+} from "./resourceNavigation";
 export { canonicalizeAndValidateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";
 export type { RsglBlockstateSchema } from "./validationTypes";
@@ -69,6 +82,7 @@ export type {
   CompileDependency
 } from "./base/types";
 export type { RsglExternalResourceResolution, RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
+export type { RsglResourceReferenceUsage } from "./validationTypes";
 export { createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export {

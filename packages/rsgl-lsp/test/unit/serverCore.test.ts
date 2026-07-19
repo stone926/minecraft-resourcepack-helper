@@ -26,6 +26,7 @@ import {
   computeDocumentDiagnostics,
   computeDocumentSemanticTokens,
   definitionLocationForDocument,
+  definitionLocationsForDocument,
   dependencyInvalidationPathsForStructuralChange,
   dependencyPathsForDocument,
   dependencyPathsForDocuments,
@@ -41,13 +42,17 @@ import {
   identifierAtOffset,
   normalizeDependencyPath,
   prepareRenameForDocument,
+  referenceLocationsForDocument,
   requiredExactWatchPathsForDocuments,
   renameEditsForDocument,
   toLspDefinitionLocation,
+  toLspDefinitionLocations,
   toLspDiagnostic,
+  toLspReferenceLocations,
   toLspSeverity,
   toLspWorkspaceEdit,
   toValidationSettings,
+  workspaceRootFileNamesFromInitialization,
   workspaceValidationOptionsFor,
   type RsglValidationSettings
 } from "../../src/serverCore";
@@ -185,6 +190,30 @@ describe("RSGL LSP server core", () => {
       toValidationSettings({ defaultAssetsPath: 7, resourcePackRoots: "not-an-array" }),
       { defaultAssetsPath: null, resourcePackRoots: [] }
     );
+  });
+
+  it("resolves multi-root workspace navigation boundaries from initialization", () => {
+    const firstRoot = path.resolve("工作区", "pack one");
+    const secondRoot = path.resolve("工作区", "pack two");
+
+    assert.deepStrictEqual(workspaceRootFileNamesFromInitialization({
+      workspaceFolders: [
+        { uri: pathToFileURL(firstRoot).toString() },
+        { uri: "vscode-remote://host/ignored" },
+        { uri: pathToFileURL(secondRoot).toString() },
+        { uri: pathToFileURL(firstRoot).toString() }
+      ],
+      rootUri: pathToFileURL(path.resolve("legacy-root")).toString()
+    }), [firstRoot, secondRoot]);
+
+    assert.deepStrictEqual(workspaceRootFileNamesFromInitialization({
+      workspaceFolders: null,
+      rootUri: pathToFileURL(firstRoot).toString()
+    }), [firstRoot]);
+    assert.deepStrictEqual(workspaceRootFileNamesFromInitialization({
+      rootUri: "untitled:workspace",
+      rootPath: secondRoot
+    }), [secondRoot]);
   });
 
   it("filters program diagnostics to the requested file", () => {
@@ -1326,6 +1355,10 @@ describe("RSGL LSP server core", () => {
 
       const definition = definitionLocationForDocument(mainDocument, mainFile, referenceOffset + 2, deps);
       assert.ok(definition);
+      assert.deepStrictEqual(
+        definitionLocationsForDocument(mainDocument, mainFile, referenceOffset + 2, deps),
+        [definition]
+      );
       const location = toLspDefinitionLocation(targetDocument, targetDocument.uri, definition);
       const definitionStart = templatesText.indexOf("cube");
       assert.deepStrictEqual(location, {
@@ -1336,6 +1369,117 @@ describe("RSGL LSP server core", () => {
         }
       });
       assert.strictEqual(location.range.start.character, "/*😀*/ template ".length);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("honors includeDeclaration when resolving document references", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-references-"));
+    try {
+      const fileName = path.join(root, "main.rsgl");
+      const text = [
+        "let shared = \"stone\"",
+        "let first = shared",
+        "let second = shared"
+      ].join("\n");
+      fs.writeFileSync(fileName, text);
+      const document = TextDocument.create(pathToFileURL(fileName).toString(), "rsgl", 1, text);
+      const cache = RsglWorkspaceSemanticCache.create();
+      const deps = {
+        loadProgramFromEntry: (entryFileName: string) => cache.loadProgramFromEntry(entryFileName),
+        loadProgramForNavigation: () => cache.loadProgramFromDirectory(root)
+      };
+      const declarationStart = text.indexOf("shared");
+      const firstReferenceStart = text.indexOf("shared", declarationStart + "shared".length);
+      const secondReferenceStart = text.lastIndexOf("shared");
+
+      assert.deepStrictEqual(
+        referenceLocationsForDocument(document, fileName, secondReferenceStart + 1, false, deps),
+        [
+          { fileName, range: { start: firstReferenceStart, end: firstReferenceStart + "shared".length } },
+          { fileName, range: { start: secondReferenceStart, end: secondReferenceStart + "shared".length } }
+        ]
+      );
+      assert.deepStrictEqual(
+        referenceLocationsForDocument(document, fileName, secondReferenceStart + 1, true, deps),
+        [
+          { fileName, range: { start: declarationStart, end: declarationStart + "shared".length } },
+          { fileName, range: { start: firstReferenceStart, end: firstReferenceStart + "shared".length } },
+          { fileName, range: { start: secondReferenceStart, end: secondReferenceStart + "shared".length } }
+        ]
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("converts multi-file references with UTF-16 positions and loads each target once", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-reference-locations-"));
+    try {
+      const firstFile = path.join(root, "入口.rsgl");
+      const secondFile = path.join(root, "定义.rsgl");
+      const firstText = "/*😀*/ let first = shared\nlet second = shared";
+      const secondText = "/*😀*/ let shared = \"stone\"";
+      const firstDocument = TextDocument.create(pathToFileURL(firstFile).toString(), "rsgl", 1, firstText);
+      const secondDocument = TextDocument.create(pathToFileURL(secondFile).toString(), "rsgl", 1, secondText);
+      const documentsByFile = new Map([
+        [path.normalize(firstFile), firstDocument],
+        [path.normalize(secondFile), secondDocument]
+      ]);
+      const firstStart = firstText.indexOf("shared");
+      const secondStart = firstText.lastIndexOf("shared");
+      const declarationStart = secondText.indexOf("shared");
+      const loads: string[] = [];
+
+      const definitions = await toLspDefinitionLocations([
+        { fileName: firstFile, range: { start: firstStart, end: firstStart + "shared".length } },
+        { fileName: secondFile, range: { start: declarationStart, end: declarationStart + "shared".length } }
+      ], async fileName => documentsByFile.get(path.normalize(fileName)) ?? null);
+      assert.deepStrictEqual(definitions.map(location => location.uri), [
+        firstDocument.uri,
+        secondDocument.uri
+      ]);
+
+      const locations = await toLspReferenceLocations([
+        { fileName: firstFile, range: { start: firstStart, end: firstStart + "shared".length } },
+        { fileName: firstFile, range: { start: secondStart, end: secondStart + "shared".length } },
+        { fileName: secondFile, range: { start: declarationStart, end: declarationStart + "shared".length } }
+      ], async fileName => {
+        loads.push(path.normalize(fileName));
+        return documentsByFile.get(path.normalize(fileName)) ?? null;
+      });
+
+      assert.deepStrictEqual(locations, [
+        {
+          uri: firstDocument.uri,
+          range: {
+            start: firstDocument.positionAt(firstStart),
+            end: firstDocument.positionAt(firstStart + "shared".length)
+          }
+        },
+        {
+          uri: firstDocument.uri,
+          range: {
+            start: firstDocument.positionAt(secondStart),
+            end: firstDocument.positionAt(secondStart + "shared".length)
+          }
+        },
+        {
+          uri: secondDocument.uri,
+          range: {
+            start: secondDocument.positionAt(declarationStart),
+            end: secondDocument.positionAt(declarationStart + "shared".length)
+          }
+        }
+      ]);
+      assert.deepStrictEqual(loads, [path.normalize(firstFile), path.normalize(secondFile)]);
+      assert.strictEqual(locations[0].range.start.character, "/*😀*/ let first = ".length);
+      assert.notStrictEqual(
+        locations[0].range.start.character,
+        Array.from("/*😀*/ let first = ").length,
+        "the astral emoji should occupy two UTF-16 code units"
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -1461,7 +1605,7 @@ describe("RSGL LSP server core", () => {
     }
   });
 
-  it("advertises prepare rename and quick fixes and registers their handlers", () => {
+  it("advertises references, prepare rename, and quick fixes and registers their handlers", () => {
     const serverSource = fs.readFileSync(path.join(
       process.cwd(),
       "packages",
@@ -1470,6 +1614,29 @@ describe("RSGL LSP server core", () => {
       "server.ts"
     ), "utf8");
 
+    assert.ok(serverSource.includes("referencesProvider: true"));
+    assert.ok(serverSource.includes("connection.onReferences"));
+    assert.ok(serverSource.includes("definitionLocationsForDocument"));
+    assert.ok(serverSource.includes("toLspDefinitionLocations"));
+    assert.ok(serverSource.includes("loadProgramForNavigation"));
+    assert.ok(serverSource.includes("semanticCache.loadProgramFromDirectory"));
+    assert.ok(serverSource.includes("resolveRsglNavigationSourceRoot"));
+    assert.ok(serverSource.includes("workspaceRootFileNamesFromInitialization(params)"));
+    assert.ok(serverSource.includes("...workspaceNavigationRoots"));
+    assert.ok(serverSource.includes("loadResourceNavigation"));
+    assert.ok(serverSource.includes("compileRsglResourceNavigation"));
+    assert.ok(serverSource.includes("resourceNavigationDependenciesByRoot"));
+    assert.ok(serverSource.includes("documentDependenciesForCompile(build.compileResult.dependencies, [])"));
+    assert.match(
+      serverSource,
+      /function loadResourceNavigation\([\s\S]*?loadedSemanticProgram[\s\S]*?\?\? loadNavigationSemanticProgram\(sourceFileName\)/
+    );
+    assert.match(
+      serverSource,
+      /function scheduleWatchedPathInvalidation[\s\S]*?invalidateResourceNavigationCache\(configurationChanged\)/
+    );
+    assert.ok(serverSource.includes("loadRsglProjectConfigForSource"));
+    assert.ok(serverSource.includes("findRsglProjectConfig(sourceFileName)"));
     assert.ok(serverSource.includes("renameProvider: { prepareProvider: true }"));
     assert.ok(serverSource.includes("connection.onPrepareRename"));
     assert.ok(serverSource.includes("connection.onRenameRequest"));

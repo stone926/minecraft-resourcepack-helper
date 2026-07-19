@@ -5,7 +5,8 @@ import * as path from "node:path";
 import {
   getRsglDocumentCompletionItems,
   getRsglDocumentDefinitionLocation,
-  getRsglDocumentHoverInfo
+  getRsglDocumentHoverInfo,
+  getRsglDocumentReferenceLocations
 } from "../../src/languageService";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 
@@ -29,7 +30,11 @@ describe("RSGL type alias language service", () => {
       fs.writeFileSync(barrelFile, barrelText);
       fs.writeFileSync(mainFile, mainText);
 
-      const workspace = RsglWorkspaceSemanticCache.create();
+      const cache = RsglWorkspaceSemanticCache.create();
+      const workspace = {
+        loadProgramFromEntry: (fileName: string) => cache.loadProgramFromEntry(fileName),
+        loadProgramForNavigation: () => cache.loadProgramFromDirectory(temp)
+      };
       const mainDocument = { fileName: mainFile, getText: () => mainText };
       const annotationOffset = mainText.lastIndexOf("Local");
       assert.deepStrictEqual(getRsglDocumentHoverInfo(mainDocument, annotationOffset + 2, workspace), {
@@ -58,6 +63,31 @@ describe("RSGL type alias language service", () => {
         getRsglDocumentDefinitionLocation(barrelDocument, reExportOffset + 2, workspace),
         expectedDefinition
       );
+
+      const references = getRsglDocumentReferenceLocations(
+        mainDocument,
+        annotationOffset + 2,
+        true,
+        workspace
+      );
+      const referenceTexts = new Map<string, string[]>();
+      const sources = new Map([
+        [sourceFile, sourceText],
+        [barrelFile, barrelText],
+        [mainFile, mainText]
+      ]);
+      for (const reference of references) {
+        const source = sources.get(reference.fileName);
+        assert.ok(source);
+        const texts = referenceTexts.get(reference.fileName) ?? [];
+        texts.push(source.slice(reference.range.start, reference.range.end));
+        referenceTexts.set(reference.fileName, texts);
+      }
+      assert.deepStrictEqual(referenceTexts, new Map([
+        [sourceFile, ["Original", "Original", "Public"]],
+        [barrelFile, ["Public", "Forwarded"]],
+        [mainFile, ["Forwarded", "Local", "Local"]]
+      ]));
 
       const completion = getRsglDocumentCompletionItems(mainDocument, mainText.length, workspace)
         .find(item => item.label === "Local");

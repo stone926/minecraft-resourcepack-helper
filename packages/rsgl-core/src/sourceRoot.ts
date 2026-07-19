@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { normalizePathKey } from "../../mc-assets/src";
+import { isRsglPathInsideOrEqual } from "./pathIdentity";
 
 export interface RsglDiscoveredSourceRoot {
   sourceRoot: string;
@@ -92,6 +93,47 @@ export function resolveRsglSourceRootFromFileName(fileName: string): string {
   }
 }
 
+export interface RsglNavigationSourceRootOptions {
+  /** Absolute root explicitly selected by rsgl.config.json. */
+  configuredRoot?: string;
+  /** Known config-project and initialized-workspace boundaries. */
+  projectRoots?: readonly string[];
+}
+
+/**
+ * Resolves the bounded directory required for reverse-import navigation.
+ * Explicit project configuration wins. Otherwise, the closest containing
+ * conventional `src`, config-project, or initialized-workspace boundary is
+ * used. Choosing the closest boundary lets a project nested under an outer
+ * `src` remain isolated while still finding sibling importers in a no-config,
+ * no-`src` workspace.
+ */
+export function resolveRsglNavigationSourceRoot(
+  fileName: string,
+  options: RsglNavigationSourceRootOptions = {}
+): string {
+  const resolvedFileName = path.resolve(fileName);
+  if (
+    options.configuredRoot
+    && isRsglPathInsideOrEqual(resolvedFileName, options.configuredRoot)
+  ) {
+    return path.resolve(options.configuredRoot);
+  }
+
+  const conventionalRoot = resolveRsglSourceRootFromFileName(resolvedFileName);
+  const containingProjectRoots = (options.projectRoots ?? [])
+    .map(root => path.resolve(root))
+    .filter(root => isRsglPathInsideOrEqual(resolvedFileName, root))
+    .sort((left, right) => pathDepth(right) - pathDepth(left) || right.length - left.length);
+  const hasConventionalRoot = path.basename(conventionalRoot).toLowerCase() === "src";
+  if (!hasConventionalRoot) {
+    return containingProjectRoots[0] ?? conventionalRoot;
+  }
+
+  return [conventionalRoot, ...containingProjectRoots]
+    .sort((left, right) => pathDepth(right) - pathDepth(left) || right.length - left.length)[0];
+}
+
 export function discoverRsglSourceRootsFromFileNames(fileNames: readonly string[]): RsglDiscoveredSourceRoot[] {
   const roots = new Map<string, RsglDiscoveredSourceRoot>();
   for (const fileName of [...fileNames].map(item => path.resolve(item)).sort(compareFileNames)) {
@@ -116,6 +158,10 @@ function hasIgnoredPathSegment(fileName: string): boolean {
 
 function compareFileNames(left: string, right: string): number {
   return normalizePathKey(left).localeCompare(normalizePathKey(right));
+}
+
+function pathDepth(fileName: string): number {
+  return path.resolve(fileName).split(path.sep).filter(Boolean).length;
 }
 
 const ignoredDirectoryNames = new Set([".git", ".vscode", "node_modules"]);

@@ -112,7 +112,23 @@ export function compileResourceDeclaration(
   const units = descriptor.compile.cardinality === "many"
     ? result as ResourceUnit[]
     : result ? [result as ResourceUnit] : [];
-  return units.map(unit => applyResourceKindOutputPath(statement.resourceKind, unit));
+  const definitionOrigin = {
+    sourceFile: context.sourceFile ?? host.fileName,
+    sourceRange: statement.id?.range ?? statement.range
+  };
+  return units.map(unit => {
+    const resolved = applyResourceKindOutputPath(statement.resourceKind, unit);
+    return {
+      ...resolved,
+      validation: {
+        ...resolved.validation,
+        resourceDefinitionOrigins: [
+          ...(resolved.validation?.resourceDefinitionOrigins ?? []),
+          definitionOrigin
+        ]
+      }
+    };
+  });
 }
 
 function compileModel(

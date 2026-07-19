@@ -91,6 +91,12 @@ export function checkResourceExists(
   }
 
   const { id, lookupId, targetKind: kind } = reference;
+  options.onResourceReferenceUsed?.({
+    targetKind: kind,
+    id: lookupId,
+    sourceFile,
+    range
+  });
   if (options.generatedResourceIds?.get(kind)?.has(lookupId)) {
     return { available: true, external: false, canonicalId: id, lookupId };
   }
@@ -183,6 +189,12 @@ export function checkInheritedExternalResourceExists(
     return true;
   }
   const { lookupId: id, targetKind: kind } = reference;
+  options.onResourceReferenceUsed?.({
+    targetKind: kind,
+    id,
+    sourceFile,
+    range
+  });
   if (options.generatedResourceIds?.get(kind)?.has(id) || (kind === "model" && isVirtualBuiltinModelId(id))) {
     return true;
   }

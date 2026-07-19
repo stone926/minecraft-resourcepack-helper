@@ -93,6 +93,39 @@ describe("RSGL workspace source cache", () => {
     assert.strictEqual(io.reads, 2);
   });
 
+  it("caches directory enumeration until TTL expiry or watcher invalidation", () => {
+    const root = path.resolve("virtual-directory-cache");
+    const mainFile = path.join(root, "main.rsgl");
+    const io = createCountingSourceFileSystem({
+      [mainFile]: { text: "let value = 1", mtimeMs: 1 }
+    });
+    let now = 10_000;
+    let enumerations = 0;
+    const cache = new RsglWorkspaceSourceCache({
+      fileSystem: io.fileSystem,
+      verificationTtlMs: 100,
+      clock: () => now,
+      enumerateRsglFiles: () => {
+        enumerations++;
+        return [mainFile];
+      }
+    });
+
+    const first = cache.loadProgramFromDirectory(root)[0];
+    const second = cache.loadProgramFromDirectory(root)[0];
+
+    assert.strictEqual(second, first);
+    assert.strictEqual(enumerations, 1);
+
+    now += 100;
+    cache.loadProgramFromDirectory(root);
+    assert.strictEqual(enumerations, 2, "TTL expiry should verify the directory once");
+
+    cache.invalidatePath(mainFile);
+    cache.loadProgramFromDirectory(root);
+    assert.strictEqual(enumerations, 3, "watcher invalidation should discard the listing");
+  });
+
   it("performs no disk I/O on watcher-trusted cache hits until invalidated", () => {
     const mainFile = path.resolve("virtual-source-cache", "watcher-trusted.rsgl");
     const io = createCountingSourceFileSystem({

@@ -7,6 +7,7 @@ import {
   getRsglDocumentCompletionItems,
   getRsglDocumentDefinitionLocation,
   getRsglDocumentHoverInfo,
+  getRsglDocumentReferenceLocations,
   semanticModelForRsglDocument
 } from "../../src/languageService";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
@@ -106,6 +107,131 @@ describe("RSGL member language service", () => {
     );
   });
 
+  it("finds structural field references from uses and declarations across union branches", () => {
+    const text = [
+      "type Left = { common: String; leftOnly: Number }",
+      "type Right = { common: String; rightOnly: Boolean }",
+      "let leftValue: Left = { common: \"left\", leftOnly: 1 }",
+      "let rightValue: Right = { common: \"right\", rightOnly: true }",
+      "let fromLeft: (Left) -> String = (left) => left.common",
+      "let fromRight: (Right) -> String = (right) => right.common",
+      "let fromEither: (Left | Right) -> String = (either) => either.common"
+    ].join("\n");
+    const fileName = path.resolve("member-references.rsgl");
+    const document = { fileName, getText: () => text };
+    const leftDeclaration = text.indexOf("common");
+    const rightDeclaration = text.indexOf("common", leftDeclaration + "common".length);
+    const leftObjectKey = text.indexOf("common", rightDeclaration + "common".length);
+    const rightObjectKey = text.indexOf("common", leftObjectKey + "common".length);
+    const leftUse = text.indexOf("left.common") + "left.".length;
+    const rightUse = text.indexOf("right.common") + "right.".length;
+    const unionUse = text.indexOf("either.common") + "either.".length;
+
+    assert.deepStrictEqual(
+      getRsglDocumentReferenceLocations(document, unionUse + 1, true, fallbackWorkspace)
+        .map(location => location.range.start),
+      [leftDeclaration, rightDeclaration, leftObjectKey, rightObjectKey, leftUse, rightUse, unionUse]
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentReferenceLocations(document, unionUse + 1, false, fallbackWorkspace)
+        .map(location => location.range.start),
+      [leftObjectKey, rightObjectKey, leftUse, rightUse, unionUse]
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentReferenceLocations(document, leftDeclaration + 1, true, fallbackWorkspace)
+        .map(location => location.range.start),
+      [leftDeclaration, leftObjectKey, leftUse, unionUse]
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentReferenceLocations(document, rightUse + 1, true, fallbackWorkspace)
+        .map(location => location.range.start),
+      [rightDeclaration, rightObjectKey, rightUse, unionUse]
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentReferenceLocations(document, leftObjectKey + 1, true, fallbackWorkspace)
+        .map(location => location.range.start),
+      [leftDeclaration, leftObjectKey, leftUse, unionUse]
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentDefinitionLocation(document, leftObjectKey + 1, fallbackWorkspace),
+      {
+        fileName,
+        range: { start: leftDeclaration, end: leftDeclaration + "common".length }
+      }
+    );
+    assert.deepStrictEqual(
+      getRsglDocumentDefinitionLocation(document, leftDeclaration + 1, fallbackWorkspace),
+      {
+        fileName,
+        range: { start: leftDeclaration, end: leftDeclaration + "common".length }
+      }
+    );
+  });
+
+  it("keeps fallback field identities isolated by declaration owner", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rsgl-member-owner-identity-"));
+    try {
+      const alphaFile = path.join(root, "alpha.rsgl");
+      const bravoFile = path.join(root, "bravo.rsgl");
+      const mainFile = path.join(root, "main.rsgl");
+      const alphaText = [
+        "type Alpha = { common: String }",
+        "export { Alpha }"
+      ].join("\n");
+      const bravoText = [
+        "type Bravo = { common: String }",
+        "export { Bravo }"
+      ].join("\n");
+      const mainText = [
+        "import { Alpha } from \"./alpha.rsgl\"",
+        "import { Bravo } from \"./bravo.rsgl\"",
+        "let choose: (Boolean, Alpha, Alpha) -> String = (flag, first, second) => (flag ? first : second).common",
+        "let other: (Bravo) -> String = (value) => value.common"
+      ].join("\n");
+      fs.writeFileSync(alphaFile, alphaText);
+      fs.writeFileSync(bravoFile, bravoText);
+      fs.writeFileSync(mainFile, mainText);
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const workspace = {
+        loadProgramFromEntry: (fileName: string) => cache.loadProgramFromEntry(fileName),
+        loadProgramForNavigation: () => cache.loadProgramFromDirectory(root)
+      };
+      const document = { fileName: mainFile, getText: () => mainText };
+      const alphaUse = mainText.indexOf(".common") + 1;
+      const bravoUse = mainText.lastIndexOf(".common") + 1;
+      const references = getRsglDocumentReferenceLocations(
+        document,
+        alphaUse + 1,
+        true,
+        workspace
+      );
+
+      assert.deepStrictEqual(
+        references.filter(location => location.fileName === alphaFile)
+          .map(location => location.range.start),
+        [alphaText.indexOf("common")]
+      );
+      assert.strictEqual(
+        references.some(location => location.fileName === bravoFile),
+        false
+      );
+      assert.deepStrictEqual(
+        references.filter(location => location.fileName === mainFile)
+          .map(location => location.range.start),
+        [alphaUse]
+      );
+      assert.deepStrictEqual(
+        getRsglDocumentReferenceLocations(document, bravoUse + 1, true, workspace)
+          .filter(location => location.fileName === mainFile)
+          .map(location => location.range.start),
+        [bravoUse]
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves imported record fields through aliases and re-exports", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "rsgl-member-类型 工具-"));
     try {
@@ -114,13 +240,19 @@ describe("RSGL member language service", () => {
       const mainFile = path.join(root, "入口.rsgl");
       const sourceText = [
         "type Original = { name: String; top?: TextureId }",
-        "export { Original as Public }"
+        "export { Original as Public }",
+        "let marker = 1",
+        "export { marker }"
       ].join("\n");
       const barrelText = "export { Public as Forwarded } from \"./原始字段.rsgl\"";
       const mainText = [
         "import { Forwarded as Local } from \"./barrel.rsgl\"",
+        "import * as original from \"./原始字段.rsgl\"",
         "let entry: Local = { name: \"wheat\" }",
-        "let title = entry.name"
+        "let title = entry.name",
+        "let copy = entry.name",
+        "let firstMarker = original.marker",
+        "let secondMarker = original.marker"
       ].join("\n");
       fs.writeFileSync(sourceFile, sourceText);
       fs.writeFileSync(barrelFile, barrelText);
@@ -145,6 +277,69 @@ describe("RSGL member language service", () => {
           fileName: sourceFile,
           range: { start: originalField, end: originalField + "name".length }
         }
+      );
+      const firstMember = mainText.indexOf("entry.name") + "entry.".length;
+      const secondMember = mainText.lastIndexOf("entry.name") + "entry.".length;
+      const objectKey = mainText.indexOf("name", mainText.indexOf("{ name:"));
+      const references = getRsglDocumentReferenceLocations(
+        document,
+        secondMember + 1,
+        true,
+        workspace
+      );
+      assert.deepStrictEqual(
+        references.filter(location => location.fileName === sourceFile)
+          .map(location => location.range.start),
+        [originalField]
+      );
+      assert.deepStrictEqual(
+        references.filter(location => location.fileName === mainFile)
+          .map(location => location.range.start),
+        [objectKey, firstMember, secondMember]
+      );
+      assert.deepStrictEqual(
+        getRsglDocumentReferenceLocations(document, secondMember + 1, false, workspace)
+          .map(location => location.range.start),
+        [objectKey, firstMember, secondMember]
+      );
+
+      const firstNamespaceMember = mainText.indexOf("original.marker") + "original.".length;
+      const secondNamespaceMember = mainText.lastIndexOf("original.marker") + "original.".length;
+      const namespaceReferences = getRsglDocumentReferenceLocations(
+        document,
+        secondNamespaceMember + 1,
+        false,
+        workspace
+      );
+      assert.deepStrictEqual(
+        namespaceReferences.filter(location => location.fileName === mainFile)
+          .map(location => location.range.start),
+        [firstNamespaceMember, secondNamespaceMember]
+      );
+      assert.strictEqual(
+        new Set(namespaceReferences.map(location =>
+          `${location.fileName}:${location.range.start}:${location.range.end}`
+        )).size,
+        namespaceReferences.length
+      );
+
+      const namespaceAliasDeclaration = mainText.indexOf("original", mainText.indexOf("import *"));
+      const namespaceAliasUse = mainText.lastIndexOf("original.marker");
+      assert.deepStrictEqual(
+        getRsglDocumentDefinitionLocation(document, namespaceAliasUse + 1, workspace),
+        {
+          fileName: mainFile,
+          range: {
+            start: namespaceAliasDeclaration,
+            end: namespaceAliasDeclaration + "original".length
+          }
+        }
+      );
+      assert.deepStrictEqual(
+        getRsglDocumentReferenceLocations(document, namespaceAliasUse + 1, false, workspace)
+          .filter(location => location.fileName === mainFile)
+          .map(location => location.range.start),
+        [mainText.indexOf("original.marker"), namespaceAliasUse]
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

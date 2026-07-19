@@ -136,6 +136,7 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
     importGraph,
     diagnostics,
     fileDiagnostics,
+    valueExportMaps: linkedSymbols.exportMaps,
     typeAliasExportMaps: typeAliases.exportMaps,
     semanticConfigurationFingerprint: options.semanticConfigurationFingerprint
   };

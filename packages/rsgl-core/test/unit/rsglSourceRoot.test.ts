@@ -1,6 +1,11 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { discoverRsglSourceRootsFromFileNames, resolveRsglSourceRootFromFileName, RsglWorkspaceSourceRootCache } from "../../src/sourceRoot";
+import {
+  discoverRsglSourceRootsFromFileNames,
+  resolveRsglNavigationSourceRoot,
+  resolveRsglSourceRootFromFileName,
+  RsglWorkspaceSourceRootCache
+} from "../../src/sourceRoot";
 
 describe("RSGL source root discovery", () => {
   it("resolves an RSGL source root from active file paths", () => {
@@ -56,6 +61,47 @@ describe("RSGL source root discovery", () => {
     cache.invalidatePath(path.join(sourceRoot, "new.rsgl"));
     assert.deepStrictEqual((await cache.discover(provider)).map(root => root.sourceRoot), [sourceRoot]);
     assert.strictEqual(calls, 2);
+  });
+
+  it("uses configured and project boundaries for reverse-import navigation", () => {
+    const projectRoot = path.resolve("pack with spaces");
+    const customRoot = path.join(projectRoot, "source files");
+    const nestedFile = path.join(customRoot, "lib", "definition.rsgl");
+
+    assert.strictEqual(
+      resolveRsglNavigationSourceRoot(nestedFile, { configuredRoot: customRoot }),
+      customRoot
+    );
+    assert.strictEqual(
+      resolveRsglNavigationSourceRoot(nestedFile, { projectRoots: [projectRoot] }),
+      projectRoot
+    );
+
+    const conventionalRoot = path.join(projectRoot, "src");
+    assert.strictEqual(
+      resolveRsglNavigationSourceRoot(path.join(conventionalRoot, "lib", "definition.rsgl"), {
+        projectRoots: [projectRoot]
+      }),
+      conventionalRoot
+    );
+
+    const nestedProjectRoot = path.join(conventionalRoot, "嵌套 project");
+    assert.strictEqual(
+      resolveRsglNavigationSourceRoot(path.join(nestedProjectRoot, "lib", "definition.rsgl"), {
+        projectRoots: [projectRoot, nestedProjectRoot]
+      }),
+      nestedProjectRoot,
+      "a nearest config project must not inherit an outer conventional src boundary"
+    );
+
+    const workspaceRoot = path.resolve("工作区", "no-src pack");
+    assert.strictEqual(
+      resolveRsglNavigationSourceRoot(path.join(workspaceRoot, "lib", "definition.rsgl"), {
+        projectRoots: [workspaceRoot]
+      }),
+      workspaceRoot,
+      "an initialized workspace is the safe reverse-import boundary when src/config are absent"
+    );
   });
 
   it("does not cache a workspace scan that was invalidated while in flight", async () => {

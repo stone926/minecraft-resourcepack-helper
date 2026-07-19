@@ -279,6 +279,8 @@ export interface RsglProgram {
   importGraph: RsglImportGraph;
   diagnostics: RsglDiagnostic[];
   fileDiagnostics: RsglFileDiagnostic[];
+  /** Final value exports retained for language features after program linking. */
+  valueExportMaps?: ReadonlyMap<string, ReadonlyMap<string, RsglSymbol>>;
   typeAliasExportMaps?: ReadonlyMap<string, ReadonlyMap<string, RsglTypeAliasSymbol>>;
   semanticConfigurationFingerprint?: string;
 }

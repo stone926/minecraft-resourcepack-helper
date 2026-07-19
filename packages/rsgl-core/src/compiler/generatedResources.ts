@@ -15,20 +15,44 @@ const generatedReferenceKinds: readonly RsglResourceExistenceKind[] = [
   "shaderFragment"
 ];
 
+/** Canonical identity shared by generated-resource validation and navigation. */
+export interface RsglGeneratedResourceKey {
+  kind: RsglResourceExistenceKind;
+  id: string;
+}
+
+/**
+ * Returns every concrete resource identity satisfied by one emitted unit.
+ * Output-path inference deliberately remains here so validation and navigation
+ * cannot drift for arbitrary JSON/copy assets, textures, or overlays.
+ */
+export function generatedResourceKeysForUnit(
+  unit: ResourceUnit
+): readonly RsglGeneratedResourceKey[] {
+  if (isExternalResourceUnit(unit)) {
+    return [];
+  }
+
+  const keys: RsglGeneratedResourceKey[] = [];
+  if (unit.id && isGeneratedReferenceKind(unit.kind)) {
+    keys.push({ kind: unit.kind, id: `${unit.id.namespace}:${unit.id.path}` });
+  }
+  keys.push(...generatedIdsFromOutputPath(unit).map(([kind, id]) => ({ kind, id })));
+
+  return [...new Map(keys.map(key => [
+    `${key.kind}\0${key.id}`,
+    key
+  ])).values()];
+}
+
 /** Indexes every concrete compiler output that can satisfy a typed reference. */
 export function createGeneratedResourceIndex(
   units: readonly ResourceUnit[]
 ): ReadonlyMap<RsglResourceExistenceKind, ReadonlySet<string>> {
   const result = new Map<RsglResourceExistenceKind, Set<string>>();
   for (const unit of units) {
-    if (isExternalResourceUnit(unit)) {
-      continue;
-    }
-    if (unit.id && isGeneratedReferenceKind(unit.kind)) {
-      addGeneratedId(result, unit.kind, `${unit.id.namespace}:${unit.id.path}`);
-    }
-    for (const [kind, id] of generatedIdsFromOutputPath(unit)) {
-      addGeneratedId(result, kind, id);
+    for (const key of generatedResourceKeysForUnit(unit)) {
+      addGeneratedId(result, key.kind, key.id);
     }
   }
   return result;

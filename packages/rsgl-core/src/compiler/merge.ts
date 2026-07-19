@@ -216,17 +216,22 @@ function mergeUnitValidation(
         )
       }))
   );
+  const resourceDefinitionOrigins = units.flatMap(unit =>
+    unit.validation?.resourceDefinitionOrigins ?? []
+  );
   if (
     externalTextureVariables.length === 0
     && referenceOrigins.length === 0
     && resourceValueObservations.length === 0
+    && resourceDefinitionOrigins.length === 0
   ) {
     return undefined;
   }
   return {
     ...(externalTextureVariables.length > 0 ? { externalTextureVariables } : {}),
     ...(referenceOrigins.length > 0 ? { referenceOrigins } : {}),
-    ...(resourceValueObservations.length > 0 ? { resourceValueObservations } : {})
+    ...(resourceValueObservations.length > 0 ? { resourceValueObservations } : {}),
+    ...(resourceDefinitionOrigins.length > 0 ? { resourceDefinitionOrigins } : {})
   };
 }
 

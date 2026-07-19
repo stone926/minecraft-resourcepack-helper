@@ -12,11 +12,18 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
+  compileRsglResourceNavigation,
+  findRsglProjectConfig,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
+  loadRsglProjectConfigForSource,
+  projectCompileOptionsFromRsglConfig,
   RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
-  type CompileDependency
+  resolveRsglNavigationSourceRoot,
+  type CompileDependency,
+  type RsglResourceNavigationIndex,
+  type RsglWorkspaceSemanticProgram
 } from "../../rsgl-core/src";
 import { RsglWorkspaceValidationCache } from "../../rsgl-core/src/workspaceValidation";
 import {
@@ -33,7 +40,7 @@ import {
   computeDocumentHover,
   computeDocumentSignatureHelp,
   computeDocumentSemanticTokens,
-  definitionLocationForDocument,
+  definitionLocationsForDocument,
   dependencyInvalidationPathsForStructuralChange,
   dependencyPathsForDocuments,
   dependencyPatternsForDocuments,
@@ -45,12 +52,15 @@ import {
   formattingEditsForDocument,
   normalizeDisplayFileName,
   projectSemanticConfigurationFingerprint,
+  referenceLocationsForDocument,
   requiredExactWatchPathsForDocuments,
   prepareRenameForDocument,
   renameEditsForDocument,
-  toLspDefinitionLocation,
+  toLspDefinitionLocations,
+  toLspReferenceLocations,
   toLspWorkspaceEdit,
   toValidationSettings,
+  workspaceRootFileNamesFromInitialization,
   type RsglDocumentDependencies,
   type RsglValidationSettings
 } from "./serverCore";
@@ -59,13 +69,19 @@ import { DirtyDiagnosticScheduler } from "./diagnosticScheduler";
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const semanticCache = RsglWorkspaceSemanticCache.create();
+let resourceNavigationCache = new WeakMap<
+  RsglWorkspaceSemanticProgram,
+  RsglResourceNavigationIndex
+>();
 const projectTargetCache = new RsglProjectTargetCache();
 // Targeted watchers provide low-latency invalidation, while TTL/version checks
 // remain the correctness fallback for paths excluded by VS Code watcher rules.
 const workspaceValidationCache = new RsglWorkspaceValidationCache();
 const dependenciesByDocument = new Map<string, RsglDocumentDependencies>();
+const resourceNavigationDependenciesByRoot = new Map<string, RsglDocumentDependencies>();
 const dependencyVerificationUris = new Set<string>();
 let publishedDependencyPaths = "";
+let workspaceNavigationRoots: string[] = [];
 
 let validationSettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
 
@@ -92,6 +108,7 @@ semanticCache.setOpenTextDocumentProvider(fileName => openDocumentForFileName(fi
 
 connection.onInitialize(params => {
   validationSettings = toValidationSettings(params.initializationOptions);
+  workspaceNavigationRoots = workspaceRootFileNamesFromInitialization(params);
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -104,6 +121,7 @@ connection.onInitialize(params => {
         retriggerCharacters: [","]
       },
       definitionProvider: true,
+      referencesProvider: true,
       codeActionProvider: {
         codeActionKinds: [CodeActionKind.QuickFix]
       },
@@ -201,6 +219,7 @@ function scheduleWatchedPathInvalidation(
       semanticCache.invalidatePath(invalidationPath);
     }
   }
+  invalidateResourceNavigationCache(configurationChanged);
   if (configurationChanged) {
     projectTargetCache.invalidateAll();
     semanticCache.invalidateAll();
@@ -214,6 +233,7 @@ function scheduleWatchedPathInvalidation(
 
 connection.onNotification(rsglRefreshWorkspaceNotification, () => {
   semanticCache.invalidateAll();
+  invalidateResourceNavigationCache(true);
   projectTargetCache.invalidateAll();
   workspaceValidationCache.invalidateAll();
   scheduleAllOpenDocuments(0);
@@ -266,19 +286,32 @@ connection.onDefinition(async params => {
   if (!document) {
     return null;
   }
-  const definition = definitionLocationForDocument(
+  const definitions = definitionLocationsForDocument(
     document,
     fileNameFromUri(document.uri),
     document.offsetAt(params.position),
-    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+    documentLanguageWorkspace()
   );
-  if (!definition) {
+  if (definitions.length === 0) {
     return null;
   }
-  const targetDocument = await loadDefinitionDocument(definition.fileName);
-  return targetDocument
-    ? toLspDefinitionLocation(targetDocument, targetDocument.uri, definition)
-    : null;
+  const locations = await toLspDefinitionLocations(definitions, loadLanguageDocument);
+  return locations.length > 0 ? locations : null;
+});
+
+connection.onReferences(async params => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) {
+    return [];
+  }
+  const references = referenceLocationsForDocument(
+    document,
+    fileNameFromUri(document.uri),
+    document.offsetAt(params.position),
+    params.context.includeDeclaration,
+    documentLanguageWorkspace()
+  );
+  return toLspReferenceLocations(references, loadLanguageDocument);
 });
 
 connection.onPrepareRename(params => {
@@ -306,7 +339,7 @@ connection.onRenameRequest(async params => {
     params.newName,
     { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
   );
-  return edits ? toLspWorkspaceEdit(edits, loadDefinitionDocument) : null;
+  return edits ? toLspWorkspaceEdit(edits, loadLanguageDocument) : null;
 });
 
 connection.languages.semanticTokens.on(params => {
@@ -417,6 +450,11 @@ function semanticDependencyPaths(fileName: string): string[] {
 function documentLanguageWorkspace() {
   return {
     loadProgramFromEntry: (entryFileName: string) => loadSemanticProgram(entryFileName),
+    loadProgramForNavigation: (sourceFileName: string) => loadNavigationSemanticProgram(sourceFileName),
+    loadResourceNavigation: (
+      sourceFileName: string,
+      semanticProgram?: RsglWorkspaceSemanticProgram
+    ) => loadResourceNavigation(sourceFileName, semanticProgram),
     projectItemModelTargetFormatForSource: (sourceFileName: string) =>
       projectTargetCache.projectItemModelTargetFormatForSource(sourceFileName)
   };
@@ -440,10 +478,84 @@ function loadSemanticProgram(
     : {});
 }
 
+function loadNavigationSemanticProgram(sourceFileName: string) {
+  let fingerprint: string | undefined;
+  try {
+    fingerprint = projectSemanticConfigurationFingerprint(sourceFileName);
+  } catch {
+    // Diagnostics report malformed project config; navigation remains available.
+  }
+  return semanticCache.loadProgramFromDirectory(
+    navigationSourceRoot(sourceFileName),
+    fingerprint ? { semanticConfigurationFingerprint: fingerprint } : {}
+  );
+}
+
+function loadResourceNavigation(
+  sourceFileName: string,
+  loadedSemanticProgram?: RsglWorkspaceSemanticProgram
+): RsglResourceNavigationIndex {
+  const semanticProgram = loadedSemanticProgram
+    ?? loadNavigationSemanticProgram(sourceFileName);
+  const cached = resourceNavigationCache.get(semanticProgram);
+  if (cached) {
+    return cached;
+  }
+  let projectConfig: ReturnType<typeof loadRsglProjectConfigForSource>;
+  try {
+    projectConfig = loadRsglProjectConfigForSource(sourceFileName);
+  } catch {
+    projectConfig = null;
+  }
+  const build = compileRsglResourceNavigation(semanticProgram.files, {
+    semanticProgram: semanticProgram.program,
+    ...projectCompileOptionsFromRsglConfig(projectConfig?.config ?? {})
+  });
+  const index = build.index;
+  resourceNavigationCache.set(semanticProgram, index);
+  resourceNavigationDependenciesByRoot.set(
+    normalizePathKey(semanticProgram.rootDirectory ?? semanticProgram.sourceName),
+    documentDependenciesForCompile(build.compileResult.dependencies, [])
+  );
+  publishDependencyPaths();
+  return index;
+}
+
+function invalidateResourceNavigationCache(clearDependencies: boolean): void {
+  resourceNavigationCache = new WeakMap();
+  if (clearDependencies && resourceNavigationDependenciesByRoot.size > 0) {
+    resourceNavigationDependenciesByRoot.clear();
+    publishDependencyPaths();
+  }
+}
+
+function navigationSourceRoot(sourceFileName: string): string {
+  let projectConfig: ReturnType<typeof loadRsglProjectConfigForSource>;
+  try {
+    projectConfig = loadRsglProjectConfigForSource(sourceFileName);
+  } catch {
+    projectConfig = null;
+  }
+  // A malformed config still establishes a project boundary while the user is
+  // editing it; only its parsed options are unavailable until it is repaired.
+  const configFileName = projectConfig?.fileName
+    ?? findRsglProjectConfig(sourceFileName);
+  return resolveRsglNavigationSourceRoot(sourceFileName, {
+    configuredRoot: projectConfig?.config.root,
+    projectRoots: configFileName
+      ? [path.dirname(configFileName)]
+      : [...workspaceNavigationRoots]
+  });
+}
+
 function publishDependencyPaths(): void {
-  const paths = dependencyPathsForDocuments(dependenciesByDocument);
-  const requiredExactWatchPaths = requiredExactWatchPathsForDocuments(dependenciesByDocument);
-  const patterns = dependencyPatternsForDocuments(dependenciesByDocument);
+  const publishedDependencies = new Map(dependenciesByDocument);
+  for (const [root, dependencies] of resourceNavigationDependenciesByRoot) {
+    publishedDependencies.set(`resource-navigation:${root}`, dependencies);
+  }
+  const paths = dependencyPathsForDocuments(publishedDependencies);
+  const requiredExactWatchPaths = requiredExactWatchPathsForDocuments(publishedDependencies);
+  const patterns = dependencyPatternsForDocuments(publishedDependencies);
   const identity = JSON.stringify({ paths, requiredExactWatchPaths, patterns });
   if (identity === publishedDependencyPaths) {
     return;
@@ -476,7 +588,7 @@ function findOpenDocument(fileName: string): TextDocument | null {
   ) ?? null;
 }
 
-async function loadDefinitionDocument(fileName: string): Promise<TextDocument | null> {
+async function loadLanguageDocument(fileName: string): Promise<TextDocument | null> {
   const openDocument = findByNormalizedPath(
     documents.all(),
     path.resolve(fileName),

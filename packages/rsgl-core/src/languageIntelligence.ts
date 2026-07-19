@@ -1,4 +1,3 @@
-import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import {
   ArgumentNode,
   CallExprNode,
@@ -9,17 +8,19 @@ import {
   getRsglMemberAccessInfo,
   getRsglMemberDefinitionLocation
 } from "./memberLanguageIntelligence";
-import { createRsglExportMaps } from "./semantic/exportResolution";
 import { formatType } from "./semantic/typeRelations";
 import { originalRsglSymbolDefinition } from "./semantic/symbolDefinition";
 import {
-  RsglProgram,
   RsglSemanticModel,
   RsglSignature,
   RsglSymbol,
-  RsglType,
-  RsglTypeAliasSymbol
+  RsglType
 } from "./semantic/types";
+import {
+  getRsglSemanticOccurrenceAtOffset,
+  semanticModelForRsglLanguageFile,
+  type RsglSemanticOccurrenceProgram
+} from "./semanticOccurrences";
 import {
   formatTemplateOutputMetadata,
   ResolvedTemplateOutputMetadata
@@ -64,26 +65,7 @@ export interface RsglDefinitionLocation {
   range: TextRange;
 }
 
-type RsglLanguageProgram = Pick<
-  RsglProgram,
-  "models" | "importGraph" | "typeAliasExportMaps"
->;
-
-interface RsglValueOccurrence {
-  kind: "value";
-  symbol: RsglSymbol;
-  name: string;
-  range: TextRange;
-}
-
-interface RsglTypeAliasOccurrence {
-  kind: "typeAlias";
-  alias: RsglTypeAliasSymbol;
-  name: string;
-  range: TextRange;
-}
-
-type RsglSemanticOccurrence = RsglValueOccurrence | RsglTypeAliasOccurrence;
+type RsglLanguageProgram = RsglSemanticOccurrenceProgram;
 
 /** Resolves hover information directly from the linked semantic program. */
 export function getRsglHoverInfo(
@@ -117,7 +99,7 @@ export function getRsglHoverInfo(
       label: `property ${member.name}${member.optional ? "?" : ""}: ${formatType(member.type)}`
     };
   }
-  const occurrence = semanticOccurrenceAtOffset(program, model, offset);
+  const occurrence = getRsglSemanticOccurrenceAtOffset(program, model, offset);
   if (!occurrence) {
     return undefined;
   }
@@ -208,7 +190,7 @@ export function getRsglDefinitionLocation(
   if (member) {
     return member;
   }
-  const occurrence = semanticOccurrenceAtOffset(program, model, offset);
+  const occurrence = getRsglSemanticOccurrenceAtOffset(program, model, offset);
   if (!occurrence) {
     return undefined;
   }
@@ -228,7 +210,10 @@ export function getRsglDefinitionLocation(
     return undefined;
   }
 
-  return originalRsglSymbolDefinition(program.models, occurrence.symbol);
+  return originalRsglSymbolDefinition(program.models, occurrence.symbol)
+    ?? (occurrence.symbol.kind === "namespace" && occurrence.symbol.range
+      ? { fileName: model.fileName, range: occurrence.symbol.range }
+      : undefined);
 }
 
 /** Formats a symbol's callable signature when parameter information is known. */
@@ -271,152 +256,6 @@ function resolvedCallableSignature(symbol: RsglSymbol): RsglSignature | undefine
     })),
     returnType: symbol.type.returnType
   };
-}
-
-function semanticOccurrenceAtOffset(
-  program: RsglLanguageProgram,
-  model: RsglSemanticModel,
-  offset: number
-): RsglSemanticOccurrence | undefined {
-  const candidates: RsglSemanticOccurrence[] = [];
-  walkRsglModule(model.module, {
-    enterType(type) {
-      if (type.kind !== "NamedType" || !touchesRange(type.name.range, offset)) {
-        return;
-      }
-      const alias = model.scope.typeAliases.get(type.name.text);
-      if (alias) {
-        candidates.push({
-          kind: "typeAlias",
-          alias,
-          name: type.name.text,
-          range: type.name.range
-        });
-      }
-    }
-  });
-  for (const reference of model.references) {
-    if (reference.symbol && touchesRange(reference.range, offset)) {
-      candidates.push({
-        kind: "value",
-        symbol: reference.symbol,
-        name: reference.name,
-        range: reference.range
-      });
-    }
-  }
-
-  for (const record of model.imports) {
-    for (const specifier of record.node.namedImports) {
-      const symbol = model.scope.symbols.get(specifier.local.text);
-      if (!symbol) {
-        continue;
-      }
-      if (touchesRange(specifier.imported.range, offset)) {
-        candidates.push({ kind: "value", symbol, name: specifier.imported.text, range: specifier.imported.range });
-      }
-      if (touchesRange(specifier.local.range, offset)) {
-        candidates.push({ kind: "value", symbol, name: specifier.local.text, range: specifier.local.range });
-      }
-    }
-    for (const specifier of record.node.namedImports) {
-      const alias = model.scope.typeAliases.get(specifier.local.text);
-      if (!alias) {
-        continue;
-      }
-      if (touchesRange(specifier.imported.range, offset)) {
-        candidates.push({
-          kind: "typeAlias",
-          alias,
-          name: specifier.imported.text,
-          range: specifier.imported.range
-        });
-      }
-      if (touchesRange(specifier.local.range, offset)) {
-        candidates.push({
-          kind: "typeAlias",
-          alias,
-          name: specifier.local.text,
-          range: specifier.local.range
-        });
-      }
-    }
-  }
-
-  const exportMaps = model.exports.some(record =>
-    record.node.specifiers.some(specifier =>
-      touchesRange(specifier.local.range, offset) || touchesRange(specifier.exported.range, offset)
-    )
-  )
-    ? createRsglExportMaps(program.models, program.importGraph).maps
-    : undefined;
-  for (const record of model.exports) {
-    for (const specifier of record.node.specifiers) {
-      const symbol = record.source
-        ? exportMaps?.get(rsglPathKey(model.fileName))?.get(specifier.exported.text)
-        : model.scope.symbols.get(specifier.local.text)
-          ?? exportMaps?.get(rsglPathKey(model.fileName))?.get(specifier.exported.text);
-      if (!symbol) {
-        continue;
-      }
-      if (touchesRange(specifier.local.range, offset)) {
-        candidates.push({ kind: "value", symbol, name: specifier.local.text, range: specifier.local.range });
-      }
-      if (touchesRange(specifier.exported.range, offset)) {
-        candidates.push({ kind: "value", symbol, name: specifier.exported.text, range: specifier.exported.range });
-      }
-    }
-    for (const specifier of record.node.specifiers) {
-      const alias = record.source
-        ? program.typeAliasExportMaps
-          ?.get(rsglPathKey(model.fileName))
-          ?.get(specifier.exported.text)
-        : model.scope.typeAliases.get(specifier.local.text)
-          ?? program.typeAliasExportMaps
-            ?.get(rsglPathKey(model.fileName))
-            ?.get(specifier.exported.text);
-      if (!alias) {
-        continue;
-      }
-      if (touchesRange(specifier.local.range, offset)) {
-        candidates.push({
-          kind: "typeAlias",
-          alias,
-          name: specifier.local.text,
-          range: specifier.local.range
-        });
-      }
-      if (touchesRange(specifier.exported.range, offset)) {
-        candidates.push({
-          kind: "typeAlias",
-          alias,
-          name: specifier.exported.text,
-          range: specifier.exported.range
-        });
-      }
-    }
-  }
-
-  for (const symbol of model.symbols) {
-    if (symbol.range && touchesRange(symbol.range, offset)) {
-      candidates.push({ kind: "value", symbol, name: symbol.name, range: symbol.range });
-    }
-  }
-  for (const statement of model.module.statements) {
-    if (statement.kind !== "TypeAliasDecl" || !statement.name || !touchesRange(statement.name.range, offset)) {
-      continue;
-    }
-    const alias = model.scope.typeAliases.get(statement.name.text);
-    if (alias) {
-      candidates.push({
-        kind: "typeAlias",
-        alias,
-        name: statement.name.text,
-        range: statement.name.range
-      });
-    }
-  }
-  return candidates.sort((left, right) => rangeLength(left.range) - rangeLength(right.range))[0];
 }
 
 function callExpressionAtOffset(model: RsglSemanticModel, offset: number): CallExprNode | undefined {
@@ -482,8 +321,7 @@ function semanticModelForLanguageFile(
   program: RsglLanguageProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = rsglPathKey(resolveRsglPath(fileName));
-  return program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
+  return semanticModelForRsglLanguageFile(program, fileName);
 }
 
 function touchesRange(range: TextRange, offset: number): boolean {
