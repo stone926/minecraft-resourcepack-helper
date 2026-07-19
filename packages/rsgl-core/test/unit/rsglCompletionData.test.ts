@@ -89,6 +89,15 @@ describe("RSGL completion data", () => {
     assert.ok(inBlock.some(candidate => candidate.label === "merge strict"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge upsert"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge append"));
+    assert.deepStrictEqual(
+      inBlock.find(candidate => candidate.label === "for object"),
+      {
+        label: "for object",
+        insertText: "for { ${1:name}, ${2:value}: ${3:localValue} } in ${4:items} {\n  ${5}\n}",
+        detail: "Finite expansion loop with named object bindings",
+        kind: "snippet"
+      }
+    );
     assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
   });
 
@@ -159,9 +168,19 @@ describe("RSGL completion data", () => {
     );
 
     const root = labelsAtEnd("item example {\n  ");
-    for (const label of ["model", "select", "range", "condition", "first_match", "use item_model", "merge", "hand_animation_on_swap"]) {
+    for (const label of ["model", "select", "range", "condition", "first_match", "use item_model", "for object", "merge", "hand_animation_on_swap"]) {
       assert.ok(root.has(label), `missing item-root completion ${label}`);
     }
+    assert.deepStrictEqual(
+      getRsglCompletionCandidates("item example {\n  ", "item example {\n  ".length)
+        .find(candidate => candidate.label === "for object"),
+      {
+        label: "for object",
+        insertText: "for { ${1:name}, ${2:value}: ${3:localValue} } in ${4:items} {\n  ${5}\n}",
+        detail: "Finite item-model expansion with named object bindings",
+        kind: "snippet"
+      }
+    );
     assert.strictEqual(root.has("parent"), false);
     assert.strictEqual(root.has("element"), false);
 
@@ -180,6 +199,7 @@ describe("RSGL completion data", () => {
     assert.ok(select.has("case"));
     assert.ok(select.has("fallback"));
     assert.ok(select.has("for"));
+    assert.ok(select.has("for object"));
     assert.strictEqual(select.has("entry"), false);
 
     const range = labelsAtEnd([
@@ -210,7 +230,7 @@ describe("RSGL completion data", () => {
       [...condition].filter(label => label === "on_true" || label === "on_false").sort(),
       ["on_false", "on_true"]
     );
-    for (const control of ["let", "for", "if"]) {
+    for (const control of ["let", "for", "for object", "if"]) {
       assert.strictEqual(condition.has(control), false, `condition must not suggest ${control}`);
     }
 

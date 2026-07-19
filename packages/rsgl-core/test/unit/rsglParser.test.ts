@@ -1,4 +1,5 @@
 import * as assert from "node:assert";
+import { forBindingMappings } from "../../src/forBindingPatterns";
 import { parseRsgl } from "../../src/parser";
 import { resourceKeywords } from "../../src/parser/keywords";
 import { rsglResourceKinds } from "../../src/resourceKinds";
@@ -291,6 +292,84 @@ describe("RSGL parser", () => {
         assert.strictEqual(branch.thenBody.statements[0]?.kind, "ModelElementStmt");
       }
     }
+  });
+
+  it("parses named object loop bindings, compact aliases, and legacy positions", () => {
+    const source = [
+      "for {name, models: m, compact:c} in [{}] {}",
+      "for outer in [1], {inner, renamed:r} in [{}] {}",
+      "for first, second in [{ first: 1, second: 2 }] {}"
+    ].join("\n");
+    const module = parseRsgl(source);
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const [namedLoop, multidimensionalLoop, legacyLoop] = module.statements;
+    assert.strictEqual(namedLoop.kind, "ForStmt");
+    assert.strictEqual(multidimensionalLoop.kind, "ForStmt");
+    assert.strictEqual(legacyLoop.kind, "ForStmt");
+    if (
+      namedLoop.kind !== "ForStmt"
+      || multidimensionalLoop.kind !== "ForStmt"
+      || legacyLoop.kind !== "ForStmt"
+    ) {
+      throw new Error("Expected for statements.");
+    }
+
+    const namedPattern = namedLoop.dimensions[0].pattern;
+    assert.strictEqual(namedPattern.kind, "ForObjectBindingPattern");
+    if (namedPattern.kind !== "ForObjectBindingPattern") {
+      throw new Error("Expected an object binding pattern.");
+    }
+    assert.deepStrictEqual(namedPattern.properties.map(property => ({
+      property: property.property.text,
+      binding: property.binding.text,
+      shorthand: property.shorthand
+    })), [
+      { property: "name", binding: "name", shorthand: true },
+      { property: "models", binding: "m", shorthand: false },
+      { property: "compact", binding: "c", shorthand: false }
+    ]);
+    assert.strictEqual(namedPattern.properties[0].property, namedPattern.properties[0].binding);
+    assert.strictEqual(
+      source.slice(
+        namedPattern.properties[2].property.range.start,
+        namedPattern.properties[2].property.range.end
+      ),
+      "compact"
+    );
+    assert.strictEqual(
+      source.slice(
+        namedPattern.properties[2].binding.range.start,
+        namedPattern.properties[2].binding.range.end
+      ),
+      "c"
+    );
+    assert.deepStrictEqual(forBindingMappings(namedPattern).map(mapping => ({
+      kind: mapping.kind,
+      property: mapping.kind === "objectProperty" ? mapping.property.text : undefined,
+      binding: mapping.binding.text
+    })), [
+      { kind: "objectProperty", property: "name", binding: "name" },
+      { kind: "objectProperty", property: "models", binding: "m" },
+      { kind: "objectProperty", property: "compact", binding: "c" }
+    ]);
+
+    assert.strictEqual(multidimensionalLoop.dimensions.length, 2);
+    assert.strictEqual(multidimensionalLoop.dimensions[0].pattern.kind, "Identifier");
+    assert.strictEqual(multidimensionalLoop.dimensions[1].pattern.kind, "ForObjectBindingPattern");
+
+    const legacyPattern = legacyLoop.dimensions[0].pattern;
+    assert.strictEqual(legacyPattern.kind, "ForLegacyPositionalBindingPattern");
+    if (legacyPattern.kind === "ForLegacyPositionalBindingPattern") {
+      assert.deepStrictEqual(legacyPattern.bindings.map(binding => binding.text), ["first", "second"]);
+      assert.deepStrictEqual(forBindingMappings(legacyPattern).map(mapping => mapping.kind), [
+        "legacyPosition",
+        "legacyPosition"
+      ]);
+    }
+
+    const emptyPattern = parseRsgl("for {} in [{}] {}");
+    assert.ok(emptyPattern.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedLoopBinding"));
   });
 
   it("rejects non-public template output dialects", () => {

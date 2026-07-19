@@ -1,4 +1,5 @@
 import type { ForStmtNode, TextRange } from "../parser";
+import { forBindingMappings, type ForBindingMapping } from "../forBindingPatterns";
 import {
   EvaluationContext,
   type EvaluationOrigin,
@@ -17,22 +18,30 @@ import { jsonObjectEntries } from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
 import { ensureEvaluationItemsForExpansion } from "./evaluationItemAccounting";
 
-export function createLoopBindings(names: string[], value: EvaluationValue): Record<string, EvaluationValue> {
-  const bindings: Record<string, EvaluationValue> = {};
-  if (names.length <= 1) {
-    if (names[0]) {
-      bindings[names[0]] = value;
+function selectLoopBindings(
+  mappings: readonly ForBindingMapping[],
+  value: EvaluationValue
+): {
+  bindings: Record<string, EvaluationValue>;
+  objectEntries: Array<[string, EvaluationValue]>;
+} {
+  const bindings = Object.create(null) as Record<string, EvaluationValue>;
+  const objectValue = isJsonObject(value) ? value : undefined;
+  const objectEntries = objectValue && mappings.some(mapping => mapping.kind === "legacyPosition")
+    ? jsonObjectEntries(objectValue)
+    : [];
+  for (const mapping of mappings) {
+    if (mapping.kind === "wholeValue") {
+      bindings[mapping.binding.text] = value;
+    } else if (mapping.kind === "objectProperty") {
+      bindings[mapping.binding.text] = objectValue && Object.hasOwn(objectValue, mapping.property.text)
+        ? objectValue[mapping.property.text] as EvaluationValue
+        : undefined;
+    } else if (objectValue) {
+      bindings[mapping.binding.text] = objectEntries[mapping.index]?.[1];
     }
-    return bindings;
   }
-
-  if (isJsonObject(value)) {
-    const entries = jsonObjectEntries(value);
-    names.forEach((name, index) => {
-      bindings[name] = entries[index]?.[1];
-    });
-  }
-  return bindings;
+  return { bindings, objectEntries };
 }
 
 export function createLoopContext(
@@ -143,6 +152,7 @@ export function forEachLoopContext(
       iterableResult,
       iterableContext.sourceFile
     );
+    const bindingMappings = forBindingMappings(dimension.pattern);
     for (const [valueIndex, value] of iterable.entries()) {
       const indexedPath = `/${valueIndex}`;
       const itemOrigins = selectEvaluationPathOrigins(iterableOrigins, indexedPath);
@@ -151,46 +161,46 @@ export function forEachLoopContext(
       const nextOrigins = new Map(bindingOrigins);
       const nextPathOrigins = new Map(bindingPathOrigins);
       const nextValueIssues = new Map(bindingValueIssues);
-      const objectEntries = isJsonObject(value)
-        ? jsonObjectEntries(value)
-        : [];
-      for (const [bindingIndex, binding] of dimension.bindings.entries()) {
-        const bindingItemOrigins = dimension.bindings.length <= 1
+      const selected = selectLoopBindings(bindingMappings, value);
+      for (const mapping of bindingMappings) {
+        const sourceProperty = loopBindingSourceProperty(mapping, selected.objectEntries);
+        const bindingItemOrigins = mapping.kind === "wholeValue"
           ? itemOrigins
-          : objectEntries[bindingIndex]
+          : sourceProperty !== undefined
             ? selectEvaluationPathOrigins(
                 itemOrigins,
-                `/${escapeJsonPointerSegment(objectEntries[bindingIndex][0])}`
+                `/${escapeJsonPointerSegment(sourceProperty)}`
               )
             : [];
-        const bindingItemIssues = dimension.bindings.length <= 1
+        const bindingItemIssues = mapping.kind === "wholeValue"
           ? itemIssues
-          : objectEntries[bindingIndex]
+          : sourceProperty !== undefined
             ? selectEvaluationValueIssues(
                 itemIssues,
-                `/${escapeJsonPointerSegment(objectEntries[bindingIndex][0])}`
+                `/${escapeJsonPointerSegment(sourceProperty)}`
               )
             : [];
         const bindingOrigin = originForEvaluationPath(bindingItemOrigins, "") ?? iterableOrigin;
+        const bindingName = mapping.binding.text;
         if (bindingOrigin) {
-          nextOrigins.set(binding.text, bindingOrigin);
+          nextOrigins.set(bindingName, bindingOrigin);
         } else {
-          nextOrigins.delete(binding.text);
+          nextOrigins.delete(bindingName);
         }
         if (bindingItemOrigins.length > 0) {
-          nextPathOrigins.set(binding.text, bindingItemOrigins);
+          nextPathOrigins.set(bindingName, bindingItemOrigins);
         } else {
-          nextPathOrigins.delete(binding.text);
+          nextPathOrigins.delete(bindingName);
         }
         if (bindingItemIssues.length > 0) {
-          nextValueIssues.set(binding.text, bindingItemIssues);
+          nextValueIssues.set(bindingName, bindingItemIssues);
         } else {
-          nextValueIssues.delete(binding.text);
+          nextValueIssues.delete(bindingName);
         }
       }
       walk(index + 1, {
         ...bindings,
-        ...createLoopBindings(dimension.bindings.map(binding => binding.text), value)
+        ...selected.bindings
       }, nextOrigins, nextPathOrigins, nextValueIssues);
     }
   };
@@ -200,4 +210,16 @@ export function forEachLoopContext(
 
 function escapeJsonPointerSegment(value: string): string {
   return value.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+function loopBindingSourceProperty(
+  mapping: ForBindingMapping,
+  objectEntries: ReadonlyArray<readonly [string, EvaluationValue]>
+): string | undefined {
+  if (mapping.kind === "objectProperty") {
+    return mapping.property.text;
+  }
+  return mapping.kind === "legacyPosition"
+    ? objectEntries[mapping.index]?.[0]
+    : undefined;
 }

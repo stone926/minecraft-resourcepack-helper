@@ -55,6 +55,20 @@ describe("RSGL blockstate semantics", () => {
     assert.ok(codes.includes("rsgl.invalidBlockstatePredicateComparison"));
   });
 
+  it("accepts boolean state-property shorthand as a StatePredicate", () => {
+    const model = bindRsglModule(parseRsgl([
+      "let direction = \"west\"",
+      "let direct: StatePredicate = $state.up",
+      "blockstate multipart shorthand {",
+      "  part when direct => minecraft:block/direct",
+      "  part when !$state.down => minecraft:block/negated",
+      "  part when $state[direction] && !$state.east => minecraft:block/combined",
+      "}"
+    ].join("\n")));
+
+    assert.deepStrictEqual(model.diagnostics, []);
+  });
+
   it("reserves $state against value and parameter bindings", () => {
     const model = bindRsglModule(parseRsgl([
       "let $state = { north: 5 }",

@@ -94,6 +94,11 @@ function checkPredicateNode(
     return;
   }
 
+  if (checkStateAccess(context, expression, scope, host)) {
+    recordType(context, expression, statePredicateType);
+    return;
+  }
+
   if (expression.kind === "IdentifierExpr") {
     const type = host.checkExpression(context, expression, scope);
     if (type.kind !== "StatePredicate" && type.kind !== "Any" && type.kind !== "Unknown") {

@@ -87,7 +87,7 @@ template horizontal(model: ModelId) -> variants {
 }
 
 template poweredOverlay(model: ModelId) -> multipart {
-  part when $state.powered == true => model
+  part when $state.powered => model
 }
 
 template weatheredOptions(base: ModelId, alternate: ModelId) -> choice {
@@ -115,6 +115,8 @@ blockstate variants weathered_panel {
 ```
 
 RSGL 只接受 canonical 方块状态语法：将模式直接写在 `blockstate` 之后；variants 使用 `case <selector> => <choice>`，multipart 使用 `part always => <choice>` 或 `part when <StatePredicate> => <choice>`。模型 choice 是带可选 `with { x, y, z, uvlock }` 的 `ModelId` 表达式；带权重的备选项应写在 `random { option ... }` 中。
+
+Boolean 状态谓词可用 `$state.powered` 和 `!$state.powered` 分别省略 `== true` 与 `== false`。有限 `for` 循环既可绑定整个元素，也可按字段名解构对象并使用别名，例如 `for { name, modes: localModes } in rows { ... }`。
 
 ## 递归物品模型与约定模块
 

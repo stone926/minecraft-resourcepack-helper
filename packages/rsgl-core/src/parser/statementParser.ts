@@ -34,7 +34,10 @@ import {
   BlockstateRootCommonStatementNode,
   ExprNode,
   ExternVarStmtNode,
+  ForBindingPatternNode,
   ForDimensionNode,
+  ForObjectBindingPatternNode,
+  ForObjectBindingPropertyNode,
   ForStmtNode,
   IdentifierNode,
   IfStmtNode,
@@ -104,6 +107,23 @@ export abstract class StatementParser extends ExpressionParser {
   }
 
   private parseForDimension(startToken: RsglToken): ForDimensionNode {
+    const pattern = this.parseForBindingPattern();
+    this.expectText("in", "Expected 'in' in for statement.");
+    const iterable = this.parseExpression({ stopTexts: [",", "{"] });
+    return {
+      kind: "ForDimension",
+      pattern,
+      iterable,
+      ...this.nodeRanges(startToken, this.previousOr(startToken))
+    };
+  }
+
+  private parseForBindingPattern(): ForBindingPatternNode {
+    if (this.current().text === "{") {
+      return this.parseForObjectBindingPattern();
+    }
+
+    const start = this.current();
     const bindings: IdentifierNode[] = [];
     while (!this.isAtEnd() && this.current().text !== "in" && this.current().text !== "{") {
       const mark = this.mark();
@@ -114,13 +134,112 @@ export abstract class StatementParser extends ExpressionParser {
       this.consumeOptionalSeparator();
       this.ensureProgress(mark, "Unable to parse loop binding; skipping token.");
     }
-    this.expectText("in", "Expected 'in' in for statement.");
-    const iterable = this.parseExpression({ stopTexts: [",", "{"] });
+
+    if (bindings.length === 1) {
+      return bindings[0];
+    }
+
     return {
-      kind: "ForDimension",
+      kind: "ForLegacyPositionalBindingPattern",
       bindings,
-      iterable,
-      ...this.nodeRanges(startToken, this.previousOr(startToken))
+      ...this.nodeRanges(start, bindings.length > 0 ? this.previousOr(start) : start)
+    };
+  }
+
+  private parseForObjectBindingPattern(): ForObjectBindingPatternNode {
+    const start = this.advance();
+    const properties: ForObjectBindingPropertyNode[] = [];
+    while (!this.isAtEnd() && this.current().text !== "}") {
+      const mark = this.mark();
+      const property = this.parseForObjectBindingProperty();
+      if (property) {
+        properties.push(property);
+      }
+      this.consumeOptionalSeparator();
+      this.ensureProgress(mark, "Unable to parse object loop binding; skipping token.");
+    }
+    if (properties.length === 0) {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedLoopBinding",
+        "Expected at least one property in object loop binding."
+      );
+    }
+    this.expectText("}", "Expected '}' after object loop binding.");
+    return {
+      kind: "ForObjectBindingPattern",
+      properties,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  private parseForObjectBindingProperty(): ForObjectBindingPropertyNode | null {
+    const compact = this.tryParseCompactForObjectBindingProperty();
+    if (compact) {
+      return compact;
+    }
+
+    const start = this.current();
+    const property = this.parseIdentifier("Expected object property name in loop binding.");
+    if (!property) {
+      return null;
+    }
+
+    if (!this.matchText(":")) {
+      return {
+        kind: "ForObjectBindingProperty",
+        property,
+        binding: property,
+        shorthand: true,
+        ...this.nodeRanges(start, this.previousOr(start))
+      };
+    }
+
+    const separator = this.previousOr(start);
+    const binding = this.parseIdentifier("Expected local name after ':' in object loop binding.")
+      ?? this.syntheticIdentifier(separator, "");
+    return {
+      kind: "ForObjectBindingProperty",
+      property,
+      binding,
+      shorthand: false,
+      ...this.nodeRanges(start, this.previousOr(start))
+    };
+  }
+
+  /**
+   * The context-free lexer intentionally keeps `namespace:path` together as a
+   * resource-location token. Inside an object binding pattern the same token
+   * is unambiguously the compact alias form `{ property:local }`, so split it
+   * here without weakening resource-location lexing everywhere else.
+   */
+  private tryParseCompactForObjectBindingProperty(): ForObjectBindingPropertyNode | undefined {
+    const token = this.current();
+    const match = /^([A-Za-z_$][A-Za-z0-9_$]*):([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(token.text);
+    if (!match) {
+      return undefined;
+    }
+
+    this.advance();
+    const propertyEnd = token.offset + match[1].length;
+    const bindingStart = propertyEnd + 1;
+    const property: IdentifierNode = {
+      kind: "Identifier",
+      text: match[1],
+      range: { start: token.offset, end: propertyEnd },
+      fullRange: { start: this.fullStart(token), end: propertyEnd }
+    };
+    const binding: IdentifierNode = {
+      kind: "Identifier",
+      text: match[2],
+      range: { start: bindingStart, end: token.offset + token.length },
+      fullRange: { start: bindingStart, end: token.offset + token.length }
+    };
+    return {
+      kind: "ForObjectBindingProperty",
+      property,
+      binding,
+      shorthand: false,
+      ...this.nodeRanges(token, token)
     };
   }
 
@@ -128,13 +247,29 @@ export abstract class StatementParser extends ExpressionParser {
     if (this.current().text !== ",") {
       return false;
     }
+
+    if (this.peekText(1) === "{") {
+      let depth = 0;
+      let offset = 1;
+      while (this.peekText(offset) !== "") {
+        const text = this.peekText(offset);
+        if (text === "{") {
+          depth++;
+        } else if (text === "}") {
+          depth--;
+          if (depth === 0) {
+            return this.peekText(offset + 1) === "in";
+          }
+        }
+        offset++;
+      }
+      return false;
+    }
+
     let offset = 1;
     while (this.peekText(offset) !== "" && this.peekText(offset) !== "{" && this.peekText(offset) !== "}") {
       if (this.peekText(offset) === "in") {
         return true;
-      }
-      if (this.peekText(offset) === ",") {
-        return false;
       }
       offset++;
     }

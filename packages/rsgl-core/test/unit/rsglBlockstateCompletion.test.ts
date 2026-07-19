@@ -79,7 +79,7 @@ describe("RSGL blockstate completion", () => {
 
   it("offers mode entries plus root operations in concrete blockstates", () => {
     const variants = syntaxLabelsAtEnd("blockstate variants stone {\n  ");
-    for (const expected of ["variant entry", "default variant", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
+    for (const expected of ["variant entry", "default variant", "random", "let", "use", "for", "for object", "if", "base", "merge", "custom"]) {
       assert.ok(variants.has(expected), `Expected variants root completion '${expected}'.`);
     }
     assert.strictEqual(variants.has("apply"), false);
@@ -87,7 +87,7 @@ describe("RSGL blockstate completion", () => {
     assert.strictEqual(variants.has("variants"), false);
     assert.strictEqual(variants.has("multipart"), false);
     const multipart = syntaxLabelsAtEnd("blockstate multipart wall {\n  ");
-    for (const expected of ["part when", "part always", "random", "let", "use", "for", "if", "base", "merge", "custom"]) {
+    for (const expected of ["part when", "part always", "random", "let", "use", "for", "for object", "if", "base", "merge", "custom"]) {
       assert.ok(multipart.has(expected), `Expected multipart root completion '${expected}'.`);
     }
     assert.strictEqual(multipart.has("variant entry"), false);
@@ -123,6 +123,7 @@ describe("RSGL blockstate completion", () => {
       "let",
       "use",
       "for",
+      "for object",
       "for multidim",
       "if"
     ]);
@@ -135,6 +136,7 @@ describe("RSGL blockstate completion", () => {
       "let",
       "use",
       "for",
+      "for object",
       "for multidim",
       "if"
     ]);
@@ -174,6 +176,7 @@ describe("RSGL blockstate completion", () => {
       "let",
       "use",
       "for",
+      "for object",
       "for multidim",
       "if"
     ]);

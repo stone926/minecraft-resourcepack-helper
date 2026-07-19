@@ -549,9 +549,38 @@ export type ResourceDeclNode =
   | NonBlockstateResourceDeclNode
   | BlockstateResourceDeclNode;
 
+export type ForBindingPatternNode =
+  | IdentifierNode
+  | ForObjectBindingPatternNode
+  | ForLegacyPositionalBindingPatternNode;
+
+export interface ForObjectBindingPatternNode extends RsglNode {
+  kind: "ForObjectBindingPattern";
+  properties: ForObjectBindingPropertyNode[];
+}
+
+export interface ForObjectBindingPropertyNode extends RsglNode {
+  kind: "ForObjectBindingProperty";
+  /** Object property selected from each iterable element. */
+  property: IdentifierNode;
+  /** Local value binding introduced in the loop scope. */
+  binding: IdentifierNode;
+  /** True when `{ name }` supplies the equivalent `{ name: name }` binding. */
+  shorthand: boolean;
+}
+
+/**
+ * Compatibility form for the original insertion-order syntax
+ * `for first, second in values`.
+ */
+export interface ForLegacyPositionalBindingPatternNode extends RsglNode {
+  kind: "ForLegacyPositionalBindingPattern";
+  bindings: IdentifierNode[];
+}
+
 export interface ForDimensionNode extends RsglNode {
   kind: "ForDimension";
-  bindings: IdentifierNode[];
+  pattern: ForBindingPatternNode;
   iterable: ExprNode;
 }
 

@@ -400,6 +400,39 @@ describe("RSGL canonical blockstate compiler", () => {
     }
   });
 
+  it("preserves named loop-field origins independently of object insertion order", () => {
+    const source = [
+      "blockstate variants named_loop_origin {",
+      "  for { state, model: selectedModel } in [",
+      "    { model: minecraft:block/first, state: { slot: first } },",
+      "    { state: { slot: second }, model: minecraft:block/second }",
+      "  ] {",
+      "    case state => selectedModel",
+      "  }",
+      "}"
+    ].join("\n");
+    const module = parseRsgl(source);
+    const result = new RsglCompiler(module, {
+      fileName: "named-loop-origin.rsgl",
+      namespace: "minecraft",
+      stdlibTemplates: []
+    }).compile();
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.deepStrictEqual(result.diagnostics, []);
+    const origins = result.units[0].validation?.referenceOrigins ?? [];
+    for (const [slot, modelText] of [
+      ["first", "minecraft:block/first"],
+      ["second", "minecraft:block/second"]
+    ]) {
+      const origin = origins.find(item =>
+        item.generatedPath === `/variants/slot=${slot}/model`
+      );
+      assert.ok(origin, `Missing ${slot} named loop-field origin`);
+      assert.strictEqual(source.slice(origin.sourceRange.start, origin.sourceRange.end), modelText);
+    }
+  });
+
   it("preserves imported ModelId origins through single and random choices", () => {
     const root = path.resolve("/virtual/rsgl-blockstate-origin");
     const mainFile = path.join(root, "main.rsgl");
@@ -466,6 +499,41 @@ describe("RSGL canonical blockstate compiler", () => {
         {
           apply: { model: "minecraft:block/dynamic" },
           when: { west: "!false" }
+        }
+      ]
+    });
+  });
+
+  it("lowers boolean state-property shorthand without changing explicit negation", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let direction = \"west\"",
+      "let direct: StatePredicate = $state.up",
+      "blockstate multipart shorthand {",
+      "  part when direct => minecraft:block/direct",
+      "  part when !$state.down => minecraft:block/negated",
+      "  part when $state[direction] && !$state.east => minecraft:block/combined",
+      "  part when !($state.south == true) => minecraft:block/explicit_not",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units[0].content, {
+      multipart: [
+        {
+          apply: { model: "minecraft:block/direct" },
+          when: { up: "true" }
+        },
+        {
+          apply: { model: "minecraft:block/negated" },
+          when: { down: "false" }
+        },
+        {
+          apply: { model: "minecraft:block/combined" },
+          when: { east: "false", west: "true" }
+        },
+        {
+          apply: { model: "minecraft:block/explicit_not" },
+          when: { south: "!true" }
         }
       ]
     });

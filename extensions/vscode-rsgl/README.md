@@ -87,7 +87,7 @@ template horizontal(model: ModelId) -> variants {
 }
 
 template poweredOverlay(model: ModelId) -> multipart {
-  part when $state.powered == true => model
+  part when $state.powered => model
 }
 
 template weatheredOptions(base: ModelId, alternate: ModelId) -> choice {
@@ -115,6 +115,8 @@ blockstate variants weathered_panel {
 ```
 
 RSGL accepts canonical blockstates only: put the mode directly after `blockstate`; write `case <selector> => <choice>` for variants and `part always => <choice>` or `part when <StatePredicate> => <choice>` for multipart. A model choice is a `ModelId` expression with optional `with { x, y, z, uvlock }`; weighted alternatives belong in `random { option ... }`.
+
+Boolean state predicates support `$state.powered` and `!$state.powered` as shorthands for `== true` and `== false`. Finite `for` loops may bind a whole item or destructure record fields by name, including aliases: `for { name, modes: localModes } in rows { ... }`.
 
 ## Recursive item models and conventions
 

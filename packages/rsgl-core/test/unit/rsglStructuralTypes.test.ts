@@ -119,6 +119,87 @@ describe("RSGL structural expression types", () => {
     assert.strictEqual(symbolType(model, "typedCount").kind, "Number");
   });
 
+  it("types object loop bindings by field name and supports local aliases", () => {
+    const model = bind([
+      "for { label, count: amount } in [{ count: 1, label: \"first\" }] {",
+      "  let typedLabel: String = label",
+      "  let typedAmount: Number = amount",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(symbolType(model, "typedLabel").kind, "String");
+    assert.strictEqual(symbolType(model, "typedAmount").kind, "Number");
+  });
+
+  it("reports misspelled object loop fields at the binding property", () => {
+    const source = [
+      "for { name, models } in [{ name: \"fire\", modes: [\"normal\"] }] {",
+      "  let selected = models",
+      "}"
+    ].join("\n");
+    const model = bindRsglModule(parseRsgl(source));
+
+    assert.deepStrictEqual(codes(model), ["rsgl.unknownRecordField"]);
+    assert.strictEqual(
+      source.slice(model.diagnostics[0].range.start, model.diagnostics[0].range.end),
+      "models"
+    );
+    assert.match(model.diagnostics[0].message, /Did you mean 'modes'/);
+  });
+
+  it("reports optional object loop fields at the binding property", () => {
+    const source = [
+      "type Row = { name?: String }",
+      "let rows: List<Row> = [{ name: \"first\" }, {}]",
+      "for { name } in rows {",
+      "  let selected = name",
+      "}"
+    ].join("\n");
+    const model = bindRsglModule(parseRsgl(source));
+
+    assert.deepStrictEqual(codes(model), ["rsgl.optionalFieldMayBeMissing"]);
+    assert.strictEqual(
+      source.slice(model.diagnostics[0].range.start, model.diagnostics[0].range.end),
+      "name"
+    );
+  });
+
+  it("reports one missing-field diagnostic across record union arms", () => {
+    const model = bind([
+      "for { models } in [{ modes: [1] }, { model: 2 }] {",
+      "  let selected = models",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(codes(model), ["rsgl.unknownRecordField"]);
+  });
+
+  it("keeps named loop bindings permissive for Json and open records", () => {
+    const model = bind([
+      "let jsonRows: List<Json> = [{ known: 2 }]",
+      "let dynamicKey: String = \"known\"",
+      "let openRows = [{ [dynamicKey]: 3 }]",
+      "for { future: jsonValue } in jsonRows { let selectedJson = jsonValue }",
+      "for { future: openValue } in openRows { let selectedOpen = openValue }"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(symbolType(model, "selectedJson").kind, "Any");
+    assert.strictEqual(symbolType(model, "selectedOpen").kind, "Number");
+  });
+
+  it("combines named loop field types across record unions", () => {
+    const model = bind([
+      "for { value } in [{ value: 1 }, { value: \"two\" }] {",
+      "  let combined = value",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(formatType(symbolType(model, "combined")), "1 | \"two\"");
+  });
+
   it("reports unknown members and invalid index operations at the access", () => {
     const source = [
       "let settings = { label: \"stable\" }",
@@ -149,14 +230,26 @@ describe("RSGL structural expression types", () => {
       "table values { first: 1, second: 2 }",
       "for value in values { let tableValue = value }",
       "for value in 1 { let scalarValue = value }",
-      "for left right in [1, 2] { let invalidPair = left }"
+      "for left right in [1, 2] { let invalidPair = left }",
+      "for { left, right } in [1, 2] { let invalidObjectPair = left }"
     ]);
 
     assert.deepStrictEqual(codes(model), [
       "rsgl.nonIterable",
       "rsgl.nonIterable",
+      "rsgl.invalidLoopDestructuring",
       "rsgl.invalidLoopDestructuring"
     ]);
+  });
+
+  it("reports one invalid-destructuring diagnostic across iterable union arms", () => {
+    const model = bind([
+      "let rows: List<Number> | List<String> = true ? [1] : [\"two\"]",
+      "for { value } in rows { let selected = value }"
+    ]);
+
+    assert.deepStrictEqual(codes(model), ["rsgl.invalidLoopDestructuring"]);
+    assert.match(model.diagnostics[0].message, /Number \| String|String \| Number/);
   });
 
   it("widens oversized inferred literal unions within a bounded time", () => {

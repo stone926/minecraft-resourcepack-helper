@@ -51,12 +51,31 @@ export type StructuralIterationIssue =
       kind: "invalidDestructuring";
       actualType: RsglType;
       bindingCount: number;
+    }
+  | {
+      kind: "unknownDestructuringProperty";
+      actualType: RsglType;
+      property: string;
+      bindingIndex: number;
+      suggestion?: string;
+    }
+  | {
+      kind: "optionalDestructuringProperty";
+      actualType: RsglType;
+      property: string;
+      bindingIndex: number;
     };
 
 export interface LoopBindingTypeResult {
   bindingTypes: RsglType[];
   issues: StructuralIterationIssue[];
 }
+
+/** Describes how one for-loop dimension selects values from each iterable item. */
+export type LoopBindingSelection =
+  | { kind: "value" }
+  | { kind: "positional"; bindingCount: number }
+  | { kind: "properties"; properties: readonly string[] };
 
 export function resolveMemberType(
   type: RsglType,
@@ -200,15 +219,16 @@ export function resolveIndexType(
 
 export function resolveLoopBindingTypes(
   iterableType: RsglType,
-  bindingCount: number,
+  selection: LoopBindingSelection,
   budgetOptions?: RsglUnionBudgetOptions
 ): LoopBindingTypeResult {
+  const bindingCount = loopBindingSelectionCount(selection);
   if (bindingCount <= 0) {
     return { bindingTypes: [], issues: [] };
   }
   if (iterableType.kind === "Union") {
     const results = (iterableType.options ?? [])
-      .map(option => resolveLoopBindingTypes(option, bindingCount, budgetOptions));
+      .map(option => resolveLoopBindingTypes(option, selection, budgetOptions));
     return {
       bindingTypes: Array.from({ length: bindingCount }, (_, index) =>
         combineRsglTypes(
@@ -217,7 +237,10 @@ export function resolveLoopBindingTypes(
           budgetOptions
         )
       ),
-      issues: deduplicateIterationIssues(results.flatMap(result => result.issues))
+      issues: deduplicateIterationIssues(
+        results.flatMap(result => result.issues),
+        budgetOptions
+      )
     };
   }
   if (iterableType.kind === "Any" || iterableType.kind === "Json" || iterableType.kind === "Unknown") {
@@ -229,7 +252,7 @@ export function resolveLoopBindingTypes(
     };
   }
   if (iterableType.kind === "Range") {
-    if (bindingCount === 1) {
+    if (selection.kind === "value") {
       return {
         bindingTypes: [iterableType.elementType ?? numberType],
         issues: []
@@ -245,8 +268,11 @@ export function resolveLoopBindingTypes(
   }
 
   const elementType = iterableType.elementType ?? unknownType;
-  if (bindingCount === 1) {
+  if (selection.kind === "value") {
     return { bindingTypes: [elementType], issues: [] };
+  }
+  if (selection.kind === "properties") {
+    return resolveNamedObjectBindings(elementType, selection.properties, budgetOptions);
   }
   return resolveDestructuredObjectBindings(elementType, bindingCount, budgetOptions);
 }
@@ -283,7 +309,10 @@ function resolveDestructuredObjectBindings(
           budgetOptions
         )
       ),
-      issues: deduplicateIterationIssues(results.flatMap(result => result.issues))
+      issues: deduplicateIterationIssues(
+        results.flatMap(result => result.issues),
+        budgetOptions
+      )
     };
   }
   if (elementType.kind === "Any" || elementType.kind === "Json" || elementType.kind === "Unknown") {
@@ -308,6 +337,52 @@ function resolveDestructuredObjectBindings(
     issues: hasUnknownBinding
       ? [{ kind: "invalidDestructuring", actualType: elementType, bindingCount }]
       : []
+  };
+}
+
+function resolveNamedObjectBindings(
+  elementType: RsglType,
+  properties: readonly string[],
+  budgetOptions?: RsglUnionBudgetOptions
+): LoopBindingTypeResult {
+  const results = properties.map(property =>
+    resolveMemberType(elementType, property, budgetOptions)
+  );
+  const issues: StructuralIterationIssue[] = [];
+  let invalidTarget = false;
+  for (const [bindingIndex, result] of results.entries()) {
+    for (const issue of result.issues) {
+      if (issue.kind === "unknownProperty") {
+        issues.push({
+          kind: "unknownDestructuringProperty",
+          actualType: issue.actualType,
+          property: issue.property,
+          bindingIndex,
+          ...(issue.suggestion ? { suggestion: issue.suggestion } : {})
+        });
+      } else if (issue.kind === "invalidMemberTarget") {
+        invalidTarget = true;
+      }
+    }
+    if (typeMayBeMissing(result.type)) {
+      issues.push({
+        kind: "optionalDestructuringProperty",
+        actualType: result.type,
+        property: properties[bindingIndex],
+        bindingIndex
+      });
+    }
+  }
+  if (invalidTarget) {
+    issues.push({
+      kind: "invalidDestructuring",
+      actualType: elementType,
+      bindingCount: properties.length
+    });
+  }
+  return {
+    bindingTypes: results.map(result => result.type),
+    issues: deduplicateIterationIssues(issues, budgetOptions)
   };
 }
 
@@ -352,11 +427,58 @@ function deduplicateAccessIssues(issues: readonly StructuralAccessIssue[]): Stru
   return Array.from(new Map(issues.map(issue => [JSON.stringify(issue), issue])).values());
 }
 
-function deduplicateIterationIssues(issues: readonly StructuralIterationIssue[]): StructuralIterationIssue[] {
-  return Array.from(new Map(issues.map(issue => [
-    `${issue.kind}:${issue.actualType.kind}:${issue.kind === "invalidDestructuring" ? issue.bindingCount : ""}`,
-    issue
-  ])).values());
+function deduplicateIterationIssues(
+  issues: readonly StructuralIterationIssue[],
+  budgetOptions?: RsglUnionBudgetOptions
+): StructuralIterationIssue[] {
+  const byKey = new Map<string, StructuralIterationIssue>();
+  for (const issue of issues) {
+    const key = iterationIssueKey(issue);
+    const existing = byKey.get(key);
+    if (existing?.kind === "invalidDestructuring" && issue.kind === "invalidDestructuring") {
+      byKey.set(key, {
+        kind: "invalidDestructuring",
+        actualType: combineRsglTypes(
+          [existing.actualType, issue.actualType],
+          false,
+          budgetOptions
+        ),
+        bindingCount: issue.bindingCount
+      });
+      continue;
+    }
+    if (!existing) {
+      byKey.set(key, issue);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+function iterationIssueKey(issue: StructuralIterationIssue): string {
+  if (issue.kind === "invalidDestructuring") {
+    return `${issue.kind}:${issue.bindingCount}`;
+  }
+  if (issue.kind === "unknownDestructuringProperty") {
+    return `${issue.kind}:${issue.property}:${issue.bindingIndex}`;
+  }
+  if (issue.kind === "optionalDestructuringProperty") {
+    return `${issue.kind}:${issue.property}:${issue.bindingIndex}`;
+  }
+  return `${issue.kind}:${issue.actualType.kind}`;
+}
+
+function typeMayBeMissing(type: RsglType): boolean {
+  return type.kind === "Missing"
+    || (type.kind === "Union" && (type.options ?? []).some(option => option.kind === "Missing"));
+}
+
+function loopBindingSelectionCount(selection: LoopBindingSelection): number {
+  if (selection.kind === "value") {
+    return 1;
+  }
+  return selection.kind === "positional"
+    ? selection.bindingCount
+    : selection.properties.length;
 }
 
 function closestPropertyName(name: string, candidates: Iterable<string>): string | undefined {

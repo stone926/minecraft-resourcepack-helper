@@ -104,6 +104,56 @@ describe("RSGL expression evaluation and loops", () => {
     });
   });
 
+  it("destructures records by field name and supports aliases", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "model block named_record_binding {",
+      "  for { name, models } in [{ models: [\"base\"], name: \"fire\" }] {",
+      "    merge { [name]: models }",
+      "  }",
+      "  for {name:n, models:m} in [{ name: \"soul_fire\", models: [\"soul\"] }] {",
+      "    merge { [n]: m }",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
+      fire: ["base"],
+      soul_fire: ["soul"]
+    });
+  });
+
+  it("binds missing named fields from dynamic records as missing values", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let rows: List<Json> = [{ known: \"value\" }]",
+      "model block missing_named_binding {",
+      "  for { future: missing } in rows {",
+      "    merge { missing: missing }",
+      "  }",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(
+      result.diagnostics.map(diagnostic => diagnostic.code),
+      ["rsgl.missingValueNotSerializable"]
+    );
+  });
+
+  it("supports object bindings in later loop dimensions", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "model block multidimensional_object_binding {",
+      "  for prefix in [\"lit\"], { name: localName } in [{ name: \"fire\" }] {",
+      "    merge { [`${prefix}_${localName}`]: true }",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(generatedResourceUnits(result)[0].content, {
+      lit_fire: true
+    });
+  });
+
   it("reports duplicate bindings in multidimensional for loops", () => {
     const result = compileSourceWithUncheckedExterns([
       "for item in [stone], item in [dirt] {",

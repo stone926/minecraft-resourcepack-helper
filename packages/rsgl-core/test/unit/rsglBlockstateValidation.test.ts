@@ -206,6 +206,30 @@ describe("RSGL blockstate validation", () => {
     );
   });
 
+  it("validates boolean predicate shorthand against the blockstate schema", () => {
+    const result = compileSource([
+      "blockstate multipart shorthand_schema {",
+      "  part when $state.north => minecraft:block/north",
+      "  part when !$state.north => minecraft:block/not_north",
+      "  part when $state.facing => minecraft:block/invalid_facing",
+      "}"
+    ], {
+      resourceExists: () => true,
+      blockstateSchema: () => ({
+        properties: {
+          north: ["true", "false"],
+          facing: ["north", "south"]
+        }
+      })
+    });
+
+    const invalidValues = result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.invalidBlockstateStateSchemaValue"
+    );
+    assert.strictEqual(invalidValues.length, 1);
+    assert.ok(invalidValues[0].message.includes("'facing' does not allow value 'true'"));
+  });
+
   it("rejects wildcard and partial selector overlap while keeping disjoint cases", () => {
     const result = compileSource([
       "blockstate variants wildcard_overlap {",

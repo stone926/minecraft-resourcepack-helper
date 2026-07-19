@@ -237,6 +237,28 @@ describe("RSGL semantic tokens", () => {
     );
   });
 
+  it("distinguishes object loop properties from their local aliases", () => {
+    const loopSource = [
+      "for {name, models:m} in [{ name: \"fire\", models: [] }] {",
+      "  let selected = m",
+      "}"
+    ].join("\n");
+    const loopModule = parseRsgl(loopSource);
+    assert.deepStrictEqual(loopModule.diagnostics, []);
+    const loopTokens = getRsglSemanticTokens(bindRsglModule(loopModule));
+    const shorthand = offsetOf(loopSource, "name");
+    const property = offsetOf(loopSource, "models:m");
+    const alias = property + "models:".length;
+    const aliasReference = offsetOf(loopSource, "= m") + 2;
+
+    // The shorthand identifier is simultaneously a property selection and a
+    // local declaration; declaration classification wins on the shared range.
+    expectToken(loopTokens, shorthand, "variable", declaration | readonlyFlag, "name".length);
+    expectToken(loopTokens, property, "property", 0, "models".length);
+    expectToken(loopTokens, alias, "variable", declaration | readonlyFlag, "m".length);
+    expectToken(loopTokens, aliasReference, "variable", readonlyFlag, "m".length);
+  });
+
   it("classifies recursive item-model option fields without overriding DSL keywords", () => {
     const itemSource = [
       "template choose(fallbackModel: ModelId) -> item_model {",

@@ -1,5 +1,6 @@
 import type {
   ArgumentNode,
+  ForObjectBindingPropertyNode,
   IdentifierNode,
   ImportDeclNode,
   ItemOptionNode,
@@ -170,6 +171,8 @@ function isSemanticIdentifier(identifier: IdentifierNode): boolean {
 
 function propertyIdentifiers(node: RsglNode): readonly IdentifierNode[] {
   switch (node.kind) {
+    case "ForObjectBindingProperty":
+      return [(node as ForObjectBindingPropertyNode).property];
     case "ObjectProperty": {
       const key = (node as ObjectPropertyNode).key;
       return key.kind === "Identifier" ? [key] : [];

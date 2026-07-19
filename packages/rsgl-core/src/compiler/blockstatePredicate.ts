@@ -161,10 +161,12 @@ export function evaluateStatePredicateBinary(
   range: TextRange
 ): { handled: boolean; value: EvaluationValue } {
   if (operator === "&&" || operator === "||") {
-    if (!isStatePredicateValue(left) && !isStatePredicateValue(right)) {
+    const leftPredicate = statePredicateOperand(left);
+    const rightPredicate = statePredicateOperand(right);
+    if (!leftPredicate && !rightPredicate) {
       return { handled: false, value: undefined };
     }
-    if (!isStatePredicateValue(left) || !isStatePredicateValue(right)) {
+    if (!leftPredicate || !rightPredicate) {
       reportPredicateRuntimeError(
         context,
         "rsgl.invalidBlockstatePredicate",
@@ -177,7 +179,7 @@ export function evaluateStatePredicateBinary(
       handled: true,
       value: predicateValue({
         kind: operator === "&&" ? "and" : "or",
-        terms: [left.predicate, right.predicate]
+        terms: [leftPredicate.predicate, rightPredicate.predicate]
       })
     };
   }
@@ -240,7 +242,7 @@ export function evaluateStatePredicateUnary(
   context: EvaluationContext,
   range: TextRange
 ): { handled: boolean; value: EvaluationValue } {
-  if (!isStatePredicateValue(value)) {
+  if (!isStatePropertyValue(value) && !isStatePredicateValue(value)) {
     return { handled: false, value: undefined };
   }
   if (operator !== "!") {
@@ -251,6 +253,12 @@ export function evaluateStatePredicateUnary(
       range
     );
     return { handled: true, value: undefined };
+  }
+  if (isStatePropertyValue(value)) {
+    return {
+      handled: true,
+      value: statePropertyPredicate(value, false)
+    };
   }
   return {
     handled: true,
@@ -272,7 +280,12 @@ export function lowerBlockstatePredicate(
       context.onEvaluationFailure?.();
     }
   });
-  if (failed || !isStatePredicateValue(result.value)) {
+  const predicateResult = isStatePropertyValue(result.value)
+    ? statePropertyPredicate(result.value, true)
+    : isStatePredicateValue(result.value)
+      ? result.value
+      : undefined;
+  if (failed || !predicateResult) {
     if (!failed) {
       host.onError(
         "rsgl.invalidBlockstatePredicate",
@@ -284,7 +297,7 @@ export function lowerBlockstatePredicate(
     return undefined;
   }
 
-  const inputComplexity = predicateIrComplexity(result.value.predicate);
+  const inputComplexity = predicateIrComplexity(predicateResult.predicate);
   if (!inputComplexity.valid) {
     host.onError(
       "rsgl.unlowerableBlockstatePredicate",
@@ -307,7 +320,7 @@ export function lowerBlockstatePredicate(
     return undefined;
   }
 
-  const normalized = normalizePredicate(result.value.predicate);
+  const normalized = normalizePredicate(predicateResult.predicate);
   const nodeCount = predicateNodeCount(normalized);
   if (nodeCount > MAX_BLOCKSTATE_PREDICATE_NODES) {
     host.onError(
@@ -331,6 +344,26 @@ export function lowerBlockstatePredicate(
 
 function predicateValue(predicate: StatePredicateIr): StatePredicateValue {
   return { kind: "rsgl.statePredicate", [stateValueBrand]: "predicate", predicate };
+}
+
+function statePropertyPredicate(
+  value: StatePropertyValue,
+  expected: boolean
+): StatePredicateValue {
+  return predicateValue({
+    kind: "atom",
+    property: value.property,
+    values: [String(expected)],
+    mode: "include"
+  });
+}
+
+function statePredicateOperand(value: EvaluationValue): StatePredicateValue | undefined {
+  return isStatePropertyValue(value)
+    ? statePropertyPredicate(value, true)
+    : isStatePredicateValue(value)
+      ? value
+      : undefined;
 }
 
 function normalizePredicate(

@@ -17,6 +17,7 @@ import {
   TopLevelStatementNode,
   VariantBodyNode
 } from "../parser";
+import { forBindingMappings, type ForBindingMapping } from "../forBindingPatterns";
 import { RsglBlockstateBodyChecker } from "./blockstateBodyChecker";
 import { RsglItemModelBodyChecker } from "./itemModelBodyChecker";
 import { diagnostic } from "./diagnostics";
@@ -45,6 +46,7 @@ import {
 import { scopeForTruthyCondition } from "./typeNarrowing";
 import {
   resolveLoopBindingTypes,
+  type LoopBindingSelection,
   type StructuralIterationIssue
 } from "./structuralTypes";
 import { inferListType } from "./typeNormalization";
@@ -201,14 +203,26 @@ export class RsglResourceBodyChecker {
     const seen = new Set<string>();
     for (const dimension of statement.dimensions) {
       const iterableType = this.checkForIterableExpression(dimension.iterable, loopScope);
+      const bindingMappings = forBindingMappings(dimension.pattern);
+      const bindingSelection: LoopBindingSelection = dimension.pattern.kind === "Identifier"
+        ? { kind: "value" }
+        : dimension.pattern.kind === "ForObjectBindingPattern"
+          ? {
+              kind: "properties",
+              properties: dimension.pattern.properties.map(property => property.property.text)
+            }
+          : { kind: "positional", bindingCount: bindingMappings.length };
       const bindingResult = resolveLoopBindingTypes(
         iterableType,
-        dimension.bindings.length,
+        bindingSelection,
         inferredUnionBudgetOptions(this.context.diagnostics, dimension.iterable.range)
       );
-      this.reportIterationIssues(bindingResult.issues, dimension.iterable);
-      const finiteDomain = dimension.bindings.length === 1 ? finiteStringDomain(dimension.iterable, loopScope) : null;
-      for (const [bindingIndex, binding] of dimension.bindings.entries()) {
+      this.reportIterationIssues(bindingResult.issues, dimension.iterable, bindingMappings);
+      const finiteDomain = dimension.pattern.kind === "Identifier"
+        ? finiteStringDomain(dimension.iterable, loopScope)
+        : null;
+      for (const [bindingIndex, mapping] of bindingMappings.entries()) {
+        const binding = mapping.binding;
         if (seen.has(binding.text)) {
           this.context.diagnostics.push(diagnostic("rsgl.duplicateLoopBinding", `Duplicate loop binding '${binding.text}'.`, binding.range));
         }
@@ -463,7 +477,11 @@ export class RsglResourceBodyChecker {
     ));
   }
 
-  private reportIterationIssues(issues: readonly StructuralIterationIssue[], expression: ExprNode): void {
+  private reportIterationIssues(
+    issues: readonly StructuralIterationIssue[],
+    expression: ExprNode,
+    bindings: readonly ForBindingMapping[]
+  ): void {
     for (const issue of issues) {
       if (issue.kind === "notIterable") {
         this.context.diagnostics.push(diagnostic(
@@ -471,11 +489,32 @@ export class RsglResourceBodyChecker {
           `A for-loop input must be a List or Range, got ${formatType(issue.actualType)}.`,
           expression.range
         ));
-      } else {
+      } else if (issue.kind === "invalidDestructuring") {
         this.context.diagnostics.push(diagnostic(
           "rsgl.invalidLoopDestructuring",
           `Cannot bind ${issue.bindingCount} loop variables from ${formatType(issue.actualType)}.`,
           expression.range
+        ));
+      } else if (issue.kind === "unknownDestructuringProperty") {
+        const binding = bindings[issue.bindingIndex];
+        const range = binding?.kind === "objectProperty"
+          ? binding.property.range
+          : expression.range;
+        const suggestion = issue.suggestion ? ` Did you mean '${issue.suggestion}'?` : "";
+        this.context.diagnostics.push(diagnostic(
+          "rsgl.unknownRecordField",
+          `Property '${issue.property}' does not exist on ${formatType(issue.actualType)}.${suggestion}`,
+          range
+        ));
+      } else {
+        const binding = bindings[issue.bindingIndex];
+        const range = binding?.kind === "objectProperty"
+          ? binding.property.range
+          : expression.range;
+        this.context.diagnostics.push(diagnostic(
+          "rsgl.optionalFieldMayBeMissing",
+          `Optional record field '${issue.property}' may be missing in this loop binding.`,
+          range
         ));
       }
     }

@@ -98,6 +98,28 @@ describe("RSGL completion lexical scope", () => {
     assertNamesExclude(model, outsideOffset, "item", "captured", "other");
   });
 
+  it("scopes object loop aliases across later dimensions without exposing property names", () => {
+    const text = [
+      "model block destructured_scope {",
+      "  for {source: alias, shorthand} in [{ source: \"a\", shorthand: \"b\" }],",
+      "      {later: second} in [{ later: alias }] {",
+      "    parent second",
+      "  }",
+      "  parent minecraft:block/cube",
+      "}"
+    ].join("\n");
+    const model = bind(text);
+    const laterIterableOffset = endOf(text, "{ later: alias }");
+    const bodyOffset = endOf(text, "parent second");
+    const outsideOffset = endOf(text, "parent minecraft:block/cube");
+
+    assertNamesInclude(model, laterIterableOffset, "alias", "shorthand");
+    assertNamesExclude(model, laterIterableOffset, "source", "later", "second");
+    assertNamesInclude(model, bodyOffset, "alias", "shorthand", "second");
+    assertNamesExclude(model, bodyOffset, "source", "later");
+    assertNamesExclude(model, outsideOffset, "alias", "shorthand", "second");
+  });
+
   it("does not leak local lets between if siblings or after the branch", () => {
     const text = [
       "model block branches {",

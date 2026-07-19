@@ -5,6 +5,7 @@ import type {
   RsglStatementBodyNode,
   TextRange,
 } from "./parser";
+import { forBindingIdentifiers } from "./forBindingPatterns";
 import { walkRsglModule } from "./parser/astTraversal";
 import type { RsglSemanticModel, RsglSymbol } from "./semantic";
 
@@ -127,9 +128,17 @@ function indexNestedScopes(
       indexBody(statement.body, owners);
       break;
     case "ForStmt": {
-      const owner = lexicalOwner(statement.body.range);
       for (const dimension of statement.dimensions) {
-        for (const binding of dimension.bindings) {
+        const owner: LexicalOwner = {
+          range: {
+            start: dimension.iterable.range.end,
+            end: statement.body.range.end
+          },
+          // A dimension's locals are available to later dimensions and the
+          // body, but not while evaluating their own iterable.
+          visibleAfter: dimension.iterable.range.end
+        };
+        for (const binding of forBindingIdentifiers(dimension.pattern)) {
           owners.set(binding, owner);
         }
       }

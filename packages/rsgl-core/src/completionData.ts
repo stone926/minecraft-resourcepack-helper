@@ -194,6 +194,7 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "let", insertText: "let ${1:name} = ${2:value}", detail: "Local constant", kind: "snippet" },
   { label: "use", insertText: "use ${1:templateName}(${2})", detail: "Template call", kind: "snippet" },
   { label: "for", insertText: "for ${1:item} in ${2:items} {\n  ${3}\n}", detail: "Finite expansion loop", kind: "snippet" },
+  { label: "for object", insertText: "for { ${1:name}, ${2:value}: ${3:localValue} } in ${4:items} {\n  ${5}\n}", detail: "Finite expansion loop with named object bindings", kind: "snippet" },
   { label: "for multidim", insertText: "for ${1:a} in ${2:items}, ${3:b} in ${4:variants} {\n  ${5}\n}", detail: "Multidimensional finite expansion loop", kind: "snippet" },
   { label: "if", insertText: "if ${1:condition} {\n  ${2}\n}", detail: "Static conditional block", kind: "snippet" },
   { label: "base", insertText: "base \"${1:./resource.json}\"", detail: "Initialize this resource from a JSON document", kind: "snippet" },
@@ -213,7 +214,7 @@ const blockstateRootOnlyCompletions: readonly RsglCompletionCandidate[] = [
   }
 ];
 
-const blockstateControlLabels = new Set(["let", "use", "for", "for multidim", "if"]);
+const blockstateControlLabels = new Set(["let", "use", "for", "for object", "for multidim", "if"]);
 const blockstateRootOperationLabels = new Set([
   "base",
   "merge",
