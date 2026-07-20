@@ -11,7 +11,7 @@ export {
   combinedVsixRuntimeSourceMaps
 } from "./combined-vsix-layout.mjs";
 
-export const combinedVsixReportSchemaVersion = 1;
+export const combinedVsixReportSchemaVersion = 2;
 
 const combinedVsixVsceMetadataPaths = Object.freeze([
   "[Content_Types].xml",
@@ -107,18 +107,11 @@ export function createCombinedVsixReport(input) {
     stagePaths: production.stage.paths,
     runtimeEntries: combinedVsixRuntimeEntries
   });
-  const budgetCandidate = Object.freeze({
-    status: "measured-exact-values-require-reviewed-headroom-before-freezing",
-    mainVsix: Object.freeze({
-      archiveBytes: production.artifact.archiveBytes,
-      compressedEntriesBytes: production.artifact.compressedEntriesBytes,
-      installedBytes: production.artifact.installedBytes,
-      fileCount: production.artifact.fileCount,
-      runtimeEntryCompressedBytes: Object.freeze(Object.fromEntries(
-        entryIds.map(id => [id, production.runtimeEntries[id].vsixCompressedBytes])
-      ))
-    })
-  });
+  const budgetEvaluation = evaluateFrozenMainVsixBudget(
+    input.budgetConfiguration,
+    production,
+    entryIds
+  );
 
   return Object.freeze({
     schemaVersion: combinedVsixReportSchemaVersion,
@@ -154,8 +147,90 @@ export function createCombinedVsixReport(input) {
       vsceMetadata,
       jsonWhitespace
     }),
-    budgetCandidate
+    budgetEvaluation
   });
+}
+
+function evaluateFrozenMainVsixBudget(configuration, production, entryIds) {
+  const metricIds = ["archiveBytes", "compressedEntriesBytes", "installedBytes", "fileCount"];
+  if (configuration?.source !== "scripts/build-budgets.json" || configuration.schemaVersion !== 2) {
+    throw new Error("Combined VSIX report requires the versioned frozen build budget configuration.");
+  }
+  const value = configuration.mainVsix;
+  const configuredEntries = value?.runtimeEntryCompressedBytes;
+  if (!value || !configuredEntries
+    || !sameStrings(Object.keys(configuredEntries).sort(), [...entryIds].sort())) {
+    throw new Error("Combined VSIX report requires the complete frozen main VSIX release budget.");
+  }
+
+  const configured = {};
+  const measured = {};
+  const headroom = {};
+  const checks = {};
+  for (const metric of metricIds) {
+    const limit = frozenBudgetInteger(value[metric], `mainVsix.${metric}`);
+    const actual = production.artifact[metric];
+    configured[metric] = limit;
+    measured[metric] = actual;
+    headroom[metric] = limit - actual;
+    checks[metric] = actual <= limit;
+    assertBudgetPassed(checks[metric], `mainVsix.${metric}`, actual, limit);
+  }
+
+  const configuredRuntimeEntries = {};
+  const measuredRuntimeEntries = {};
+  const runtimeEntryHeadroom = {};
+  const runtimeEntryChecks = {};
+  for (const id of entryIds) {
+    const label = `mainVsix.runtimeEntryCompressedBytes.${id}`;
+    const limit = frozenBudgetInteger(configuredEntries[id], label);
+    const actual = production.runtimeEntries[id].vsixCompressedBytes;
+    configuredRuntimeEntries[id] = limit;
+    measuredRuntimeEntries[id] = actual;
+    runtimeEntryHeadroom[id] = limit - actual;
+    runtimeEntryChecks[id] = actual <= limit;
+    assertBudgetPassed(runtimeEntryChecks[id], label, actual, limit);
+  }
+
+  return Object.freeze({
+    status: "frozen-release-budgets-pass",
+    source: configuration.source,
+    schemaVersion: configuration.schemaVersion,
+    passed: true,
+    configured: Object.freeze({
+      ...configured,
+      runtimeEntryCompressedBytes: Object.freeze(configuredRuntimeEntries)
+    }),
+    measured: Object.freeze({
+      ...measured,
+      runtimeEntryCompressedBytes: Object.freeze(measuredRuntimeEntries)
+    }),
+    headroom: Object.freeze({
+      ...headroom,
+      runtimeEntryCompressedBytes: Object.freeze(runtimeEntryHeadroom)
+    }),
+    checks: Object.freeze({
+      ...checks,
+      runtimeEntryCompressedBytes: Object.freeze(runtimeEntryChecks)
+    })
+  });
+}
+
+function frozenBudgetInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a frozen positive integer release budget.`);
+  }
+  return value;
+}
+
+function assertBudgetPassed(passed, label, actual, limit) {
+  if (!passed) {
+    throw new Error(`Combined production VSIX exceeds ${label}: ${actual}/${limit}.`);
+  }
+}
+
+function sameStrings(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function semanticJsonHash(value) {

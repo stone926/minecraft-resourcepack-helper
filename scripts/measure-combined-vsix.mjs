@@ -20,6 +20,7 @@ import {
   semanticJsonHash
 } from "./combined-vsix-report.mjs";
 import { captureCombinedVsixModeEvidence } from "./combined-vsix-evidence.mjs";
+import { readBuildBudgetConfiguration } from "./build-budget-config.mjs";
 import { resolveNpmInvocation } from "./npm-invocation.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
@@ -118,6 +119,7 @@ export async function runCombinedVsixMeasurement(options = {}) {
   const paths = resolveCombinedVsixMeasurementPaths(options);
   const git = assertCleanGitCheckout(paths.repositoryRoot);
   const toolchain = readToolchainIdentity(paths.repositoryRoot);
+  const buildBudgetConfiguration = readBuildBudgetConfiguration();
   prepareMeasurementOutputs(paths);
   const environment = { ...process.env, SOURCE_DATE_EPOCH: git.commitTimestamp };
   const evidence = {};
@@ -163,6 +165,11 @@ export async function runCombinedVsixMeasurement(options = {}) {
       clean: true
     }),
     toolchain,
+    budgetConfiguration: Object.freeze({
+      source: "scripts/build-budgets.json",
+      schemaVersion: buildBudgetConfiguration.schemaVersion,
+      mainVsix: buildBudgetConfiguration.mainVsix
+    }),
     development: evidence.development,
     production: evidence.production
   });

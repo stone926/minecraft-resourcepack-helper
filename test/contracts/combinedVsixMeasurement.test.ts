@@ -68,6 +68,7 @@ interface YazlZipFile {
 }
 
 interface CombinedReport {
+  schemaVersion: number;
   comparison: {
     checks: Record<string, boolean>;
     entries: Record<string, { delta: Record<string, number> }>;
@@ -84,10 +85,26 @@ interface CombinedReport {
       zipStructuralOverheadBytes: number;
     };
   };
-  budgetCandidate: {
-    mainVsix: {
+  budgetEvaluation: {
+    status: string;
+    source: string;
+    schemaVersion: number;
+    passed: boolean;
+    configured: {
       archiveBytes: number;
       runtimeEntryCompressedBytes: Record<string, number>;
+    };
+    measured: {
+      archiveBytes: number;
+      runtimeEntryCompressedBytes: Record<string, number>;
+    };
+    headroom: {
+      archiveBytes: number;
+      runtimeEntryCompressedBytes: Record<string, number>;
+    };
+    checks: {
+      archiveBytes: boolean;
+      runtimeEntryCompressedBytes: Record<string, boolean>;
     };
   };
 }
@@ -146,6 +163,17 @@ interface TestModeEvidence {
 interface TestComparisonInput {
   repository: { commit: string; tree: string; commitTimestamp: string; clean: boolean };
   toolchain: { node: string; fingerprint: string };
+  budgetConfiguration: {
+    source: string;
+    schemaVersion: number;
+    mainVsix: {
+      archiveBytes: number;
+      compressedEntriesBytes: number;
+      installedBytes: number;
+      fileCount: number;
+      runtimeEntryCompressedBytes: Record<string, number>;
+    };
+  };
   development: TestModeEvidence;
   production: TestModeEvidence;
 }
@@ -305,9 +333,17 @@ describe("combined VSIX artifact measurement", () => {
     assert.strictEqual(report.comparison.sizeAttribution.sourceMapExclusion.rawBytes, 50);
     assert.strictEqual(report.comparison.sizeAttribution.vsceGeneratedMetadata.installedBytes, 10);
     assert.ok(report.comparison.sizeAttribution.zipStructuralOverheadBytes > 0);
-    assert.strictEqual(report.budgetCandidate.mainVsix.archiveBytes, 700);
+    assert.strictEqual(report.schemaVersion, 2);
+    assert.strictEqual(report.budgetEvaluation.status, "frozen-release-budgets-pass");
+    assert.strictEqual(report.budgetEvaluation.source, "scripts/build-budgets.json");
+    assert.strictEqual(report.budgetEvaluation.schemaVersion, 2);
+    assert.strictEqual(report.budgetEvaluation.passed, true);
+    assert.strictEqual(report.budgetEvaluation.configured.archiveBytes, 750);
+    assert.strictEqual(report.budgetEvaluation.measured.archiveBytes, 700);
+    assert.strictEqual(report.budgetEvaluation.headroom.archiveBytes, 50);
+    assert.strictEqual(report.budgetEvaluation.checks.archiveBytes, true);
     assert.deepStrictEqual(
-      Object.keys(report.budgetCandidate.mainVsix.runtimeEntryCompressedBytes).sort(),
+      Object.keys(report.budgetEvaluation.measured.runtimeEntryCompressedBytes).sort(),
       ["modelPreview", "root", "rsglHost", "server", "worker"]
     );
   });
@@ -364,6 +400,33 @@ describe("combined VSIX artifact measurement", () => {
     assert.throws(
       () => reportModule.createCombinedVsixReport(missingDevelopmentMap),
       /source-map paths do not match/
+    );
+
+    const exceededBudget = createComparisonInput();
+    exceededBudget.budgetConfiguration.mainVsix.archiveBytes = 699;
+    assert.throws(
+      () => reportModule.createCombinedVsixReport(exceededBudget),
+      /exceeds mainVsix\.archiveBytes: 700\/699/
+    );
+
+    const incompleteBudget = createComparisonInput();
+    delete incompleteBudget.budgetConfiguration.mainVsix.runtimeEntryCompressedBytes.worker;
+    assert.throws(
+      () => reportModule.createCombinedVsixReport(incompleteBudget),
+      /complete frozen main VSIX release budget/
+    );
+
+    const exactBudget = createComparisonInput();
+    exactBudget.budgetConfiguration.mainVsix.archiveBytes = 700;
+    const exactReport = reportModule.createCombinedVsixReport(exactBudget);
+    assert.strictEqual(exactReport.budgetEvaluation.headroom.archiveBytes, 0);
+    assert.strictEqual(exactReport.budgetEvaluation.checks.archiveBytes, true);
+
+    const pendingBudget = createComparisonInput();
+    pendingBudget.budgetConfiguration.mainVsix.archiveBytes = null as unknown as number;
+    assert.throws(
+      () => reportModule.createCombinedVsixReport(pendingBudget),
+      /must be a frozen positive integer release budget/
     );
   });
 
@@ -600,6 +663,19 @@ describe("combined VSIX artifact measurement", () => {
     return {
       repository: { commit, tree: "b".repeat(40), commitTimestamp: "1700000000", clean: true },
       toolchain,
+      budgetConfiguration: {
+        source: "scripts/build-budgets.json",
+        schemaVersion: 2,
+        mainVsix: {
+          archiveBytes: 750,
+          compressedEntriesBytes: 600,
+          installedBytes: 1_600,
+          fileCount: productionArchivePaths.length + 1,
+          runtimeEntryCompressedBytes: Object.fromEntries(
+            Object.keys(reportModule.combinedVsixRuntimeEntries).map(id => [id, 50])
+          )
+        }
+      },
       development: makeEvidence("development"),
       production: makeEvidence("production")
     };
