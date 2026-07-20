@@ -39,16 +39,16 @@
     }
   },
   "mainVsix": {
-    "archiveBytes": null,
-    "compressedEntriesBytes": null,
-    "installedBytes": null,
-    "fileCount": 110,
+    "archiveBytes": 1000000,
+    "compressedEntriesBytes": 985000,
+    "installedBytes": 3525000,
+    "fileCount": 88,
     "runtimeEntryCompressedBytes": {
-      "root": null,
-      "rsglHost": null,
-      "server": null,
-      "worker": null,
-      "modelPreview": null
+      "root": 110000,
+      "rsglHost": 123000,
+      "server": 255000,
+      "worker": 183000,
+      "modelPreview": 153000
     }
   }
 }

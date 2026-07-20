@@ -367,27 +367,35 @@ describe("combined VSIX artifact measurement", () => {
     );
   });
 
-  it("loads pending formal VSIX budget slots without inventing thresholds", () => {
+  it("loads the reviewed formal VSIX budgets", () => {
     const budgets = budgetModule.readBuildBudgetConfiguration() as {
       schemaVersion: number;
       mainVsix: {
-        archiveBytes: number | null;
-        compressedEntriesBytes: number | null;
-        installedBytes: number | null;
-        fileCount: number | null;
-        runtimeEntryCompressedBytes: Record<string, number | null>;
+        archiveBytes: number;
+        compressedEntriesBytes: number;
+        installedBytes: number;
+        fileCount: number;
+        runtimeEntryCompressedBytes: Record<string, number>;
       };
     };
     assert.strictEqual(budgets.schemaVersion, 2);
-    assert.strictEqual(budgets.mainVsix.archiveBytes, null);
-    assert.strictEqual(budgets.mainVsix.compressedEntriesBytes, null);
-    assert.strictEqual(budgets.mainVsix.installedBytes, null);
-    assert.ok((budgets.mainVsix.fileCount ?? 0) > 0);
+    assert.deepStrictEqual(budgets.mainVsix, {
+      archiveBytes: 1_000_000,
+      compressedEntriesBytes: 985_000,
+      installedBytes: 3_525_000,
+      fileCount: 88,
+      runtimeEntryCompressedBytes: {
+        root: 110_000,
+        rsglHost: 123_000,
+        server: 255_000,
+        worker: 183_000,
+        modelPreview: 153_000
+      }
+    });
     assert.deepStrictEqual(
       Object.keys(budgets.mainVsix.runtimeEntryCompressedBytes).sort(),
       [...budgetModule.mainVsixBudgetEntryIds].sort()
     );
-    assert.ok(Object.values(budgets.mainVsix.runtimeEntryCompressedBytes).every(value => value === null));
 
     const invalid = structuredClone(budgets);
     delete invalid.mainVsix.runtimeEntryCompressedBytes.worker;
