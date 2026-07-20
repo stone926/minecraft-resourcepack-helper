@@ -2,6 +2,11 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
+const {
+  analyzeRenderedModelPng,
+  assertRenderedCheckerTexture,
+  assertRenderedMissingTexture
+} = require("./png.cjs");
 
 const extensionId = "stone926.minecraft-resourcepack-helper";
 const resultFile = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_RESULT");
@@ -73,16 +78,55 @@ async function run() {
     const pngDataUri = await vscode.commands.executeCommand(
       "McResHelper.captureModelPreviewImage",
       modelUri,
-      { width: 192, height: 192, transparentBackground: true }
+      {
+        width: 192,
+        height: 192,
+        transparentBackground: true,
+        includeGrid: false,
+        includeAxes: false
+      }
     );
     assert(
       typeof pngDataUri === "string" && pngDataUri.startsWith("data:image/png;base64,iVBORw0KGgo"),
       "Packaged model preview did not return a PNG screenshot."
     );
-    result.screenshotBytes = Buffer.from(pngDataUri.slice(pngDataUri.indexOf(",") + 1), "base64").byteLength;
+    const screenshotBytes = Buffer.from(pngDataUri.slice(pngDataUri.indexOf(",") + 1), "base64");
+    result.screenshotBytes = screenshotBytes.byteLength;
     assert(result.screenshotBytes > 100, "Packaged model preview screenshot is unexpectedly empty.");
+    result.screenshotAnalysis = analyzeRenderedModelPng(screenshotBytes);
+    assertRenderedCheckerTexture(result.screenshotAnalysis);
     result.screenshotDataUri = pngDataUri;
     result.stages.push("model-preview-rendered");
+
+    const brokenModelUri = vscode.Uri.file(path.join(
+      workspaceRoot,
+      "assets",
+      "smoke",
+      "models",
+      "block",
+      "broken.json"
+    ));
+    const fallbackPng = await vscode.commands.executeCommand(
+      "McResHelper.captureModelPreviewImage",
+      brokenModelUri,
+      {
+        width: 192,
+        height: 192,
+        transparentBackground: true,
+        includeGrid: false,
+        includeAxes: false
+      }
+    );
+    assert(
+      typeof fallbackPng === "string" && fallbackPng.startsWith("data:image/png;base64,iVBORw0KGgo"),
+      "Packaged model preview texture-fallback capture did not return a PNG."
+    );
+    result.fallbackScreenshotAnalysis = analyzeRenderedModelPng(
+      Buffer.from(fallbackPng.slice(fallbackPng.indexOf(",") + 1), "base64")
+    );
+    assertRenderedMissingTexture(result.fallbackScreenshotAnalysis);
+    result.fallbackScreenshotDataUri = fallbackPng;
+    result.stages.push("model-preview-texture-fallback");
 
     const alternatePng = await vscode.commands.executeCommand(
       "McResHelper.captureModelPreviewImage",

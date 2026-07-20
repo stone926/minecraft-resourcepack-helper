@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
   codeInvocation,
@@ -20,6 +21,8 @@ import {
 const scriptFile = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptFile), "..");
 const extensionTestPath = path.join(repositoryRoot, "scripts", "extension-host-smoke", "run.cjs");
+const require = createRequire(import.meta.url);
+const { createCheckerTexturePng } = require("./extension-host-smoke/png.cjs");
 
 export function runPackagedExtensionHostSmoke(extensionRoot, options = {}) {
   const resolvedExtensionRoot = path.resolve(extensionRoot);
@@ -72,18 +75,28 @@ export function runPackagedExtensionHostSmoke(extensionRoot, options = {}) {
     if (report.error || !report.stages?.includes("model-preview-disposed")) {
       throw new Error(`Packaged Extension Host smoke returned an incomplete report: ${JSON.stringify(report)}`);
     }
-    if (options.screenshotOutput && typeof report.screenshotDataUri === "string") {
-      const comma = report.screenshotDataUri.indexOf(",");
-      const screenshotOutput = path.resolve(options.screenshotOutput);
-      mkdirSync(path.dirname(screenshotOutput), { recursive: true });
-      writeFileSync(screenshotOutput, Buffer.from(report.screenshotDataUri.slice(comma + 1), "base64"));
-    }
+    writeScreenshot(options.screenshotOutput, report.screenshotDataUri);
+    writeScreenshot(options.fallbackScreenshotOutput, report.fallbackScreenshotDataUri);
     delete report.screenshotDataUri;
+    delete report.fallbackScreenshotDataUri;
     assertChildrenExited(report.childPids ?? []);
     return report;
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
   }
+}
+
+function writeScreenshot(outputFile, dataUri) {
+  if (!outputFile || typeof dataUri !== "string") {
+    return;
+  }
+  const comma = dataUri.indexOf(",");
+  if (comma < 0) {
+    throw new Error("Extension Host smoke returned an invalid screenshot data URI.");
+  }
+  const screenshotOutput = path.resolve(outputFile);
+  mkdirSync(path.dirname(screenshotOutput), { recursive: true });
+  writeFileSync(screenshotOutput, Buffer.from(dataUri.slice(comma + 1), "base64"));
 }
 
 function createFixture(root) {
@@ -104,8 +117,18 @@ function createFixture(root) {
     "model block generated_smoke {}",
     ""
   ].join("\n"), "utf8");
-  writeFileSync(path.join(modelDirectory, "cube.json"), JSON.stringify({
-    textures: { all: "smoke:block/checker" },
+  writeFileSync(path.join(modelDirectory, "cube.json"), JSON.stringify(cubeModel("smoke:block/checker")), "utf8");
+  writeFileSync(path.join(modelDirectory, "broken.json"), JSON.stringify(cubeModel("smoke:block/broken")), "utf8");
+  writeFileSync(
+    path.join(textureDirectory, "checker.png"),
+    createCheckerTexturePng()
+  );
+  writeFileSync(path.join(textureDirectory, "broken.png"), "not a PNG", "utf8");
+}
+
+function cubeModel(texture) {
+  return {
+    textures: { all: texture },
     elements: [{
       from: [0, 0, 0],
       to: [16, 16, 16],
@@ -118,11 +141,7 @@ function createFixture(root) {
         down: { texture: "#all" }
       }
     }]
-  }), "utf8");
-  writeFileSync(
-    path.join(textureDirectory, "checker.png"),
-    Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lRZ4WQAAAABJRU5ErkJggg==", "base64")
-  );
+  };
 }
 
 function assertChildrenExited(pids) {

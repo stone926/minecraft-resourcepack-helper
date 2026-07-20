@@ -10,17 +10,16 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  NearestFilter,
   OrthographicCamera,
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
-  TextureLoader,
   Vector3,
   WebGLRenderer
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { vscode, t, clamp } from "./webviewApi.js";
+import { t, clamp } from "./webviewApi.js";
+import { PreviewTextureCache } from "./previewTextureCache.js";
 import {
   createGeometry,
   createMissingMaterial,
@@ -52,12 +51,13 @@ export class PreviewRenderer {
     this.displayMode = "textured";
     this.viewPreset = "default";
     this.document = null;
+    this.sceneRevision = 0;
     this.renderQueued = false;
     this.animationFrame = 0;
     this.disposed = false;
     this.backgroundColor = getCssColor("--vscode-editor-background", "#1e1e1e");
     this.texturePromises = [];
-    this.textureCache = new Map();
+    this.textureCache = new PreviewTextureCache(() => this.requestRender());
     this.disposables = [];
     this.grid = new GridHelper(32, 16, 0x5f6f7a, 0x303842);
     this.grid.position.set(8, 0, 8);
@@ -152,6 +152,7 @@ export class PreviewRenderer {
   }
 
   rebuildScene() {
+    this.sceneRevision += 1;
     this.disposeSceneObjects();
     if (!this.document) {
       this.requestRender();
@@ -199,14 +200,20 @@ export class PreviewRenderer {
       });
     }
 
-    const texture = material.fallback === "texture" && material.textureUri
-      ? this.loadTexture(material)
+    const textureEntry = material.fallback === "texture" && material.textureUri
+      ? this.textureCache.acquire(material)
+      : null;
+    if (textureEntry) {
+      this.texturePromises.push(textureEntry.ready);
+    }
+    const texture = textureEntry?.state === "ready"
+      ? textureEntry.texture
       : createMissingTexture();
-    if (!(material.fallback === "texture" && material.textureUri)) {
+    if (texture !== textureEntry?.texture) {
       this.disposables.push(texture);
     }
 
-    return new MeshStandardMaterial({
+    const renderedMaterial = new MeshStandardMaterial({
       map: texture,
       roughness: 0.95,
       metalness: 0,
@@ -214,34 +221,18 @@ export class PreviewRenderer {
       alphaTest: 0.1,
       side: FrontSide
     });
-  }
-
-  loadTexture(material) {
-    const cacheKey = textureCacheKey(material);
-    const cached = this.textureCache.get(cacheKey);
-    if (cached) {
-      this.texturePromises.push(cached.ready);
-      return cached.texture;
+    if (textureEntry?.state === "loading") {
+      const revision = this.sceneRevision;
+      textureEntry.outcome.then(loaded => {
+        if (!loaded || this.disposed || revision !== this.sceneRevision) {
+          return;
+        }
+        renderedMaterial.map = textureEntry.texture;
+        renderedMaterial.needsUpdate = true;
+        this.requestRender();
+      });
     }
-
-    const loader = new TextureLoader();
-    const texture = loader.load(
-      material.textureUri,
-      () => this.requestRender(),
-      undefined,
-      error => vscode.postMessage({ type: "renderIssue", code: "Texture load failed: {0}", args: [String(error)] })
-    );
-    texture.colorSpace = SRGBColorSpace;
-    texture.magFilter = NearestFilter;
-    texture.minFilter = NearestFilter;
-    texture.flipY = false;
-    const ready = new Promise(resolve => {
-      texture.onUpdate = () => resolve();
-      setTimeout(resolve, 3000);
-    });
-    this.texturePromises.push(ready);
-    this.textureCache.set(cacheKey, { texture, ready });
-    return texture;
+    return renderedMaterial;
   }
 
   fitCamera() {
@@ -401,32 +392,17 @@ export class PreviewRenderer {
       return;
     }
 
-    const activeKeys = new Set(this.document.materials
-      .filter(material => material.fallback === "texture" && material.textureUri)
-      .map(material => textureCacheKey(material)));
-    for (const [key, entry] of this.textureCache) {
-      if (!activeKeys.has(key)) {
-        entry.texture.dispose();
-        this.textureCache.delete(key);
-      }
-    }
+    this.textureCache.prune(this.document.materials);
   }
 
   disposeTextureCache() {
-    for (const entry of this.textureCache.values()) {
-      entry.texture.dispose();
-    }
-    this.textureCache.clear();
+    this.textureCache.dispose();
   }
 }
 
 function getCssColor(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
-}
-
-function textureCacheKey(material) {
-  return `${material.textureUri}\0${material.textureVersion ?? "unknown"}`;
 }
 
 function normalizeCaptureDimension(value, fallback) {

@@ -48,7 +48,14 @@ describe("model preview manifest", () => {
 
     assert.strictEqual(packageJson.dependencies?.three, undefined, "three should not ship through node_modules");
     assert.ok(packageJson.devDependencies?.three, "three should remain a build-time dependency");
-    for (const moduleName of ["main.js", "previewRenderer.js", "previewScene.js", "detailsPanel.js", "webviewApi.js"]) {
+    for (const moduleName of [
+      "main.js",
+      "previewRenderer.js",
+      "previewScene.js",
+      "previewTextureCache.js",
+      "detailsPanel.js",
+      "webviewApi.js"
+    ]) {
       assert.ok(scriptNames.includes(moduleName), `webview source behavior should include ${moduleName}`);
     }
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css")));
@@ -160,13 +167,30 @@ describe("model preview manifest", () => {
   });
 
   it("caches webview textures by dependency version instead of timestamps", () => {
-    const script = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewRenderer.js"), "utf8");
+    const renderer = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewRenderer.js"), "utf8");
+    const cache = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewTextureCache.js"), "utf8");
 
-    assert.ok(script.includes("this.textureCache = new Map()"), "renderer should keep a texture cache across scene rebuilds");
-    assert.ok(script.includes("textureCacheKey(material)"), "renderer should key textures from material metadata");
-    assert.ok(script.includes("material.textureVersion"), "texture cache keys should include the dependency version");
-    assert.strictEqual(script.includes("Date.now()"), false, "renderer should not bypass webview caching with timestamps");
-    assert.strictEqual(script.includes("appendCacheBust"), false, "renderer should load stable texture URIs");
+    assert.ok(renderer.includes("new PreviewTextureCache"), "renderer should keep a texture cache across scene rebuilds");
+    assert.ok(cache.includes("this.entries = new Map()"), "texture cache should own its entries");
+    assert.ok(cache.includes("textureCacheKey(material)"), "renderer should key textures from material metadata");
+    assert.ok(cache.includes("material.textureVersion"), "texture cache keys should include the dependency version");
+    assert.strictEqual(cache.includes("Date.now()"), false, "renderer should not bypass webview caching with timestamps");
+    assert.strictEqual(cache.includes("appendCacheBust"), false, "renderer should load stable texture URIs");
+  });
+
+  it("keeps missing-texture geometry visible while texture loading fails", () => {
+    const renderer = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewRenderer.js"), "utf8");
+    const cache = fs.readFileSync(path.join(process.cwd(), "webviews", "modelPreview", "previewTextureCache.js"), "utf8");
+
+    assert.match(renderer, /textureEntry\?\.state === "ready"[\s\S]+: createMissingTexture\(\)/);
+    assert.match(renderer, /textureEntry\.outcome\.then\(loaded =>/);
+    assert.match(renderer, /revision !== this\.sceneRevision/);
+    assert.match(cache, /settle\("failed", false\)/);
+    assert.match(cache, /state: "loading"/);
+    assert.match(cache, /settleWithin\(outcome, TEXTURE_LOAD_SETTLE_MILLISECONDS\)/);
+    assert.match(cache, /active: true/);
+    assert.match(cache, /if \(!entry\.active\)/);
+    assert.match(cache, /entry\.deactivate\(\)/, "prune/dispose should suppress late texture callbacks");
   });
 });
 
