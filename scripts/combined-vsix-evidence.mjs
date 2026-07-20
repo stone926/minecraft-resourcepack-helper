@@ -8,6 +8,12 @@ import {
 } from "./combined-vsix-report.mjs";
 import { readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
 
+const vsceCanonicalRootFileNames = Object.freeze({
+  "CHANGELOG.md": "changelog.md",
+  "LICENSE": "LICENSE.txt",
+  "README.md": "readme.md"
+});
+
 export async function captureCombinedVsixModeEvidence(options) {
   const stageRoot = path.join(options.repositoryRoot, "dist", "vsix-stage", "main");
   const stageManifestFile = path.join(
@@ -210,15 +216,16 @@ function readVscodeIgnoreLines(bytes) {
 
 function verifyStageIsPackaged(stage, archive) {
   const archivePaths = new Set(archive.entries.filter(entry => !entry.directory).map(entry => entry.path));
-  const expectedExtensionPaths = new Set(
-    stage.paths.filter(stagePath => stagePath !== ".vscodeignore")
-      .map(stagePath => `extension/${stagePath}`)
-  );
+  const packagedStagePaths = stage.paths.filter(stagePath => stagePath !== ".vscodeignore");
+  const expectedExtensionPaths = new Set(packagedStagePaths.map(vsceArchivePathForStagePath));
+  if (expectedExtensionPaths.size !== packagedStagePaths.length) {
+    throw new Error("VSCE canonical document names collide with another staged runtime path.");
+  }
   for (const stagePath of stage.paths) {
     if (stagePath === ".vscodeignore") {
       continue;
     }
-    if (!archivePaths.has(`extension/${stagePath}`)) {
+    if (!archivePaths.has(vsceArchivePathForStagePath(stagePath))) {
       throw new Error(`Official VSCE package omitted staged runtime file: ${stagePath}`);
     }
   }
@@ -227,6 +234,13 @@ function verifyStageIsPackaged(stage, archive) {
       throw new Error(`Official VSCE package added a file outside the verified stage: ${archivePath}`);
     }
   }
+}
+
+export function vsceArchivePathForStagePath(stagePath) {
+  const archiveRelativePath = Object.hasOwn(vsceCanonicalRootFileNames, stagePath)
+    ? vsceCanonicalRootFileNames[stagePath]
+    : stagePath;
+  return `extension/${archiveRelativePath}`;
 }
 
 function parseJson(bytes, label) {

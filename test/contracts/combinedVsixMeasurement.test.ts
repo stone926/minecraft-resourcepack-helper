@@ -57,6 +57,10 @@ interface ArchiveModule {
   }>;
 }
 
+interface EvidenceModule {
+  vsceArchivePathForStagePath(stagePath: string): string;
+}
+
 interface YazlZipFile {
   addBuffer(bytes: Buffer, fileName: string): void;
   end(): void;
@@ -151,6 +155,7 @@ describe("combined VSIX artifact measurement", () => {
   let reportModule: ReportModule;
   let budgetModule: BudgetModule;
   let archiveModule: ArchiveModule;
+  let evidenceModule: EvidenceModule;
 
   before(async () => {
     const scripts = path.join(process.cwd(), "scripts");
@@ -170,6 +175,10 @@ describe("combined VSIX artifact measurement", () => {
       scripts,
       "vsix-archive-metrics.mjs"
     )).href) as ArchiveModule;
+    evidenceModule = await import(pathToFileURL(path.join(
+      scripts,
+      "combined-vsix-evidence.mjs"
+    )).href) as EvidenceModule;
   });
 
   it("creates one typecheck and one official build/stage/package pass per bundle mode", () => {
@@ -232,6 +241,29 @@ describe("combined VSIX artifact measurement", () => {
     assert.throws(
       () => measurement.parseCombinedVsixMeasurementArguments(["--allow-dirty"]),
       /Unknown combined VSIX measurement argument/
+    );
+  });
+
+  it("models only VSCE's canonical root-file name rewrites", () => {
+    assert.strictEqual(
+      evidenceModule.vsceArchivePathForStagePath("CHANGELOG.md"),
+      "extension/changelog.md"
+    );
+    assert.strictEqual(
+      evidenceModule.vsceArchivePathForStagePath("README.md"),
+      "extension/readme.md"
+    );
+    assert.strictEqual(
+      evidenceModule.vsceArchivePathForStagePath("LICENSE"),
+      "extension/LICENSE.txt"
+    );
+    assert.strictEqual(
+      evidenceModule.vsceArchivePathForStagePath("README_CN.md"),
+      "extension/README_CN.md"
+    );
+    assert.strictEqual(
+      evidenceModule.vsceArchivePathForStagePath("bundle/Extension.js"),
+      "extension/bundle/Extension.js"
     );
   });
 
