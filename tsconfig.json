@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/mc-assets" },
+    { "path": "./packages/resource-project" },
     { "path": "./packages/rsgl-core" },
     { "path": "./packages/rsgl-shared" },
     { "path": "./packages/rsgl-lsp" },

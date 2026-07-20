@@ -1,0 +1,5 @@
+namespace demo
+
+model block nested_generated {
+  parent demo:block/generated_live
+}

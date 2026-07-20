@@ -1,0 +1,4 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "fixture_origin": "handwritten-local"
+}

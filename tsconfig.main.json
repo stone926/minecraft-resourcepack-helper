@@ -16,6 +16,7 @@
     "src/test/**"
   ],
   "references": [
-    { "path": "./packages/mc-assets" }
+    { "path": "./packages/mc-assets" },
+    { "path": "./packages/resource-project" }
   ]
 }

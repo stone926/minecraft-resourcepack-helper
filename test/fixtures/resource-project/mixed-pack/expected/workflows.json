@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "mixed-pack",
+    "configFile": "project/rsgl.config.json",
+    "packRoot": "project",
+    "assetsRoot": "project/assets",
+    "sourceRoot": "project/rsgl/src",
+    "outputPackRoot": "project",
+    "vanillaLayer": {
+      "id": "vanilla-directory",
+      "kind": "directory",
+      "root": "vanilla"
+    },
+    "customLayers": [
+      {
+        "id": "custom-directory",
+        "kind": "directory",
+        "root": "extern-directory",
+        "priority": 0
+      },
+      {
+        "id": "custom-zip",
+        "kind": "zip",
+        "root": "extern-pack-b.zip",
+        "priority": 1
+      }
+    ]
+  },
+  "archive": {
+    "path": "extern-pack-b.zip",
+    "entries": [
+      {
+        "path": "pack.mcmeta",
+        "content": "{\"pack\":{\"pack_format\":34,\"description\":\"Lower-priority custom ZIP fixture\"}}\n"
+      },
+      {
+        "path": "assets/external/models/block/shared_custom.json",
+        "content": "{\"fixture_origin\":\"custom-zip-shadowed\",\"elements\":[]}\n"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "id": "rsgl-build-to-assets",
+      "sources": [
+        {
+          "language": "rsgl",
+          "file": "project/rsgl/src/main.rsgl",
+          "anchor": "model block generated_live"
+        }
+      ],
+      "logicalTarget": {
+        "kind": "model",
+        "id": "demo:block/generated_live",
+        "key": "model|demo:block/generated_live"
+      },
+      "scope": "generated",
+      "winner": {
+        "provider": "rsgl",
+        "origin": "source",
+        "state": "unbuilt",
+        "uri": "project/rsgl/src/main.rsgl",
+        "anchor": "model block generated_live"
+      },
+      "definition": {
+        "primaryUri": "project/rsgl/src/main.rsgl",
+        "anchor": "model block generated_live",
+        "reason": "editable-source"
+      },
+      "graph": {
+        "node": "model|demo:block/generated_live",
+        "originsBeforeBuild": ["source"],
+        "originsAfterBuild": ["source", "materialized"],
+        "nodeCountAfterBuild": 1,
+        "edges": []
+      },
+      "build": {
+        "action": "create",
+        "destination": "project/assets/demo/models/block/generated_live.json",
+        "outputPackRoot": "project",
+        "ownership": "rsgl-provenance-v2",
+        "transaction": "single-commit",
+        "stateAfter": "current"
+      },
+      "invalidation": {
+        "trigger": "build-materialization-commit",
+        "effect": "one-project-universe-revision",
+        "preserveLogicalProducer": true
+      }
+    },
+    {
+      "id": "rsgl-to-local",
+      "sources": [
+        {
+          "language": "rsgl",
+          "file": "project/rsgl/src/main.rsgl",
+          "anchor": "parent demo:block/handwritten"
+        }
+      ],
+      "logicalTarget": {
+        "kind": "model",
+        "id": "demo:block/handwritten",
+        "key": "model|demo:block/handwritten"
+      },
+      "scope": "local",
+      "winner": {
+        "provider": "physical",
+        "origin": "handwritten",
+        "state": "current",
+        "uri": "project/assets/demo/models/block/handwritten.json"
+      },
+      "definition": {
+        "primaryUri": "project/assets/demo/models/block/handwritten.json",
+        "reason": "local-handwritten"
+      },
+      "graph": {
+        "node": "model|demo:block/handwritten",
+        "originsBeforeBuild": ["handwritten"],
+        "originsAfterBuild": ["handwritten"],
+        "nodeCountAfterBuild": 1,
+        "edges": [
+          {
+            "from": "model|demo:block/generated_live",
+            "to": "model|demo:block/handwritten",
+            "relationship": "model-parent",
+            "scope": "local"
+          }
+        ]
+      },
+      "build": {
+        "action": "none",
+        "reason": "dependency-only"
+      },
+      "invalidation": {
+        "trigger": "local-asset-change",
+        "effect": "re-resolve-project-consumers",
+        "preserveLogicalProducer": true
+      }
+    },
+    {
+      "id": "rsgl-to-vanilla",
+      "sources": [
+        {
+          "language": "rsgl",
+          "file": "project/rsgl/src/main.rsgl",
+          "anchor": "parent minecraft:block/cube_all"
+        }
+      ],
+      "logicalTarget": {
+        "kind": "model",
+        "id": "minecraft:block/cube_all",
+        "key": "model|minecraft:block/cube_all"
+      },
+      "scope": "vanilla",
+      "winner": {
+        "provider": "vanilla-directory",
+        "origin": "vanilla",
+        "state": "current",
+        "uri": "vanilla/assets/minecraft/models/block/cube_all.json"
+      },
+      "definition": {
+        "primaryUri": "vanilla/assets/minecraft/models/block/cube_all.json",
+        "reason": "read-only-vanilla"
+      },
+      "graph": {
+        "node": "model|minecraft:block/cube_all",
+        "originsBeforeBuild": ["vanilla"],
+        "originsAfterBuild": ["vanilla"],
+        "nodeCountAfterBuild": 1,
+        "edges": [
+          {
+            "from": "model|demo:block/generated_vanilla",
+            "to": "model|minecraft:block/cube_all",
+            "relationship": "model-parent",
+            "scope": "vanilla"
+          }
+        ]
+      },
+      "build": {
+        "action": "none",
+        "reason": "dependency-only"
+      },
+      "invalidation": {
+        "trigger": "vanilla-layer-change",
+        "effect": "re-resolve-project-consumers",
+        "preserveLogicalProducer": true
+      }
+    },
+    {
+      "id": "assets-to-unbuilt-rsgl",
+      "sources": [
+        {
+          "language": "json",
+          "file": "project/assets/demo/models/block/handwritten_consumer.json",
+          "pointer": "/parent",
+          "value": "demo:block/generated_live"
+        }
+      ],
+      "logicalTarget": {
+        "kind": "model",
+        "id": "demo:block/generated_live",
+        "key": "model|demo:block/generated_live"
+      },
+      "scope": "effective",
+      "winner": {
+        "provider": "rsgl",
+        "origin": "source",
+        "state": "unbuilt",
+        "uri": "project/rsgl/src/main.rsgl",
+        "anchor": "model block generated_live"
+      },
+      "definition": {
+        "primaryUri": "project/rsgl/src/main.rsgl",
+        "anchor": "model block generated_live",
+        "reason": "unbuilt-generated-source"
+      },
+      "graph": {
+        "node": "model|demo:block/generated_live",
+        "originsBeforeBuild": ["source"],
+        "originsAfterBuild": ["source"],
+        "nodeCountAfterBuild": 1,
+        "edges": [
+          {
+            "from": "model|demo:block/handwritten_consumer",
+            "to": "model|demo:block/generated_live",
+            "relationship": "model-parent",
+            "scope": "effective"
+          }
+        ]
+      },
+      "build": {
+        "action": "none",
+        "reason": "navigation-does-not-materialize"
+      },
+      "invalidation": {
+        "trigger": "dirty-rsgl-semantic-revision",
+        "effect": "replace-generated-project-snapshot",
+        "preserveLogicalProducer": true
+      }
+    },
+    {
+      "id": "both-to-custom",
+      "sources": [
+        {
+          "language": "rsgl",
+          "file": "project/rsgl/src/main.rsgl",
+          "anchor": "parent external:block/shared_custom"
+        },
+        {
+          "language": "json",
+          "file": "project/assets/demo/models/block/custom_consumer.json",
+          "pointer": "/parent",
+          "value": "external:block/shared_custom"
+        }
+      ],
+      "logicalTarget": {
+        "kind": "model",
+        "id": "external:block/shared_custom",
+        "key": "model|external:block/shared_custom"
+      },
+      "scope": "custom",
+      "winner": {
+        "provider": "custom-directory",
+        "origin": "custom",
+        "state": "current",
+        "uri": "extern-directory/assets/external/models/block/shared_custom.json",
+        "candidates": ["custom-directory", "custom-zip"]
+      },
+      "definition": {
+        "primaryUri": "extern-directory/assets/external/models/block/shared_custom.json",
+        "reason": "ordered-custom-layer-winner"
+      },
+      "graph": {
+        "node": "model|external:block/shared_custom",
+        "originsBeforeBuild": ["custom-directory", "custom-zip"],
+        "originsAfterBuild": ["custom-directory", "custom-zip"],
+        "nodeCountAfterBuild": 1,
+        "edges": [
+          {
+            "from": "model|demo:block/generated_custom",
+            "to": "model|external:block/shared_custom",
+            "relationship": "model-parent",
+            "scope": "custom"
+          },
+          {
+            "from": "model|demo:block/custom_consumer",
+            "to": "model|external:block/shared_custom",
+            "relationship": "model-parent",
+            "scope": "effective"
+          }
+        ]
+      },
+      "build": {
+        "action": "none",
+        "reason": "dependency-only"
+      },
+      "invalidation": {
+        "trigger": "custom-layer-change",
+        "effect": "re-resolve-both-language-consumers",
+        "preserveLogicalProducer": true
+      }
+    }
+  ]
+}

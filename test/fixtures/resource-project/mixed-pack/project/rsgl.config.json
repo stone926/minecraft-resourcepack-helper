@@ -1,0 +1,12 @@
+{
+  "root": "rsgl/src",
+  "outDir": ".",
+  "namespace": "demo",
+  "defaultAssetsPath": "../vanilla",
+  "resourcePackRoots": [
+    "../extern-directory",
+    "../extern-pack-b.zip"
+  ],
+  "emitSourceMap": true,
+  "manifest": true
+}

@@ -1,0 +1,17 @@
+namespace demo
+
+extern local model demo:block/handwritten
+extern vanilla model minecraft:block/cube_all
+extern custom model external:block/shared_custom
+
+model block generated_live {
+  parent demo:block/handwritten
+}
+
+model block generated_vanilla {
+  parent minecraft:block/cube_all
+}
+
+model block generated_custom {
+  parent external:block/shared_custom
+}

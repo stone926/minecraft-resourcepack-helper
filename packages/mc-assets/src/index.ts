@@ -1,6 +1,7 @@
 export * from "./resourceId";
 export * from "./collections";
 export * from "./resourceTargets";
+export * from "./resourceGraphIdentity";
 export * from "./pathKeys";
 export * from "./pathSegments";
 export * from "./packMetadata";
