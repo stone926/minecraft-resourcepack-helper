@@ -1,4 +1,15 @@
-import * as THREE from "./vendor/three.module.js";
+import {
+  BufferGeometry,
+  DataTexture,
+  Float32BufferAttribute,
+  FrontSide,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  NearestFilter,
+  RGBAFormat,
+  SRGBColorSpace,
+  Vector3
+} from "three";
 
 const MISSING_TEXTURE_SIZE = 16;
 const MISSING_TEXTURE_MAGENTA = [248, 0, 248];
@@ -32,9 +43,9 @@ export function createGeometry(faces) {
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
@@ -42,10 +53,10 @@ export function createGeometry(faces) {
 
 export function createMissingMaterial(displayMode) {
   if (displayMode === "wireframe") {
-    return new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true, side: THREE.FrontSide });
+    return new MeshBasicMaterial({ color: 0xff00ff, wireframe: true, side: FrontSide });
   }
 
-  return new THREE.MeshStandardMaterial({ color: 0xff00ff, roughness: 0.95, side: THREE.FrontSide });
+  return new MeshStandardMaterial({ color: 0xff00ff, roughness: 0.95, side: FrontSide });
 }
 
 export function createMissingTexture() {
@@ -64,10 +75,10 @@ export function createMissingTexture() {
     }
   }
 
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
+  const texture = new DataTexture(data, size, size, RGBAFormat);
+  texture.colorSpace = SRGBColorSpace;
+  texture.magFilter = NearestFilter;
+  texture.minFilter = NearestFilter;
   texture.flipY = false;
   texture.needsUpdate = true;
   return texture;
@@ -81,18 +92,18 @@ export function paletteColor(index) {
 export function viewDirection(preset) {
   switch (preset) {
     case "front":
-      return new THREE.Vector3(0, 0.15, 1).normalize();
+      return new Vector3(0, 0.15, 1).normalize();
     case "back":
-      return new THREE.Vector3(0, 0.15, -1).normalize();
+      return new Vector3(0, 0.15, -1).normalize();
     case "left":
-      return new THREE.Vector3(-1, 0.15, 0).normalize();
+      return new Vector3(-1, 0.15, 0).normalize();
     case "right":
-      return new THREE.Vector3(1, 0.15, 0).normalize();
+      return new Vector3(1, 0.15, 0).normalize();
     case "top":
-      return new THREE.Vector3(0, 1, 0.001).normalize();
+      return new Vector3(0, 1, 0.001).normalize();
     case "bottom":
-      return new THREE.Vector3(0, -1, 0.001).normalize();
+      return new Vector3(0, -1, 0.001).normalize();
     default:
-      return new THREE.Vector3(1, 0.75, 1).normalize();
+      return new Vector3(1, 0.75, 1).normalize();
   }
 }

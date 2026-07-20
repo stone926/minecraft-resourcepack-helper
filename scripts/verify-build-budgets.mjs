@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
+import { bundleEntryDefinitions, bundleModes } from "./build-bundles.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -11,12 +13,19 @@ const repositoryRoot = path.resolve(scriptDirectory, "..");
 const budgets = JSON.parse(readFileSync(path.join(scriptDirectory, "build-budgets.json"), "utf8"));
 
 const supportedTargets = Object.freeze(["main", "rsgl", "rsgl-cli"]);
+const targetEntries = Object.freeze({
+  main: Object.freeze(["root", "rsglHost", "server", "worker", "modelPreview"]),
+  rsgl: Object.freeze(["rsglHost", "server", "worker"]),
+  "rsgl-cli": Object.freeze(["cli"])
+});
 
 export function parseBudgetArguments(args) {
   let target = "all";
   let artifactPath;
+  let bundleMode = "development";
   let hasTarget = false;
   let hasArtifact = false;
+  let hasBundleMode = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -46,14 +55,36 @@ export function parseBudgetArguments(args) {
       index += 1;
       continue;
     }
+    if (argument === "--bundle-mode") {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
+      }
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value after --bundle-mode.");
+      }
+      bundleMode = value;
+      hasBundleMode = true;
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--bundle-mode=")) {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
+      }
+      bundleMode = argument.slice("--bundle-mode=".length);
+      hasBundleMode = true;
+      continue;
+    }
     throw new Error(`Unknown argument: ${argument}`);
   }
 
   budgetTargets(target);
+  assertBundleMode(bundleMode);
   if (artifactPath && target !== "main" && target !== "rsgl") {
     throw new Error("--artifact requires --target main or --target rsgl.");
   }
-  return { target, artifactPath };
+  return { target, artifactPath, bundleMode };
 }
 
 export function budgetTargets(target) {
@@ -71,7 +102,9 @@ export function budgetTargets(target) {
 export function createBudgetPlan(options = {}) {
   const target = options.target ?? "all";
   const artifactPath = options.artifactPath;
+  const bundleMode = options.bundleMode ?? "development";
   const targets = budgetTargets(target);
+  assertBundleMode(bundleMode);
   if (artifactPath !== undefined
     && (typeof artifactPath !== "string" || artifactPath.length === 0)) {
     throw new Error("An artifact path must be a non-empty string.");
@@ -81,36 +114,34 @@ export function createBudgetPlan(options = {}) {
   }
   return targets.map(selectedTarget => Object.freeze({
     target: selectedTarget,
-    artifactPath: selectedTarget === target ? artifactPath : undefined
+    artifactPath: selectedTarget === target ? artifactPath : undefined,
+    bundleMode
   }));
 }
 
 export function verifyBuildBudgets(options = {}) {
+  const verifiedEntries = new Set();
   for (const step of createBudgetPlan(options)) {
+    for (const entryId of targetEntries[step.target]) {
+      if (verifiedEntries.has(entryId)) {
+        continue;
+      }
+      verifyBundle(entryId, step.bundleMode);
+      verifiedEntries.add(entryId);
+    }
     if (step.target === "main") {
-      verifyActivationBudget("main", "src/extension.ts");
-      verifyBundle("main", "bundle/extension.js");
-      verifyColdActivationBudget("main", "bundle/extension.js");
-      if (step.artifactPath !== undefined) {
-        verifyVsixBudget("main", step.artifactPath);
-      }
-      continue;
-    }
-    if (step.target === "rsgl") {
-      verifyActivationBudget("rsgl", "extensions/vscode-rsgl/src/extension.ts");
-      verifyBundle("rsglExtension", "extensions/vscode-rsgl/bundle/extension.js");
-      verifyBundle("rsglServer", "extensions/vscode-rsgl/bundle/server.js");
-      verifyBundle("rsglWorker", "extensions/vscode-rsgl/bundle/worker.js");
-      verifyRsglBundleIsolation();
-      verifyColdActivationBudget("rsgl", "extensions/vscode-rsgl/bundle/extension.js");
-      if (step.artifactPath !== undefined) {
-        verifyVsixBudget("rsgl", step.artifactPath);
-      }
-      continue;
-    }
-    if (step.target === "rsgl-cli") {
-      verifyBundle("rsglCli", "packages/rsgl-cli/dist/rsgl.js");
+      verifyActivationBudget("root", "src/extension.ts");
+      verifyColdActivationBudget("root", bundleEntryDefinitions.root.outfile);
+      verifyRsglBundleIsolation(true);
+    } else if (step.target === "rsgl") {
+      verifyActivationBudget("rsglHost", "extensions/vscode-rsgl/src/extension.ts");
+      verifyColdActivationBudget("rsglHost", bundleEntryDefinitions.rsglHost.outfile);
+      verifyRsglBundleIsolation(false);
+    } else if (step.target === "rsgl-cli") {
       verifyCliBundle();
+    }
+    if (step.artifactPath !== undefined) {
+      verifyVsixBudget(step.target, step.artifactPath);
     }
   }
 }
@@ -168,30 +199,50 @@ function resolveTypeScriptModule(directory, specifier) {
   return null;
 }
 
-function verifyBundle(name, relativeFileName) {
-  const fileName = path.join(repositoryRoot, relativeFileName);
+function verifyBundle(entryId, bundleMode) {
+  const definition = bundleEntryDefinitions[entryId];
+  const fileName = path.join(repositoryRoot, definition.outfile);
   const sourceMap = `${fileName}.map`;
   if (!existsSync(fileName) || !existsSync(sourceMap)) {
-    throw new Error(`${name} bundle or source map is missing: ${relativeFileName}`);
+    throw new Error(`${entryId} ${bundleMode} bundle or source map is missing: ${definition.outfile}`);
   }
-  assertWithinBudget(`${name} bundle bytes`, statSync(fileName).size, budgets.bundleBytes[name]);
+  const budgetMode = bundleMode === "development" ? "development" : "production";
+  assertWithinBudget(
+    `${entryId} ${bundleMode} bundle bytes`,
+    statSync(fileName).size,
+    budgets.bundleBytes[budgetMode]?.[entryId]
+  );
+  const gzipMaximum = budgets.bundleGzipBytes?.[budgetMode]?.[entryId];
+  if (gzipMaximum !== undefined) {
+    assertWithinBudget(
+      `${entryId} ${bundleMode} gzip bytes`,
+      gzipSync(readFileSync(fileName)).length,
+      gzipMaximum
+    );
+  }
 }
 
-function verifyRsglBundleIsolation() {
-  const rsglExtension = readFileSync(
-    path.join(repositoryRoot, "extensions/vscode-rsgl/bundle/extension.js"),
-    "utf8"
-  );
-  if (rsglExtension.includes("parentPort.once")) {
-    throw new Error("RSGL worker code was folded into the extension-host bundle.");
+function verifyRsglBundleIsolation(includeRoot) {
+  const rsglHost = readFileSync(path.join(repositoryRoot, bundleEntryDefinitions.rsglHost.outfile), "utf8");
+  const sources = [["rsglHost", rsglHost]];
+  if (includeRoot) {
+    sources.unshift([
+      "root",
+      readFileSync(path.join(repositoryRoot, bundleEntryDefinitions.root.outfile), "utf8")
+    ]);
   }
-  if (rsglExtension.includes("createConnection(ProposedFeatures")) {
-    throw new Error("RSGL language server code was folded into the extension-host bundle.");
+  for (const [name, source] of sources) {
+    if (source.includes("parentPort.once")) {
+      throw new Error(`RSGL worker code was folded into the ${name} extension-host bundle.`);
+    }
+    if (source.includes("createConnection(ProposedFeatures")) {
+      throw new Error(`RSGL language server code was folded into the ${name} extension-host bundle.`);
+    }
   }
 }
 
 function verifyCliBundle() {
-  const cli = readFileSync(path.join(repositoryRoot, "packages/rsgl-cli/dist/rsgl.js"), "utf8");
+  const cli = readFileSync(path.join(repositoryRoot, bundleEntryDefinitions.cli.outfile), "utf8");
   if (!cli.startsWith("#!/usr/bin/env node")) {
     throw new Error("RSGL CLI bundle is missing its executable shebang.");
   }
@@ -243,6 +294,12 @@ function listArchiveEntries(fileName) {
     ].filter(Boolean).join("\n"));
   }
   return result.stdout.trim().split(/\r?\n/);
+}
+
+function assertBundleMode(bundleMode) {
+  if (!bundleModes.includes(bundleMode)) {
+    throw new Error(`Unknown bundle mode '${bundleMode}'. Expected ${bundleModes.join(", ")}.`);
+  }
 }
 
 function assertWithinBudget(label, actual, maximum) {

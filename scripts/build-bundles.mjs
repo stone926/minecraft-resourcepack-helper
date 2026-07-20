@@ -1,100 +1,333 @@
 #!/usr/bin/env node
 
 import { build } from "esbuild";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const scriptFile = fileURLToPath(import.meta.url);
+const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const stdlibSource = path.join(repositoryRoot, "packages", "rsgl-core", "src", "stdlib", "rsgl");
+const threeLicenseSource = path.join(repositoryRoot, "node_modules", "three", "LICENSE");
+const threeLicenseTarget = path.join(repositoryRoot, "licenses", "THREE-LICENSE.txt");
 
-const targetDefinitions = {
-  main: {
-    builds: [
-      {
-        entryPoint: "src/extension.ts",
-        outfile: "bundle/extension.js",
-        external: ["vscode"]
+export const bundleModes = Object.freeze(["development", "production", "analyze"]);
+export const bundleAnalysisOutputs = Object.freeze({
+  directory: "dist/build-analysis",
+  duplicateReport: "dist/build-analysis/duplicate-modules.json"
+});
+const analysisRoot = path.join(repositoryRoot, bundleAnalysisOutputs.directory);
+
+export const bundleEntryDefinitions = Object.freeze({
+  root: entry({
+    entryPoint: "src/extension.ts",
+    outfile: "bundle/extension.js",
+    platform: "node",
+    format: "cjs",
+    target: "node22",
+    external: ["vscode"]
+  }),
+  rsglHost: entry({
+    // Transitional source seam: Phase 4 can move the glue without changing the bundle identity.
+    entryPoint: "extensions/vscode-rsgl/src/extension.ts",
+    outfile: "bundle/features/rsglHost.js",
+    platform: "node",
+    format: "cjs",
+    target: "node22",
+    external: ["vscode"]
+  }),
+  server: entry({
+    entryPoint: "packages/rsgl-lsp/src/server.ts",
+    outfile: "bundle/rsgl/server.js",
+    platform: "node",
+    format: "cjs",
+    target: "node22"
+  }),
+  worker: entry({
+    entryPoint: "extensions/vscode-rsgl/src/commands/buildWorker.ts",
+    outfile: "bundle/rsgl/worker.js",
+    platform: "node",
+    format: "cjs",
+    target: "node22"
+  }),
+  modelPreview: entry({
+    entryPoint: "webviews/modelPreview/main.js",
+    outfile: "bundle/model-preview.js",
+    platform: "browser",
+    format: "esm",
+    target: "es2022",
+    external: []
+  }),
+  cli: entry({
+    entryPoint: "packages/rsgl-cli/src/main.ts",
+    outfile: "packages/rsgl-cli/dist/rsgl.js",
+    platform: "node",
+    format: "cjs",
+    target: "node20",
+    banner: "#!/usr/bin/env node"
+  })
+});
+
+export const bundleTargetProfiles = Object.freeze({
+  main: Object.freeze(["root", "rsglHost", "server", "worker", "modelPreview"]),
+  // Transitional focused target; the distributable paths still belong to the single main VSIX.
+  rsgl: Object.freeze(["rsglHost", "server", "worker"]),
+  "rsgl-cli": Object.freeze(["cli"]),
+  all: Object.freeze(["root", "rsglHost", "server", "worker", "modelPreview", "cli"])
+});
+
+export function parseBundleArguments(args) {
+  let targetName = "all";
+  let bundleMode = "development";
+  let hasTarget = false;
+  let hasBundleMode = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--bundle-mode") {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
       }
-    ],
-    cleanRoots: ["bundle"]
-  },
-  rsgl: {
-    builds: [
-      {
-        entryPoint: "extensions/vscode-rsgl/src/extension.ts",
-        outfile: "extensions/vscode-rsgl/bundle/extension.js",
-        external: ["vscode"]
-      },
-      {
-        entryPoint: "packages/rsgl-lsp/src/server.ts",
-        outfile: "extensions/vscode-rsgl/bundle/server.js"
-      },
-      {
-        entryPoint: "extensions/vscode-rsgl/src/commands/buildWorker.ts",
-        outfile: "extensions/vscode-rsgl/bundle/worker.js"
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value after --bundle-mode.");
       }
-    ],
-    cleanRoots: ["extensions/vscode-rsgl/bundle"],
-    stdlibTargets: ["extensions/vscode-rsgl/bundle/rsgl"]
-  },
-  cli: {
-    builds: [
-      {
-        entryPoint: "packages/rsgl-cli/src/main.ts",
-        outfile: "packages/rsgl-cli/dist/rsgl.js",
-        banner: "#!/usr/bin/env node",
-        target: "node20"
+      bundleMode = value;
+      hasBundleMode = true;
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--bundle-mode=")) {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
       }
-    ],
-    cleanRoots: ["packages/rsgl-cli/dist"],
-    stdlibTargets: ["packages/rsgl-cli/dist/rsgl"]
+      bundleMode = argument.slice("--bundle-mode=".length);
+      hasBundleMode = true;
+      continue;
+    }
+    if (argument.startsWith("--")) {
+      throw new Error(`Unknown bundle flag: ${argument}`);
+    }
+    if (hasTarget) {
+      throw new Error(`Unexpected bundle target: ${argument}`);
+    }
+    targetName = argument;
+    hasTarget = true;
   }
-};
 
-const requestedTargets = process.argv.slice(2);
-const targetNames = requestedTargets.length > 0 ? requestedTargets : Object.keys(targetDefinitions);
-for (const targetName of targetNames) {
-  if (!(targetName in targetDefinitions)) {
-    throw new Error(`Unknown bundle target '${targetName}'. Expected main, rsgl, or cli.`);
+  assertBundleTarget(targetName);
+  assertBundleMode(bundleMode);
+  return { targetName, bundleMode };
+}
+
+export function createBundlePlan(targetName = "all", bundleMode = "development") {
+  assertBundleTarget(targetName);
+  assertBundleMode(bundleMode);
+  return Object.freeze(bundleTargetProfiles[targetName].map(id => Object.freeze({
+    id,
+    bundleMode,
+    definition: bundleEntryDefinitions[id]
+  })));
+}
+
+export function createEsbuildOptions(definition, bundleMode, overrides = {}) {
+  assertBundleMode(bundleMode);
+  const optimized = bundleMode !== "development";
+  return {
+    absWorkingDir: repositoryRoot,
+    entryPoints: [definition.entryPoint],
+    outfile: path.join(repositoryRoot, definition.outfile),
+    bundle: true,
+    platform: definition.platform,
+    format: definition.format,
+    target: definition.target,
+    sourcemap: "external",
+    sourcesContent: false,
+    treeShaking: true,
+    minify: optimized,
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(optimized ? "production" : "development")
+    },
+    charset: "utf8",
+    legalComments: "none",
+    logLevel: "warning",
+    external: [...definition.external],
+    banner: definition.banner ? { js: definition.banner } : undefined,
+    metafile: bundleMode === "analyze",
+    ...overrides
+  };
+}
+
+export async function buildBundleTarget({ targetName = "all", bundleMode = "development" } = {}) {
+  const plan = createBundlePlan(targetName, bundleMode);
+  cleanPlanOutputs(plan);
+  if (bundleMode === "analyze") {
+    rmSync(analysisRoot, { recursive: true, force: true });
+  }
+
+  const results = [];
+  for (const item of plan) {
+    const outfile = path.join(repositoryRoot, item.definition.outfile);
+    mkdirSync(path.dirname(outfile), { recursive: true });
+    const result = await build(createEsbuildOptions(item.definition, bundleMode));
+    results.push({ ...item, result });
+  }
+
+  copyRuntimeAssets(plan);
+  if (bundleMode === "analyze") {
+    writeAnalysisReports(results);
+  }
+  return results;
+}
+
+function entry(definition) {
+  return Object.freeze({
+    ...definition,
+    external: Object.freeze([...(definition.external ?? [])])
+  });
+}
+
+function assertBundleTarget(targetName) {
+  if (!Object.hasOwn(bundleTargetProfiles, targetName)) {
+    throw new Error(
+      `Unknown bundle target '${targetName}'. Expected ${Object.keys(bundleTargetProfiles).join(", ")}.`
+    );
   }
 }
 
-for (const targetName of targetNames) {
-  const target = targetDefinitions[targetName];
-  for (const cleanRoot of target.cleanRoots) {
-    rmSync(path.join(repositoryRoot, cleanRoot), { recursive: true, force: true });
+function assertBundleMode(bundleMode) {
+  if (!bundleModes.includes(bundleMode)) {
+    throw new Error(`Unknown bundle mode '${bundleMode}'. Expected ${bundleModes.join(", ")}.`);
   }
+}
 
-  for (const definition of target.builds) {
-    const outfile = path.join(repositoryRoot, definition.outfile);
-    mkdirSync(path.dirname(outfile), { recursive: true });
-    await build({
-      absWorkingDir: repositoryRoot,
-      entryPoints: [definition.entryPoint],
-      outfile,
-      bundle: true,
-      platform: "node",
-      format: "cjs",
-      target: definition.target ?? "node22",
-      sourcemap: "external",
-      sourcesContent: false,
-      charset: "utf8",
-      legalComments: "none",
-      logLevel: "warning",
-      external: definition.external ?? [],
-      banner: definition.banner ? { js: definition.banner } : undefined
+function cleanPlanOutputs(plan) {
+  for (const item of plan) {
+    const outfile = path.join(repositoryRoot, item.definition.outfile);
+    rmSync(outfile, { force: true });
+    rmSync(`${outfile}.map`, { force: true });
+  }
+  if (plan.some(item => item.id === "server" || item.id === "worker" || item.id === "rsglHost")) {
+    rmSync(path.join(repositoryRoot, "bundle", "rsgl", "stdlib"), { recursive: true, force: true });
+  }
+  if (plan.some(item => item.id === "cli")) {
+    rmSync(path.join(repositoryRoot, "packages", "rsgl-cli", "dist", "rsgl"), { recursive: true, force: true });
+  }
+}
+
+function copyRuntimeAssets(plan) {
+  if (plan.some(item => item.id === "server" || item.id === "worker" || item.id === "rsglHost")) {
+    copyDirectoryOrCreate(stdlibSource, path.join(repositoryRoot, "bundle", "rsgl", "stdlib"));
+  }
+  if (plan.some(item => item.id === "cli")) {
+    copyDirectoryOrCreate(stdlibSource, path.join(repositoryRoot, "packages", "rsgl-cli", "dist", "rsgl"));
+  }
+  if (plan.some(item => item.id === "modelPreview")) {
+    if (!existsSync(threeLicenseSource)) {
+      throw new Error(`Three.js license is missing: ${threeLicenseSource}`);
+    }
+    mkdirSync(path.dirname(threeLicenseTarget), { recursive: true });
+    cpSync(threeLicenseSource, threeLicenseTarget);
+  }
+}
+
+function copyDirectoryOrCreate(source, target) {
+  mkdirSync(path.dirname(target), { recursive: true });
+  if (existsSync(source)) {
+    cpSync(source, target, { recursive: true });
+  } else {
+    mkdirSync(target, { recursive: true });
+  }
+}
+
+function writeAnalysisReports(results) {
+  mkdirSync(analysisRoot, { recursive: true });
+  const occurrences = new Map();
+  const entries = [];
+
+  for (const { id, definition, result } of results) {
+    const metafile = result.metafile;
+    if (!metafile) {
+      throw new Error(`Analyze build did not return a metafile for ${id}.`);
+    }
+    writeJson(path.join(analysisRoot, `${id}.metafile.json`), metafile);
+    entries.push({
+      id,
+      entryPoint: definition.entryPoint,
+      outfile: definition.outfile,
+      bytes: statSync(path.join(repositoryRoot, definition.outfile)).size
     });
-  }
-
-  for (const stdlibTarget of target.stdlibTargets ?? []) {
-    const absoluteTarget = path.join(repositoryRoot, stdlibTarget);
-    mkdirSync(path.dirname(absoluteTarget), { recursive: true });
-    if (existsSync(stdlibSource)) {
-      cpSync(stdlibSource, absoluteTarget, { recursive: true });
-    } else {
-      mkdirSync(absoluteTarget, { recursive: true });
+    for (const [input, details] of Object.entries(metafile.inputs)) {
+      const inputPath = canonicalInputPath(input);
+      const occurrence = occurrences.get(inputPath) ?? { entries: new Set(), sourceBytes: 0 };
+      occurrence.entries.add(id);
+      occurrence.sourceBytes = Math.max(occurrence.sourceBytes, details.bytes ?? 0);
+      occurrences.set(inputPath, occurrence);
     }
   }
+
+  const duplicates = [...occurrences.entries()]
+    .filter(([, value]) => value.entries.size > 1)
+    .map(([input, value]) => ({
+      input,
+      entries: [...value.entries].sort(),
+      sourceBytes: value.sourceBytes
+    }))
+    .sort((left, right) => left.input.localeCompare(right.input, "en"));
+  const threeInputs = [...occurrences.keys()]
+    .filter(input => input.includes("/node_modules/three/"))
+    .sort((left, right) => left.localeCompare(right, "en"));
+  const threeManifest = JSON.parse(readFileSync(
+    path.join(repositoryRoot, "node_modules", "three", "package.json"),
+    "utf8"
+  ));
+
+  writeJson(path.join(analysisRoot, "duplicate-modules.json"), {
+    schemaVersion: 1,
+    bundleMode: "analyze",
+    entries: entries.sort((left, right) => left.id.localeCompare(right.id, "en")),
+    duplicates,
+    three: {
+      packageRealpath: normalizeSlashes(realpathSync(path.join(repositoryRoot, "node_modules", "three"))),
+      version: threeManifest.version,
+      inputs: threeInputs
+    }
+  });
+}
+
+function canonicalInputPath(input) {
+  const absolute = path.resolve(repositoryRoot, input);
+  return normalizeSlashes(existsSync(absolute) ? realpathSync(absolute) : absolute);
+}
+
+function normalizeSlashes(value) {
+  return value.replaceAll("\\", "/");
+}
+
+function writeJson(fileName, value) {
+  writeFileSync(fileName, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function isMainModule() {
+  if (!process.argv[1]) {
+    return false;
+  }
+  const invoked = path.resolve(process.argv[1]);
+  return process.platform === "win32"
+    ? invoked.toLowerCase() === scriptFile.toLowerCase()
+    : invoked === scriptFile;
+}
+
+if (isMainModule()) {
+  await buildBundleTarget(parseBundleArguments(process.argv.slice(2)));
 }

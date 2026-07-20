@@ -37,20 +37,38 @@ describe("model preview manifest", () => {
     assert.strictEqual(graphUnsupportedMenu?.when, "view == McResHelper.resourceGraph && viewItem == unsupportedPreviewResource");
   });
 
-  it("ships webview static assets and vendored Three.js runtime files", () => {
+  it("keeps source behavior testable while shipping Three through the browser bundle", () => {
     const packageJson = readPackageJson();
     const scriptNames = readModelPreviewScripts().map(script => script.fileName);
+    const source = readCombinedModelPreviewScript();
+    const hostSource = fs.readFileSync(
+      path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"),
+      "utf8"
+    );
 
     assert.strictEqual(packageJson.dependencies?.three, undefined, "three should not ship through node_modules");
-    assert.ok(packageJson.devDependencies?.three, "three should remain available for vendor updates");
+    assert.ok(packageJson.devDependencies?.three, "three should remain a build-time dependency");
     for (const moduleName of ["main.js", "previewRenderer.js", "previewScene.js", "detailsPanel.js", "webviewApi.js"]) {
-      assert.ok(scriptNames.includes(moduleName), `webview should ship ${moduleName}`);
+      assert.ok(scriptNames.includes(moduleName), `webview source behavior should include ${moduleName}`);
     }
     assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "styles.css")));
-    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.module.js")));
-    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "three.core.js")));
-    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "OrbitControls.js")));
-    assert.ok(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor", "THREE-LICENSE.txt")));
+    assert.strictEqual(fs.existsSync(path.join(process.cwd(), "webviews", "modelPreview", "vendor")), false);
+    assert.strictEqual(source.includes("import * as THREE"), false);
+    assert.strictEqual(source.includes("three/src/"), false);
+    assert.match(source, /from "three";/);
+    assert.match(source, /from "three\/addons\/controls\/OrbitControls\.js";/);
+    const threeSpecifiers = [...source.matchAll(/from ["'](three(?:\/[^"']*)?)["']/g)]
+      .map(match => match[1]);
+    assert.ok(threeSpecifiers.length >= 3);
+    assert.ok(threeSpecifiers.every(specifier =>
+      specifier === "three" || specifier === "three/addons/controls/OrbitControls.js"
+    ));
+    assert.match(hostSource, /"bundle", "model-preview\.js"/);
+    assert.strictEqual(hostSource.includes('"webviews", "modelPreview", "main.js"'), false);
+    assert.strictEqual(
+      fs.readFileSync(path.join(process.cwd(), "licenses", "THREE-LICENSE.txt"), "utf8"),
+      fs.readFileSync(path.join(process.cwd(), "node_modules", "three", "LICENSE"), "utf8")
+    );
   });
 
   it("registers the webview message listener before injecting HTML", () => {

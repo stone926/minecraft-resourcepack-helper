@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { performance } from "node:perf_hooks";
+import { build } from "esbuild";
 import { ModelPreviewService } from "../out/src/modelPreview/service/ModelPreviewService.js";
+import { bundleEntryDefinitions, createEsbuildOptions } from "./build-bundles.mjs";
 
 function writeFile(root, relativePath, value) {
   const fileName = path.join(root, relativePath);
@@ -133,6 +135,22 @@ async function time(action) {
   return performance.now() - start;
 }
 
+async function measureProductionBrowserBundle() {
+  const result = await build(createEsbuildOptions(
+    bundleEntryDefinitions.modelPreview,
+    "production",
+    { write: false, sourcemap: false }
+  ));
+  const output = result.outputFiles?.find(file => file.path.endsWith("model-preview.js"));
+  if (!output) {
+    throw new Error("Model preview benchmark build did not return bundle/model-preview.js.");
+  }
+  return {
+    raw: output.contents.length,
+    gzip: zlib.gzipSync(output.contents).length
+  };
+}
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-rph-model-preview-benchmark-"));
 try {
   const fixtures = createBenchmarkFixtures(root);
@@ -147,6 +165,9 @@ try {
   for (const [fixture, result] of rows) {
     console.log(`${fixture},${result.first.toFixed(3)},${result.hot.toFixed(3)}`);
   }
+  const browserBundle = await measureProductionBrowserBundle();
+  console.log("artifact,raw_bytes,gzip_bytes");
+  console.log(`model-preview-production,${browserBundle.raw},${browserBundle.gzip}`);
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

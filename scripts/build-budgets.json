@@ -1,18 +1,34 @@
 {
   "activationModules": {
-    "main": 105,
-    "rsgl": 12
+    "root": 105,
+    "rsglHost": 12
   },
   "coldActivationMilliseconds": {
-    "main": 500,
-    "rsgl": 500
+    "root": 500,
+    "rsglHost": 500
   },
   "bundleBytes": {
-    "main": 1800000,
-    "rsglExtension": 1800000,
-    "rsglServer": 2800000,
-    "rsglWorker": 2800000,
-    "rsglCli": 2800000
+    "development": {
+      "root": 1800000,
+      "rsglHost": 1800000,
+      "server": 2800000,
+      "worker": 2800000,
+      "modelPreview": 1400000,
+      "cli": 2800000
+    },
+    "production": {
+      "root": 1200000,
+      "rsglHost": 1300000,
+      "server": 2000000,
+      "worker": 1500000,
+      "modelPreview": 716800,
+      "cli": 2000000
+    }
+  },
+  "bundleGzipBytes": {
+    "production": {
+      "modelPreview": 184320
+    }
   },
   "vsixFiles": {
     "main": 110,

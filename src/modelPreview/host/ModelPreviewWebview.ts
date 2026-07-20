@@ -15,7 +15,7 @@ export class ModelPreviewWebview {
   setHtml(): void {
     const webview = this.panel.webview;
     const nonce = createNonce();
-    const mainScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "main.js"));
+    const mainScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "bundle", "model-preview.js"));
     const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "webviews", "modelPreview", "styles.css"));
     const l10n = createWebviewL10nDictionary();
     const text = (key: string) => escapeHtml(l10n[key] ?? key);

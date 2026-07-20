@@ -1,6 +1,8 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
+import type { BuildOptions } from "esbuild";
 
 describe("repository build graph", () => {
   it("keeps production and test projects in explicit project-reference graphs", () => {
@@ -11,20 +13,20 @@ describe("repository build graph", () => {
 
     assert.deepStrictEqual(main.include, ["src/**/*.ts"]);
     assert.deepStrictEqual(main.exclude, ["src/test/**"]);
-    assert.deepStrictEqual(referencePaths(main), ["./packages/mc-assets"]);
+    assert.deepStrictEqual(referencePaths(main), ["./packages/mc-assets", "./packages/resource-project"]);
     assert.ok(referencePaths(solution).includes("./tsconfig.main.json"));
     assert.ok(referencePaths(solution).includes("./tsconfig.tests.json"));
     assert.ok(tests.include?.includes("extensions/*/test/**/*.ts"));
     assert.ok(tests.include?.includes("test/**/*.ts"));
 
-    for (const project of ["mc-assets", "rsgl-core", "rsgl-shared", "rsgl-lsp", "rsgl-cli"]) {
+    for (const project of ["mc-assets", "resource-project", "rsgl-core", "rsgl-shared", "rsgl-lsp", "rsgl-cli"]) {
       const config = readJson<TsConfig>(path.join(root, "packages", project, "tsconfig.json"));
       assert.deepStrictEqual(config.include, ["src/**/*.ts"], `${project} must own only its source files`);
       assert.ok(config.compilerOptions?.tsBuildInfoFile?.includes(project));
     }
   });
 
-  it("runs every owned test suite through the canonical build surface", () => {
+  it("runs every owned test suite through the canonical build surface", async () => {
     const root = process.cwd();
     const manifest = readJson<{ scripts?: Record<string, string>; main?: string }>(path.join(root, "package.json"));
     const testCommand = manifest.scripts?.test ?? "";
@@ -43,31 +45,137 @@ describe("repository build graph", () => {
       .filter(command => command.includes("scripts/build.mjs"))
       .every(command => !command.includes("npm run")));
 
-    const bundleScript = fs.readFileSync(path.join(root, "scripts", "build-bundles.mjs"), "utf8");
-    for (const entryPoint of [
-      "src/extension.ts",
-      "extensions/vscode-rsgl/src/extension.ts",
-      "packages/rsgl-lsp/src/server.ts",
-      "extensions/vscode-rsgl/src/commands/buildWorker.ts",
-      "packages/rsgl-cli/src/main.ts"
-    ]) {
-      assert.ok(bundleScript.includes(entryPoint), `missing bundle entry point ${entryPoint}`);
+    const bundles = await readBundleModule(root);
+    assert.deepStrictEqual(bundles.bundleModes, ["development", "production", "analyze"]);
+    assert.deepStrictEqual(bundles.bundleAnalysisOutputs, {
+      directory: "dist/build-analysis",
+      duplicateReport: "dist/build-analysis/duplicate-modules.json"
+    });
+    assert.deepStrictEqual(
+      bundles.bundleTargetProfiles.main,
+      ["root", "rsglHost", "server", "worker", "modelPreview"]
+    );
+    assert.deepStrictEqual(
+      bundles.bundleTargetProfiles.all,
+      ["root", "rsglHost", "server", "worker", "modelPreview", "cli"]
+    );
+    assert.deepStrictEqual(
+      Object.fromEntries(Object.entries(bundles.bundleEntryDefinitions).map(([id, definition]) => [
+        id,
+        [definition.entryPoint, definition.outfile]
+      ])),
+      {
+        root: ["src/extension.ts", "bundle/extension.js"],
+        rsglHost: ["extensions/vscode-rsgl/src/extension.ts", "bundle/features/rsglHost.js"],
+        server: ["packages/rsgl-lsp/src/server.ts", "bundle/rsgl/server.js"],
+        worker: ["extensions/vscode-rsgl/src/commands/buildWorker.ts", "bundle/rsgl/worker.js"],
+        modelPreview: ["webviews/modelPreview/main.js", "bundle/model-preview.js"],
+        cli: ["packages/rsgl-cli/src/main.ts", "packages/rsgl-cli/dist/rsgl.js"]
+      }
+    );
+    for (const id of ["root", "rsglHost", "server", "worker"] as const) {
+      assert.strictEqual(bundles.bundleEntryDefinitions[id].platform, "node");
+      assert.strictEqual(bundles.bundleEntryDefinitions[id].format, "cjs");
     }
-    assert.ok(bundleScript.includes('sourcemap: "external"'));
-    assert.ok(bundleScript.includes('target: "node20"'), "CLI bundle must honor its Node 20 engine floor");
+    assert.deepStrictEqual(
+      pickBuildEnvironment(bundles.bundleEntryDefinitions.modelPreview),
+      { platform: "browser", format: "esm", target: "es2022", external: [] }
+    );
+    assert.strictEqual(bundles.bundleEntryDefinitions.cli.target, "node20");
+    assert.strictEqual(bundles.bundleEntryDefinitions.cli.banner, "#!/usr/bin/env node");
+    const development = bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.modelPreview,
+      "development"
+    );
+    const production = bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.modelPreview,
+      "production"
+    );
+    const analyze = bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.modelPreview,
+      "analyze"
+    );
+    assert.strictEqual(development.minify, false);
+    assert.strictEqual(development.sourcemap, "external");
+    assert.strictEqual(production.minify, true);
+    assert.strictEqual(production.sourcemap, "external");
+    assert.strictEqual(analyze.minify, true);
+    assert.strictEqual(analyze.metafile, true);
 
     const vsixScript = fs.readFileSync(path.join(root, "scripts", "package-vsix.mjs"), "utf8");
     assert.ok(vsixScript.includes("SOURCE_DATE_EPOCH"));
     assert.ok(vsixScript.includes('"--format=%ct"'));
     assert.match(vsixScript, /env: \{ \.\.\.process\.env, SOURCE_DATE_EPOCH: sourceDateEpoch \}/);
 
-    const budgets = readJson<{ coldActivationMilliseconds?: Record<string, number> }>(
+    const budgets = readJson<{
+      coldActivationMilliseconds?: Record<string, number>;
+      bundleBytes?: Record<string, Record<string, number>>;
+    }>(
       path.join(root, "scripts", "build-budgets.json")
     );
-    assert.ok((budgets.coldActivationMilliseconds?.main ?? 0) > 0);
-    assert.ok((budgets.coldActivationMilliseconds?.rsgl ?? 0) > 0);
+    assert.ok((budgets.coldActivationMilliseconds?.root ?? 0) > 0);
+    assert.ok((budgets.coldActivationMilliseconds?.rsglHost ?? 0) > 0);
+    for (const mode of ["development", "production"]) {
+      assert.deepStrictEqual(
+        Object.keys(budgets.bundleBytes?.[mode] ?? {}).sort(),
+        ["cli", "modelPreview", "root", "rsglHost", "server", "worker"]
+      );
+    }
+  });
+
+  it("produces a self-contained browser ESM model preview bundle from one npm Three package", async () => {
+    const root = process.cwd();
+    const bundles = await readBundleModule(root);
+    const { build } = await import("esbuild");
+    const result = await build(bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.modelPreview,
+      "production",
+      { write: false, sourcemap: false, metafile: true }
+    ));
+    const output = result.outputFiles?.find(file => file.path.endsWith("model-preview.js"));
+    assert.ok(output, "model preview build should return its browser entry");
+    const source = output.text;
+    assert.doesNotMatch(source, /\b(?:require|module\.exports)\s*[=(]/);
+    assert.doesNotMatch(source, /\bfrom\s*["']three(?:\/|["'])/);
+    assert.doesNotMatch(source, /\bimport\s*["']three(?:\/|["'])/);
+    assert.strictEqual(source.includes("eval("), false);
+
+    const inputs = Object.keys(result.metafile?.inputs ?? {});
+    const threeInputs = inputs.filter(input => input.replaceAll("\\", "/").includes("node_modules/three/"));
+    assert.ok(threeInputs.length > 0, "browser bundle should inline npm Three inputs");
+    assert.strictEqual(inputs.some(input => input.includes("webviews/modelPreview/vendor")), false);
+    const packageRoot = fs.realpathSync(path.join(root, "node_modules", "three"));
+    for (const input of threeInputs) {
+      const resolved = fs.realpathSync(path.resolve(root, input));
+      assert.ok(resolved.startsWith(`${packageRoot}${path.sep}`), `unexpected Three input: ${resolved}`);
+    }
+    const lock = readJson<{ packages?: Record<string, { version?: string }> }>(path.join(root, "package-lock.json"));
+    const manifest = readJson<{ version?: string }>(path.join(packageRoot, "package.json"));
+    assert.strictEqual(manifest.version, lock.packages?.["node_modules/three"]?.version);
   });
 });
+
+interface BundleEntryDefinition {
+  entryPoint: string;
+  outfile: string;
+  platform: string;
+  format: string;
+  target: string;
+  external: readonly string[];
+  banner?: string;
+}
+
+interface BundleModule {
+  bundleModes: readonly string[];
+  bundleAnalysisOutputs: { directory: string; duplicateReport: string };
+  bundleEntryDefinitions: Record<string, BundleEntryDefinition>;
+  bundleTargetProfiles: Record<string, readonly string[]>;
+  createEsbuildOptions(
+    definition: BundleEntryDefinition,
+    bundleMode: string,
+    overrides?: Record<string, unknown>
+  ): BuildOptions;
+}
 
 interface TsConfig {
   compilerOptions?: { tsBuildInfoFile?: string };
@@ -78,6 +186,19 @@ interface TsConfig {
 
 function referencePaths(config: TsConfig): string[] {
   return config.references?.map(reference => reference.path ?? "") ?? [];
+}
+
+async function readBundleModule(root: string): Promise<BundleModule> {
+  return await import(pathToFileURL(path.join(root, "scripts", "build-bundles.mjs")).href) as BundleModule;
+}
+
+function pickBuildEnvironment(definition: BundleEntryDefinition) {
+  return {
+    platform: definition.platform,
+    format: definition.format,
+    target: definition.target,
+    external: definition.external
+  };
 }
 
 function readJson<T>(fileName: string): T {

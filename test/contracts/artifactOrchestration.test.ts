@@ -25,12 +25,13 @@ interface ArtifactModule {
 }
 
 interface BudgetModule {
-  parseBudgetArguments(args: string[]): { target: string; artifactPath?: string };
+  parseBudgetArguments(args: string[]): { target: string; artifactPath?: string; bundleMode: string };
   budgetTargets(target: string): string[];
   createBudgetPlan(options?: {
     target?: string;
     artifactPath?: string;
-  }): Array<{ target: string; artifactPath?: string }>;
+    bundleMode?: string;
+  }): Array<{ target: string; artifactPath?: string; bundleMode: string }>;
 }
 
 describe("artifact orchestration", () => {
@@ -137,23 +138,32 @@ describe("artifact orchestration", () => {
   it("parses target-aware budget options without legacy aliases", () => {
     assert.deepStrictEqual(budget.parseBudgetArguments([]), {
       target: "all",
-      artifactPath: undefined
+      artifactPath: undefined,
+      bundleMode: "development"
     });
     assert.deepStrictEqual(
       budget.parseBudgetArguments(["--target", "main", "--artifact", "dist/main.vsix"]),
-      { target: "main", artifactPath: "dist/main.vsix" }
+      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
     );
     assert.deepStrictEqual(
       budget.parseBudgetArguments(["--artifact", "dist/rsgl.vsix", "--target", "rsgl"]),
-      { target: "rsgl", artifactPath: "dist/rsgl.vsix" }
+      { target: "rsgl", artifactPath: "dist/rsgl.vsix", bundleMode: "development" }
     );
     assert.deepStrictEqual(budget.budgetTargets("all"), ["main", "rsgl", "rsgl-cli"]);
     assert.deepStrictEqual(budget.createBudgetPlan({ target: "main", artifactPath: "dist/main.vsix" }), [
-      { target: "main", artifactPath: "dist/main.vsix" }
+      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
     ]);
     assert.deepStrictEqual(budget.createBudgetPlan({ target: "rsgl-cli" }), [
-      { target: "rsgl-cli", artifactPath: undefined }
+      { target: "rsgl-cli", artifactPath: undefined, bundleMode: "development" }
     ]);
+    assert.deepStrictEqual(
+      budget.parseBudgetArguments(["--target", "main", "--bundle-mode=production"]),
+      { target: "main", artifactPath: undefined, bundleMode: "production" }
+    );
+    assert.deepStrictEqual(
+      budget.createBudgetPlan({ target: "rsgl-cli", bundleMode: "analyze" }),
+      [{ target: "rsgl-cli", artifactPath: undefined, bundleMode: "analyze" }]
+    );
     assert.throws(
       () => budget.parseBudgetArguments(["--target", "rsgl-cli", "--artifact", "cli.tgz"]),
       /requires --target main or --target rsgl/
@@ -174,6 +184,10 @@ describe("artifact orchestration", () => {
     assert.throws(() => budget.parseBudgetArguments(["--artifact"]), /Missing path/);
     assert.throws(() => budget.parseBudgetArguments(["--target", "unknown"]), /Unknown budget target/);
     assert.throws(() => budget.parseBudgetArguments(["--unknown"]), /Unknown argument/);
+    assert.throws(
+      () => budget.parseBudgetArguments(["--bundle-mode", "invalid"]),
+      /Unknown bundle mode/
+    );
     assert.throws(() => budget.parseBudgetArguments(["--main-vsix", "old.vsix"]), /Unknown argument/);
     assert.throws(
       () => budget.createBudgetPlan({ target: "main", artifactPath: "" }),

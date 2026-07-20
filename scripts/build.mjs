@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { bundleModes } from "./build-bundles.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptFile), "..");
@@ -10,24 +11,24 @@ const repositoryRoot = path.resolve(path.dirname(scriptFile), "..");
 export const buildProfiles = Object.freeze({
   main: Object.freeze({
     tsconfig: "tsconfig.main.json",
-    bundleArgs: Object.freeze(["main"])
+    bundleTarget: "main"
   }),
   rsgl: Object.freeze({
     tsconfig: "extensions/vscode-rsgl/tsconfig.json",
-    bundleArgs: Object.freeze(["rsgl"])
+    bundleTarget: "rsgl"
   }),
   "rsgl-cli": Object.freeze({
     tsconfig: "packages/rsgl-cli/tsconfig.json",
-    bundleArgs: Object.freeze(["cli"])
+    bundleTarget: "rsgl-cli"
   }),
   all: Object.freeze({
     tsconfig: "tsconfig.json",
-    bundleArgs: Object.freeze([]),
+    bundleTarget: "all",
     stdlibOutputs: Object.freeze(["out"])
   }),
   test: Object.freeze({
     tsconfig: "tsconfig.tests.json",
-    bundleArgs: null,
+    bundleTarget: null,
     stdlibOutputs: Object.freeze(["out"]),
     cleanFirst: true
   })
@@ -45,8 +46,15 @@ export function createBuildPlan(targetName, options = {}) {
   if (!new Set(["build", "typecheck", "bundle"]).has(mode)) {
     throw new Error(`Unknown build mode '${mode}'. Expected build, typecheck, or bundle.`);
   }
-  if (mode === "bundle" && profile.bundleArgs === null) {
+  const bundleMode = options.bundleMode ?? "development";
+  if (!bundleModes.includes(bundleMode)) {
+    throw new Error(`Unknown bundle mode '${bundleMode}'. Expected ${bundleModes.join(", ")}.`);
+  }
+  if (mode === "bundle" && profile.bundleTarget === null) {
     throw new Error(`Build target '${targetName}' does not produce a distributable bundle.`);
+  }
+  if (mode === "typecheck" && bundleMode !== "development") {
+    throw new Error("--bundle-mode cannot be used with --typecheck-only.");
   }
 
   const plan = [];
@@ -67,11 +75,11 @@ export function createBuildPlan(targetName, options = {}) {
       ));
     }
   }
-  if (mode !== "typecheck" && profile.bundleArgs !== null) {
+  if (mode !== "typecheck" && profile.bundleTarget !== null) {
     plan.push(nodeStep(
-      `bundle ${targetName}`,
+      `bundle ${targetName} (${bundleMode})`,
       "scripts/build-bundles.mjs",
-      [...profile.bundleArgs]
+      [profile.bundleTarget, "--bundle-mode", bundleMode]
     ));
   }
   return plan;
@@ -91,11 +99,15 @@ export function parseBuildArguments(args) {
   if (!targetName) {
     throw new Error(
       "Usage: node scripts/build.mjs <main|rsgl|rsgl-cli|all|test> "
-        + "[--typecheck-only|--bundle-only]"
+        + "[--typecheck-only|--bundle-only] "
+        + "[--bundle-mode <development|production|analyze>]"
     );
   }
   let mode = "build";
-  for (const flag of flags) {
+  let bundleMode = "development";
+  let hasBundleMode = false;
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
     if (flag === "--typecheck-only" && mode === "build") {
       mode = "typecheck";
       continue;
@@ -107,9 +119,32 @@ export function parseBuildArguments(args) {
     if (flag === "--typecheck-only" || flag === "--bundle-only") {
       throw new Error("--typecheck-only and --bundle-only cannot be combined.");
     }
+    if (flag === "--bundle-mode") {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
+      }
+      const value = flags[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value after --bundle-mode.");
+      }
+      bundleMode = value;
+      hasBundleMode = true;
+      index += 1;
+      continue;
+    }
+    if (flag.startsWith("--bundle-mode=")) {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
+      }
+      bundleMode = flag.slice("--bundle-mode=".length);
+      hasBundleMode = true;
+      continue;
+    }
     throw new Error(`Unknown build flag: ${flag}`);
   }
-  return { targetName, mode };
+  const parsed = { targetName, mode, bundleMode };
+  createBuildPlan(targetName, parsed);
+  return parsed;
 }
 
 function nodeStep(label, script, args = []) {
@@ -135,6 +170,6 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  const { targetName, mode } = parseBuildArguments(process.argv.slice(2));
-  executeBuildPlan(createBuildPlan(targetName, { mode }));
+  const options = parseBuildArguments(process.argv.slice(2));
+  executeBuildPlan(createBuildPlan(options.targetName, options));
 }

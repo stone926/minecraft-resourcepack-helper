@@ -1,5 +1,25 @@
-import * as THREE from "./vendor/three.module.js";
-import { OrbitControls } from "./vendor/OrbitControls.js";
+import {
+  AxesHelper,
+  Color,
+  DirectionalLight,
+  FrontSide,
+  GridHelper,
+  Group,
+  HemisphereLight,
+  MathUtils,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  NearestFilter,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Scene,
+  SRGBColorSpace,
+  TextureLoader,
+  Vector3,
+  WebGLRenderer
+} from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { vscode, t, clamp } from "./webviewApi.js";
 import {
   createGeometry,
@@ -16,17 +36,17 @@ const CAMERA_MIN_DISTANCE = 24;
 export class PreviewRenderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.scene = new THREE.Scene();
-    this.root = new THREE.Group();
+    this.scene = new Scene();
+    this.root = new Group();
     this.scene.add(this.root);
-    this.scene.background = new THREE.Color(getCssColor("--vscode-editor-background", "#1e1e1e"));
-    this.webgl = new THREE.WebGLRenderer({
+    this.scene.background = new Color(getCssColor("--vscode-editor-background", "#1e1e1e"));
+    this.webgl = new WebGLRenderer({
       canvas,
       antialias: true,
       alpha: true,
       preserveDrawingBuffer: true
     });
-    this.webgl.outputColorSpace = THREE.SRGBColorSpace;
+    this.webgl.outputColorSpace = SRGBColorSpace;
     this.webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.cameraMode = "perspective";
     this.displayMode = "textured";
@@ -39,9 +59,9 @@ export class PreviewRenderer {
     this.texturePromises = [];
     this.textureCache = new Map();
     this.disposables = [];
-    this.grid = new THREE.GridHelper(32, 16, 0x5f6f7a, 0x303842);
+    this.grid = new GridHelper(32, 16, 0x5f6f7a, 0x303842);
     this.grid.position.set(8, 0, 8);
-    this.axes = new THREE.AxesHelper(18);
+    this.axes = new AxesHelper(18);
     this.scene.add(this.grid);
     this.scene.add(this.axes);
     this.addLights();
@@ -66,8 +86,8 @@ export class PreviewRenderer {
   }
 
   addLights() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x4f5660, 2.4));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.1);
+    this.scene.add(new HemisphereLight(0xffffff, 0x4f5660, 2.4));
+    const keyLight = new DirectionalLight(0xffffff, 2.1);
     keyLight.position.set(32, 48, 32);
     this.scene.add(keyLight);
   }
@@ -76,8 +96,8 @@ export class PreviewRenderer {
     const size = this.canvas.parentElement.getBoundingClientRect();
     const aspect = Math.max(1, size.width) / Math.max(1, size.height);
     this.camera = this.cameraMode === "perspective"
-      ? new THREE.PerspectiveCamera(35, aspect, 0.1, 1000)
-      : new THREE.OrthographicCamera(-16 * aspect, 16 * aspect, 16, -16, 0.1, 1000);
+      ? new PerspectiveCamera(35, aspect, 0.1, 1000)
+      : new OrthographicCamera(-16 * aspect, 16 * aspect, 16, -16, 0.1, 1000);
     this.controls?.dispose();
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = false;
@@ -144,7 +164,7 @@ export class PreviewRenderer {
     for (const [materialId, faces] of groups) {
       const geometry = createGeometry(faces);
       const material = materialMap.get(materialId) ?? createMissingMaterial(this.displayMode);
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new Mesh(geometry, material);
       this.root.add(mesh);
       this.disposables.push(geometry, material);
     }
@@ -163,19 +183,19 @@ export class PreviewRenderer {
 
   createMaterial(material, index) {
     if (this.displayMode === "solid") {
-      return new THREE.MeshStandardMaterial({
+      return new MeshStandardMaterial({
         color: paletteColor(index),
         roughness: 0.8,
         metalness: 0,
-        side: THREE.FrontSide
+        side: FrontSide
       });
     }
 
     if (this.displayMode === "wireframe") {
-      return new THREE.MeshBasicMaterial({
+      return new MeshBasicMaterial({
         color: 0xd6dee8,
         wireframe: true,
-        side: THREE.FrontSide
+        side: FrontSide
       });
     }
 
@@ -186,13 +206,13 @@ export class PreviewRenderer {
       this.disposables.push(texture);
     }
 
-    return new THREE.MeshStandardMaterial({
+    return new MeshStandardMaterial({
       map: texture,
       roughness: 0.95,
       metalness: 0,
       transparent: material.transparent,
       alphaTest: 0.1,
-      side: THREE.FrontSide
+      side: FrontSide
     });
   }
 
@@ -204,16 +224,16 @@ export class PreviewRenderer {
       return cached.texture;
     }
 
-    const loader = new THREE.TextureLoader();
+    const loader = new TextureLoader();
     const texture = loader.load(
       material.textureUri,
       () => this.requestRender(),
       undefined,
       error => vscode.postMessage({ type: "renderIssue", code: "Texture load failed: {0}", args: [String(error)] })
     );
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestFilter;
+    texture.colorSpace = SRGBColorSpace;
+    texture.magFilter = NearestFilter;
+    texture.minFilter = NearestFilter;
     texture.flipY = false;
     const ready = new Promise(resolve => {
       texture.onUpdate = () => resolve();
@@ -226,8 +246,8 @@ export class PreviewRenderer {
 
   fitCamera() {
     const bounds = this.document?.bounds ?? { min: [0, 0, 0], max: [16, 16, 16] };
-    const min = new THREE.Vector3(...bounds.min);
-    const max = new THREE.Vector3(...bounds.max);
+    const min = new Vector3(...bounds.min);
+    const max = new Vector3(...bounds.max);
     const center = min.clone().add(max).multiplyScalar(0.5);
     const size = max.clone().sub(min);
     const radius = Math.max(size.length() * 0.5, 1) * CAMERA_FIT_PADDING;
@@ -258,7 +278,7 @@ export class PreviewRenderer {
   }
 
   getPerspectiveFitDistance(radius, aspect) {
-    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const verticalFov = MathUtils.degToRad(this.camera.fov);
     const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
     const fitFov = Math.max(0.1, Math.min(verticalFov, horizontalFov));
     return Math.max(radius / Math.sin(fitFov / 2), CAMERA_MIN_DISTANCE);
@@ -326,7 +346,7 @@ export class PreviewRenderer {
     if (options.transparentBackground) {
       this.scene.background = null;
     } else if (options.backgroundColor) {
-      this.scene.background = new THREE.Color(options.backgroundColor);
+      this.scene.background = new Color(options.backgroundColor);
     }
 
     this.webgl.setSize(width, height, false);
