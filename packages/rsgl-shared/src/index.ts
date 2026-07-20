@@ -1,6 +1,8 @@
 export const rsglExtensionId = "stone926.rsgl";
 export const rsglFileGlob = "**/*.rsgl";
 
+export * from "./resourceSnapshotProtocol";
+
 /** Server-to-client notification carrying current exact and patterned watch dependencies. */
 export const rsglDependencyPathsNotification = "rsgl/dependencyPaths";
 /** Client-to-server notification for targeted dependency-directory events. */
@@ -36,9 +38,8 @@ export const rsglCommands = {
 } as const;
 
 export const rsglConfigKeys = {
-  outDir: "rsgl.outDir",
-  defaultAssetsPath: "rsgl.defaultAssetsPath",
-  resourcePackLoadOrder: "rsgl.resourcePackLoadOrder"
+  defaultAssetsPath: "McResHelper.defaultMcAssetsPath",
+  resourcePackLoadOrder: "McResHelper.resourcePackLoadOrder"
 } as const;
 
 export type RsglCommandId = typeof rsglCommands[keyof typeof rsglCommands];
