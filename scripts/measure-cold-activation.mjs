@@ -3,7 +3,11 @@
 import Module, { createRequire } from "node:module";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { fileURLToPath } from "node:url";
+import {
+  createExtensionContext,
+  createVscodeStub,
+  disposeExtensionContext
+} from "./activation-probe/vscode-stub.mjs";
 
 const [bundleArgument] = process.argv.slice(2);
 if (!bundleArgument) {
@@ -19,7 +23,7 @@ Module._load = function loadWithVscodeStub(request, parent, isMain) {
     : originalLoad.call(this, request, parent, isMain);
 };
 
-const context = createExtensionContext(path.dirname(bundlePath), vscode);
+const context = createExtensionContext(resolveExtensionRoot(bundlePath), vscode);
 const startedAt = performance.now();
 try {
   const extension = createRequire(import.meta.url)(bundlePath);
@@ -27,157 +31,17 @@ try {
   const milliseconds = performance.now() - startedAt;
   process.stdout.write(JSON.stringify({ milliseconds }));
 } finally {
-  for (const disposable of context.subscriptions.reverse()) {
-    disposable?.dispose?.();
-  }
+  disposeExtensionContext(context);
   Module._load = originalLoad;
 }
 
-function createExtensionContext(extensionPath, vscode) {
-  return {
-    subscriptions: [],
-    extensionPath,
-    extensionUri: vscode.Uri.file(extensionPath),
-    asAbsolutePath: relativePath => path.join(extensionPath, relativePath),
-    globalState: createMemento(),
-    workspaceState: createMemento(),
-    secrets: createCallableStub(),
-    extensionMode: 3
-  };
-}
-
-function createMemento() {
-  const values = new Map();
-  return {
-    get: (key, defaultValue) => values.has(key) ? values.get(key) : defaultValue,
-    update: async (key, value) => {
-      values.set(key, value);
-    },
-    keys: () => [...values.keys()]
-  };
-}
-
-function createVscodeStub() {
-  const disposable = () => ({ dispose() {} });
-  const event = () => disposable();
-  const watcher = () => ({
-    onDidCreate: event,
-    onDidChange: event,
-    onDidDelete: event,
-    dispose() {}
-  });
-  class Uri {
-    constructor(fsPath) {
-      this.fsPath = fsPath;
-      this.path = fsPath.replaceAll("\\", "/");
-      this.scheme = "file";
+function resolveExtensionRoot(bundlePath) {
+  let directory = path.dirname(bundlePath);
+  while (path.dirname(directory) !== directory) {
+    if (path.basename(directory).toLowerCase() === "bundle") {
+      return path.dirname(directory);
     }
-
-    static file(fileName) {
-      return new Uri(path.resolve(fileName));
-    }
-
-    static parse(value) {
-      return new Uri(value);
-    }
-
-    toString() {
-      return `file://${this.path}`;
-    }
+    directory = path.dirname(directory);
   }
-  class EventEmitter {
-    event = event;
-    fire() {}
-    dispose() {}
-  }
-  class RelativePattern {
-    constructor(base, pattern) {
-      this.base = base;
-      this.pattern = pattern;
-    }
-  }
-  const collection = {
-    set() {},
-    delete() {},
-    clear() {},
-    dispose() {}
-  };
-  const configuration = {
-    get: (_key, defaultValue) => defaultValue,
-    has: () => false,
-    inspect: () => undefined,
-    update: async () => undefined
-  };
-  return {
-    Uri,
-    EventEmitter,
-    RelativePattern,
-    TreeItem: class {},
-    CodeActionKind: { QuickFix: "quickfix" },
-    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-    l10n: { t: message => String(message) },
-    commands: {
-      registerCommand: disposable,
-      executeCommand: async () => undefined
-    },
-    languages: {
-      createDiagnosticCollection: () => collection,
-      registerDefinitionProvider: disposable,
-      registerCompletionItemProvider: disposable,
-      registerHoverProvider: disposable,
-      registerCodeActionsProvider: disposable
-    },
-    window: {
-      activeTextEditor: undefined,
-      createTreeView: disposable,
-      createTextEditorDecorationType: disposable,
-      onDidChangeActiveTextEditor: event,
-      showErrorMessage: async () => undefined,
-      showInformationMessage: async () => undefined
-    },
-    workspace: {
-      textDocuments: [],
-      workspaceFolders: undefined,
-      getConfiguration: () => configuration,
-      getWorkspaceFolder: () => undefined,
-      createFileSystemWatcher: watcher,
-      findFiles: async () => [],
-      onDidChangeTextDocument: event,
-      onDidOpenTextDocument: event,
-      onDidCloseTextDocument: event,
-      onWillCreateFiles: event,
-      onDidCreateFiles: event,
-      onWillDeleteFiles: event,
-      onDidDeleteFiles: event,
-      onWillRenameFiles: event,
-      onDidRenameFiles: event,
-      onDidChangeWorkspaceFolders: event,
-      onDidChangeConfiguration: event
-    },
-    env: createCallableStub()
-  };
-}
-
-function createCallableStub() {
-  const target = function callableStub() {
-    return proxy;
-  };
-  const proxy = new Proxy(target, {
-    apply: () => proxy,
-    construct: () => ({}),
-    get: (object, property, receiver) => {
-      const descriptor = Reflect.getOwnPropertyDescriptor(object, property);
-      if (descriptor && !descriptor.configurable) {
-        return Reflect.get(object, property, receiver);
-      }
-      if (property === "then") {
-        return undefined;
-      }
-      if (property === Symbol.toPrimitive) {
-        return () => 0;
-      }
-      return proxy;
-    }
-  });
-  return proxy;
+  return path.dirname(bundlePath);
 }
