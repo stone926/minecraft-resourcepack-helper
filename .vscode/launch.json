@@ -10,12 +10,10 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}",
-				"--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode-rsgl"
+				"--extensionDevelopmentPath=${workspaceFolder}"
 			],
 			"outFiles": [
-				"${workspaceFolder}/out/**/*.js",
-				"${workspaceFolder}/extensions/vscode-rsgl/out/**/*.js"
+				"${workspaceFolder}/out/**/*.js"
 			],
 			"preLaunchTask": "npm: build"
 		},
@@ -26,7 +24,8 @@
 			"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
 			"args": [
 				"${workspaceFolder}/out/src/test/unit/**/*.test.js",
-				"${workspaceFolder}/out/packages/**/test/**/*.test.js"
+				"${workspaceFolder}/out/packages/**/test/**/*.test.js",
+				"${workspaceFolder}/out/test/**/*.test.js"
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal",

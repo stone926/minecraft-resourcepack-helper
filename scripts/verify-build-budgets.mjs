@@ -6,18 +6,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { bundleEntryDefinitions, bundleModes } from "./build-bundles.mjs";
+import {
+  mainVsixBudgetEntryIds,
+  readBuildBudgetConfiguration
+} from "./build-budget-config.mjs";
+import { findVsixArchiveEntry, readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
+
+export {
+  mainVsixBudgetEntryIds,
+  parseBuildBudgetConfiguration,
+  readBuildBudgetConfiguration
+} from "./build-budget-config.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
-const budgets = JSON.parse(readFileSync(path.join(scriptDirectory, "build-budgets.json"), "utf8"));
-
-const supportedTargets = Object.freeze(["main", "rsgl", "rsgl-cli"]);
+const supportedTargets = Object.freeze(["main", "rsgl-cli"]);
 const targetEntries = Object.freeze({
-  main: Object.freeze(["root", "rsglHost", "server", "worker", "modelPreview"]),
-  rsgl: Object.freeze(["rsglHost", "server", "worker"]),
+  main: mainVsixBudgetEntryIds,
   "rsgl-cli": Object.freeze(["cli"])
 });
+const budgets = readBuildBudgetConfiguration();
 
 export function parseBudgetArguments(args) {
   let target = "all";
@@ -81,8 +90,8 @@ export function parseBudgetArguments(args) {
 
   budgetTargets(target);
   assertBundleMode(bundleMode);
-  if (artifactPath && target !== "main" && target !== "rsgl") {
-    throw new Error("--artifact requires --target main or --target rsgl.");
+  if (artifactPath && target !== "main") {
+    throw new Error("--artifact requires --target main.");
   }
   return { target, artifactPath, bundleMode };
 }
@@ -109,8 +118,8 @@ export function createBudgetPlan(options = {}) {
     && (typeof artifactPath !== "string" || artifactPath.length === 0)) {
     throw new Error("An artifact path must be a non-empty string.");
   }
-  if (artifactPath !== undefined && target !== "main" && target !== "rsgl") {
-    throw new Error("An artifact path requires the main or rsgl budget target.");
+  if (artifactPath !== undefined && target !== "main") {
+    throw new Error("An artifact path requires the main budget target.");
   }
   return targets.map(selectedTarget => Object.freeze({
     target: selectedTarget,
@@ -119,7 +128,7 @@ export function createBudgetPlan(options = {}) {
   }));
 }
 
-export function verifyBuildBudgets(options = {}) {
+export async function verifyBuildBudgets(options = {}) {
   const verifiedEntries = new Set();
   for (const step of createBudgetPlan(options)) {
     for (const entryId of targetEntries[step.target]) {
@@ -132,16 +141,14 @@ export function verifyBuildBudgets(options = {}) {
     if (step.target === "main") {
       verifyActivationBudget("root", "src/extension.ts");
       verifyColdActivationBudget("root", bundleEntryDefinitions.root.outfile);
-      verifyRsglBundleIsolation(true);
-    } else if (step.target === "rsgl") {
-      verifyActivationBudget("rsglHost", "extensions/vscode-rsgl/src/extension.ts");
+      verifyActivationBudget("rsglHost", "src/rsgl/host/rsglHost.ts");
       verifyColdActivationBudget("rsglHost", bundleEntryDefinitions.rsglHost.outfile);
-      verifyRsglBundleIsolation(false);
+      verifyRsglBundleIsolation(true);
     } else if (step.target === "rsgl-cli") {
       verifyCliBundle();
     }
     if (step.artifactPath !== undefined) {
-      verifyVsixBudget(step.target, step.artifactPath);
+      await verifyVsixBudget(step.target, step.artifactPath);
     }
   }
 }
@@ -272,28 +279,31 @@ function verifyColdActivationBudget(name, relativeFileName) {
   );
 }
 
-function verifyVsixBudget(name, relativeFileName) {
+async function verifyVsixBudget(name, relativeFileName) {
   const absoluteFileName = path.resolve(repositoryRoot, relativeFileName);
   if (!existsSync(absoluteFileName)) {
     throw new Error(`${name} VSIX does not exist: ${absoluteFileName}`);
   }
-  const entries = listArchiveEntries(absoluteFileName);
-  assertWithinBudget(`${name} VSIX files`, entries.filter(Boolean).length, budgets.vsixFiles[name]);
-}
-
-function listArchiveEntries(fileName) {
-  const command = process.platform === "win32"
-    ? { file: "tar", args: ["-tf", fileName] }
-    : { file: "unzip", args: ["-Z1", fileName] };
-  const result = spawnSync(command.file, command.args, { encoding: "utf8", windowsHide: true });
-  if (result.error || result.status !== 0) {
-    throw new Error([
-      `Unable to list ${fileName} with ${command.file}.`,
-      result.error?.message,
-      result.stderr
-    ].filter(Boolean).join("\n"));
+  const metrics = await readVsixArchiveMetrics(absoluteFileName);
+  for (const metric of ["archiveBytes", "compressedEntriesBytes", "installedBytes", "fileCount"]) {
+    assertFrozenArtifactBudget(
+      `${name} VSIX ${metric}`,
+      metrics[metric],
+      budgets.mainVsix[metric]
+    );
   }
-  return result.stdout.trim().split(/\r?\n/);
+  for (const entryId of mainVsixBudgetEntryIds) {
+    const archivePath = `extension/${bundleEntryDefinitions[entryId].outfile}`;
+    const entry = findVsixArchiveEntry(metrics, archivePath);
+    if (!entry || entry.directory) {
+      throw new Error(`${name} VSIX is missing budgeted runtime entry: ${archivePath}`);
+    }
+    assertFrozenArtifactBudget(
+      `${name} VSIX ${entryId} compressed bytes`,
+      entry.compressedBytes,
+      budgets.mainVsix.runtimeEntryCompressedBytes[entryId]
+    );
+  }
 }
 
 function assertBundleMode(bundleMode) {
@@ -312,6 +322,15 @@ function assertWithinBudget(label, actual, maximum) {
   console.log(`${label}: ${actual}/${maximum}`);
 }
 
+function assertFrozenArtifactBudget(label, actual, maximum) {
+  if (maximum === null) {
+    throw new Error(
+      `Budget for ${label} is not frozen. Run npm run measure:combined-vsix and review its budgetCandidate.`
+    );
+  }
+  assertWithinBudget(label, actual, maximum);
+}
+
 function isMainModule() {
   if (!process.argv[1]) {
     return false;
@@ -323,5 +342,5 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  verifyBuildBudgets(parseBudgetArguments(process.argv.slice(2)));
+  await verifyBuildBudgets(parseBudgetArguments(process.argv.slice(2)));
 }

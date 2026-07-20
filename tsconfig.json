@@ -8,7 +8,7 @@
     { "path": "./packages/rsgl-lsp" },
     { "path": "./packages/rsgl-cli" },
     { "path": "./tsconfig.main.json" },
-    { "path": "./extensions/vscode-rsgl" },
+    { "path": "./tsconfig.rsgl-host.json" },
     { "path": "./tsconfig.tests.json" }
   ]
 }

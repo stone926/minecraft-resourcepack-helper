@@ -5,19 +5,21 @@ import { findByNormalizedPath, normalizePathKey } from "../../mc-assets/src";
 import {
   CodeActionKind,
   createConnection,
+  ErrorCodes,
   ProposedFeatures,
+  ResponseError,
   TextDocuments,
   TextDocumentSyncKind,
-  type CompletionItem
+  type CancellationToken,
+  type CompletionItem,
+  type Location
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
-  compileRsglResourceNavigation,
   findRsglProjectConfig,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
   loadRsglProjectConfigForSource,
-  projectCompileOptionsFromRsglConfig,
   RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
   resolveRsglNavigationSourceRoot,
@@ -30,8 +32,12 @@ import {
   rsglDependencyPathsNotification,
   rsglDependencyStructureChangedNotification,
   rsglRefreshWorkspaceNotification,
+  rsglResourceNavigationRequest,
+  rsglResourceSnapshotInvalidatedNotification,
+  rsglResourceSnapshotRequest,
   type RsglDependencyPathsNotification,
-  type RsglDependencyStructureChangedNotification
+  type RsglDependencyStructureChangedNotification,
+  type RsglResourceSnapshotRequest
 } from "../../rsgl-shared/src";
 import {
   completionItemsForDocument as completionItemsForDocumentCore,
@@ -53,6 +59,7 @@ import {
   normalizeDisplayFileName,
   projectSemanticConfigurationFingerprint,
   referenceLocationsForDocument,
+  resourceAnalysisConfigurationFor,
   requiredExactWatchPathsForDocuments,
   prepareRenameForDocument,
   renameEditsForDocument,
@@ -65,14 +72,31 @@ import {
   type RsglValidationSettings
 } from "./serverCore";
 import { DirtyDiagnosticScheduler } from "./diagnosticScheduler";
+import {
+  RsglResourceAnalysisCache,
+  type RsglResourceAnalysisEntry
+} from "./resourceAnalysisCache";
+import {
+  RsglResourceSnapshotProtocolError,
+  RsglResourceSnapshotService
+} from "./resourceSnapshotService";
+import {
+  fileNameFromSerializedResourceUri,
+  rsglSourceUriFromFileName,
+  type RsglResourceUriNativePathMapping
+} from "./resourceSnapshotUris";
+import { resourceNavigationTargetsAtOffset } from "./resourceNavigationTarget";
+import {
+  createResourceNavigationRequest,
+  mergeLspResourceLocations,
+  requireMatchingResourceNavigationResponse,
+  toLspResourceNavigationLocations
+} from "./resourceNavigationTransport";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
-const semanticCache = RsglWorkspaceSemanticCache.create();
-let resourceNavigationCache = new WeakMap<
-  RsglWorkspaceSemanticProgram,
-  RsglResourceNavigationIndex
->();
+let semanticCache = RsglWorkspaceSemanticCache.create();
+const resourceAnalysisCache = new RsglResourceAnalysisCache();
 const projectTargetCache = new RsglProjectTargetCache();
 // Targeted watchers provide low-latency invalidation, while TTL/version checks
 // remain the correctness fallback for paths excluded by VS Code watcher rules.
@@ -82,8 +106,23 @@ const resourceNavigationDependenciesByRoot = new Map<string, RsglDocumentDepende
 const dependencyVerificationUris = new Set<string>();
 let publishedDependencyPaths = "";
 let workspaceNavigationRoots: string[] = [];
+let initializedWorkspaceNavigationRoots: string[] = [];
+let resourceNavigationRequestGeneration = 0;
 
-let validationSettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
+let validationSettings: RsglValidationSettings = {
+  defaultAssetsPath: null,
+  resourcePackRoots: [],
+  workspaceFolders: []
+};
+
+const resourceSnapshotService = new RsglResourceSnapshotService({
+  loadAnalysis: (sourceRootFileName, projectContext, nativePathMappings) =>
+    loadResourceAnalysis(sourceRootFileName, undefined, projectContext, nativePathMappings),
+  documentFact: fileName => {
+    const document = findOpenDocument(fileName);
+    return document ? { version: document.version } : undefined;
+  }
+});
 
 const diagnosticScheduler = new DirtyDiagnosticScheduler<string>({
   delayMs: 150,
@@ -108,7 +147,9 @@ semanticCache.setOpenTextDocumentProvider(fileName => openDocumentForFileName(fi
 
 connection.onInitialize(params => {
   validationSettings = toValidationSettings(params.initializationOptions);
-  workspaceNavigationRoots = workspaceRootFileNamesFromInitialization(params);
+  replaceSemanticCache(validationSettings.stdlibRoot);
+  initializedWorkspaceNavigationRoots = workspaceRootFileNamesFromInitialization(params);
+  workspaceNavigationRoots = configuredWorkspaceNavigationRoots(validationSettings);
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -139,33 +180,41 @@ connection.onInitialize(params => {
 });
 
 connection.onDidChangeConfiguration(params => {
-  validationSettings = toValidationSettings(params.settings);
+  const nextValidationSettings = toValidationSettings(params.settings);
+  if (nextValidationSettings.stdlibRoot !== validationSettings.stdlibRoot) {
+    replaceSemanticCache(nextValidationSettings.stdlibRoot);
+  }
+  validationSettings = nextValidationSettings;
+  workspaceNavigationRoots = configuredWorkspaceNavigationRoots(validationSettings);
   projectTargetCache.invalidateAll();
   workspaceValidationCache.invalidateAll();
+  invalidateResourceAnalysisCache(true);
+  publishResourceSnapshotInvalidations("configuration");
   scheduleAllOpenDocuments(0);
 });
 
 documents.onDidOpen(event => {
   invalidateDocument(event.document);
-  scheduleAffectedDocuments(fileNameFromUri(event.document.uri), event.document.uri, 0);
+  scheduleAffectedDocuments(nativeFileNameFromUri(event.document.uri), event.document.uri, 0);
 });
 documents.onDidChangeContent(event => {
   invalidateDocument(event.document);
-  scheduleAffectedDocuments(fileNameFromUri(event.document.uri), event.document.uri);
+  scheduleAffectedDocuments(nativeFileNameFromUri(event.document.uri), event.document.uri);
 });
 documents.onDidClose(event => {
-  const fileName = fileNameFromUri(event.document.uri);
+  const fileName = nativeFileNameFromUri(event.document.uri);
   diagnosticScheduler.drop(event.document.uri);
   dependencyVerificationUris.delete(event.document.uri);
   semanticCache.invalidatePath(fileName);
   dependenciesByDocument.delete(event.document.uri);
   publishDependencyPaths();
+  publishResourceSnapshotInvalidations("document", [fileName]);
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
   scheduleAffectedDocuments(fileName, undefined, 0);
 });
 
 connection.onDidChangeWatchedFiles(params => {
-  const changedFileNames = params.changes.map(change => fileNameFromUri(change.uri));
+  const changedFileNames = params.changes.map(change => nativeFileNameFromUri(change.uri));
   const affectedUris = new Set<string>();
   for (const changedFileName of changedFileNames) {
     for (const uri of documentsDependingOnPath(dependenciesByDocument, changedFileName)) {
@@ -219,7 +268,15 @@ function scheduleWatchedPathInvalidation(
       semanticCache.invalidatePath(invalidationPath);
     }
   }
-  invalidateResourceNavigationCache(configurationChanged);
+  invalidateResourceAnalysisCache(configurationChanged);
+  publishResourceSnapshotInvalidations(
+    configurationChanged
+      ? "configuration"
+      : invalidationPaths.some(fileName => path.extname(fileName).toLowerCase() === ".rsgl")
+        ? "document"
+        : "dependency",
+    invalidationPaths
+  );
   if (configurationChanged) {
     projectTargetCache.invalidateAll();
     semanticCache.invalidateAll();
@@ -233,10 +290,22 @@ function scheduleWatchedPathInvalidation(
 
 connection.onNotification(rsglRefreshWorkspaceNotification, () => {
   semanticCache.invalidateAll();
-  invalidateResourceNavigationCache(true);
+  invalidateResourceAnalysisCache(true);
   projectTargetCache.invalidateAll();
   workspaceValidationCache.invalidateAll();
+  publishResourceSnapshotInvalidations("refresh");
   scheduleAllOpenDocuments(0);
+});
+
+connection.onRequest(rsglResourceSnapshotRequest, (request: unknown) => {
+  try {
+    return resourceSnapshotService.handle(request);
+  } catch (error) {
+    if (error instanceof RsglResourceSnapshotProtocolError) {
+      throw new ResponseError(ErrorCodes.InvalidParams, error.message, { code: error.code });
+    }
+    throw error;
+  }
 });
 
 connection.onCompletion(params => {
@@ -263,7 +332,7 @@ connection.onHover(params => {
     return null;
   }
   const offset = document.offsetAt(params.position);
-  return computeDocumentHover(document, fileNameFromUri(document.uri), offset, {
+  return computeDocumentHover(document, nativeFileNameFromUri(document.uri), offset, {
     ...documentLanguageWorkspace()
   });
 });
@@ -275,43 +344,62 @@ connection.onSignatureHelp(params => {
   }
   return computeDocumentSignatureHelp(
     document,
-    fileNameFromUri(document.uri),
+    nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
   );
 });
 
-connection.onDefinition(async params => {
+connection.onDefinition(async (params, token) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) {
     return null;
   }
   const definitions = definitionLocationsForDocument(
     document,
-    fileNameFromUri(document.uri),
+    nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     documentLanguageWorkspace()
   );
-  if (definitions.length === 0) {
-    return null;
+  const coreLocations = definitions.length > 0
+    ? await toLspDefinitionLocations(definitions, loadLanguageDocument)
+    : [];
+  if (coreLocations.length > 0) {
+    return coreLocations;
   }
-  const locations = await toLspDefinitionLocations(definitions, loadLanguageDocument);
+  const locations = await requestMainResourceNavigation(
+    "definition",
+    document,
+    document.offsetAt(params.position),
+    false,
+    token
+  );
   return locations.length > 0 ? locations : null;
 });
 
-connection.onReferences(async params => {
+connection.onReferences(async (params, token) => {
   const document = documents.get(params.textDocument.uri);
   if (!document) {
     return [];
   }
   const references = referenceLocationsForDocument(
     document,
-    fileNameFromUri(document.uri),
+    nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     params.context.includeDeclaration,
     documentLanguageWorkspace()
   );
-  return toLspReferenceLocations(references, loadLanguageDocument);
+  const [coreLocations, physicalLocations] = await Promise.all([
+    toLspReferenceLocations(references, loadLanguageDocument),
+    requestMainResourceNavigation(
+      "references",
+      document,
+      document.offsetAt(params.position),
+      params.context.includeDeclaration,
+      token
+    )
+  ]);
+  return mergeLspResourceLocations([coreLocations, physicalLocations]);
 });
 
 connection.onPrepareRename(params => {
@@ -321,7 +409,7 @@ connection.onPrepareRename(params => {
   }
   return prepareRenameForDocument(
     document,
-    fileNameFromUri(document.uri),
+    nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
   );
@@ -334,7 +422,7 @@ connection.onRenameRequest(async params => {
   }
   const edits = renameEditsForDocument(
     document,
-    fileNameFromUri(document.uri),
+    nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     params.newName,
     { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
@@ -348,7 +436,7 @@ connection.languages.semanticTokens.on(params => {
     return { data: [] };
   }
   return {
-    data: computeDocumentSemanticTokens(document, fileNameFromUri(document.uri), {
+    data: computeDocumentSemanticTokens(document, nativeFileNameFromUri(document.uri), {
       loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
     })
   };
@@ -366,7 +454,7 @@ documents.listen(connection);
 connection.listen();
 
 function validateDocument(document: TextDocument): void {
-  const fileName = fileNameFromUri(document.uri);
+  const fileName = nativeFileNameFromUri(document.uri);
   let compileDependencies: readonly CompileDependency[] = [];
   let projectConfigWatchPaths: readonly string[] = [];
   const diagnostics = computeDocumentDiagnostics(document, fileName, {
@@ -400,13 +488,15 @@ function validateDocument(document: TextDocument): void {
 }
 
 function invalidateDocument(document: TextDocument): void {
-  semanticCache.invalidatePath(fileNameFromUri(document.uri));
+  const fileName = nativeFileNameFromUri(document.uri);
+  semanticCache.invalidatePath(fileName);
+  publishResourceSnapshotInvalidations("document", [fileName]);
 }
 
 function completionItemsForDocument(document: TextDocument, offset: number): CompletionItem[] {
   return completionItemsForDocumentCore(
     document,
-    fileNameFromUri(document.uri),
+    nativeFileNameFromUri(document.uri),
     offset,
     documentLanguageWorkspace()
   );
@@ -479,14 +569,24 @@ function loadSemanticProgram(
 }
 
 function loadNavigationSemanticProgram(sourceFileName: string) {
+  return loadNavigationSemanticProgramFromRoot(
+    navigationSourceRoot(sourceFileName),
+    sourceFileName
+  );
+}
+
+function loadNavigationSemanticProgramFromRoot(
+  rootDirectory: string,
+  configurationAnchor = rootDirectory
+) {
   let fingerprint: string | undefined;
   try {
-    fingerprint = projectSemanticConfigurationFingerprint(sourceFileName);
+    fingerprint = projectSemanticConfigurationFingerprint(configurationAnchor);
   } catch {
     // Diagnostics report malformed project config; navigation remains available.
   }
   return semanticCache.loadProgramFromDirectory(
-    navigationSourceRoot(sourceFileName),
+    rootDirectory,
     fingerprint ? { semanticConfigurationFingerprint: fingerprint } : {}
   );
 }
@@ -495,37 +595,108 @@ function loadResourceNavigation(
   sourceFileName: string,
   loadedSemanticProgram?: RsglWorkspaceSemanticProgram
 ): RsglResourceNavigationIndex {
-  const semanticProgram = loadedSemanticProgram
-    ?? loadNavigationSemanticProgram(sourceFileName);
-  const cached = resourceNavigationCache.get(semanticProgram);
-  if (cached) {
-    return cached;
-  }
-  let projectConfig: ReturnType<typeof loadRsglProjectConfigForSource>;
-  try {
-    projectConfig = loadRsglProjectConfigForSource(sourceFileName);
-  } catch {
-    projectConfig = null;
-  }
-  const build = compileRsglResourceNavigation(semanticProgram.files, {
-    semanticProgram: semanticProgram.program,
-    ...projectCompileOptionsFromRsglConfig(projectConfig?.config ?? {})
-  });
-  const index = build.index;
-  resourceNavigationCache.set(semanticProgram, index);
-  resourceNavigationDependenciesByRoot.set(
-    normalizePathKey(semanticProgram.rootDirectory ?? semanticProgram.sourceName),
-    documentDependenciesForCompile(build.compileResult.dependencies, [])
-  );
-  publishDependencyPaths();
-  return index;
+  return loadResourceAnalysis(sourceFileName, loadedSemanticProgram).analysis.index;
 }
 
-function invalidateResourceNavigationCache(clearDependencies: boolean): void {
-  resourceNavigationCache = new WeakMap();
+function loadResourceAnalysis(
+  sourceFileName: string,
+  loadedSemanticProgram?: RsglWorkspaceSemanticProgram,
+  projectContext?: RsglResourceSnapshotRequest["projectContext"],
+  nativePathMappings: Parameters<typeof resourceAnalysisConfigurationFor>[4] = []
+): RsglResourceAnalysisEntry {
+  const semanticProgram = loadedSemanticProgram
+    ?? loadNavigationSemanticProgramFromRoot(sourceFileName, sourceFileName);
+  const entry = resourceAnalysisCache.getOrCreate(
+    semanticProgram,
+    resourceAnalysisConfigurationFor(
+      sourceFileName,
+      validationSettings,
+      workspaceValidationCache,
+      projectContext,
+      nativePathMappings
+    )
+  );
+  resourceNavigationDependenciesByRoot.set(
+    normalizePathKey(semanticProgram.rootDirectory ?? semanticProgram.sourceName),
+    documentDependenciesForCompile(entry.dependencies, [])
+  );
+  publishDependencyPaths();
+  return entry;
+}
+
+async function requestMainResourceNavigation(
+  operation: "definition" | "references",
+  document: TextDocument,
+  offset: number,
+  includeDeclaration: boolean,
+  token: CancellationToken
+): Promise<Location[]> {
+  if (token.isCancellationRequested) {
+    return [];
+  }
+  let selections;
+  try {
+    const fileName = nativeFileNameFromUri(document.uri);
+    const entry = loadResourceAnalysis(fileName);
+    selections = resourceNavigationTargetsAtOffset(
+      entry.analysis,
+      fileName,
+      offset
+    );
+  } catch {
+    return [];
+  }
+  if (selections.length === 0) {
+    return [];
+  }
+
+  const sourceRootUri = document.uri.startsWith("file:")
+    ? pathToFileURL(navigationSourceRoot(nativeFileNameFromUri(document.uri))).toString()
+    : undefined;
+  const responses = await Promise.all(selections.map(async selection => {
+    const request = createResourceNavigationRequest(
+      operation,
+      ++resourceNavigationRequestGeneration,
+      document.uri,
+      selection,
+      { sourceRootUri, includeDeclaration }
+    );
+    try {
+      const value = await connection.sendRequest(rsglResourceNavigationRequest, request, token);
+      return toLspResourceNavigationLocations(
+        requireMatchingResourceNavigationResponse(value, request)
+      );
+    } catch (error) {
+      if (!token.isCancellationRequested) {
+        connection.console.error(
+          `RSGL ResourceUniverse navigation failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      return [];
+    }
+  }));
+  return mergeLspResourceLocations(responses);
+}
+
+function invalidateResourceAnalysisCache(clearDependencies: boolean): void {
+  resourceAnalysisCache.invalidateAll();
   if (clearDependencies && resourceNavigationDependenciesByRoot.size > 0) {
     resourceNavigationDependenciesByRoot.clear();
     publishDependencyPaths();
+  }
+}
+
+function replaceSemanticCache(stdlibRoot: string | undefined): void {
+  semanticCache = RsglWorkspaceSemanticCache.create({ stdlibRoot });
+  semanticCache.setOpenTextDocumentProvider(fileName => openDocumentForFileName(fileName));
+}
+
+function publishResourceSnapshotInvalidations(
+  reason: Parameters<RsglResourceSnapshotService["invalidations"]>[0],
+  changedFileNames: readonly string[] = []
+): void {
+  for (const notification of resourceSnapshotService.invalidations(reason, changedFileNames)) {
+    void connection.sendNotification(rsglResourceSnapshotInvalidatedNotification, notification);
   }
 }
 
@@ -569,6 +740,36 @@ function publishDependencyPaths(): void {
   void connection.sendNotification(rsglDependencyPathsNotification, notification);
 }
 
+function nativeFileNameFromUri(uri: string): string {
+  return fileNameFromSerializedResourceUri(uri, workspaceUriNativePathMappings())
+    ?? fileNameFromUri(uri);
+}
+
+function workspaceUriNativePathMappings(): RsglResourceUriNativePathMapping[] {
+  return (validationSettings.workspaceFolders ?? []).flatMap(folder =>
+    folder.workspaceFolderUri
+      ? [{
+          uriRoot: folder.workspaceFolderUri,
+          fileSystemPath: folder.workspaceFolderPath
+        }]
+      : []
+  );
+}
+
+function uniqueNativePaths(fileNames: readonly string[]): string[] {
+  return [...new Map(fileNames.map(fileName => [
+    normalizePathKey(path.resolve(fileName)),
+    path.resolve(fileName)
+  ])).values()];
+}
+
+function configuredWorkspaceNavigationRoots(settings: RsglValidationSettings): string[] {
+  return uniqueNativePaths([
+    ...initializedWorkspaceNavigationRoots,
+    ...(settings.workspaceFolders ?? []).map(folder => folder.workspaceFolderPath)
+  ]);
+}
+
 function openDocumentForFileName(fileName: string): { fileName: string; version?: number; getText(): string } | null {
   const document = findOpenDocument(fileName);
   return document
@@ -584,7 +785,7 @@ function findOpenDocument(fileName: string): TextDocument | null {
   return findByNormalizedPath(
     documents.all(),
     path.resolve(fileName),
-    item => item.uri.startsWith("file:") ? path.resolve(fileNameFromUri(item.uri)) : null
+    item => path.resolve(nativeFileNameFromUri(item.uri))
   ) ?? null;
 }
 
@@ -592,7 +793,7 @@ async function loadLanguageDocument(fileName: string): Promise<TextDocument | nu
   const openDocument = findByNormalizedPath(
     documents.all(),
     path.resolve(fileName),
-    item => item.uri.startsWith("file:") ? path.resolve(fileNameFromUri(item.uri)) : null
+    item => path.resolve(nativeFileNameFromUri(item.uri))
   );
   if (openDocument) {
     return openDocument;
@@ -600,7 +801,12 @@ async function loadLanguageDocument(fileName: string): Promise<TextDocument | nu
   try {
     const normalizedFileName = path.resolve(fileName);
     const text = await readFile(normalizedFileName, "utf8");
-    return TextDocument.create(pathToFileURL(normalizedFileName).toString(), "rsgl", 0, text);
+    return TextDocument.create(
+      rsglSourceUriFromFileName(normalizedFileName, workspaceUriNativePathMappings()),
+      "rsgl",
+      0,
+      text
+    );
   } catch {
     return null;
   }

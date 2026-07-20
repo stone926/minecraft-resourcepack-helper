@@ -27,7 +27,7 @@ rsgl watch [root|file] [--out <dir>]
 
 Place `rsgl.config.json` in a project directory, then run the commands from that directory. Command-line `--out` overrides the configured `outDir` without modifying the project file.
 
-The VS Code language experience is published separately as the `stone926.rsgl` extension.
+The same language, project, external-resource, and ownership semantics are built into the Minecraft Resourcepack Helper VS Code extension. The CLI remains a separately versioned npm artifact for terminal and CI workflows.
 
 ## License
 

@@ -89,7 +89,7 @@ export function parseActivationProbeArguments(args) {
     throw new Error(`Unknown activation probe adapter '${adapter}'. Expected ${activationProbeAdapters.join(", ")}.`);
   }
   const iterations = parseInteger(values.get("--iterations") ?? "20", "--iterations", 1, 100);
-  const settleMilliseconds = parseInteger(values.get("--settle-ms") ?? "50", "--settle-ms", 0, 10_000);
+  const settleMilliseconds = parseInteger(values.get("--settle-ms") ?? "1000", "--settle-ms", 0, 10_000);
   const outputPath = path.resolve(
     repositoryRoot,
     values.get("--out") ?? defaultActivationProbeOutputs[adapter]
@@ -260,7 +260,9 @@ function createActivationProbeReport(options, workspaceRoot, samples) {
       platform: process.platform,
       arch: process.arch,
       cpuCount: os.cpus().length,
-      totalMemoryBytes: os.totalmem()
+      cpuModel: os.cpus()[0]?.model ?? "unknown",
+      totalMemoryBytes: os.totalmem(),
+      extensionHost: summarizeExtensionHostEnvironment(successful)
     },
     input: {
       artifact: relativeOrAbsolute(artifactPath),
@@ -322,15 +324,19 @@ function createMeasurementScope(options) {
 
 function summarizeHardConditions(samples) {
   const rsglModuleLoads = sum(samples, sample => sample.moduleLoads.filter(event => event.rsgl).length);
-  const processSpawnAttempts = sum(samples, sample => sample.processSpawns.length);
-  const workerSpawnAttempts = sum(samples, sample => sample.workerSpawns.length);
+  const rsglProcessSpawnAttempts = sum(samples, sample => sample.processSpawns.filter(event => event.rsgl).length);
+  const rsglWorkerSpawnAttempts = sum(samples, sample => sample.workerSpawns.filter(event => event.rsgl).length);
+  const extensionOwnedNonRsglProcessSpawns = sum(samples, sample =>
+    sample.processSpawns.filter(event => event.extensionOwned && !event.rsgl).length);
+  const hostProcessSpawnNoise = sum(samples, sample =>
+    sample.processSpawns.filter(event => !event.extensionOwned && !event.rsgl).length);
   const rsglFilesystemWalks = sum(samples, sample => sample.filesystemWalks.filter(event => event.rsgl).length);
   const rsglWatcherRegistrations = sum(samples, sample => sample.watcherRegistrations.filter(event => event.rsgl).length);
   const instrumentationWarnings = sum(samples, sample => sample.instrumentationWarnings.length);
   const conditions = {
     rsglModuleLoadsZero: rsglModuleLoads === 0,
-    processSpawnAttemptsZero: processSpawnAttempts === 0,
-    workerSpawnAttemptsZero: workerSpawnAttempts === 0,
+    rsglProcessSpawnAttemptsZero: rsglProcessSpawnAttempts === 0,
+    rsglWorkerSpawnAttemptsZero: rsglWorkerSpawnAttempts === 0,
     rsglFilesystemWalksZero: rsglFilesystemWalks === 0,
     rsglWatcherRegistrationsZero: rsglWatcherRegistrations === 0,
     instrumentationWarningsZero: instrumentationWarnings === 0
@@ -339,13 +345,33 @@ function summarizeHardConditions(samples) {
     ...conditions,
     counts: {
       rsglModuleLoads,
-      processSpawnAttempts,
-      workerSpawnAttempts,
+      rsglProcessSpawnAttempts,
+      rsglWorkerSpawnAttempts,
+      extensionOwnedNonRsglProcessSpawns,
+      hostProcessSpawnNoise,
       rsglFilesystemWalks,
       rsglWatcherRegistrations,
       instrumentationWarnings
     },
     passed: Object.values(conditions).every(Boolean)
+  };
+}
+
+function summarizeExtensionHostEnvironment(samples) {
+  if (samples.length === 0 || !samples[0].extensionHost) {
+    return null;
+  }
+  const environments = samples.map(sample => ({
+    node: sample.extensionHost.node,
+    platform: sample.extensionHost.platform,
+    arch: sample.extensionHost.arch,
+    vscodeVersion: sample.extensionHost.vscodeVersion
+  }));
+  const first = environments[0];
+  return {
+    ...first,
+    consistent: environments.every(value => JSON.stringify(value) === JSON.stringify(first)),
+    distinctProcessCount: new Set(samples.map(sample => sample.extensionHost.pid)).size
   };
 }
 
@@ -356,6 +382,13 @@ function createRunnerFailureSample(adapter, iteration, error) {
     iteration,
     status: "error",
     error: { name: "ActivationProbeRunnerError", message: errorMessage(error) },
+    extensionHost: adapter === "extension-host" ? {
+      pid: process.pid,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      vscodeVersion: "runner-failure"
+    } : undefined,
     activationMilliseconds: 0,
     rssBeforeBytes: 0,
     rssAfterActivationBytes: 0,

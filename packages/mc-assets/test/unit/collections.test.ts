@@ -16,7 +16,9 @@ describe("shared collection helpers", () => {
     const offenders = sourceFiles
       .filter(fileName => {
         const source = fs.readFileSync(fileName, "utf8");
-        return source.includes("[...new Set(") || /function\s+unique\s*\(/.test(source);
+        return source.includes("[...new Set(")
+          || source.includes("Array.from(new Set(")
+          || /function\s+unique\s*\(/.test(source);
       })
       .map(fileName => normalizePathKey(path.relative(process.cwd(), fileName)));
 

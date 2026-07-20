@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
 import { localize } from "../i18n/runtime";
 import { ResourceGraphService } from "../services/resourceGraphService";
+import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 import { ResourceGraphTreeProvider } from "../views/resourceGraphTree";
+import {
+  getResourceGraphNodeModel,
+  getResourceGraphNodeNavigation
+} from "../views/resourceGraphTreeItem";
 import {
   ResourceGraphTreeModel,
   type ResourceGraphTreeDocument,
@@ -17,8 +22,11 @@ export interface ResourceGraphController {
   invalidatePath(uri: ResourceGraphUriLike, kind?: ResourceGraphPathChangeKind): void;
 }
 
-export function registerResourceGraph(context: vscode.ExtensionContext): ResourceGraphController {
-  const service = new ResourceGraphService();
+export function registerResourceGraph(
+  context: vscode.ExtensionContext,
+  navigation: ResourceUniverseNavigationFacade
+): ResourceGraphController {
+  const service = new ResourceGraphService(navigation);
   const model = new ResourceGraphTreeModel(service, (message, ...args) => localize({ message, args }));
   const provider = new ResourceGraphTreeProvider(model);
   const controller: ResourceGraphController = {
@@ -33,11 +41,39 @@ export function registerResourceGraph(context: vscode.ExtensionContext): Resourc
   };
   context.subscriptions.push(
     provider,
+    navigation.onDidChangeResources(() => provider.refreshSoon(50, true)),
     vscode.window.createTreeView("McResHelper.resourceGraph", {
       treeDataProvider: provider,
       showCollapseAll: true
     }),
-    vscode.commands.registerCommand("McResHelper.refreshResourceGraph", () => controller.refresh())
+    vscode.commands.registerCommand("McResHelper.refreshResourceGraph", () => controller.refresh()),
+    vscode.commands.registerCommand("McResHelper.navigateResourceGraphNode", async value => {
+      const target = getResourceGraphNodeNavigation(value);
+      if (target) {
+        await service.navigate(target);
+      }
+    }),
+    vscode.commands.registerCommand("McResHelper.openGeneratedResource", async value => {
+      const target = getResourceGraphNodeNavigation(value);
+      if (target) {
+        await service.navigate(target, { preferMaterialized: false });
+      }
+    }),
+    vscode.commands.registerCommand("McResHelper.openMaterializedResource", async value => {
+      const target = getResourceGraphNodeNavigation(value);
+      if (target) {
+        await service.navigate(target, { preferMaterialized: true });
+      }
+    }),
+    vscode.commands.registerCommand("McResHelper.showResourceConflictOwners", async value => {
+      const resource = getResourceGraphNodeModel(value)?.resource;
+      if (resource) {
+        await service.showConflictOwners(resource);
+      }
+    }),
+    vscode.commands.registerCommand("McResHelper.configureVanillaSource", () =>
+      service.configureVanillaSource()
+    )
   );
   return controller;
 }

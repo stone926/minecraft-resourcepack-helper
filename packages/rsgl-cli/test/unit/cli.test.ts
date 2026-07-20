@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   createCliContext,
   isRsglWatchPathRelevant,
@@ -15,6 +16,10 @@ import {
 import { parseRsglProjectConfig } from "../../../rsgl-core/src/rsglConfig";
 import { resolvedRsglPathKey } from "../../../rsgl-core/src/pathIdentity";
 import type { CompileDependency } from "../../../rsgl-core/src/compiler";
+import {
+  createLocalResourceLayerDescriptor,
+  createResourceProjectId
+} from "../../../resource-project/src";
 
 interface CapturedIo {
   io: RsglCliIo;
@@ -150,6 +155,7 @@ describe("RSGL CLI", () => {
     assert.ok(output.includes("--out <dir>, --outDir <dir>"));
     assert.ok(output.includes("for build, check, and watch"));
     assert.ok(output.includes("--preview"));
+    assert.ok(output.includes("--adopt-identical"));
     assert.ok(output.includes("(build only)"));
     assert.ok(output.includes("--watch"));
     assert.ok(output.includes("equivalent to watch"));
@@ -194,6 +200,36 @@ describe("RSGL CLI", () => {
       );
       assert.ok(captured.stdout().includes("RSGL build complete"));
       assert.ok(!captured.stderr().includes(" error "));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires --adopt-identical before claiming matching outputs whose manifest was removed", () => {
+    const root = createTempRoot();
+    const sourceRoot = path.join(root, "src");
+    const outDir = path.join(root, "pack");
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "main.rsgl"), minimalModel);
+      assert.strictEqual(runRsglCli(["build", sourceRoot, "--out", outDir], captureIo().io), 0);
+      fs.rmSync(path.join(outDir, ".rsgl", "manifests"), { recursive: true });
+
+      const refused = captureIo();
+      assert.strictEqual(runRsglCli(["build", sourceRoot, "--out", outDir], refused.io), 1);
+      assert.match(refused.stderr(), /rsgl\.materializationConflict/);
+      assert.doesNotMatch(refused.stdout(), /RSGL build complete/);
+
+      const adopted = captureIo();
+      assert.strictEqual(runRsglCli([
+        "build",
+        sourceRoot,
+        "--out",
+        outDir,
+        "--adopt-identical"
+      ], adopted.io), 0);
+      assert.match(adopted.stdout(), /RSGL build complete/);
+      assert.strictEqual(fs.readdirSync(path.join(outDir, ".rsgl", "manifests")).length, 1);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -349,12 +385,19 @@ describe("RSGL CLI", () => {
     const customPack = path.join(root, "custom packs", "资源 包");
     const vanillaTexture = path.join(defaultAssets, "assets", "example", "textures", "item", "vanilla.png");
     const customTexture = path.join(customPack, "assets", "example", "textures", "item", "custom.png");
+    const localTexture = path.join(projectRoot, "generated pack", "assets", "example", "textures", "item", "local.png");
     try {
-      for (const directory of [sourceRoot, path.dirname(vanillaTexture), path.dirname(customTexture)]) {
+      for (const directory of [
+        sourceRoot,
+        path.dirname(vanillaTexture),
+        path.dirname(customTexture),
+        path.dirname(localTexture)
+      ]) {
         fs.mkdirSync(directory, { recursive: true });
       }
       fs.writeFileSync(vanillaTexture, Buffer.alloc(0));
       fs.writeFileSync(customTexture, Buffer.alloc(0));
+      fs.writeFileSync(localTexture, Buffer.alloc(0));
       fs.writeFileSync(path.join(customPack, "pack.mcmeta"), "{}");
       fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({ unexpected: true }));
       fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
@@ -369,9 +412,22 @@ describe("RSGL CLI", () => {
       assert.strictEqual(context.configFileName, path.join(projectRoot, "rsgl.config.json"));
       assert.strictEqual(context.root, sourceRoot);
       assert.strictEqual(context.options.outputRoot, path.join(projectRoot, "generated pack"));
+      const projectRootUri = pathToFileURL(projectRoot).toString();
+      const sourceRootUri = pathToFileURL(sourceRoot).toString();
+      const outputRootUri = pathToFileURL(path.join(projectRoot, "generated pack")).toString();
+      assert.deepStrictEqual(context.options.materializationProject, {
+        projectId: createResourceProjectId({
+          projectRootUri,
+          outputPackRootUri: outputRootUri,
+          rsglSourceRootUris: [sourceRootUri]
+        }),
+        sourceRoot: "sources",
+        outputPackRootIdentity: createLocalResourceLayerDescriptor(outputRootUri).layerId
+      });
       assert.strictEqual(context.options.checkExternExistence, false);
       assert.strictEqual(context.options.externResourceExists?.("vanilla", "texture", "example:item/vanilla"), true);
       assert.strictEqual(context.options.externResourceExists?.("custom", "texture", "example:item/custom"), true);
+      assert.strictEqual(context.options.externResourceExists?.("local", "texture", "example:item/local"), true);
       assert.strictEqual(context.options.externResourceExists?.("custom", "texture", "example:item/vanilla"), false);
       assert.strictEqual(context.configSearchRoot, sourceRoot);
     } finally {
@@ -458,6 +514,60 @@ describe("RSGL CLI", () => {
       isRsglWatchPathRelevant(path.join(root, "fragments", "unrelated.json"), dependencies),
       false
     );
+  });
+
+  it("refuses to overwrite an unowned CLI output and records project ownership", () => {
+    const root = createTempRoot();
+    const sourceRoot = path.join(root, "src");
+    const outDir = path.join(root, "pack");
+    const modelFile = path.join(outDir, "assets", "minecraft", "models", "block", "stone.json");
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.mkdirSync(path.dirname(modelFile), { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "main.rsgl"), minimalModel);
+      fs.writeFileSync(modelFile, "handwritten");
+
+      const captured = captureIo();
+      const exitCode = runRsglCli(["build", sourceRoot, "--out", outDir], captured.io);
+
+      assert.strictEqual(exitCode, 1);
+      assert.strictEqual(fs.readFileSync(modelFile, "utf8"), "handwritten");
+      assert.ok(captured.stderr().includes("rsgl.materializationConflict"));
+      assert.ok(!captured.stdout().includes("RSGL build complete"));
+
+      fs.rmSync(outDir, { recursive: true, force: true });
+      const successful = captureIo();
+      assert.strictEqual(runRsglCli(["build", sourceRoot, "--out", outDir], successful.io), 0);
+      const manifestDirectory = path.join(outDir, ".rsgl", "manifests");
+      assert.strictEqual(fs.readdirSync(manifestDirectory).filter(name => name.endsWith(".json")).length, 1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats config root as authoritative and rejects assets output roots", () => {
+    const root = createTempRoot();
+    const sourceRoot = path.join(root, "project", "configured sources");
+    const explicitAnchor = path.join(root, "project", "nested");
+    const outputRoot = path.join(root, "pack");
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.mkdirSync(explicitAnchor, { recursive: true });
+      fs.writeFileSync(path.join(root, "project", "rsgl.config.json"), JSON.stringify({
+        root: "configured sources",
+        outDir: path.relative(path.join(root, "project"), outputRoot)
+      }));
+
+      const context = createCliContext({ command: "check", root: explicitAnchor });
+      assert.strictEqual(context.root, sourceRoot);
+      assert.strictEqual(context.options.outputRoot, outputRoot);
+      assert.throws(
+        () => createCliContext({ command: "check", root: explicitAnchor, outDir: path.join(outputRoot, "assets") }),
+        /resource-pack root, not an assets directory/
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("watches glob create, change, and delete events inside and outside the source root", () => {

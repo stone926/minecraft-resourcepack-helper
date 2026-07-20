@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://stone926.github.io/rsgl/schemas/rsgl-config.schema.json",
+  "title": "RSGL 项目配置",
+  "description": "用于配置 RSGL 编译、输出、外部资源和求值限制的项目设置。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "root": {
+      "type": "string",
+      "description": "VS Code、LSP 与 CLI 共用的 RSGL 源目录根路径，相对于此配置文件解析。"
+    },
+    "outDir": {
+      "type": "string",
+      "not": {
+        "pattern": "(^|[\\\\/])[aA][sS][sS][eE][tT][sS][\\\\/]?$"
+      },
+      "description": "VS Code、LSP 与 CLI 共用的输出资源包根目录，相对于此配置文件解析；不能指向 assets 目录。"
+    },
+    "emitSourceMap": {
+      "type": "boolean",
+      "description": "构建时是否生成 RSGL 源映射。"
+    },
+    "manifest": {
+      "type": "boolean",
+      "description": "构建时是否生成 RSGL 清单。"
+    },
+    "defaultAssetsPath": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "校验原版资源时使用的默认 Minecraft assets 根目录；设为 null 可禁用。"
+    },
+    "resourcePackRoots": {
+      "type": "array",
+      "description": "按自定义资源包加载顺序排列的资源包根目录，相对于此配置文件解析。",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extern": {
+      "type": "array",
+      "description": "项目范围的外部资源声明。",
+      "items": {
+        "$ref": "#/definitions/externEntry"
+      }
+    },
+    "checkExternExistence": {
+      "type": "boolean",
+      "description": "外部资源声明是否检查匹配的资源确实存在。"
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^(?!\\.\\.$)[a-z0-9_.-]+$",
+      "description": "项目默认的 Minecraft 命名空间。RSGL 文件中的 namespace 声明会覆盖此默认值。"
+    },
+    "target": {
+      "$ref": "#/definitions/target"
+    },
+    "maxEvaluationItems": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "default": 100000,
+      "description": "编译期求值和展开所允许的最大工作项数量。"
+    },
+    "maxItemModelDepth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "default": 128,
+      "description": "递归物品模型展开后的最大深度，以根深度 0 起算的边数衡量。"
+    }
+  },
+  "definitions": {
+    "target": {
+      "type": "object",
+      "description": "项目范围的 Java 资源包目标约束。format 与 mc 必须且只能指定一个。",
+      "additionalProperties": false,
+      "required": [
+        "edition"
+      ],
+      "properties": {
+        "edition": {
+          "const": "java",
+          "description": "此项目面向的 Minecraft 版本类型。"
+        },
+        "format": {
+          "description": "Java 资源包格式，可以是正整数主版本，也可以是精确的 [主版本, 次版本] 数组。",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              ],
+              "additionalItems": false
+            }
+          ]
+        },
+        "mc": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+(?:\\.\\d+)?$",
+          "description": "用于解析资源包格式的 Minecraft Java 版本，例如 1.21.4。"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "format"
+          ]
+        },
+        {
+          "required": [
+            "mc"
+          ]
+        }
+      ]
+    },
+    "externEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "kind",
+        "patterns"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "资源查找来源：目标资源包、自定义资源包根目录或原版 Minecraft assets。",
+          "enum": [
+            "local",
+            "custom",
+            "vanilla"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "description": "此外部声明所匹配的资源类型。",
+          "enum": [
+            "model",
+            "blockstate",
+            "item",
+            "font",
+            "texture",
+            "texture_directory",
+            "sound",
+            "font_file",
+            "shader_vertex",
+            "shader_fragment"
+          ]
+        },
+        "patterns": {
+          "type": "array",
+          "description": "此外部声明所匹配的资源 ID 模式。",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "checkExistence": {
+          "type": "boolean",
+          "description": "是否检查匹配的资源确实存在；此设置会覆盖项目范围的选项。"
+        }
+      }
+    }
+  }
+}

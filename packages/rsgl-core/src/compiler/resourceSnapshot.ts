@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   canonicalizeResourceGraphIdentity,
   canonicalizeResourceGraphOutputPath,
+  uniqueValues,
   type ResourceGraphLogicalKey
 } from "../../../mc-assets/src";
 import { isVirtualBuiltinModelId } from "./resourceReferenceValidation";
@@ -446,7 +447,7 @@ function uniqueByIdentity<T>(values: readonly T[], identity: (value: T) => strin
 }
 
 function uniqueStrings(values: readonly string[]): string[] {
-  return [...new Set(values)].sort(compareOrdinal);
+  return uniqueValues(values).sort(compareOrdinal);
 }
 
 function logicalKeyIdentity(key: ResourceGraphLogicalKey): string {

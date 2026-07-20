@@ -58,13 +58,14 @@ export interface ResourceProjectConfigurationDto {
   root?: string;
   outDir?: string;
   targetPackFormat?: ResourcePackFormatDto;
-  vanillaLayer?: ResourceLayerConfigurationDto;
+  /** Null is an explicit project-level override that disables the shared layer. */
+  vanillaLayer?: ResourceLayerConfigurationDto | null;
   externalLayers?: readonly ResourceLayerConfigurationDto[];
   overlaySelection?: readonly string[];
 }
 
 export interface ResourceProjectSharedConfigurationDto {
-  vanillaLayer?: ResourceLayerConfigurationDto;
+  vanillaLayer?: ResourceLayerConfigurationDto | null;
   externalLayers?: readonly ResourceLayerConfigurationDto[];
   overlaySelection?: readonly string[];
 }

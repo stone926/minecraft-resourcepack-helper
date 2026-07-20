@@ -13,10 +13,12 @@
     "src/**/*.ts"
   ],
   "exclude": [
-    "src/test/**"
+    "src/test/**",
+    "src/rsgl/host/**"
   ],
   "references": [
     { "path": "./packages/mc-assets" },
-    { "path": "./packages/resource-project" }
+    { "path": "./packages/resource-project" },
+    { "path": "./packages/rsgl-shared" }
   ]
 }

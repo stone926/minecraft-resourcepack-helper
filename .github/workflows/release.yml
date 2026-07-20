@@ -4,12 +4,11 @@ on:
   push:
     tags:
       - "v*"
-      - "rsgl-v*"
       - "rsgl-cli-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag (vX.Y.Z, rsgl-vX.Y.Z, or rsgl-cli-vX.Y.Z)"
+        description: "Existing release tag (vX.Y.Z or rsgl-cli-vX.Y.Z)"
         required: true
         type: string
 
@@ -89,14 +88,10 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            extensions/vscode-rsgl/package-lock.json
             tools/vsce-publisher/package-lock.json
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install RSGL extension dependencies
-        run: npm ci --prefix extensions/vscode-rsgl
 
       - name: Install pinned Marketplace publishing client
         if: needs.contract.outputs.publish_kind == 'marketplace'

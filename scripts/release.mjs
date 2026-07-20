@@ -28,7 +28,7 @@ for (const flag of flags) {
 }
 if (positional.length > 2) {
   fail(
-    "Usage: release.mjs [main|rsgl|rsgl-cli] [current|patch|minor|major|x.y.z] "
+    "Usage: release.mjs [main|rsgl-cli] [current|patch|minor|major|x.y.z] "
       + "[--dry-run] [--skip-tests] [--no-push] [--resume]"
   );
 }
@@ -84,7 +84,7 @@ async function main() {
   if (!skipTests) {
     run("npm", ["test"]);
   }
-  run(process.execPath, ["scripts/build.mjs", "all"]);
+  run(process.execPath, ["scripts/build.mjs", "all", "--bundle-mode", "production"]);
 
   if (!taggingCurrentVersion) {
     updateTargetVersion(nextVersion);
@@ -168,7 +168,7 @@ function printPlan(notes, branchName) {
   }
   console.log("Steps:");
   console.log(skipTests ? "- tests skipped" : "- npm test");
-  console.log("- node scripts/build.mjs all");
+  console.log("- node scripts/build.mjs all --bundle-mode production");
   if (!taggingCurrentVersion) {
     console.log(`- update only ${target.manifestPath}${target.lockPath ? `, ${target.lockPath}` : ""}, and ${target.changelogPath}`);
     console.log("- create a target-specific release commit");

@@ -10,15 +10,6 @@ export const releaseTargets = Object.freeze({
     changelogPath: "CHANGELOG.md",
     publishKind: "marketplace"
   }),
-  rsgl: Object.freeze({
-    id: "rsgl",
-    displayName: "RSGL",
-    tagPrefix: "rsgl-v",
-    manifestPath: "extensions/vscode-rsgl/package.json",
-    lockPath: "extensions/vscode-rsgl/package-lock.json",
-    changelogPath: "extensions/vscode-rsgl/CHANGELOG.md",
-    publishKind: "marketplace"
-  }),
   "rsgl-cli": Object.freeze({
     id: "rsgl-cli",
     displayName: "RSGL CLI",
@@ -53,7 +44,7 @@ export function parseReleaseTag(tag) {
     }
   }
   throw new Error(
-    `Invalid release tag '${tag}'. Expected vX.Y.Z, rsgl-vX.Y.Z, or rsgl-cli-vX.Y.Z.`
+    `Invalid release tag '${tag}'. Expected vX.Y.Z or rsgl-cli-vX.Y.Z.`
   );
 }
 

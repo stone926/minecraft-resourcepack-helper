@@ -9,8 +9,6 @@ const repoRoot = path.resolve(__dirname, "..");
 const supportedPaths = [
   "out",
   "bundle",
-  "extensions/vscode-rsgl/out",
-  "extensions/vscode-rsgl/bundle",
   "packages/rsgl-cli/dist"
 ];
 const requestedPaths = process.argv.slice(2);

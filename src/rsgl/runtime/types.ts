@@ -30,6 +30,11 @@ export interface RsglRuntimeLoadRequest {
 /** Narrow root-to-lazy-host lifetime boundary. */
 export interface RsglRuntimeInstance {
   ensureLanguageServer?(reason: RsglRuntimeLoadReason, signal: AbortSignal): Promise<void>;
+  requestResourceSnapshot?(request: unknown, signal: AbortSignal): Promise<unknown>;
+  onResourceSnapshotInvalidated?(
+    listener: (notification: unknown) => void
+  ): { dispose(): void };
+  executeCommand?(command: string, ...args: unknown[]): Promise<unknown>;
   projectRevisionChanged?(): void | Promise<void>;
   dispose(): void | Promise<void>;
 }

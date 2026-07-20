@@ -7,12 +7,15 @@ import {
   compileDependencyMatchesPath,
   compileDependencyPatternStructurallyMatchesPath,
   compileDependencyWatchPattern,
+  createRsglMaterializationProject,
   formatRsglBuildPreview,
   getRsglProjectConfigWatchPaths,
+  assertRsglOutputPackRoot,
   loadRsglProjectConfigForSource,
   projectCompileOptionsFromRsglConfig,
   previewRsglResourcePackDirectoryBuild,
   rebaseCompileDependencyWatchPattern,
+  resolveRsglOutputPackRoot,
   resolvedRsglPathKey,
   type CompileDependency,
   type RsglBuildOptions,
@@ -26,6 +29,7 @@ export interface RsglCliArgs {
   outDir?: string;
   watch?: boolean;
   preview?: boolean;
+  adoptIdentical?: boolean;
 }
 
 /** Output sinks for CLI text, injectable for tests. */
@@ -130,7 +134,7 @@ function build(args: RsglCliArgs, io: RsglCliIo): number {
   printDiagnostics(result.diagnostics, io);
   if (args.preview && result.plan) {
     io.writeOut(formatRsglBuildPreview(result.plan, { sourceRoot: context.root }));
-  } else if (result.plan) {
+  } else if (result.plan && (!result.materialization || result.materialization.status === "committed")) {
     io.writeOut(`RSGL build complete: ${result.plan.summary.create} created, ${result.plan.summary.update} updated, ${result.plan.summary.unchanged} unchanged.\n`);
   }
   return result.diagnostics.some(diagnostic => diagnostic.severity === "error") ? 1 : 0;
@@ -271,7 +275,7 @@ export function startRsglCliWatch(
       scheduleRun
     );
     printDiagnostics(result.diagnostics, io);
-    if (result.plan) {
+    if (result.plan && (!result.materialization || result.materialization.status === "committed")) {
       io.writeOut(`RSGL build complete: ${result.plan.summary.create} created, ${result.plan.summary.update} updated, ${result.plan.summary.unchanged} unchanged.\n`);
     }
     if (hasRun && rootChanged) {
@@ -508,14 +512,23 @@ export function createCliContext(args: RsglCliArgs): RsglCliContext {
 function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: string): RsglCliContext {
   const loadedConfig = loadRsglProjectConfigForSource(configSearchRoot);
   const config = loadedConfig?.config ?? {};
-  const root = args.root ? configSearchRoot : (config.root ?? configSearchRoot);
-  const outputRoot = args.outDir ? path.resolve(args.outDir) : (config.outDir ?? path.resolve("assets"));
+  const root = config.root ?? configSearchRoot;
+  const outputRoot = args.outDir
+    ? assertRsglOutputPackRoot(path.resolve(args.outDir), "--out")
+    : resolveRsglOutputPackRoot(root, config.outDir) ?? path.resolve(".generated");
   return {
     root,
     configSearchRoot,
     configFileName: loadedConfig?.fileName ?? null,
     options: {
       outputRoot,
+      materializationProject: createRsglMaterializationProject(
+        root,
+        outputRoot,
+        loadedConfig ? path.dirname(loadedConfig.fileName) : outputRoot
+      ),
+      materializationSourceRoot: root,
+      adoptUnownedIdentical: args.adoptIdentical,
       sourceMaps: config.emitSourceMap ?? true,
       manifest: config.manifest ?? true,
       ...projectCompileOptionsFromRsglConfig(config),
@@ -523,6 +536,7 @@ function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: stri
       checkExternExistence: config.checkExternExistence,
       ...createRsglWorkspaceValidationOptions({
         sourceFileName: root,
+        outputPackRoot: outputRoot,
         defaultAssetsPath: config.defaultAssetsPath,
         resourcePackRoots: config.resourcePackRoots
       })
@@ -535,15 +549,21 @@ function createCliContextWithoutConfig(
   configSearchRoot: string
 ): RsglCliContext {
   const root = configSearchRoot;
+  const outputRoot = args.outDir
+    ? assertRsglOutputPackRoot(path.resolve(args.outDir), "--out")
+    : resolveRsglOutputPackRoot(root) ?? path.resolve(".generated");
   return {
     root,
     configSearchRoot,
     configFileName: null,
     options: {
-      outputRoot: args.outDir ? path.resolve(args.outDir) : path.resolve("assets"),
+      outputRoot,
+      materializationProject: createRsglMaterializationProject(root, outputRoot, outputRoot),
+      materializationSourceRoot: root,
+      adoptUnownedIdentical: args.adoptIdentical,
       sourceMaps: true,
       manifest: true,
-      ...createRsglWorkspaceValidationOptions({ sourceFileName: root })
+      ...createRsglWorkspaceValidationOptions({ sourceFileName: root, outputPackRoot: outputRoot })
     }
   };
 }
@@ -564,6 +584,8 @@ export function parseRsglCliArgs(argv: string[]): RsglCliArgs {
       result.watch = true;
     } else if (arg === "--preview") {
       result.preview = true;
+    } else if (arg === "--adopt-identical") {
+      result.adoptIdentical = true;
     } else if (!result.root) {
       result.root = arg;
     }
@@ -591,6 +613,7 @@ function printHelp(io: RsglCliIo): void {
     "Options:",
     "  --out <dir>, --outDir <dir>  Override the output directory for build, check, and watch",
     "  --preview                    Preview changes without writing generated files (build only)",
+    "  --adopt-identical            Claim byte-identical unowned outputs after explicit review",
     "  --watch                      Rebuild after changes (build only; equivalent to watch)"
   ].join("\n")}\n`);
 }

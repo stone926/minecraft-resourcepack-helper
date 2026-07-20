@@ -1,11 +1,19 @@
 {
+  "schemaVersion": 2,
   "activationModules": {
-    "root": 105,
+    "root": 165,
     "rsglHost": 12
   },
   "coldActivationMilliseconds": {
     "root": 500,
     "rsglHost": 500
+  },
+  "jsonOnlyExtensionHost": {
+    "minimumIterations": 20,
+    "minimumSteadyStateSettleMilliseconds": 1000,
+    "maximumAbsoluteP95RegressionMilliseconds": 10,
+    "maximumRelativeP95RegressionRatio": 0.05,
+    "maximumSteadyRssP95DeltaBytes": 2097152
   },
   "bundleBytes": {
     "development": {
@@ -30,8 +38,17 @@
       "modelPreview": 184320
     }
   },
-  "vsixFiles": {
-    "main": 110,
-    "rsgl": 110
+  "mainVsix": {
+    "archiveBytes": null,
+    "compressedEntriesBytes": null,
+    "installedBytes": null,
+    "fileCount": 110,
+    "runtimeEntryCompressedBytes": {
+      "root": null,
+      "rsglHost": null,
+      "server": null,
+      "worker": null,
+      "modelPreview": null
+    }
   }
 }

@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./out",
+    "tsBuildInfoFile": "./out/.tsbuildinfo/rsgl-host.tsbuildinfo",
+    "types": [
+      "node",
+      "vscode"
+    ]
+  },
+  "include": [
+    "src/rsgl/host/**/*.ts"
+  ],
+  "references": [
+    { "path": "./packages/mc-assets" },
+    { "path": "./packages/rsgl-core" },
+    { "path": "./packages/rsgl-shared" }
+  ]
+}

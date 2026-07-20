@@ -16,6 +16,16 @@ interface ProbeModule {
   parseActivationProbeArguments(args: string[]): Record<string, unknown>;
 }
 
+interface ExtensionHostSampleModule {
+  parseExtensionHostSampleArguments(args: string[]): {
+    artifact: string;
+    workspace: string;
+    iteration: number;
+    settleMilliseconds: number;
+    sampleOutput: string;
+  };
+}
+
 interface ProbeReport {
   schemaVersion: number;
   measurement: string;
@@ -48,8 +58,8 @@ interface ProbeReport {
   };
   hardConditions: {
     rsglModuleLoadsZero: boolean;
-    processSpawnAttemptsZero: boolean;
-    workerSpawnAttemptsZero: boolean;
+    rsglProcessSpawnAttemptsZero: boolean;
+    rsglWorkerSpawnAttemptsZero: boolean;
     rsglFilesystemWalksZero: boolean;
     rsglWatcherRegistrationsZero: boolean;
     instrumentationWarningsZero: boolean;
@@ -91,11 +101,19 @@ interface ProbeSample {
 describe("JSON-only activation probe harness", () => {
   const repositoryRoot = process.cwd();
   const probeScript = path.join(repositoryRoot, "scripts", "measure-json-only-activation.mjs");
+  const extensionHostSampleScript = path.join(
+    repositoryRoot,
+    "scripts",
+    "activation-probe",
+    "extension-host-sample.mjs"
+  );
   let probe: ProbeModule;
+  let extensionHostSample: ExtensionHostSampleModule;
   let temporaryRoots: string[] = [];
 
   before(async () => {
     probe = await import(pathToFileURL(probeScript).href) as ProbeModule;
+    extensionHostSample = await import(pathToFileURL(extensionHostSampleScript).href) as ExtensionHostSampleModule;
   });
 
   afterEach(() => {
@@ -157,8 +175,10 @@ describe("JSON-only activation probe harness", () => {
     assert.strictEqual(report.hardConditions.passed, true);
     assert.deepStrictEqual(report.hardConditions.counts, {
       rsglModuleLoads: 0,
-      processSpawnAttempts: 0,
-      workerSpawnAttempts: 0,
+      rsglProcessSpawnAttempts: 0,
+      rsglWorkerSpawnAttempts: 0,
+      extensionOwnedNonRsglProcessSpawns: 0,
+      hostProcessSpawnNoise: 0,
       rsglFilesystemWalks: 0,
       rsglWatcherRegistrations: 0,
       instrumentationWarnings: 0
@@ -186,7 +206,7 @@ describe("JSON-only activation probe harness", () => {
       "exports.activate = () => {",
       '  require("./features/rsglHost.js");',
       '  fs.readdirSync(path.join(__dirname, "..", "rsgl-source"));',
-      '  childProcess.spawn(process.execPath, ["--version"]);',
+      '  childProcess.spawn(process.execPath, ["bundle/rsgl/server.js"]);',
       "};"
     ].join("\n"));
     const output = path.join(fixture.root, "raw", "violations.json");
@@ -205,10 +225,10 @@ describe("JSON-only activation probe harness", () => {
     assert.strictEqual(report.summary.successfulSamples, 0);
     assert.strictEqual(report.summary.failedSamples, 1);
     assert.strictEqual(report.hardConditions.rsglModuleLoadsZero, false);
-    assert.strictEqual(report.hardConditions.processSpawnAttemptsZero, false);
+    assert.strictEqual(report.hardConditions.rsglProcessSpawnAttemptsZero, false);
     assert.strictEqual(report.hardConditions.rsglFilesystemWalksZero, false);
     assert.ok(report.hardConditions.counts.rsglModuleLoads > 0);
-    assert.strictEqual(report.hardConditions.counts.processSpawnAttempts, 1);
+    assert.strictEqual(report.hardConditions.counts.rsglProcessSpawnAttempts, 1);
     assert.strictEqual(report.hardConditions.counts.rsglFilesystemWalks, 1);
     const sample = report.samples[0];
     assert.strictEqual(sample.status, "error");
@@ -239,6 +259,40 @@ describe("JSON-only activation probe harness", () => {
       ]),
       /accepts --bundle/
     );
+
+    const parsed = extensionHostSample.parseExtensionHostSampleArguments([
+      "--artifact", "dist/combined-production.vsix",
+      "--workspace", "test/fixtures/resource-project/mixed-pack/project",
+      "--iteration", "7",
+      "--settle-ms", "50",
+      "--sample-out", "dist/measurements/sample.json"
+    ]);
+    assert.strictEqual(parsed.iteration, 7);
+    assert.strictEqual(parsed.settleMilliseconds, 50);
+    assert.ok(path.isAbsolute(parsed.artifact));
+    assert.ok(path.isAbsolute(parsed.workspace));
+    assert.ok(path.isAbsolute(parsed.sampleOutput));
+    assert.throws(
+      () => extensionHostSample.parseExtensionHostSampleArguments([
+        "--artifact", "combined.vsix",
+        "--workspace", "workspace"
+      ]),
+      /Missing required Extension Host sample argument/
+    );
+    assert.ok(fs.existsSync(path.join(
+      repositoryRoot,
+      "scripts",
+      "activation-probe",
+      "extension-host-run.cjs"
+    )));
+    const realRunner = fs.readFileSync(path.join(
+      repositoryRoot,
+      "scripts",
+      "activation-probe",
+      "extension-host-run.cjs"
+    ), "utf8");
+    assert.match(realRunner, /vscode\.workspace.*\["findFiles"\]/s);
+    assert.match(realRunner, /vscode\.workspace\.fs.*\["readDirectory"\]/s);
   });
 
   it("keeps the existing cold-activation leaf compatible with the shared VS Code stub", () => {

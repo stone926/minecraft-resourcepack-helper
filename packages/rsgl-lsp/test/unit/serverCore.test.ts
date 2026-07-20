@@ -172,6 +172,45 @@ describe("RSGL LSP server core", () => {
     );
   });
 
+  it("retains the explicit installed stdlib root from initialization settings", () => {
+    const stdlibRoot = path.resolve("installed extension", "资源", "rsgl", "stdlib");
+    const settings = toValidationSettings({
+      stdlibRoot,
+      defaultAssetsPath: null,
+      resourcePackRoots: []
+    });
+
+    assert.strictEqual(settings.stdlibRoot, stdlibRoot);
+    assert.strictEqual(
+      workspaceValidationOptionsFor(path.resolve("workspace", "main.rsgl"), settings).stdlibRoot,
+      stdlibRoot
+    );
+  });
+
+  it("normalizes workspace-folder scoped shared resource settings", () => {
+    const workspaceFolderPath = path.resolve("workspace", "pack");
+    const workspaceFolderUri = "vscode-remote://ssh-remote+dev/work/%E8%B5%84%E6%BA%90";
+    assert.deepStrictEqual(toValidationSettings({
+      defaultAssetsPath: "global-assets",
+      resourcePackRoots: ["global-pack"],
+      workspaceFolders: [{
+        workspaceFolderUri,
+        workspaceFolderPath,
+        defaultAssetsPath: "folder-assets",
+        resourcePackRoots: ["folder-pack", 7]
+      }, null]
+    }), {
+      defaultAssetsPath: "global-assets",
+      resourcePackRoots: ["global-pack"],
+      workspaceFolders: [{
+        workspaceFolderUri,
+        workspaceFolderPath,
+        defaultAssetsPath: "folder-assets",
+        resourcePackRoots: ["folder-pack"]
+      }]
+    });
+  });
+
   it("falls back to safe defaults for garbage settings payloads", () => {
     const fallback = { defaultAssetsPath: null, resourcePackRoots: [] };
     assert.deepStrictEqual(toValidationSettings(undefined), fallback);
@@ -463,6 +502,80 @@ describe("RSGL LSP server core", () => {
     }
   });
 
+  it("uses workspace-folder settings and lets project fields override them", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-scoped-settings-"));
+    const firstProject = path.join(root, "first");
+    const secondProject = path.join(root, "second");
+    const firstSource = path.join(firstProject, "src", "main.rsgl");
+    const secondSource = path.join(secondProject, "src", "main.rsgl");
+    const firstAssets = path.join(root, "first assets");
+    const secondAssets = path.join(root, "second assets");
+    const firstTexture = path.join(firstAssets, "assets", "example", "textures", "item", "scoped.png");
+    const secondTexture = path.join(secondAssets, "assets", "example", "textures", "item", "scoped.png");
+    try {
+      for (const fileName of [firstSource, secondSource, firstTexture, secondTexture]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, "");
+      }
+      fs.writeFileSync(path.join(secondProject, "rsgl.config.json"), JSON.stringify({
+        defaultAssetsPath: path.relative(secondProject, secondAssets)
+      }));
+      const settings: RsglValidationSettings = {
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        workspaceFolders: [{
+          workspaceFolderPath: firstProject,
+          defaultAssetsPath: firstAssets,
+          resourcePackRoots: []
+        }, {
+          workspaceFolderPath: secondProject,
+          defaultAssetsPath: firstAssets,
+          resourcePackRoots: []
+        }]
+      };
+
+      assert.strictEqual(
+        workspaceValidationOptionsFor(firstSource, settings)
+          .externResourceExists("vanilla", "texture", "example:item/scoped"),
+        true
+      );
+      assert.strictEqual(
+        workspaceValidationOptionsFor(secondSource, settings)
+          .externResourcePath("vanilla", "texture", "example:item/scoped"),
+        secondTexture
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves extern local from project outDir when sources live outside the pack", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-local-outdir-"));
+    const projectRoot = path.join(root, "tooling");
+    const sourceFile = path.join(projectRoot, "sources", "main.rsgl");
+    const outputPack = path.join(root, "target pack");
+    const localModel = path.join(outputPack, "assets", "example", "models", "block", "handwritten.json");
+    try {
+      for (const fileName of [sourceFile, localModel]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+        fs.writeFileSync(fileName, fileName.endsWith(".json") ? "{}" : "");
+      }
+      fs.writeFileSync(path.join(outputPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
+        root: "sources",
+        outDir: path.relative(projectRoot, outputPack)
+      }));
+
+      const validation = workspaceValidationOptionsFor(sourceFile, emptySettings);
+      assert.strictEqual(
+        validation.externResourcePath("local", "model", "example:block/handwritten"),
+        localModel
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("maps project namespace, target, and compile limits into LSP compile options", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-compile-config-"));
     const sourceFile = path.join(root, "src", "main.rsgl");
@@ -550,17 +663,17 @@ describe("RSGL LSP server core", () => {
   it("keeps VS Code build payload precedence aligned with project config semantics", () => {
     const buildSource = fs.readFileSync(path.join(
       process.cwd(),
-      "extensions",
-      "vscode-rsgl",
       "src",
+      "rsgl",
+      "host",
       "commands",
       "build.ts"
     ), "utf8");
 
     assert.ok(buildSource.includes("defaultAssetsPath: projectDefaultAssetsPath === undefined"));
-    assert.ok(buildSource.includes("? configuredDefaultAssetsPath()"));
+    assert.ok(buildSource.includes("? configuredDefaultAssetsPath(configurationScope)"));
     assert.strictEqual(
-      buildSource.includes("projectConfig?.defaultAssetsPath ?? configuredDefaultAssetsPath()"),
+      buildSource.includes("projectConfig?.defaultAssetsPath ?? configuredDefaultAssetsPath(configurationScope)"),
       false
     );
     assert.ok(buildSource.includes("const validationAnchor = isDirectoryBuildContext(context)"));
@@ -1624,16 +1737,17 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("workspaceRootFileNamesFromInitialization(params)"));
     assert.ok(serverSource.includes("...workspaceNavigationRoots"));
     assert.ok(serverSource.includes("loadResourceNavigation"));
-    assert.ok(serverSource.includes("compileRsglResourceNavigation"));
+    assert.ok(serverSource.includes("resourceAnalysisCache.getOrCreate"));
+    assert.ok(serverSource.includes("resourceAnalysisConfigurationFor"));
     assert.ok(serverSource.includes("resourceNavigationDependenciesByRoot"));
-    assert.ok(serverSource.includes("documentDependenciesForCompile(build.compileResult.dependencies, [])"));
+    assert.ok(serverSource.includes("documentDependenciesForCompile(entry.dependencies, [])"));
     assert.match(
       serverSource,
-      /function loadResourceNavigation\([\s\S]*?loadedSemanticProgram[\s\S]*?\?\? loadNavigationSemanticProgram\(sourceFileName\)/
+      /function loadResourceNavigation\([\s\S]*?return loadResourceAnalysis\(sourceFileName, loadedSemanticProgram\)\.analysis\.index/
     );
     assert.match(
       serverSource,
-      /function scheduleWatchedPathInvalidation[\s\S]*?invalidateResourceNavigationCache\(configurationChanged\)/
+      /function scheduleWatchedPathInvalidation[\s\S]*?invalidateResourceAnalysisCache\(configurationChanged\)/
     );
     assert.ok(serverSource.includes("loadRsglProjectConfigForSource"));
     assert.ok(serverSource.includes("findRsglProjectConfig(sourceFileName)"));

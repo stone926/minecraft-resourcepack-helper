@@ -9,6 +9,7 @@
     "src/**/*.ts"
   ],
   "references": [
-    { "path": "../mc-assets" }
+    { "path": "../mc-assets" },
+    { "path": "../resource-project" }
   ]
 }

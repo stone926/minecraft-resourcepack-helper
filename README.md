@@ -24,7 +24,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 - Extra semantic checks for `pack.mcmeta`, `pack.png`, colormap PNG sizes, `sounds.json`, post-effect targets, model parent/texture-variable chains, and `assets/<namespace>/texts/{splashes,end,postcredits}.txt`.
 - English and Simplified Chinese localization for extension commands, runtime prompts, diagnostics, resource graph labels, model preview issues, and model preview webview controls.
 - Commands for scaffolding a modern resource pack with namespace folders, a default `pack.png`, and `min_format`/`max_format` pack metadata.
-- Optional RSGL support through the companion `stone926.rsgl` extension, which is included in this extension pack and owns `.rsgl` language features, build commands, and the bundled language server.
+- Integrated, lazy RSGL language tooling and build commands, with generated resources participating in the same project context, definitions, diagnostics, and resource graph as handwritten assets.
 
 ## Quick Start
 
@@ -34,7 +34,7 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 4. Optional: configure `McResHelper.resourcePackLoadOrder` with absolute paths to lower-priority resource pack roots.
 5. Open a supported resource pack file and use Go to Definition, path suggestions, diagnostics, the Minecraft Resources activity bar view, or model preview for model JSON files.
 
-The extension activates automatically when the workspace contains `pack.mcmeta`. The Marketplace install also offers the RSGL companion through an extension pack; it can be removed independently, and Minecraft Resourcepack Helper continues to work without it.
+The extension activates for a resource pack or an `.rsgl` document. RSGL runtime code, its language-server process, source watchers, and build worker remain unloaded in a JSON-only workflow until an RSGL signal actually needs them.
 
 ## Resource Resolution
 
@@ -105,23 +105,25 @@ The view has cached workspace indexes and can be refreshed manually with **McRes
 
 ## RSGL
 
-RSGL support is split into a separate VS Code extension: `stone926.rsgl`. It is included in the main extension's extension pack for convenient installation, but it is not a runtime dependency and can be removed independently.
+RSGL is included in this extension and uses the same resource-pack project and resolution settings as JSON, shader, texture, and CIT tooling. Its runtime is isolated behind a lazy host bundle; the language server and build worker are separate processes that start only on demand.
 
-The RSGL extension owns:
+Integrated RSGL support includes:
 
 - `.rsgl` language registration, syntax highlighting, language configuration, diagnostics, completion, hover, and formatting.
 - RSGL build and preview commands such as **RSGL: Build Resourcepack JSON**, **RSGL: Preview Build**, **RSGL: Build Source Directory**, and workspace build variants.
-- VS Code settings under the `rsgl.*` namespace for the output directory, vanilla assets fallback, and lower-priority resource packs.
-- Project compiler options in `rsgl.config.json`, including the Minecraft target, source maps, generated JSON validation, source roots, and evaluation limits.
-- The bundled RSGL language server plus shared compiler/core packages.
+- Project compiler options in `rsgl.config.json`, including `root`, `outDir`, the Minecraft target, external-resource declarations, source maps, and evaluation limits. Project roots and output destinations resolve identically in VS Code, the language server, and the CLI.
+- Safe build-to-assets transactions. RSGL refuses to overwrite unknown handwritten files, another project's outputs, or generated files changed since their ownership manifest; stale outputs are removed only when ownership and the previous content hash both match.
+- Cross-language navigation between physical resources and live, unbuilt RSGL producers.
+- Read-only Definition and graph navigation into configured resource-pack ZIPs and vanilla `client.jar` files through revisioned virtual URIs; archives are never extracted into the workspace.
 
-The current language surface accepts canonical syntax only, including explicit `model` / `variants` / `multipart` / `choice` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. See the [RSGL companion extension guide](extensions/vscode-rsgl/README.md) for compilable examples, project configuration, and CLI usage.
+The language accepts canonical syntax only, including explicit `model` / `variants` / `multipart` / `choice` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. The independently published [RSGL CLI](packages/rsgl-cli/README.md) provides the same project semantics for terminal workflows.
 
 ## Configuration
 
-- `McResHelper.defaultMcAssetsPath`: absolute path to vanilla Minecraft assets. It can point at an `assets` folder, an `assets/minecraft` folder, or a resource pack root containing `assets/minecraft`.
-- `McResHelper.resourcePackLoadOrder`: absolute paths to enabled resource pack roots below the currently edited pack, ordered from higher priority to lower priority. The current pack is checked first, then this list, then vanilla assets.
+- `McResHelper.defaultMcAssetsPath`: absolute path to vanilla Minecraft assets. It can point at an `assets` folder, an `assets/minecraft` folder, a resource pack root containing `assets/minecraft`, or a vanilla `client.jar`.
+- `McResHelper.resourcePackLoadOrder`: absolute paths to enabled resource pack directories or ZIPs below the currently edited pack, ordered from higher priority to lower priority. The current pack is checked first, then this list, then vanilla assets.
 - `McResHelper.tipColorForUndefinedTextureVariables`: color used to highlight undefined `#texture` variables in model files.
+- `McResHelper.rsgl.enabled`: `auto` loads RSGL only for relevant signals, `on` preloads its host after a project is discovered, and `off` keeps its runtime, processes, providers, and source watchers disabled. Static syntax highlighting remains available.
 
 Example:
 
@@ -131,6 +133,7 @@ Example:
   "McResHelper.resourcePackLoadOrder": [
     "C:/.minecraft/resourcepacks/base_pack"
   ],
+  "McResHelper.rsgl.enabled": "auto",
   "McResHelper.tipColorForUndefinedTextureVariables": "Chartreuse"
 }
 ```
@@ -149,7 +152,7 @@ Example:
 
 The model preview commands are also available from model JSON editor menus. Resource graph model nodes provide an inline preview action. The CIT commands are accessible from the command palette; "generate CIT for current item" also appears in the editor context menu for item textures and models.
 
-RSGL commands are provided by the companion RSGL extension and use the `RSGL:` command prefix.
+Integrated RSGL commands use the `RSGL:` prefix: build or preview one file, a source directory, or all configured workspace source roots, and refresh workspace resources and diagnostics.
 
 ## Scaffolding
 
@@ -169,19 +172,19 @@ Useful focused commands:
 ```bash
 npm run benchmark:model-preview
 npm run build:rsgl
+npm run watch
 npm run package:main:vsix
-npm run package:rsgl:vsix
 npm run package:rsgl-cli
 ```
 
-The repository contains the main extension at the root, shared RSGL packages under `packages/rsgl-*`, and the standalone RSGL VS Code extension under `extensions/vscode-rsgl`. RSGL unit tests live with the core package in `packages/rsgl-core/test/unit`.
+The root extension owns five VSIX entries: the lightweight activation bundle, lazy RSGL host, isolated language server, isolated build worker, and browser-only model preview. The Node 20 CLI is a sixth, VSIX-external entry. `npm run watch` incrementally rebuilds the five VSIX entries from the single development path.
 
-The three public products release independently: the main extension uses `vX.Y.Z`, the RSGL extension uses `rsgl-vX.Y.Z`, and the npm CLI uses `rsgl-cli-vX.Y.Z`. Use `npm run release:main`, `npm run release:rsgl`, or `npm run release:rsgl-cli` so only that product's manifest, changelog, artifact, and tag are advanced. The prepared RSGL 1.0.0 first releases use `npm run release:rsgl:current` and `npm run release:rsgl-cli:current`; later release commands increment only their selected product by one patch unless an explicit version is supplied to `scripts/release.mjs`.
+There are two public artifacts: the combined VSIX uses `vX.Y.Z`, and the npm CLI uses `rsgl-cli-vX.Y.Z`. Use `npm run release:main` or `npm run release:rsgl-cli`; each release advances only its own manifest, changelog, artifact, and tag.
 
-The release script atomically pushes the current branch and exactly one target tag, with bounded retries only for transport failures. If the remote connection still fails after creating the local release commit/tag, and that tag still points exactly to HEAD, resume with `node scripts/release.mjs <main|rsgl|rsgl-cli> current --resume`; do not push only the branch, because that does not start the tag workflow.
+The release script atomically pushes the current branch and exactly one target tag, with bounded retries only for transport failures. If the remote connection still fails after creating the local release commit/tag, and that tag still points exactly to HEAD, resume with `node scripts/release.mjs <main|rsgl-cli> current --resume`; do not push only the branch, because that does not start the tag workflow.
 
 ## Links
 
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)
-- [RSGL companion extension](https://marketplace.visualstudio.com/items?itemName=stone926.rsgl)
+- [RSGL CLI](packages/rsgl-cli/README.md)
 - [Repository](https://github.com/stone926/minecraft-resourcepack-helper)

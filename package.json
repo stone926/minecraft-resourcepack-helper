@@ -16,9 +16,13 @@
   "engines": {
     "vscode": "^1.125.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "icon": "icon.png",
   "categories": [
     "Linters",
+    "Programming Languages",
     "Other"
   ],
   "repository": {
@@ -26,7 +30,15 @@
     "type": "git"
   },
   "activationEvents": [
-    "workspaceContains:**/pack.mcmeta"
+    "workspaceContains:**/pack.mcmeta",
+    "onLanguage:rsgl",
+    "onCommand:rsgl.build",
+    "onCommand:rsgl.previewBuild",
+    "onCommand:rsgl.buildDirectory",
+    "onCommand:rsgl.previewDirectoryBuild",
+    "onCommand:rsgl.buildWorkspace",
+    "onCommand:rsgl.previewWorkspaceBuild",
+    "onCommand:rsgl.refreshWorkspace"
   ],
   "keywords": [
     "minecraft",
@@ -37,9 +49,6 @@
     "mc"
   ],
   "main": "./bundle/extension.js",
-  "extensionPack": [
-    "stone926.rsgl"
-  ],
   "l10n": "./l10n",
   "contributes": {
     "languages": [
@@ -48,6 +57,24 @@
         "extensions": [
           ".mcmeta"
         ]
+      },
+      {
+        "id": "rsgl",
+        "aliases": [
+          "RSGL",
+          "rsgl"
+        ],
+        "extensions": [
+          ".rsgl"
+        ],
+        "configuration": "./language-configuration/rsgl.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rsgl",
+        "scopeName": "source.rsgl",
+        "path": "./syntaxes/rsgl.tmLanguage.json"
       }
     ],
     "jsonValidation": [
@@ -118,6 +145,10 @@
       {
         "fileMatch": "**/textures/**/*.png.mcmeta",
         "url": "%schema.pngMcmeta.url%"
+      },
+      {
+        "fileMatch": "**/rsgl.config.json",
+        "url": "%schema.rsglConfig.url%"
       }
     ],
     "commands": [
@@ -142,6 +173,26 @@
         "command": "McResHelper.refreshResources",
         "title": "%command.title.refreshResources%",
         "icon": "$(sync)"
+      },
+      {
+        "command": "McResHelper.openGeneratedResource",
+        "title": "%command.title.openGeneratedResource%",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "McResHelper.openMaterializedResource",
+        "title": "%command.title.openMaterializedResource%",
+        "icon": "$(output)"
+      },
+      {
+        "command": "McResHelper.showResourceConflictOwners",
+        "title": "%command.title.showResourceConflictOwners%",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "McResHelper.configureVanillaSource",
+        "title": "%command.title.configureVanillaSource%",
+        "icon": "$(settings-gear)"
       },
       {
         "command": "McResHelper.openModelPreview",
@@ -172,6 +223,41 @@
         "command": "McResHelper.generateCitForCurrentItem",
         "title": "%command.title.generateCitForCurrentItem%",
         "icon": "$(wand)"
+      },
+      {
+        "command": "rsgl.build",
+        "title": "%command.title.rsglBuild%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rsgl.previewBuild",
+        "title": "%command.title.rsglPreviewBuild%",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "rsgl.buildDirectory",
+        "title": "%command.title.rsglBuildDirectory%",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "rsgl.previewDirectoryBuild",
+        "title": "%command.title.rsglPreviewDirectoryBuild%",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "rsgl.buildWorkspace",
+        "title": "%command.title.rsglBuildWorkspace%",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "rsgl.previewWorkspaceBuild",
+        "title": "%command.title.rsglPreviewWorkspaceBuild%",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "rsgl.refreshWorkspace",
+        "title": "%command.title.rsglRefreshWorkspace%",
+        "icon": "$(sync)"
       }
     ],
     "viewsContainers": {
@@ -202,6 +288,26 @@
           "command": "McResHelper.openModelPreview",
           "when": "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]citresewn(?:[\\\\/]|$)/",
           "group": "navigation"
+        },
+        {
+          "command": "rsgl.build",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation"
+        },
+        {
+          "command": "rsgl.previewBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rsgl.buildDirectory",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rsgl.previewDirectoryBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@3"
         }
       ],
       "editor/context": [
@@ -224,6 +330,26 @@
           "command": "McResHelper.generateCitForCurrentItem",
           "when": "resourceExtname =~ /\\.(json|png)$/ && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:items|models[\\\\/]item|textures[\\\\/]item)(?:[\\\\/]|$)/",
           "group": "navigation"
+        },
+        {
+          "command": "rsgl.build",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation"
+        },
+        {
+          "command": "rsgl.previewBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rsgl.buildDirectory",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rsgl.previewDirectoryBuild",
+          "when": "resourceLangId == rsgl",
+          "group": "navigation@3"
         }
       ],
       "view/title": [
@@ -248,6 +374,31 @@
           "command": "McResHelper.openUnsupportedModelPreviewResource",
           "when": "view == McResHelper.resourceGraph && viewItem == unsupportedPreviewResource",
           "group": "inline"
+        },
+        {
+          "command": "McResHelper.openResourceGraphModelPreview",
+          "when": "view == McResHelper.resourceGraph && viewItem == resourceGraphGeneratedModelCurrent",
+          "group": "inline"
+        },
+        {
+          "command": "McResHelper.openGeneratedResource",
+          "when": "view == McResHelper.resourceGraph && viewItem =~ /^resourceGraphGenerated/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "McResHelper.openMaterializedResource",
+          "when": "view == McResHelper.resourceGraph && viewItem =~ /^resourceGraphGenerated(?:Model|Resource)(?:Current|Stale)$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "McResHelper.showResourceConflictOwners",
+          "when": "view == McResHelper.resourceGraph && viewItem =~ /^resourceGraphGenerated(?:Model|Resource)Conflict$/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "McResHelper.configureVanillaSource",
+          "when": "view == McResHelper.resourceGraph && viewItem == resourceGraphMissing",
+          "group": "navigation@4"
         }
       ]
     },
@@ -271,36 +422,52 @@
           "type": "string",
           "description": "%config.desc.tipColorForUndefinedTextureVariables%",
           "default": "Chartreuse"
+        },
+        "McResHelper.rsgl.enabled": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "enumDescriptions": [
+            "%config.enum.rsglEnabled.auto%",
+            "%config.enum.rsglEnabled.on%",
+            "%config.enum.rsglEnabled.off%"
+          ],
+          "description": "%config.desc.rsglEnabled%",
+          "default": "auto",
+          "scope": "resource"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "node scripts/build.mjs main",
+    "vscode:prepublish": "node scripts/build.mjs main --bundle-mode production",
     "clean": "node scripts/clean.mjs",
     "build": "node scripts/build.mjs all",
     "build:main": "node scripts/build.mjs main",
     "build:rsgl": "node scripts/build.mjs rsgl",
     "build:rsgl-cli": "node scripts/build.mjs rsgl-cli",
     "build:test": "node scripts/build.mjs test",
-    "watch": "tsc -b tsconfig.tests.json --watch",
-    "watch:rsgl-extension": "tsc -b extensions/vscode-rsgl/tsconfig.json --watch",
-    "pretest": "node scripts/build.mjs test && eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"extensions/**/*.ts\" \"test/**/*.ts\"",
-    "lint": "eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"extensions/**/*.ts\" \"test/**/*.ts\"",
-    "test": "mocha \"./out/src/test/unit/**/*.test.js\" \"./out/packages/**/test/**/*.test.js\" \"./out/extensions/**/test/**/*.test.js\" \"./out/test/**/*.test.js\"",
+    "watch": "node scripts/watch.mjs",
+    "watch:tests": "tsc -b tsconfig.tests.json --watch",
+    "pretest": "node scripts/build.mjs test && eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"test/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"packages/**/*.ts\" \"test/**/*.ts\"",
+    "test": "mocha \"./out/src/test/unit/**/*.test.js\" \"./out/packages/**/test/**/*.test.js\" \"./out/test/**/*.test.js\"",
     "test:rsgl:better-textures": "node scripts/build.mjs all --typecheck-only && node scripts/verify-rsgl-better-textures.mjs",
     "benchmark:model-preview": "node scripts/build.mjs all --typecheck-only && node scripts/model-preview-benchmark.mjs",
     "benchmark:rsgl": "node scripts/build.mjs all --typecheck-only && node scripts/rsgl-benchmark.mjs",
-    "verify:build-budgets": "node scripts/build.mjs all --bundle-only && node scripts/verify-build-budgets.mjs --target all",
+    "benchmark:resource-universe": "node scripts/build.mjs all --typecheck-only && node scripts/resource-universe-benchmark.mjs",
+    "benchmark:json-only-extension-host": "node scripts/measure-json-only-activation.mjs --adapter extension-host --runner scripts/activation-probe/extension-host-sample.mjs --artifact-kind combined-vsix --out dist/measurements/json-only-activation.combined-production.extension-host.json",
+    "verify:json-only-extension-host-budget": "node scripts/verify-json-only-activation-budget.mjs",
+    "measure:combined-vsix": "node scripts/measure-combined-vsix.mjs",
+    "verify:build-budgets": "node scripts/build.mjs all --bundle-only --bundle-mode production && node scripts/verify-build-budgets.mjs --target all --bundle-mode production",
     "package:main:vsix": "node scripts/artifact.mjs package main",
     "verify:main:vsix": "node scripts/artifact.mjs verify main",
-    "package:rsgl:vsix": "node scripts/artifact.mjs package rsgl",
-    "verify:rsgl:vsix": "node scripts/artifact.mjs verify rsgl",
     "package:rsgl-cli": "node scripts/artifact.mjs package rsgl-cli",
     "verify:rsgl-cli": "node scripts/artifact.mjs verify rsgl-cli",
     "release:main": "node scripts/release.mjs main",
-    "release:rsgl": "node scripts/release.mjs rsgl",
-    "release:rsgl:current": "node scripts/release.mjs rsgl current",
     "release:rsgl-cli": "node scripts/release.mjs rsgl-cli",
     "release:rsgl-cli:current": "node scripts/release.mjs rsgl-cli current"
   },

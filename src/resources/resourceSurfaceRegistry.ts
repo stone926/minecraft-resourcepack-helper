@@ -283,7 +283,8 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   schemaOnlySurface("lang", "**/assets/*/lang/*.json", "%schema.lang.url%"),
   schemaOnlySurface("credits", "**/assets/*/texts/credits.json", "%schema.credits.url%"),
   schemaOnlySurface("gpuWarnlist", "**/assets/*/gpu_warnlist.json", "%schema.gpuWarnlist.url%"),
-  schemaOnlySurface("regionalCompliancies", "**/assets/*/regional_compliancies.json", "%schema.regionalCompliancies.url%")
+  schemaOnlySurface("regionalCompliancies", "**/assets/*/regional_compliancies.json", "%schema.regionalCompliancies.url%"),
+  schemaOnlySurface("rsglConfig", "**/rsgl.config.json", "%schema.rsglConfig.url%")
 ];
 
 export function getResourceDocumentSelectors(

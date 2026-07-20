@@ -24,7 +24,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 - 额外语义检查覆盖 `pack.mcmeta`、`pack.png`、colormap PNG 尺寸、`sounds.json`、后处理 target、模型 parent/纹理变量链，以及 `assets/<namespace>/texts/{splashes,end,postcredits}.txt`。
 - 扩展命令、运行时提示、诊断、资源关系图标签、模型预览问题和模型预览 webview 控件均覆盖英文与简体中文本地化。
 - 提供创建现代资源包脚手架的命令，包含常用命名空间目录、默认 `pack.png` 和 `min_format`/`max_format` 资源包元数据。
-- 通过配套的 `stone926.rsgl` 扩展提供可选 RSGL 支持。该扩展列入主扩展的扩展包，负责 `.rsgl` 语言能力、构建命令和内置语言服务器。
+- 内置按需加载的 RSGL 语言能力与构建命令；生成资源与手写资源共用同一工程上下文、跳转、诊断和资源关系图。
 
 ## 快速开始
 
@@ -34,7 +34,7 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 4. 可选：用 `McResHelper.resourcePackLoadOrder` 配置低优先级资源包根目录的绝对路径。
 5. 打开受支持的资源包文件，使用跳转定义、路径建议、诊断、Minecraft 资源活动栏视图，或在模型 JSON 中打开模型预览。
 
-当工作区中存在 `pack.mcmeta` 时，扩展会自动激活。市场安装会通过扩展包一并提供 RSGL 配套扩展；用户可以单独移除它，Minecraft 资源包助手仍可正常工作。
+资源包或 `.rsgl` 文档会激活扩展。在只编辑 JSON 的工作流中，RSGL 运行时代码、语言服务器进程、源码 watcher 和构建 worker 会保持未加载，直到真实 RSGL 信号需要它们。
 
 ## 资源解析顺序
 
@@ -105,23 +105,25 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 
 ## RSGL
 
-RSGL 支持已经拆分到独立 VS Code 扩展：`stone926.rsgl`。主扩展通过扩展包提供便捷安装，但不把它作为运行时依赖；用户可以单独移除 RSGL 扩展。
+RSGL 已直接集成到本扩展，并与 JSON、shader、纹理和 CIT 工具共用同一套资源包工程与解析设置。RSGL runtime 位于延迟加载的独立 host bundle；语言服务器和构建 worker 是仅在需要时启动的隔离进程。
 
-RSGL 扩展负责：
+内置 RSGL 支持包括：
 
 - `.rsgl` 语言注册、语法高亮、语言配置、诊断、补全、悬停和格式化。
 - RSGL 构建与预览命令，例如 **RSGL: Build Resourcepack JSON**、**RSGL: Preview Build**、**RSGL: Build Source Directory** 和工作区构建命令。
-- `rsgl.*` 命名空间下的 VS Code 设置，包括输出目录、原版资源回退和低优先级资源包。
-- `rsgl.config.json` 中的项目编译选项，包括 Minecraft 目标版本、source map、生成 JSON 校验、源码根目录和求值上限。
-- 内置 RSGL 语言服务器以及共享 compiler/core 包。
+- `rsgl.config.json` 中的工程选项，包括 `root`、`outDir`、Minecraft 目标、外部资源声明、source map 与求值上限；VS Code、语言服务器和 CLI 使用完全一致的工程根与输出目录语义。
+- 安全的 build-to-assets transaction：不会覆盖未知手写文件、其他工程输出或已被用户修改的生成文件；只有 ownership manifest 与旧内容 hash 同时匹配时才清理 stale output。
+- 物理资源与尚未构建的 live RSGL producer 之间的跨语言跳转。
+- 可只读跳转到配置的资源包 ZIP 与原版 `client.jar`；资源使用带 revision 的虚拟 URI，不会解压到工作区。
 
-当前语言仅接受 canonical 语法，包括显式 `model` / `variants` / `multipart` / `choice` 模板方言和 canonical blockstate；同时支持结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。可编译示例、项目配置和 CLI 用法见 [RSGL 配套扩展指南](extensions/vscode-rsgl/README_CN.md)。
+当前语言仅接受 canonical 语法，包括显式 `model` / `variants` / `multipart` / `choice` 模板方言和 canonical blockstate；同时支持结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。独立发布的 [RSGL CLI](packages/rsgl-cli/README.md) 为终端工作流提供相同的工程语义。
 
 ## 配置项
 
-- `McResHelper.defaultMcAssetsPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹，或包含 `assets/minecraft` 的资源包根目录。
-- `McResHelper.resourcePackLoadOrder`：当前编辑资源包下层已启用资源包根目录的绝对路径列表，按高优先级到低优先级排序。解析时会先查当前资源包，再查该列表，最后查原版资源。
+- `McResHelper.defaultMcAssetsPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹、包含 `assets/minecraft` 的资源包根目录，或原版 `client.jar`。
+- `McResHelper.resourcePackLoadOrder`：当前编辑资源包下层已启用资源包目录或 ZIP 的绝对路径列表，按高优先级到低优先级排序。解析时会先查当前资源包，再查该列表，最后查原版资源。
 - `McResHelper.tipColorForUndefinedTextureVariables`：用于高亮模型文件中未定义 `#texture` 变量的颜色。
+- `McResHelper.rsgl.enabled`：`auto` 仅在相关信号出现时加载 RSGL；`on` 在发现工程后预加载 host；`off` 禁用其 runtime、进程、provider 与源码 watcher。静态语法高亮仍可使用。
 
 示例：
 
@@ -131,6 +133,7 @@ RSGL 扩展负责：
   "McResHelper.resourcePackLoadOrder": [
     "C:/.minecraft/resourcepacks/base_pack"
   ],
+  "McResHelper.rsgl.enabled": "auto",
   "McResHelper.tipColorForUndefinedTextureVariables": "Chartreuse"
 }
 ```
@@ -149,7 +152,7 @@ RSGL 扩展负责：
 
 模型预览命令也会出现在模型 JSON 的编辑器菜单中。资源关系图里的模型节点提供内联预览操作。CIT 命令可从命令面板调用；"为当前物品生成 CIT"同时显示在物品纹理和模型的编辑器右键菜单中。
 
-RSGL 命令由配套 RSGL 扩展提供，使用 `RSGL:` 命令前缀，不再使用旧的 `McResHelper` 命令 ID。
+内置 RSGL 命令使用 `RSGL:` 前缀，可构建或预览单文件、源码目录、全部工作区源码根，并刷新工作区资源与诊断。
 
 ## 脚手架
 
@@ -169,19 +172,19 @@ npm test
 ```bash
 npm run benchmark:model-preview
 npm run build:rsgl
+npm run watch
 npm run package:main:vsix
-npm run package:rsgl:vsix
 npm run package:rsgl-cli
 ```
 
-仓库根目录是主扩展，`packages/rsgl-*` 存放共享 RSGL 包，`extensions/vscode-rsgl` 是独立 RSGL VS Code 扩展。RSGL 单元测试与核心包放在一起：`packages/rsgl-core/test/unit`。
+根扩展拥有五个 VSIX entry：轻量激活 bundle、延迟 RSGL host、隔离语言服务器、隔离构建 worker 与纯浏览器模型预览。Node 20 CLI 是第六个、位于 VSIX 外的 entry。`npm run watch` 从唯一开发路径增量重建五个 VSIX entry。
 
-三个公开产品独立发布：主扩展使用 `vX.Y.Z`，RSGL 扩展使用 `rsgl-vX.Y.Z`，npm CLI 使用 `rsgl-cli-vX.Y.Z`。分别使用 `npm run release:main`、`npm run release:rsgl` 或 `npm run release:rsgl-cli`，只推进对应产品的 manifest、changelog、artifact 和 tag。已准备好的 RSGL 1.0.0 首发应使用 `npm run release:rsgl:current` 与 `npm run release:rsgl-cli:current`；后续命令默认只为选中的产品递增一个补丁版本，也可直接向 `scripts/release.mjs` 传入目标版本。
+公开制品只有两个：组合 VSIX 使用 `vX.Y.Z`，npm CLI 使用 `rsgl-cli-vX.Y.Z`。使用 `npm run release:main` 或 `npm run release:rsgl-cli`；每次只推进所选制品的 manifest、changelog、artifact 和 tag。
 
-发布脚本会原子推送当前分支和唯一的目标 tag，并只对网络传输错误进行有限重试。若远端连接在本地 release commit/tag 创建后仍失败，且该 tag 仍精确指向 HEAD，请使用 `node scripts/release.mjs <main|rsgl|rsgl-cli> current --resume` 恢复；不要只手动推送分支，否则 tag workflow 不会启动。
+发布脚本会原子推送当前分支和唯一的目标 tag，并只对网络传输错误进行有限重试。若远端连接在本地 release commit/tag 创建后仍失败，且该 tag 仍精确指向 HEAD，请使用 `node scripts/release.mjs <main|rsgl-cli> current --resume` 恢复；不要只手动推送分支，否则 tag workflow 不会启动。
 
 ## 链接
 
 - [VS Code 扩展市场](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper)
-- [RSGL 配套扩展](https://marketplace.visualstudio.com/items?itemName=stone926.rsgl)
+- [RSGL CLI](packages/rsgl-cli/README.md)
 - [项目仓库](https://github.com/stone926/minecraft-resourcepack-helper)

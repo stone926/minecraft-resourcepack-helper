@@ -9,14 +9,27 @@ describe("repository build graph", () => {
     const root = process.cwd();
     const solution = readJson<TsConfig>(path.join(root, "tsconfig.json"));
     const main = readJson<TsConfig>(path.join(root, "tsconfig.main.json"));
+    const rsglHost = readJson<TsConfig>(path.join(root, "tsconfig.rsgl-host.json"));
     const tests = readJson<TsConfig>(path.join(root, "tsconfig.tests.json"));
 
     assert.deepStrictEqual(main.include, ["src/**/*.ts"]);
-    assert.deepStrictEqual(main.exclude, ["src/test/**"]);
-    assert.deepStrictEqual(referencePaths(main), ["./packages/mc-assets", "./packages/resource-project"]);
+    assert.deepStrictEqual(main.exclude, ["src/test/**", "src/rsgl/host/**"]);
+    assert.deepStrictEqual(referencePaths(main), [
+      "./packages/mc-assets",
+      "./packages/resource-project",
+      "./packages/rsgl-shared"
+    ]);
+    assert.deepStrictEqual(rsglHost.include, ["src/rsgl/host/**/*.ts"]);
+    assert.deepStrictEqual(referencePaths(rsglHost), [
+      "./packages/mc-assets",
+      "./packages/rsgl-core",
+      "./packages/rsgl-shared"
+    ]);
     assert.ok(referencePaths(solution).includes("./tsconfig.main.json"));
+    assert.ok(referencePaths(solution).includes("./tsconfig.rsgl-host.json"));
+    assert.strictEqual(referencePaths(solution).includes("./extensions/vscode-rsgl"), false);
     assert.ok(referencePaths(solution).includes("./tsconfig.tests.json"));
-    assert.ok(tests.include?.includes("extensions/*/test/**/*.ts"));
+    assert.strictEqual(tests.include?.some(pattern => pattern.startsWith("extensions/")) ?? false, false);
     assert.ok(tests.include?.includes("test/**/*.ts"));
 
     for (const project of ["mc-assets", "resource-project", "rsgl-core", "rsgl-shared", "rsgl-lsp", "rsgl-cli"]) {
@@ -35,7 +48,7 @@ describe("repository build graph", () => {
     assert.strictEqual(manifest.main, "./bundle/extension.js");
     assert.ok(testCommand.includes("out/src/test"));
     assert.ok(testCommand.includes("out/packages/**/test"));
-    assert.ok(testCommand.includes("out/extensions/**/test"));
+    assert.strictEqual(testCommand.includes("out/extensions"), false);
     assert.ok(testCommand.includes("out/test"));
     assert.deepStrictEqual(
       Object.keys(scripts).filter(name => name === "build" || name.startsWith("build:")).sort(),
@@ -66,9 +79,9 @@ describe("repository build graph", () => {
       ])),
       {
         root: ["src/extension.ts", "bundle/extension.js"],
-        rsglHost: ["extensions/vscode-rsgl/src/extension.ts", "bundle/features/rsglHost.js"],
+        rsglHost: ["src/rsgl/host/rsglHost.ts", "bundle/features/rsglHost.js"],
         server: ["packages/rsgl-lsp/src/server.ts", "bundle/rsgl/server.js"],
-        worker: ["extensions/vscode-rsgl/src/commands/buildWorker.ts", "bundle/rsgl/worker.js"],
+        worker: ["src/rsgl/host/commands/buildWorker.ts", "bundle/rsgl/worker.js"],
         modelPreview: ["webviews/modelPreview/main.js", "bundle/model-preview.js"],
         cli: ["packages/rsgl-cli/src/main.ts", "packages/rsgl-cli/dist/rsgl.js"]
       }

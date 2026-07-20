@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- refactor: integrate RSGL language tooling, build commands, resource providers, and ownership-aware materialization into one lazy, isolated VSIX.
+- feat: unify physical, generated, custom, and vanilla resources behind one project context and resource universe for cross-language navigation and graph views.
+- feat: navigate configured resource-pack ZIPs and vanilla client jars through an extraction-free read-only virtual filesystem.
+- build: publish one production-staged VSIX with five isolated entries, a tree-shaken Three.js preview, reproducible contents hashes, and no source maps or second extension artifact.
+
 ## [2.3.3] - 2026-07-18
 
 - fix: write validated release metadata directly to GitHub Actions outputs without leaking Git command output.
@@ -12,8 +17,8 @@
 - refactor: add watcher-backed hot caches with TTL/mtime verification, explicit resource refresh, and incremental resource-graph updates.
 - refactor: separate CIT resource planning from VS Code filesystem/UI application logic and derive graph prefilters from the resource registry.
 - fix: make model previews reject mixed resource snapshots and track missing, fallback, pack-metadata, parent, and texture candidates precisely.
-- build: split project-reference builds, bundle extension entry points, enforce activation/VSIX budgets, and publish RSGL through the optional extension pack.
-- release: give the main extension, RSGL extension, and RSGL CLI independent, reproducible, digest-verified cross-platform release contracts.
+- build: split project-reference builds, bundle extension entry points, and enforce activation/VSIX budgets.
+- release: give the VSIX and RSGL CLI reproducible, digest-verified cross-platform release contracts.
 - fix: create VSIX output directories in clean CI checkouts and make release ref pushes atomic, retryable, and resumable.
 
 ## [2.3.1] - 2026-07-01

@@ -46,17 +46,6 @@
 				"reveal": "never"
 			},
 			"group": "build"
-		},
-		{
-			"label": "npm: watch:rsgl-extension",
-			"type": "npm",
-			"script": "watch:rsgl-extension",
-			"problemMatcher": "$tsc-watch",
-			"isBackground": true,
-			"presentation": {
-				"reveal": "never"
-			},
-			"group": "build"
 		}
 	]
 }

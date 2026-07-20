@@ -38,8 +38,7 @@ export const bundleEntryDefinitions = Object.freeze({
     external: ["vscode"]
   }),
   rsglHost: entry({
-    // Transitional source seam: Phase 4 can move the glue without changing the bundle identity.
-    entryPoint: "extensions/vscode-rsgl/src/extension.ts",
+    entryPoint: "src/rsgl/host/rsglHost.ts",
     outfile: "bundle/features/rsglHost.js",
     platform: "node",
     format: "cjs",
@@ -54,7 +53,7 @@ export const bundleEntryDefinitions = Object.freeze({
     target: "node22"
   }),
   worker: entry({
-    entryPoint: "extensions/vscode-rsgl/src/commands/buildWorker.ts",
+    entryPoint: "src/rsgl/host/commands/buildWorker.ts",
     outfile: "bundle/rsgl/worker.js",
     platform: "node",
     format: "cjs",
@@ -225,7 +224,7 @@ function cleanPlanOutputs(plan) {
   }
 }
 
-function copyRuntimeAssets(plan) {
+export function copyRuntimeAssets(plan) {
   if (plan.some(item => item.id === "server" || item.id === "worker" || item.id === "rsglHost")) {
     copyDirectoryOrCreate(stdlibSource, path.join(repositoryRoot, "bundle", "rsgl", "stdlib"));
   }

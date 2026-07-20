@@ -1,0 +1,458 @@
+import * as assert from "node:assert";
+import { createHash } from "node:crypto";
+import type { ResourcePackProjectContextDto } from "../../../packages/resource-project/src";
+import {
+  rsglResourceSnapshotProtocolVersion,
+  type RsglResourceSnapshotInvalidationNotification,
+  type RsglResourceSnapshotRequest,
+  type RsglResourceSnapshotResponse
+} from "../../../packages/rsgl-shared/src";
+import {
+  RsglGeneratedContributionBridge,
+  type RsglGeneratedProjectContextStore
+} from "../../rsgl/rsglGeneratedContributionBridge";
+import {
+  RsglRuntimeController,
+  type RsglRuntimeInstance
+} from "../../rsgl/runtime";
+import {
+  PhysicalAssetContributionProvider,
+  ResourceUniverseService,
+  type PhysicalAssetOwnedOutputLookup,
+  type PhysicalAssetProjectScan,
+  type PhysicalAssetProjectSource,
+  type ResourceContributionRequest
+} from "../../resourceUniverse";
+
+describe("RSGL generated contribution bridge", () => {
+  it("does not hydrate manifests or load the host while RSGL is off", async () => {
+    const context = projectContext();
+    let hostLoads = 0;
+    let manifestLists = 0;
+    const controller = new RsglRuntimeController(async () => {
+      hostLoads++;
+      return new SnapshotRuntime();
+    }, { mode: "off", hasActiveProject: true });
+    const universe = new ResourceUniverseService();
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller,
+      { listDirectoryUris: async () => { manifestLists++; return []; } }
+    );
+
+    await bridge.refreshProject(context.projectId);
+
+    assert.strictEqual(hostLoads, 0);
+    assert.strictEqual(manifestLists, 0);
+    assert.strictEqual(
+      universe.index.getCoverage("rsgl", context.projectId)?.status,
+      "unavailable"
+    );
+    await bridge.shutdown();
+    await controller.dispose();
+  });
+
+  it("stays cold for an untracked JSON-only request, then requests and reloads one project", async () => {
+    const context = projectContext();
+    const projectStore = new ProjectStore(context);
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => {
+      host.loads++;
+      return host;
+    }, { mode: "auto", hasActiveProject: true });
+    const universe = new ResourceUniverseService();
+    const bridge = new RsglGeneratedContributionBridge(projectStore, universe, controller);
+
+    assert.deepStrictEqual(universe.registry.list().map(provider => provider.providerId), ["rsgl"]);
+    await universe.refreshProviderProject("rsgl", context.projectId);
+    assert.strictEqual(host.loads, 0, "a generic JSON-only Universe refresh must not load RSGL");
+    assert.deepStrictEqual(universe.index.getCoverage("rsgl", context.projectId), {
+      status: "unavailable",
+      reason: "notProbed"
+    });
+
+    await bridge.refreshProject(context.projectId);
+    assert.strictEqual(host.loads, 1);
+    assert.strictEqual(host.languageServerStarts, 1);
+    assert.strictEqual(host.requests.length, 1);
+    assert.deepStrictEqual(host.requests[0], {
+      protocolVersion: rsglResourceSnapshotProtocolVersion,
+      projectContext: context,
+      scope: { kind: "project", projectId: context.projectId },
+      requestGeneration: 2
+    });
+    assert.strictEqual(universe.index.getCoverage("rsgl", context.projectId)?.status, "authoritative");
+    assert.ok(universe.getProducer(producerId));
+    assert.strictEqual(
+      bridge.provider.getProjectState(context.projectId)?.materializationStatus,
+      "missing",
+      "a missing manifest is explicit and never inferred from the physical output"
+    );
+
+    const staleListener = host.onlyInvalidationListener();
+    const invalidation = snapshotInvalidation(context.projectId, "invalidation-r1");
+    host.emitInvalidation(invalidation);
+    assert.deepStrictEqual(universe.index.getCoverage("rsgl", context.projectId), {
+      status: "unavailable",
+      reason: "stale",
+      lastKnownRevision: "snapshot-r1"
+    });
+    await bridge.whenIdle();
+    assert.strictEqual(host.requests.length, 2);
+    assert.strictEqual(universe.index.getCoverage("rsgl", context.projectId)?.status, "authoritative");
+
+    host.emitInvalidation(invalidation);
+    await bridge.whenIdle();
+    assert.strictEqual(host.requests.length, 2, "duplicate invalidation revisions are coalesced");
+
+    await controller.setMode("off");
+    assert.strictEqual(host.invalidationListeners.size, 0);
+    assert.strictEqual(host.disposals, 1);
+    assert.deepStrictEqual(universe.index.getCoverage("rsgl", context.projectId), {
+      status: "unavailable",
+      reason: "disabled",
+      lastKnownRevision: "snapshot-r1"
+    });
+    staleListener(snapshotInvalidation(context.projectId, "stale-runtime-r2"));
+    await bridge.whenIdle();
+    assert.strictEqual(host.requests.length, 2, "a stale runtime listener cannot refresh a newer generation");
+
+    await bridge.shutdown();
+    assert.deepStrictEqual(universe.registry.list(), []);
+    await controller.dispose();
+  });
+
+  it("hydrates and hashes ownership before one atomic generated/physical replacement", async () => {
+    const context = projectContext();
+    const projectStore = new ProjectStore(context);
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const physicalSource = new OwnershipAwarePhysicalSource(context);
+    const physicalRegistration = universe.registerProvider(
+      new PhysicalAssetContributionProvider(physicalSource)
+    );
+    const manifestUri = `${context.outputPackRootUri}/.rsgl/manifests/project.json`;
+    const expectedBytes = Buffer.from("generated model");
+    const editedBytes = Buffer.from("user edited generated model");
+    let manifestReads = 0;
+    const bridge = new RsglGeneratedContributionBridge(projectStore, universe, controller, {
+      listDirectoryUris: async () => [manifestUri],
+      readTextUri: async () => {
+        manifestReads++;
+        return ownershipManifest(context, hashBytes(expectedBytes));
+      },
+      readBinaryUri: async uri => uri.endsWith(outputPath) ? editedBytes : undefined
+    });
+    const replacements: string[][] = [];
+    const subscription = universe.onDidChange(event => {
+      if (event.kind === "replacement") {
+        replacements.push([...event.providerIds]);
+      }
+    });
+
+    await bridge.refreshProject(context.projectId);
+
+    assert.strictEqual(manifestReads, 1, "the first relevant refresh hydrates manifests once");
+    assert.strictEqual(
+      universe.getProducer(producerId)?.materializationState,
+      "conflict",
+      "the actual output hash, not path equality, detects an edited generated file"
+    );
+    assert.deepStrictEqual(
+      universe.index.getProviderProjectProducers("physical", context.projectId),
+      [],
+      "ownership-proven output is not registered as a second handwritten producer"
+    );
+    assert.deepStrictEqual(replacements, [["rsgl", "physical"]]);
+    assert.deepStrictEqual([...physicalSource.lastOwnedOutputPaths], [outputPath]);
+    assert.ok(physicalSource.lastOwnershipRevision?.startsWith("sha256:"));
+    assert.strictEqual(
+      bridge.provider.getProjectState(context.projectId)?.materializationStatus,
+      "authoritative"
+    );
+
+    subscription.dispose();
+    await bridge.shutdown();
+    physicalRegistration.dispose();
+    await controller.dispose();
+  });
+
+  it("reports malformed persisted ownership as partial without inferring paths", async () => {
+    const context = projectContext();
+    const controller = new RsglRuntimeController(async () => new SnapshotRuntime(), {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const manifestUri = `${context.outputPackRootUri}/.rsgl/manifests/broken.json`;
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller,
+      {
+        listDirectoryUris: async () => [manifestUri],
+        readTextUri: async () => "{ broken"
+      }
+    );
+
+    await bridge.refreshProject(context.projectId);
+
+    const state = bridge.provider.getProjectState(context.projectId);
+    assert.strictEqual(state?.materializationStatus, "partial");
+    assert.ok((state?.materializationIssues?.length ?? 0) > 0);
+    assert.deepStrictEqual([...bridge.provider.getOwnedOutputPaths(context.projectId)], []);
+
+    await bridge.shutdown();
+    await controller.dispose();
+  });
+
+  it("reads one committed ownership manifest and reprojects materialization facts once", async () => {
+    const context = projectContext();
+    const projectStore = new ProjectStore(context);
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    let manifestReads = 0;
+    const materializedBytes = Buffer.from("generated model");
+    const bridge = new RsglGeneratedContributionBridge(projectStore, universe, controller, {
+      readTextUri: async () => {
+        manifestReads++;
+        return JSON.stringify({
+          version: 2,
+          projectId: context.projectId,
+          sourceRoot: "rsgl",
+          outputPackRootIdentity: context.localLayer.layerId,
+          buildRevision: "ownership-r1",
+          files: [{
+            outputPath,
+            producerId,
+            kind: "model",
+            logicalKeys: [{ kind: "model", id: "demo:block/generated" }],
+            contentHash: hashBytes(materializedBytes),
+            sourceOrigins: []
+          }]
+        });
+      },
+      readBinaryUri: async uri => uri.endsWith(outputPath) ? materializedBytes : undefined
+    });
+    await bridge.refreshProject(context.projectId);
+
+    const invalidation = {
+      version: 1,
+      transactionId: "transaction-r1",
+      projectId: context.projectId,
+      ownershipRevision: "ownership-r1",
+      state: "committed",
+      changedUris: [`${context.outputPackRootUri}/${outputPath}`],
+      deletedUris: [],
+      manifestUri: `${context.outputPackRootUri}/.rsgl/manifests/project.json`
+    } as const;
+    assert.strictEqual(await bridge.acceptMaterializationInvalidation(invalidation), true);
+    assert.strictEqual(manifestReads, 1);
+    assert.strictEqual(universe.getProducer(producerId)?.materializationState, "current");
+    assert.deepStrictEqual(universe.getProducer(producerId)?.physicalOrigins, [{
+      uri: `${context.outputPackRootUri}/${outputPath}`,
+      origin: "materialized",
+      editable: true
+    }]);
+
+    assert.strictEqual(await bridge.acceptMaterializationInvalidation(invalidation), false);
+    assert.strictEqual(manifestReads, 1, "the same committed transaction is applied once");
+    await bridge.shutdown();
+    await controller.dispose();
+  });
+});
+
+const producerId = "rsgl:project:generated";
+const outputPath = "assets/demo/models/block/generated.json";
+
+class ProjectStore implements RsglGeneratedProjectContextStore {
+  public constructor(private readonly context: ResourcePackProjectContextDto) {}
+
+  public getCachedContext(projectId: string): ResourcePackProjectContextDto | undefined {
+    return projectId === this.context.projectId ? this.context : undefined;
+  }
+
+  public getCachedContexts(): readonly ResourcePackProjectContextDto[] {
+    return [this.context];
+  }
+}
+
+class SnapshotRuntime implements RsglRuntimeInstance {
+  public loads = 0;
+  public languageServerStarts = 0;
+  public disposals = 0;
+  public readonly requests: RsglResourceSnapshotRequest[] = [];
+  public readonly invalidationListeners = new Set<(value: unknown) => void>();
+
+  public async ensureLanguageServer(): Promise<void> {
+    this.languageServerStarts++;
+  }
+
+  public async requestResourceSnapshot(value: unknown): Promise<unknown> {
+    const request = value as RsglResourceSnapshotRequest;
+    this.requests.push(request);
+    if (request.knownRevision === "snapshot-r1") {
+      return notModifiedResponse(request);
+    }
+    return snapshotResponse(request);
+  }
+
+  public onResourceSnapshotInvalidated(listener: (value: unknown) => void): { dispose(): void } {
+    this.invalidationListeners.add(listener);
+    return { dispose: () => this.invalidationListeners.delete(listener) };
+  }
+
+  public emitInvalidation(value: unknown): void {
+    for (const listener of this.invalidationListeners) {
+      listener(value);
+    }
+  }
+
+  public onlyInvalidationListener(): (value: unknown) => void {
+    assert.strictEqual(this.invalidationListeners.size, 1);
+    return [...this.invalidationListeners][0];
+  }
+
+  public dispose(): void {
+    this.disposals++;
+  }
+}
+
+function snapshotResponse(request: RsglResourceSnapshotRequest): RsglResourceSnapshotResponse {
+  return {
+    protocolVersion: rsglResourceSnapshotProtocolVersion,
+    projectId: request.projectContext.projectId,
+    requestGeneration: request.requestGeneration,
+    revision: "snapshot-r1",
+    status: "ok",
+    coverage: {
+      status: "authoritative",
+      revision: "snapshot-r1",
+      coveredScope: { projectId: request.projectContext.projectId }
+    },
+    resources: [{
+      producerId,
+      kind: "model",
+      logicalKeys: [{ kind: "model", id: "demo:block/generated" }],
+      outputPath,
+      sourceOrigins: [{ uri: "file:///workspace/pack/rsgl/main.rsgl" }],
+      revision: "producer-r1"
+    }],
+    edges: []
+  };
+}
+
+function notModifiedResponse(request: RsglResourceSnapshotRequest): RsglResourceSnapshotResponse {
+  return {
+    protocolVersion: rsglResourceSnapshotProtocolVersion,
+    projectId: request.projectContext.projectId,
+    requestGeneration: request.requestGeneration,
+    revision: "snapshot-r1",
+    status: "notModified",
+    coverage: {
+      status: "authoritative",
+      revision: "snapshot-r1",
+      coveredScope: { projectId: request.projectContext.projectId }
+    }
+  };
+}
+
+function snapshotInvalidation(
+  projectId: string,
+  invalidationRevision: string
+): RsglResourceSnapshotInvalidationNotification {
+  return {
+    protocolVersion: rsglResourceSnapshotProtocolVersion,
+    projectId,
+    invalidationRevision,
+    reason: "document"
+  };
+}
+
+function projectContext(): ResourcePackProjectContextDto {
+  return {
+    projectId: "project",
+    workspaceFolderUri: "file:///workspace",
+    projectRootUri: "file:///workspace/pack",
+    packRootUri: "file:///workspace/pack",
+    assetsRootUri: "file:///workspace/pack/assets",
+    rsglSourceRootUris: ["file:///workspace/pack/rsgl"],
+    outputPackRootUri: "file:///workspace/pack",
+    outputAssetsRootUri: "file:///workspace/pack/assets",
+    localLayer: {
+      layerId: "local",
+      role: "local",
+      source: "directory",
+      rootUri: "file:///workspace/pack",
+      priority: 0,
+      metadataRevision: "metadata-r1"
+    },
+    externalLayers: [],
+    overlaySelection: [],
+    configurationRevision: "configuration-r1",
+    contextRevision: "context-r1"
+  };
+}
+
+function hashBytes(value: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function ownershipManifest(context: ResourcePackProjectContextDto, contentHash: string): string {
+  return JSON.stringify({
+    version: 2,
+    projectId: context.projectId,
+    sourceRoot: "rsgl",
+    outputPackRootIdentity: context.localLayer.layerId,
+    buildRevision: "ownership-r1",
+    files: [{
+      outputPath,
+      producerId,
+      kind: "model",
+      logicalKeys: [{ kind: "model", id: "demo:block/generated" }],
+      contentHash,
+      sourceOrigins: []
+    }]
+  });
+}
+
+class OwnershipAwarePhysicalSource implements PhysicalAssetProjectSource {
+  public lastOwnedOutputPaths: ReadonlySet<string> = new Set();
+  public lastOwnershipRevision: string | undefined;
+  private lookup?: PhysicalAssetOwnedOutputLookup;
+
+  public constructor(private readonly context: ResourcePackProjectContextDto) {}
+
+  public setOwnedOutputLookup(lookup: PhysicalAssetOwnedOutputLookup): { dispose(): void } {
+    this.lookup = lookup;
+    return { dispose: () => this.lookup === lookup && (this.lookup = undefined) };
+  }
+
+  public async scanProject(request: ResourceContributionRequest): Promise<PhysicalAssetProjectScan> {
+    this.lastOwnedOutputPaths = this.lookup?.getOwnedOutputPaths(request.projectId) ?? new Set();
+    this.lastOwnershipRevision = this.lookup?.getOwnershipRevision(request.projectId);
+    return {
+      revision: `physical:${this.lastOwnershipRevision ?? "none"}`,
+      ownedOutputPaths: this.lastOwnedOutputPaths,
+      documents: [{
+        uri: `${this.context.outputPackRootUri}/${outputPath}`,
+        fileName: outputPath,
+        languageId: "json",
+        revision: "physical-document-r1",
+        layerId: this.context.localLayer.layerId,
+        layerRole: "local",
+        outputPath,
+        getText: () => "{}"
+      }]
+    };
+  }
+}

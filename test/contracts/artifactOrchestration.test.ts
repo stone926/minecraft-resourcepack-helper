@@ -53,10 +53,9 @@ describe("artifact orchestration", () => {
 
   it("dispatches packaging to stable format-specific leaf scripts", () => {
     assert.deepStrictEqual(commands(artifact.createArtifactPlan("package", "main", ["--out", "dist/main.vsix"])), [
+      ["scripts/build.mjs", "main", "--bundle-mode", "production"],
+      ["scripts/assemble-main-vsix-stage.mjs"],
       ["scripts/package-vsix.mjs", "main", "--out", "dist/main.vsix"]
-    ]);
-    assert.deepStrictEqual(commands(artifact.createArtifactPlan("package", "rsgl", ["--out=dist/rsgl.vsix"])), [
-      ["scripts/package-vsix.mjs", "rsgl", "--out=dist/rsgl.vsix"]
     ]);
     assert.deepStrictEqual(commands(artifact.createArtifactPlan("package", "rsgl-cli")), [
       ["scripts/package-rsgl-cli.mjs"]
@@ -66,15 +65,26 @@ describe("artifact orchestration", () => {
   it("runs each product's runtime and budget checks in a deterministic order", () => {
     const spacedPath = "dist/release artifacts/main.vsix";
     assert.deepStrictEqual(commands(artifact.createArtifactPlan("verify", "main", [spacedPath])), [
-      ["scripts/verify-build-budgets.mjs", "--target", "main", "--artifact", spacedPath]
-    ]);
-    assert.deepStrictEqual(commands(artifact.createArtifactPlan("verify", "rsgl", ["dist/rsgl.vsix"])), [
-      ["scripts/verify-rsgl-vsix.mjs", "dist/rsgl.vsix"],
-      ["scripts/verify-build-budgets.mjs", "--target", "rsgl", "--artifact", "dist/rsgl.vsix"]
+      ["scripts/verify-main-vsix.mjs", spacedPath],
+      [
+        "scripts/verify-build-budgets.mjs",
+        "--target",
+        "main",
+        "--artifact",
+        spacedPath,
+        "--bundle-mode",
+        "production"
+      ]
     ]);
     assert.deepStrictEqual(commands(artifact.createArtifactPlan("verify", "rsgl-cli", ["dist/rsgl.tgz"])), [
       ["scripts/verify-rsgl-cli-package.mjs", "dist/rsgl.tgz"],
-      ["scripts/verify-build-budgets.mjs", "--target", "rsgl-cli"]
+      [
+        "scripts/verify-build-budgets.mjs",
+        "--target",
+        "rsgl-cli",
+        "--bundle-mode",
+        "production"
+      ]
     ]);
   });
 
@@ -89,6 +99,7 @@ describe("artifact orchestration", () => {
       }
     );
     assert.throws(() => artifact.createArtifactPlan("package", "all"), /Unknown artifact target/);
+    assert.throws(() => artifact.createArtifactPlan("package", "rsgl"), /Unknown artifact target/);
     assert.throws(() => artifact.createArtifactPlan("publish", "main"), /Unknown artifact command/);
     assert.throws(
       () => artifact.createArtifactPlan("verify", "main", []),
@@ -114,14 +125,15 @@ describe("artifact orchestration", () => {
         logger: { log: () => undefined }
       }
     );
-    assert.strictEqual(calls[0].args[3], artifactPath);
+    assert.strictEqual(calls[0].args[0], artifactPath);
+    assert.strictEqual(calls[1].args[3], artifactPath);
   });
 
-  it("stops verification when the first product check fails", () => {
+  it("stops combined verification when the runtime smoke fails", () => {
     const calls: string[] = [];
     assert.throws(
       () => artifact.executeArtifactPlan(
-        artifact.createArtifactPlan("verify", "rsgl", ["dist/rsgl.vsix"]),
+        artifact.createArtifactPlan("verify", "main", ["dist/main.vsix"]),
         {
           executeStep: step => {
             calls.push(step.script);
@@ -132,7 +144,7 @@ describe("artifact orchestration", () => {
       ),
       /runtime smoke failed/
     );
-    assert.deepStrictEqual(calls, ["scripts/verify-rsgl-vsix.mjs"]);
+    assert.deepStrictEqual(calls, ["scripts/verify-main-vsix.mjs"]);
   });
 
   it("parses target-aware budget options without legacy aliases", () => {
@@ -146,10 +158,10 @@ describe("artifact orchestration", () => {
       { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
     );
     assert.deepStrictEqual(
-      budget.parseBudgetArguments(["--artifact", "dist/rsgl.vsix", "--target", "rsgl"]),
-      { target: "rsgl", artifactPath: "dist/rsgl.vsix", bundleMode: "development" }
+      budget.parseBudgetArguments(["--artifact", "dist/main.vsix", "--target", "main"]),
+      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
     );
-    assert.deepStrictEqual(budget.budgetTargets("all"), ["main", "rsgl", "rsgl-cli"]);
+    assert.deepStrictEqual(budget.budgetTargets("all"), ["main", "rsgl-cli"]);
     assert.deepStrictEqual(budget.createBudgetPlan({ target: "main", artifactPath: "dist/main.vsix" }), [
       { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
     ]);
@@ -166,11 +178,11 @@ describe("artifact orchestration", () => {
     );
     assert.throws(
       () => budget.parseBudgetArguments(["--target", "rsgl-cli", "--artifact", "cli.tgz"]),
-      /requires --target main or --target rsgl/
+      /requires --target main/
     );
     assert.throws(
       () => budget.parseBudgetArguments(["--artifact", "all.zip"]),
-      /requires --target main or --target rsgl/
+      /requires --target main/
     );
     assert.throws(
       () => budget.parseBudgetArguments(["--target", "main", "--target", "rsgl"]),

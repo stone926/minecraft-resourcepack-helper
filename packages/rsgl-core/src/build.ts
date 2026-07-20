@@ -1,15 +1,20 @@
+import * as path from "node:path";
 import {
-  createRsglWritePlan,
+  createRsglMaterializationProject,
   compileRsglDirectory,
   compileRsglFile,
   compileRsglProgram,
   emitRsglFiles,
-  type RsglEmittedFile,
+  previewRsglMaterializationTransactionSync,
+  runRsglMaterializationTransactionSync,
   type RsglCompileDiagnostic,
   type RsglCompileResult,
   type CompileDependency,
+  type RsglEmittedFile,
   type RsglEmitOptions,
-  writeRsglFiles,
+  type RsglMaterializationPreview,
+  type RsglMaterializationProject,
+  type RsglMaterializationTransactionResult,
   type RsglWritePlan,
   type RsglWritePlanOptions
 } from "./compiler";
@@ -39,10 +44,18 @@ export interface RsglBuildOptions extends
   RsglWritePlanOptions {
   outputRoot: string;
   previewMessages?: RsglBuildPreviewMessages;
+  /** Canonical host/project-package identity; fallback is derived for standalone callers. */
+  materializationProject?: RsglMaterializationProject;
+  /** Native compile source root used to serialize portable provenance. */
+  materializationSourceRoot?: string;
+  /** Explicitly adopt byte-identical unowned outputs into this project's manifest. */
+  adoptUnownedIdentical?: boolean;
 }
 
 export interface RsglBuildResult {
   plan?: RsglWritePlan;
+  materialization?: RsglMaterializationTransactionResult;
+  materializationPreview?: RsglMaterializationPreview;
   diagnostics: RsglCompileDiagnostic[];
   dependencies: CompileDependency[];
   cancelled?: boolean;
@@ -57,7 +70,7 @@ export interface RsglPreparedBuildResult {
 
 export function buildRsglResourcePack(entryFileName: string, options: RsglBuildOptions): RsglBuildResult {
   const compiled = prepareRsglResourcePackBuild(entryFileName, options);
-  return writeCompiledRsglBuild(compiled, options);
+  return writeCompiledRsglBuild(compiled, options, entryFileName);
 }
 
 export function prepareRsglResourcePackBuild(entryFileName: string, options: RsglBuildOptions): RsglPreparedBuildResult {
@@ -66,7 +79,7 @@ export function prepareRsglResourcePackBuild(entryFileName: string, options: Rsg
 
 export function buildRsglResourcePackDirectory(rootDirectory: string, options: RsglBuildOptions): RsglBuildResult {
   const compiled = prepareRsglResourcePackDirectoryBuild(rootDirectory, options);
-  return writeCompiledRsglBuild(compiled, options);
+  return writeCompiledRsglBuild(compiled, options, rootDirectory);
 }
 
 export function prepareRsglResourcePackDirectoryBuild(rootDirectory: string, options: RsglBuildOptions): RsglPreparedBuildResult {
@@ -80,7 +93,7 @@ export interface RsglProgramBuildOptions extends RsglBuildOptions, Pick<RsglProg
 
 export function buildRsglResourcePackProgram(files: RsglSourceFile[], options: RsglProgramBuildOptions): RsglBuildResult {
   const compiled = prepareRsglResourcePackProgramBuild(files, options);
-  return writeCompiledRsglBuild(compiled, options);
+  return writeCompiledRsglBuild(compiled, options, programSourceIdentity(files, options));
 }
 
 export function prepareRsglResourcePackProgramBuild(
@@ -104,7 +117,7 @@ export function previewRsglResourcePackBuild(entryFileName: string, options: Rsg
   return previewCompiledRsglBuild(compiled, options, {
     entryFileName,
     messages: options.previewMessages
-  });
+  }, entryFileName);
 }
 
 export function previewRsglResourcePackDirectoryBuild(rootDirectory: string, options: RsglBuildOptions): RsglBuildPreviewResult {
@@ -112,7 +125,7 @@ export function previewRsglResourcePackDirectoryBuild(rootDirectory: string, opt
   return previewCompiledRsglBuild(compiled, options, {
     sourceRoot: rootDirectory,
     messages: options.previewMessages
-  });
+  }, rootDirectory);
 }
 
 export function previewRsglResourcePackProgramBuild(files: RsglSourceFile[], options: RsglProgramBuildOptions): RsglBuildPreviewResult {
@@ -121,7 +134,7 @@ export function previewRsglResourcePackProgramBuild(files: RsglSourceFile[], opt
     entryFileName: options.entryFileName,
     sourceRoot: options.sourceRoot,
     messages: options.previewMessages
-  });
+  }, programSourceIdentity(files, options));
 }
 
 function prepareCompiledRsglBuild(
@@ -152,7 +165,8 @@ function prepareCompiledRsglBuild(
 
 function writeCompiledRsglBuild(
   compiled: RsglPreparedBuildResult,
-  options: RsglBuildOptions
+  options: RsglBuildOptions,
+  sourceIdentity: string
 ): RsglBuildResult {
   if (compiled.cancelled || isCancellationRequested(options)) {
     return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
@@ -164,16 +178,36 @@ function writeCompiledRsglBuild(
     };
   }
 
-  const plan = writeRsglFiles(compiled.files, options.outputRoot, options);
-  return isCancellationRequested(options)
-    ? { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true }
-    : { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, plan };
+  const materialization = runRsglMaterializationTransactionSync({
+    files: compiled.files,
+    outputRoot: options.outputRoot,
+    project: options.materializationProject ?? createRsglMaterializationProject(
+      materializationSourceRoot(options, sourceIdentity),
+      options.outputRoot
+    ),
+    sourceRootPath: materializationSourceRoot(options, sourceIdentity),
+    adoptUnownedIdentical: options.adoptUnownedIdentical,
+    isCancellationRequested: options.isCancellationRequested
+  });
+  const diagnostics = [
+    ...compiled.diagnostics,
+    ...createRsglMaterializationDiagnostics(materialization)
+  ];
+  return materialization.status === "cancelled"
+    ? { diagnostics, dependencies: compiled.dependencies, cancelled: true, materialization }
+    : {
+      diagnostics,
+      dependencies: compiled.dependencies,
+      plan: materialization.preview.writePlan,
+      materialization
+    };
 }
 
 function previewCompiledRsglBuild(
   compiled: RsglPreparedBuildResult,
   options: RsglBuildOptions,
-  previewOptions: RsglBuildPreviewFormatOptions
+  previewOptions: RsglBuildPreviewFormatOptions,
+  sourceIdentity: string
 ): RsglBuildPreviewResult {
   if (compiled.cancelled || isCancellationRequested(options)) {
     return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
@@ -185,9 +219,16 @@ function previewCompiledRsglBuild(
     };
   }
 
-  const plan = createRsglWritePlan(compiled.files, options.outputRoot, {
-    ...options,
-    includePreviousContent: true
+  const materializationPreview = previewRsglMaterializationTransactionSync({
+    files: compiled.files,
+    outputRoot: options.outputRoot,
+    project: options.materializationProject ?? createRsglMaterializationProject(
+      materializationSourceRoot(options, sourceIdentity),
+      options.outputRoot
+    ),
+    sourceRootPath: materializationSourceRoot(options, sourceIdentity),
+    adoptUnownedIdentical: options.adoptUnownedIdentical,
+    isCancellationRequested: options.isCancellationRequested
   });
   if (isCancellationRequested(options)) {
     return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
@@ -195,11 +236,91 @@ function previewCompiledRsglBuild(
   return {
     diagnostics: compiled.diagnostics,
     dependencies: compiled.dependencies,
-    plan,
-    preview: formatRsglBuildPreview(plan, previewOptions)
+    plan: materializationPreview.writePlan,
+    materializationPreview,
+    preview: formatMaterializationPreview(materializationPreview, previewOptions)
   };
+}
+
+export function createRsglMaterializationDiagnostics(
+  materialization: RsglMaterializationTransactionResult
+): RsglCompileDiagnostic[] {
+  const diagnostics: RsglCompileDiagnostic[] = [];
+  for (const entry of materialization.preview.ownershipPlan.writes) {
+    if (entry.action === "conflict") {
+      diagnostics.push({
+        code: "rsgl.materializationConflict",
+        severity: "error",
+        message: `Materialization conflict at '${entry.output.outputPath}' (${entry.conflictReason ?? "unknown"}).`,
+        range: { start: 0, end: 0 }
+      });
+    }
+  }
+  for (const entry of materialization.preview.ownershipPlan.stale) {
+    if (entry.action === "preserve") {
+      diagnostics.push({
+        code: "rsgl.materializationStalePreserved",
+        severity: "warning",
+        message: `Preserved stale output '${entry.previous.outputPath}' (${entry.preserveReason ?? "unknown"}).`,
+        range: { start: 0, end: 0 }
+      });
+    }
+  }
+  if (materialization.failure) {
+    diagnostics.push({
+      code: materialization.status === "partial"
+        ? "rsgl.materializationPartial"
+        : "rsgl.materializationFailed",
+      severity: "error",
+      message: materialization.failure.message,
+      range: { start: 0, end: 0 }
+    });
+  }
+  return diagnostics;
+}
+
+function formatMaterializationPreview(
+  preview: RsglMaterializationPreview,
+  options: RsglBuildPreviewFormatOptions
+): string {
+  const lines = [formatRsglBuildPreview(preview.writePlan, options).trimEnd()];
+  const conflicts = preview.ownershipPlan.writes.filter(entry => entry.action === "conflict");
+  if (conflicts.length > 0) {
+    lines.push("", "## Conflicts", "");
+    for (const entry of conflicts) {
+      lines.push(`- conflict: ${entry.output.outputPath} (${entry.conflictReason ?? "unknown"})`);
+    }
+  }
+  const adoptions = preview.ownershipPlan.writes.filter(entry => entry.action === "adopt");
+  if (adoptions.length > 0) {
+    lines.push("", "## Ownership Adoption", "");
+    for (const entry of adoptions) {
+      lines.push(`- adopt identical: ${entry.output.outputPath}`);
+    }
+  }
+  if (preview.deletes.length > 0) {
+    lines.push("", "## Stale Output Cleanup", "");
+    for (const entry of preview.deletes) {
+      const detail = entry.preserveReason ? ` (${entry.preserveReason})` : "";
+      lines.push(`- ${entry.status}: ${entry.outputPath}${detail}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function isCancellationRequested(options: RsglBuildOptions): boolean {
   return options.isCancellationRequested?.() ?? false;
+}
+
+function programSourceIdentity(files: readonly RsglSourceFile[], options: RsglProgramBuildOptions): string {
+  return options.sourceRoot ?? options.entryFileName ?? files[0]?.fileName ?? options.outputRoot;
+}
+
+function materializationSourceRoot(options: RsglBuildOptions, sourceIdentity: string): string {
+  if (options.materializationSourceRoot) {
+    return options.materializationSourceRoot;
+  }
+  return sourceIdentity.toLowerCase().endsWith(".rsgl")
+    ? path.dirname(sourceIdentity)
+    : sourceIdentity;
 }

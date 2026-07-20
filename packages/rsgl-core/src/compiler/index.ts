@@ -1,7 +1,14 @@
 export { compileRsglDirectory, compileRsglFile, compileRsglModule, compileRsglProgram, loadRsglSourceFilesFromDirectory, loadRsglSourceFilesFromFile } from "./compilePipeline";
 export type { RsglCompileOptions, RsglDirectoryCompileOptions, RsglFileCompileOptions, RsglFileLoadOptions, RsglProgramCompileOptions } from "./compilePipeline";
 export { emitRsglFiles, stableJsonStringify, orderJsonValue } from "./emit";
-export type { RsglContentEmittedFile, RsglCopyEmittedFile, RsglEmittedFile, RsglEmitOptions } from "./emit";
+export type {
+  RsglContentEmittedFile,
+  RsglCopyEmittedFile,
+  RsglEmittedFile,
+  RsglEmittedOwnershipHint,
+  RsglEmittedSourceOrigin,
+  RsglEmitOptions
+} from "./emit";
 export { createRsglCompileSnapshot, rsglCompileSnapshotVersion } from "./compileSnapshot";
 export type {
   RsglCompileSnapshot,
@@ -97,7 +104,7 @@ export type {
 } from "./base/types";
 export type { RsglExternalResourceResolution, RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
 export type { RsglExternalResourceUsage, RsglResourceReferenceUsage } from "./validationTypes";
-export { createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
+export { createRsglLineDiff, createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export {
   RsglCopySourceReadError,
@@ -115,6 +122,38 @@ export {
   rsglOwnershipManifestVersion,
   serializeRsglOwnershipManifestV2
 } from "./ownershipManifest";
+export {
+  createRsglMaterializationProject,
+  createRsglMaterializationTransactionId,
+  rsglMaterializationStagingRoot,
+  rsglMaterializationStagingDirectory,
+  rsglOwnershipManifestDirectory
+} from "./materializationPlanning";
+export {
+  previewRsglMaterializationTransaction,
+  runRsglMaterializationTransaction
+} from "./materializationTransaction";
+export {
+  previewRsglMaterializationTransactionSync,
+  runRsglMaterializationTransactionSync
+} from "./materializationSync";
+export {
+  nodeAsyncMaterializationHost,
+  nodeSyncMaterializationHost
+} from "./materializationNodeHosts";
+export { rsglMaterializationInvalidationVersion } from "./materializationTypes";
+export type {
+  RsglAsyncMaterializationHost,
+  RsglMaterializationDeletePreview,
+  RsglMaterializationFailure,
+  RsglMaterializationInvalidation,
+  RsglMaterializationPreview,
+  RsglMaterializationProject,
+  RsglMaterializationRequest,
+  RsglMaterializationTransactionResult,
+  RsglMaterializationTransactionStatus,
+  RsglSyncMaterializationHost
+} from "./materializationTypes";
 export type {
   RsglExistingOutputFact,
   RsglOwnedMaterializationPlan,

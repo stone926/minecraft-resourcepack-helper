@@ -29,6 +29,10 @@ export interface GrammarTokenization {
   scopesAt(offset: number): readonly string[];
 }
 
+export function rsglGrammarPath(): string {
+  return path.join(process.cwd(), "syntaxes", "rsgl.tmLanguage.json");
+}
+
 interface GrammarContext {
   patterns: readonly GrammarPattern[];
   end?: string;
@@ -42,10 +46,7 @@ interface GrammarCandidate {
 }
 
 export function readGrammarText(): string {
-  return fs.readFileSync(
-    path.join(process.cwd(), "extensions", "vscode-rsgl", "syntaxes", "rsgl.tmLanguage.json"),
-    "utf8"
-  );
+  return fs.readFileSync(rsglGrammarPath(), "utf8");
 }
 
 export function readGrammar(): RsglGrammar {

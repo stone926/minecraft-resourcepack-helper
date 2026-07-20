@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.main.json" },
+    { "path": "./tsconfig.rsgl-host.json" },
+    { "path": "./packages/rsgl-lsp" }
+  ]
+}

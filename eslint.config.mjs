@@ -34,7 +34,59 @@ export default tseslint.config(
             "**/rsgl-shared/**",
             "**/vscode-rsgl/**"
           ],
-          message: "The main extension may depend only on the mc-assets internal source module."
+          message: "The main extension may depend only on the mc-assets and resource-project internal source modules."
+        }]
+      }]
+    }
+  },
+  {
+    files: [
+      "src/resourceUniverse/providers/rsglGeneratedProvider.ts",
+      "src/resourceUniverse/providers/rsglGeneratedSnapshotMapper.ts"
+    ],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: [
+            "**/rsgl-core/**",
+            "**/rsgl-lsp/**",
+            "**/rsgl-cli/**",
+            "**/vscode-rsgl/**"
+          ],
+          message: "The generated-resource protocol adapter may consume rsgl-shared DTOs, but not compiler or host layers."
+        }]
+      }]
+    }
+  },
+  {
+    files: ["packages/resource-project/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["vscode", "**/mc-assets/**", "**/rsgl-*/**", "**/vscode-rsgl/**", "../../../src/**", "../../../../src/**"],
+          message: "resource-project must remain URI-neutral and independent from editor and compiler hosts."
+        }]
+      }]
+    }
+  },
+  {
+    files: [
+      "src/resourceProject/index.ts",
+      "src/resourceProject/resourcePackProjectService.ts",
+      "src/resourceProject/resourceProjectDiscovery.ts",
+      "src/resourceProject/sharedConfiguration.ts",
+      "src/resourceProject/types.ts",
+      "src/services/resourceProjectUniverseInvalidator.ts",
+      "src/resourceUniverse/core/**/*.ts",
+      "src/resourceUniverse/providers/physicalAssetProvider.ts",
+      "src/resourceUniverse/providers/physicalAssetReferenceAdapter.ts",
+      "src/resourceUniverse/providers/physicalAssetSnapshot.ts"
+    ],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["vscode"],
+          message: "Pure project/universe orchestration must use an injected host boundary."
         }]
       }]
     }
@@ -102,12 +154,12 @@ export default tseslint.config(
     }
   },
   {
-    files: ["extensions/vscode-rsgl/src/**/*.ts"],
+    files: ["src/rsgl/host/**/*.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [{
-          group: ["**/rsgl-cli/**", "../../../src/**", "../../../../src/**"],
-          message: "The RSGL extension must not depend on the main extension or CLI host."
+          group: ["**/rsgl-lsp/**", "**/rsgl-cli/**", "../../../src/**", "../../../../src/**"],
+          message: "The lazy RSGL host may consume core/shared modules but not the LSP, CLI, or root host."
         }]
       }]
     }

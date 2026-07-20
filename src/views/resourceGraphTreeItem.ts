@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type {
   ResourceGraphCollapsibleState,
+  ResourceGraphNodeNavigation,
   ResourceGraphTreeNodeModel,
   ResourceGraphUriLike
 } from "./resourceGraphTreeModel";
@@ -17,14 +18,29 @@ export class ResourceGraphTreeItem extends vscode.TreeItem {
     this.contextValue = presentation.contextValue;
     this.tooltip = presentation.tooltip;
     this.resourceUri = model.resourceUri ? toVscodeUri(model.resourceUri) : undefined;
-    if (this.resourceUri) {
+    if (model.navigation) {
       this.command = {
-        command: "vscode.open",
+        command: "McResHelper.navigateResourceGraphNode",
         title: vscode.l10n.t("Open Resource"),
-        arguments: [this.resourceUri]
+        arguments: [model.navigation]
       };
     }
   }
+}
+
+export function getResourceGraphNodeModel(value: unknown): ResourceGraphTreeNodeModel | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const model = (value as { model?: unknown }).model;
+  return model && typeof model === "object"
+    ? model as ResourceGraphTreeNodeModel
+    : null;
+}
+
+export function getResourceGraphNodeNavigation(value: unknown): ResourceGraphNodeNavigation | null {
+  const model = getResourceGraphNodeModel(value);
+  return model?.navigation ?? (isResourceGraphNodeNavigation(value) ? value : null);
 }
 
 export function getResourceGraphNodeUri(value: unknown): vscode.Uri | null {
@@ -47,5 +63,12 @@ function toCollapsibleState(state: ResourceGraphCollapsibleState): vscode.TreeIt
 }
 
 function toVscodeUri(uri: ResourceGraphUriLike): vscode.Uri {
-  return uri instanceof vscode.Uri ? uri : vscode.Uri.file(uri.fsPath);
+  return uri instanceof vscode.Uri ? uri : vscode.Uri.parse(uri.toString(), true);
+}
+
+function isResourceGraphNodeNavigation(value: unknown): value is ResourceGraphNodeNavigation {
+  return !!value && typeof value === "object"
+    && ["producer", "resourceUri", "location"].includes(
+      String((value as { kind?: unknown }).kind)
+    );
 }

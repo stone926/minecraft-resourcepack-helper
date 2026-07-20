@@ -113,7 +113,7 @@ function createPlanEntry(
     status,
     previousContent: includePreviousContent ? previousContent : undefined,
     diff: previousContent !== undefined && previousContent !== file.content
-      ? createLineDiff(previousContent, file.content)
+      ? createRsglLineDiff(previousContent, file.content)
       : undefined
   };
 }
@@ -158,7 +158,7 @@ function readExistingOutputFile(
   }
 }
 
-function createLineDiff(previous: string, next: string): RsglWriteDiff {
+export function createRsglLineDiff(previous: string, next: string): RsglWriteDiff {
   const previousLines = splitLines(previous);
   const nextLines = splitLines(next);
   const commonPrefixLength = countCommonPrefix(previousLines, nextLines);

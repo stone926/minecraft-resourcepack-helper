@@ -6,17 +6,21 @@ import { fileURLToPath } from "node:url";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptFile), "..");
-const targetNames = Object.freeze(["main", "rsgl", "rsgl-cli"]);
+const targetNames = Object.freeze(["main", "rsgl-cli"]);
 
 export function createArtifactPlan(command, targetName, args = []) {
   assertTarget(targetName);
   if (command === "package") {
-    if (targetName === "main" || targetName === "rsgl") {
-      return [nodeStep(
-        `package ${targetName}`,
-        "scripts/package-vsix.mjs",
-        [targetName, ...args]
-      )];
+    if (targetName === "main") {
+      return [
+        nodeStep(
+          "build combined extension once",
+          "scripts/build.mjs",
+          ["main", "--bundle-mode", "production"]
+        ),
+        nodeStep("assemble combined VSIX stage", "scripts/assemble-main-vsix-stage.mjs"),
+        nodeStep("package combined extension", "scripts/package-vsix.mjs", ["main", ...args])
+      ];
     }
     return [nodeStep("package rsgl-cli", "scripts/package-rsgl-cli.mjs", [...args])];
   }
@@ -30,12 +34,9 @@ export function createArtifactPlan(command, targetName, args = []) {
       throw new Error("Artifact verification requires a non-empty artifact path.");
     }
     if (targetName === "main") {
-      return [budgetStep("main", artifactPath)];
-    }
-    if (targetName === "rsgl") {
       return [
-        nodeStep("verify rsgl runtime", "scripts/verify-rsgl-vsix.mjs", [artifactPath]),
-        budgetStep("rsgl", artifactPath)
+        nodeStep("verify combined extension runtime", "scripts/verify-main-vsix.mjs", [artifactPath]),
+        budgetStep("main", artifactPath, "production")
       ];
     }
     return [
@@ -44,7 +45,7 @@ export function createArtifactPlan(command, targetName, args = []) {
         "scripts/verify-rsgl-cli-package.mjs",
         [artifactPath]
       ),
-      budgetStep("rsgl-cli")
+      budgetStep("rsgl-cli", undefined, "production")
     ];
   }
 
@@ -64,7 +65,7 @@ export function parseArtifactArguments(args) {
   const [command, targetName, ...commandArgs] = args;
   if (!command || !targetName) {
     throw new Error(
-      "Usage: node scripts/artifact.mjs <package|verify> <main|rsgl|rsgl-cli> [arguments]"
+      "Usage: node scripts/artifact.mjs <package|verify> <main|rsgl-cli> [arguments]"
     );
   }
   return { command, targetName, commandArgs };
@@ -76,15 +77,18 @@ function assertTarget(targetName) {
   }
 }
 
-function budgetStep(targetName, artifactPath) {
+function budgetStep(targetName, artifactPath, bundleMode) {
   const args = ["--target", targetName];
   if (artifactPath !== undefined) {
     args.push("--artifact", artifactPath);
   }
+  if (bundleMode !== undefined) {
+    args.push("--bundle-mode", bundleMode);
+  }
   return nodeStep(`verify ${targetName} budgets`, "scripts/verify-build-budgets.mjs", args);
 }
 
-function nodeStep(label, script, args) {
+function nodeStep(label, script, args = []) {
   return Object.freeze({ label, script, args: Object.freeze(args) });
 }
 

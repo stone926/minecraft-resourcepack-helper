@@ -120,11 +120,14 @@ export function createVscodeStub(options = {}) {
     },
     window: {
       activeTextEditor: undefined,
+      visibleTextEditors: [],
       createTreeView: disposable,
       createTextEditorDecorationType: disposable,
       onDidChangeActiveTextEditor: event,
+      onDidChangeVisibleTextEditors: event,
       showErrorMessage: async () => undefined,
       showInformationMessage: async () => undefined,
+      showWarningMessage: async () => undefined,
       withProgress: async (_options, task) => task(createCallableStub(), createCallableStub())
     },
     workspace: {
@@ -133,6 +136,7 @@ export function createVscodeStub(options = {}) {
       fs: createCallableStub(),
       getConfiguration: () => configuration,
       getWorkspaceFolder: () => workspaceFolders?.[0],
+      registerFileSystemProvider: disposable,
       createFileSystemWatcher: watcher,
       findFiles: async (include, exclude, maxResults) => {
         telemetry?.recordFilesystemWalk?.(

@@ -35,6 +35,7 @@ import {
   parseRsgl,
   prepareRsglDocumentRename,
   projectCompileOptionsFromRsglConfig,
+  resolveRsglOutputPackRoot,
   rsglArrowQuickFixForDiagnosticCode,
   resolveRsglCompileConfiguration,
   RsglProjectConfigError,
@@ -44,6 +45,7 @@ import {
   type RsglDiagnostic,
   type RsglDefinitionLocation,
   type RsglLanguageWorkspace,
+  type RsglProgramCompileOptions,
   type RsglReferenceLocation,
   type RsglResourceValidationOptions,
   type RsglRenameEdit,
@@ -55,12 +57,32 @@ import {
   createRsglWorkspaceValidationOptions,
   type RsglWorkspaceValidationCache
 } from "../../rsgl-core/src/workspaceValidation";
+import type { RsglResourceSnapshotRequest } from "../../rsgl-shared/src";
+import type { RsglResourceAnalysisConfiguration } from "./resourceAnalysisCache";
+import {
+  fileNameFromSerializedResourceUri,
+  type RsglResourceUriNativePathMapping
+} from "./resourceSnapshotUris";
 
 /** Validation settings pushed by the client via initializationOptions or didChangeConfiguration. */
 export interface RsglValidationSettings {
+  stdlibRoot?: string;
+  defaultAssetsPath: string | null;
+  resourcePackRoots: string[];
+  workspaceFolders?: readonly RsglWorkspaceFolderValidationSettings[];
+}
+
+export interface RsglWorkspaceFolderValidationSettings {
+  workspaceFolderUri?: string;
+  workspaceFolderPath: string;
   defaultAssetsPath: string | null;
   resourcePackRoots: string[];
 }
+
+type RsglWorkspaceAnalysisOptions = ReturnType<typeof createRsglWorkspaceValidationOptions>
+  & RsglResourceValidationOptions
+  & RsglCompileConfigurationOptions
+  & Pick<RsglProgramCompileOptions, "stdlibRoot">;
 
 /** Filesystem-relevant subset of LSP initialization parameters. */
 export interface RsglWorkspaceInitializationParams {
@@ -98,6 +120,9 @@ export type RsglDocumentLanguageIntelligenceDeps = RsglDocumentCompletionDeps;
 /** Normalizes an untyped settings payload into safe validation settings. */
 export function toValidationSettings(value: unknown): RsglValidationSettings {
   const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  const stdlibRoot = typeof record.stdlibRoot === "string" && record.stdlibRoot.trim().length > 0
+    ? path.resolve(record.stdlibRoot)
+    : undefined;
   const defaultAssetsPath = typeof record.defaultAssetsPath === "string" && record.defaultAssetsPath.trim().length > 0
     ? record.defaultAssetsPath
     : null;
@@ -105,7 +130,38 @@ export function toValidationSettings(value: unknown): RsglValidationSettings {
   const resourcePackRoots = Array.isArray(roots)
     ? roots.filter((root): root is string => typeof root === "string")
     : [];
-  return { defaultAssetsPath, resourcePackRoots };
+  const workspaceFolders = Array.isArray(record.workspaceFolders)
+    ? record.workspaceFolders.flatMap(value => {
+      if (typeof value !== "object" || value === null) {
+        return [];
+      }
+      const folder = value as Record<string, unknown>;
+      if (typeof folder.workspaceFolderPath !== "string" || folder.workspaceFolderPath.trim().length === 0) {
+        return [];
+      }
+      const folderDefaultAssetsPath = typeof folder.defaultAssetsPath === "string"
+        && folder.defaultAssetsPath.trim().length > 0
+        ? folder.defaultAssetsPath
+        : null;
+      const folderRoots = Array.isArray(folder.resourcePackRoots)
+        ? folder.resourcePackRoots.filter((root): root is string => typeof root === "string")
+        : [];
+      return [{
+        ...(isSerializedWorkspaceUri(folder.workspaceFolderUri)
+          ? { workspaceFolderUri: folder.workspaceFolderUri }
+          : {}),
+        workspaceFolderPath: path.resolve(folder.workspaceFolderPath),
+        defaultAssetsPath: folderDefaultAssetsPath,
+        resourcePackRoots: folderRoots
+      }];
+    })
+    : [];
+  return {
+    ...(stdlibRoot ? { stdlibRoot } : {}),
+    defaultAssetsPath,
+    resourcePackRoots,
+    ...(workspaceFolders.length > 0 ? { workspaceFolders } : {})
+  };
 }
 
 /** Compiles the document's program and returns LSP diagnostics scoped to the document's file. */
@@ -151,6 +207,12 @@ export function computeDocumentDiagnostics(
   });
   deps.onDependencies?.(result.dependencies);
   return result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic));
+}
+
+function isSerializedWorkspaceUri(value: unknown): value is string {
+  return typeof value === "string"
+    && /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value)
+    && !/^[a-zA-Z]:[\\/]/.test(value);
 }
 
 /** Builds precise, token-sized quick fixes for parser diagnostics. */
@@ -269,24 +331,115 @@ export function workspaceValidationOptionsFor(
   sourceFileName: string,
   settings: RsglValidationSettings,
   validationCache?: RsglWorkspaceValidationCache
-): ReturnType<typeof createRsglWorkspaceValidationOptions>
-  & RsglResourceValidationOptions
-  & RsglCompileConfigurationOptions {
+): RsglWorkspaceAnalysisOptions {
+  return resolvedResourceAnalysisConfiguration(
+    sourceFileName,
+    settings,
+    validationCache
+  ).options;
+}
+
+/**
+ * Creates the complete compiler/resolver identity used by the shared analysis
+ * cache. A supplied ProjectContext is authoritative for output and layer roots.
+ */
+export function resourceAnalysisConfigurationFor(
+  sourceFileName: string,
+  settings: RsglValidationSettings,
+  validationCache?: RsglWorkspaceValidationCache,
+  projectContext?: RsglResourceSnapshotRequest["projectContext"],
+  nativePathMappings: readonly RsglResourceUriNativePathMapping[] = []
+): RsglResourceAnalysisConfiguration & { options: RsglWorkspaceAnalysisOptions } {
+  return resolvedResourceAnalysisConfiguration(
+    sourceFileName,
+    settings,
+    validationCache,
+    projectContext,
+    nativePathMappings
+  );
+}
+
+function resolvedResourceAnalysisConfiguration(
+  sourceFileName: string,
+  settings: RsglValidationSettings,
+  validationCache?: RsglWorkspaceValidationCache,
+  projectContext?: RsglResourceSnapshotRequest["projectContext"],
+  nativePathMappings: readonly RsglResourceUriNativePathMapping[] = []
+): RsglResourceAnalysisConfiguration & { options: RsglWorkspaceAnalysisOptions } {
   const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
+  const sharedSettings = validationSettingsForSource(sourceFileName, settings);
   const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
-  return {
+  const outputPackRoot = projectContext
+    ? fileNameFromSerializedResourceUri(projectContext.outputPackRootUri, nativePathMappings)
+    : resolveRsglOutputPackRoot(sourceFileName, projectConfig?.outDir);
+  const defaultAssetsPath = projectContext
+    ? directoryLayerFileName(projectContext.vanillaLayer, nativePathMappings)
+    : projectDefaultAssetsPath === undefined
+      ? sharedSettings.defaultAssetsPath
+      : projectDefaultAssetsPath;
+  const resourcePackRoots = projectContext
+    ? projectContext.externalLayers.flatMap(layer =>
+        directoryLayerFileName(layer, nativePathMappings) ?? [])
+    : projectConfig?.resourcePackRoots ?? sharedSettings.resourcePackRoots;
+  const unavailableResolutionScopes = projectContext
+    ? [
+        ...(!outputPackRoot ? ["local" as const] : []),
+        ...(projectContext.externalLayers.some(layer =>
+          !directoryLayerFileName(layer, nativePathMappings))
+          ? ["custom" as const]
+          : []),
+        ...(projectContext.vanillaLayer
+          && !directoryLayerFileName(projectContext.vanillaLayer, nativePathMappings)
+          ? ["vanilla" as const]
+          : [])
+      ]
+    : [];
+  const compileOptions: RsglWorkspaceAnalysisOptions = {
     ...projectCompileOptionsFromRsglConfig(projectConfig ?? {}),
+    ...(settings.stdlibRoot ? { stdlibRoot: settings.stdlibRoot } : {}),
     ...createRsglWorkspaceValidationOptions({
       sourceFileName,
-      defaultAssetsPath: projectDefaultAssetsPath === undefined
-        ? settings.defaultAssetsPath
-        : projectDefaultAssetsPath,
-      resourcePackRoots: projectConfig?.resourcePackRoots ?? settings.resourcePackRoots,
+      outputPackRoot,
+      defaultAssetsPath,
+      resourcePackRoots,
       cache: validationCache
     }),
     globalExterns: projectConfig?.extern,
-    checkExternExistence: projectConfig?.checkExternExistence
+    checkExternExistence: projectConfig?.checkExternExistence,
+    ...(projectContext?.targetPackFormat
+      ? { targetPackFormat: projectContext.targetPackFormat }
+      : {})
   };
+  return {
+    cacheKey: JSON.stringify({
+      semantic: resolveRsglCompileConfiguration(compileOptions).semanticFingerprint,
+      stdlibRoot: normalizedOptionalPath(settings.stdlibRoot),
+      outputPackRoot: normalizedOptionalPath(outputPackRoot),
+      defaultAssetsPath: normalizedOptionalPath(defaultAssetsPath),
+      resourcePackRoots: resourcePackRoots.map(root => normalizePathKey(path.resolve(root))),
+      globalExterns: projectConfig?.extern ?? [],
+      checkExternExistence: projectConfig?.checkExternExistence,
+      unavailableResolutionScopes,
+      validationGeneration: validationCache?.generation ?? 0
+    }),
+    options: compileOptions,
+    ...(unavailableResolutionScopes.length > 0 ? { unavailableResolutionScopes } : {})
+  };
+}
+
+function directoryLayerFileName(
+  layer: RsglResourceSnapshotRequest["projectContext"]["vanillaLayer"]
+    | RsglResourceSnapshotRequest["projectContext"]["externalLayers"][number]
+    | undefined,
+  nativePathMappings: readonly RsglResourceUriNativePathMapping[]
+): string | null {
+  return layer?.source === "directory"
+    ? fileNameFromSerializedResourceUri(layer.rootUri, nativePathMappings)
+    : null;
+}
+
+function normalizedOptionalPath(fileName: string | null | undefined): string | null {
+  return fileName ? normalizePathKey(path.resolve(fileName)) : null;
 }
 
 /** Returns the stable semantic identity of the nearest validated project config. */
@@ -430,6 +583,24 @@ export function definitionLocationForDocument(
   deps: RsglDocumentLanguageIntelligenceDeps
 ): RsglDefinitionLocation | null {
   return definitionLocationsForDocument(document, fileName, offset, deps)[0] ?? null;
+}
+
+function validationSettingsForSource(
+  sourceFileName: string,
+  settings: RsglValidationSettings
+): Pick<RsglValidationSettings, "defaultAssetsPath" | "resourcePackRoots"> {
+  const source = path.resolve(sourceFileName);
+  const scoped = [...(settings.workspaceFolders ?? [])]
+    .filter(folder => isPathInsideOrEqual(source, folder.workspaceFolderPath))
+    .sort((left, right) => path.resolve(right.workspaceFolderPath).length
+      - path.resolve(left.workspaceFolderPath).length)[0];
+  return scoped ?? settings;
+}
+
+function isPathInsideOrEqual(candidate: string, root: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 /** Returns every offset-based definition target for protocol clients that support locations. */

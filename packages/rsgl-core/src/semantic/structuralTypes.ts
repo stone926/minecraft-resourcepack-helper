@@ -1,3 +1,4 @@
+import { uniqueValues } from "../../../mc-assets/src";
 import type { ExprNode } from "../parser";
 import { isAssignable } from "./typeRelations";
 import { combineRsglTypes, type RsglUnionBudgetOptions } from "./typeNormalization";
@@ -458,7 +459,7 @@ export function finiteObjectKeysFromType(type: RsglType): string[] | undefined {
     }
     keys.push(String(option.literalValue));
   }
-  return Array.from(new Set(keys));
+  return uniqueValues(keys);
 }
 
 function editDistance(left: string, right: string): number {

@@ -41,6 +41,22 @@ describe("resource project topology", () => {
     assert.strictEqual(result.context.localLayer.role, "local");
   });
 
+  it("uses a targeted conventional root for non-RSGL document anchors", async () => {
+    const packRoot = "file:///workspace/pack";
+    const sourceUri = `${packRoot}/assets/demo/models/block/example.json`;
+    const result = await resolveResourcePackProjectContext({
+      sourceUri,
+      workspaceFolderUris: [packRoot]
+    }, memoryHost({
+      [`${packRoot}/pack.mcmeta`]: "file",
+      [`${packRoot}/rsgl`]: "directory",
+      [sourceUri]: "file"
+    }));
+
+    assert.ok(result.context);
+    assert.deepStrictEqual(result.context.rsglSourceRootUris, [`${packRoot}/rsgl`]);
+  });
+
   it("resolves configured source root and pack-root outDir when source lives outside the pack", async () => {
     const projectRoot = "file:///workspace/Tooling%20Project";
     const sourceUri = `${projectRoot}/%E6%BA%90%E7%A0%81/nested/main.rsgl`;
@@ -136,6 +152,29 @@ describe("resource project topology", () => {
       source: "zip",
       root: "local.zip"
     }, "file:///workspace"), /local resource layer must use a directory/);
+  });
+
+  it("treats a null project vanilla layer as an explicit shared-setting override", async () => {
+    const result = await resolveResourcePackProjectContext({
+      sourceUri: "file:///workspace/project/rsgl/main.rsgl",
+      workspaceFolderUris: ["file:///workspace"],
+      configuration: {
+        configUri: "file:///workspace/project/rsgl.config.json",
+        root: "rsgl",
+        outDir: "pack",
+        vanillaLayer: null
+      },
+      sharedConfiguration: {
+        vanillaLayer: {
+          role: "vanilla",
+          source: "directory",
+          root: "file:///settings/default-assets"
+        }
+      }
+    }, memoryHost({}));
+
+    assert.ok(result.context);
+    assert.strictEqual(result.context.vanillaLayer, undefined);
   });
 
   it("reports multi-root ambiguity instead of choosing a pack arbitrarily", async () => {

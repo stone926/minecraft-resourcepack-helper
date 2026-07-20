@@ -26,12 +26,12 @@ describe("VSIX packaging output", () => {
   });
 
   it("supports --out= and short -o forms without changing absolute outputs", () => {
-    const absoluteOutput = path.join(temporaryRoot, "absolute", "rsgl.vsix");
-    const equalsArgs = prepareArguments(["--out=artifacts/rsgl.vsix"]);
+    const absoluteOutput = path.join(temporaryRoot, "absolute", "combined.vsix");
+    const equalsArgs = prepareArguments(["--out=artifacts/combined.vsix"]);
     const shortArgs = prepareArguments(["-o", absoluteOutput]);
 
     assert.deepStrictEqual(equalsArgs, [
-      `--out=${path.join(temporaryRoot, "artifacts", "rsgl.vsix")}`
+      `--out=${path.join(temporaryRoot, "artifacts", "combined.vsix")}`
     ]);
     assert.deepStrictEqual(shortArgs, ["-o", absoluteOutput]);
     assert.ok(fs.statSync(path.join(temporaryRoot, "artifacts")).isDirectory());

@@ -14,6 +14,10 @@ import {
   normalizeStagePath,
   validateSourceDateEpoch
 } from "./vsix-stage-tree.mjs";
+import {
+  combinedVsixRuntimeEntries,
+  combinedVsixRuntimeSourceMaps
+} from "./combined-vsix-layout.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -25,12 +29,10 @@ export const mainVsixStageLayout = Object.freeze({
 });
 
 export const mainVsixRuntimeBundles = Object.freeze([
-  "bundle/extension.js",
-  "bundle/features/rsglHost.js",
-  "bundle/rsgl/server.js",
-  "bundle/rsgl/worker.js",
-  "bundle/model-preview.js"
+  ...Object.values(combinedVsixRuntimeEntries)
 ]);
+
+export const mainVsixRuntimeSourceMaps = combinedVsixRuntimeSourceMaps;
 
 export const mainVsixGeneratedIgnore = Object.freeze([
   "**/*.map",
@@ -43,6 +45,12 @@ export const mainVsixGeneratedIgnore = Object.freeze([
   "out/**",
   "dist/**"
 ]);
+
+export const mainVsixDevelopmentGeneratedIgnore = Object.freeze(
+  mainVsixGeneratedIgnore.filter(pattern => pattern !== "**/*.map")
+);
+
+export const mainVsixStageBundleModes = Object.freeze(["development", "production"]);
 
 const requiredRootFiles = Object.freeze([
   "README.md",
@@ -61,29 +69,22 @@ const optionalRootFiles = Object.freeze([
 const overlayDirectories = Object.freeze([
   Object.freeze({
     destination: "language-configuration",
-    sources: Object.freeze([
-      "extensions/vscode-rsgl/language-configuration",
-      "language-configuration"
-    ])
+    sources: Object.freeze(["language-configuration"])
   }),
   Object.freeze({
     destination: "syntaxes",
-    sources: Object.freeze([
-      "extensions/vscode-rsgl/syntaxes",
-      "syntaxes"
-    ])
+    sources: Object.freeze(["syntaxes"])
   }),
   Object.freeze({
     destination: "schemas",
-    sources: Object.freeze([
-      "extensions/vscode-rsgl/schemas",
-      "schemas"
-    ])
+    sources: Object.freeze(["schemas"])
   })
 ]);
 
 export function assembleMainVsixStage(options = {}) {
   const repositoryRoot = path.resolve(options.repositoryRoot ?? defaultRepositoryRoot);
+  const bundleMode = options.bundleMode ?? "production";
+  assertMainVsixStageBundleMode(bundleMode);
   const stageRoot = path.resolve(
     options.stageRoot ?? path.join(repositoryRoot, mainVsixStageLayout.root)
   );
@@ -94,24 +95,31 @@ export function assembleMainVsixStage(options = {}) {
   const sourceDateEpoch = options.sourceDateEpoch === undefined
     ? resolveMainVsixSourceDateEpoch({ repositoryRoot })
     : validateSourceDateEpoch(options.sourceDateEpoch);
-  const files = collectMainVsixStageFiles(repositoryRoot);
+  const files = collectMainVsixStageFiles(repositoryRoot, { bundleMode });
 
   return assembleVsixStageTree({
     stageRoot,
     allowedStageParent,
     contentsManifestFile,
     sourceDateEpoch,
-    files
+    files,
+    allowedForbiddenPaths: bundleMode === "development" ? mainVsixRuntimeSourceMaps : []
   });
 }
 
-export function collectMainVsixStageFiles(repositoryRoot) {
+export function collectMainVsixStageFiles(repositoryRoot, options = {}) {
   const root = path.resolve(repositoryRoot);
+  const bundleMode = options.bundleMode ?? "production";
+  assertMainVsixStageBundleMode(bundleMode);
+  const jsonIndent = bundleMode === "development" ? 2 : undefined;
   const files = new Map();
   const sourceManifest = readJsonObject(path.join(root, "package.json"), "package.json");
   const publishManifest = createPublishManifest(sourceManifest);
   addGeneratedFile(files, "package.json", `${JSON.stringify(publishManifest, null, 2)}\n`);
-  addGeneratedFile(files, ".vscodeignore", `${mainVsixGeneratedIgnore.join("\n")}\n`);
+  const generatedIgnore = bundleMode === "development"
+    ? mainVsixDevelopmentGeneratedIgnore
+    : mainVsixGeneratedIgnore;
+  addGeneratedFile(files, ".vscodeignore", `${generatedIgnore.join("\n")}\n`);
 
   for (const relativePath of requiredRootFiles) {
     addRepositoryFile(files, root, relativePath, relativePath, { required: true });
@@ -122,24 +130,35 @@ export function collectMainVsixStageFiles(repositoryRoot) {
   for (const relativePath of mainVsixRuntimeBundles) {
     addRepositoryFile(files, root, relativePath, relativePath, { required: true });
   }
+  if (bundleMode === "development") {
+    for (const relativePath of mainVsixRuntimeSourceMaps) {
+      addRepositoryFile(files, root, relativePath, relativePath, {
+        required: true,
+        allowForbidden: true
+      });
+    }
+  }
 
   addJsonFamily(files, root, {
     destinationDirectory: "",
-    sourceDirectories: ["extensions/vscode-rsgl", ""],
+    sourceDirectories: [""],
     filePattern: /^package\.nls(?:\..+)?\.json$/,
-    requiredFile: "package.nls.json"
+    requiredFile: "package.nls.json",
+    jsonIndent
   });
   addJsonFamily(files, root, {
     destinationDirectory: "l10n",
-    sourceDirectories: ["extensions/vscode-rsgl/l10n", "l10n"],
+    sourceDirectories: ["l10n"],
     filePattern: /^bundle\.l10n(?:\..+)?\.json$/,
-    requiredFile: "bundle.l10n.json"
+    requiredFile: "bundle.l10n.json",
+    jsonIndent
   });
 
   addDirectory(files, root, "assets", "assets", {
     required: true,
     include: relativePath => relativePath.endsWith(".json") || relativePath.endsWith(".svg"),
-    transformJson: true
+    transformJson: true,
+    jsonIndent
   });
   requireCollectedFile(files, "assets/mcResHelperSidebar.svg");
   requireCollectedPrefix(files, "assets/linters/");
@@ -170,6 +189,7 @@ export function collectMainVsixStageFiles(repositoryRoot) {
         required: true,
         include: relativePath => relativePath.endsWith(".json"),
         transformJson: true,
+        jsonIndent,
         replace: true
       });
     }
@@ -189,6 +209,11 @@ export function collectMainVsixStageFiles(repositoryRoot) {
 
 export function createPublishManifest(sourceManifest) {
   const manifest = structuredClone(sourceManifest);
+  // Every runtime dependency is bundled into one of the isolated entries.
+  // Keeping package-manager metadata would make VSCE look for node_modules
+  // that are intentionally outside the production allow-list.
+  delete manifest.dependencies;
+  delete manifest.devDependencies;
   if (isPlainObject(manifest.scripts)) {
     delete manifest.scripts["vscode:prepublish"];
     if (Object.keys(manifest.scripts).length === 0) {
@@ -241,7 +266,7 @@ function addJsonFamily(files, repositoryRoot, options) {
     const destination = options.destinationDirectory
       ? `${options.destinationDirectory}/${fileName}`
       : fileName;
-    addGeneratedFile(files, destination, JSON.stringify(value));
+    addGeneratedFile(files, destination, stringifyStageJson(value, options.jsonIndent));
   }
 }
 
@@ -277,7 +302,10 @@ function addDirectory(files, repositoryRoot, sourceDirectory, destinationDirecto
       }
       const destination = normalizeStagePath(`${destinationDirectory}/${relativePath}`);
       const content = options.transformJson && relativePath.endsWith(".json")
-        ? Buffer.from(JSON.stringify(readJsonObject(absolutePath, `${sourceDirectory}/${relativePath}`)))
+        ? Buffer.from(stringifyStageJson(
+          readJsonObject(absolutePath, `${sourceDirectory}/${relativePath}`),
+          options.jsonIndent
+        ))
         : readFileSync(absolutePath);
       addFile(files, destination, content, options.replace === true);
     }
@@ -297,7 +325,12 @@ function addRepositoryFile(files, repositoryRoot, sourcePath, destinationPath, o
   if (details.isSymbolicLink() || !details.isFile()) {
     throw new Error(`VSIX stage source must be a real file: ${sourcePath}`);
   }
-  addFile(files, normalizeStagePath(destinationPath), readFileSync(absoluteSource), false);
+  addFile(
+    files,
+    normalizeStagePath(destinationPath, { allowForbidden: options.allowForbidden === true }),
+    readFileSync(absoluteSource),
+    false
+  );
 }
 
 function addGeneratedFile(files, destinationPath, content) {
@@ -389,8 +422,10 @@ function compareNames(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function parseArguments(args) {
+export function parseMainVsixStageArguments(args) {
   let sourceDateEpoch;
+  let bundleMode = "production";
+  let hasBundleMode = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--source-date-epoch") {
@@ -412,9 +447,44 @@ function parseArguments(args) {
       sourceDateEpoch = argument.slice("--source-date-epoch=".length);
       continue;
     }
+    if (argument === "--bundle-mode") {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
+      }
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value after --bundle-mode.");
+      }
+      bundleMode = value;
+      hasBundleMode = true;
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--bundle-mode=")) {
+      if (hasBundleMode) {
+        throw new Error("--bundle-mode may only be specified once.");
+      }
+      bundleMode = argument.slice("--bundle-mode=".length);
+      hasBundleMode = true;
+      continue;
+    }
     throw new Error(`Unknown VSIX stage argument: ${argument}`);
   }
-  return { sourceDateEpoch };
+  assertMainVsixStageBundleMode(bundleMode);
+  return { sourceDateEpoch, bundleMode };
+}
+
+function stringifyStageJson(value, indent) {
+  const serialized = JSON.stringify(value, null, indent);
+  return indent === undefined ? serialized : `${serialized}\n`;
+}
+
+function assertMainVsixStageBundleMode(bundleMode) {
+  if (!mainVsixStageBundleModes.includes(bundleMode)) {
+    throw new Error(
+      `Unknown VSIX stage bundle mode '${bundleMode}'. Expected ${mainVsixStageBundleModes.join(", ")}.`
+    );
+  }
 }
 
 function isMainModule() {
@@ -428,7 +498,7 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  const result = assembleMainVsixStage(parseArguments(process.argv.slice(2)));
+  const result = assembleMainVsixStage(parseMainVsixStageArguments(process.argv.slice(2)));
   console.log(`main VSIX stage files: ${result.files.length}`);
   console.log(`main VSIX stage content hash: ${result.contentHash}`);
   console.log(`main VSIX stage writes/reuses/removals: ${result.written.length}/${result.reused.length}/${result.removed.length}`);

@@ -3,6 +3,40 @@ import { pathToFileURL } from "node:url";
 import type * as vscode from "vscode";
 import type { RsglRuntimeInstance, RsglRuntimeLoader } from "./types";
 
+export interface InstalledRsglMaterializationProject {
+  /** Canonical ResourcePackProjectContext identity. */
+  projectId: string;
+  /** Portable path stored in the ownership manifest, never an absolute path. */
+  sourceRoot: string;
+  /** Opaque identity for collision isolation; this is not a filesystem path. */
+  outputPackRootIdentity: string;
+}
+
+export interface InstalledRsglMaterializationInvalidation {
+  version: 1;
+  transactionId: string;
+  projectId: string;
+  ownershipRevision: string;
+  state: "committed" | "partial";
+  changedUris: readonly string[];
+  deletedUris: readonly string[];
+  manifestUri: string;
+}
+
+export interface InstalledRsglRuntimeIntegration {
+  onMaterializationInvalidation?: (
+    invalidation: InstalledRsglMaterializationInvalidation
+  ) => unknown | Promise<unknown>;
+  resolveMaterializationProject?: (
+    sourceIdentity: string,
+    outputRoot: string
+  ) => InstalledRsglMaterializationProject | undefined | Promise<InstalledRsglMaterializationProject | undefined>;
+  resolveResourceNavigation?: (
+    request: unknown,
+    signal: AbortSignal
+  ) => Promise<unknown>;
+}
+
 export interface RsglRuntimeModule {
   createRsglRuntime(options: {
     extensionContext: vscode.ExtensionContext;
@@ -10,6 +44,9 @@ export interface RsglRuntimeModule {
     workerPath: string;
     stdlibRoot: string;
     signal: AbortSignal;
+    onMaterializationInvalidation?: InstalledRsglRuntimeIntegration["onMaterializationInvalidation"];
+    resolveMaterializationProject?: InstalledRsglRuntimeIntegration["resolveMaterializationProject"];
+    resolveResourceNavigation?: InstalledRsglRuntimeIntegration["resolveResourceNavigation"];
   }): Promise<RsglRuntimeInstance> | RsglRuntimeInstance;
 }
 
@@ -18,7 +55,8 @@ export type RsglRuntimeModuleImporter = (url: string) => Promise<unknown>;
 /** Resolves all runtime paths from the one owning ExtensionContext. */
 export function createInstalledRsglRuntimeLoader(
   extensionContext: vscode.ExtensionContext,
-  importer: RsglRuntimeModuleImporter = importRuntimeModule
+  importer: RsglRuntimeModuleImporter = importRuntimeModule,
+  integration: InstalledRsglRuntimeIntegration = {}
 ): RsglRuntimeLoader {
   const runtimePath = extensionContext.asAbsolutePath(path.join("bundle", "features", "rsglHost.js"));
   const serverPath = extensionContext.asAbsolutePath(path.join("bundle", "rsgl", "server.js"));
@@ -33,7 +71,8 @@ export function createInstalledRsglRuntimeLoader(
       serverPath,
       workerPath,
       stdlibRoot,
-      signal: request.signal
+      signal: request.signal,
+      ...integration
     });
   };
 }

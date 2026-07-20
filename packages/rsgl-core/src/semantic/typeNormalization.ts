@@ -1,3 +1,4 @@
+import { uniqueValues } from "../../../mc-assets/src";
 import {
   anyType,
   jsonType,
@@ -297,7 +298,7 @@ function rsglTypeKeyInternal(type: RsglType, ancestors: Set<RsglType>): string {
       const options = (type.options ?? [])
         .map(option => rsglTypeKeyInternal(option, nextAncestors))
         .sort((left, right) => left.localeCompare(right));
-      return `Union<${Array.from(new Set(options)).join("|")}>`;
+      return `Union<${uniqueValues(options).join("|")}>`;
     }
     case "TypeParameter":
       return `TypeParameter<${type.typeParameterName ?? "?"}>`;

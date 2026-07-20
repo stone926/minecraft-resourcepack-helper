@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       product:
-        description: Product to verify (all, main, rsgl, or rsgl-cli)
+        description: Product to verify (all, main, or rsgl-cli)
         required: true
         type: string
       upload_artifacts:
@@ -40,7 +40,7 @@ jobs:
           PRODUCT: ${{ inputs.product }}
         run: |
           case "${PRODUCT}" in
-            all|main|rsgl|rsgl-cli) ;;
+            all|main|rsgl-cli) ;;
             *) echo "Unsupported product: ${PRODUCT}"; exit 1 ;;
           esac
 
@@ -55,15 +55,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            extensions/vscode-rsgl/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install RSGL extension dependencies
-        run: npm ci --prefix extensions/vscode-rsgl
 
       - name: Test
         run: npm test
@@ -75,14 +70,6 @@ jobs:
       - name: Verify main extension package
         if: inputs.product == 'all' || inputs.product == 'main'
         run: npm run verify:main:vsix -- dist/minecraft-resourcepack-helper-${{ runner.os }}.vsix
-
-      - name: Package RSGL extension
-        if: inputs.product == 'all' || inputs.product == 'rsgl'
-        run: npm run package:rsgl:vsix -- --out dist/rsgl-${{ runner.os }}.vsix
-
-      - name: Verify RSGL extension package
-        if: inputs.product == 'all' || inputs.product == 'rsgl'
-        run: npm run verify:rsgl:vsix -- dist/rsgl-${{ runner.os }}.vsix
 
       - name: Package RSGL CLI
         if: inputs.product == 'all' || inputs.product == 'rsgl-cli'

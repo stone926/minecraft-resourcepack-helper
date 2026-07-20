@@ -17,12 +17,14 @@ type JsonObject = Record<string, unknown>;
 
 const EN_LINTER = path.join(process.cwd(), "assets", "linters", "en");
 const ZH_LINTER = path.join(process.cwd(), "assets", "linters", "zh-cn");
+const EN_SCHEMA_ROOTS = [EN_LINTER, path.join(process.cwd(), "schemas", "en")];
+const ZH_SCHEMA_ROOTS = [ZH_LINTER, path.join(process.cwd(), "schemas", "zh-cn")];
 
 describe("schema assets", () => {
   it("parses every bundled JSON schema asset in both locales", () => {
     for (const file of [
-      ...collectJsonFiles(EN_LINTER),
-      ...collectJsonFiles(ZH_LINTER),
+      ...EN_SCHEMA_ROOTS.flatMap(collectJsonFiles),
+      ...ZH_SCHEMA_ROOTS.flatMap(collectJsonFiles),
     ]) {
       assert.doesNotThrow(() => JSON.parse(fs.readFileSync(file, "utf8")), file);
     }
@@ -33,8 +35,8 @@ describe("schema assets", () => {
     const findings: string[] = [];
 
     for (const file of [
-      ...collectJsonFiles(EN_LINTER),
-      ...collectJsonFiles(ZH_LINTER),
+      ...EN_SCHEMA_ROOTS.flatMap(collectJsonFiles),
+      ...ZH_SCHEMA_ROOTS.flatMap(collectJsonFiles),
     ]) {
       findMisspelledSchemaKeywords(
         readJsonFile<unknown>(file),
@@ -83,10 +85,8 @@ describe("schema assets", () => {
 
       const enUrl = String(packageNlsEn[nlsKey]);
       const zhUrl = String(packageNlsZh[nlsKey]);
-      assert.ok(enUrl.startsWith("./assets/linters/en/"),
-        `EN schema URL should point to assets/linters/en/, got: ${enUrl}`);
-      assert.ok(zhUrl.startsWith("./assets/linters/zh-cn/"),
-        `ZH schema URL should point to assets/linters/zh-cn/, got: ${zhUrl}`);
+      assertLocalizedSchemaUrl(enUrl, "en");
+      assertLocalizedSchemaUrl(zhUrl, "zh-cn");
       assert.ok(fs.existsSync(path.join(process.cwd(), enUrl)),
         `EN schema file missing: ${enUrl}`);
       assert.ok(fs.existsSync(path.join(process.cwd(), zhUrl)),
@@ -540,6 +540,18 @@ function collectJsonFiles(root: string): string[] {
   }
 
   return files;
+}
+
+function assertLocalizedSchemaUrl(url: string, locale: "en" | "zh-cn"): void {
+  const normalized = url.replaceAll("\\", "/");
+  const allowedRoots = [
+    `./assets/linters/${locale}/`,
+    `./schemas/${locale}/`
+  ];
+  assert.ok(
+    allowedRoots.some(root => normalized.startsWith(root)),
+    `${locale.toUpperCase()} schema URL should point to a bundled ${locale} schema root, got: ${url}`
+  );
 }
 
 function readJsonFile<T>(file: string): T {

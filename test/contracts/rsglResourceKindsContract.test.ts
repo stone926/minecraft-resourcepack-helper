@@ -23,7 +23,7 @@ import {
   rsglResourceKindDescriptors,
   rsglResourceKinds
 } from "../../packages/rsgl-core/src/resourceKinds";
-import { readGrammar, tokenizeGrammar } from "./helpers/textMateGrammar";
+import { readGrammar, rsglGrammarPath, tokenizeGrammar } from "./helpers/textMateGrammar";
 
 describe("RSGL resource kind descriptors", () => {
   it("derive parser keywords, generic JSON kinds, and completion snippets from one registry", () => {
@@ -220,8 +220,7 @@ function sourceForDescriptor(keyword: string): string {
 }
 
 function readGrammarStorageTypePattern(): RegExp {
-  const grammarPath = path.join(process.cwd(), "extensions", "vscode-rsgl", "syntaxes", "rsgl.tmLanguage.json");
-  const grammar = JSON.parse(fs.readFileSync(grammarPath, "utf8")) as {
+  const grammar = JSON.parse(fs.readFileSync(rsglGrammarPath(), "utf8")) as {
     repository?: { keywords?: { patterns?: Array<{ name?: string; match?: string }> } };
   };
   const match = grammar.repository?.keywords?.patterns?.find(pattern => pattern.name === "storage.type.rsgl")?.match;

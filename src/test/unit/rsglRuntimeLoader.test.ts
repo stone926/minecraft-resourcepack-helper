@@ -16,6 +16,21 @@ describe("installed RSGL runtime loader", () => {
     const context = {
       asAbsolutePath: (relative: string) => path.join(extensionRoot, relative)
     };
+    const onInvalidation = () => undefined;
+    const resolveProject = () => ({
+      projectId: "project-a",
+      sourceRoot: ".",
+      outputPackRootIdentity: "pack-a"
+    });
+    const resolveNavigation = async () => ({
+      protocolVersion: 1 as const,
+      requestGeneration: 1,
+      operation: "definition" as const,
+      status: "missing" as const,
+      coverage: "authoritative" as const,
+      locations: [],
+      reason: "noProducer" as const
+    });
     const loader = createInstalledRsglRuntimeLoader(context as never, async url => {
       importedUrl = url;
       return {
@@ -26,6 +41,10 @@ describe("installed RSGL runtime loader", () => {
           }
         }
       };
+    }, {
+      onMaterializationInvalidation: onInvalidation,
+      resolveMaterializationProject: resolveProject,
+      resolveResourceNavigation: resolveNavigation
     });
 
     const loaded = await loader({
@@ -38,6 +57,9 @@ describe("installed RSGL runtime loader", () => {
     assert.strictEqual(received?.serverPath, path.join(extensionRoot, "bundle", "rsgl", "server.js"));
     assert.strictEqual(received?.workerPath, path.join(extensionRoot, "bundle", "rsgl", "worker.js"));
     assert.strictEqual(received?.stdlibRoot, path.join(extensionRoot, "bundle", "rsgl", "stdlib"));
+    assert.strictEqual(received?.onMaterializationInvalidation, onInvalidation);
+    assert.strictEqual(received?.resolveMaterializationProject, resolveProject);
+    assert.strictEqual(received?.resolveResourceNavigation, resolveNavigation);
   });
 
   it("normalizes direct and CJS default exports and rejects malformed bundles", () => {

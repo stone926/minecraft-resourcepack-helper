@@ -8,6 +8,7 @@ import {
 } from "./parser";
 import { RsglSourceFile } from "./semantic";
 import {
+  isRsglStdlibVirtualFileName,
   isRsglStdlibImportSource,
   readRsglStdlibVirtualSource,
   rsglStdlibVirtualFileName
@@ -26,6 +27,8 @@ export interface RsglTextDocumentLike {
 
 export interface RsglWorkspaceSourceCacheOptions {
   encoding?: BufferEncoding;
+  /** Explicit installed stdlib directory; never inferred from a bundled caller. */
+  stdlibRoot?: string;
   fileSystem?: RsglWorkspaceSourceFileSystem;
   /**
    * Trusts callers to invalidate disk paths from a covering file watcher.
@@ -191,7 +194,9 @@ export class RsglWorkspaceSourceCache {
       return cached.sourceFile;
     }
 
-    const virtualText = readRsglStdlibVirtualSource(canonicalFileName);
+    const virtualText = readRsglStdlibVirtualSource(canonicalFileName, {
+      stdlibRoot: this.options.stdlibRoot
+    });
     if (virtualText !== null) {
       return this.cacheReadResult(fileKey, canonicalFileName, cached, {
         text: virtualText,
@@ -311,7 +316,7 @@ function resolveModuleSourceFileName(fromFileName: string, source: string): stri
 }
 
 function isVirtualSourceFileName(fileName: string): boolean {
-  return readRsglStdlibVirtualSource(fileName) !== null;
+  return isRsglStdlibVirtualFileName(fileName);
 }
 
 function normalizeSourceFileName(fileName: string): string {

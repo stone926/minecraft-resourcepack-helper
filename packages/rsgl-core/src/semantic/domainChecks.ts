@@ -1,3 +1,4 @@
+import { uniqueValues } from "../../../mc-assets/src";
 import { ExprNode, MatchExprNode, RsglDiagnostic } from "../parser";
 import { diagnostic } from "./diagnostics";
 import { lookup } from "./scopes";
@@ -124,7 +125,7 @@ function finiteTemplateStringDomain(expression: ExprNode & { kind: "TemplateStri
     }
     values = values.flatMap(prefix => partDomain.map(value => prefix + value));
   }
-  return Array.from(new Set(values));
+  return uniqueValues(values);
 }
 
 function finiteTemplateInterpolationDomain(expression: ExprNode, scope: RsglScope): string[] | null {
@@ -151,7 +152,7 @@ export function finiteStringDomainFromType(type: RsglType | undefined): string[]
   )) {
     return null;
   }
-  return Array.from(new Set(options.map(option => option.literalValue as string)));
+  return uniqueValues(options.map(option => option.literalValue as string));
 }
 
 export function staticStringPatternValue(expression: ExprNode, scope: RsglScope): string | null {

@@ -1,83 +1,72 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
-  rsglModelGeometryKeywordDescriptors
-} from "../../packages/rsgl-core/src/modelGeometrySyntax";
+import { rsglModelGeometryKeywordDescriptors } from "../../packages/rsgl-core/src/modelGeometrySyntax";
 import { rsglResourceKinds } from "../../packages/rsgl-core/src/resourceKinds";
 
-describe("RSGL extension manifest contract", () => {
-  it("contributes the rsgl language and bundled editor assets", () => {
-    const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
-      activationEvents?: string[];
-      extensionDependencies?: string[];
-      extensionPack?: string[];
-      contributes?: {
-        commands?: Array<{ command?: string; icon?: string }>;
-        languages?: Array<{ id?: string; extensions?: string[]; configuration?: string }>;
-        grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
-        menus?: Record<string, Array<{ command?: string; when?: string }>>;
-      };
-    };
-    const rsglPackageRoot = path.join(process.cwd(), "extensions", "vscode-rsgl");
-    const rsglPackageJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, "package.json"), "utf8")) as typeof packageJson;
-    const rsglConfigurationSurface = [
-      "package.nls.json",
-      "package.nls.zh-cn.json",
-      path.join("src", "configuration.ts"),
-      path.join("src", "client.ts")
-    ].map(file => fs.readFileSync(path.join(rsglPackageRoot, file), "utf8")).join("\n");
+interface ExtensionManifest {
+  activationEvents?: string[];
+  extensionDependencies?: string[];
+  extensionPack?: string[];
+  contributes?: {
+    commands?: Array<{ command?: string; icon?: string }>;
+    languages?: Array<{ id?: string; extensions?: string[]; configuration?: string }>;
+    grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
+    menus?: Record<string, Array<{ command?: string; when?: string }>>;
+    jsonValidation?: Array<{ fileMatch?: string; url?: string }>;
+  };
+}
 
-    assert.ok(packageJson.extensionPack?.includes("stone926.rsgl"));
-    assert.strictEqual(packageJson.extensionDependencies?.includes("stone926.rsgl") ?? false, false);
-    assert.strictEqual(packageJson.contributes?.languages?.some(entry => entry.id === "rsgl"), false);
-    assert.strictEqual(rsglConfigurationSurface.includes("McResHelper."), false);
+describe("integrated RSGL manifest contract", () => {
+  it("contributes the RSGL language, commands, and bundled editor assets from the root extension", () => {
+    const manifest = readJson<ExtensionManifest>("package.json");
+
+    assert.strictEqual(
+      fs.existsSync(path.join(process.cwd(), "extensions", "vscode-rsgl", "package.json")),
+      false
+    );
+    assert.strictEqual(manifest.extensionPack?.includes("stone926.rsgl") ?? false, false);
+    assert.strictEqual(manifest.extensionDependencies?.includes("stone926.rsgl") ?? false, false);
     for (const event of [
-      "onCommand:McResHelper.buildRsglResourcePack",
-      "onCommand:McResHelper.previewRsglResourcePackBuild",
-      "onCommand:McResHelper.buildRsglResourcePackDirectory",
-      "onCommand:McResHelper.previewRsglResourcePackDirectoryBuild",
-      "onCommand:McResHelper.buildRsglWorkspaceResourcePacks",
-      "onCommand:McResHelper.previewRsglWorkspaceResourcePackBuilds"
+      "onLanguage:rsgl",
+      "onCommand:rsgl.build",
+      "onCommand:rsgl.previewBuild",
+      "onCommand:rsgl.buildDirectory",
+      "onCommand:rsgl.previewDirectoryBuild",
+      "onCommand:rsgl.buildWorkspace",
+      "onCommand:rsgl.previewWorkspaceBuild",
+      "onCommand:rsgl.refreshWorkspace"
     ]) {
-      assert.strictEqual(packageJson.activationEvents?.includes(event), false);
+      assert.ok(manifest.activationEvents?.includes(event), `missing root activation event ${event}`);
     }
 
-    assert.ok(rsglPackageJson.activationEvents?.includes("onLanguage:rsgl"));
-    assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.build"));
-    assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.previewBuild"));
-    assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.buildDirectory"));
-    assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.previewDirectoryBuild"));
-    assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.buildWorkspace"));
-    assert.ok(rsglPackageJson.activationEvents?.includes("onCommand:rsgl.previewWorkspaceBuild"));
+    const language = manifest.contributes?.languages?.find(entry => entry.id === "rsgl");
+    assert.ok(language?.extensions?.includes(".rsgl"));
+    assert.ok(language?.configuration);
+    assert.doesNotThrow(() => readJson<unknown>(language!.configuration!));
 
-    const language = rsglPackageJson.contributes?.languages?.find(entry => entry.id === "rsgl");
-    assert.ok(language);
-    assert.ok(language.extensions?.includes(".rsgl"));
-    assert.ok(language.configuration);
-    assert.doesNotThrow(() => JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, language.configuration!), "utf8")));
-
-    const grammar = rsglPackageJson.contributes?.grammars?.find(entry => entry.language === "rsgl");
+    const grammar = manifest.contributes?.grammars?.find(entry => entry.language === "rsgl");
     assert.strictEqual(grammar?.scopeName, "source.rsgl");
-    assert.ok(grammar.path);
-    const grammarJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, grammar.path!), "utf8")) as {
+    assert.ok(grammar?.path);
+    const grammarJson = readJson<{
       repository?: {
         properties?: {
           patterns?: Array<{ name?: string; match?: string }>;
         };
       };
-    };
+    }>(grammar!.path!);
+    const grammarText = JSON.stringify(grammarJson);
     for (const kind of rsglResourceKinds) {
-      assert.ok(JSON.stringify(grammarJson).includes(kind), `Expected RSGL grammar to include resource kind '${kind}'.`);
+      assert.ok(grammarText.includes(kind), `Expected RSGL grammar to include resource kind '${kind}'.`);
     }
     const geometryPropertyRule = grammarJson.repository?.properties?.patterns?.find(
       pattern => pattern.name === "variable.other.property.rsgl"
     );
     assert.strictEqual(typeof geometryPropertyRule?.match, "string");
     const geometryPropertyPattern = new RegExp(`^(?:${geometryPropertyRule!.match})$`);
-    const grammarText = JSON.stringify(grammarJson);
     for (const descriptor of rsglModelGeometryKeywordDescriptors) {
-      assert.ok(grammarText.includes(descriptor.keyword), `Expected RSGL grammar to include geometry keyword '${descriptor.keyword}'.`);
+      assert.ok(grammarText.includes(descriptor.keyword),
+        `Expected RSGL grammar to include geometry keyword '${descriptor.keyword}'.`);
       const isControlledTransformKeyword = "statement" in descriptor
         ? descriptor.statement.kind === "transform"
         : descriptor.roles.some(role => role === "transformOperation" || role === "transformClause");
@@ -90,67 +79,40 @@ describe("RSGL extension manifest contract", () => {
       );
     }
 
-    for (const command of [
-      "McResHelper.buildRsglResourcePack",
-      "McResHelper.previewRsglResourcePackBuild",
-      "McResHelper.buildRsglResourcePackDirectory",
-      "McResHelper.previewRsglResourcePackDirectoryBuild",
-      "McResHelper.buildRsglWorkspaceResourcePacks",
-      "McResHelper.previewRsglWorkspaceResourcePackBuilds"
-    ]) {
-      assert.strictEqual(packageJson.contributes?.commands?.some(entry => entry.command === command), false);
+    const expectedCommands = new Map([
+      ["rsgl.build", "$(play)"],
+      ["rsgl.previewBuild", "$(diff)"],
+      ["rsgl.buildDirectory", "$(run-all)"],
+      ["rsgl.previewDirectoryBuild", "$(diff)"],
+      ["rsgl.buildWorkspace", "$(run-all)"],
+      ["rsgl.previewWorkspaceBuild", "$(diff)"],
+      ["rsgl.refreshWorkspace", "$(sync)"]
+    ]);
+    for (const [commandId, icon] of expectedCommands) {
+      assert.ok(manifest.contributes?.commands?.some(command =>
+        command.command === commandId && command.icon === icon
+      ), `missing root command ${commandId}`);
     }
-
-    assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
-      command.command === "rsgl.build" && command.icon === "$(play)"
-    ));
-    assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
-      command.command === "rsgl.previewBuild" && command.icon === "$(diff)"
-    ));
-    assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
-      command.command === "rsgl.buildDirectory" && command.icon === "$(run-all)"
-    ));
-    assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
-      command.command === "rsgl.previewDirectoryBuild" && command.icon === "$(diff)"
-    ));
-    assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
-      command.command === "rsgl.buildWorkspace" && command.icon === "$(run-all)"
-    ));
-    assert.ok(rsglPackageJson.contributes?.commands?.some(command =>
-      command.command === "rsgl.previewWorkspaceBuild" && command.icon === "$(diff)"
-    ));
-    assert.ok(rsglPackageJson.contributes?.menus?.["editor/title"]?.some(item =>
-      item.command === "rsgl.build" && item.when === "resourceLangId == rsgl"
-    ));
-    assert.ok(rsglPackageJson.contributes?.menus?.["editor/title"]?.some(item =>
-      item.command === "rsgl.previewBuild" && item.when === "resourceLangId == rsgl"
-    ));
-    assert.ok(rsglPackageJson.contributes?.menus?.["editor/context"]?.some(item =>
-      item.command === "rsgl.buildDirectory" && item.when === "resourceLangId == rsgl"
-    ));
-    assert.ok(rsglPackageJson.contributes?.menus?.["editor/context"]?.some(item =>
-      item.command === "rsgl.previewDirectoryBuild" && item.when === "resourceLangId == rsgl"
-    ));
+    for (const command of ["rsgl.build", "rsgl.previewBuild", "rsgl.buildDirectory", "rsgl.previewDirectoryBuild"]) {
+      assert.ok(manifest.contributes?.menus?.["editor/title"]?.some(item =>
+        item.command === command && item.when === "resourceLangId == rsgl"
+      ), `missing editor title menu for ${command}`);
+      assert.ok(manifest.contributes?.menus?.["editor/context"]?.some(item =>
+        item.command === command && item.when === "resourceLangId == rsgl"
+      ), `missing editor context menu for ${command}`);
+    }
   });
 
-  it("registers a strict schema for every public project configuration field", () => {
-    const rsglPackageRoot = path.join(process.cwd(), "extensions", "vscode-rsgl");
-    const packageJson = JSON.parse(fs.readFileSync(path.join(rsglPackageRoot, "package.json"), "utf8")) as {
-      contributes?: {
-        jsonValidation?: Array<{ fileMatch?: string; url?: string }>;
-      };
-    };
-    const registration = packageJson.contributes?.jsonValidation?.find(entry =>
+  it("registers a strict root-bundled schema for every public project configuration field", () => {
+    const manifest = readJson<ExtensionManifest>("package.json");
+    const registration = manifest.contributes?.jsonValidation?.find(entry =>
       entry.fileMatch === "**/rsgl.config.json"
     );
     assert.ok(registration?.url);
 
-    const packageNls = JSON.parse(
-      fs.readFileSync(path.join(rsglPackageRoot, "package.nls.json"), "utf8")
-    ) as Record<string, string>;
-    const schemaUrl = resolvePackageNlsValue(registration.url, packageNls);
-    const schemaPath = path.resolve(rsglPackageRoot, schemaUrl);
-    const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as {
+    const packageNls = readJson<Record<string, string>>("package.nls.json");
+    const schemaUrl = resolvePackageNlsValue(registration!.url!, packageNls);
+    const schema = readJson<{
       additionalProperties?: boolean;
       properties?: Record<string, {
         pattern?: string;
@@ -166,7 +128,6 @@ describe("RSGL extension manifest contract", () => {
             edition?: { const?: string };
             format?: {
               oneOf?: Array<{
-                type?: string;
                 minimum?: number;
                 minItems?: number;
                 maxItems?: number;
@@ -181,11 +142,12 @@ describe("RSGL extension manifest contract", () => {
           additionalProperties?: boolean;
           required?: string[];
           properties?: {
+            source?: { enum?: string[] };
             kind?: { enum?: string[] };
           };
         };
       };
-    };
+    }>(schemaUrl);
 
     assert.strictEqual(schema.additionalProperties, false);
     assert.deepStrictEqual(Object.keys(schema.properties ?? {}).sort(), [
@@ -209,7 +171,6 @@ describe("RSGL extension manifest contract", () => {
     assert.strictEqual(namespacePattern.test("example.pack-1"), true);
     assert.strictEqual(namespacePattern.test("Example"), false);
     assert.strictEqual(namespacePattern.test(".."), false);
-
     assert.strictEqual(schema.properties?.maxEvaluationItems?.minimum, 1);
     assert.strictEqual(schema.properties?.maxEvaluationItems?.default, 100000);
     assert.strictEqual(schema.properties?.maxItemModelDepth?.minimum, 1);
@@ -223,7 +184,6 @@ describe("RSGL extension manifest contract", () => {
     assert.deepStrictEqual(target?.oneOf?.map(option => option.required), [["format"], ["mc"]]);
     assert.ok(target?.properties?.mc?.pattern);
     assert.strictEqual(new RegExp(target!.properties!.mc!.pattern!).test("1.21.4"), true);
-
     const formatOptions = target?.properties?.format?.oneOf;
     assert.strictEqual(formatOptions?.[0]?.minimum, 1);
     assert.strictEqual(formatOptions?.[1]?.minItems, 2);
@@ -233,6 +193,7 @@ describe("RSGL extension manifest contract", () => {
     const externEntry = schema.definitions?.externEntry;
     assert.strictEqual(externEntry?.additionalProperties, false);
     assert.deepStrictEqual(externEntry?.required, ["source", "kind", "patterns"]);
+    assert.deepStrictEqual(externEntry?.properties?.source?.enum, ["local", "custom", "vanilla"]);
     assert.deepStrictEqual(externEntry?.properties?.kind?.enum, [
       "model",
       "blockstate",
@@ -247,47 +208,50 @@ describe("RSGL extension manifest contract", () => {
     ]);
   });
 
-  it("does not expose the removed synchronous extension API", () => {
-    const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
-    const extensionSource = fs.readFileSync(path.join(extensionRoot, "extension.ts"), "utf8");
+  it("exposes only an asynchronous integrated runtime factory", () => {
+    const hostRoot = path.join(process.cwd(), "src", "rsgl", "host");
+    const host = fs.readFileSync(path.join(hostRoot, "rsglHost.ts"), "utf8");
 
-    assert.strictEqual(fs.existsSync(path.join(extensionRoot, "api.ts")), false);
-    assert.match(extensionSource, /activate\(context: vscode\.ExtensionContext\): void/);
-    assert.strictEqual(extensionSource.includes("RsglApi"), false);
-    assert.strictEqual(extensionSource.includes("createRsglApi"), false);
+    assert.strictEqual(fs.existsSync(path.join(hostRoot, "api.ts")), false);
+    assert.match(host, /export function createRsglRuntime/);
+    assert.strictEqual(host.includes("registerCommand"), false);
+    assert.strictEqual(host.includes("export function activate"), false);
+    assert.strictEqual(host.includes("RsglApi"), false);
+    assert.strictEqual(host.includes("createRsglApi"), false);
   });
 
-  it("offloads command and watcher builds from the extension host", () => {
-    const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
-    const presenterSource = fs.readFileSync(path.join(extensionRoot, "commands", "buildPresenter.ts"), "utf8");
-    const commandSource = fs.readFileSync(path.join(extensionRoot, "commands", "build.ts"), "utf8");
-    const workerClientSource = fs.readFileSync(path.join(extensionRoot, "commands", "buildWorkerClient.ts"), "utf8");
-    const extensionSource = fs.readFileSync(path.join(extensionRoot, "extension.ts"), "utf8");
+  it("offloads command builds to an explicitly located worker", () => {
+    const hostRoot = path.join(process.cwd(), "src", "rsgl", "host");
+    const presenter = fs.readFileSync(path.join(hostRoot, "commands", "buildPresenter.ts"), "utf8");
+    const commands = fs.readFileSync(path.join(hostRoot, "commands", "build.ts"), "utf8");
+    const workerClient = fs.readFileSync(path.join(hostRoot, "commands", "buildWorkerClient.ts"), "utf8");
+    const host = fs.readFileSync(path.join(hostRoot, "rsglHost.ts"), "utf8");
 
-    assert.strictEqual(presenterSource.includes("Promise.resolve(task())"), false);
-    assert.match(presenterSource, /cancellable:\s*true/);
-    assert.match(commandSource, /runRsglWorkerTask/);
-    assert.strictEqual(commandSource.includes("buildRsglResourcePackProgram"), false);
-    assert.match(workerClientSource, /new Worker\(/);
-    assert.match(extensionSource, /import\("\.\/commands\/build\.js"\)/);
-    assert.strictEqual(extensionSource.includes('from "./commands/build"'), false);
+    assert.strictEqual(presenter.includes("Promise.resolve(task())"), false);
+    assert.match(presenter, /cancellable:\s*true/);
+    assert.match(commands, /runRsglWorkerTask/);
+    assert.match(commands, /workerPath:\s*paths\.workerPath/);
+    assert.strictEqual(commands.includes("buildRsglResourcePackProgram"), false);
+    assert.match(workerClient, /new Worker\(workerPath\)/);
+    assert.strictEqual(workerClient.includes("__dirname"), false);
+    assert.match(host, /import\("\.\/commands\/build\.js"\)/);
+    assert.strictEqual(host.includes('from "./commands/build"'), false);
   });
 
   it("shares the RSGL file glob while keeping watcher responsibilities separate", () => {
-    const extensionRoot = path.join(process.cwd(), "extensions", "vscode-rsgl", "src");
-    const clientSource = fs.readFileSync(path.join(extensionRoot, "client.ts"), "utf8");
-    const sharedSource = fs.readFileSync(
+    const client = fs.readFileSync(path.join(process.cwd(), "src", "rsgl", "host", "client.ts"), "utf8");
+    const shared = fs.readFileSync(
       path.join(process.cwd(), "packages", "rsgl-shared", "src", "index.ts"),
       "utf8"
     );
 
-    assert.match(sharedSource, /rsglFileGlob\s*=\s*"\*\*\/\*\.rsgl"/);
-    assert.match(clientSource, /fileEvents:\s*\[/);
-    assert.match(clientSource, /vscode\.workspace\.createFileSystemWatcher\(rsglFileGlob\)/);
-    assert.match(clientSource, /synchronize:\s*\{/);
-    assert.match(clientSource, /new DependencyWatchRegistry/);
-    assert.strictEqual(clientSource.includes('createFileSystemWatcher("**/*.json")'), false);
-    assert.match(sharedSource, /refreshWorkspace:\s*"rsgl\.refreshWorkspace"/);
+    assert.match(shared, /rsglFileGlob\s*=\s*"\*\*\/\*\.rsgl"/);
+    assert.match(client, /fileEvents:\s*\[/);
+    assert.match(client, /vscode\.workspace\.createFileSystemWatcher\(rsglFileGlob\)/);
+    assert.match(client, /synchronize:\s*\{/);
+    assert.match(client, /new DependencyWatchRegistry/);
+    assert.strictEqual(client.includes('createFileSystemWatcher("**/*.json")'), false);
+    assert.match(shared, /refreshWorkspace:\s*"rsgl\.refreshWorkspace"/);
   });
 });
 
@@ -296,8 +260,14 @@ function resolvePackageNlsValue(value: string, bundle: Record<string, string>): 
   if (!match) {
     return value;
   }
-
   const localized = bundle[match[1]];
   assert.ok(localized, `package.nls.json is missing ${match[1]}`);
   return localized;
+}
+
+function readJson<T>(relativePath: string): T {
+  return JSON.parse(fs.readFileSync(
+    path.resolve(process.cwd(), relativePath.replace(/^\.\//, "")),
+    "utf8"
+  )) as T;
 }

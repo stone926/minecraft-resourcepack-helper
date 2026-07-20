@@ -7,6 +7,33 @@ import { bindRsglProgram, RsglSourceFile } from "../../src/semantic";
 import { createTempDir } from "./helpers/fs";
 
 describe("RSGL workspace source cache", () => {
+  it("loads stdlib imports from the explicit installed root", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-source-stdlib-");
+    const stdlibRoot = path.join(root, "installed stdlib 资源");
+    try {
+      fs.mkdirSync(stdlibRoot, { recursive: true });
+      const mainFile = path.join(root, "main.rsgl");
+      fs.writeFileSync(mainFile, [
+        "import { transportTemplate } from \"rsgl:__transport_test.rsgl\"",
+        "use transportTemplate(stone)"
+      ].join("\n"));
+      fs.writeFileSync(path.join(stdlibRoot, "__transport_test.rsgl"), [
+        "template transportTemplate(id: ResourceId) {",
+        "  model block id { parent minecraft:block/cube_all }",
+        "}",
+        "export { transportTemplate }"
+      ].join("\n"));
+
+      const files = new RsglWorkspaceSourceCache({ stdlibRoot }).loadProgramFromEntry(mainFile);
+      const program = bindRsglProgram(files);
+
+      assert.ok(files.some(file => file.fileName.includes("__transport_test.rsgl")));
+      assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads imports and re-exports using open document content", () => {
     const root = createTempDir("mc-resourcepack-helper-rsgl-source-");
     try {

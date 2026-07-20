@@ -9,6 +9,10 @@ import {
   DiagnosticsRefreshGate,
   type DiagnosticsRefresh
 } from "./diagnosticsRefreshGate";
+import {
+  shouldReportMissingResource,
+  type ResourceDiagnosticCoverage
+} from "./resourceDiagnosticResolution";
 import { getSemanticResourceDiagnostics } from "./semanticDiagnostics";
 import { isSemanticDiagnosticsDocument } from "./semanticDiagnosticsCore";
 
@@ -16,9 +20,20 @@ const resolveResourcePath = createResourceReferencePathResolver();
 const refreshGates = new WeakMap<vscode.DiagnosticCollection, DiagnosticsRefreshGate>();
 const disposedCollections = new WeakSet<vscode.DiagnosticCollection>();
 
+export interface ResourceDiagnosticResolution {
+  readonly targetUri: vscode.Uri | null;
+  readonly coverage: ResourceDiagnosticCoverage;
+}
+
+export type ResourceDiagnosticResolver = (
+  document: vscode.TextDocument,
+  reference: ReturnType<typeof getResourceReferences>[number]
+) => Promise<ResourceDiagnosticResolution>;
+
 export async function refreshResourceDiagnostics(
   document: vscode.TextDocument,
-  collection: vscode.DiagnosticCollection
+  collection: vscode.DiagnosticCollection,
+  resolveReference?: ResourceDiagnosticResolver
 ): Promise<void> {
   if (disposedCollections.has(collection)) {
     return;
@@ -44,7 +59,7 @@ export async function refreshResourceDiagnostics(
     ...semanticDiagnostics,
     ...getCitDiagnostics(document, {
       onResourceIdsReady: () => {
-        void refreshResourceDiagnostics(document, collection);
+        void refreshResourceDiagnostics(document, collection, resolveReference);
       }
     })
   ];
@@ -54,9 +69,20 @@ export async function refreshResourceDiagnostics(
       continue;
     }
 
-    const resolvedUri = resolveResourcePath(reference, document);
+    const resolution = resolveReference
+      ? await resolveReference(document, reference)
+      : {
+          targetUri: resolveResourcePath(reference, document),
+          coverage: "authoritative" as const
+        };
+    if (!isCurrentRefresh(document, collection, refresh)) {
+      return;
+    }
     const range = rangeInsideString(reference.valueNode);
-    if (!resolvedUri && range) {
+    if (shouldReportMissingResource({
+      resolved: resolution.targetUri !== null,
+      coverage: resolution.coverage
+    }) && range) {
       diagnostics.push(new vscode.Diagnostic(
         range,
         localize(lm("Minecraft resource not found: {0}", reference.value)),

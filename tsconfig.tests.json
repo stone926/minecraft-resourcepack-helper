@@ -13,7 +13,6 @@
   "include": [
     "src/test/**/*.ts",
     "packages/*/test/**/*.ts",
-    "extensions/*/test/**/*.ts",
     "test/**/*.ts"
   ],
   "references": [
@@ -24,6 +23,6 @@
     { "path": "./packages/rsgl-shared" },
     { "path": "./packages/rsgl-lsp" },
     { "path": "./packages/rsgl-cli" },
-    { "path": "./extensions/vscode-rsgl" }
+    { "path": "./tsconfig.rsgl-host.json" }
   ]
 }

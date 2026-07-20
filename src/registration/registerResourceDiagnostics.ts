@@ -2,8 +2,10 @@ import * as vscode from "vscode";
 import {
   clearResourceDiagnostics,
   disposeResourceDiagnosticsRefreshes,
-  refreshResourceDiagnostics
+  refreshResourceDiagnostics,
+  type ResourceDiagnosticResolver
 } from "../diagnostics/resourceDiagnostics";
+import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 
 export interface ResourceDiagnosticsController extends vscode.Disposable {
   refresh(document: vscode.TextDocument): void;
@@ -14,10 +16,16 @@ export interface ResourceDiagnosticsController extends vscode.Disposable {
 }
 
 export function registerResourceDiagnostics(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  navigation: ResourceUniverseNavigationFacade
 ): ResourceDiagnosticsController {
   const collection = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper resources"));
-  const controller = new RegisteredResourceDiagnostics(collection);
+  const controller = new RegisteredResourceDiagnostics(
+    collection,
+    (document, reference) => navigation.resolveReference(document, reference, {
+      includeGenerated: true
+    })
+  );
   context.subscriptions.push(controller);
   controller.refreshAllSoon();
   return controller;
@@ -27,11 +35,14 @@ class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly documentRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private readonly collection: vscode.DiagnosticCollection) {}
+  constructor(
+    private readonly collection: vscode.DiagnosticCollection,
+    private readonly resolveReference: ResourceDiagnosticResolver
+  ) {}
 
   refresh(document: vscode.TextDocument): void {
     this.cancelDocumentRefresh(document.uri.toString());
-    void refreshResourceDiagnostics(document, this.collection);
+    void refreshResourceDiagnostics(document, this.collection, this.resolveReference);
   }
 
   refreshSoon(document: vscode.TextDocument, delay = 150): void {
@@ -39,7 +50,7 @@ class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
     this.cancelDocumentRefresh(key);
     this.documentRefreshTimers.set(key, setTimeout(() => {
       this.documentRefreshTimers.delete(key);
-      void refreshResourceDiagnostics(document, this.collection);
+      void refreshResourceDiagnostics(document, this.collection, this.resolveReference);
     }, delay));
   }
 

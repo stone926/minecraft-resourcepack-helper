@@ -10,11 +10,11 @@ const repositoryRoot = path.resolve(path.dirname(scriptFile), "..");
 
 export const buildProfiles = Object.freeze({
   main: Object.freeze({
-    tsconfig: "tsconfig.main.json",
+    tsconfig: "tsconfig.vsix.json",
     bundleTarget: "main"
   }),
   rsgl: Object.freeze({
-    tsconfig: "extensions/vscode-rsgl/tsconfig.json",
+    tsconfig: "tsconfig.rsgl-host.json",
     bundleTarget: "rsgl"
   }),
   "rsgl-cli": Object.freeze({

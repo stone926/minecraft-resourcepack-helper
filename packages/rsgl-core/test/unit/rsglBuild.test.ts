@@ -72,6 +72,26 @@ describe("RSGL build", () => {
         true
       );
       assert.strictEqual(fs.existsSync(path.join(outputRoot, "rsgl.manifest.json")), true);
+      const ownershipManifestName = fs.readdirSync(path.join(outputRoot, ".rsgl", "manifests"))[0];
+      const serializedOwnershipManifest = fs.readFileSync(
+        path.join(outputRoot, ".rsgl", "manifests", ownershipManifestName),
+        "utf8"
+      );
+      const ownershipManifest = JSON.parse(serializedOwnershipManifest) as {
+        version: number;
+        files: Array<{
+          outputPath: string;
+          logicalKeys: Array<{ kind: string; id: string }>;
+          sourceOrigins: Array<{ sourcePath: string }>;
+        }>;
+      };
+      const ownedModel = ownershipManifest.files.find(file => file.outputPath.endsWith("stone.json"));
+      assert.strictEqual(ownershipManifest.version, 2);
+      assert.strictEqual(ownershipManifest.files.filter(file => file.logicalKeys.length > 0).length, 1);
+      assert.deepStrictEqual(ownedModel?.logicalKeys, [{ kind: "model", id: "minecraft:block/stone" }]);
+      assert.ok(ownedModel?.sourceOrigins.some(origin => origin.sourcePath === "main.rsgl"));
+      assert.doesNotMatch(serializedOwnershipManifest, /file:|[a-zA-Z]:[\\/]/);
+      assert.strictEqual(serializedOwnershipManifest.includes(root.replaceAll("\\", "/")), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

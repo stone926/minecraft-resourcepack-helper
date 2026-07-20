@@ -10,12 +10,8 @@ const repoRoot = path.resolve(__dirname, "..");
 
 const targets = {
   main: {
-    cwd: repoRoot,
-    defaultArgs: [],
-  },
-  rsgl: {
-    cwd: path.join(repoRoot, "extensions", "vscode-rsgl"),
-    defaultArgs: [],
+    cwd: path.join(repoRoot, "dist", "vsix-stage", "main"),
+    defaultArgs: ["--no-dependencies"],
   },
 };
 

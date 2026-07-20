@@ -4,7 +4,8 @@ import type { ResourceGraphLogicalKey } from "../../../mc-assets/src";
 export const rsglOwnershipManifestVersion = 2;
 
 export interface RsglOwnershipSourceOrigin {
-  sourceUri: string;
+  /** Portable path relative to the manifest's sourceRoot; may traverse to an imported sibling. */
+  sourcePath: string;
   range?: { start: number; end: number };
 }
 
@@ -34,7 +35,7 @@ export interface RsglExistingOutputFact {
   contentHash: string;
 }
 
-export type RsglOwnedWriteAction = "create" | "update" | "unchanged" | "conflict";
+export type RsglOwnedWriteAction = "create" | "update" | "unchanged" | "adopt" | "conflict";
 export type RsglOwnedWriteConflictReason =
   | "userModifiedOwnedOutput"
   | "ownedByOtherProject"
@@ -72,6 +73,8 @@ export interface RsglOwnedMaterializationPlanOptions {
   previousManifest?: RsglOwnershipManifestV2;
   otherManifests?: readonly RsglOwnershipManifestV2[];
   existingOutputs: readonly RsglExistingOutputFact[];
+  /** Explicitly claim an unowned existing file only when its bytes already match. */
+  adoptUnownedIdentical?: boolean;
 }
 
 export function createRsglOwnershipManifestV2(
@@ -113,7 +116,11 @@ export function parseRsglOwnershipManifestV2(value: unknown): RsglOwnershipManif
 }
 
 export function rsglOwnershipManifestPath(projectId: string): string {
-  const safeProjectId = requireIdentity(projectId, "projectId").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const identity = requireIdentity(projectId, "projectId");
+  const readable = identity.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeProjectId = readable === identity
+    ? readable
+    : `${readable}-${createHash("sha256").update(identity).digest("hex").slice(0, 12)}`;
   return `.rsgl/manifests/${safeProjectId}.json`;
 }
 
@@ -143,13 +150,16 @@ export function planRsglOwnedMaterialization(
     const existing = existingByPath.get(output.outputPath);
     const previous = previousByPath.get(output.outputPath);
     const otherOwners = otherOwnersByPath.get(output.outputPath) ?? [];
-    if (!existing) {
-      return writeEntry(output, "create", otherOwners);
-    }
     if (otherOwners.length > 0) {
-      return writeEntry(output, "conflict", otherOwners, existing.contentHash, "ownedByOtherProject");
+      return writeEntry(output, "conflict", otherOwners, existing?.contentHash, "ownedByOtherProject");
+    }
+    if (!existing) {
+      return writeEntry(output, "create", []);
     }
     if (!previous) {
+      if (options.adoptUnownedIdentical && existing.contentHash === output.contentHash) {
+        return writeEntry(output, "adopt", [], existing.contentHash);
+      }
       return writeEntry(output, "conflict", [], existing.contentHash, "unownedExistingOutput");
     }
     if (existing.contentHash !== previous.contentHash) {
@@ -197,7 +207,7 @@ function normalizeManifestFiles(
 
 function normalizeManifestFile(file: RsglOwnershipManifestFileV2): RsglOwnershipManifestFileV2 {
   return {
-    outputPath: normalizePortableRelativePath(file.outputPath, "outputPath"),
+    outputPath: normalizeOwnedOutputPath(file.outputPath, "outputPath"),
     producerId: requireIdentity(file.producerId, "producerId"),
     kind: requireIdentity(file.kind, "kind"),
     logicalKeys: [...new Map(file.logicalKeys.map(key => [
@@ -208,17 +218,25 @@ function normalizeManifestFile(file: RsglOwnershipManifestFileV2): RsglOwnership
     ),
     contentHash: requireContentHash(file.contentHash),
     ...(file.sourceMapPath
-      ? { sourceMapPath: normalizePortableRelativePath(file.sourceMapPath, "sourceMapPath") }
+      ? { sourceMapPath: normalizeOwnedOutputPath(file.sourceMapPath, "sourceMapPath") }
       : {}),
     sourceOrigins: [...file.sourceOrigins].map(origin => ({
-      sourceUri: requireIdentity(origin.sourceUri, "source origin URI"),
+      sourcePath: normalizePortableSourcePath(origin.sourcePath, "source origin path"),
       ...(origin.range ? { range: normalizeRange(origin.range) } : {})
     })).sort((left, right) =>
-      left.sourceUri.localeCompare(right.sourceUri, "en")
+      left.sourcePath.localeCompare(right.sourcePath, "en")
       || (left.range?.start ?? 0) - (right.range?.start ?? 0)
       || (left.range?.end ?? 0) - (right.range?.end ?? 0)
     )
   };
+}
+
+function normalizeOwnedOutputPath(value: string, field: string): string {
+  const normalized = normalizePortableRelativePath(value, field);
+  if (normalized.split("/")[0].toLowerCase() === ".rsgl") {
+    throw new Error(`${field} must not use the reserved .rsgl metadata directory.`);
+  }
+  return normalized;
 }
 
 function parseManifestFile(value: unknown, index: number): RsglOwnershipManifestFileV2 {
@@ -247,7 +265,7 @@ function parseManifestFile(value: unknown, index: number): RsglOwnershipManifest
         ? undefined
         : parseRange(record.range, `files[${index}].sourceOrigins[${originIndex}].range`);
       return {
-        sourceUri: requireString(record.sourceUri, `files[${index}].sourceOrigins[${originIndex}].sourceUri`),
+        sourcePath: requireString(record.sourcePath, `files[${index}].sourceOrigins[${originIndex}].sourcePath`),
         ...(range ? { range } : {})
       };
     })
@@ -347,6 +365,32 @@ function normalizePortableRelativePath(value: string, field: string, allowDot = 
       return ".";
     }
     throw new Error(`${field} must not be empty.`);
+  }
+  return segments.join("/");
+}
+
+function normalizePortableSourcePath(value: string, field: string): string {
+  const raw = requireIdentity(value, field).replaceAll("\\", "/");
+  if (/^(?:\/|[a-zA-Z]:\/|[a-zA-Z][a-zA-Z0-9+.-]*:)/.test(raw)) {
+    throw new Error(`${field} must be a portable relative path without a URI scheme.`);
+  }
+  const segments: string[] = [];
+  for (const segment of raw.split("/")) {
+    if (!segment || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      if (segments.at(-1) && segments.at(-1) !== "..") {
+        segments.pop();
+      } else {
+        segments.push(segment);
+      }
+      continue;
+    }
+    segments.push(segment);
+  }
+  if (segments.length === 0) {
+    throw new Error(`${field} must identify a source.`);
   }
   return segments.join("/");
 }

@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://stone926.github.io/rsgl/schemas/rsgl-config.schema.json",
+  "title": "RSGL Project Configuration",
+  "description": "Project settings for RSGL compilation, output, external resources, and evaluation limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "root": {
+      "type": "string",
+      "description": "Canonical RSGL source root used by VS Code, LSP, and CLI, resolved relative to this configuration file."
+    },
+    "outDir": {
+      "type": "string",
+      "not": {
+        "pattern": "(^|[\\\\/])[aA][sS][sS][eE][tT][sS][\\\\/]?$"
+      },
+      "description": "Generated resource-pack root used by VS Code, LSP, and CLI, resolved relative to this configuration file. Must not name the assets directory."
+    },
+    "emitSourceMap": {
+      "type": "boolean",
+      "description": "Whether builds emit RSGL source maps."
+    },
+    "manifest": {
+      "type": "boolean",
+      "description": "Whether builds emit the RSGL manifest."
+    },
+    "defaultAssetsPath": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Default Minecraft assets root used for vanilla resource validation, or null to disable it."
+    },
+    "resourcePackRoots": {
+      "type": "array",
+      "description": "Resource-pack roots in custom-pack load order, resolved relative to this configuration file.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extern": {
+      "type": "array",
+      "description": "Project-wide external resource declarations.",
+      "items": {
+        "$ref": "#/definitions/externEntry"
+      }
+    },
+    "checkExternExistence": {
+      "type": "boolean",
+      "description": "Whether external declarations check that matched resources exist."
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^(?!\\.\\.$)[a-z0-9_.-]+$",
+      "description": "Project default Minecraft namespace. A namespace declaration in an RSGL file overrides this default."
+    },
+    "target": {
+      "$ref": "#/definitions/target"
+    },
+    "maxEvaluationItems": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "default": 100000,
+      "description": "Maximum compile-time evaluation and expansion work items."
+    },
+    "maxItemModelDepth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "default": 128,
+      "description": "Maximum expanded recursive item-model depth, measured in edges from root depth 0."
+    }
+  },
+  "definitions": {
+    "target": {
+      "type": "object",
+      "description": "Project-wide Java resource-pack target constraint. Specify exactly one of format or mc.",
+      "additionalProperties": false,
+      "required": [
+        "edition"
+      ],
+      "properties": {
+        "edition": {
+          "const": "java",
+          "description": "Minecraft edition targeted by this project."
+        },
+        "format": {
+          "description": "Java resource-pack format as a positive major version or an exact [major, minor] pair.",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              ],
+              "additionalItems": false
+            }
+          ]
+        },
+        "mc": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+(?:\\.\\d+)?$",
+          "description": "Minecraft Java version resolved to its resource-pack format, for example 1.21.4."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "format"
+          ]
+        },
+        {
+          "required": [
+            "mc"
+          ]
+        }
+      ]
+    },
+    "externEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "kind",
+        "patterns"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Resource lookup source: the target pack, custom resource-pack roots, or vanilla Minecraft assets.",
+          "enum": [
+            "local",
+            "custom",
+            "vanilla"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "description": "Resource kind matched by this external declaration.",
+          "enum": [
+            "model",
+            "blockstate",
+            "item",
+            "font",
+            "texture",
+            "texture_directory",
+            "sound",
+            "font_file",
+            "shader_vertex",
+            "shader_fragment"
+          ]
+        },
+        "patterns": {
+          "type": "array",
+          "description": "Resource ID patterns matched by this external declaration.",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "checkExistence": {
+          "type": "boolean",
+          "description": "Whether to check that matched resources exist, overriding the project-wide setting."
+        }
+      }
+    }
+  }
+}

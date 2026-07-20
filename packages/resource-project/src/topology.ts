@@ -71,18 +71,6 @@ export async function resolveResourcePackProjectContext(
     projectRootUri = parent;
   }
 
-  const rsglSourceRootUri = request.configuration?.root && projectRootUri
-    ? resolveResourceProjectUri(projectRootUri, request.configuration.root)
-    : inferRsglSourceRoot(sourceUri, projectRootUri);
-  if (request.configuration?.root && !isResourceProjectUriWithin(sourceUri, rsglSourceRootUri)) {
-    diagnostics.push({
-      code: "resourceProject.sourceOutsideConfiguredRoot",
-      severity: "warning",
-      message: "The source URI is outside the configured RSGL root.",
-      relatedUris: [sourceUri, rsglSourceRootUri]
-    });
-  }
-
   const configuredOutputUri = request.configuration?.outDir && projectRootUri
     ? resolveResourceProjectUri(projectRootUri, request.configuration.outDir)
     : undefined;
@@ -103,6 +91,17 @@ export async function resolveResourcePackProjectContext(
   }
 
   const effectiveProjectRootUri = projectRootUri ?? outputPackRootUri;
+  const rsglSourceRootUri = request.configuration?.root && projectRootUri
+    ? resolveResourceProjectUri(projectRootUri, request.configuration.root)
+    : await inferRsglSourceRoot(sourceUri, effectiveProjectRootUri, host);
+  if (request.configuration?.root && !isResourceProjectUriWithin(sourceUri, rsglSourceRootUri)) {
+    diagnostics.push({
+      code: "resourceProject.sourceOutsideConfiguredRoot",
+      severity: "warning",
+      message: "The source URI is outside the configured RSGL root.",
+      relatedUris: [sourceUri, rsglSourceRootUri]
+    });
+  }
   const workspaceFolderUri = selectWorkspaceFolder(
     effectiveProjectRootUri,
     sourceUri,
@@ -113,8 +112,9 @@ export async function resolveResourcePackProjectContext(
   let vanillaLayer;
   let externalLayers;
   try {
-    const vanillaConfiguration = request.configuration?.vanillaLayer
-      ?? request.sharedConfiguration?.vanillaLayer;
+    const vanillaConfiguration = request.configuration?.vanillaLayer !== undefined
+      ? request.configuration.vanillaLayer
+      : request.sharedConfiguration?.vanillaLayer;
     if (vanillaConfiguration && vanillaConfiguration.role !== "vanilla") {
       throw new ResourceLayerConfigurationError("The vanilla layer must use role 'vanilla'.");
     }
@@ -248,21 +248,40 @@ async function isPackRoot(
   return await host.stat(joinResourceProjectUri(candidateUri, "pack.mcmeta")) === "file";
 }
 
-function inferRsglSourceRoot(
+async function inferRsglSourceRoot(
   sourceUri: SerializedResourceUri,
-  projectRootUri: SerializedResourceUri | undefined
-): SerializedResourceUri {
-  let candidate: SerializedResourceUri | null = resourceProjectUriParent(sourceUri) ?? sourceUri;
-  while (candidate) {
-    if (conventionalSourceRootNames.has(resourceProjectUriBasename(candidate).toLowerCase())) {
-      return candidate;
+  projectRootUri: SerializedResourceUri,
+  host: ResourceProjectTopologyHost
+): Promise<SerializedResourceUri> {
+  const sourceType = await host.stat(sourceUri);
+  const sourceBasename = resourceProjectUriBasename(sourceUri).toLowerCase();
+  const sourceIsRsgl = sourceBasename.endsWith(".rsgl");
+  let candidate: SerializedResourceUri | null = sourceType === "directory"
+    ? sourceUri
+    : resourceProjectUriParent(sourceUri);
+  if (sourceIsRsgl || conventionalSourceRootNames.has(sourceBasename)) {
+    while (candidate) {
+      if (conventionalSourceRootNames.has(resourceProjectUriBasename(candidate).toLowerCase())) {
+        return candidate;
+      }
+      if (resourceProjectUriIdentity(candidate) === resourceProjectUriIdentity(projectRootUri)) {
+        break;
+      }
+      candidate = resourceProjectUriParent(candidate);
     }
-    if (projectRootUri && candidate === projectRootUri) {
-      break;
-    }
-    candidate = resourceProjectUriParent(candidate);
   }
-  return resourceProjectUriParent(sourceUri) ?? sourceUri;
+
+  const conventionalCandidates = [...conventionalSourceRootNames]
+    .map(name => joinResourceProjectUri(projectRootUri, name));
+  for (const conventionalCandidate of conventionalCandidates) {
+    if (await host.stat(conventionalCandidate) === "directory") {
+      return conventionalCandidate;
+    }
+  }
+  if (sourceIsRsgl) {
+    return resourceProjectUriParent(sourceUri) ?? sourceUri;
+  }
+  return conventionalCandidates[0];
 }
 
 function selectWorkspaceFolder(

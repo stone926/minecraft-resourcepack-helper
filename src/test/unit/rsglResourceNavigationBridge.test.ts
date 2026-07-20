@@ -1,0 +1,117 @@
+import * as assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import * as path from "node:path";
+
+describe("integrated RSGL ResourceUniverse navigation bridge", () => {
+  it("does not probe generated facts for an explicitly non-RSGL project", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: value => ({ toString: () => value }) } }; return originalLoad.call(this, request, ...args); };",
+      "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
+      "const context = { projectId: 'project', contextRevision: 'r1', projectRootUri: 'file:///pack', localLayer: { layerId: 'local' }, externalLayers: [] };",
+      "let applicability = 'none'; let generatedRefreshes = 0; let physicalRefreshes = 0;",
+      "const projects = { resolveProject: async () => ({ context, rsglApplicability: applicability }), getRsglApplicability: () => applicability };",
+      "const physicalCoverage = { status: 'authoritative', revision: 'r1', coveredScope: { projectId: 'project' } };",
+      "const universe = {",
+      "  index: { getCoverage: provider => provider === 'physical' ? physicalCoverage : undefined },",
+      "  registry: { get: () => ({}) },",
+      "  refreshProviderProject: async provider => { if (provider === 'physical') physicalRefreshes++; return { applied: true }; },",
+      "  invalidateProviderProject: () => undefined, onDidChange: () => ({ dispose() {} })",
+      "};",
+      "const facade = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
+      "facade.setGeneratedProjectRefresher(async () => { generatedRefreshes++; });",
+      "(async () => {",
+      "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true });",
+      "  assert.strictEqual(generatedRefreshes, 0); assert.strictEqual(physicalRefreshes, 1);",
+      "  applicability = undefined;",
+      "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true });",
+      "  assert.strictEqual(generatedRefreshes, 1, 'unknown applicability stays conservative');",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const facadePath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");
+    const result = spawnSync(process.execPath, ["-e", script, facadePath], { encoding: "utf8" });
+    assert.strictEqual(result.status, 0, result.stderr);
+  });
+
+  it("returns scoped directory/ZIP/JAR/remote definitions and physical References without fake paths", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module');",
+      "const originalLoad = Module._load;",
+      "const uri = value => ({ value, toString: () => value });",
+      "const texts = new Map([['file:///pack/assets/demo/models/block/consumer.json', '{\\n  \\\"parent\\\": \\\"demo:block/base\\\"\\n}']]);",
+      "Module._load = function(request, ...args) {",
+      "  if (request === 'vscode') return {",
+      "    Uri: { parse: value => uri(value) },",
+      "    workspace: { openTextDocument: async target => {",
+      "      const text = texts.get(target.toString()) || '';",
+      "      return { getText: () => text, positionAt: offset => {",
+      "        const before = text.slice(0, Math.max(0, Math.min(text.length, offset)));",
+      "        const lines = before.split('\\n'); return { line: lines.length - 1, character: lines.at(-1).length };",
+      "      } };",
+      "    } }",
+      "  };",
+      "  return originalLoad.call(this, request, ...args);",
+      "};",
+      "const { resolveRsglResourceNavigation } = require(process.argv[1]);",
+      "const protocol = require(process.argv[2]);",
+      "const seen = [];",
+      "const locationById = {",
+      "  'demo:block/local': 'file:///C:/Pack%20%E8%B5%84%E6%BA%90/assets/demo/models/block/local.json',",
+      "  'demo:block/zip': 'mcres-archive://zip-r1/assets/demo/models/block/zip.json',",
+      "  'minecraft:block/cube_all': 'mcres-archive://client-jar-r1/assets/minecraft/models/block/cube_all.json',",
+      "  'demo:block/remote': 'vscode-remote://ssh-remote+dev/work/%E8%B5%84%E6%BA%90/assets/demo/models/block/remote.json'",
+      "};",
+      "const facade = {",
+      "  resolveLogicalDefinition: async (source, target, scope) => {",
+      "    seen.push(['definition', source.toString(), target.id, scope]);",
+      "    if (target.id === 'demo:block/missing') return { context: { projectId: 'project' }, coverage: 'partial', navigation: { status: 'incomplete', target, reason: 'providerUnavailable', candidates: [] } };",
+      "    const targetUri = locationById[target.id];",
+      "    return { context: { projectId: 'project' }, coverage: 'authoritative', navigation: {",
+      "      status: 'resolved', target, primary: { uri: targetUri, origin: 'physical', editable: !targetUri.startsWith('mcres-archive:') }, alternatives: [],",
+      "      producer: {}, resolutionIncomplete: false",
+      "    } };",
+      "  },",
+      "  getLogicalIncomingReferenceLocations: async (source, target) => {",
+      "    seen.push(['references', source.toString(), target.id]);",
+      "    return { context: { projectId: 'project' }, coverage: 'authoritative', locations: [{",
+      "      uri: 'file:///pack/assets/demo/models/block/consumer.json', origin: 'physical', range: { start: 16, end: 31 }",
+      "    }] };",
+      "  }",
+      "};",
+      "let generation = 0;",
+      "const request = (operation, id, scope, mode = 'checked', extra = {}) => ({",
+      "  protocolVersion: protocol.rsglResourceNavigationProtocolVersion, requestGeneration: ++generation, operation,",
+      "  sourceContext: { documentUri: extra.documentUri || 'file:///pack/rsgl/main.rsgl' },",
+      "  target: { kind: 'model', id }, resolutionScope: scope, declarationMode: mode,",
+      "  ...(operation === 'references' ? { includeDeclaration: extra.includeDeclaration === true } : {})",
+      "});",
+      "(async () => {",
+      "  for (const [id, scope] of [['demo:block/local','local'], ['demo:block/zip','custom'], ['minecraft:block/cube_all','vanilla']]) {",
+      "    const result = await resolveRsglResourceNavigation(facade, request('definition', id, scope), new AbortController().signal);",
+      "    assert.strictEqual(result.status, 'resolved'); assert.strictEqual(result.locations[0].uri, locationById[id]);",
+      "  }",
+      "  const remoteSource = 'vscode-remote://ssh-remote+dev/work/%E8%B5%84%E6%BA%90/rsgl/main.rsgl';",
+      "  const remote = await resolveRsglResourceNavigation(facade, request('definition','demo:block/remote','local','checked',{documentUri:remoteSource}), new AbortController().signal);",
+      "  assert.strictEqual(remote.locations[0].uri, locationById['demo:block/remote']); assert.ok(seen.some(row => row[1] === remoteSource));",
+      "  const unchecked = await resolveRsglResourceNavigation(facade, request('definition','minecraft:block/cube_all','vanilla','unchecked'), new AbortController().signal);",
+      "  assert.deepStrictEqual({status:unchecked.status, reason:unchecked.reason, count:unchecked.locations.length}, {status:'unchecked', reason:'existenceCheckDisabled', count:0});",
+      "  const missing = await resolveRsglResourceNavigation(facade, request('definition','demo:block/missing','custom'), new AbortController().signal);",
+      "  assert.deepStrictEqual({status:missing.status, reason:missing.reason, coverage:missing.coverage}, {status:'incomplete', reason:'providerUnavailable', coverage:'partial'});",
+      "  const refs = await resolveRsglResourceNavigation(facade, request('references','demo:block/local','local','checked',{includeDeclaration:true}), new AbortController().signal);",
+      "  assert.strictEqual(refs.status, 'resolved'); assert.deepStrictEqual(refs.locations.map(item => item.uri).sort(), [locationById['demo:block/local'], 'file:///pack/assets/demo/models/block/consumer.json'].sort());",
+      "  assert.deepStrictEqual(refs.locations.find(item => item.range).range, { start: { line: 1, character: 14 }, end: { line: 1, character: 29 } });",
+      "  const abort = new AbortController(); abort.abort();",
+      "  const cancelled = await resolveRsglResourceNavigation(facade, request('definition','demo:block/local','local'), abort.signal);",
+      "  assert.strictEqual(cancelled.status, 'cancelled');",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const bridgePath = path.join(process.cwd(), "out", "src", "rsgl", "rsglResourceNavigationBridge.js");
+    const protocolPath = path.join(process.cwd(), "out", "packages", "rsgl-shared", "src", "index.js");
+    const result = spawnSync(process.execPath, ["-e", script, bridgePath, protocolPath], {
+      encoding: "utf8"
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+  });
+});

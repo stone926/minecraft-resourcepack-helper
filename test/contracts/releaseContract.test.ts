@@ -3,43 +3,36 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-describe("independent release contracts", () => {
+describe("single-extension release contracts", () => {
   const root = process.cwd();
 
-  it("maps each tag namespace to exactly one independently versioned product", () => {
+  it("maps the combined VSIX and CLI tag namespaces to one product each", () => {
     const main = readJson<Manifest>(path.join(root, "package.json"));
-    const rsgl = readJson<Manifest>(path.join(root, "extensions", "vscode-rsgl", "package.json"));
     const cli = readJson<Manifest>(path.join(root, "packages", "rsgl-cli", "package.json"));
 
-    assert.match(rsgl.version, /^\d+\.\d+\.\d+$/);
     assert.match(cli.version, /^\d+\.\d+\.\d+$/);
-    assert.deepStrictEqual(main.extensionPack, ["stone926.rsgl"]);
+    assert.strictEqual(main.extensionPack, undefined);
     assert.strictEqual(main.extensionDependencies, undefined);
 
     const mainRelease = describeTag(`v${main.version}`);
-    const rsglRelease = describeTag(`rsgl-v${rsgl.version}`);
     const cliRelease = describeTag(`rsgl-cli-v${cli.version}`);
 
     assert.deepStrictEqual(
-      [mainRelease.product, rsglRelease.product, cliRelease.product],
-      ["main", "rsgl", "rsgl-cli"]
+      [mainRelease.product, cliRelease.product],
+      ["main", "rsgl-cli"]
     );
     assert.strictEqual(mainRelease.asset_name, `${main.name}-${main.version}.vsix`);
-    assert.strictEqual(rsglRelease.asset_name, `${rsgl.name}-${rsgl.version}.vsix`);
     assert.strictEqual(mainRelease.marketplace_publisher, main.publisher);
     assert.strictEqual(mainRelease.marketplace_extension, main.name);
-    assert.strictEqual(rsglRelease.marketplace_publisher, rsgl.publisher);
-    assert.strictEqual(rsglRelease.marketplace_extension, rsgl.name);
     assert.strictEqual(cliRelease.marketplace_publisher, undefined);
     assert.strictEqual(
       cliRelease.asset_name,
       `minecraft-resourcepack-helper-rsgl-cli-${cli.version}.tgz`
     );
     assert.strictEqual(cliRelease.publish_kind, "npm");
-    for (const [changelogPath, currentVersion] of [
-      ["extensions/vscode-rsgl/CHANGELOG.md", rsgl.version],
-      ["packages/rsgl-cli/CHANGELOG.md", cli.version]
-    ] as const) {
+    for (const [changelogPath, currentVersion] of [[
+      "packages/rsgl-cli/CHANGELOG.md", cli.version
+    ]] as const) {
       const changelog = read(changelogPath);
       assert.match(changelog, /^## \[1\.0\.0\]/m, `${changelogPath} must retain its first release`);
       assert.match(
@@ -60,16 +53,24 @@ describe("independent release contracts", () => {
     );
     assert.deepStrictEqual(
       Object.keys(scripts).filter(name => name.startsWith("package:")).sort(),
-      ["package:main:vsix", "package:rsgl-cli", "package:rsgl:vsix"]
+      ["package:main:vsix", "package:rsgl-cli"]
     );
     assert.deepStrictEqual(
-      Object.keys(scripts).filter(name => name.startsWith("verify:") && name !== "verify:build-budgets").sort(),
-      ["verify:main:vsix", "verify:rsgl-cli", "verify:rsgl:vsix"]
+      Object.keys(scripts).filter(name => name.startsWith("verify:")).sort(),
+      [
+        "verify:build-budgets",
+        "verify:json-only-extension-host-budget",
+        "verify:main:vsix",
+        "verify:rsgl-cli"
+      ]
+    );
+    assert.strictEqual(
+      scripts["verify:build-budgets"],
+      "node scripts/build.mjs all --bundle-only --bundle-mode production && "
+        + "node scripts/verify-build-budgets.mjs --target all --bundle-mode production"
     );
     const expectedReleaseScripts = {
       "release:main": "node scripts/release.mjs main",
-      "release:rsgl": "node scripts/release.mjs rsgl",
-      "release:rsgl:current": "node scripts/release.mjs rsgl current",
       "release:rsgl-cli": "node scripts/release.mjs rsgl-cli",
       "release:rsgl-cli:current": "node scripts/release.mjs rsgl-cli current"
     };
@@ -103,7 +104,6 @@ describe("independent release contracts", () => {
   it("uses official npm registry URLs in committed lockfiles", () => {
     for (const lockfile of [
       "package-lock.json",
-      "extensions/vscode-rsgl/package-lock.json",
       "tools/vsce-publisher/package-lock.json"
     ]) {
       const source = read(lockfile);
@@ -123,11 +123,11 @@ describe("independent release contracts", () => {
     assert.match(reusable, /ubuntu-latest/);
     assert.match(reusable, /windows-latest/);
     assert.match(reusable, /package:main:vsix/);
-    assert.match(reusable, /package:rsgl:vsix/);
     assert.match(reusable, /package:rsgl-cli/);
     assert.match(reusable, /verify:main:vsix/);
-    assert.match(reusable, /verify:rsgl:vsix/);
     assert.match(reusable, /verify:rsgl-cli/);
+    assert.strictEqual(reusable.includes("package:rsgl:vsix"), false);
+    assert.strictEqual(reusable.includes("verify:rsgl:vsix"), false);
     assert.strictEqual(reusable.includes("verify:build-budgets"), false);
     assert.strictEqual(reusable.includes("verify:vsix-budgets"), false);
     assertSingleCommandStep(
@@ -139,16 +139,6 @@ describe("independent release contracts", () => {
       reusable,
       "Verify main extension package",
       "npm run verify:main:vsix --"
-    );
-    assertSingleCommandStep(
-      reusable,
-      "Package RSGL extension",
-      "npm run package:rsgl:vsix -- --out"
-    );
-    assertSingleCommandStep(
-      reusable,
-      "Verify RSGL extension package",
-      "npm run verify:rsgl:vsix --"
     );
     assertSingleCommandStep(
       reusable,
@@ -176,7 +166,7 @@ describe("independent release contracts", () => {
     );
     assert.strictEqual(release.includes('case "${PRODUCT}"'), false);
     assert.match(release, /- "v\*"/);
-    assert.match(release, /- "rsgl-v\*"/);
+    assert.strictEqual(release.includes('- "rsgl-v*"'), false);
     assert.match(release, /- "rsgl-cli-v\*"/);
     assert.match(
       release,

@@ -7,9 +7,10 @@ describe("extension surface", () => {
     const source = readSource("extension.ts");
 
     for (const registration of [
-      "registerResourceGraph(context)",
-      "registerResourceDiagnostics(context)",
-      "registerLanguageProviders(context)",
+      "registerResourceInfrastructure(context)",
+      "registerResourceGraph(context, resources.navigation)",
+      "registerResourceDiagnostics(context, resources.navigation)",
+      "registerLanguageProviders(context, resources.navigation)",
       "registerCommands(context)",
       "registerWorkspaceEvents(context, { diagnostics, resourceGraph })"
     ]) {
@@ -33,11 +34,24 @@ describe("extension surface", () => {
     assert.ok(source.split(/\r?\n/).length <= 25, "extension.ts should remain a thin composition root");
   });
 
+  it("registers project and universe infrastructure without activation-time scanning", () => {
+    const source = readSource("registration", "registerResourceInfrastructure.ts");
+
+    assert.ok(source.includes("new ResourcePackProjectService"));
+    assert.ok(source.includes("new ResourceUniverseService"));
+    assert.ok(source.includes("new PhysicalAssetContributionProvider"));
+    assert.ok(source.includes("new ResourceUniverseNavigationFacade"));
+    assert.ok(source.includes('"**/rsgl.config.json"'));
+    assert.ok(source.includes('"**/pack.mcmeta"'));
+    assert.strictEqual(source.includes("findFiles("), false);
+    assert.strictEqual(source.includes("scanProject("), false);
+  });
+
   it("defers initial diagnostics and preserves async refresh disposal", () => {
     const source = readSource("registration", "registerResourceDiagnostics.ts");
 
     assert.ok(source.includes("controller.refreshAllSoon();"));
-    assert.ok(source.includes("void refreshResourceDiagnostics(document, this.collection);"));
+    assert.ok(source.includes("void refreshResourceDiagnostics(document, this.collection, this.resolveReference);"));
     assert.ok(source.includes("disposeResourceDiagnosticsRefreshes(this.collection);"));
     assert.strictEqual(
       /context\.subscriptions\.push\(controller\);\s*controller\.refreshAll\(\)/.test(source),

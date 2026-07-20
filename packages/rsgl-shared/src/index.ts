@@ -1,7 +1,7 @@
-export const rsglExtensionId = "stone926.rsgl";
 export const rsglFileGlob = "**/*.rsgl";
 
 export * from "./resourceSnapshotProtocol";
+export * from "./resourceNavigationProtocol";
 
 /** Server-to-client notification carrying current exact and patterned watch dependencies. */
 export const rsglDependencyPathsNotification = "rsgl/dependencyPaths";

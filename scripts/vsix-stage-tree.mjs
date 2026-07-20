@@ -31,6 +31,7 @@ export function assembleVsixStageTree(options) {
   ));
   const sourceDateEpoch = validateSourceDateEpoch(options?.sourceDateEpoch);
   const timestamp = new Date(sourceDateEpoch * 1_000);
+  const allowedForbiddenPaths = normalizeAllowedForbiddenPaths(options?.allowedForbiddenPaths);
 
   assertStrictDescendant(allowedStageParent, stageRoot, "stageRoot");
   assertDescendant(allowedStageParent, contentsManifestFile, "contentsManifestFile");
@@ -42,7 +43,7 @@ export function assembleVsixStageTree(options) {
   mkdirSync(allowedStageParent, { recursive: true });
   mkdirSync(stageRoot, { recursive: true });
 
-  const desiredFiles = normalizeDesiredFiles(options?.files);
+  const desiredFiles = normalizeDesiredFiles(options?.files, allowedForbiddenPaths);
   const desiredPaths = new Set(desiredFiles.map(file => file.path));
   const desiredDirectories = collectDesiredDirectories(desiredFiles);
   const removed = reconcileStageShape(stageRoot, desiredPaths, desiredDirectories);
@@ -63,9 +64,11 @@ export function assembleVsixStageTree(options) {
   }
 
   normalizeStageDirectories(stageRoot, desiredDirectories, timestamp);
-  assertNoForbiddenStageFiles(stageRoot);
+  assertNoForbiddenStageFiles(stageRoot, allowedForbiddenPaths);
 
-  const manifest = createStageContentsManifest(desiredFiles, sourceDateEpoch);
+  const manifest = createStageContentsManifest(desiredFiles, sourceDateEpoch, {
+    allowedForbiddenPaths
+  });
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   mkdirSync(path.dirname(contentsManifestFile), { recursive: true });
   const manifestWritten = writeFileIfChanged(contentsManifestFile, manifestBytes, timestamp);
@@ -82,10 +85,11 @@ export function assembleVsixStageTree(options) {
   });
 }
 
-export function createStageContentsManifest(files, sourceDateEpoch) {
+export function createStageContentsManifest(files, sourceDateEpoch, options = {}) {
   const normalizedEpoch = validateSourceDateEpoch(sourceDateEpoch);
+  const allowedForbiddenPaths = normalizeAllowedForbiddenPaths(options.allowedForbiddenPaths);
   const entries = files.map(file => ({
-    path: normalizeStagePath(file.path),
+    path: normalizeStagePathForAllowList(file.path, allowedForbiddenPaths),
     bytes: file.content.length,
     sha256: sha256(file.content)
   })).sort((left, right) => compareNames(left.path, right.path));
@@ -113,7 +117,7 @@ export function validateSourceDateEpoch(value, source = "sourceDateEpoch") {
   return timestamp;
 }
 
-export function normalizeStagePath(value) {
+export function normalizeStagePath(value, options = {}) {
   if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
     throw new Error("Stage file paths must be non-empty strings without NUL bytes.");
   }
@@ -129,20 +133,21 @@ export function normalizeStagePath(value) {
     throw new Error(`Stage file path is not canonical: ${value}`);
   }
   const lower = normalized.toLowerCase();
-  if (forbiddenStageSuffixes.some(suffix => lower.endsWith(suffix))) {
+  if (forbiddenStageSuffixes.some(suffix => lower.endsWith(suffix))
+    && options.allowForbidden !== true) {
     throw new Error(`Forbidden production stage file: ${normalized}`);
   }
   return normalized;
 }
 
-function normalizeDesiredFiles(files) {
+function normalizeDesiredFiles(files, allowedForbiddenPaths) {
   if (!Array.isArray(files) || files.length === 0) {
     throw new Error("A VSIX stage requires at least one allow-listed file.");
   }
   const normalized = [];
   const caseInsensitivePaths = new Map();
   for (const file of files) {
-    const relativePath = normalizeStagePath(file?.path);
+    const relativePath = normalizeStagePathForAllowList(file?.path, allowedForbiddenPaths);
     const caseInsensitivePath = relativePath.toLowerCase();
     const collision = caseInsensitivePaths.get(caseInsensitivePath);
     if (collision !== undefined) {
@@ -301,13 +306,44 @@ function normalizeStageDirectories(stageRoot, desiredDirectories, timestamp) {
   }
 }
 
-function assertNoForbiddenStageFiles(stageRoot) {
+function assertNoForbiddenStageFiles(stageRoot, allowedForbiddenPaths) {
   for (const file of scanStage(stageRoot).files) {
     const lower = file.toLowerCase();
-    if (forbiddenStageSuffixes.some(suffix => lower.endsWith(suffix))) {
+    if (forbiddenStageSuffixes.some(suffix => lower.endsWith(suffix))
+      && !allowedForbiddenPaths.has(file)) {
       throw new Error(`Forbidden production stage file remained after assembly: ${file}`);
     }
   }
+}
+
+function normalizeAllowedForbiddenPaths(values) {
+  if (values === undefined) {
+    return new Set();
+  }
+  const iterable = values instanceof Set ? [...values] : values;
+  if (!Array.isArray(iterable)) {
+    throw new Error("allowedForbiddenPaths must be an array or Set of exact stage paths.");
+  }
+  const normalized = new Set();
+  for (const value of iterable) {
+    const relativePath = normalizeStagePath(value, { allowForbidden: true });
+    const lower = relativePath.toLowerCase();
+    if (!forbiddenStageSuffixes.some(suffix => lower.endsWith(suffix))) {
+      throw new Error(`Allowed forbidden stage path does not use a forbidden suffix: ${relativePath}`);
+    }
+    normalized.add(relativePath);
+  }
+  return normalized;
+}
+
+function normalizeStagePathForAllowList(value, allowedForbiddenPaths) {
+  const relativePath = normalizeStagePath(value, { allowForbidden: true });
+  const lower = relativePath.toLowerCase();
+  if (forbiddenStageSuffixes.some(suffix => lower.endsWith(suffix))
+    && !allowedForbiddenPaths.has(relativePath)) {
+    throw new Error(`Forbidden production stage file: ${relativePath}`);
+  }
+  return relativePath;
 }
 
 function validateExistingStageRoot(stageRoot) {

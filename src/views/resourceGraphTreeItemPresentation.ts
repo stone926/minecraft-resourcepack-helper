@@ -2,14 +2,13 @@ import type {
   ResourceGraphCollapsibleState,
   ResourceGraphTreeNodeModel
 } from "./resourceGraphTreeModel";
-import type { ResourceGraphPreviewContext } from "./resourceGraphPreviewClassifier";
 
 export interface ResourceGraphTreeItemPresentation {
   label: string;
   collapsibleState: ResourceGraphCollapsibleState;
   description?: string;
   icon: string;
-  contextValue?: ResourceGraphPreviewContext;
+  contextValue?: string;
   tooltip?: string;
 }
 

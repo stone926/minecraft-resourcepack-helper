@@ -26,6 +26,7 @@ describe("RSGL ownership manifest v2", () => {
       "assets/demo/models/block/b.json"
     ]);
     assert.strictEqual(rsglOwnershipManifestPath(manifest.projectId), ".rsgl/manifests/project-a.json");
+    assert.notStrictEqual(rsglOwnershipManifestPath("project/a"), rsglOwnershipManifestPath("project?a"));
     assert.deepStrictEqual(parseRsglOwnershipManifestV2(JSON.parse(
       serializeRsglOwnershipManifestV2(manifest)
     )), manifest);
@@ -45,6 +46,13 @@ describe("RSGL ownership manifest v2", () => {
       sourceRoot: ".",
       outputPackRootIdentity: "pack",
       buildRevision: "r1",
+      files: [ownedFile(".rsgl/manifests/hijack.json", "outside")]
+    }), /reserved .rsgl/);
+    assert.throws(() => createRsglOwnershipManifestV2({
+      projectId: "project",
+      sourceRoot: ".",
+      outputPackRootIdentity: "pack",
+      buildRevision: "r1",
       files: [ownedFile("assets/demo/a.json", "a"), ownedFile("assets/demo/a.json", "b")]
     }), /Duplicate manifest file path/);
     assert.throws(() => createRsglOwnershipManifestV2({
@@ -54,6 +62,16 @@ describe("RSGL ownership manifest v2", () => {
       buildRevision: "r1",
       files: [{ ...ownedFile("assets/demo/a.json", "a"), contentHash: "md5:nope" }]
     }), /SHA-256/);
+    assert.throws(() => createRsglOwnershipManifestV2({
+      projectId: "project",
+      sourceRoot: ".",
+      outputPackRootIdentity: "pack",
+      buildRevision: "r1",
+      files: [{
+        ...ownedFile("assets/demo/a.json", "a"),
+        sourceOrigins: [{ sourcePath: "file:///workspace/private/main.rsgl" }]
+      }]
+    }), /without a URI scheme/);
   });
 
   it("classifies create, update, and unchanged only when current ownership hash is intact", () => {
@@ -118,6 +136,44 @@ describe("RSGL ownership manifest v2", () => {
     assert.strictEqual(plan.hasConflicts, true);
   });
 
+  it("adopts an unowned output only through the explicit byte-identical flow", () => {
+    const output = ownedFile("assets/demo/models/block/existing.json", "same");
+    const adopted = planRsglOwnedMaterialization({
+      projectId: "project-a",
+      plannedOutputs: [output],
+      existingOutputs: [{ outputPath: output.outputPath, contentHash: output.contentHash }],
+      adoptUnownedIdentical: true
+    });
+    const different = planRsglOwnedMaterialization({
+      projectId: "project-a",
+      plannedOutputs: [output],
+      existingOutputs: [{
+        outputPath: output.outputPath,
+        contentHash: hashRsglOwnedContent("different")
+      }],
+      adoptUnownedIdentical: true
+    });
+
+    assert.strictEqual(adopted.writes[0].action, "adopt");
+    assert.strictEqual(adopted.hasConflicts, false);
+    assert.strictEqual(different.writes[0].action, "conflict");
+    assert.strictEqual(different.writes[0].conflictReason, "unownedExistingOutput");
+  });
+
+  it("keeps another project's ownership authoritative while its output is absent", () => {
+    const output = ownedFile("assets/demo/models/block/shared.json", "other");
+    const plan = planRsglOwnedMaterialization({
+      projectId: "project-a",
+      plannedOutputs: [{ ...output, contentHash: hashRsglOwnedContent("next") }],
+      otherManifests: [manifest("project-b", [output])],
+      existingOutputs: []
+    });
+
+    assert.strictEqual(plan.writes[0].action, "conflict");
+    assert.strictEqual(plan.writes[0].conflictReason, "ownedByOtherProject");
+    assert.deepStrictEqual(plan.writes[0].ownerProjectIds, ["project-b"]);
+  });
+
   it("deletes stale outputs only while ownership and the previous content hash still agree", () => {
     const safe = ownedFile("assets/demo/models/block/safe.json", "safe");
     const modified = ownedFile("assets/demo/models/block/modified.json", "old");
@@ -170,7 +226,7 @@ describe("RSGL ownership manifest v2", () => {
       contentHash: hashRsglOwnedContent(content),
       sourceMapPath: `${outputPath}.rsgl.map`,
       sourceOrigins: [{
-        sourceUri: "file:///workspace/rsgl/main.rsgl",
+        sourcePath: "main.rsgl",
         range: { start: 0, end: 10 }
       }]
     };

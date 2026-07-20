@@ -1,3 +1,4 @@
+import { uniqueValues } from "../../../mc-assets/src";
 import {
   ExprNode,
   ObjectExprNode,
@@ -349,9 +350,9 @@ function contextualExpectationsEquivalent(
   scores: readonly ContextualObjectArmScore[],
   scope: RsglScope
 ): boolean {
-  const keys = Array.from(new Set(expression.properties.flatMap(property =>
+  const keys = uniqueValues(expression.properties.flatMap(property =>
     property.kind === "ObjectSpread" ? [] : contextualPropertyKeys(property, scope) ?? []
-  )));
+  ));
   return keys.every(key => {
     const expectedKeys = scores.map(score => {
       const expected = expectedObjectValueType(score.type, key);

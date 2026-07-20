@@ -30,16 +30,24 @@ interface StageTreeModule {
     contentsManifestFile: string;
     sourceDateEpoch: string | number;
     files: StageFile[];
+    allowedForbiddenPaths?: string[];
   }): StageResult;
 }
 
 interface MainStageModule {
   mainVsixRuntimeBundles: readonly string[];
+  mainVsixRuntimeSourceMaps: readonly string[];
   mainVsixGeneratedIgnore: readonly string[];
+  mainVsixDevelopmentGeneratedIgnore: readonly string[];
   assembleMainVsixStage(options: {
     repositoryRoot: string;
     sourceDateEpoch: string | number;
+    bundleMode?: "development" | "production";
   }): StageResult;
+  parseMainVsixStageArguments(args: string[]): {
+    sourceDateEpoch?: string;
+    bundleMode: "development" | "production";
+  };
   resolveMainVsixSourceDateEpoch(options: {
     repositoryRoot: string;
     environment?: Record<string, string | undefined>;
@@ -108,6 +116,8 @@ describe("main VSIX stage assembler", () => {
 
     const publishManifest = readJson<Record<string, unknown>>(path.join(result.stageRoot, "package.json"));
     assert.deepStrictEqual(publishManifest.scripts, { keep: "node keep.mjs" });
+    assert.strictEqual(publishManifest.dependencies, undefined);
+    assert.strictEqual(publishManifest.devDependencies, undefined);
     assert.strictEqual(
       fs.readFileSync(path.join(result.stageRoot, "assets", "linters", "en", "schema.json"), "utf8"),
       JSON.stringify({ title: "Schema", type: "object" })
@@ -206,6 +216,64 @@ describe("main VSIX stage assembler", () => {
     }
   });
 
+  it("uses readable development JSON and an equivalent compact production form", () => {
+    const repositoryRoot = createFixtureRepository();
+    const development = mainStage.assembleMainVsixStage({
+      repositoryRoot,
+      sourceDateEpoch: SOURCE_DATE_EPOCH,
+      bundleMode: "development"
+    });
+    const relativeJson = path.join("syntaxes", "rsgl.tmLanguage.json");
+    const developmentBytes = fs.readFileSync(path.join(development.stageRoot, relativeJson));
+    const developmentValue = JSON.parse(developmentBytes.toString("utf8")) as unknown;
+    const developmentPaths = listFiles(development.stageRoot);
+    const developmentIgnore = fs.readFileSync(
+      path.join(development.stageRoot, ".vscodeignore"),
+      "utf8"
+    );
+    assert.deepStrictEqual(
+      developmentPaths,
+      [...development.files.map(file => file.path)].sort()
+    );
+    assert.ok(!developmentIgnore.includes("**/*.map"));
+    assert.ok(!mainStage.mainVsixDevelopmentGeneratedIgnore.includes("**/*.map"));
+    for (const sourceMap of mainStage.mainVsixRuntimeSourceMaps) {
+      assert.ok(developmentPaths.includes(sourceMap), sourceMap);
+    }
+
+    const production = mainStage.assembleMainVsixStage({
+      repositoryRoot,
+      sourceDateEpoch: SOURCE_DATE_EPOCH,
+      bundleMode: "production"
+    });
+    const productionBytes = fs.readFileSync(path.join(production.stageRoot, relativeJson));
+    assert.deepStrictEqual(JSON.parse(productionBytes.toString("utf8")), developmentValue);
+    assert.ok(productionBytes.length < developmentBytes.length);
+    assert.strictEqual(productionBytes.toString("utf8"), JSON.stringify(developmentValue));
+    assert.notStrictEqual(production.contentHash, development.contentHash);
+    assert.deepStrictEqual(
+      developmentPaths,
+      [...production.files.map(file => file.path), ...mainStage.mainVsixRuntimeSourceMaps].sort()
+    );
+    assert.ok(fs.readFileSync(path.join(production.stageRoot, ".vscodeignore"), "utf8")
+      .startsWith("**/*.map\n"));
+    for (const sourceMap of mainStage.mainVsixRuntimeSourceMaps) {
+      assert.strictEqual(fs.existsSync(path.join(production.stageRoot, ...sourceMap.split("/"))), false);
+    }
+    assert.deepStrictEqual(mainStage.parseMainVsixStageArguments([]), {
+      sourceDateEpoch: undefined,
+      bundleMode: "production"
+    });
+    assert.deepStrictEqual(
+      mainStage.parseMainVsixStageArguments(["--bundle-mode=development"]),
+      { sourceDateEpoch: undefined, bundleMode: "development" }
+    );
+    assert.throws(
+      () => mainStage.parseMainVsixStageArguments(["--bundle-mode", "analyze"]),
+      /Unknown VSIX stage bundle mode/
+    );
+  });
+
   it("rejects maps, path escapes, case-folding collisions, and unsafe stage roots", () => {
     const root = createTemporaryRoot();
     const parent = path.join(root, "dist", "vsix-stage");
@@ -218,6 +286,20 @@ describe("main VSIX stage assembler", () => {
 
     assert.throws(
       () => stageTree.assembleVsixStageTree({ ...baseOptions, files: [{ path: "bundle/app.js.map", content: "map" }] }),
+      /Forbidden production stage file/
+    );
+    const development = stageTree.assembleVsixStageTree({
+      ...baseOptions,
+      files: [{ path: "bundle/app.js.map", content: "map" }],
+      allowedForbiddenPaths: ["bundle/app.js.map"]
+    });
+    assert.deepStrictEqual(development.files.map(file => file.path), ["bundle/app.js.map"]);
+    assert.throws(
+      () => stageTree.assembleVsixStageTree({
+        ...baseOptions,
+        files: [{ path: "bundle/other.js.map", content: "map" }],
+        allowedForbiddenPaths: ["bundle/app.js.map"]
+      }),
       /Forbidden production stage file/
     );
     assert.throws(
@@ -280,6 +362,8 @@ describe("main VSIX stage assembler", () => {
         "vscode:prepublish": "node scripts/build.mjs main --bundle-mode production",
         keep: "node keep.mjs"
       },
+      dependencies: { runtime: "1.0.0" },
+      devDependencies: { tooling: "1.0.0" },
       contributes: {
         languages: [{ id: "rsgl", configuration: "./language-configuration/rsgl.json" }],
         grammars: [{ language: "rsgl", scopeName: "source.rsgl", path: "./syntaxes/rsgl.tmLanguage.json" }],
@@ -288,15 +372,14 @@ describe("main VSIX stage assembler", () => {
     });
     writeJson(root, "package.nls.json", {
       "extension.displayName": "Main Fixture",
+      "rsgl.command.build": "Build RSGL",
+      "schema.rsglConfig.url": "./schemas/en/rsgl-config.schema.json",
       "schema.root.url": "./assets/linters/en/schema.json"
     });
-    writeJson(root, "extensions/vscode-rsgl/package.nls.json", {
-      "extension.displayName": "RSGL Fixture",
-      "rsgl.command.build": "Build RSGL",
-      "schema.rsglConfig.url": "./schemas/en/rsgl-config.schema.json"
+    writeJson(root, "l10n/bundle.l10n.json", {
+      "RSGL message": "RSGL message",
+      "Root message": "Root message"
     });
-    writeJson(root, "l10n/bundle.l10n.json", { "Root message": "Root message" });
-    writeJson(root, "extensions/vscode-rsgl/l10n/bundle.l10n.json", { "RSGL message": "RSGL message" });
 
     for (const [fileName, contents] of [
       ["README.md", "readme\n"],
@@ -323,9 +406,9 @@ describe("main VSIX stage assembler", () => {
     }
     writeJson(root, "assets/linters/en/schema.json", { title: "Schema", type: "object" }, true);
     writeJson(root, "assets/cit/en/base.json", { id: "base", keys: {} }, true);
-    writeJson(root, "extensions/vscode-rsgl/language-configuration/rsgl.json", { comments: { lineComment: "//" } }, true);
-    writeJson(root, "extensions/vscode-rsgl/syntaxes/rsgl.tmLanguage.json", { scopeName: "source.rsgl", patterns: [] }, true);
-    writeJson(root, "extensions/vscode-rsgl/schemas/en/rsgl-config.schema.json", { title: "RSGL config", type: "object" }, true);
+    writeJson(root, "language-configuration/rsgl.json", { comments: { lineComment: "//" } }, true);
+    writeJson(root, "syntaxes/rsgl.tmLanguage.json", { scopeName: "source.rsgl", patterns: [] }, true);
+    writeJson(root, "schemas/en/rsgl-config.schema.json", { title: "RSGL config", type: "object" }, true);
     return root;
   }
 

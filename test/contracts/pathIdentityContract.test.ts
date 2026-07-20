@@ -6,7 +6,6 @@ describe("filesystem path identity contract", () => {
   const root = process.cwd();
   const productionRoots = [
     "src",
-    "extensions/vscode-rsgl/src",
     "packages/rsgl-cli/src",
     "packages/rsgl-core/src",
     "packages/rsgl-lsp/src",

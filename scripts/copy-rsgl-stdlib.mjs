@@ -7,19 +7,13 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const source = path.join(repoRoot, "packages", "rsgl-core", "src", "stdlib", "rsgl");
-const supportedOutputRoots = new Map([
-  ["out", path.join(repoRoot, "out")],
-  ["extensions/vscode-rsgl/out", path.join(repoRoot, "extensions", "vscode-rsgl", "out")]
-]);
 const [outputArgument, ...unexpectedArguments] = process.argv.slice(2);
 
-if (!outputArgument || unexpectedArguments.length > 0 || !supportedOutputRoots.has(outputArgument)) {
-  throw new Error(
-    "Usage: node scripts/copy-rsgl-stdlib.mjs <out|extensions/vscode-rsgl/out>"
-  );
+if (outputArgument !== "out" || unexpectedArguments.length > 0) {
+  throw new Error("Usage: node scripts/copy-rsgl-stdlib.mjs out");
 }
 
-const outputRoot = supportedOutputRoots.get(outputArgument);
+const outputRoot = path.join(repoRoot, "out");
 const compiledCoreRoot = path.join(outputRoot, "packages", "rsgl-core", "src");
 if (!existsSync(compiledCoreRoot)) {
   process.exit(0);

@@ -39,11 +39,11 @@ describe("build orchestration", () => {
 
   it("plans focused typecheck and bundle work without npm recursion", () => {
     assert.deepStrictEqual(stepCommands(build.createBuildPlan("main")), [
-      ["node_modules/typescript/bin/tsc", "-b", "tsconfig.main.json"],
+      ["node_modules/typescript/bin/tsc", "-b", "tsconfig.vsix.json"],
       ["scripts/build-bundles.mjs", "main", "--bundle-mode", "development"]
     ]);
     assert.deepStrictEqual(stepCommands(build.createBuildPlan("rsgl")), [
-      ["node_modules/typescript/bin/tsc", "-b", "extensions/vscode-rsgl/tsconfig.json"],
+      ["node_modules/typescript/bin/tsc", "-b", "tsconfig.rsgl-host.json"],
       ["scripts/build-bundles.mjs", "rsgl", "--bundle-mode", "development"]
     ]);
     assert.deepStrictEqual(stepCommands(build.createBuildPlan("rsgl-cli")), [

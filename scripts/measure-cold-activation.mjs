@@ -25,12 +25,26 @@ Module._load = function loadWithVscodeStub(request, parent, isMain) {
 
 const context = createExtensionContext(resolveExtensionRoot(bundlePath), vscode);
 const startedAt = performance.now();
+let runtime;
 try {
   const extension = createRequire(import.meta.url)(bundlePath);
-  extension.activate(context);
+  if (typeof extension.activate === "function") {
+    await extension.activate(context);
+  } else if (typeof extension.createRsglRuntime === "function") {
+    runtime = await extension.createRsglRuntime({
+      extensionContext: context,
+      serverPath: context.asAbsolutePath(path.join("bundle", "rsgl", "server.js")),
+      workerPath: context.asAbsolutePath(path.join("bundle", "rsgl", "worker.js")),
+      stdlibRoot: context.asAbsolutePath(path.join("bundle", "rsgl", "stdlib")),
+      signal: new AbortController().signal
+    });
+  } else {
+    throw new Error("Bundle exports neither activate() nor createRsglRuntime().");
+  }
   const milliseconds = performance.now() - startedAt;
   process.stdout.write(JSON.stringify({ milliseconds }));
 } finally {
+  await runtime?.dispose?.();
   disposeExtensionContext(context);
   Module._load = originalLoad;
 }

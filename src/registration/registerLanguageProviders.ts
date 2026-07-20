@@ -3,7 +3,9 @@ import citCodeActionProvider from "../cit/providers/citCodeActionProvider";
 import citCompletionProvider from "../cit/providers/citCompletionProvider";
 import citHoverProvider from "../cit/providers/citHoverProvider";
 import resourceCompletionProvider from "../providers/resourceCompletionProvider";
-import resourceDefinitionProvider from "../providers/resourceDefinitionProvider";
+import { createResourceDefinitionProvider } from "../providers/resourceDefinitionProvider";
+import { createResourceReferenceProvider } from "../providers/resourceReferenceProvider";
+import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 import textureVarDefinitionProvider from "../providers/textureVarDefinitionProvider";
 import { getResourceDocumentSelectors } from "../resources/resourceSurfaceRegistry";
 
@@ -12,10 +14,18 @@ const textureVariableSelectors: vscode.DocumentFilter[] = getResourceDocumentSel
 const citLanguageSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citLanguage");
 const citCodeActionSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citCodeAction");
 
-export function registerLanguageProviders(context: vscode.ExtensionContext): void {
+export function registerLanguageProviders(
+  context: vscode.ExtensionContext,
+  navigation: ResourceUniverseNavigationFacade
+): void {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     resourceReferenceSelectors,
-    { provideDefinition: resourceDefinitionProvider }
+    createResourceDefinitionProvider(navigation)
+  ));
+
+  context.subscriptions.push(vscode.languages.registerReferenceProvider(
+    resourceReferenceSelectors,
+    createResourceReferenceProvider(navigation)
   ));
 
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
