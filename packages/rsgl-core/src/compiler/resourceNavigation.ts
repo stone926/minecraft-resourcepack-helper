@@ -11,6 +11,7 @@ import {
 } from "./generatedResources";
 import type { ResourceUnit, RsglCompileResult } from "./ir";
 import type {
+  RsglExternalResourceUsage,
   RsglResourceExistenceKind,
   RsglResourceReferenceUsage
 } from "./validationTypes";
@@ -42,7 +43,12 @@ export interface RsglResourceNavigationBuildResult {
   compileResult: RsglCompileResult;
   /** Modules omitted so one incomplete editor buffer cannot invalidate its siblings. */
   skippedSourceFiles: readonly string[];
+  /** Compiler-owned final-unit edge observations; no second compile is needed. */
+  resourceReferences: readonly RsglResourceReferenceUsage[];
+  externalResources: readonly RsglExternalResourceUsage[];
 }
+
+export type RsglResourceAnalysisResult = RsglResourceNavigationBuildResult;
 
 /**
  * Compiles one source-root snapshot for navigation while isolating modules that
@@ -54,6 +60,17 @@ export function compileRsglResourceNavigation(
   files: readonly RsglSourceFile[],
   options: RsglProgramCompileOptions = {}
 ): RsglResourceNavigationBuildResult {
+  return compileRsglResourceAnalysis(files, {
+    ...options,
+    checkExternExistence: false
+  });
+}
+
+/** Shared compiler analysis entry consumed by navigation, graph, and snapshots. */
+export function compileRsglResourceAnalysis(
+  files: readonly RsglSourceFile[],
+  options: RsglProgramCompileOptions = {}
+): RsglResourceAnalysisResult {
   const compilableFiles: RsglSourceFile[] = [];
   const skippedSourceFiles: string[] = [];
   for (const file of files) {
@@ -65,7 +82,9 @@ export function compileRsglResourceNavigation(
   }
 
   const references: RsglResourceReferenceUsage[] = [];
+  const externalResources: RsglExternalResourceUsage[] = [];
   const observeReference = options.onResourceReferenceUsed;
+  const observeExternal = options.onExternResourceUsed;
   const compileResult = compileRsglProgram(compilableFiles, {
     ...options,
     // A filtered file list no longer matches the caller's bound program. The
@@ -73,16 +92,21 @@ export function compileRsglResourceNavigation(
     ...(compilableFiles.length === files.length
       ? {}
       : { semanticProgram: undefined }),
-    checkExternExistence: false,
     onResourceReferenceUsed: reference => {
       references.push(reference);
       observeReference?.(reference);
+    },
+    onExternResourceUsed: usage => {
+      externalResources.push(usage);
+      observeExternal?.(usage);
     }
   });
   return {
     index: createRsglResourceNavigationIndex(compileResult.units, references),
     compileResult,
-    skippedSourceFiles
+    skippedSourceFiles,
+    resourceReferences: references,
+    externalResources
   };
 }
 

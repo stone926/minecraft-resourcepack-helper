@@ -6,6 +6,7 @@ describe("RSGL extern language frontend", () => {
   it("lexes extern modifiers, wildcards, and texture variables without invalid characters", () => {
     const result = lexRsgl([
       "extern! custom texture minecraft:block/**",
+      "extern local model minecraft:block/handwritten",
       "model block template {",
       "  extern var #front, #back",
       "}"
@@ -13,6 +14,7 @@ describe("RSGL extern language frontend", () => {
 
     assert.deepStrictEqual(result.diagnostics, []);
     assert.strictEqual(result.tokens.find(token => token.text === "custom")?.kind, "keyword");
+    assert.strictEqual(result.tokens.find(token => token.text === "local")?.kind, "keyword");
     assert.strictEqual(result.tokens.find(token => token.text === "var")?.kind, "keyword");
     assert.strictEqual(result.tokens.filter(token => token.text === "#").length, 2);
   });
@@ -145,6 +147,7 @@ describe("RSGL extern language frontend", () => {
   it("parses sourced extern declarations and keeps pattern text unexpanded", () => {
     const module = parseRsgl([
       "extern custom model minecraft:block/stone",
+      "extern local model minecraft:block/handwritten",
       "extern custom texture minecraft:item/wood/*, ns:block/**",
       "extern! vanilla texture **",
       "extern vanilla item *:something"
@@ -164,6 +167,13 @@ describe("RSGL extern language frontend", () => {
         source: "custom",
         resourceKind: "model",
         patterns: ["minecraft:block/stone"],
+        skipExistenceCheck: false
+      },
+      {
+        kind: "ExternDecl",
+        source: "local",
+        resourceKind: "model",
+        patterns: ["minecraft:block/handwritten"],
         skipExistenceCheck: false
       },
       {
@@ -274,8 +284,8 @@ describe("RSGL extern language frontend", () => {
     ]) {
       const checked = candidates.find(candidate => candidate.label === `extern ${kind}`);
       const unchecked = candidates.find(candidate => candidate.label === `extern! ${kind}`);
-      assert.ok(checked?.insertText?.startsWith("extern ${1|custom,vanilla|} "));
-      assert.ok(unchecked?.insertText?.startsWith("extern! ${1|custom,vanilla|} "));
+      assert.ok(checked?.insertText?.startsWith("extern ${1|local,custom,vanilla|} "));
+      assert.ok(unchecked?.insertText?.startsWith("extern! ${1|local,custom,vanilla|} "));
       assert.ok(checked?.insertText?.includes(` ${kind} `));
       assert.ok(unchecked?.insertText?.includes(` ${kind} `));
       assert.strictEqual(checked?.insertText?.includes("(id:"), false);

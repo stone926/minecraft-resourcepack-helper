@@ -395,12 +395,12 @@ export const rsglExternResourceCompletionDescriptors: readonly RsglResourceCompl
     return [
       {
         label: `extern ${kind}`,
-        insertText: `extern \${1|custom,vanilla|} ${kind} \${2:${example}}`,
+        insertText: `extern \${1|local,custom,vanilla|} ${kind} \${2:${example}}`,
         detail: `Declare existing ${kind.replaceAll("_", " ")} resources`
       },
       {
         label: `extern! ${kind}`,
-        insertText: `extern! \${1|custom,vanilla|} ${kind} \${2:${example}}`,
+        insertText: `extern! \${1|local,custom,vanilla|} ${kind} \${2:${example}}`,
         detail: `Declare ${kind.replaceAll("_", " ")} resources without checking existence`
       }
     ];

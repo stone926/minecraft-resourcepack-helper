@@ -95,7 +95,15 @@ export function checkResourceExists(
     targetKind: kind,
     id: lookupId,
     sourceFile,
-    range
+    range,
+    ...referenceConsumerFacts(
+      consumer,
+      unit,
+      sourceFile,
+      range,
+      "direct",
+      resourceValueLocation?.generatedPath
+    )
   });
   if (options.generatedResourceIds?.get(kind)?.has(lookupId)) {
     return { available: true, external: false, canonicalId: id, lookupId };
@@ -139,6 +147,14 @@ export function checkResourceExists(
     skipExistenceCheck,
     sourceFile,
     range,
+    ...referenceConsumerFacts(
+      consumer,
+      unit,
+      sourceFile,
+      range,
+      "direct",
+      resourceValueLocation?.generatedPath
+    ),
     ...(resolvedPath ? { resolvedPath } : {}),
     ...(resolution?.candidatePaths.length
       ? { candidatePaths: resolution.candidatePaths }
@@ -148,11 +164,28 @@ export function checkResourceExists(
       : {})
   });
   if (exists) {
-    return { available: true, external: true, canonicalId: id, lookupId, source: declaration.source };
+    return {
+      available: true,
+      external: true,
+      canonicalId: id,
+      lookupId,
+      source: declaration.source,
+      ...(resolvedPath ? { resolvedPath } : {}),
+      ...(resolution ? { candidatePaths: resolution.candidatePaths } : {}),
+      ...(resolution?.metadataPaths ? { metadataPaths: resolution.metadataPaths } : {})
+    };
   }
 
   pushResourceDiagnostic(diagnostics, kind, `not found: ${lookupId}`, "warning", range, sourceFile);
-  return { available: false, external: true, canonicalId: id, lookupId, source: declaration.source };
+  return {
+    available: false,
+    external: true,
+    canonicalId: id,
+    lookupId,
+    source: declaration.source,
+    ...(resolution ? { candidatePaths: resolution.candidatePaths } : {}),
+    ...(resolution?.metadataPaths ? { metadataPaths: resolution.metadataPaths } : {})
+  };
 }
 
 /**
@@ -193,7 +226,8 @@ export function checkInheritedExternalResourceExists(
     targetKind: kind,
     id,
     sourceFile,
-    range
+    range,
+    ...referenceConsumerFacts(consumer, unit, sourceFile, range, "inherited")
   });
   if (options.generatedResourceIds?.get(kind)?.has(id) || (kind === "model" && isVirtualBuiltinModelId(id))) {
     return true;
@@ -220,6 +254,7 @@ export function checkInheritedExternalResourceExists(
       skipExistenceCheck,
       sourceFile,
       range,
+      ...referenceConsumerFacts(consumer, unit, sourceFile, range, "inherited"),
       ...(resolvedPath ? { resolvedPath } : {}),
       ...(resolution?.candidatePaths.length
         ? { candidatePaths: resolution.candidatePaths }
@@ -300,8 +335,11 @@ function resolveExternDeclaration(
   const equallySpecific = sorted.filter(candidate =>
     compareExternPatternSpecificity(candidate.pattern, selected.pattern) === 0
   );
-  const customCandidates = equallySpecific.filter(candidate => candidate.source === "custom");
-  const sourceCandidates = customCandidates.length > 0 ? customCandidates : equallySpecific;
+  const preferredSource = (["local", "custom", "vanilla"] as const)
+    .find(source => equallySpecific.some(candidate => candidate.source === source));
+  const sourceCandidates = preferredSource
+    ? equallySpecific.filter(candidate => candidate.source === preferredSource)
+    : equallySpecific;
   return sourceCandidates.find(candidate => candidate.skipExistenceCheck) ?? sourceCandidates[0];
 }
 
@@ -344,4 +382,36 @@ function resolveExternalResource(
         resolvedPath,
         candidatePaths: resolvedPath ? [resolvedPath] : []
       };
+}
+
+function referenceConsumerFacts(
+  consumer: RsglResourceReferenceConsumer,
+  unit: ResourceUnit,
+  sourceFile: string,
+  range: ValidationRange,
+  origin: "direct" | "inherited",
+  sourceGeneratedPath?: string
+): Pick<
+  import("./validationTypes").RsglResourceReferenceUsage,
+  | "consumerOutputPath"
+  | "consumerKind"
+  | "consumerId"
+  | "consumer"
+  | "sourceGeneratedPath"
+  | "origin"
+> {
+  const generatedPath = sourceGeneratedPath
+    ?? unit.validation?.referenceOrigins?.find(candidate =>
+      candidate.sourceFile === sourceFile
+      && candidate.sourceRange.start === range.start
+      && candidate.sourceRange.end === range.end
+    )?.generatedPath;
+  return {
+    consumerOutputPath: unit.outputPath,
+    consumerKind: unit.kind,
+    ...(unit.id ? { consumerId: `${unit.id.namespace}:${unit.id.path}` } : {}),
+    consumer,
+    ...(generatedPath === undefined ? {} : { sourceGeneratedPath: generatedPath }),
+    origin
+  };
 }

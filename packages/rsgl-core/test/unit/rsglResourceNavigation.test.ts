@@ -84,8 +84,26 @@ describe("RSGL resource navigation", () => {
       { start: 10, end: 20 }
     );
     const references: RsglResourceReferenceUsage[] = [
-      { targetKind: "item", id: "nav:shared", sourceFile: fileName, range: { start: 30, end: 40 } },
-      { targetKind: "blockstate", id: "nav:shared", sourceFile: fileName, range: { start: 50, end: 60 } }
+      {
+        targetKind: "item",
+        id: "nav:shared",
+        sourceFile: fileName,
+        range: { start: 30, end: 40 },
+        consumerOutputPath: item.outputPath,
+        consumerKind: item.kind,
+        consumer: "item",
+        origin: "direct"
+      },
+      {
+        targetKind: "blockstate",
+        id: "nav:shared",
+        sourceFile: fileName,
+        range: { start: 50, end: 60 },
+        consumerOutputPath: blockstate.outputPath,
+        consumerKind: blockstate.kind,
+        consumer: "blockstate",
+        origin: "direct"
+      }
     ];
     const index = createRsglResourceNavigationIndex([item, blockstate], references);
 

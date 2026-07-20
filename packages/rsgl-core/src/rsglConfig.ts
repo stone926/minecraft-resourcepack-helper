@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isValidMinecraftNamespace } from "../../mc-assets/src";
+import { findPackRoot, isValidMinecraftNamespace } from "../../mc-assets/src";
 import { parseExternResourcePattern, type RsglGlobalExternConfigEntry } from "./externDeclarations";
 import { isExternResourceKind, rsglExternResourceKinds } from "./resourceKinds";
 import type { RsglCompileConfigurationOptions } from "./compiler/compileConfiguration";
@@ -148,7 +148,14 @@ export function readRsglProjectConfig(fileName: string): RsglProjectConfig {
       { cause: error }
     );
   }
-  return resolveRsglProjectConfigPaths(parseRsglProjectConfig(value, resolvedFileName), resolvedFileName);
+  try {
+    return resolveRsglProjectConfigPaths(parseRsglProjectConfig(value, resolvedFileName), resolvedFileName);
+  } catch (error) {
+    if (error instanceof RsglProjectConfigError) {
+      error.attachConfigPath(resolvedFileName);
+    }
+    throw error;
+  }
 }
 
 /** Finds and reads the closest rsgl.config.json above a source file. */
@@ -199,12 +206,43 @@ export function resolveRsglProjectConfigPaths(
   return {
     ...config,
     root: resolveOptionalPath(config.root),
-    outDir: resolveOptionalPath(config.outDir),
+    outDir: config.outDir === undefined
+      ? undefined
+      : assertRsglOutputPackRoot(resolveOptionalPath(config.outDir)!, `${configFileName}.outDir`),
     defaultAssetsPath: config.defaultAssetsPath === null
       ? null
       : resolveOptionalPath(config.defaultAssetsPath),
     resourcePackRoots: config.resourcePackRoots?.map(root => path.resolve(baseDirectory, root))
   };
+}
+
+/**
+ * Normalizes and validates an RSGL output destination as a resource-pack root.
+ * Compiler output paths already start with `assets/`, so accepting an assets
+ * directory here would otherwise create `assets/assets/...`.
+ */
+export function assertRsglOutputPackRoot(
+  outputRoot: string,
+  fieldPath = "outDir"
+): string {
+  const resolved = path.resolve(outputRoot);
+  if (path.basename(resolved).toLowerCase() === "assets") {
+    throw invalidConfig(fieldPath, "expected a resource-pack root, not an assets directory.");
+  }
+  return resolved;
+}
+
+/** Resolves the canonical target pack without deriving it from an `assets/` path. */
+export function resolveRsglOutputPackRoot(
+  sourceFileName: string,
+  configuredOutDir?: string | null
+): string | null {
+  if (configuredOutDir) {
+    return assertRsglOutputPackRoot(configuredOutDir);
+  }
+  const source = path.resolve(sourceFileName);
+  const anchor = isDirectory(source) ? path.join(source, ".rsgl-pack-root-anchor") : source;
+  return findPackRoot(anchor);
 }
 
 function parseExternEntries(value: unknown, fieldPath: string): RsglGlobalExternConfigEntry[] | undefined {
@@ -268,8 +306,8 @@ function parseTargetFormat(value: unknown, fieldPath: string): number | [number,
 function parseExternEntry(value: unknown, fieldPath: string): RsglGlobalExternConfigEntry {
   const entry = requireObject(value, fieldPath);
   rejectUnknownProperties(entry, externEntryProperties, fieldPath);
-  if (entry.source !== "custom" && entry.source !== "vanilla") {
-    throw invalidConfig(`${fieldPath}.source`, "expected 'custom' or 'vanilla'.");
+  if (entry.source !== "local" && entry.source !== "custom" && entry.source !== "vanilla") {
+    throw invalidConfig(`${fieldPath}.source`, "expected 'local', 'custom', or 'vanilla'.");
   }
   if (typeof entry.kind !== "string" || !isExternResourceKind(entry.kind)) {
     throw invalidConfig(

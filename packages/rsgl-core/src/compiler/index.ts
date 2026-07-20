@@ -34,18 +34,32 @@ export type {
 } from "./targetConfig";
 export { parseResourceId, resourceIdToString, resourceOutputPath } from "./resourceIds";
 export {
+  compileRsglResourceAnalysis,
   compileRsglResourceNavigation,
   createRsglResourceNavigationIndex,
   getRsglResourceDefinitionLocationsAtOffset,
   getRsglResourceReferenceLocationsAtOffset
 } from "./resourceNavigation";
 export type {
+  RsglResourceAnalysisResult,
   RsglResourceNavigationBuildResult,
   RsglResourceNavigationIndex,
   RsglResourceNavigationLocation,
   RsglResourceNavigationOccurrence,
   RsglResourceNavigationTarget
 } from "./resourceNavigation";
+export { createRsglResourceSnapshot, rsglResourceSnapshotVersion } from "./resourceSnapshot";
+export type {
+  RsglResourceRelationship,
+  RsglResourceSnapshot,
+  RsglResourceSnapshotDocumentFact,
+  RsglResourceSnapshotEdge,
+  RsglResourceSnapshotIssue,
+  RsglResourceSnapshotLocation,
+  RsglResourceSnapshotOptions,
+  RsglResourceSnapshotProducer,
+  RsglResourceSnapshotResolvedTarget
+} from "./resourceSnapshot";
 export { canonicalizeAndValidateResourceUnits } from "./validation";
 export { inferBlockstateSchemaFromContent } from "./blockstateStateValidation";
 export type { RsglBlockstateSchema } from "./validationTypes";
@@ -82,7 +96,7 @@ export type {
   CompileDependency
 } from "./base/types";
 export type { RsglExternalResourceResolution, RsglResourceContentKind, RsglResourceExistenceKind, RsglResourceValidationOptions, RsglSoundMetadata, RsglTextureMetadata } from "./validation";
-export type { RsglResourceReferenceUsage } from "./validationTypes";
+export type { RsglExternalResourceUsage, RsglResourceReferenceUsage } from "./validationTypes";
 export { createRsglWritePlan, resolveRsglOutputPath, writeRsglFiles } from "./write";
 export type { RsglWriteDiff, RsglWritePlan, RsglWritePlanEntry, RsglWritePlanOptions, RsglWriteStatus, RsglWriteSummary } from "./write";
 export {
@@ -92,6 +106,30 @@ export {
   rsglWriteErrorCodes
 } from "./writeErrors";
 export type { RsglWriteErrorCode } from "./writeErrors";
+export {
+  createRsglOwnershipManifestV2,
+  hashRsglOwnedContent,
+  parseRsglOwnershipManifestV2,
+  planRsglOwnedMaterialization,
+  rsglOwnershipManifestPath,
+  rsglOwnershipManifestVersion,
+  serializeRsglOwnershipManifestV2
+} from "./ownershipManifest";
+export type {
+  RsglExistingOutputFact,
+  RsglOwnedMaterializationPlan,
+  RsglOwnedMaterializationPlanOptions,
+  RsglOwnedWriteAction,
+  RsglOwnedWriteConflictReason,
+  RsglOwnedWritePlanEntry,
+  RsglOwnershipManifestFileV2,
+  RsglOwnershipManifestV2,
+  RsglOwnershipSourceOrigin,
+  RsglPlannedOwnedOutput,
+  RsglStaleOutputAction,
+  RsglStaleOutputPlanEntry,
+  RsglStalePreserveReason
+} from "./ownershipManifest";
 export type {
   ExpansionFrame,
   BinaryCopyRef,

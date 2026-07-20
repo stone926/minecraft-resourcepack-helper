@@ -50,6 +50,12 @@ export interface RsglExternalResourceUsage {
   skipExistenceCheck: boolean;
   sourceFile: string;
   range: ValidationRange;
+  consumerOutputPath: string;
+  consumerKind: string;
+  consumerId?: string;
+  consumer: string;
+  sourceGeneratedPath?: string;
+  origin: "direct" | "inherited";
   resolvedPath?: string;
   candidatePaths?: readonly string[];
   metadataPaths?: readonly string[];
@@ -62,6 +68,13 @@ export interface RsglResourceReferenceUsage {
   id: string;
   sourceFile: string;
   range: ValidationRange;
+  /** Concrete final output that owns this reference edge. */
+  consumerOutputPath: string;
+  consumerKind: string;
+  consumerId?: string;
+  consumer: string;
+  sourceGeneratedPath?: string;
+  origin: "direct" | "inherited";
 }
 
 export interface RsglCheckedResourceReference {
@@ -72,6 +85,11 @@ export interface RsglCheckedResourceReference {
   /** Canonical physical target used by generated/extern/disk resolution. */
   lookupId?: string;
   source?: ExternResourceSource;
+  /** Winning physical definition retained for checked external references. */
+  resolvedPath?: string;
+  /** Ordered physical candidates retained even when no definition exists yet. */
+  candidatePaths?: readonly string[];
+  metadataPaths?: readonly string[];
 }
 
 export interface RsglResourceValidationOptions {

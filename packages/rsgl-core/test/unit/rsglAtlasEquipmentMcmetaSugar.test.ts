@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { compileRsglFile, compileRsglModule, type RsglResourceExistenceKind } from "../../src/compiler";
+import type { ExternResourceSource } from "../../src/externDeclarations";
 import { parseRsgl } from "../../src/parser";
 import {
   compileSourceWithUncheckedExterns,
@@ -22,7 +23,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       "  filter namespace \"minecraft\" path \"block/.*_debug\"",
       "}"
     ], {
-      externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
+      externResourceExists: (_source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
@@ -87,7 +88,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     ].join("\n");
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl(source), withUncheckedExterns({
-      externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
+      externResourceExists: (_source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
@@ -174,7 +175,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
     ].join("\n");
     const checkedResources: string[] = [];
     const result = compileRsglModule(parseRsgl(source), withUncheckedExterns({
-      externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
+      externResourceExists: (_source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => {
         checkedResources.push(`${kind}:${id}`);
         return true;
       }
@@ -371,7 +372,7 @@ describe("RSGL atlas, equipment, and mcmeta sugar", () => {
       ].join("\n"));
       const checkedResources: string[] = [];
       const result = compileRsglFile(mainFile, withUncheckedExterns({
-        externResourceExists: (_source: "custom" | "vanilla", kind: RsglResourceExistenceKind, id: string) => {
+        externResourceExists: (_source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => {
           checkedResources.push(`${kind}:${id}`);
           return true;
         }

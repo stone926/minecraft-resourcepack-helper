@@ -425,18 +425,18 @@ class RsglParser extends StatementParser {
     if (this.isAtEnd() || token.text === "}" || this.isStatementBoundary(token)) {
       this.addDiagnosticAtCurrent(
         "rsgl.invalidExternSource",
-        "Expected extern source 'custom' or 'vanilla'."
+        "Expected extern source 'local', 'custom', or 'vanilla'."
       );
       return null;
     }
-    if (token.text === "custom" || token.text === "vanilla") {
+    if (token.text === "local" || token.text === "custom" || token.text === "vanilla") {
       this.advance();
       return token.text;
     }
 
     this.addDiagnosticAtCurrent(
       "rsgl.invalidExternSource",
-      "Expected extern source 'custom' or 'vanilla'."
+      "Expected extern source 'local', 'custom', or 'vanilla'."
     );
     if (token.kind === "identifier" || token.kind === "keyword") {
       this.advance();

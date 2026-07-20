@@ -30,6 +30,13 @@ import {
 
 export interface RsglWorkspaceValidationOptions {
   sourceFileName: string;
+  /** Canonical target resource-pack root. `local` never infers this from the source file. */
+  outputPackRoot?: string | null;
+  /**
+   * Materialized paths owned by RSGL projects. Local lookup keeps these paths
+   * as candidates, but cannot resolve them as handwritten resources.
+   */
+  excludedLocalResourcePaths?: readonly string[];
   defaultAssetsPath?: string | null;
   resourcePackRoots?: string[];
   fileSystem?: RsglValidationFileSystem;
@@ -238,6 +245,8 @@ class WorkspaceResourceResolver {
   private readonly fileSystem: RsglValidationFileSystem;
   private readonly validationCache: RsglWorkspaceValidationCache;
   private readonly sourceFileName: string;
+  private readonly outputPackRoot: string | null;
+  private readonly excludedLocalResourcePathKeys: ReadonlySet<string>;
   private readonly defaultAssetsPath: string | null;
   private readonly resourcePackRoots: string[];
 
@@ -247,6 +256,10 @@ class WorkspaceResourceResolver {
     });
     this.fileSystem = this.validationCache;
     this.sourceFileName = path.resolve(options.sourceFileName);
+    this.outputPackRoot = options.outputPackRoot ? path.resolve(options.outputPackRoot) : null;
+    this.excludedLocalResourcePathKeys = new Set(
+      (options.excludedLocalResourcePaths ?? []).map(fileName => normalizePathKey(path.resolve(fileName)))
+    );
     this.defaultAssetsPath = options.defaultAssetsPath ?? null;
     this.resourcePackRoots = options.resourcePackRoots ?? [];
   }
@@ -314,6 +327,12 @@ class WorkspaceResourceResolver {
 
     const candidatePaths = roots.map(root => path.join(root, ...relativePath));
     for (const candidate of candidatePaths) {
+      if (
+        source === "local"
+        && this.isLocalResourcePathExcluded(candidate, target.isDirectory)
+      ) {
+        continue;
+      }
       if (target.isDirectory ? this.fileSystem.isDirectory(candidate) : this.fileSystem.exists(candidate)) {
         return {
           resolvedPath: candidate,
@@ -339,6 +358,21 @@ class WorkspaceResourceResolver {
       return getResourceRootCandidates(null, this.defaultAssetsPath, resourceId.namespace, target.directory);
     }
 
+    if (source === "local") {
+      return this.outputPackRoot
+        ? getConfiguredPackResourceRootCandidates(
+          [this.outputPackRoot],
+          resourceId.namespace,
+          target.directory,
+          {
+            pathExists: fileName => this.fileSystem.exists(fileName),
+            getPackMetadata: packRoot => this.getPackMetadata(packRoot),
+            resourcePath: path.posix.join(target.directory.replaceAll("\\", "/"), resourcePath)
+          }
+        )
+        : [];
+    }
+
     return getConfiguredPackResourceRootCandidates(
       this.resourcePackRoots,
       resourceId.namespace,
@@ -347,13 +381,25 @@ class WorkspaceResourceResolver {
         pathExists: fileName => this.fileSystem.exists(fileName),
         getPackMetadata: packRoot => this.getPackMetadata(packRoot),
         resourcePath: path.posix.join(target.directory.replaceAll("\\", "/"), resourcePath),
-        excludedPackRoot: this.getPackRoot(this.sourceFileName)
+        excludedPackRoot: this.outputPackRoot ?? this.getPackRoot(this.sourceFileName)
       }
     );
   }
 
   private getPackRoot(fileName: string): string | null {
     return findPackRoot(fileName, { pathExists: candidate => this.fileSystem.exists(candidate) });
+  }
+
+  private isLocalResourcePathExcluded(fileName: string, directory: boolean): boolean {
+    const candidateKey = normalizePathKey(fileName);
+    if (this.excludedLocalResourcePathKeys.has(candidateKey)) {
+      return true;
+    }
+    if (!directory) {
+      return false;
+    }
+    const prefix = candidateKey.endsWith(path.sep) ? candidateKey : `${candidateKey}${path.sep}`;
+    return [...this.excludedLocalResourcePathKeys].some(excludedPath => excludedPath.startsWith(prefix));
   }
 
   private getPackMetadata(packRoot: string): PackMetadata {
@@ -389,6 +435,7 @@ class WorkspaceResourceResolver {
     for (const configuredRoot of this.resourcePackRoots) {
       addPackRoot(configuredRoot);
     }
+    addPackRoot(this.outputPackRoot);
     return [...paths.values()];
   }
 }

@@ -28,6 +28,7 @@ export const resourceKeywords = rsglResourceKinds;
 export const rsglKeywords = new Set<string>([
   ...topLevelKeywords,
   ...rsglExternResourceKinds,
+  "local",
   "custom",
   "vanilla",
   "var",

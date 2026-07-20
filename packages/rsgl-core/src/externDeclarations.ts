@@ -1,7 +1,13 @@
 import type { TextRange } from "./parser";
 import type { ExternResourceKind } from "./resourceKinds";
 
-export type ExternResourceSource = "custom" | "vanilla";
+/**
+ * Physical resource layer selected by an extern declaration.
+ *
+ * `local` is the target/output pack, `custom` is an explicitly configured
+ * resource-pack layer, and `vanilla` is the Minecraft Default layer.
+ */
+export type ExternResourceSource = "local" | "custom" | "vanilla";
 
 export interface ExternResourcePattern {
   text: string;

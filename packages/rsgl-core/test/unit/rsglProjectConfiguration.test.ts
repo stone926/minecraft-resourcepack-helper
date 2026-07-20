@@ -87,6 +87,22 @@ describe("RSGL project compile configuration", () => {
     );
   });
 
+  it("accepts local, custom, and vanilla global extern sources", () => {
+    const config = parseRsglProjectConfig({
+      extern: ["local", "custom", "vanilla"].map(source => ({
+        source,
+        kind: "model",
+        patterns: ["minecraft:block/**"]
+      }))
+    });
+
+    assert.deepStrictEqual(config.extern?.map(entry => entry.source), [
+      "local",
+      "custom",
+      "vanilla"
+    ]);
+  });
+
   it("requires exactly one supported target selector", () => {
     assert.throws(
       () => parseRsglProjectConfig({ target: { edition: "java" } }),

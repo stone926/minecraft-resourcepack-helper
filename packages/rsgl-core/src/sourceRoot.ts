@@ -9,10 +9,12 @@ export interface RsglDiscoveredSourceRoot {
 }
 
 export type RsglWorkspaceSourceRootFileProvider = () => readonly string[] | Promise<readonly string[]>;
+export type RsglSourceRootResolver = (fileName: string) => string;
 
 interface RsglWorkspaceSourceRootCacheEntry {
   generation: number;
   verifiedAtMs: number;
+  resolver: RsglSourceRootResolver;
   roots: RsglDiscoveredSourceRoot[];
 }
 
@@ -35,11 +37,15 @@ export class RsglWorkspaceSourceRootCache {
     this.pathExists = options.pathExists ?? fs.existsSync;
   }
 
-  public async discover(provider: RsglWorkspaceSourceRootFileProvider): Promise<RsglDiscoveredSourceRoot[]> {
+  public async discover(
+    provider: RsglWorkspaceSourceRootFileProvider,
+    resolver: RsglSourceRootResolver = resolveRsglSourceRootFromFileName
+  ): Promise<RsglDiscoveredSourceRoot[]> {
     while (true) {
       const now = this.now();
       if (
         this.cache?.generation === this.generation
+        && this.cache.resolver === resolver
         && now >= this.cache.verifiedAtMs
         && now - this.cache.verifiedAtMs < this.verificationTtlMs
         && this.cache.roots.every(root => this.sampleStillExists(root.sampleFileName))
@@ -48,9 +54,9 @@ export class RsglWorkspaceSourceRootCache {
       }
 
       const generation = this.generation;
-      const roots = discoverRsglSourceRootsFromFileNames(await provider());
+      const roots = discoverRsglSourceRootsFromFileNames(await provider(), resolver);
       if (generation === this.generation) {
-        this.cache = { generation, verifiedAtMs: this.now(), roots };
+        this.cache = { generation, verifiedAtMs: this.now(), resolver, roots };
         return roots;
       }
     }
@@ -134,14 +140,17 @@ export function resolveRsglNavigationSourceRoot(
     .sort((left, right) => pathDepth(right) - pathDepth(left) || right.length - left.length)[0];
 }
 
-export function discoverRsglSourceRootsFromFileNames(fileNames: readonly string[]): RsglDiscoveredSourceRoot[] {
+export function discoverRsglSourceRootsFromFileNames(
+  fileNames: readonly string[],
+  resolver: RsglSourceRootResolver = resolveRsglSourceRootFromFileName
+): RsglDiscoveredSourceRoot[] {
   const roots = new Map<string, RsglDiscoveredSourceRoot>();
   for (const fileName of [...fileNames].map(item => path.resolve(item)).sort(compareFileNames)) {
     if (path.extname(fileName).toLowerCase() !== ".rsgl" || hasIgnoredPathSegment(fileName)) {
       continue;
     }
 
-    const sourceRoot = resolveRsglSourceRootFromFileName(fileName);
+    const sourceRoot = path.resolve(resolver(fileName));
     const key = normalizePathKey(sourceRoot);
     if (!roots.has(key)) {
       roots.set(key, { sourceRoot, sampleFileName: fileName });

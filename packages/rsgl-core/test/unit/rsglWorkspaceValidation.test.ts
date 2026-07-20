@@ -473,35 +473,48 @@ describe("RSGL workspace validation", () => {
     }
   });
 
-  it("isolates extern custom and vanilla roots from the current source pack", () => {
+  it("resolves local from the canonical output pack and excludes owned materializations", () => {
     const root = createTempDir();
     const sourcePack = path.join(root, "当前 source pack");
+    const outputPack = path.join(root, "target output pack");
     const customPack = path.join(root, "configured packs", "自定义 pack");
     const defaultAssets = path.join(root, "default assets 原版");
     const sourceFile = path.join(sourcePack, "main.rsgl");
     const currentTexture = path.join(sourcePack, "assets", "minecraft", "textures", "block", "current_only.png");
+    const localTexture = path.join(outputPack, "assets", "example", "textures", "item", "handwritten.png");
+    const ownedTexture = path.join(outputPack, "assets", "example", "textures", "item", "owned.png");
     const customTexture = path.join(customPack, "assets", "example", "textures", "item", "custom_only.png");
     const vanillaTexture = path.join(defaultAssets, "assets", "example", "textures", "item", "vanilla_only.png");
 
     try {
-      for (const fileName of [sourceFile, currentTexture, customTexture, vanillaTexture]) {
+      for (const fileName of [sourceFile, currentTexture, localTexture, ownedTexture, customTexture, vanillaTexture]) {
         fs.mkdirSync(path.dirname(fileName), { recursive: true });
         fs.writeFileSync(fileName, fileName.endsWith(".png") ? createPngBytes(16, 16) : "");
       }
-      for (const packRoot of [sourcePack, customPack]) {
+      for (const packRoot of [sourcePack, outputPack, customPack]) {
         fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
       }
 
       const validation = createRsglWorkspaceValidationOptions({
         sourceFileName: sourceFile,
+        outputPackRoot: outputPack,
+        excludedLocalResourcePaths: [ownedTexture],
         defaultAssetsPath: defaultAssets,
-        resourcePackRoots: [sourcePack, customPack]
+        resourcePackRoots: [outputPack, customPack]
       });
 
       assert.strictEqual(validation.resourceExists?.("texture", "minecraft:block/current_only"), true);
+      assert.strictEqual(validation.externResourceExists("local", "texture", "minecraft:block/current_only"), false);
       assert.strictEqual(validation.externResourceExists("custom", "texture", "minecraft:block/current_only"), false);
       assert.strictEqual(validation.externResourceExists("vanilla", "texture", "minecraft:block/current_only"), false);
       assert.strictEqual(validation.externResourceExists("custom", "texture", "example:item/custom_only"), true);
+      assert.strictEqual(validation.externResourceExists("local", "texture", "example:item/handwritten"), true);
+      assert.strictEqual(validation.externResourceExists("custom", "texture", "example:item/handwritten"), false);
+      assert.strictEqual(validation.externResourceExists("local", "texture", "example:item/owned"), false);
+      assert.deepStrictEqual(
+        validation.externResourceResolution("local", "texture", "example:item/owned").candidatePaths,
+        [ownedTexture]
+      );
       assert.strictEqual(validation.externResourceExists("vanilla", "texture", "example:item/custom_only"), false);
       assert.strictEqual(validation.externResourceExists("vanilla", "texture", "example:item/vanilla_only"), true);
       assert.strictEqual(validation.externResourceExists("custom", "texture", "example:item/vanilla_only"), false);
