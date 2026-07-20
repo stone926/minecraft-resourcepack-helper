@@ -6,6 +6,7 @@ const vscode = require("vscode");
 const extensionId = "stone926.minecraft-resourcepack-helper";
 const resultFile = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_RESULT");
 const workspaceRoot = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_WORKSPACE");
+const extensionRoot = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_EXTENSION_ROOT");
 
 async function run() {
   const processStarts = [];
@@ -43,14 +44,14 @@ async function run() {
     await showDocument(modelUri);
     await settle(250);
     assert(!rsglHostLoaded(), "JSON-only activation loaded the lazy RSGL host bundle.");
-    assert(processStarts.length === 0, "JSON-only activation started a child process.");
+    assertNoExtensionProcessStarts(processStarts, "JSON-only activation");
     result.stages.push("json-only-cold");
 
     const rsglUri = vscode.Uri.file(path.join(workspaceRoot, "rsgl", "main.rsgl"));
     await showDocument(rsglUri);
     await settle(300);
     assert(!rsglHostLoaded(), "McResHelper.rsgl.enabled=off loaded the RSGL host.");
-    assert(processStarts.length === 0, "McResHelper.rsgl.enabled=off started an RSGL process.");
+    assertNoExtensionProcessStarts(processStarts, "McResHelper.rsgl.enabled=off");
     result.stages.push("rsgl-off");
 
     await vscode.workspace.getConfiguration("McResHelper").update(
@@ -105,11 +106,11 @@ async function run() {
     await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
     await settle(250);
     result.stages.push("model-preview-disposed");
-    result.childPids = [...new Set(processStarts.map(start => start.pid).filter(Number.isInteger))];
+    finalizeProcessAttribution(result, processStarts);
     writeResult(result);
   } catch (error) {
     result.error = serializeError(error);
-    result.childPids = [...new Set(processStarts.map(start => start.pid).filter(Number.isInteger))];
+    finalizeProcessAttribution(result, processStarts);
     writeResult(result);
     throw error;
   } finally {
@@ -141,16 +142,27 @@ function rsglHostLoaded() {
 
 function instrumentProcessStarts(events) {
   const originals = new Map();
-  for (const api of ["spawn", "fork", "execFile"]) {
+  for (const api of ["spawn", "spawnSync", "fork", "exec", "execSync", "execFile", "execFileSync"]) {
     const original = childProcess[api];
     originals.set(api, original);
     childProcess[api] = function instrumentedProcessStart(...args) {
-      const child = original.apply(this, args);
-      events.push({
+      const eventArguments = sanitizeArguments(args);
+      const caller = captureCaller();
+      const event = {
         api,
-        arguments: sanitizeArguments(args),
-        pid: child?.pid
-      });
+        arguments: eventArguments,
+        caller: sanitize(caller),
+        extensionOwned: isExtensionOwnedCaller(caller),
+        rsgl: eventArguments.some(isRsglRuntimePath) || isRsglRuntimePath(caller)
+      };
+      event.attribution = event.rsgl
+        ? "rsgl"
+        : event.extensionOwned
+          ? "extension"
+          : "hostNoise";
+      events.push(event);
+      const child = original.apply(this, args);
+      event.pid = child?.pid;
       return child;
     };
   }
@@ -164,13 +176,61 @@ function instrumentProcessStarts(events) {
 function sanitizeArguments(args) {
   return args.flatMap(value => {
     if (typeof value === "string") {
-      return [value];
+      return [sanitize(value)];
     }
     if (Array.isArray(value)) {
-      return value.filter(item => typeof item === "string");
+      return value.filter(item => typeof item === "string").map(sanitize);
+    }
+    if (value instanceof URL) {
+      return [sanitize(value.href)];
     }
     return [];
-  }).map(value => value.replaceAll(workspaceRoot, "<workspace>"));
+  });
+}
+
+function captureCaller() {
+  return new Error("packaged-extension-host-smoke-callsite").stack ?? "";
+}
+
+function isExtensionOwnedCaller(value) {
+  const normalize = candidate => process.platform === "win32"
+    ? candidate.replaceAll("\\", "/").toLowerCase()
+    : candidate.replaceAll("\\", "/");
+  return normalize(value).includes(normalize(extensionRoot));
+}
+
+function isRsglRuntimePath(value) {
+  const normalized = value.replaceAll("\\", "/").toLowerCase();
+  return normalized.includes("/bundle/features/rsglhost.js")
+    || normalized.includes("/bundle/rsgl/server.js")
+    || normalized.includes("/bundle/rsgl/worker.js")
+    || /\/packages\/rsgl-(?:core|lsp|shared)(?:\/|$)/.test(normalized);
+}
+
+function sanitize(value) {
+  return String(value)
+    .replaceAll(workspaceRoot, "<workspace>")
+    .replaceAll(extensionRoot, "<extension>");
+}
+
+function assertNoExtensionProcessStarts(events, label) {
+  const owned = events.filter(event => event.extensionOwned || event.rsgl);
+  assert(
+    owned.length === 0,
+    `${label} started ${owned.length} extension-owned or RSGL child process(es): ${JSON.stringify(owned)}`
+  );
+}
+
+function finalizeProcessAttribution(result, processStarts) {
+  result.processAttribution = {
+    rsgl: processStarts.filter(start => start.attribution === "rsgl"),
+    extension: processStarts.filter(start => start.attribution === "extension"),
+    hostNoise: processStarts.filter(start => start.attribution === "hostNoise")
+  };
+  result.childPids = [...new Set(processStarts
+    .filter(start => start.extensionOwned || start.rsgl)
+    .map(start => start.pid)
+    .filter(Number.isInteger))];
 }
 
 async function waitUntil(predicate, message, timeout = 15_000) {

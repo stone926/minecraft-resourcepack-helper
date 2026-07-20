@@ -52,7 +52,8 @@ export function runPackagedExtensionHostSmoke(extensionRoot, options = {}) {
       env: {
         ...process.env,
         MCRES_EXTENSION_HOST_SMOKE_RESULT: resultFile,
-        MCRES_EXTENSION_HOST_SMOKE_WORKSPACE: workspaceRoot
+        MCRES_EXTENSION_HOST_SMOKE_WORKSPACE: workspaceRoot,
+        MCRES_EXTENSION_HOST_SMOKE_EXTENSION_ROOT: resolvedExtensionRoot
       }
     });
     if (result.error || result.status !== 0) {
@@ -132,7 +133,9 @@ function assertChildrenExited(pids) {
     alive = alive.filter(pid => isProcessAlive(pid));
   }
   if (alive.length > 0) {
-    throw new Error(`Packaged Extension Host left RSGL child processes alive: ${alive.join(", ")}`);
+    throw new Error(
+      `Packaged Extension Host left extension-owned or RSGL child processes alive: ${alive.join(", ")}`
+    );
   }
 }
 

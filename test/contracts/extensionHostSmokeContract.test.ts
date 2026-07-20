@@ -38,6 +38,19 @@ describe("packaged Extension Host smoke contract", () => {
     assert.match(runner, /instrumentProcessStarts/);
   });
 
+  it("separates host process noise without weakening extension and RSGL zero assertions", () => {
+    const harness = read("scripts", "verify-extension-host-smoke.mjs");
+    const runner = read("scripts", "extension-host-smoke", "run.cjs");
+    assert.match(harness, /MCRES_EXTENSION_HOST_SMOKE_EXTENSION_ROOT: resolvedExtensionRoot/);
+    assert.match(runner, /extensionOwned: isExtensionOwnedCaller\(caller\)/);
+    assert.match(runner, /rsgl: eventArguments\.some\(isRsglRuntimePath\)/);
+    assert.match(runner, /assertNoExtensionProcessStarts\(processStarts, "JSON-only activation"\)/);
+    assert.match(runner, /assertNoExtensionProcessStarts\(processStarts, "McResHelper\.rsgl\.enabled=off"\)/);
+    assert.match(runner, /hostNoise: processStarts\.filter/);
+    assert.match(runner, /\.filter\(start => start\.extensionOwned \|\| start\.rsgl\)/);
+    assert.doesNotMatch(runner, /assert\(processStarts\.length === 0/);
+  });
+
   function read(...segments: string[]): string {
     return fs.readFileSync(path.join(root, ...segments), "utf8");
   }
