@@ -8,6 +8,13 @@ const vscode = require("vscode");
 const {
   createTargetVscodeApiInstrumentation
 } = require("./target-vscode-api.cjs");
+const {
+  isRsglModuleLoadEvent,
+  isRsglRuntimePath,
+  isRsglScanEvent,
+  isRsglSourceWatcher
+} = require("./event-classification.cjs");
+const { redactActivationPaths } = require("./path-redaction.cjs");
 
 const extensionId = "stone926.minecraft-resourcepack-helper";
 const iteration = Number(requiredEnvironment("MCRES_ACTIVATION_ITERATION"));
@@ -31,6 +38,7 @@ async function run() {
   let rssAfterActivationBytes = rssBeforeBytes;
   let steadyRssBytes = rssBeforeBytes;
   let activationMilliseconds = 0;
+  let activatedExtensionRoot;
   let status = "error";
   let serializedError;
   const extensionHost = {
@@ -52,6 +60,11 @@ async function run() {
     const extension = vscode.extensions.getExtension(extensionId);
     assert(extension, `Combined extension '${extensionId}' is not installed.`);
     assert(!extension.isActive, "Combined extension was already active before the measured cold activation.");
+    activatedExtensionRoot = canonicalPath(extension.extensionPath);
+    assert(
+      samePath(activatedExtensionRoot, canonicalPath(extensionRoot)),
+      `Activated extension root does not match the prepared artifact: ${activatedExtensionRoot}`
+    );
 
     const sourcePack = path.join(sourceWorkspace, "pack.mcmeta");
     assert(fs.existsSync(sourcePack), `JSON-only source workspace has no pack.mcmeta: ${sourcePack}`);
@@ -80,11 +93,12 @@ async function run() {
       }
     }
     writeSample({
-      schemaVersion: 2,
+      schemaVersion: 3,
       adapter: "extension-host",
       probeRunId,
       sampleId,
       artifact,
+      activatedExtensionRoot,
       iteration,
       status,
       error: serializedError,
@@ -133,7 +147,8 @@ function instrumentModuleLoads(events, installedHooks) {
         api: hook,
         target,
         extensionOwned: true,
-        rsgl: isRsglScanTarget(target)
+        recursive: String(target).includes("**"),
+        rsgl: isRsglScanEvent({ target, recursive: String(target).includes("**") })
       });
     },
     onHookInstalled(hook) {
@@ -146,18 +161,26 @@ function instrumentModuleLoads(events, installedHooks) {
   Module._load = function instrumentedModuleLoad(request, parent, isMain) {
     const value = String(request);
     const parentFileName = parent?.filename;
+    let resolved;
+    try {
+      resolved = Module._resolveFilename(request, parent, isMain);
+    } catch {
+      // Preserve Module._load as the authority for the actual resolution error.
+    }
     const started = performance.now();
     try {
       const result = original.apply(this, arguments);
       targetVscodeApi.observeModuleLoad(value, parentFileName, result);
       return result;
     } finally {
-      events.moduleLoads.push({
+      const event = {
         request: sanitize(value),
+        resolved: sanitize(resolved),
         parent: sanitize(parentFileName),
-        rsgl: isRsglRuntimePath(value) || isRsglRuntimePath(String(parentFileName ?? "")),
         durationMilliseconds: performance.now() - started
-      });
+      };
+      event.rsgl = isRsglModuleLoadEvent(event);
+      events.moduleLoads.push(event);
     }
   };
   installedHooks.push("Module._load");
@@ -244,7 +267,16 @@ function instrumentFilesystemWalks(events, installedHooks, warnings) {
       try {
         owner[api] = function instrumentedFilesystemWalk(...args) {
           const target = displayTarget(args[0]);
-          events.push({ api: `${ownerName}.${api}`, target, rsgl: isRsglScanTarget(target) });
+          const rawCaller = captureCaller();
+          const event = {
+            api: `${ownerName}.${api}`,
+            target,
+            caller: sanitize(rawCaller),
+            extensionOwned: isExtensionOwnedCaller(rawCaller),
+            recursive: isRecursiveWalk(api, args, target)
+          };
+          event.rsgl = isRsglScanEvent(event);
+          events.push(event);
           return original.apply(this, args);
         };
         installedHooks.push(`${ownerName}.${api}`);
@@ -265,24 +297,12 @@ function rsglHostLoaded() {
   );
 }
 
-function isRsglRuntimePath(value) {
-  const normalized = value.replaceAll("\\", "/").toLowerCase();
-  return normalized.includes("rsglhost")
-    || normalized.includes("vscode-languageclient")
-    || /(?:^|[\/._-])rsgl(?:[\/._-]|$)/.test(normalized);
-}
-
-function isRsglScanTarget(value) {
-  const normalized = value.replaceAll("\\", "/").toLowerCase();
-  return normalized.endsWith(".rsgl")
-    || normalized.includes("/**/*.rsgl")
-    || normalized.includes("/rsgl/src")
-    || normalized.includes("/rsgl/stdlib");
-}
-
-function isRsglSourceWatcher(value) {
-  const normalized = value.replaceAll("\\", "/").toLowerCase();
-  return normalized.endsWith(".rsgl") || normalized.includes("*.rsgl");
+function isRecursiveWalk(api, args, target) {
+  if (api === "glob" || api === "globSync") {
+    return String(target).includes("**");
+  }
+  return args.slice(1).some(value =>
+    value && typeof value === "object" && value.recursive === true);
 }
 
 function captureCaller() {
@@ -333,13 +353,11 @@ function displayTarget(value) {
 }
 
 function sanitize(value) {
-  if (value === undefined) {
-    return undefined;
-  }
-  return String(value)
-    .replaceAll(workspaceRoot, "<workspace>")
-    .replaceAll(sourceWorkspace, "<source-workspace>")
-    .replaceAll(extensionRoot, "<extension>");
+  return redactActivationPaths(value, [
+    [workspaceRoot, "<workspace>"],
+    [sourceWorkspace, "<source-workspace>"],
+    [extensionRoot, "<extension>"]
+  ]);
 }
 
 function settle(milliseconds) {
@@ -350,6 +368,16 @@ function assert(value, message) {
   if (!value) {
     throw new Error(message);
   }
+}
+
+function canonicalPath(value) {
+  return fs.realpathSync.native(path.resolve(value));
+}
+
+function samePath(left, right) {
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
 }
 
 function serializeError(error) {

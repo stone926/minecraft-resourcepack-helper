@@ -4,8 +4,8 @@ import {
   cpSync,
   existsSync,
   mkdtempSync,
-  mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync
 } from "node:fs";
@@ -15,7 +15,6 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   codeInvocation,
-  extractZipArchive,
   resolveCodeExecutable
 } from "../extension-host-harness.mjs";
 import {
@@ -50,6 +49,7 @@ export function parseExtensionHostSampleArguments(args) {
   }
   const required = [
     "--artifact",
+    "--extension-root",
     "--workspace",
     "--iteration",
     "--settle-ms",
@@ -77,6 +77,7 @@ export function parseExtensionHostSampleArguments(args) {
   }
   return {
     artifact: path.resolve(values.get("--artifact")),
+    extensionRoot: path.resolve(values.get("--extension-root")),
     workspace: path.resolve(values.get("--workspace")),
     probeRunId,
     sampleId,
@@ -93,10 +94,12 @@ export function parseExtensionHostSampleArguments(args) {
 
 export function runExtensionHostSample(options) {
   assertInput(options.artifact, "artifact");
+  assertInput(options.extensionRoot, "extension root", true);
+  assertExtensionRoot(options.extensionRoot);
   assertInput(options.workspace, "workspace", true);
   const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), `mcres-activation-ext-${options.iteration}-`));
   try {
-    const extensionRoot = prepareExtensionRoot(options.artifact, temporaryRoot);
+    const extensionRoot = canonicalPath(options.extensionRoot);
     const workspaceRoot = path.join(temporaryRoot, "JSON 工作区 with spaces");
     copyWorkspaceWithoutActivationMarker(options.workspace, workspaceRoot);
     const codeExecutable = resolveCodeExecutable(options.codeExecutable);
@@ -142,7 +145,7 @@ export function runExtensionHostSample(options) {
       ].filter(Boolean).join("\n"));
     }
     const sample = readExtensionHostSample(options.sampleOutput);
-    assertSampleIdentity(sample, options);
+    assertSampleIdentity(sample, options, extensionRoot);
     assertExitMatchesSample(result, sample, "VS Code Extension Host test process");
     if (sample.status === "error") {
       throw new Error([
@@ -169,12 +172,13 @@ function readExtensionHostSample(sampleOutput) {
   }
 }
 
-function assertSampleIdentity(sample, options) {
+function assertSampleIdentity(sample, options, extensionRoot) {
   if (sample.probeRunId !== options.probeRunId
     || sample.sampleId !== options.sampleId
     || sample.iteration !== options.iteration
     || sample.artifact.sha256 !== options.artifactIdentity.sha256
-    || sample.artifact.bytes !== options.artifactIdentity.bytes) {
+    || sample.artifact.bytes !== options.artifactIdentity.bytes
+    || !samePath(sample.activatedExtensionRoot, canonicalPath(extensionRoot))) {
     throw new Error("Real Extension Host activation sample did not echo its challenges, iteration, and artifact identity.");
   }
 }
@@ -191,19 +195,6 @@ function assertExitMatchesSample(result, sample, label) {
       `${label} exit status ${String(result.status)} is inconsistent with sample status '${sample.status}'.`
     );
   }
-}
-
-function prepareExtensionRoot(artifact, temporaryRoot) {
-  if (statSync(artifact).isDirectory()) {
-    assertExtensionRoot(artifact);
-    return artifact;
-  }
-  const extractionRoot = path.join(temporaryRoot, "已安装 extension");
-  mkdirSync(extractionRoot, { recursive: true });
-  extractZipArchive(artifact, extractionRoot, "activation-probe VSIX");
-  const extensionRoot = path.join(extractionRoot, "extension");
-  assertExtensionRoot(extensionRoot);
-  return extensionRoot;
 }
 
 function copyWorkspaceWithoutActivationMarker(source, destination) {
@@ -224,6 +215,19 @@ function assertInput(fileName, label, directory = false) {
   if (!existsSync(fileName) || (directory && !statSync(fileName).isDirectory())) {
     throw new Error(`Activation probe ${label} does not exist${directory ? " as a directory" : ""}: ${fileName}`);
   }
+}
+
+function canonicalPath(value) {
+  return realpathSync.native(path.resolve(value));
+}
+
+function samePath(left, right) {
+  if (typeof left !== "string" || typeof right !== "string") {
+    return false;
+  }
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
 }
 
 function parseInteger(value, label, minimum, maximum) {

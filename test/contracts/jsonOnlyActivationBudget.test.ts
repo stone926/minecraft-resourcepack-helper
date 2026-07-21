@@ -81,7 +81,7 @@ describe("JSON-only real Extension Host release budget", () => {
     };
     assert.strictEqual(
       manifest.scripts["verify:json-only-extension-host-budget"],
-      "node scripts/verify-json-only-activation-budget.mjs"
+      "node scripts/verify-json-only-activation-comparison.mjs"
     );
   });
 
@@ -126,6 +126,12 @@ describe("JSON-only real Extension Host release budget", () => {
     assert.throws(
       () => verifier.compareJsonOnlyActivationReports(developmentBaseline, candidate, budget),
       /installable VSIX/
+    );
+    const noncanonicalRunner = structuredClone(candidate);
+    noncanonicalRunner.input.runner = "scripts/activation-probe/node-bundle-sample.mjs";
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, noncanonicalRunner, budget),
+      /canonical Extension Host runner/
     );
     const tooFew = structuredClone(candidate);
     tooFew.input.iterations = 19;
@@ -226,6 +232,31 @@ describe("JSON-only real Extension Host release budget", () => {
     };
     assert.throws(
       () => verifier.compareJsonOnlyActivationReports(baseline, forgedRsglWatcher, budget),
+      /inconsistent rsgl classification/
+    );
+    const forgedResolvedModule = structuredClone(candidate);
+    (forgedResolvedModule.samples[0].moduleLoads as Array<Record<string, unknown>>).push({
+      request: "./runtime.js",
+      resolved: "<extension>/bundle/features/rsglHost.js",
+      parent: "<extension>/bundle/extension.js",
+      durationMilliseconds: 0,
+      rsgl: false
+    });
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, forgedResolvedModule, budget),
+      /inconsistent rsgl classification/
+    );
+    const forgedDefaultSourceScan = structuredClone(candidate);
+    (forgedDefaultSourceScan.samples[0].filesystemWalks as Array<Record<string, unknown>>).push({
+      api: "fs.promises.readdir",
+      target: "<workspace>/rsgl",
+      caller: "<extension>/bundle/extension.js",
+      extensionOwned: true,
+      recursive: false,
+      rsgl: false
+    });
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, forgedDefaultSourceScan, budget),
       /inconsistent rsgl classification/
     );
     const directoryCandidate = structuredClone(candidate);
@@ -337,18 +368,20 @@ function report(options: {
   steadyRssP95: number;
   artifactKind?: "vsix" | "combined-vsix";
 }) {
+  const runnerIdentity = canonicalRunnerIdentity();
   const artifactKind = options.artifactKind ?? "vsix";
   const probeRunId = (artifactKind === "combined-vsix" ? "c" : "d").repeat(32);
   const artifactSha256 = (artifactKind === "combined-vsix" ? "b" : "a").repeat(64);
   const identityPrefix = artifactKind === "combined-vsix" ? "c" : "d";
   const samples = Array.from({ length: 20 }, (_, iteration) => ({
-    schemaVersion: 2,
+    schemaVersion: 3,
     adapter: "extension-host",
     probeRunId,
     sampleId: `${identityPrefix}${iteration.toString(16).padStart(31, "0")}`,
     artifact: { bytes: 1024, sha256: artifactSha256 },
     iteration,
     status: "ok",
+    activatedExtensionRoot: `C:\\activation-cache\\${identityPrefix}`,
     extensionHost: {
       pid: 1000 + iteration,
       timeOrigin: 1_700_000_000_000 + (identityPrefix === "c" ? 100 : 0) + iteration,
@@ -390,7 +423,7 @@ function report(options: {
     instrumentationWarnings: []
   }));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     measurement: "json-only-activation",
     probeRunId,
     scope: {
@@ -398,12 +431,16 @@ function report(options: {
       isExtensionHost: true,
       isCombinedVsix: artifactKind === "combined-vsix",
       artifactKind,
-      runnerProtocol: { version: 2 }
+      canonicalRunner: true,
+      runnerProtocol: { version: 3 }
     },
     input: {
       artifact: `${artifactKind}.vsix`,
       artifactBytes: 1024,
       artifactSha256,
+      runner: "scripts/activation-probe/extension-host-sample.mjs",
+      runnerBytes: runnerIdentity.bytes,
+      runnerSha256: runnerIdentity.sha256,
       iterations: 20,
       settleMilliseconds: 1000
     },
@@ -455,5 +492,18 @@ function report(options: {
     },
     valid: true,
     samples
+  };
+}
+
+function canonicalRunnerIdentity(): { bytes: number; sha256: string } {
+  const contents = fs.readFileSync(path.join(
+    process.cwd(),
+    "scripts",
+    "activation-probe",
+    "extension-host-sample.mjs"
+  ));
+  return {
+    bytes: contents.length,
+    sha256: createHash("sha256").update(contents).digest("hex")
   };
 }

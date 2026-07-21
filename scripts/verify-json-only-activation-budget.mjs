@@ -17,6 +17,11 @@ import { readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
+const canonicalExtensionHostSampleRunner = path.join(
+  scriptDirectory,
+  "activation-probe",
+  "extension-host-sample.mjs"
+);
 
 export const defaultJsonOnlyActivationBudgetInputs = Object.freeze({
   baseline: "dist/measurements/json-only-activation.baseline.extension-host.json",
@@ -158,8 +163,11 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
   if (report.scope?.adapter !== "extension-host" || report.scope?.isExtensionHost !== true) {
     throw new Error(`${label} must be measured in a real VS Code Extension Host.`);
   }
-  if (report.scope?.runnerProtocol?.version !== 2) {
-    throw new Error(`${label} must use Extension Host runner protocol v2.`);
+  if (report.scope?.canonicalRunner !== true) {
+    throw new Error(`${label} must be measured by the canonical Extension Host runner.`);
+  }
+  if (report.scope?.runnerProtocol?.version !== 3) {
+    throw new Error(`${label} must use Extension Host runner protocol v3.`);
   }
   if (!isActivationProbeIdentifier(report.probeRunId)) {
     throw new Error(`${label}.probeRunId must identify the activation probe run.`);
@@ -241,6 +249,7 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
       throw new Error(`${label} raw sample artifact identity does not match the report input.`);
     }
   }
+  const runnerIdentity = validateCanonicalRunnerIdentity(report.input, label);
   const extensionHostEnvironment = validateExtensionHostEnvironment(
     report.environment?.extensionHost,
     rawSamples,
@@ -252,6 +261,7 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
     artifactBytes,
     artifactSha256,
     artifactKind: report.scope?.artifactKind ?? null,
+    runnerSha256: runnerIdentity.sha256,
     probeRunId: report.probeRunId,
     sampleIds: rawSamples.map(sample => sample.sampleId),
     processInstanceKeys: rawSamples.map(sample => extensionHostProcessInstanceKey(sample.extensionHost)),
@@ -262,6 +272,31 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
     extensionHostEnvironment,
     measurementMachine
   });
+}
+
+function validateCanonicalRunnerIdentity(input, label) {
+  const runnerValue = input?.runner;
+  if (typeof runnerValue !== "string" || runnerValue.length === 0) {
+    throw new Error(`${label}.input.runner must identify the activation probe runner.`);
+  }
+  const runnerFile = path.resolve(repositoryRoot, runnerValue);
+  if (pathIdentity(runnerFile) !== pathIdentity(canonicalExtensionHostSampleRunner)) {
+    throw new Error(`${label} must identify the canonical Extension Host runner.`);
+  }
+  if (!existsSync(runnerFile)) {
+    throw new Error(`${label} canonical Extension Host runner does not exist: ${runnerFile}`);
+  }
+  const bytes = readFileSync(runnerFile);
+  const expectedBytes = requirePositiveInteger(input?.runnerBytes, `${label}.input.runnerBytes`);
+  const expectedSha256 = input?.runnerSha256;
+  if (typeof expectedSha256 !== "string" || !/^[a-f0-9]{64}$/.test(expectedSha256)) {
+    throw new Error(`${label}.input.runnerSha256 must identify the activation probe runner.`);
+  }
+  const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+  if (bytes.length !== expectedBytes || actualSha256 !== expectedSha256) {
+    throw new Error(`${label} canonical Extension Host runner bytes no longer match the report.`);
+  }
+  return Object.freeze({ bytes: bytes.length, sha256: actualSha256 });
 }
 
 const requiredExtensionHostHooks = Object.freeze([

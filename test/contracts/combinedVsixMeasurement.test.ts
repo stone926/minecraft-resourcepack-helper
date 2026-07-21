@@ -305,9 +305,7 @@ describe("combined VSIX artifact measurement", () => {
     );
     assert.strictEqual(
       manifest.scripts?.["benchmark:json-only-extension-host"],
-      "node scripts/measure-json-only-activation.mjs --adapter extension-host "
-        + "--runner scripts/activation-probe/extension-host-sample.mjs --artifact-kind combined-vsix "
-        + "--out dist/measurements/json-only-activation.combined-production.extension-host.json"
+      "node scripts/measure-json-only-activation-comparison.mjs"
     );
   });
 

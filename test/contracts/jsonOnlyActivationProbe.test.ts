@@ -19,6 +19,7 @@ interface ProbeModule {
 interface ExtensionHostSampleModule {
   parseExtensionHostSampleArguments(args: string[]): {
     artifact: string;
+    extensionRoot: string;
     workspace: string;
     probeRunId: string;
     sampleId: string;
@@ -159,7 +160,7 @@ describe("JSON-only activation probe harness", () => {
     assert.strictEqual(result.status, 0, result.stderr);
     assert.match(result.stdout, /Node bundle probe only/);
     const report = readJson<ProbeReport>(output);
-    assert.strictEqual(report.schemaVersion, 2);
+    assert.strictEqual(report.schemaVersion, 3);
     assert.strictEqual(report.measurement, "json-only-activation");
     assert.match(report.probeRunId, /^[a-f0-9]{32}$/);
     assert.strictEqual(report.scope.adapter, "node-bundle");
@@ -268,12 +269,13 @@ describe("JSON-only activation probe harness", () => {
       "node-bundle": "dist/measurements/json-only-activation.node-bundle.json",
       "extension-host": "dist/measurements/json-only-activation.extension-host.json"
     });
-    assert.strictEqual(probe.extensionHostRunnerProtocol.version, 2);
+    assert.strictEqual(probe.extensionHostRunnerProtocol.version, 3);
     assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--sample-out"));
     assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--probe-run-id"));
     assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--sample-id"));
     assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--artifact-sha256"));
     assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--artifact-bytes"));
+    assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--extension-root"));
     assert.match(probe.extensionHostRunnerProtocol.requirement, /real VS Code Extension Host/);
     assert.throws(
       () => probe.parseActivationProbeArguments(["--adapter", "extension-host"]),
@@ -290,6 +292,7 @@ describe("JSON-only activation probe harness", () => {
 
     const parsed = extensionHostSample.parseExtensionHostSampleArguments([
       "--artifact", "dist/combined-production.vsix",
+      "--extension-root", "dist/measurements/prepared/extension",
       "--workspace", "test/fixtures/resource-project/mixed-pack/project",
       "--iteration", "7",
       "--settle-ms", "50",
@@ -308,6 +311,7 @@ describe("JSON-only activation probe harness", () => {
     assert.strictEqual(parsed.iteration, 7);
     assert.strictEqual(parsed.settleMilliseconds, 50);
     assert.ok(path.isAbsolute(parsed.artifact));
+    assert.ok(path.isAbsolute(parsed.extensionRoot));
     assert.ok(path.isAbsolute(parsed.workspace));
     assert.ok(path.isAbsolute(parsed.sampleOutput));
     assert.throws(
@@ -338,7 +342,9 @@ describe("JSON-only activation probe harness", () => {
 
   it("rejects stale challenges and runner exits that contradict the written sample", () => {
     const fixture = createFixture();
-    const artifact = writeFile(fixture.root, "fake.vsix", "fake VSIX boundary");
+    writeFile(fixture.extensionRoot, "package.json", '{"name":"fake-extension"}');
+    writeFile(fixture.extensionRoot, "bundle/extension.js", "exports.activate = () => undefined;");
+    const artifact = fixture.extensionRoot;
 
     const wrongExitRunner = writeFakeExtensionHostRunner(fixture.root, "wrong-exit.mjs", {
       echoChallenges: true,
@@ -349,7 +355,7 @@ describe("JSON-only activation probe harness", () => {
       "--adapter", "extension-host",
       "--runner", wrongExitRunner,
       "--artifact", artifact,
-      "--artifact-kind", "vsix",
+      "--artifact-kind", "extension-directory",
       "--workspace", fixture.workspaceRoot,
       "--iterations", "1",
       "--settle-ms", "0",
@@ -358,7 +364,7 @@ describe("JSON-only activation probe harness", () => {
     assert.strictEqual(wrongExit.status, 1, wrongExit.stderr);
     assert.match(
       readJson<ProbeReport>(wrongExitOutput).samples[0].error?.message ?? "",
-      /exit status 1 is inconsistent with sample status 'ok'/
+      /exit status 1 contradicts sample status 'ok'/
     );
 
     const staleRunner = writeFakeExtensionHostRunner(fixture.root, "stale.mjs", {
@@ -370,7 +376,7 @@ describe("JSON-only activation probe harness", () => {
       "--adapter", "extension-host",
       "--runner", staleRunner,
       "--artifact", artifact,
-      "--artifact-kind", "vsix",
+      "--artifact-kind", "extension-directory",
       "--workspace", fixture.workspaceRoot,
       "--iterations", "1",
       "--settle-ms", "0",
@@ -450,7 +456,7 @@ function writeFakeExtensionHostRunner(
     "  values.set(process.argv[index], process.argv[index + 1]);",
     "}",
     "const sample = {",
-    "  schemaVersion: 2,",
+    "  schemaVersion: 3,",
     '  adapter: "extension-host",',
     `  probeRunId: ${challengeExpression("--probe-run-id", "0".repeat(32))},`,
     `  sampleId: ${challengeExpression("--sample-id", "1".repeat(32))},`,
@@ -460,6 +466,7 @@ function writeFakeExtensionHostRunner(
     "  },",
     '  iteration: Number(values.get("--iteration")),',
     '  status: "ok",',
+    '  activatedExtensionRoot: values.get("--extension-root"),',
     "  extensionHost: {",
     "    pid: process.pid,",
     "    timeOrigin: performance.timeOrigin,",

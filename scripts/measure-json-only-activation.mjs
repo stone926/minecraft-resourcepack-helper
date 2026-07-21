@@ -24,6 +24,14 @@ import {
   recomputeExtensionHostEventFacts,
   validateActivationProbeSample
 } from "./activation-probe/schema.mjs";
+import {
+  hashPreparedExtensionTree,
+  prepareVsixExtension
+} from "./activation-probe/prepared-vsix.mjs";
+import {
+  isCanonicalExtensionHostSampleRunner,
+  runExtensionHostSampleProcess
+} from "./activation-probe/extension-host-sample-process.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -149,10 +157,16 @@ export function parseActivationProbeArguments(args) {
   };
 }
 
-export function runJsonOnlyActivationProbe(options) {
+export async function runJsonOnlyActivationProbe(options) {
   validateProbeInputs(options);
   const artifactPath = options.adapter === "node-bundle" ? options.bundlePath : options.artifactPath;
   const artifactDetails = describeArtifact(artifactPath);
+  const runnerDetails = options.adapter === "extension-host"
+    ? describeArtifact(options.runnerPath)
+    : null;
+  const preparedExtension = options.adapter === "extension-host"
+    ? await prepareActivationExtension(options, artifactDetails)
+    : null;
   const ownedWorkspaceRoot = options.workspacePath ? undefined : createJsonOnlyWorkspace();
   const workspaceRoot = options.workspacePath ?? ownedWorkspaceRoot;
   const sampleRoot = mkdtempSync(path.join(os.tmpdir(), "mcres-activation-samples-"));
@@ -166,7 +180,16 @@ export function runJsonOnlyActivationProbe(options) {
       try {
         const sample = options.adapter === "node-bundle"
           ? runNodeBundleSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifactDetails)
-          : runExtensionHostSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifactDetails);
+          : runExtensionHostSample(
+            options,
+            workspaceRoot,
+            iteration,
+            sampleFile,
+            probeRunId,
+            sampleId,
+            artifactDetails,
+            preparedExtension
+          );
         samples.push(validateActivationProbeSample(sample, options.adapter));
       } catch (error) {
         samples.push(createRunnerFailureSample(
@@ -184,11 +207,25 @@ export function runJsonOnlyActivationProbe(options) {
     if (JSON.stringify(finalArtifactDetails) !== JSON.stringify(artifactDetails)) {
       throw new Error("Activation probe artifact changed while samples were running.");
     }
+    if (runnerDetails) {
+      const finalRunnerDetails = describeArtifact(options.runnerPath);
+      if (JSON.stringify(finalRunnerDetails) !== JSON.stringify(runnerDetails)) {
+        throw new Error("Activation probe runner changed while samples were running.");
+      }
+    }
+    if (preparedExtension?.extensionTree) {
+      const finalPreparedTree = await hashPreparedExtensionTree(preparedExtension.extensionRoot);
+      if (JSON.stringify(finalPreparedTree) !== JSON.stringify(preparedExtension.extensionTree)) {
+        throw new Error("Prepared activation extension changed while samples were running.");
+      }
+    }
     const report = createActivationProbeReport(
       options,
       workspaceRoot,
       probeRunId,
       artifactDetails,
+      runnerDetails,
+      preparedExtension,
       samples
     );
     mkdirSync(path.dirname(options.outputPath), { recursive: true });
@@ -241,39 +278,29 @@ function runNodeBundleSample(options, workspaceRoot, iteration, sampleFile, prob
   });
 }
 
-function runExtensionHostSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifact) {
-  const result = spawnSync(process.execPath, [
-    options.runnerPath,
-    "--artifact",
-    options.artifactPath,
-    "--workspace",
+function runExtensionHostSample(
+  options,
+  workspaceRoot,
+  iteration,
+  sampleFile,
+  probeRunId,
+  sampleId,
+  artifact,
+  preparedExtension
+) {
+  return runExtensionHostSampleProcess({
+    runnerPath: options.runnerPath,
+    artifactPath: options.artifactPath,
+    extensionRoot: preparedExtension.extensionRoot,
     workspaceRoot,
-    "--iteration",
-    String(iteration),
-    "--settle-ms",
-    String(options.settleMilliseconds),
-    "--sample-out",
-    sampleFile,
-    "--probe-run-id",
-    probeRunId,
-    "--sample-id",
-    sampleId,
-    "--artifact-sha256",
-    artifact.sha256,
-    "--artifact-bytes",
-    String(artifact.bytes)
-  ], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 120_000
-  });
-  return readRunnerSample(result, sampleFile, "Extension Host sample runner", {
-    adapter: "extension-host",
     iteration,
+    settleMilliseconds: options.settleMilliseconds,
+    sampleOutput: sampleFile,
     probeRunId,
     sampleId,
-    artifact
+    artifact,
+    cwd: repositoryRoot,
+    timeoutMilliseconds: 180_000
   });
 }
 
@@ -318,7 +345,15 @@ function readRunnerSample(result, sampleFile, label, expected) {
   throw new Error(`${label} did not write ${sampleFile}.${detail ? `\n${detail}` : ""}`);
 }
 
-function createActivationProbeReport(options, workspaceRoot, probeRunId, artifactDetails, samples) {
+export function createActivationProbeReport(
+  options,
+  workspaceRoot,
+  probeRunId,
+  artifactDetails,
+  runnerDetails,
+  preparedExtension,
+  samples
+) {
   const successful = samples.filter(sample => sample.status === "ok");
   const hardConditions = summarizeHardConditions(samples);
   const scope = createMeasurementScope(options);
@@ -349,6 +384,12 @@ function createActivationProbeReport(options, workspaceRoot, probeRunId, artifac
       artifact: relativeOrAbsolute(artifactPath),
       artifactBytes: artifactDetails.bytes,
       artifactSha256: artifactDetails.sha256,
+      runner: runnerDetails ? relativeOrAbsolute(options.runnerPath) : null,
+      runnerBytes: runnerDetails?.bytes ?? null,
+      runnerSha256: runnerDetails?.sha256 ?? null,
+      preparedExtension: preparedExtension
+        ? describePreparedExtensionForReport(preparedExtension)
+        : null,
       workspace: options.workspacePath ? relativeOrAbsolute(workspaceRoot) : "generated-json-only-pack",
       iterations: options.iterations,
       settleMilliseconds: options.settleMilliseconds
@@ -373,6 +414,10 @@ function createActivationProbeReport(options, workspaceRoot, probeRunId, artifac
       && samples.every(sample => sample.probeRunId === probeRunId)
       && (processIdentity === null
         || processIdentity.distinctProcessInstanceCount === successful.length)
+      && (options.adapter !== "extension-host" || scope.canonicalRunner === true)
+      && (options.adapter !== "extension-host"
+        || successful.every(sample => normalizedPathIdentity(sample.activatedExtensionRoot)
+          === normalizedPathIdentity(preparedExtension.extensionRoot)))
       && hardConditions.passed,
     samples
   });
@@ -397,17 +442,21 @@ function createMeasurementScope(options) {
   }
   return {
     adapter: "extension-host",
-    executionSurface: "external-real-vscode-extension-host-runner",
+    executionSurface: isCanonicalExtensionHostSampleRunner(options.runnerPath)
+      ? "canonical-real-vscode-extension-host-runner"
+      : "noncanonical-extension-host-runner",
     artifactKind: options.artifactKind,
     isExtensionHost: true,
     isCombinedVsix: options.artifactKind === "combined-vsix",
+    canonicalRunner: isCanonicalExtensionHostSampleRunner(options.runnerPath),
     claim: options.artifactKind === "combined-vsix"
+      && isCanonicalExtensionHostSampleRunner(options.runnerPath)
       ? "Combined VSIX data supplied by an explicit real Extension Host runner."
-      : "Extension Host data supplied by an explicit real runner; not claimed as combined VSIX.",
+      : "Non-release Extension Host diagnostic; canonical runner and combined VSIX are both required for formal evidence.",
     runnerProtocol: extensionHostRunnerProtocol,
     limitations: [
-      "The external runner owns VS Code installation, isolation, activation trigger, and extension-side instrumentation.",
-      "This aggregator validates the common sample schema but cannot upgrade a development-directory run into combined VSIX evidence."
+      "The canonical runner owns VS Code installation, per-sample isolation, activation trigger, and extension-side instrumentation.",
+      "Only prepared installable VSIX roots measured by the canonical runner are eligible for release comparison evidence."
     ]
   };
 }
@@ -533,8 +582,50 @@ function createRunnerFailureSample(adapter, iteration, probeRunId, sampleId, art
   };
 }
 
-function createChallenge() {
+export function createChallenge() {
   return randomBytes(16).toString("hex");
+}
+
+async function prepareActivationExtension(options, artifactDetails) {
+  const artifactStat = statSync(options.artifactPath);
+  if (artifactStat.isDirectory()) {
+    if (options.artifactKind !== "extension-directory") {
+      throw new Error("VSIX activation evidence requires a VSIX file, not an extension directory.");
+    }
+    return Object.freeze({
+      status: "development-directory",
+      artifact: artifactDetails,
+      extensionRoot: path.resolve(options.artifactPath),
+      cacheEntryRoot: null,
+      markerPath: null,
+      extensionTree: null,
+      extractedTree: null
+    });
+  }
+  if (!artifactStat.isFile()) {
+    throw new Error(`Activation artifact must be a VSIX file or extension directory: ${options.artifactPath}`);
+  }
+  const prepared = await prepareVsixExtension({
+    artifactPath: options.artifactPath,
+    repositoryRoot
+  });
+  if (prepared.artifact.sha256 !== artifactDetails.sha256
+    || prepared.artifact.bytes !== artifactDetails.bytes) {
+    throw new Error("Prepared extension identity does not match the measured activation artifact.");
+  }
+  return prepared;
+}
+
+function describePreparedExtensionForReport(prepared) {
+  return Object.freeze({
+    status: prepared.status,
+    artifact: prepared.artifact,
+    cacheEntryRoot: prepared.cacheEntryRoot ? relativeOrAbsolute(prepared.cacheEntryRoot) : null,
+    extensionRoot: relativeOrAbsolute(prepared.extensionRoot),
+    markerPath: prepared.markerPath ? relativeOrAbsolute(prepared.markerPath) : null,
+    extensionTree: prepared.extensionTree,
+    extractedTree: prepared.extractedTree
+  });
 }
 
 function validateProbeInputs(options) {
@@ -553,7 +644,12 @@ function validateProbeInputs(options) {
   }
 }
 
-function createJsonOnlyWorkspace() {
+function normalizedPathIdentity(value) {
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+export function createJsonOnlyWorkspace() {
   const root = mkdtempSync(path.join(os.tmpdir(), "mcres-json-only-pack-"));
   const modelDirectory = path.join(root, "assets", "probe", "models", "block");
   mkdirSync(modelDirectory, { recursive: true });
@@ -562,7 +658,7 @@ function createJsonOnlyWorkspace() {
   return root;
 }
 
-function assertJsonOnlyWorkspace(workspaceRoot) {
+export function assertJsonOnlyWorkspace(workspaceRoot) {
   const visit = directory => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const entryPath = path.join(directory, entry.name);
@@ -576,7 +672,7 @@ function assertJsonOnlyWorkspace(workspaceRoot) {
   visit(workspaceRoot);
 }
 
-function describeArtifact(artifactPath) {
+export function describeArtifact(artifactPath) {
   const details = statSync(artifactPath);
   if (details.isFile()) {
     const bytes = readFileSync(artifactPath);
@@ -738,7 +834,7 @@ if (isMainModule()) {
     if (options.help) {
       printUsage();
     } else {
-      const report = runJsonOnlyActivationProbe(options);
+      const report = await runJsonOnlyActivationProbe(options);
       console.log(`JSON-only activation raw report: ${path.resolve(options.outputPath)}`);
       console.log(`Measurement scope: ${report.scope.claim}`);
       console.log(`Activation p95 milliseconds: ${formatMetric(report.summary.activationMilliseconds?.p95)}`);

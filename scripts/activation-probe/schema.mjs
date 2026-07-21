@@ -1,13 +1,27 @@
-export const activationProbeReportSchemaVersion = 2;
-export const activationProbeSampleSchemaVersion = 2;
+import eventClassification from "./event-classification.cjs";
+
+const {
+  eventValues,
+  isExtensionOwnedEvent,
+  isRsglModuleLoadEvent,
+  isRsglRuntimePath,
+  isRsglScanEvent,
+  isRsglSourceWatcher,
+  recomputeExtensionHostEventFacts
+} = eventClassification;
+
+export const activationProbeReportSchemaVersion = 3;
+export const activationProbeSampleSchemaVersion = 3;
 export const activationProbeAdapters = Object.freeze(["node-bundle", "extension-host"]);
+export const activationEvidenceTrustBoundary = "Reproducible local measurement with canonical-code, artifact, process, schedule, and tree consistency checks; it detects stale or internally inconsistent evidence but is not a cryptographic attestation against deliberately fabricated telemetry.";
 
 const activationProbeIdentifierPattern = /^[a-f0-9]{32}$/;
 
 export const extensionHostRunnerProtocol = Object.freeze({
-  version: 2,
+  version: 3,
   requiredArguments: Object.freeze([
     "--artifact",
+    "--extension-root",
     "--workspace",
     "--iteration",
     "--settle-ms",
@@ -17,7 +31,7 @@ export const extensionHostRunnerProtocol = Object.freeze({
     "--artifact-sha256",
     "--artifact-bytes"
   ]),
-  requirement: "Runner must launch a real VS Code Extension Host, echo the per-run and per-sample challenges, and write one activation probe sample JSON file with an exit code matching its status."
+  requirement: "Runner must launch a real VS Code Extension Host from the supplied prepared extension root, echo the per-run and per-sample challenges, and write one activation probe sample JSON file with an exit code matching its status."
 });
 
 export function isActivationProbeIdentifier(value) {
@@ -28,43 +42,7 @@ export function extensionHostProcessInstanceKey(host) {
   return JSON.stringify([host.pid, host.timeOrigin]);
 }
 
-export function recomputeExtensionHostEventFacts(sample) {
-  const rsglModuleLoads = sample.moduleLoads.filter(event =>
-    isRsglRuntimePath(event.request)
-    || isRsglRuntimePath(event.resolved)
-    || isRsglRuntimePath(event.parent)).length;
-  const rsglProcessSpawnAttempts = sample.processSpawns.filter(event =>
-    eventValues(event).some(isRsglRuntimePath)).length;
-  const rsglWorkerSpawnAttempts = sample.workerSpawns.filter(event =>
-    eventValues(event).some(isRsglRuntimePath)).length;
-  const extensionOwnedNonRsglProcessSpawns = sample.processSpawns.filter(event =>
-    isExtensionOwnedEvent(event) && !eventValues(event).some(isRsglRuntimePath)).length;
-  const hostProcessSpawnNoise = sample.processSpawns.length
-    - rsglProcessSpawnAttempts
-    - extensionOwnedNonRsglProcessSpawns;
-  const rsglFilesystemWalks = sample.filesystemWalks.filter(event =>
-    isRsglScanTarget(event.target)).length;
-  const rsglWatcherRegistrations = sample.watcherRegistrations.filter(event =>
-    isRsglSourceWatcher(event.target)).length;
-  const mainWatcherRegistrations = sample.watcherRegistrations.length
-    - rsglWatcherRegistrations;
-  const mainWatcherPositiveControl = sample.watcherRegistrations.some(event =>
-    event.api === "vscode.workspace.createFileSystemWatcher"
-    && normalizeSignal(event.target).includes("pack.mcmeta")
-    && !isRsglSourceWatcher(event.target));
-  return Object.freeze({
-    rsglModuleLoads,
-    rsglProcessSpawnAttempts,
-    rsglWorkerSpawnAttempts,
-    extensionOwnedNonRsglProcessSpawns,
-    hostProcessSpawnNoise,
-    rsglFilesystemWalks,
-    mainWatcherRegistrations,
-    mainWatcherPositiveControl,
-    rsglWatcherRegistrations,
-    instrumentationWarnings: sample.instrumentationWarnings.length
-  });
-}
+export { recomputeExtensionHostEventFacts };
 
 export function validateActivationProbeSample(sample, expectedAdapter) {
   if (!sample || typeof sample !== "object") {
@@ -103,6 +81,11 @@ export function validateActivationProbeSample(sample, expectedAdapter) {
       || typeof host.arch !== "string" || host.arch.length === 0
       || typeof host.vscodeVersion !== "string" || host.vscodeVersion.length === 0) {
       throw new Error("Extension Host samples must identify the fresh VS Code host process and runtime.");
+    }
+    if (sample.status === "ok"
+      && (typeof sample.activatedExtensionRoot !== "string"
+        || sample.activatedExtensionRoot.length === 0)) {
+      throw new Error("Successful Extension Host samples must identify the activated extension root.");
     }
   }
   for (const metric of [
@@ -149,12 +132,10 @@ export function validateActivationProbeSample(sample, expectedAdapter) {
 
 function assertReportedExtensionHostEventClassifications(sample) {
   for (const [collection, classify] of [
-    [sample.moduleLoads, event => isRsglRuntimePath(event.request)
-      || isRsglRuntimePath(event.resolved)
-      || isRsglRuntimePath(event.parent)],
+    [sample.moduleLoads, isRsglModuleLoadEvent],
     [sample.processSpawns, event => eventValues(event).some(isRsglRuntimePath)],
     [sample.workerSpawns, event => eventValues(event).some(isRsglRuntimePath)],
-    [sample.filesystemWalks, event => isRsglScanTarget(event.target)],
+    [sample.filesystemWalks, isRsglScanEvent],
     [sample.watcherRegistrations, event => isRsglSourceWatcher(event.target)]
   ]) {
     for (const event of collection) {
@@ -176,41 +157,4 @@ function assertReportedExtensionHostEventClassifications(sample) {
       throw new Error("Target-scoped VS Code activation events must be extensionOwned.");
     }
   }
-}
-
-function isExtensionOwnedEvent(event) {
-  return normalizeSignal(event?.caller).includes("<extension>");
-}
-
-function eventValues(event) {
-  return [
-    event?.file,
-    event?.caller,
-    ...(Array.isArray(event?.args) ? event.args : []),
-    ...(Array.isArray(event?.arguments) ? event.arguments : [])
-  ];
-}
-
-function isRsglRuntimePath(value) {
-  const normalized = normalizeSignal(value);
-  return normalized.includes("rsglhost")
-    || normalized.includes("vscode-languageclient")
-    || /(?:^|[\/._-])rsgl(?:[\/._-]|$)/.test(normalized);
-}
-
-function isRsglScanTarget(value) {
-  const normalized = normalizeSignal(value);
-  return normalized.endsWith(".rsgl")
-    || normalized.includes("/**/*.rsgl")
-    || normalized.includes("/rsgl/src")
-    || normalized.includes("/rsgl/stdlib");
-}
-
-function isRsglSourceWatcher(value) {
-  const normalized = normalizeSignal(value);
-  return normalized.endsWith(".rsgl") || normalized.includes("*.rsgl");
-}
-
-function normalizeSignal(value) {
-  return String(value ?? "").replaceAll("\\", "/").toLowerCase();
 }
