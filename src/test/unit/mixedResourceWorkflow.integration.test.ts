@@ -17,13 +17,13 @@ import {
   ResourceNavigationService,
   ResourceUniverseIndex,
   RsglGeneratedProvider,
-  ZipArchive,
   projectRsglGeneratedOwnershipManifest,
   type ResourceContributionRequest,
   type ResourceEdge,
   type ResourceNavigationResult,
   type ResourceResolutionContext
 } from "../../resourceUniverse";
+import { ZipArchive } from "../../resourceUniverse/virtualFs";
 import {
   CompilerSnapshotSource,
   createMixedPhysicalSnapshot as physicalSnapshot,

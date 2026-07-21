@@ -3,6 +3,39 @@ import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 
 describe("integrated RSGL ResourceUniverse navigation bridge", () => {
+  it("registers the lazy generated provider before the first generated projection", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "const uri = value => ({ path: new URL(value).pathname, toString: () => value });",
+      "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
+      "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
+      "const context = { projectId: 'project', contextRevision: 'r1', projectRootUri: 'file:///pack', localLayer: { layerId: 'local' }, externalLayers: [] };",
+      "let generatedRegistered = false; let generatedRefreshes = 0;",
+      "const coverage = { status: 'authoritative', revision: 'r1', coveredScope: { projectId: 'project' } };",
+      "const projects = { resolveProject: async () => ({ context, rsglApplicability: 'conventional' }), getRsglApplicability: () => 'conventional' };",
+      "const universe = {",
+      "  index: { getCoverage: provider => provider === 'physical' || generatedRegistered ? coverage : undefined },",
+      "  registry: { get: provider => provider === 'physical' || generatedRegistered ? {} : undefined },",
+      "  refreshProviderProject: async () => ({ applied: true }), invalidateProviderProject: () => undefined,",
+      "  onDidChange: () => ({ dispose() {} }),",
+      "  getDocumentProviderIds: document => generatedRegistered && document.languageId === 'rsgl' ? ['rsgl'] : [],",
+      "  getDocumentProjections: () => generatedRegistered ? [{ resources: [] }] : []",
+      "};",
+      "const facade = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
+      "facade.setGeneratedProjectRefresher(async () => { generatedRefreshes++; generatedRegistered = true; });",
+      "(async () => {",
+      "  const document = { uri: uri('file:///pack/generated/source'), fileName: '/pack/rsgl/main.rsgl', languageId: 'plaintext' };",
+      "  const result = await facade.getDocumentProjection(document);",
+      "  assert.strictEqual(generatedRefreshes, 1); assert.strictEqual(result.applicable, true);",
+      "  assert.strictEqual(result.coverage, 'authoritative'); assert.strictEqual(result.projections.length, 1);",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const facadePath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");
+    const result = spawnSync(process.execPath, ["-e", script, facadePath], { encoding: "utf8" });
+    assert.strictEqual(result.status, 0, result.stderr);
+  });
+
   it("does not probe generated facts for an explicitly non-RSGL project", () => {
     const script = [
       "const assert = require('node:assert');",
@@ -10,23 +43,32 @@ describe("integrated RSGL ResourceUniverse navigation bridge", () => {
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: value => ({ toString: () => value }) } }; return originalLoad.call(this, request, ...args); };",
       "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
       "const context = { projectId: 'project', contextRevision: 'r1', projectRootUri: 'file:///pack', localLayer: { layerId: 'local' }, externalLayers: [] };",
-      "let applicability = 'none'; let generatedRefreshes = 0; let physicalRefreshes = 0;",
+      "let applicability = 'none'; let generatedRefreshes = 0; let physicalRefreshes = 0; let generatedFailure; const invalidations = [];",
       "const projects = { resolveProject: async () => ({ context, rsglApplicability: applicability }), getRsglApplicability: () => applicability };",
       "const physicalCoverage = { status: 'authoritative', revision: 'r1', coveredScope: { projectId: 'project' } };",
       "const universe = {",
       "  index: { getCoverage: provider => provider === 'physical' ? physicalCoverage : undefined },",
       "  registry: { get: () => ({}) },",
       "  refreshProviderProject: async provider => { if (provider === 'physical') physicalRefreshes++; return { applied: true }; },",
-      "  invalidateProviderProject: () => undefined, onDidChange: () => ({ dispose() {} })",
+      "  invalidateProviderProject: (...args) => invalidations.push(args), onDidChange: () => ({ dispose() {} })",
       "};",
       "const facade = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
-      "facade.setGeneratedProjectRefresher(async () => { generatedRefreshes++; });",
+      "facade.setGeneratedProjectRefresher(async () => { generatedRefreshes++; if (generatedFailure) throw generatedFailure; });",
       "(async () => {",
       "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true });",
       "  assert.strictEqual(generatedRefreshes, 0); assert.strictEqual(physicalRefreshes, 1);",
       "  applicability = undefined;",
       "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true });",
       "  assert.strictEqual(generatedRefreshes, 1, 'unknown applicability stays conservative');",
+      "  const abort = new AbortController(); abort.abort();",
+      "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true, signal: abort.signal });",
+      "  assert.strictEqual(generatedRefreshes, 1, 'pre-cancelled queries do not load generated resources');",
+      "  generatedFailure = Object.assign(new Error('shared cancellation'), { name: 'AbortError' });",
+      "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true });",
+      "  assert.strictEqual(invalidations.length, 0, 'shared AbortError must not poison generated coverage');",
+      "  generatedFailure = new Error('lsp failed');",
+      "  await facade.ensureProjectForUri({ toString: () => 'file:///pack' }, { includeGenerated: true });",
+      "  assert.deepStrictEqual(invalidations.at(-1), ['rsgl', 'project', 'lspFailed']);",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
     const facadePath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");

@@ -1,0 +1,90 @@
+import * as assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import * as path from "node:path";
+
+describe("JSON-first lazy RSGL integration", () => {
+  it("marks the discovered project available before the first generated refresh", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "const createUri = value => {",
+      "  const parsed = new URL(value);",
+      "  return { scheme: parsed.protocol.slice(0, -1), authority: parsed.host, path: parsed.pathname, fsPath: parsed.pathname, toString: () => value };",
+      "};",
+      "const disposable = () => ({ dispose() {} });",
+      "const vscode = {",
+      "  FileType: { File: 1, Directory: 2 },",
+      "  Uri: { parse: createUri, joinPath: (root, name) => createUri(`${root.toString().replace(/\\/$/, '')}/${name}`) },",
+      "  commands: { registerCommand: disposable },",
+      "  l10n: { t: value => value },",
+      "  workspace: {",
+      "    workspaceFolders: [], textDocuments: [],",
+      "    fs: { readDirectory: async () => [], readFile: async () => { throw new Error('missing'); } },",
+      "    getConfiguration: () => ({ get: (_key, fallback) => fallback }),",
+      "    onDidOpenTextDocument: disposable, onDidChangeConfiguration: disposable, onDidChangeWorkspaceFolders: disposable",
+      "  },",
+      "  window: { visibleTextEditors: [], onDidChangeVisibleTextEditors: disposable, showInformationMessage: async () => undefined, showWarningMessage: async () => undefined, showErrorMessage: async () => undefined }",
+      "};",
+      "Module._load = function(request, ...args) { return request === 'vscode' ? vscode : originalLoad.call(this, request, ...args); };",
+      "const runtimePath = require.resolve(process.argv[2]);",
+      "const runtimeExports = require(runtimePath);",
+      "const counters = { hostLoads: 0, languageServerStarts: 0, snapshotRequests: 0, disposals: 0, physicalRequests: 0 };",
+      "const runtime = {",
+      "  ensureLanguageServer: async () => { counters.languageServerStarts++; },",
+      "  requestResourceSnapshot: async request => {",
+      "    counters.snapshotRequests++;",
+      "    return { protocolVersion: request.protocolVersion, projectId: request.projectContext.projectId, requestGeneration: request.requestGeneration, revision: 'generated-r1', status: 'ok', coverage: { status: 'authoritative', revision: 'generated-r1', coveredScope: { projectId: request.projectContext.projectId } }, resources: [], edges: [] };",
+      "  },",
+      "  onResourceSnapshotInvalidated: () => disposable(),",
+      "  dispose: async () => { counters.disposals++; }",
+      "};",
+      "require.cache[runtimePath].exports = { ...runtimeExports, createInstalledRsglRuntimeLoader: () => async () => { counters.hostLoads++; return runtime; } };",
+      "const { registerRsglSubsystem } = require(process.argv[1]);",
+      "const { ResourceUniverseService } = require(process.argv[3]);",
+      "const { ResourceUniverseNavigationFacade } = require(process.argv[4]);",
+      "const context = {",
+      "  projectId: 'project', workspaceFolderUri: 'file:///workspace', projectRootUri: 'file:///workspace/pack', packRootUri: 'file:///workspace/pack', assetsRootUri: 'file:///workspace/pack/assets',",
+      "  rsglSourceRootUris: ['file:///workspace/pack/rsgl'], outputPackRootUri: 'file:///workspace/pack', outputAssetsRootUri: 'file:///workspace/pack/assets',",
+      "  localLayer: { layerId: 'local', role: 'local', source: 'directory', rootUri: 'file:///workspace/pack', priority: 0, metadataRevision: 'metadata-r1' },",
+      "  externalLayers: [], overlaySelection: [], configurationRevision: 'configuration-r1', contextRevision: 'context-r1'",
+      "};",
+      "const projects = {",
+      "  resolveProject: async () => ({ context, rsglApplicability: 'conventional' }),",
+      "  getRsglApplicability: () => 'conventional',",
+      "  getCachedContext: projectId => projectId === context.projectId ? context : undefined,",
+      "  getCachedContexts: () => [context], findCachedContextsForUri: () => [context]",
+      "};",
+      "const universe = new ResourceUniverseService();",
+      "const physical = universe.registerProvider({ providerId: 'physical', getSnapshot: async request => { counters.physicalRequests++; return { providerId: 'physical', projectId: request.projectId, generation: request.requestGeneration, revision: 'physical-r1', coverage: { status: 'authoritative', revision: 'physical-r1', coveredScope: request.scope }, producers: [], edges: [] }; } });",
+      "const navigation = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
+      "const extensionContext = { subscriptions: [], asAbsolutePath: value => value };",
+      "const registration = registerRsglSubsystem(extensionContext, projects, universe, navigation);",
+      "navigation.setGeneratedProjectRefresher((projectId, signal) => registration.refreshGeneratedProject(projectId, signal));",
+      "(async () => {",
+      "  assert.deepStrictEqual(registration.controller.getState(), { kind: 'suspended', generation: 0, reason: 'noActiveProject' });",
+      "  const cancelled = new AbortController(); cancelled.abort();",
+      "  assert.strictEqual(await registration.refreshGeneratedProject(context.projectId, cancelled.signal), undefined);",
+      "  assert.deepStrictEqual(registration.controller.getState(), { kind: 'suspended', generation: 0, reason: 'noActiveProject' });",
+      "  assert.strictEqual(universe.registry.get('rsgl'), undefined);",
+      "  assert.strictEqual(counters.hostLoads, 0);",
+      "  const ensured = await navigation.ensureProjectForUri(createUri('file:///workspace/pack/assets/demo/models/block/example.json'), { includeGenerated: true });",
+      "  assert.strictEqual(ensured.coverage, 'authoritative');",
+      "  assert.strictEqual(registration.controller.getState().kind, 'ready');",
+      "  assert.deepStrictEqual({ hostLoads: counters.hostLoads, languageServerStarts: counters.languageServerStarts, snapshotRequests: counters.snapshotRequests, physicalRequests: counters.physicalRequests }, { hostLoads: 1, languageServerStarts: 1, snapshotRequests: 1, physicalRequests: 1 });",
+      "  assert.strictEqual(universe.index.getCoverage('rsgl', context.projectId).status, 'authoritative');",
+      "  await registration.shutdown(); physical.dispose(); universe.dispose();",
+      "  assert.strictEqual(counters.disposals, 1);",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const registrationPath = path.join(process.cwd(), "out", "src", "rsgl", "registerRsglSubsystem.js");
+    const runtimePath = path.join(process.cwd(), "out", "src", "rsgl", "runtime", "index.js");
+    const universePath = path.join(process.cwd(), "out", "src", "resourceUniverse", "index.js");
+    const navigationPath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");
+    const result = spawnSync(
+      process.execPath,
+      ["-e", script, registrationPath, runtimePath, universePath, navigationPath],
+      { encoding: "utf8" }
+    );
+    assert.strictEqual(result.status, 0, result.stderr);
+  });
+});

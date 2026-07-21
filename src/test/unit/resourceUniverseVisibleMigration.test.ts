@@ -17,6 +17,11 @@ describe("resource universe visible migration contract", () => {
     assert.ok(graph.includes("navigation.getIncomingReferences"));
     assert.ok(facade.includes("new ResourceNavigationService"));
     assert.ok(facade.includes("resolveProducerDefinition"));
+    assert.ok(facade.includes('["physical", ...(generatedApplicable ? ["rsgl"] : [])]'));
+    assert.strictEqual(
+      facade.includes(".filter(providerId => this.universe.registry.get(providerId)"),
+      false
+    );
   });
 
   it("keeps the established overlay/filter/load-order resolver as physical winner evidence", () => {
@@ -47,8 +52,7 @@ describe("resource universe visible migration contract", () => {
 
     assert.ok(workspaceEvents.includes("resourceGraph.invalidatePath(uri, kind)"));
     assert.ok(graph.includes("this.navigation.invalidateUri"));
-    assert.ok(infrastructure.includes('"**/rsgl.config.json"'));
-    assert.ok(infrastructure.includes('"**/pack.mcmeta"'));
+    assert.ok(infrastructure.includes('"**/{rsgl.config.json,pack.mcmeta}"'));
     assert.ok(infrastructure.includes("universe.removeProject(projectId)"));
   });
 

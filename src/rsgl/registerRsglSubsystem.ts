@@ -7,8 +7,6 @@ import type {
   ResourceUniverseService
 } from "../resourceUniverse";
 import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
-import { RsglGeneratedContributionBridge } from "./rsglGeneratedContributionBridge";
-import { resolveRsglResourceNavigation } from "./rsglResourceNavigationBridge";
 import {
   createInstalledRsglRuntimeLoader,
   RsglRuntimeController,
@@ -52,15 +50,22 @@ export function registerRsglSubsystem(
 ): RsglSubsystemRegistration {
   const disposables: vscode.Disposable[] = [];
   const notifiedDisabledDocuments = new Set<string>();
-  const generatedRef: { current?: RsglGeneratedContributionBridge } = {};
+  type GeneratedBridge = import("./rsglGeneratedContributionBridge.js").RsglGeneratedContributionBridge;
+  let generatedLoad: Promise<GeneratedBridge> | undefined;
+  let navigationBridgeLoad: Promise<typeof import("./rsglResourceNavigationBridge.js")> | undefined;
+  let subsystemDisposed = false;
+  let subsystemShutdown: Promise<void> | undefined;
   let materializationProjectHint: string | undefined;
   const controller = new RsglRuntimeController(
     createInstalledRsglRuntimeLoader(context, undefined, {
       onMaterializationInvalidation: value =>
-        generatedRef.current?.acceptMaterializationInvalidation(value, materializationProjectHint),
+        getGeneratedBridge().then(generated =>
+          generated.acceptMaterializationInvalidation(value, materializationProjectHint)),
       resolveMaterializationProject,
-      resolveResourceNavigation: (request, signal) =>
-        resolveRsglResourceNavigation(navigation, request, signal)
+      resolveResourceNavigation: async (request, signal) => {
+        const bridge = await getNavigationBridgeModule();
+        return bridge.resolveRsglResourceNavigation(navigation, request, signal);
+      }
     }),
     {
       mode: configuredRsglMode(),
@@ -68,34 +73,6 @@ export function registerRsglSubsystem(
       recheckSignals: () => queueMicrotask(() => void recheckKnownSignals())
     }
   );
-  const generated = new RsglGeneratedContributionBridge(projects, universe, controller, {
-    readTextUri: async uri => {
-      try {
-        return new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.parse(uri, true)));
-      } catch {
-        return undefined;
-      }
-    },
-    readBinaryUri: async uri => {
-      try {
-        return await vscode.workspace.fs.readFile(vscode.Uri.parse(uri, true));
-      } catch {
-        return undefined;
-      }
-    },
-    listDirectoryUris: async uri => {
-      try {
-        const root = vscode.Uri.parse(uri, true);
-        return (await vscode.workspace.fs.readDirectory(root))
-          .filter(([, type]) => (type & vscode.FileType.File) !== 0)
-          .map(([name]) => vscode.Uri.joinPath(root, name).toString());
-      } catch {
-        return undefined;
-      }
-    }
-  });
-  generatedRef.current = generated;
-
   for (const command of Object.values(rsglProxyCommands)) {
     disposables.push(vscode.commands.registerCommand(command, (...args: unknown[]) =>
       executeProxyCommand(command, args)
@@ -132,20 +109,33 @@ export function registerRsglSubsystem(
 
   const registration: RsglSubsystemRegistration = {
     controller,
-    refreshGeneratedProject: (projectId, signal) =>
-      generated.refreshProject(projectId, { projectId }, signal),
+    refreshGeneratedProject: async (projectId, signal) => {
+      if (signal?.aborted) {
+        return undefined;
+      }
+      if (projects.getCachedContext(projectId)) {
+        await controller.setProjectAvailable(true);
+      }
+      if (signal?.aborted) {
+        return undefined;
+      }
+      const generated = await getGeneratedBridge();
+      if (signal?.aborted) {
+        return undefined;
+      }
+      return generated.refreshProject(projectId, { projectId }, signal);
+    },
     dispose: () => {
       for (const disposable of disposables.splice(0)) {
         disposable.dispose();
       }
-      generated.dispose();
-      void controller.dispose();
+      void shutdownSubsystem();
     },
     shutdown: async () => {
       for (const disposable of disposables.splice(0)) {
         disposable.dispose();
       }
-      await Promise.all([generated.shutdown(), controller.dispose()]);
+      await shutdownSubsystem();
     }
   };
   context.subscriptions.push(registration);
@@ -177,6 +167,7 @@ export function registerRsglSubsystem(
       return undefined;
     }
 
+    const generated = await getGeneratedBridge();
     generated.trackProject(project.projectId);
     const runtime = command === rsglProxyCommands.refreshWorkspace
       ? await generated.ensureLanguageServer(project.projectId, "manualRefresh", { retryFailed: true })
@@ -210,8 +201,9 @@ export function registerRsglSubsystem(
     if (!project) {
       return;
     }
-    generated.trackProject(project.projectId);
     try {
+      const generated = await getGeneratedBridge();
+      generated.trackProject(project.projectId);
       await generated.ensureLanguageServer(project.projectId, reason);
       await generated.refreshProject(project.projectId);
     } catch (error) {
@@ -300,6 +292,85 @@ export function registerRsglSubsystem(
       sourceRoot: portableSourceRoot(project),
       outputPackRootIdentity: project.localLayer.layerId
     };
+  }
+
+  function getGeneratedBridge(): Promise<GeneratedBridge> {
+    if (subsystemDisposed) {
+      return Promise.reject(new Error("The integrated RSGL subsystem has been disposed."));
+    }
+    return generatedLoad ??= import("./rsglGeneratedContributionBridge.js")
+      .then(module => {
+        if (subsystemDisposed) {
+          throw new Error("The integrated RSGL subsystem was disposed while its bridge was loading.");
+        }
+        const generated = new module.RsglGeneratedContributionBridge(
+          projects,
+          universe,
+          controller,
+          {
+            readTextUri: async uri => {
+              try {
+                return new TextDecoder().decode(
+                  await vscode.workspace.fs.readFile(vscode.Uri.parse(uri, true))
+                );
+              } catch {
+                return undefined;
+              }
+            },
+            readBinaryUri: async uri => {
+              try {
+                return await vscode.workspace.fs.readFile(vscode.Uri.parse(uri, true));
+              } catch {
+                return undefined;
+              }
+            },
+            listDirectoryUris: async uri => {
+              try {
+                const root = vscode.Uri.parse(uri, true);
+                return (await vscode.workspace.fs.readDirectory(root))
+                  .filter(([, type]) => (type & vscode.FileType.File) !== 0)
+                  .map(([name]) => vscode.Uri.joinPath(root, name).toString());
+              } catch {
+                return undefined;
+              }
+            }
+          }
+        );
+        return generated;
+      })
+      .catch(error => {
+        generatedLoad = undefined;
+        throw error;
+      });
+  }
+
+  function getNavigationBridgeModule(): Promise<typeof import("./rsglResourceNavigationBridge.js")> {
+    if (subsystemDisposed) {
+      return Promise.reject(new Error("The integrated RSGL subsystem has been disposed."));
+    }
+    return navigationBridgeLoad ??= import("./rsglResourceNavigationBridge.js")
+      .then(module => {
+        if (subsystemDisposed) {
+          throw new Error("The integrated RSGL subsystem was disposed while its navigation bridge was loading.");
+        }
+        return module;
+      })
+      .catch(error => {
+        navigationBridgeLoad = undefined;
+        throw error;
+      });
+  }
+
+  function shutdownSubsystem(): Promise<void> {
+    if (subsystemShutdown) {
+      return subsystemShutdown;
+    }
+    subsystemDisposed = true;
+    const generatedShutdown = generatedLoad
+      ? generatedLoad.then(generated => generated.shutdown(), () => undefined)
+      : Promise.resolve();
+    subsystemShutdown = Promise.all([generatedShutdown, controller.dispose()]).then(() => undefined);
+    return subsystemShutdown;
   }
 }
 

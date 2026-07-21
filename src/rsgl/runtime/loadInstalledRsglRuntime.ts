@@ -1,5 +1,4 @@
 import * as path from "node:path";
-import { pathToFileURL } from "node:url";
 import type * as vscode from "vscode";
 import type { RsglRuntimeInstance, RsglRuntimeLoader } from "./types";
 
@@ -64,6 +63,7 @@ export function createInstalledRsglRuntimeLoader(
   const stdlibRoot = extensionContext.asAbsolutePath(path.join("bundle", "rsgl", "stdlib"));
 
   return async request => {
+    const { pathToFileURL } = await import("node:url");
     const loaded = await importer(pathToFileURL(runtimePath).href);
     const module = normalizeRuntimeModule(loaded);
     return module.createRsglRuntime({

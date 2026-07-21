@@ -68,6 +68,19 @@ describe("integrated RSGL extension surface", () => {
     assert.ok(registration.includes("onMaterializationInvalidation:"));
     assert.ok(registration.includes("resolveMaterializationProject,"));
     assert.ok(registration.includes("resolveResourceNavigation:"));
+    assert.ok(registration.includes('import("./rsglGeneratedContributionBridge.js")'));
+    assert.ok(registration.includes('import("./rsglResourceNavigationBridge.js")'));
+    assert.ok(registration.includes("if (subsystemDisposed)"));
+    assert.ok(registration.includes("disposed while its navigation bridge was loading"));
+    assert.match(registration, /try\s*{\s*const generated = await getGeneratedBridge\(\)/);
+    assert.strictEqual(
+      registration.includes('from "./rsglGeneratedContributionBridge"'),
+      false
+    );
+    assert.strictEqual(
+      registration.includes('from "./rsglResourceNavigationBridge"'),
+      false
+    );
     assert.strictEqual(registration.includes('from "./host/'), false);
     assert.ok(loader.includes('path.join("bundle", "rsgl", "server.js")'));
     assert.ok(loader.includes('path.join("bundle", "rsgl", "worker.js")'));

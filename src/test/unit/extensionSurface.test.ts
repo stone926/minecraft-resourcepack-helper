@@ -41,10 +41,11 @@ describe("extension surface", () => {
     assert.ok(source.includes("new ResourceUniverseService"));
     assert.ok(source.includes("new PhysicalAssetContributionProvider"));
     assert.ok(source.includes("new ResourceUniverseNavigationFacade"));
-    assert.ok(source.includes('"**/rsgl.config.json"'));
-    assert.ok(source.includes('"**/pack.mcmeta"'));
+    assert.ok(source.includes("new LazyVscodeArchiveResources"));
+    assert.ok(source.includes('"**/{rsgl.config.json,pack.mcmeta}"'));
     assert.strictEqual(source.includes("findFiles("), false);
     assert.strictEqual(source.includes("scanProject("), false);
+    assert.strictEqual(source.includes("new ArchiveResourceStore"), false);
   });
 
   it("defers initial diagnostics and preserves async refresh disposal", () => {

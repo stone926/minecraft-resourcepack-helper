@@ -408,10 +408,11 @@ export class ResourceUniverseNavigationFacade {
       languageId: document.languageId
     };
     const providerIds = this.universe.getDocumentProviderIds(descriptor);
-    if (providerIds.length === 0) {
+    const generatedDocument = isGeneratedResourceDocument(document);
+    if (providerIds.length === 0 && !generatedDocument) {
       return { applicable: false, projections: [], coverage: "authoritative" };
     }
-    const includeGenerated = providerIds.includes("rsgl");
+    const includeGenerated = generatedDocument || providerIds.includes("rsgl");
     const ensured = await this.ensureProjectForUri(document.uri, { includeGenerated });
     if (!ensured.context) {
       return { applicable: true, projections: [], coverage: ensured.coverage };
@@ -652,16 +653,36 @@ export class ResourceUniverseNavigationFacade {
     projectId: string,
     signal?: AbortSignal
   ): Promise<UnifiedResourceCoverage> {
+    if (signal?.aborted) {
+      return visibleCoverage(this.universe.index.getCoverage("rsgl", projectId));
+    }
+    let requestedLazyRegistration = false;
+    if (!this.universe.registry.get("rsgl") && this.generatedProjectRefresher) {
+      requestedLazyRegistration = true;
+      try {
+        await this.generatedProjectRefresher(projectId, signal);
+      } catch (error) {
+        if (!isAbortError(error) && !signal?.aborted) {
+          this.universe.invalidateProviderProject(
+            "rsgl",
+            projectId,
+            this.universe.registry.get("rsgl") ? "lspFailed" : "runtimeLoadFailed"
+          );
+        }
+      }
+    }
     if (!this.universe.registry.get("rsgl")) {
       return "unavailable";
     }
     const current = this.universe.index.getCoverage("rsgl", projectId);
     const shouldRefresh = shouldRequestGeneratedSnapshot(current);
-    if (shouldRefresh && this.generatedProjectRefresher) {
+    if (shouldRefresh && !requestedLazyRegistration && this.generatedProjectRefresher) {
       try {
         await this.generatedProjectRefresher(projectId, signal);
-      } catch {
-        this.universe.invalidateProviderProject("rsgl", projectId, "lspFailed");
+      } catch (error) {
+        if (!isAbortError(error) && !signal?.aborted) {
+          this.universe.invalidateProviderProject("rsgl", projectId, "lspFailed");
+        }
       }
     }
     return visibleCoverage(this.universe.index.getCoverage("rsgl", projectId));
@@ -693,8 +714,7 @@ export class ResourceUniverseNavigationFacade {
       ?? (projectId === undefined ? undefined : this.projects.getRsglApplicability(projectId));
     const generatedApplicable = includeGenerated
       && applicability !== "none";
-    return ["physical", ...(generatedApplicable ? ["rsgl"] : [])]
-      .filter(providerId => this.universe.registry.get(providerId) !== undefined);
+    return ["physical", ...(generatedApplicable ? ["rsgl"] : [])];
   }
 
   private tryResolveLegacyReference(
@@ -756,6 +776,16 @@ export class ResourceUniverseNavigationFacade {
       ?? producer?.physicalOrigins[0]?.uri;
     return uri ? vscode.Uri.parse(uri, true) : null;
   }
+}
+
+function isGeneratedResourceDocument(document: UriDocument): boolean {
+  return document.languageId === "rsgl"
+    || document.uri.path.toLowerCase().endsWith(".rsgl")
+    || document.fileName.toLowerCase().endsWith(".rsgl");
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function resolutionContext(

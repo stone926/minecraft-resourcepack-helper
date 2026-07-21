@@ -4,16 +4,18 @@ import {
   type ResourceLayerDescriptor
 } from "../../../packages/resource-project/src";
 import {
-  ArchiveResourceStore,
-  ArchiveResourceStoreError,
   ResourceNavigationService,
   ResourceUniverseIndex,
+  createPhysicalAssetSnapshot
+} from "../../resourceUniverse";
+import {
+  ArchiveResourceStore,
+  ArchiveResourceStoreError,
   ZipArchive,
   ZipArchiveError,
-  createPhysicalAssetSnapshot,
   type ArchiveResourceSourceHost,
   type ArchiveResourceSourceStat
-} from "../../resourceUniverse";
+} from "../../resourceUniverse/virtualFs";
 import { sharedConfigurationFromSettings } from "../../resourceProject";
 import { createZipFixture } from "./helpers/zipFixture";
 
