@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -19,7 +19,9 @@ import {
   activationProbeAdapters,
   activationProbeReportSchemaVersion,
   activationProbeSampleSchemaVersion,
+  extensionHostProcessInstanceKey,
   extensionHostRunnerProtocol,
+  recomputeExtensionHostEventFacts,
   validateActivationProbeSample
 } from "./activation-probe/schema.mjs";
 
@@ -149,25 +151,46 @@ export function parseActivationProbeArguments(args) {
 
 export function runJsonOnlyActivationProbe(options) {
   validateProbeInputs(options);
+  const artifactPath = options.adapter === "node-bundle" ? options.bundlePath : options.artifactPath;
+  const artifactDetails = describeArtifact(artifactPath);
   const ownedWorkspaceRoot = options.workspacePath ? undefined : createJsonOnlyWorkspace();
   const workspaceRoot = options.workspacePath ?? ownedWorkspaceRoot;
   const sampleRoot = mkdtempSync(path.join(os.tmpdir(), "mcres-activation-samples-"));
+  const probeRunId = createChallenge();
   try {
     assertJsonOnlyWorkspace(workspaceRoot);
     const samples = [];
     for (let iteration = 0; iteration < options.iterations; iteration += 1) {
       const sampleFile = path.join(sampleRoot, `sample-${iteration}.json`);
+      const sampleId = createChallenge();
       try {
         const sample = options.adapter === "node-bundle"
-          ? runNodeBundleSample(options, workspaceRoot, iteration, sampleFile)
-          : runExtensionHostSample(options, workspaceRoot, iteration, sampleFile);
+          ? runNodeBundleSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifactDetails)
+          : runExtensionHostSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifactDetails);
         samples.push(validateActivationProbeSample(sample, options.adapter));
       } catch (error) {
-        samples.push(createRunnerFailureSample(options.adapter, iteration, error));
+        samples.push(createRunnerFailureSample(
+          options.adapter,
+          iteration,
+          probeRunId,
+          sampleId,
+          artifactDetails,
+          error
+        ));
       }
     }
 
-    const report = createActivationProbeReport(options, workspaceRoot, samples);
+    const finalArtifactDetails = describeArtifact(artifactPath);
+    if (JSON.stringify(finalArtifactDetails) !== JSON.stringify(artifactDetails)) {
+      throw new Error("Activation probe artifact changed while samples were running.");
+    }
+    const report = createActivationProbeReport(
+      options,
+      workspaceRoot,
+      probeRunId,
+      artifactDetails,
+      samples
+    );
     mkdirSync(path.dirname(options.outputPath), { recursive: true });
     writeFileSync(options.outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     return report;
@@ -179,7 +202,7 @@ export function runJsonOnlyActivationProbe(options) {
   }
 }
 
-function runNodeBundleSample(options, workspaceRoot, iteration, sampleFile) {
+function runNodeBundleSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifact) {
   const result = spawnSync(process.execPath, [
     "--expose-gc",
     nodeBundleSampleRunner,
@@ -194,17 +217,31 @@ function runNodeBundleSample(options, workspaceRoot, iteration, sampleFile) {
     "--settle-ms",
     String(options.settleMilliseconds),
     "--sample-out",
-    sampleFile
+    sampleFile,
+    "--probe-run-id",
+    probeRunId,
+    "--sample-id",
+    sampleId,
+    "--artifact-sha256",
+    artifact.sha256,
+    "--artifact-bytes",
+    String(artifact.bytes)
   ], {
     cwd: repositoryRoot,
     encoding: "utf8",
     windowsHide: true,
     timeout: 30_000
   });
-  return readRunnerSample(result, sampleFile, "Node bundle sample runner");
+  return readRunnerSample(result, sampleFile, "Node bundle sample runner", {
+    adapter: "node-bundle",
+    iteration,
+    probeRunId,
+    sampleId,
+    artifact
+  });
 }
 
-function runExtensionHostSample(options, workspaceRoot, iteration, sampleFile) {
+function runExtensionHostSample(options, workspaceRoot, iteration, sampleFile, probeRunId, sampleId, artifact) {
   const result = spawnSync(process.execPath, [
     options.runnerPath,
     "--artifact",
@@ -216,40 +253,84 @@ function runExtensionHostSample(options, workspaceRoot, iteration, sampleFile) {
     "--settle-ms",
     String(options.settleMilliseconds),
     "--sample-out",
-    sampleFile
+    sampleFile,
+    "--probe-run-id",
+    probeRunId,
+    "--sample-id",
+    sampleId,
+    "--artifact-sha256",
+    artifact.sha256,
+    "--artifact-bytes",
+    String(artifact.bytes)
   ], {
     cwd: repositoryRoot,
     encoding: "utf8",
     windowsHide: true,
     timeout: 120_000
   });
-  return readRunnerSample(result, sampleFile, "Extension Host sample runner");
+  return readRunnerSample(result, sampleFile, "Extension Host sample runner", {
+    adapter: "extension-host",
+    iteration,
+    probeRunId,
+    sampleId,
+    artifact
+  });
 }
 
-function readRunnerSample(result, sampleFile, label) {
-  if (existsSync(sampleFile)) {
-    try {
-      return JSON.parse(readFileSync(sampleFile, "utf8"));
-    } catch (error) {
-      throw new Error(`${label} wrote invalid sample JSON.`, { cause: error });
-    }
-  }
+function readRunnerSample(result, sampleFile, label, expected) {
   const detail = [result.error?.message, result.stderr, result.stdout]
     .filter(Boolean)
     .join("\n")
     .slice(-4_000);
+  if (existsSync(sampleFile)) {
+    try {
+      const sample = validateActivationProbeSample(
+        JSON.parse(readFileSync(sampleFile, "utf8")),
+        expected.adapter
+      );
+      if (sample.iteration !== expected.iteration
+        || sample.probeRunId !== expected.probeRunId
+        || sample.sampleId !== expected.sampleId
+        || sample.artifact.bytes !== expected.artifact.bytes
+        || sample.artifact.sha256 !== expected.artifact.sha256) {
+        throw new Error(`${label} sample did not echo its iteration, challenges, and artifact identity.`);
+      }
+      if (result.error) {
+        throw new Error(`${label} failed before its exit status could be trusted.`, {
+          cause: result.error
+        });
+      }
+      const exitMatches = sample.status === "ok"
+        ? result.status === 0
+        : Number.isSafeInteger(result.status) && result.status !== 0;
+      if (!exitMatches) {
+        throw new Error(
+          `${label} exit status ${String(result.status)} is inconsistent with sample status '${sample.status}'.`
+        );
+      }
+      return sample;
+    } catch (error) {
+      throw new Error(`${label} wrote an invalid or inconsistent sample: ${errorMessage(error)}.${detail ? `\n${detail}` : ""}`, {
+        cause: error
+      });
+    }
+  }
   throw new Error(`${label} did not write ${sampleFile}.${detail ? `\n${detail}` : ""}`);
 }
 
-function createActivationProbeReport(options, workspaceRoot, samples) {
+function createActivationProbeReport(options, workspaceRoot, probeRunId, artifactDetails, samples) {
   const successful = samples.filter(sample => sample.status === "ok");
   const hardConditions = summarizeHardConditions(samples);
   const scope = createMeasurementScope(options);
   const artifactPath = options.adapter === "node-bundle" ? options.bundlePath : options.artifactPath;
-  const artifactDetails = describeArtifact(artifactPath);
+  const processIdentity = options.adapter === "extension-host"
+    ? summarizeExtensionHostProcessIdentity(successful)
+    : null;
+  const sampleIds = new Set(samples.map(sample => sample.sampleId));
   return Object.freeze({
     schemaVersion: activationProbeReportSchemaVersion,
     measurement: "json-only-activation",
+    probeRunId,
     generatedAt: new Date().toISOString(),
     repositoryCommit: readRepositoryCommit(),
     scope,
@@ -275,6 +356,10 @@ function createActivationProbeReport(options, workspaceRoot, samples) {
     summary: {
       successfulSamples: successful.length,
       failedSamples: samples.length - successful.length,
+      distinctPidCount: processIdentity?.distinctPidCount ?? null,
+      distinctProcessInstanceCount: processIdentity?.distinctProcessInstanceCount ?? null,
+      distinctSessionCount: processIdentity?.distinctSessionCount ?? null,
+      pidReuseCount: processIdentity?.pidReuseCount ?? null,
       activationMilliseconds: distribution(successful.map(sample => sample.activationMilliseconds)),
       steadyRssBytes: distribution(successful.map(sample => sample.steadyRssBytes)),
       rssDeltaBytes: distribution(successful.map(sample => sample.rssDeltaBytes)),
@@ -283,7 +368,12 @@ function createActivationProbeReport(options, workspaceRoot, samples) {
       watcherRegistrations: distribution(successful.map(sample => sample.watcherRegistrations.length))
     },
     hardConditions,
-    valid: successful.length === samples.length && hardConditions.passed,
+    valid: successful.length === samples.length
+      && sampleIds.size === samples.length
+      && samples.every(sample => sample.probeRunId === probeRunId)
+      && (processIdentity === null
+        || processIdentity.distinctProcessInstanceCount === successful.length)
+      && hardConditions.passed,
     samples
   });
 }
@@ -323,21 +413,26 @@ function createMeasurementScope(options) {
 }
 
 function summarizeHardConditions(samples) {
-  const rsglModuleLoads = sum(samples, sample => sample.moduleLoads.filter(event => event.rsgl).length);
-  const rsglProcessSpawnAttempts = sum(samples, sample => sample.processSpawns.filter(event => event.rsgl).length);
-  const rsglWorkerSpawnAttempts = sum(samples, sample => sample.workerSpawns.filter(event => event.rsgl).length);
-  const extensionOwnedNonRsglProcessSpawns = sum(samples, sample =>
-    sample.processSpawns.filter(event => event.extensionOwned && !event.rsgl).length);
-  const hostProcessSpawnNoise = sum(samples, sample =>
-    sample.processSpawns.filter(event => !event.extensionOwned && !event.rsgl).length);
-  const rsglFilesystemWalks = sum(samples, sample => sample.filesystemWalks.filter(event => event.rsgl).length);
-  const rsglWatcherRegistrations = sum(samples, sample => sample.watcherRegistrations.filter(event => event.rsgl).length);
-  const instrumentationWarnings = sum(samples, sample => sample.instrumentationWarnings.length);
+  const facts = samples.map(sample => sample.adapter === "extension-host"
+    ? recomputeExtensionHostEventFacts(sample)
+    : recomputeNodeBundleEventFacts(sample));
+  const rsglModuleLoads = sum(facts, value => value.rsglModuleLoads);
+  const rsglProcessSpawnAttempts = sum(facts, value => value.rsglProcessSpawnAttempts);
+  const rsglWorkerSpawnAttempts = sum(facts, value => value.rsglWorkerSpawnAttempts);
+  const extensionOwnedNonRsglProcessSpawns = sum(facts, value => value.extensionOwnedNonRsglProcessSpawns);
+  const hostProcessSpawnNoise = sum(facts, value => value.hostProcessSpawnNoise);
+  const rsglFilesystemWalks = sum(facts, value => value.rsglFilesystemWalks);
+  const mainWatcherRegistrations = sum(facts, value => value.mainWatcherRegistrations);
+  const samplesMissingMainWatcherPositiveControl = facts.filter((value, index) =>
+    samples[index].adapter === "extension-host" && !value.mainWatcherPositiveControl).length;
+  const rsglWatcherRegistrations = sum(facts, value => value.rsglWatcherRegistrations);
+  const instrumentationWarnings = sum(facts, value => value.instrumentationWarnings);
   const conditions = {
     rsglModuleLoadsZero: rsglModuleLoads === 0,
     rsglProcessSpawnAttemptsZero: rsglProcessSpawnAttempts === 0,
     rsglWorkerSpawnAttemptsZero: rsglWorkerSpawnAttempts === 0,
     rsglFilesystemWalksZero: rsglFilesystemWalks === 0,
+    mainWatcherRegistrationsPositive: samplesMissingMainWatcherPositiveControl === 0,
     rsglWatcherRegistrationsZero: rsglWatcherRegistrations === 0,
     instrumentationWarningsZero: instrumentationWarnings === 0
   };
@@ -350,10 +445,27 @@ function summarizeHardConditions(samples) {
       extensionOwnedNonRsglProcessSpawns,
       hostProcessSpawnNoise,
       rsglFilesystemWalks,
+      mainWatcherRegistrations,
+      samplesMissingMainWatcherPositiveControl,
       rsglWatcherRegistrations,
       instrumentationWarnings
     },
     passed: Object.values(conditions).every(Boolean)
+  };
+}
+
+function recomputeNodeBundleEventFacts(sample) {
+  return {
+    rsglModuleLoads: sample.moduleLoads.filter(event => event.rsgl).length,
+    rsglProcessSpawnAttempts: sample.processSpawns.filter(event => event.rsgl).length,
+    rsglWorkerSpawnAttempts: sample.workerSpawns.filter(event => event.rsgl).length,
+    extensionOwnedNonRsglProcessSpawns: 0,
+    hostProcessSpawnNoise: sample.processSpawns.filter(event => !event.rsgl).length,
+    rsglFilesystemWalks: sample.filesystemWalks.filter(event => event.rsgl).length,
+    mainWatcherRegistrations: 0,
+    mainWatcherPositiveControl: true,
+    rsglWatcherRegistrations: sample.watcherRegistrations.filter(event => event.rsgl).length,
+    instrumentationWarnings: sample.instrumentationWarnings.length
   };
 }
 
@@ -370,29 +482,46 @@ function summarizeExtensionHostEnvironment(samples) {
   const first = environments[0];
   return {
     ...first,
-    consistent: environments.every(value => JSON.stringify(value) === JSON.stringify(first)),
-    distinctProcessCount: new Set(samples.map(sample => sample.extensionHost.pid)).size
+    consistent: environments.every(value => JSON.stringify(value) === JSON.stringify(first))
   };
 }
 
-function createRunnerFailureSample(adapter, iteration, error) {
+function summarizeExtensionHostProcessIdentity(samples) {
+  const distinctPidCount = new Set(samples.map(sample => sample.extensionHost.pid)).size;
+  const distinctProcessInstanceCount = new Set(
+    samples.map(sample => extensionHostProcessInstanceKey(sample.extensionHost))
+  ).size;
+  return {
+    distinctPidCount,
+    distinctProcessInstanceCount,
+    distinctSessionCount: new Set(samples.map(sample => sample.extensionHost.sessionId)).size,
+    pidReuseCount: distinctProcessInstanceCount - distinctPidCount
+  };
+}
+
+function createRunnerFailureSample(adapter, iteration, probeRunId, sampleId, artifact, error) {
   return {
     schemaVersion: activationProbeSampleSchemaVersion,
     adapter,
+    probeRunId,
+    sampleId,
+    artifact,
     iteration,
     status: "error",
     error: { name: "ActivationProbeRunnerError", message: errorMessage(error) },
     extensionHost: adapter === "extension-host" ? {
       pid: process.pid,
+      timeOrigin: performance.timeOrigin,
+      sessionId: `runner-failure-${process.pid}`,
       node: process.version,
       platform: process.platform,
       arch: process.arch,
       vscodeVersion: "runner-failure"
     } : undefined,
     activationMilliseconds: 0,
-    rssBeforeBytes: 0,
-    rssAfterActivationBytes: 0,
-    steadyRssBytes: 0,
+    rssBeforeBytes: 1,
+    rssAfterActivationBytes: 1,
+    steadyRssBytes: 1,
     rssDeltaBytes: 0,
     installedHooks: [],
     moduleLoads: [],
@@ -402,6 +531,10 @@ function createRunnerFailureSample(adapter, iteration, error) {
     watcherRegistrations: [],
     instrumentationWarnings: [{ hook: "runner", message: errorMessage(error) }]
   };
+}
+
+function createChallenge() {
+  return randomBytes(16).toString("hex");
 }
 
 function validateProbeInputs(options) {
@@ -445,11 +578,36 @@ function assertJsonOnlyWorkspace(workspaceRoot) {
 
 function describeArtifact(artifactPath) {
   const details = statSync(artifactPath);
-  if (!details.isFile()) {
-    return { bytes: undefined, sha256: undefined };
+  if (details.isFile()) {
+    const bytes = readFileSync(artifactPath);
+    return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
   }
-  const bytes = readFileSync(artifactPath);
-  return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  if (!details.isDirectory()) {
+    throw new Error(`Activation probe artifact must be a file or directory: ${artifactPath}`);
+  }
+  const hash = createHash("sha256");
+  let bytes = 0;
+  const visit = directory => {
+    const entries = readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      const relative = path.relative(artifactPath, entryPath).replaceAll("\\", "/");
+      if (entry.isDirectory()) {
+        hash.update(`directory\0${relative}\0`);
+        visit(entryPath);
+      } else if (entry.isFile()) {
+        const contents = readFileSync(entryPath);
+        bytes += contents.length;
+        hash.update(`file\0${relative}\0${contents.length}\0`);
+        hash.update(contents);
+      } else {
+        throw new Error(`Activation probe artifact contains an unsupported entry: ${entryPath}`);
+      }
+    }
+  };
+  visit(artifactPath);
+  return { bytes, sha256: hash.digest("hex") };
 }
 
 function createReproductionCommand(options) {

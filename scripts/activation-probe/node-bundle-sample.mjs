@@ -9,7 +9,10 @@ import {
   createActivationTelemetry,
   installNodeActivationInstrumentation
 } from "./instrumentation.mjs";
-import { activationProbeSampleSchemaVersion } from "./schema.mjs";
+import {
+  activationProbeSampleSchemaVersion,
+  isActivationProbeIdentifier
+} from "./schema.mjs";
 import {
   createExtensionContext,
   createVscodeStub,
@@ -66,6 +69,9 @@ export async function runNodeBundleActivationSample(options) {
   return Object.freeze({
     schemaVersion: activationProbeSampleSchemaVersion,
     adapter: "node-bundle",
+    probeRunId: options.probeRunId,
+    sampleId: options.sampleId,
+    artifact: options.artifact,
     iteration: options.iteration,
     status,
     error,
@@ -92,21 +98,57 @@ function parseArguments(args) {
     }
     values.set(flag, value);
   }
-  for (const required of ["--bundle", "--extension-root", "--workspace", "--iteration", "--settle-ms", "--sample-out"]) {
+  const requiredArguments = [
+    "--bundle",
+    "--extension-root",
+    "--workspace",
+    "--iteration",
+    "--settle-ms",
+    "--sample-out",
+    "--probe-run-id",
+    "--sample-id",
+    "--artifact-sha256",
+    "--artifact-bytes"
+  ];
+  for (const required of requiredArguments) {
     if (!values.has(required)) {
       throw new Error(`Missing required node bundle activation sample argument: ${required}`);
     }
   }
+  for (const flag of values.keys()) {
+    if (!requiredArguments.includes(flag)) {
+      throw new Error(`Unknown node bundle activation sample argument: ${flag}`);
+    }
+  }
   const iteration = parseInteger(values.get("--iteration"), "--iteration", 0, 10_000);
   const settleMilliseconds = parseInteger(values.get("--settle-ms"), "--settle-ms", 0, 60_000);
+  const probeRunId = values.get("--probe-run-id");
+  const sampleId = values.get("--sample-id");
+  if (!isActivationProbeIdentifier(probeRunId)
+    || !isActivationProbeIdentifier(sampleId)) {
+    throw new Error("--probe-run-id and --sample-id must be 32-character lowercase hexadecimal challenges.");
+  }
   return {
     bundlePath: values.get("--bundle"),
     extensionRoot: values.get("--extension-root"),
     workspaceRoot: values.get("--workspace"),
+    probeRunId,
+    sampleId,
+    artifact: {
+      sha256: parseSha256(values.get("--artifact-sha256"), "--artifact-sha256"),
+      bytes: parseInteger(values.get("--artifact-bytes"), "--artifact-bytes", 1, Number.MAX_SAFE_INTEGER)
+    },
     iteration,
     settleMilliseconds,
     sampleOutput: path.resolve(values.get("--sample-out"))
   };
+}
+
+function parseSha256(value, label) {
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    throw new Error(`${label} must be a lowercase SHA-256 digest.`);
+  }
+  return value;
 }
 
 function parseInteger(value, label, minimum, maximum) {

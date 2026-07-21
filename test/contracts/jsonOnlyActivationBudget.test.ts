@@ -135,13 +135,50 @@ describe("JSON-only real Extension Host release budget", () => {
       () => verifier.compareJsonOnlyActivationReports(baseline, tooFew, budget),
       /at least 20/
     );
-    const reusedHost = structuredClone(candidate);
-    for (const sample of reusedHost.samples) {
+    const reusedPid = structuredClone(candidate);
+    for (const sample of reusedPid.samples) {
       sample.extensionHost.pid = 1;
     }
+    reusedPid.summary.distinctPidCount = 1;
+    reusedPid.summary.pidReuseCount = 19;
+    assert.strictEqual(
+      verifier.compareJsonOnlyActivationReports(baseline, reusedPid, budget).passed,
+      true,
+      "PID reuse must be allowed when the process-instance identities remain distinct"
+    );
+    const reusedInstance = structuredClone(candidate);
+    reusedInstance.samples[1].extensionHost = structuredClone(
+      reusedInstance.samples[0].extensionHost
+    );
     assert.throws(
-      () => verifier.compareJsonOnlyActivationReports(baseline, reusedHost, budget),
-      /distinct fresh Extension Host/
+      () => verifier.compareJsonOnlyActivationReports(baseline, reusedInstance, budget),
+      /distinct fresh Extension Host process instance/
+    );
+    const reusedSession = structuredClone(candidate);
+    reusedSession.samples[1].extensionHost.sessionId = reusedSession.samples[0].extensionHost.sessionId;
+    reusedSession.summary.distinctSessionCount = 19;
+    assert.strictEqual(
+      verifier.compareJsonOnlyActivationReports(baseline, reusedSession, budget).passed,
+      true,
+      "VS Code test runtimes may reuse a placeholder sessionId; process freshness uses pid + timeOrigin"
+    );
+    const forgedIdentitySummary = structuredClone(candidate);
+    forgedIdentitySummary.summary.distinctPidCount -= 1;
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, forgedIdentitySummary, budget),
+      /does not match its raw process identities/
+    );
+    const staleChallenge = structuredClone(candidate);
+    staleChallenge.samples[0].probeRunId = "0".repeat(32);
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, staleChallenge, budget),
+      /echo the report probeRunId challenge/
+    );
+    const reboundArtifact = structuredClone(candidate);
+    reboundArtifact.samples[0].artifact.sha256 = "a".repeat(64);
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, reboundArtifact, budget),
+      /artifact identity does not match/
     );
     const forgedSummary = structuredClone(candidate);
     forgedSummary.summary.activationMilliseconds.p95 += 1;
@@ -160,6 +197,36 @@ describe("JSON-only real Extension Host release budget", () => {
     assert.throws(
       () => verifier.compareJsonOnlyActivationReports(baseline, violated, budget),
       /hard conditions/
+    );
+    const missingWatcherPositiveControl = structuredClone(candidate);
+    for (const sample of missingWatcherPositiveControl.samples) {
+      sample.watcherRegistrations = [];
+    }
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, missingWatcherPositiveControl, budget),
+      /recomputed.*watcher hard conditions/
+    );
+    const rsglWatcher = structuredClone(candidate);
+    rsglWatcher.samples[0].watcherRegistrations.push({
+      api: "vscode.workspace.createFileSystemWatcher",
+      target: "**/*.rsgl",
+      extensionOwned: true,
+      rsgl: true
+    });
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, rsglWatcher, budget),
+      /recomputed.*watcher hard conditions/
+    );
+    const forgedRsglWatcher = structuredClone(candidate);
+    forgedRsglWatcher.samples[0].watcherRegistrations[0] = {
+      api: "vscode.workspace.createFileSystemWatcher",
+      target: "**/*.rsgl",
+      extensionOwned: true,
+      rsgl: false
+    };
+    assert.throws(
+      () => verifier.compareJsonOnlyActivationReports(baseline, forgedRsglWatcher, budget),
+      /inconsistent rsgl classification/
     );
     const directoryCandidate = structuredClone(candidate);
     directoryCandidate.scope.isCombinedVsix = false;
@@ -271,13 +338,21 @@ function report(options: {
   artifactKind?: "vsix" | "combined-vsix";
 }) {
   const artifactKind = options.artifactKind ?? "vsix";
+  const probeRunId = (artifactKind === "combined-vsix" ? "c" : "d").repeat(32);
+  const artifactSha256 = (artifactKind === "combined-vsix" ? "b" : "a").repeat(64);
+  const identityPrefix = artifactKind === "combined-vsix" ? "c" : "d";
   const samples = Array.from({ length: 20 }, (_, iteration) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     adapter: "extension-host",
+    probeRunId,
+    sampleId: `${identityPrefix}${iteration.toString(16).padStart(31, "0")}`,
+    artifact: { bytes: 1024, sha256: artifactSha256 },
     iteration,
     status: "ok",
     extensionHost: {
       pid: 1000 + iteration,
+      timeOrigin: 1_700_000_000_000 + (identityPrefix === "c" ? 100 : 0) + iteration,
+      sessionId: `contract-session-${identityPrefix}-${iteration}`,
       node: "v22.0.0",
       platform: "win32",
       arch: "x64",
@@ -306,22 +381,29 @@ function report(options: {
     processSpawns: [],
     workerSpawns: [],
     filesystemWalks: [],
-    watcherRegistrations: [],
+    watcherRegistrations: [{
+      api: "vscode.workspace.createFileSystemWatcher",
+      target: "**/pack.mcmeta",
+      extensionOwned: true,
+      rsgl: false
+    }],
     instrumentationWarnings: []
   }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     measurement: "json-only-activation",
+    probeRunId,
     scope: {
       adapter: "extension-host",
       isExtensionHost: true,
       isCombinedVsix: artifactKind === "combined-vsix",
-      artifactKind
+      artifactKind,
+      runnerProtocol: { version: 2 }
     },
     input: {
       artifact: `${artifactKind}.vsix`,
       artifactBytes: 1024,
-      artifactSha256: (artifactKind === "combined-vsix" ? "b" : "a").repeat(64),
+      artifactSha256,
       iterations: 20,
       settleMilliseconds: 1000
     },
@@ -336,13 +418,16 @@ function report(options: {
         platform: "win32",
         arch: "x64",
         vscodeVersion: "1.109.0",
-        consistent: true,
-        distinctProcessCount: 20
+        consistent: true
       }
     },
     summary: {
       successfulSamples: 20,
       failedSamples: 0,
+      distinctPidCount: 20,
+      distinctProcessInstanceCount: 20,
+      distinctSessionCount: 20,
+      pidReuseCount: 0,
       activationMilliseconds: { p95: options.activationP95 },
       steadyRssBytes: { p95: options.steadyRssP95 }
     },
@@ -351,6 +436,7 @@ function report(options: {
       rsglProcessSpawnAttemptsZero: true,
       rsglWorkerSpawnAttemptsZero: true,
       rsglFilesystemWalksZero: true,
+      mainWatcherRegistrationsPositive: true,
       rsglWatcherRegistrationsZero: true,
       instrumentationWarningsZero: true,
       counts: {
@@ -360,6 +446,8 @@ function report(options: {
         extensionOwnedNonRsglProcessSpawns: 0,
         hostProcessSpawnNoise: 0,
         rsglFilesystemWalks: 0,
+        mainWatcherRegistrations: 20,
+        samplesMissingMainWatcherPositiveControl: 0,
         rsglWatcherRegistrations: 0,
         instrumentationWarnings: 0
       },

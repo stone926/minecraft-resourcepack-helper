@@ -5,7 +5,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readBuildBudgetConfiguration } from "./build-budget-config.mjs";
-import { validateActivationProbeSample } from "./activation-probe/schema.mjs";
+import {
+  activationProbeReportSchemaVersion,
+  extensionHostProcessInstanceKey,
+  isActivationProbeIdentifier,
+  recomputeExtensionHostEventFacts,
+  validateActivationProbeSample
+} from "./activation-probe/schema.mjs";
 import { readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
@@ -88,6 +94,15 @@ export function compareJsonOnlyActivationReports(baseline, candidate, budget) {
   if (normalizedBaseline.artifactSha256 === normalizedCandidate.artifactSha256) {
     throw new Error("baseline and candidate must identify different VSIX artifacts.");
   }
+  if (normalizedBaseline.probeRunId === normalizedCandidate.probeRunId) {
+    throw new Error("baseline and candidate must come from distinct activation probe runs.");
+  }
+  assertDisjoint(normalizedBaseline.sampleIds, normalizedCandidate.sampleIds, "sample challenges");
+  assertDisjoint(
+    normalizedBaseline.processInstanceKeys,
+    normalizedCandidate.processInstanceKeys,
+    "Extension Host process instances"
+  );
   const gates = Object.freeze({
     activationP95WithinBudget:
       activationRegressionMilliseconds <= activationAllowanceMilliseconds,
@@ -136,12 +151,18 @@ export async function verifyJsonOnlyActivationBudget(options) {
 
 function validateActivationReport(report, label, budget, requireCombinedVsix) {
   if (!report || typeof report !== "object"
-    || report.schemaVersion !== 1
+    || report.schemaVersion !== activationProbeReportSchemaVersion
     || report.measurement !== "json-only-activation") {
     throw new Error(`${label} is not a supported JSON-only activation report.`);
   }
   if (report.scope?.adapter !== "extension-host" || report.scope?.isExtensionHost !== true) {
     throw new Error(`${label} must be measured in a real VS Code Extension Host.`);
+  }
+  if (report.scope?.runnerProtocol?.version !== 2) {
+    throw new Error(`${label} must use Extension Host runner protocol v2.`);
+  }
+  if (!isActivationProbeIdentifier(report.probeRunId)) {
+    throw new Error(`${label}.probeRunId must identify the activation probe run.`);
   }
   if (requireCombinedVsix && (report.scope?.isCombinedVsix !== true
     || report.scope?.artifactKind !== "combined-vsix")) {
@@ -180,8 +201,10 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
     report.samples,
     label,
     requestedIterations,
-    successfulSamples
+    successfulSamples,
+    report.probeRunId
   );
+  validateProcessIdentitySummary(report.summary, rawSamples, label);
   const activationP95Milliseconds = requireFiniteMetric(
     report.summary?.activationMilliseconds?.p95,
     `${label}.summary.activationMilliseconds.p95`
@@ -213,6 +236,11 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
     report.input?.artifactBytes,
     `${label}.input.artifactBytes`
   );
+  for (const sample of rawSamples) {
+    if (sample.artifact.sha256 !== artifactSha256 || sample.artifact.bytes !== artifactBytes) {
+      throw new Error(`${label} raw sample artifact identity does not match the report input.`);
+    }
+  }
   const extensionHostEnvironment = validateExtensionHostEnvironment(
     report.environment?.extensionHost,
     rawSamples,
@@ -224,6 +252,9 @@ function validateActivationReport(report, label, budget, requireCombinedVsix) {
     artifactBytes,
     artifactSha256,
     artifactKind: report.scope?.artifactKind ?? null,
+    probeRunId: report.probeRunId,
+    sampleIds: rawSamples.map(sample => sample.sampleId),
+    processInstanceKeys: rawSamples.map(sample => extensionHostProcessInstanceKey(sample.extensionHost)),
     successfulSamples,
     activationP95Milliseconds,
     steadyRssP95Bytes,
@@ -248,20 +279,25 @@ const requiredExtensionHostHooks = Object.freeze([
   "vscode.workspace.createFileSystemWatcher"
 ]);
 
-function validateRawSamples(samples, label, requestedIterations, successfulSamples) {
+function validateRawSamples(samples, label, requestedIterations, successfulSamples, probeRunId) {
   if (!Array.isArray(samples) || samples.length !== requestedIterations
     || successfulSamples !== requestedIterations) {
     throw new Error(`${label} must contain every requested successful raw sample.`);
   }
   const iterations = new Set();
-  const pids = new Set();
+  const sampleIds = new Set();
+  const processInstances = new Set();
   for (const sample of samples) {
     validateActivationProbeSample(sample, "extension-host");
     if (sample.status !== "ok") {
       throw new Error(`${label} contains a failed raw sample.`);
     }
+    if (sample.probeRunId !== probeRunId) {
+      throw new Error(`${label} raw samples must echo the report probeRunId challenge.`);
+    }
     iterations.add(sample.iteration);
-    pids.add(sample.extensionHost.pid);
+    sampleIds.add(sample.sampleId);
+    processInstances.add(extensionHostProcessInstanceKey(sample.extensionHost));
     const hooks = new Set(sample.installedHooks);
     const missingHooks = requiredExtensionHostHooks.filter(hook => !hooks.has(hook));
     if (missingHooks.length > 0) {
@@ -275,30 +311,55 @@ function validateRawSamples(samples, label, requestedIterations, successfulSampl
     || [...iterations].some(iteration => iteration >= requestedIterations)) {
     throw new Error(`${label} raw samples must cover each iteration exactly once.`);
   }
-  if (pids.size !== requestedIterations) {
-    throw new Error(`${label} must use a distinct fresh Extension Host process for every sample.`);
+  if (sampleIds.size !== requestedIterations) {
+    throw new Error(`${label} raw samples must have distinct per-sample challenges.`);
+  }
+  if (processInstances.size !== requestedIterations) {
+    throw new Error(`${label} must use a distinct fresh Extension Host process instance for every sample.`);
   }
   return samples;
 }
 
+function validateProcessIdentitySummary(summary, samples, label) {
+  const distinctPidCount = new Set(samples.map(sample => sample.extensionHost.pid)).size;
+  const distinctProcessInstanceCount = new Set(
+    samples.map(sample => extensionHostProcessInstanceKey(sample.extensionHost))
+  ).size;
+  const distinctSessionCount = new Set(samples.map(sample => sample.extensionHost.sessionId)).size;
+  const pidReuseCount = distinctProcessInstanceCount - distinctPidCount;
+  for (const [name, expected] of Object.entries({
+    distinctPidCount,
+    distinctProcessInstanceCount,
+    distinctSessionCount,
+    pidReuseCount
+  })) {
+    const actual = requireNonNegativeInteger(summary?.[name], `${label}.summary.${name}`);
+    if (actual !== expected) {
+      throw new Error(`${label}.summary.${name} does not match its raw process identities.`);
+    }
+  }
+}
+
 function validateHardConditions(hardConditions, samples, label) {
+  const facts = samples.map(recomputeExtensionHostEventFacts);
   const counts = {
-    rsglModuleLoads: sum(samples, sample => sample.moduleLoads.filter(event => event.rsgl).length),
-    rsglProcessSpawnAttempts: sum(samples, sample => sample.processSpawns.filter(event => event.rsgl).length),
-    rsglWorkerSpawnAttempts: sum(samples, sample => sample.workerSpawns.filter(event => event.rsgl).length),
-    extensionOwnedNonRsglProcessSpawns: sum(samples, sample =>
-      sample.processSpawns.filter(event => event.extensionOwned && !event.rsgl).length),
-    hostProcessSpawnNoise: sum(samples, sample =>
-      sample.processSpawns.filter(event => !event.extensionOwned && !event.rsgl).length),
-    rsglFilesystemWalks: sum(samples, sample => sample.filesystemWalks.filter(event => event.rsgl).length),
-    rsglWatcherRegistrations: sum(samples, sample => sample.watcherRegistrations.filter(event => event.rsgl).length),
-    instrumentationWarnings: sum(samples, sample => sample.instrumentationWarnings.length)
+    rsglModuleLoads: sum(facts, value => value.rsglModuleLoads),
+    rsglProcessSpawnAttempts: sum(facts, value => value.rsglProcessSpawnAttempts),
+    rsglWorkerSpawnAttempts: sum(facts, value => value.rsglWorkerSpawnAttempts),
+    extensionOwnedNonRsglProcessSpawns: sum(facts, value => value.extensionOwnedNonRsglProcessSpawns),
+    hostProcessSpawnNoise: sum(facts, value => value.hostProcessSpawnNoise),
+    rsglFilesystemWalks: sum(facts, value => value.rsglFilesystemWalks),
+    mainWatcherRegistrations: sum(facts, value => value.mainWatcherRegistrations),
+    samplesMissingMainWatcherPositiveControl: facts.filter(value => !value.mainWatcherPositiveControl).length,
+    rsglWatcherRegistrations: sum(facts, value => value.rsglWatcherRegistrations),
+    instrumentationWarnings: sum(facts, value => value.instrumentationWarnings)
   };
   const conditions = {
     rsglModuleLoadsZero: counts.rsglModuleLoads === 0,
     rsglProcessSpawnAttemptsZero: counts.rsglProcessSpawnAttempts === 0,
     rsglWorkerSpawnAttemptsZero: counts.rsglWorkerSpawnAttempts === 0,
     rsglFilesystemWalksZero: counts.rsglFilesystemWalks === 0,
+    mainWatcherRegistrationsPositive: counts.samplesMissingMainWatcherPositiveControl === 0,
     rsglWatcherRegistrationsZero: counts.rsglWatcherRegistrations === 0,
     instrumentationWarningsZero: counts.instrumentationWarnings === 0
   };
@@ -327,7 +388,6 @@ function validateExtensionHostEnvironment(environment, samples, label) {
     throw new Error(`${label} samples use inconsistent Extension Host runtimes.`);
   }
   if (!environment || environment.consistent !== true
-    || environment.distinctProcessCount !== samples.length
     || JSON.stringify({
       node: environment.node,
       platform: environment.platform,
@@ -410,6 +470,13 @@ function assertMetricMatches(actual, expected, label) {
 
 function sum(samples, selector) {
   return samples.reduce((total, sample) => total + selector(sample), 0);
+}
+
+function assertDisjoint(leftValues, rightValues, label) {
+  const left = new Set(leftValues);
+  if (rightValues.some(value => left.has(value))) {
+    throw new Error(`baseline and candidate must use disjoint ${label}.`);
+  }
 }
 
 function readJsonReport(fileName, label) {

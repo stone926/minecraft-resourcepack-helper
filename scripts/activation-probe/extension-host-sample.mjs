@@ -18,6 +18,10 @@ import {
   extractZipArchive,
   resolveCodeExecutable
 } from "../extension-host-harness.mjs";
+import {
+  isActivationProbeIdentifier,
+  validateActivationProbeSample
+} from "./schema.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -44,7 +48,17 @@ export function parseExtensionHostSampleArguments(args) {
       index += 1;
     }
   }
-  const required = ["--artifact", "--workspace", "--iteration", "--settle-ms", "--sample-out"];
+  const required = [
+    "--artifact",
+    "--workspace",
+    "--iteration",
+    "--settle-ms",
+    "--sample-out",
+    "--probe-run-id",
+    "--sample-id",
+    "--artifact-sha256",
+    "--artifact-bytes"
+  ];
   for (const flag of required) {
     if (!values.has(flag)) {
       throw new Error(`Missing required Extension Host sample argument: ${flag}.`);
@@ -55,9 +69,21 @@ export function parseExtensionHostSampleArguments(args) {
       throw new Error(`Unknown Extension Host sample argument: ${flag}.`);
     }
   }
+  const probeRunId = values.get("--probe-run-id");
+  const sampleId = values.get("--sample-id");
+  if (!isActivationProbeIdentifier(probeRunId)
+    || !isActivationProbeIdentifier(sampleId)) {
+    throw new Error("--probe-run-id and --sample-id must be 32-character lowercase hexadecimal challenges.");
+  }
   return {
     artifact: path.resolve(values.get("--artifact")),
     workspace: path.resolve(values.get("--workspace")),
+    probeRunId,
+    sampleId,
+    artifactIdentity: {
+      sha256: parseSha256(values.get("--artifact-sha256"), "--artifact-sha256"),
+      bytes: parseInteger(values.get("--artifact-bytes"), "--artifact-bytes", 1, Number.MAX_SAFE_INTEGER)
+    },
     iteration: parseInteger(values.get("--iteration"), "--iteration", 0, 10_000),
     settleMilliseconds: parseInteger(values.get("--settle-ms"), "--settle-ms", 0, 10_000),
     sampleOutput: path.resolve(values.get("--sample-out")),
@@ -96,6 +122,10 @@ export function runExtensionHostSample(options) {
         ...process.env,
         MCRES_ACTIVATION_ARTIFACT: options.artifact,
         MCRES_ACTIVATION_ITERATION: String(options.iteration),
+        MCRES_ACTIVATION_PROBE_RUN_ID: options.probeRunId,
+        MCRES_ACTIVATION_SAMPLE_ID: options.sampleId,
+        MCRES_ACTIVATION_ARTIFACT_SHA256: options.artifactIdentity.sha256,
+        MCRES_ACTIVATION_ARTIFACT_BYTES: String(options.artifactIdentity.bytes),
         MCRES_ACTIVATION_SAMPLE_OUT: options.sampleOutput,
         MCRES_ACTIVATION_SETTLE_MS: String(options.settleMilliseconds),
         MCRES_ACTIVATION_SOURCE_WORKSPACE: options.workspace,
@@ -103,20 +133,63 @@ export function runExtensionHostSample(options) {
         MCRES_ACTIVATION_EXTENSION_ROOT: extensionRoot
       }
     });
-    if (result.error || result.status !== 0) {
+    if (!existsSync(options.sampleOutput)) {
       throw new Error([
-        "Real Extension Host activation sample failed.",
+        "Real Extension Host activation sample exited without writing its sample JSON.",
         result.error?.message,
         result.stdout,
-        result.stderr,
-        existsSync(options.sampleOutput) ? readFileSync(options.sampleOutput, "utf8") : undefined
+        result.stderr
       ].filter(Boolean).join("\n"));
     }
-    if (!existsSync(options.sampleOutput)) {
-      throw new Error("Real Extension Host activation sample exited without writing its sample JSON.");
+    const sample = readExtensionHostSample(options.sampleOutput);
+    assertSampleIdentity(sample, options);
+    assertExitMatchesSample(result, sample, "VS Code Extension Host test process");
+    if (sample.status === "error") {
+      throw new Error([
+        "Real Extension Host activation sample reported an error.",
+        sample.error?.message,
+        result.stdout,
+        result.stderr
+      ].filter(Boolean).join("\n"));
     }
+    return sample;
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+function readExtensionHostSample(sampleOutput) {
+  try {
+    return validateActivationProbeSample(
+      JSON.parse(readFileSync(sampleOutput, "utf8")),
+      "extension-host"
+    );
+  } catch (error) {
+    throw new Error("Real Extension Host activation sample JSON is invalid.", { cause: error });
+  }
+}
+
+function assertSampleIdentity(sample, options) {
+  if (sample.probeRunId !== options.probeRunId
+    || sample.sampleId !== options.sampleId
+    || sample.iteration !== options.iteration
+    || sample.artifact.sha256 !== options.artifactIdentity.sha256
+    || sample.artifact.bytes !== options.artifactIdentity.bytes) {
+    throw new Error("Real Extension Host activation sample did not echo its challenges, iteration, and artifact identity.");
+  }
+}
+
+function assertExitMatchesSample(result, sample, label) {
+  if (result.error) {
+    throw new Error(`${label} failed before its exit status could be trusted.`, { cause: result.error });
+  }
+  const exitMatches = sample.status === "ok"
+    ? result.status === 0
+    : Number.isSafeInteger(result.status) && result.status !== 0;
+  if (!exitMatches) {
+    throw new Error(
+      `${label} exit status ${String(result.status)} is inconsistent with sample status '${sample.status}'.`
+    );
   }
 }
 
@@ -159,6 +232,13 @@ function parseInteger(value, label, minimum, maximum) {
     throw new Error(`${label} must be an integer from ${minimum} through ${maximum}.`);
   }
   return parsed;
+}
+
+function parseSha256(value, label) {
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    throw new Error(`${label} must be a lowercase SHA-256 digest.`);
+  }
+  return value;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptFile) {

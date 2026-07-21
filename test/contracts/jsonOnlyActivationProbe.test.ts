@@ -20,6 +20,9 @@ interface ExtensionHostSampleModule {
   parseExtensionHostSampleArguments(args: string[]): {
     artifact: string;
     workspace: string;
+    probeRunId: string;
+    sampleId: string;
+    artifactIdentity: { bytes: number; sha256: string };
     iteration: number;
     settleMilliseconds: number;
     sampleOutput: string;
@@ -29,6 +32,7 @@ interface ExtensionHostSampleModule {
 interface ProbeReport {
   schemaVersion: number;
   measurement: string;
+  probeRunId: string;
   scope: {
     adapter: string;
     executionSurface: string;
@@ -49,6 +53,10 @@ interface ProbeReport {
   summary: {
     successfulSamples: number;
     failedSamples: number;
+    distinctPidCount: number | null;
+    distinctProcessInstanceCount: number | null;
+    distinctSessionCount: number | null;
+    pidReuseCount: number | null;
     activationMilliseconds: Distribution | null;
     steadyRssBytes: Distribution | null;
     rssDeltaBytes: Distribution | null;
@@ -61,6 +69,7 @@ interface ProbeReport {
     rsglProcessSpawnAttemptsZero: boolean;
     rsglWorkerSpawnAttemptsZero: boolean;
     rsglFilesystemWalksZero: boolean;
+    mainWatcherRegistrationsPositive: boolean;
     rsglWatcherRegistrationsZero: boolean;
     instrumentationWarningsZero: boolean;
     counts: Record<string, number>;
@@ -81,6 +90,9 @@ interface Distribution {
 interface ProbeSample {
   schemaVersion: number;
   adapter: string;
+  probeRunId: string;
+  sampleId: string;
+  artifact: { bytes: number; sha256: string };
   iteration: number;
   status: "ok" | "error";
   error?: { name: string; code?: string; message: string };
@@ -90,7 +102,7 @@ interface ProbeSample {
   steadyRssBytes: number;
   rssDeltaBytes: number;
   installedHooks: string[];
-  moduleLoads: Array<{ request: string; resolved?: string; rsgl: boolean }>;
+  moduleLoads: Array<{ request: string; resolved?: string; rsgl: boolean; durationMilliseconds?: number }>;
   processSpawns: Array<{ api: string; file: string; args: string[]; rsgl: boolean }>;
   workerSpawns: Array<{ api: string; file: string; rsgl: boolean }>;
   filesystemWalks: Array<{ api: string; target: string; recursive: boolean; rsgl: boolean }>;
@@ -147,8 +159,9 @@ describe("JSON-only activation probe harness", () => {
     assert.strictEqual(result.status, 0, result.stderr);
     assert.match(result.stdout, /Node bundle probe only/);
     const report = readJson<ProbeReport>(output);
-    assert.strictEqual(report.schemaVersion, 1);
+    assert.strictEqual(report.schemaVersion, 2);
     assert.strictEqual(report.measurement, "json-only-activation");
+    assert.match(report.probeRunId, /^[a-f0-9]{32}$/);
     assert.strictEqual(report.scope.adapter, "node-bundle");
     assert.strictEqual(report.scope.executionSurface, "fresh-node-process-with-vscode-api-stub");
     assert.strictEqual(report.scope.isExtensionHost, false);
@@ -167,6 +180,10 @@ describe("JSON-only activation probe harness", () => {
 
     assert.strictEqual(report.summary.successfulSamples, 3);
     assert.strictEqual(report.summary.failedSamples, 0);
+    assert.strictEqual(report.summary.distinctPidCount, null);
+    assert.strictEqual(report.summary.distinctProcessInstanceCount, null);
+    assert.strictEqual(report.summary.distinctSessionCount, null);
+    assert.strictEqual(report.summary.pidReuseCount, null);
     assert.ok((report.summary.activationMilliseconds?.p95 ?? -1) >= 0);
     assert.ok((report.summary.steadyRssBytes?.p95 ?? 0) > 0);
     assert.ok((report.summary.moduleLoads?.p95 ?? 0) >= 2);
@@ -180,13 +197,20 @@ describe("JSON-only activation probe harness", () => {
       extensionOwnedNonRsglProcessSpawns: 0,
       hostProcessSpawnNoise: 0,
       rsglFilesystemWalks: 0,
+      mainWatcherRegistrations: 0,
+      samplesMissingMainWatcherPositiveControl: 0,
       rsglWatcherRegistrations: 0,
       instrumentationWarnings: 0
     });
     assert.strictEqual(report.valid, true);
     assert.strictEqual(report.samples.length, 3);
+    assert.strictEqual(new Set(report.samples.map(sample => sample.sampleId)).size, 3);
     for (const sample of report.samples) {
       assert.strictEqual(sample.status, "ok");
+      assert.strictEqual(sample.probeRunId, report.probeRunId);
+      assert.match(sample.sampleId, /^[a-f0-9]{32}$/);
+      assert.strictEqual(sample.artifact.sha256, report.input.artifactSha256);
+      assert.strictEqual(sample.artifact.bytes, report.input.artifactBytes);
       assert.ok(sample.installedHooks.includes("_load"));
       assert.ok(sample.installedHooks.includes("Worker"));
       assert.strictEqual(sample.filesystemWalks[0].api, "vscode.workspace.findFiles");
@@ -244,8 +268,12 @@ describe("JSON-only activation probe harness", () => {
       "node-bundle": "dist/measurements/json-only-activation.node-bundle.json",
       "extension-host": "dist/measurements/json-only-activation.extension-host.json"
     });
-    assert.strictEqual(probe.extensionHostRunnerProtocol.version, 1);
+    assert.strictEqual(probe.extensionHostRunnerProtocol.version, 2);
     assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--sample-out"));
+    assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--probe-run-id"));
+    assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--sample-id"));
+    assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--artifact-sha256"));
+    assert.ok(probe.extensionHostRunnerProtocol.requiredArguments.includes("--artifact-bytes"));
     assert.match(probe.extensionHostRunnerProtocol.requirement, /real VS Code Extension Host/);
     assert.throws(
       () => probe.parseActivationProbeArguments(["--adapter", "extension-host"]),
@@ -265,8 +293,18 @@ describe("JSON-only activation probe harness", () => {
       "--workspace", "test/fixtures/resource-project/mixed-pack/project",
       "--iteration", "7",
       "--settle-ms", "50",
-      "--sample-out", "dist/measurements/sample.json"
+      "--sample-out", "dist/measurements/sample.json",
+      "--probe-run-id", "a".repeat(32),
+      "--sample-id", "b".repeat(32),
+      "--artifact-sha256", "c".repeat(64),
+      "--artifact-bytes", "123"
     ]);
+    assert.strictEqual(parsed.probeRunId, "a".repeat(32));
+    assert.strictEqual(parsed.sampleId, "b".repeat(32));
+    assert.deepStrictEqual(parsed.artifactIdentity, {
+      sha256: "c".repeat(64),
+      bytes: 123
+    });
     assert.strictEqual(parsed.iteration, 7);
     assert.strictEqual(parsed.settleMilliseconds, 50);
     assert.ok(path.isAbsolute(parsed.artifact));
@@ -291,8 +329,58 @@ describe("JSON-only activation probe harness", () => {
       "activation-probe",
       "extension-host-run.cjs"
     ), "utf8");
-    assert.match(realRunner, /vscode\.workspace.*\["findFiles"\]/s);
-    assert.match(realRunner, /vscode\.workspace\.fs.*\["readDirectory"\]/s);
+    assert.match(realRunner, /createTargetVscodeApiInstrumentation/);
+    assert.match(realRunner, /targetVscodeApi\.observeModuleLoad/);
+    assert.match(realRunner, /timeOrigin:\s*performance\.timeOrigin/);
+    assert.match(realRunner, /sessionId:\s*vscode\.env\.sessionId/);
+    assert.match(realRunner, /durationMilliseconds:\s*performance\.now\(\)\s*-\s*started/);
+  });
+
+  it("rejects stale challenges and runner exits that contradict the written sample", () => {
+    const fixture = createFixture();
+    const artifact = writeFile(fixture.root, "fake.vsix", "fake VSIX boundary");
+
+    const wrongExitRunner = writeFakeExtensionHostRunner(fixture.root, "wrong-exit.mjs", {
+      echoChallenges: true,
+      exitCode: 1
+    });
+    const wrongExitOutput = path.join(fixture.root, "raw", "wrong-exit.json");
+    const wrongExit = runProbe([
+      "--adapter", "extension-host",
+      "--runner", wrongExitRunner,
+      "--artifact", artifact,
+      "--artifact-kind", "vsix",
+      "--workspace", fixture.workspaceRoot,
+      "--iterations", "1",
+      "--settle-ms", "0",
+      "--out", wrongExitOutput
+    ]);
+    assert.strictEqual(wrongExit.status, 1, wrongExit.stderr);
+    assert.match(
+      readJson<ProbeReport>(wrongExitOutput).samples[0].error?.message ?? "",
+      /exit status 1 is inconsistent with sample status 'ok'/
+    );
+
+    const staleRunner = writeFakeExtensionHostRunner(fixture.root, "stale.mjs", {
+      echoChallenges: false,
+      exitCode: 0
+    });
+    const staleOutput = path.join(fixture.root, "raw", "stale.json");
+    const stale = runProbe([
+      "--adapter", "extension-host",
+      "--runner", staleRunner,
+      "--artifact", artifact,
+      "--artifact-kind", "vsix",
+      "--workspace", fixture.workspaceRoot,
+      "--iterations", "1",
+      "--settle-ms", "0",
+      "--out", staleOutput
+    ]);
+    assert.strictEqual(stale.status, 1, stale.stderr);
+    assert.match(
+      readJson<ProbeReport>(staleOutput).samples[0].error?.message ?? "",
+      /did not echo its iteration, challenges, and artifact identity/
+    );
   });
 
   it("keeps the existing cold-activation leaf compatible with the shared VS Code stub", () => {
@@ -344,6 +432,61 @@ function writeFile(root: string, relativePath: string, contents: string): string
   fs.mkdirSync(path.dirname(fileName), { recursive: true });
   fs.writeFileSync(fileName, contents);
   return fileName;
+}
+
+function writeFakeExtensionHostRunner(
+  root: string,
+  relativePath: string,
+  options: { echoChallenges: boolean; exitCode: number }
+): string {
+  const challengeExpression = (flag: string, fallback: string) => options.echoChallenges
+    ? `values.get(${JSON.stringify(flag)})`
+    : JSON.stringify(fallback);
+  return writeFile(root, relativePath, [
+    'import fs from "node:fs";',
+    'import path from "node:path";',
+    "const values = new Map();",
+    "for (let index = 2; index < process.argv.length; index += 2) {",
+    "  values.set(process.argv[index], process.argv[index + 1]);",
+    "}",
+    "const sample = {",
+    "  schemaVersion: 2,",
+    '  adapter: "extension-host",',
+    `  probeRunId: ${challengeExpression("--probe-run-id", "0".repeat(32))},`,
+    `  sampleId: ${challengeExpression("--sample-id", "1".repeat(32))},`,
+    "  artifact: {",
+    '    sha256: values.get("--artifact-sha256"),',
+    '    bytes: Number(values.get("--artifact-bytes"))',
+    "  },",
+    '  iteration: Number(values.get("--iteration")),',
+    '  status: "ok",',
+    "  extensionHost: {",
+    "    pid: process.pid,",
+    "    timeOrigin: performance.timeOrigin,",
+    '    sessionId: "contract-session",',
+    "    node: process.version,",
+    "    platform: process.platform,",
+    "    arch: process.arch,",
+    '    vscodeVersion: "1.109.0"',
+    "  },",
+    "  activationMilliseconds: 1,",
+    "  rssBeforeBytes: 1,",
+    "  rssAfterActivationBytes: 1,",
+    "  steadyRssBytes: 1,",
+    "  rssDeltaBytes: 0,",
+    "  installedHooks: [],",
+    "  moduleLoads: [],",
+    "  processSpawns: [],",
+    "  workerSpawns: [],",
+    "  filesystemWalks: [],",
+    "  watcherRegistrations: [],",
+    "  instrumentationWarnings: []",
+    "};",
+    'const output = path.resolve(values.get("--sample-out"));',
+    "fs.mkdirSync(path.dirname(output), { recursive: true });",
+    'fs.writeFileSync(output, `${JSON.stringify(sample)}\\n`, "utf8");',
+    `process.exitCode = ${options.exitCode};`
+  ].join("\n"));
 }
 
 function readJson<T>(fileName: string): T {

@@ -5,9 +5,18 @@ const path = require("node:path");
 const { performance } = require("node:perf_hooks");
 const workerThreads = require("node:worker_threads");
 const vscode = require("vscode");
+const {
+  createTargetVscodeApiInstrumentation
+} = require("./target-vscode-api.cjs");
 
 const extensionId = "stone926.minecraft-resourcepack-helper";
 const iteration = Number(requiredEnvironment("MCRES_ACTIVATION_ITERATION"));
+const probeRunId = requiredEnvironment("MCRES_ACTIVATION_PROBE_RUN_ID");
+const sampleId = requiredEnvironment("MCRES_ACTIVATION_SAMPLE_ID");
+const artifact = Object.freeze({
+  sha256: requiredEnvironment("MCRES_ACTIVATION_ARTIFACT_SHA256"),
+  bytes: Number(requiredEnvironment("MCRES_ACTIVATION_ARTIFACT_BYTES"))
+});
 const sampleOutput = requiredEnvironment("MCRES_ACTIVATION_SAMPLE_OUT");
 const settleMilliseconds = Number(requiredEnvironment("MCRES_ACTIVATION_SETTLE_MS"));
 const sourceWorkspace = requiredEnvironment("MCRES_ACTIVATION_SOURCE_WORKSPACE");
@@ -26,6 +35,8 @@ async function run() {
   let serializedError;
   const extensionHost = {
     pid: process.pid,
+    timeOrigin: performance.timeOrigin,
+    sessionId: vscode.env.sessionId,
     node: process.version,
     platform: process.platform,
     arch: process.arch,
@@ -33,11 +44,10 @@ async function run() {
   };
 
   try {
-    restorers.push(instrumentModuleLoads(events.moduleLoads, installedHooks));
+    restorers.push(instrumentModuleLoads(events, installedHooks));
     restorers.push(instrumentProcessStarts(events.processSpawns, installedHooks));
     restorers.push(instrumentWorkers(events.workerSpawns, installedHooks, events.instrumentationWarnings));
     restorers.push(instrumentFilesystemWalks(events.filesystemWalks, installedHooks, events.instrumentationWarnings));
-    restorers.push(instrumentWatchers(events.watcherRegistrations, installedHooks, events.instrumentationWarnings));
 
     const extension = vscode.extensions.getExtension(extensionId);
     assert(extension, `Combined extension '${extensionId}' is not installed.`);
@@ -70,8 +80,11 @@ async function run() {
       }
     }
     writeSample({
-      schemaVersion: 1,
+      schemaVersion: 2,
       adapter: "extension-host",
+      probeRunId,
+      sampleId,
+      artifact,
       iteration,
       status,
       error: serializedError,
@@ -103,19 +116,61 @@ function createEventCollections() {
 
 function instrumentModuleLoads(events, installedHooks) {
   const original = Module._load;
+  const targetVscodeApi = createTargetVscodeApiInstrumentation({
+    extensionRoot,
+    onCall({ hook, args }) {
+      const target = displayTarget(args[0]);
+      if (hook === "vscode.workspace.createFileSystemWatcher") {
+        events.watcherRegistrations.push({
+          api: hook,
+          target,
+          extensionOwned: true,
+          rsgl: isRsglSourceWatcher(target)
+        });
+        return;
+      }
+      events.filesystemWalks.push({
+        api: hook,
+        target,
+        extensionOwned: true,
+        rsgl: isRsglScanTarget(target)
+      });
+    },
+    onHookInstalled(hook) {
+      installedHooks.push(hook);
+    },
+    onWarning(warning) {
+      events.instrumentationWarnings.push(warning);
+    }
+  });
   Module._load = function instrumentedModuleLoad(request, parent, isMain) {
-    const result = original.apply(this, arguments);
     const value = String(request);
-    events.push({
-      request: sanitize(value),
-      parent: sanitize(parent?.filename),
-      rsgl: isRsglRuntimePath(value)
-    });
-    return result;
+    const parentFileName = parent?.filename;
+    const started = performance.now();
+    try {
+      const result = original.apply(this, arguments);
+      targetVscodeApi.observeModuleLoad(value, parentFileName, result);
+      return result;
+    } finally {
+      events.moduleLoads.push({
+        request: sanitize(value),
+        parent: sanitize(parentFileName),
+        rsgl: isRsglRuntimePath(value) || isRsglRuntimePath(String(parentFileName ?? "")),
+        durationMilliseconds: performance.now() - started
+      });
+    }
   };
   installedHooks.push("Module._load");
   return () => {
-    Module._load = original;
+    try {
+      Module._load = original;
+    } catch (error) {
+      events.instrumentationWarnings.push({
+        hook: "Module._load",
+        message: serializeError(error).message
+      });
+    }
+    targetVscodeApi.stop();
   };
 }
 
@@ -201,51 +256,7 @@ function instrumentFilesystemWalks(events, installedHooks, warnings) {
       }
     }
   }
-  for (const [owner, ownerName, apis] of [
-    [vscode.workspace, "vscode.workspace", ["findFiles"]],
-    [vscode.workspace.fs, "vscode.workspace.fs", ["readDirectory"]]
-  ]) {
-    for (const api of apis) {
-      const original = owner?.[api];
-      if (typeof original !== "function") {
-        warnings.push({ hook: `${ownerName}.${api}`, message: "API is unavailable." });
-        continue;
-      }
-      try {
-        owner[api] = function instrumentedVscodeFilesystemWalk(...args) {
-          const target = displayTarget(args[0]);
-          events.push({ api: `${ownerName}.${api}`, target, rsgl: isRsglScanTarget(target) });
-          return original.apply(this, args);
-        };
-        installedHooks.push(`${ownerName}.${api}`);
-        restorers.push(() => {
-          owner[api] = original;
-        });
-      } catch (error) {
-        warnings.push({ hook: `${ownerName}.${api}`, message: serializeError(error).message });
-      }
-    }
-  }
   return () => restorers.reverse().forEach(restore => restore());
-}
-
-function instrumentWatchers(events, installedHooks, warnings) {
-  const owner = vscode.workspace;
-  const original = owner.createFileSystemWatcher;
-  try {
-    owner.createFileSystemWatcher = function instrumentedWatcher(pattern, ...args) {
-      const target = displayTarget(pattern);
-      events.push({ api: "vscode.workspace.createFileSystemWatcher", target, rsgl: isRsglSourceWatcher(target) });
-      return original.call(this, pattern, ...args);
-    };
-    installedHooks.push("vscode.workspace.createFileSystemWatcher");
-    return () => {
-      owner.createFileSystemWatcher = original;
-    };
-  } catch (error) {
-    warnings.push({ hook: "vscode.workspace.createFileSystemWatcher", message: serializeError(error).message });
-    return () => undefined;
-  }
 }
 
 function rsglHostLoaded() {
@@ -256,10 +267,9 @@ function rsglHostLoaded() {
 
 function isRsglRuntimePath(value) {
   const normalized = value.replaceAll("\\", "/").toLowerCase();
-  return normalized.includes("/bundle/features/rsglhost.js")
-    || normalized.includes("/bundle/rsgl/server.js")
-    || normalized.includes("/bundle/rsgl/worker.js")
-    || /\/packages\/rsgl-(?:core|lsp|shared)(?:\/|$)/.test(normalized);
+  return normalized.includes("rsglhost")
+    || normalized.includes("vscode-languageclient")
+    || /(?:^|[\/._-])rsgl(?:[\/._-]|$)/.test(normalized);
 }
 
 function isRsglScanTarget(value) {
