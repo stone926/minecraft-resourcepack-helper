@@ -53,9 +53,9 @@ export async function runNodeBundleActivationSample(options) {
   await settle(options.settleMilliseconds);
   collectGarbage();
   const steadyRssBytes = process.memoryUsage.rss();
-  const events = telemetry.snapshot();
   const installedHooks = instrumentation?.installedHooks ?? [];
   instrumentation?.stop();
+  const events = telemetry.snapshot();
 
   try {
     disposeExtensionContext(context);

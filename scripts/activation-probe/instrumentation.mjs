@@ -6,6 +6,10 @@ const require = createRequire(import.meta.url);
 const childProcess = require("node:child_process");
 const fileSystem = require("node:fs");
 const workerThreads = require("node:worker_threads");
+const {
+  createDeferredModuleLoadRecorder,
+  snapshotModuleParent
+} = require("./deferred-module-loads.cjs");
 
 export class ActivationProbeBlockedOperationError extends Error {
   constructor(operation) {
@@ -18,7 +22,6 @@ export class ActivationProbeBlockedOperationError extends Error {
 export function createActivationTelemetry(options = {}) {
   const extensionRoot = options.extensionRoot ? path.resolve(options.extensionRoot) : undefined;
   const workspaceRoot = options.workspaceRoot ? path.resolve(options.workspaceRoot) : undefined;
-  const moduleLoads = [];
   const processSpawns = [];
   const workerSpawns = [];
   const filesystemWalks = [];
@@ -26,14 +29,20 @@ export function createActivationTelemetry(options = {}) {
   const instrumentationWarnings = [];
 
   const sanitize = value => sanitizeValue(value, { extensionRoot, workspaceRoot });
-  return {
-    recordModuleLoad(request, resolved) {
-      const signal = `${String(request)}\n${String(resolved ?? "")}`;
-      moduleLoads.push(Object.freeze({
-        request: sanitize(request),
+  const deferredModuleLoads = createDeferredModuleLoadRecorder({
+    resolveFilename: Module._resolveFilename,
+    createEvent(rawEvent, resolved) {
+      const signal = `${String(rawEvent.request)}\n${String(resolved ?? "")}`;
+      return Object.freeze({
+        request: sanitize(rawEvent.request),
         resolved: resolved === undefined ? undefined : sanitize(resolved),
         rsgl: isRsglSignal(signal)
-      }));
+      });
+    }
+  });
+  return {
+    recordModuleLoad(request, parent, isMain) {
+      deferredModuleLoads.record(request, parent, isMain);
     },
     recordProcessSpawn(api, file, args) {
       const signal = `${String(file)}\n${Array.isArray(args) ? args.join("\n") : ""}`;
@@ -76,7 +85,7 @@ export function createActivationTelemetry(options = {}) {
     },
     snapshot() {
       return Object.freeze({
-        moduleLoads: Object.freeze([...moduleLoads]),
+        moduleLoads: deferredModuleLoads.finalize(),
         processSpawns: Object.freeze([...processSpawns]),
         workerSpawns: Object.freeze([...workerSpawns]),
         filesystemWalks: Object.freeze([...filesystemWalks]),
@@ -94,16 +103,16 @@ export function installNodeActivationInstrumentation(options) {
   const installedHooks = [];
 
   patchMethod(Module, "_load", originalLoad => function instrumentedModuleLoad(request, parent, isMain) {
-    let resolved;
+    const parentSnapshot = snapshotModuleParent(parent);
+    let moduleReference;
     try {
-      resolved = Module._resolveFilename(request, parent, isMain);
-    } catch {
-      resolved = undefined;
+      moduleReference = request === "vscode"
+        ? vscode
+        : originalLoad.call(this, request, parent, isMain);
+      return moduleReference;
+    } finally {
+      telemetry.recordModuleLoad(request, parentSnapshot, isMain);
     }
-    telemetry.recordModuleLoad(request, resolved);
-    return request === "vscode"
-      ? vscode
-      : originalLoad.call(this, request, parent, isMain);
   });
 
   for (const api of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"]) {

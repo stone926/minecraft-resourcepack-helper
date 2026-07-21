@@ -14,6 +14,11 @@ const {
   isRsglScanEvent,
   isRsglSourceWatcher
 } = require("./event-classification.cjs");
+const {
+  createDeferredModuleLoadRecorder,
+  createExtensionHostModuleLoadEvent,
+  snapshotModuleParent
+} = require("./deferred-module-loads.cjs");
 const { redactActivationPaths } = require("./path-redaction.cjs");
 
 const extensionId = "stone926.minecraft-resourcepack-helper";
@@ -32,6 +37,14 @@ const extensionRoot = requiredEnvironment("MCRES_ACTIVATION_EXTENSION_ROOT");
 
 async function run() {
   const events = createEventCollections();
+  const deferredModuleLoads = createDeferredModuleLoadRecorder({
+    resolveFilename: Module._resolveFilename,
+    createEvent: (rawEvent, resolved) => createExtensionHostModuleLoadEvent(
+      rawEvent,
+      resolved,
+      { sanitize, classify: isRsglModuleLoadEvent }
+    )
+  });
   const installedHooks = [];
   const restorers = [];
   let rssBeforeBytes = process.memoryUsage().rss;
@@ -52,7 +65,7 @@ async function run() {
   };
 
   try {
-    restorers.push(instrumentModuleLoads(events, installedHooks));
+    restorers.push(instrumentModuleLoads(events, installedHooks, deferredModuleLoads));
     restorers.push(instrumentProcessStarts(events.processSpawns, installedHooks));
     restorers.push(instrumentWorkers(events.workerSpawns, installedHooks, events.instrumentationWarnings));
     restorers.push(instrumentFilesystemWalks(events.filesystemWalks, installedHooks, events.instrumentationWarnings));
@@ -92,6 +105,14 @@ async function run() {
         events.instrumentationWarnings.push({ hook: "restore", message: serializeError(error).message });
       }
     }
+    try {
+      events.moduleLoads.push(...deferredModuleLoads.finalize());
+    } catch (error) {
+      events.instrumentationWarnings.push({
+        hook: "Module._load.finalize",
+        message: serializeError(error).message
+      });
+    }
     writeSample({
       schemaVersion: 3,
       adapter: "extension-host",
@@ -128,7 +149,7 @@ function createEventCollections() {
   };
 }
 
-function instrumentModuleLoads(events, installedHooks) {
+function instrumentModuleLoads(events, installedHooks, deferredModuleLoads) {
   const original = Module._load;
   const targetVscodeApi = createTargetVscodeApiInstrumentation({
     extensionRoot,
@@ -159,28 +180,20 @@ function instrumentModuleLoads(events, installedHooks) {
     }
   });
   Module._load = function instrumentedModuleLoad(request, parent, isMain) {
-    const value = String(request);
-    const parentFileName = parent?.filename;
-    let resolved;
-    try {
-      resolved = Module._resolveFilename(request, parent, isMain);
-    } catch {
-      // Preserve Module._load as the authority for the actual resolution error.
-    }
+    const parentSnapshot = snapshotModuleParent(parent);
     const started = performance.now();
+    let moduleReference;
     try {
-      const result = original.apply(this, arguments);
-      targetVscodeApi.observeModuleLoad(value, parentFileName, result);
-      return result;
+      moduleReference = original.apply(this, arguments);
+      targetVscodeApi.observeModuleLoad(request, parentSnapshot?.filename, moduleReference);
+      return moduleReference;
     } finally {
-      const event = {
-        request: sanitize(value),
-        resolved: sanitize(resolved),
-        parent: sanitize(parentFileName),
-        durationMilliseconds: performance.now() - started
-      };
-      event.rsgl = isRsglModuleLoadEvent(event);
-      events.moduleLoads.push(event);
+      deferredModuleLoads.record(
+        request,
+        parentSnapshot,
+        isMain,
+        performance.now() - started
+      );
     }
   };
   installedHooks.push("Module._load");

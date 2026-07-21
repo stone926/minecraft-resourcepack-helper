@@ -337,7 +337,25 @@ describe("JSON-only activation probe harness", () => {
     assert.match(realRunner, /targetVscodeApi\.observeModuleLoad/);
     assert.match(realRunner, /timeOrigin:\s*performance\.timeOrigin/);
     assert.match(realRunner, /sessionId:\s*vscode\.env\.sessionId/);
-    assert.match(realRunner, /durationMilliseconds:\s*performance\.now\(\)\s*-\s*started/);
+    assert.match(
+      realRunner,
+      /deferredModuleLoads\.record\([\s\S]*performance\.now\(\)\s*-\s*started/
+    );
+    assert.ok(
+      realRunner.indexOf("snapshotModuleParent(parent)")
+        < realRunner.indexOf("original.apply(this, arguments)"),
+      "the runner must freeze parent resolution inputs before executing the child module"
+    );
+    assert.doesNotMatch(
+      realRunner,
+      /Module\._resolveFilename\s*\(/,
+      "the timed Extension Host runner must not perform eager duplicate resolution"
+    );
+    assert.ok(
+      realRunner.indexOf("steadyRssBytes = process.memoryUsage().rss;")
+        < realRunner.indexOf("deferredModuleLoads.finalize()"),
+      "module resolution and serialization must happen after steady RSS sampling"
+    );
   });
 
   it("rejects stale challenges and runner exits that contradict the written sample", () => {

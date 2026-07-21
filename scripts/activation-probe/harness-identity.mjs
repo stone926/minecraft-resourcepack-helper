@@ -7,6 +7,7 @@ const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export const ACTIVATION_HARNESS_IDENTITY_ALGORITHM = "sha256-path-content-set-v1";
 export const ACTIVATION_HARNESS_FILES = Object.freeze([
+  "deferred-module-loads.cjs",
   "error-format.mjs",
   "event-classification.cjs",
   "extension-host-run.cjs",
