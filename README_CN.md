@@ -40,10 +40,12 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 
 跳转、补全、诊断、资源关系图和模型预览会尽量使用同一套加载顺序：
 
-1. 当前正在编辑的资源包。
+1. 当前正在编辑的 local 资源包。对于 RSGL 工程，它是由 `rsgl.config.json.outDir` 或资源包发现确定的 canonical output pack root。
 2. `pack.mcmeta` 中声明的启用 overlay 和 filter 规则。
-3. `McResHelper.resourcePackLoadOrder` 中配置的低优先级资源包，按高优先级到低优先级排序。
-4. `McResHelper.defaultMcAssetsPath` 指向的原版资源。
+3. `rsgl.config.json.resourcePackRoots` 或 `McResHelper.resourcePackLoadOrder` 中配置的 custom 低优先级资源包，按高优先级到低优先级排序。
+4. `rsgl.config.json.defaultAssetsPath` 或 `McResHelper.defaultMcAssetsPath` 指向的 vanilla 资源。
+
+物理文件和 live RSGL producer 通过同一个工程上下文解析。因此 JSON、shader、CIT 或 RSGL 对同一个 external/default 资源 ID 会选择相同的 effective local/custom/vanilla layer；归档形式的 custom 资源包和 vanilla jar 始终只读。
 
 ## 模型预览
 
@@ -100,8 +102,9 @@ CIT `.properties` 预览是资源预览，不是完整 CIT 运行态模拟。它
 - 被谁引用：工作区中指向当前资源的入站引用。
 - 模型继承树：父模型和子模型。
 - 方块：工作区中的方块状态文件，可作为方块状态 -> 模型 -> 纹理链路的入口。
+- RSGL producer：live 声明及其物理 materialization，并在适用时标明 current、stale 或 conflict 状态。
 
-该视图使用缓存的工作区索引，也可以通过 **McResHelper: 刷新资源映射** 手动刷新。
+该视图合并 physical 与 RSGL 的出站/入站边。物理资源可以跳转到尚未构建的 live RSGL 声明，RSGL 引用也可以跳转到实际生效的 local、custom 或 vanilla 资源。工作区索引会被缓存，也可以通过 **McResHelper: 刷新资源映射** 手动刷新。
 
 ## RSGL
 
@@ -117,6 +120,28 @@ RSGL 已直接集成到本扩展，并与 JSON、shader、纹理和 CIT 工具�
 - 可只读跳转到配置的资源包 ZIP 与原版 `client.jar`；资源使用带 revision 的虚拟 URI，不会解压到工作区。
 
 当前语言仅接受 canonical 语法，包括显式 `model` / `variants` / `multipart` / `choice` 模板方言和 canonical blockstate；同时支持结构化 record 类型与函数值、类型化资源 ID、有界集合操作与 spread、命名空间导入，以及精确的四分之一圈模型几何变换。独立发布的 [RSGL CLI](packages/rsgl-cli/README.md) 为终端工作流提供相同的工程语义。
+
+混合手写/生成资源包可以把源码放在资源包外，同时直接写入真实资源包根：
+
+```text
+workspace/
+├─ rsgl.config.json
+├─ rsgl-src/
+│  └─ main.rsgl
+└─ pack/
+   ├─ pack.mcmeta
+   └─ assets/example/...  # 可在这里保留手写资源
+```
+
+```json
+{
+  "root": "rsgl-src",
+  "outDir": "pack",
+  "namespace": "example"
+}
+```
+
+`root` 是 RSGL source root。`outDir` 始终是包含 `assets/` 的完整 output pack root，不能直接指向 `assets` 目录，因此不会生成 `assets/assets/...`。checked `extern local` 从该 output pack 中解析手写资源；`custom` 与 `vanilla` 从配置的低层资源中解析。preview 命令会展示 ownership 计划；真实构建把未知文件、其他工程输出或被用户修改的生成文件视为 conflict，在 staging 中提交允许的写入，并且仅在 ownership 与旧内容 hash 都可证明时删除 stale 文件。
 
 ## 配置项
 
@@ -177,7 +202,7 @@ npm run package:main:vsix
 npm run package:rsgl-cli
 ```
 
-根扩展拥有五个 VSIX entry：轻量激活 bundle、延迟 RSGL host、隔离语言服务器、隔离构建 worker 与纯浏览器模型预览。Node 20 CLI 是第六个、位于 VSIX 外的 entry。`npm run watch` 从唯一开发路径增量重建五个 VSIX entry。
+唯一可安装的 VSIX 包含五个 entry：轻量激活 bundle、延迟 RSGL host、隔离语言服务器、隔离构建 worker 与纯浏览器模型预览。Node 20 CLI 是第六个、位于 VSIX 外的 entry。`npm run watch` 从唯一开发路径增量重建五个 VSIX entry。
 
 公开制品只有两个：组合 VSIX 使用 `vX.Y.Z`，npm CLI 使用 `rsgl-cli-vX.Y.Z`。使用 `npm run release:main` 或 `npm run release:rsgl-cli`；每次只推进所选制品的 manifest、changelog、artifact 和 tag。
 

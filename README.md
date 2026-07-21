@@ -40,10 +40,12 @@ The extension activates for a resource pack or an `.rsgl` document. RSGL runtime
 
 Navigation, completion, diagnostics, the resource graph, and model preview use the same load-order model where possible:
 
-1. The resource pack currently being edited.
+1. The local pack currently being edited. For an RSGL project, this is the canonical output pack root selected by `rsgl.config.json.outDir` or pack discovery.
 2. Active overlays and filters declared in `pack.mcmeta`.
-3. Enabled lower-priority packs from `McResHelper.resourcePackLoadOrder`, ordered from higher priority to lower priority.
-4. Vanilla assets from `McResHelper.defaultMcAssetsPath`.
+3. Custom lower-priority packs from `rsgl.config.json.resourcePackRoots` or `McResHelper.resourcePackLoadOrder`, ordered from higher priority to lower priority.
+4. Vanilla assets from `rsgl.config.json.defaultAssetsPath` or `McResHelper.defaultMcAssetsPath`.
+
+Physical files and live RSGL producers are resolved through the same project context. For an external/default resource ID, a JSON, shader, CIT, or RSGL reference therefore selects the same effective local/custom/vanilla layer; archive-backed custom packs and vanilla jars remain read-only.
 
 ## Model Preview
 
@@ -100,8 +102,9 @@ The **Minecraft Resources** activity bar view follows the active editor and show
 - Referenced By: incoming references from files in the workspace.
 - Model Inheritance: parent models and child models.
 - Blocks: workspace blockstates grouped as entry points into blockstate -> model -> texture chains.
+- RSGL producers: live declarations and their physical materializations, including current, stale, and conflict state where applicable.
 
-The view has cached workspace indexes and can be refreshed manually with **McResHelper: refresh resource graph**.
+The view merges physical and RSGL outgoing/incoming edges. A physical resource can navigate to a live, unbuilt RSGL declaration, while an RSGL reference can navigate to the effective local, custom, or vanilla resource. The cached workspace indexes can be refreshed manually with **McResHelper: refresh resource graph**.
 
 ## RSGL
 
@@ -117,6 +120,28 @@ Integrated RSGL support includes:
 - Read-only Definition and graph navigation into configured resource-pack ZIPs and vanilla `client.jar` files through revisioned virtual URIs; archives are never extracted into the workspace.
 
 The language accepts canonical syntax only, including explicit `model` / `variants` / `multipart` / `choice` template dialects and canonical blockstates. It also includes structural record types and function values, typed resource IDs, bounded collection operations and spread, namespace imports, and exact quarter-turn model-geometry transforms. The independently published [RSGL CLI](packages/rsgl-cli/README.md) provides the same project semantics for terminal workflows.
+
+A mixed handwritten/generated pack can keep sources outside the pack while writing into the real pack root:
+
+```text
+workspace/
+├─ rsgl.config.json
+├─ rsgl-src/
+│  └─ main.rsgl
+└─ pack/
+   ├─ pack.mcmeta
+   └─ assets/example/...  # handwritten resources may coexist here
+```
+
+```json
+{
+  "root": "rsgl-src",
+  "outDir": "pack",
+  "namespace": "example"
+}
+```
+
+`root` is the RSGL source root. `outDir` is always the complete output pack root containing `assets/`, never the `assets` directory itself, so generated paths do not become `assets/assets/...`. Checked `extern local` declarations resolve handwritten resources from that output pack; `custom` and `vanilla` declarations resolve configured lower layers. Preview commands show the ownership plan. A real build rejects unknown/cross-project/user-modified targets as conflicts, stages accepted writes, and only removes stale files whose ownership and previous hash are both proven.
 
 ## Configuration
 
@@ -177,7 +202,7 @@ npm run package:main:vsix
 npm run package:rsgl-cli
 ```
 
-The root extension owns five VSIX entries: the lightweight activation bundle, lazy RSGL host, isolated language server, isolated build worker, and browser-only model preview. The Node 20 CLI is a sixth, VSIX-external entry. `npm run watch` incrementally rebuilds the five VSIX entries from the single development path.
+The single installable VSIX packages five entries: the lightweight activation bundle, lazy RSGL host, isolated language server, isolated build worker, and browser-only model preview. The Node 20 CLI is a sixth, VSIX-external entry. `npm run watch` incrementally rebuilds the five VSIX entries from the single development path.
 
 There are two public artifacts: the combined VSIX uses `vX.Y.Z`, and the npm CLI uses `rsgl-cli-vX.Y.Z`. Use `npm run release:main` or `npm run release:rsgl-cli`; each release advances only its own manifest, changelog, artifact, and tag.
 

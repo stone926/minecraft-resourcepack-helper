@@ -3,7 +3,9 @@
 ## [Unreleased]
 
 - refactor: integrate RSGL language tooling, build commands, resource providers, and ownership-aware materialization into one lazy, isolated VSIX.
-- feat: unify physical, generated, custom, and vanilla resources behind one project context and resource universe for cross-language navigation and graph views.
+- feat: give `rsgl.config.json` one `root`/pack-root `outDir` meaning across VS Code, LSP, CLI, mixed handwritten/generated layouts, and resource graphs.
+- feat: unify physical, live RSGL, local, custom, and vanilla resources behind one project context and resource universe for cross-language Definition, incoming/outgoing graph edges, and missing-resource diagnostics.
+- fix: make build-to-assets transactions reject unknown, cross-project, and user-modified targets, and clean stale output only when ownership and the previous content hash are proven.
 - feat: navigate configured resource-pack ZIPs and vanilla client jars through an extraction-free read-only virtual filesystem.
 - build: publish one production-staged VSIX with five isolated entries, a tree-shaken Three.js preview, reproducible contents hashes, and no source maps or second extension artifact.
 
