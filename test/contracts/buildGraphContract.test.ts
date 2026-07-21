@@ -91,6 +91,11 @@ describe("repository build graph", () => {
       assert.strictEqual(bundles.bundleEntryDefinitions[id].platform, "node");
       assert.strictEqual(bundles.bundleEntryDefinitions[id].format, "cjs");
     }
+    assert.deepStrictEqual(bundles.bundleEntryDefinitions.root.singletonExternals, ["vscode"]);
+    assert.deepStrictEqual(bundles.bundleEntryDefinitions.rsglHost.singletonExternals, ["vscode"]);
+    for (const id of ["server", "worker", "modelPreview", "cli"] as const) {
+      assert.deepStrictEqual(bundles.bundleEntryDefinitions[id].singletonExternals, []);
+    }
     assert.deepStrictEqual(
       pickBuildEnvironment(bundles.bundleEntryDefinitions.modelPreview),
       { platform: "browser", format: "esm", target: "es2022", external: [] }
@@ -187,6 +192,46 @@ describe("repository build graph", () => {
       "src/rsgl/registerLazyRsglSubsystem.ts",
       "src/rsgl/rsglActivationSignals.ts"
     ]);
+    const output = result.outputFiles?.find(file => file.path.endsWith("extension.js"));
+    assert.ok(output, "root build should return its CommonJS entry");
+    assert.strictEqual(
+      output.text.match(/require\("vscode"\)/g)?.length,
+      1,
+      "all static VS Code API imports should share one external module load"
+    );
+    assert.ok(
+      Object.hasOwn(result.metafile?.inputs ?? {}, "singleton-external:vscode"),
+      "the root metafile should retain the reviewed singleton boundary"
+    );
+    const subsystemLoader = result.metafile?.inputs["src/rsgl/loadInstalledRsglSubsystem.ts"];
+    assert.ok(
+      subsystemLoader?.imports.some(input =>
+        input.path === "node:url"
+          && input.kind === "dynamic-import"
+          && input.external === true),
+      "the installed feature URL helper must remain a native dynamic import"
+    );
+
+    const hostResult = await build(bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.rsglHost,
+      "production",
+      { write: false, sourcemap: false }
+    ));
+    const unsharedHostResult = await build(bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.rsglHost,
+      "production",
+      { write: false, sourcemap: false, plugins: [] }
+    ));
+    const hostOutput = hostResult.outputFiles?.find(file => file.path.endsWith("rsglHost.js"));
+    const unsharedHostOutput = unsharedHostResult.outputFiles
+      ?.find(file => file.path.endsWith("rsglHost.js"));
+    assert.ok(hostOutput, "RSGL host build should return its CommonJS entry");
+    assert.ok(unsharedHostOutput, "unshared RSGL host comparison should return its entry");
+    assert.ok(
+      (hostOutput.text.match(/require\("vscode"\)/g)?.length ?? 0)
+        < (unsharedHostOutput.text.match(/require\("vscode"\)/g)?.length ?? 0),
+      "the feature host should also deduplicate its static VS Code API imports"
+    );
   });
 });
 
@@ -197,6 +242,7 @@ interface BundleEntryDefinition {
   format: string;
   target: string;
   external: readonly string[];
+  singletonExternals: readonly string[];
   banner?: string;
 }
 

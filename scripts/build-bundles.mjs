@@ -20,6 +20,7 @@ const repositoryRoot = path.resolve(scriptDirectory, "..");
 const stdlibSource = path.join(repositoryRoot, "packages", "rsgl-core", "src", "stdlib", "rsgl");
 const threeLicenseSource = path.join(repositoryRoot, "node_modules", "three", "LICENSE");
 const threeLicenseTarget = path.join(repositoryRoot, "licenses", "THREE-LICENSE.txt");
+const singletonExternalNamespace = "singleton-external";
 
 export const bundleModes = Object.freeze(["development", "production", "analyze"]);
 export const bundleAnalysisOutputs = Object.freeze({
@@ -35,7 +36,8 @@ export const bundleEntryDefinitions = Object.freeze({
     platform: "node",
     format: "cjs",
     target: "node22",
-    external: ["vscode"]
+    external: ["vscode"],
+    singletonExternals: ["vscode"]
   }),
   rsglHost: entry({
     entryPoint: "src/rsgl/host/rsglHost.ts",
@@ -43,7 +45,8 @@ export const bundleEntryDefinitions = Object.freeze({
     platform: "node",
     format: "cjs",
     target: "node22",
-    external: ["vscode"]
+    external: ["vscode"],
+    singletonExternals: ["vscode"]
   }),
   server: entry({
     entryPoint: "packages/rsgl-lsp/src/server.ts",
@@ -161,6 +164,7 @@ export function createEsbuildOptions(definition, bundleMode, overrides = {}) {
     legalComments: "none",
     logLevel: "warning",
     external: [...definition.external],
+    plugins: createSingletonExternalPlugins(definition),
     banner: definition.banner ? { js: definition.banner } : undefined,
     metafile: bundleMode === "analyze",
     ...overrides
@@ -192,8 +196,56 @@ export async function buildBundleTarget({ targetName = "all", bundleMode = "deve
 function entry(definition) {
   return Object.freeze({
     ...definition,
-    external: Object.freeze([...(definition.external ?? [])])
+    external: Object.freeze([...(definition.external ?? [])]),
+    singletonExternals: Object.freeze([...(definition.singletonExternals ?? [])])
   });
+}
+
+/**
+ * Node caches external CommonJS modules by resolved identity, but esbuild emits
+ * one require call per source importer. Route selected static imports through
+ * one bundled module so cold activation performs the observable load once.
+ * Dynamic imports deliberately stay untouched because they define lazy feature
+ * boundaries such as the installed RSGL host URL loader.
+ */
+function createSingletonExternalPlugins(definition) {
+  const specifiers = new Set(definition.singletonExternals ?? []);
+  if (specifiers.size === 0) {
+    return [];
+  }
+  if (definition.platform !== "node" || definition.format !== "cjs") {
+    throw new Error("Singleton externals require a Node CommonJS bundle entry.");
+  }
+  for (const specifier of specifiers) {
+    if (!definition.external.includes(specifier)) {
+      throw new Error(`Singleton external '${specifier}' must also be declared external.`);
+    }
+  }
+
+  return [{
+    name: singletonExternalNamespace,
+    setup(buildContext) {
+      buildContext.onResolve({ filter: /.*/ }, args => {
+        if (!specifiers.has(args.path)) {
+          return undefined;
+        }
+        if (args.namespace === singletonExternalNamespace) {
+          return { path: args.path, external: true };
+        }
+        if (args.kind !== "import-statement") {
+          return undefined;
+        }
+        return { path: args.path, namespace: singletonExternalNamespace };
+      });
+      buildContext.onLoad(
+        { filter: /.*/, namespace: singletonExternalNamespace },
+        args => ({
+          contents: `"use strict";\nmodule.exports = require(${JSON.stringify(args.path)});\n`,
+          loader: "js"
+        })
+      );
+    }
+  }];
 }
 
 function assertBundleTarget(targetName) {
@@ -305,6 +357,9 @@ function writeAnalysisReports(results) {
 }
 
 function canonicalInputPath(input) {
+  if (input.startsWith(`${singletonExternalNamespace}:`)) {
+    return input;
+  }
   const absolute = path.resolve(repositoryRoot, input);
   return normalizeSlashes(existsSync(absolute) ? realpathSync(absolute) : absolute);
 }
