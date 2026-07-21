@@ -275,5 +275,6 @@
   "Configure Vanilla Source": "配置原版资源来源",
   "No navigable resource definition is available.": "没有可跳转的资源定义。",
   "{0} references": "{0} 处引用",
-  "{0}: {1}": "{0}：{1}"
+  "{0}: {1}": "{0}：{1}",
+  "Resource tooling could not be initialized: {0}": "资源工具初始化失败：{0}"
 }

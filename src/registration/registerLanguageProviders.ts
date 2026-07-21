@@ -9,15 +9,15 @@ import type { ResourceUniverseNavigation } from "../services/resourceUniverseNav
 import textureVarDefinitionProvider from "../providers/textureVarDefinitionProvider";
 import { getResourceDocumentSelectors } from "../resources/resourceSurfaceRegistry";
 
-const resourceReferenceSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("references");
-const textureVariableSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("textureVariables");
-const citLanguageSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citLanguage");
-const citCodeActionSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citCodeAction");
-
 export function registerLanguageProviders(
-  context: vscode.ExtensionContext,
+  context: Pick<vscode.ExtensionContext, "subscriptions">,
   navigation: ResourceUniverseNavigation
 ): void {
+  const resourceReferenceSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("references");
+  const textureVariableSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("textureVariables");
+  const citLanguageSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citLanguage");
+  const citCodeActionSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citCodeAction");
+
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     resourceReferenceSelectors,
     createResourceDefinitionProvider(navigation)

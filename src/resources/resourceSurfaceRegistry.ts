@@ -306,6 +306,27 @@ export function getResourceWatcherPatterns(
 }
 
 /**
+ * Combine descriptor-owned patterns into the brace-union form accepted by
+ * VS Code. This helper's inputs must be brace- and comma-free because it does
+ * not parse or escape nested glob alternatives.
+ */
+export function getResourceWatcherGlob(
+  registry: readonly ResourceSurfaceDescriptor[] = resourceSurfaceRegistry
+): string | undefined {
+  const patterns = getResourceWatcherPatterns(registry);
+  if (patterns.length === 0) {
+    return undefined;
+  }
+  const unsafePattern = patterns.find(pattern => /[{},]/.test(pattern));
+  if (unsafePattern) {
+    throw new Error(
+      `Resource watcher union alternatives must be brace- and comma-free: ${unsafePattern}`
+    );
+  }
+  return patterns.length === 1 ? patterns[0] : `{${patterns.join(",")}}`;
+}
+
+/**
  * Broad, one-result discovery pattern used only for a folded directory
  * operation. Keep this structural boundary beside the resource descriptors so
  * registration modules do not grow a second resource-surface definition.

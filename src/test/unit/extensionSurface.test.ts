@@ -9,11 +9,8 @@ describe("extension surface", () => {
     for (const registration of [
       "registerLazyResourceInfrastructure(context)",
       "registerLazyRsglSubsystem(context, resources)",
-      "registerResourceGraph(context, resources.navigation)",
-      "registerResourceDiagnostics(context, resources.navigation)",
-      "registerLanguageProviders(context, resources.navigation)",
+      "registerDeferredResourceSurfaces(context, resources.navigation)",
       "registerCommands(context)",
-      "registerWorkspaceEvents(context, { diagnostics, resourceGraph })"
     ]) {
       assert.ok(source.includes(registration), `activate should delegate to ${registration}`);
     }
@@ -35,6 +32,54 @@ describe("extension surface", () => {
     assert.ok(source.split(/\r?\n/).length <= 25, "extension.ts should remain a thin composition root");
     assert.strictEqual(source.includes('from "./registration/registerResourceInfrastructure"'), false);
     assert.strictEqual(source.includes('from "./rsgl/registerRsglSubsystem"'), false);
+  });
+
+  it("defers cold resource surfaces behind synchronous command, document, and view entry points", () => {
+    const source = readSource("registration", "registerDeferredResourceSurfaces.ts");
+
+    assert.ok(source.includes("owner.start(openResourceDocuments.length > 0)"));
+    assert.ok(source.includes("schedule: callback => setImmediate(callback)"));
+    assert.ok(source.includes("vscode.workspace.onDidOpenTextDocument"));
+    assert.ok(source.includes("isSemanticDiagnosticsDocument(document)"));
+    assert.ok(source.includes("isResourceGraphDocumentPath(document.fileName)"));
+    assert.ok(source.includes("new DeferredResourceGraphTreeProvider"));
+    assert.ok(source.includes("vscode.window.createTreeView"));
+    assert.ok(source.includes("registerResourceSurfaceCommands"));
+    assert.ok(source.includes("registerResourceGraph(scope, navigation)"));
+    assert.ok(source.includes("registerResourceDiagnostics(scope, navigation)"));
+    assert.ok(source.includes("registerLanguageProviders(scope, navigation)"));
+    assert.ok(source.includes("registerWorkspaceEvents(scope"));
+    assert.ok(source.includes("installation.scope.dispose()"));
+  });
+
+  it("keeps all resource command IDs on synchronous lazy proxies", () => {
+    const proxies = readSource("registration", "registerResourceSurfaceCommands.ts");
+    const graph = readSource("registration", "registerResourceGraph.ts");
+    const workspaceEvents = readSource("registration", "registerWorkspaceEvents.ts");
+
+    for (const command of [
+      "McResHelper.refreshResourceGraph",
+      "McResHelper.navigateResourceGraphNode",
+      "McResHelper.openGeneratedResource",
+      "McResHelper.openMaterializedResource",
+      "McResHelper.showResourceConflictOwners",
+      "McResHelper.configureVanillaSource",
+      "McResHelper.refreshResources"
+    ]) {
+      assert.ok(proxies.includes(command), `lazy proxy should own ${command}`);
+      assert.strictEqual(graph.includes(`registerCommand("${command}"`), false);
+      assert.strictEqual(workspaceEvents.includes(`registerCommand("${command}"`), false);
+    }
+  });
+
+  it("shuts down independent owners even when one fails", () => {
+    const extension = readSource("extension.ts");
+    const shutdown = readSource("registration", "shutdownExtensionSubsystems.ts");
+
+    assert.ok(extension.includes("shutdownExtensionSubsystems(surfaces, subsystem)"));
+    assert.ok(shutdown.includes("resourceSurfaces?.dispose()"));
+    assert.ok(shutdown.includes("await rsglSubsystem?.shutdown()"));
+    assert.ok(shutdown.includes("new AggregateError"));
   });
 
   it("registers project and universe infrastructure without activation-time scanning", () => {
@@ -67,6 +112,8 @@ describe("extension surface", () => {
   it("keeps workspace event handlers on the diagnostics controller boundary", () => {
     const source = readSource("registration", "registerWorkspaceEvents.ts");
 
+    assert.ok(source.includes("getResourceWatcherGlob()"));
+    assert.strictEqual(source.includes("for (const pattern of getResourceWatcherPatterns())"), false);
     assert.ok(source.includes("diagnostics.refreshSoon(event.document);"));
     assert.ok(source.includes("diagnostics.refresh(document);"));
     assert.ok(source.includes("diagnostics.refreshAllSoon();"));

@@ -14,6 +14,7 @@ import {
   getResourceSemanticDiagnosticsKind,
   getResourceStructureDiscoveryGlob,
   getResourceSurfaceDocumentKind,
+  getResourceWatcherGlob,
   getResourceWatcherPatterns,
   isResourceSurfaceFile,
   resourceSurfaceRegistry,
@@ -111,6 +112,19 @@ describe("resource surface registry", () => {
       { language: "json", pattern: "**/fixture/**/*.fixture" }
     ]);
     assert.deepStrictEqual(getResourceWatcherPatterns(registry), ["**/fixture/**/*.fixture"]);
+    assert.strictEqual(getResourceWatcherGlob(registry), "**/fixture/**/*.fixture");
+    assert.strictEqual(getResourceWatcherGlob([
+      { id: "first", watcherPatterns: ["**/*.first"] },
+      { id: "second", watcherPatterns: ["**/*.second"] }
+    ]), "{**/*.first,**/*.second}");
+    assert.throws(
+      () => getResourceWatcherGlob([{ id: "nested", watcherPatterns: ["**/*.{one,two}"] }]),
+      /brace- and comma-free/
+    );
+    assert.throws(
+      () => getResourceWatcherGlob([{ id: "comma", watcherPatterns: ["**/one,two/*.json"] }]),
+      /brace- and comma-free/
+    );
     assert.deepStrictEqual(getResourceSchemaRegistrations(registry), fixture.schema);
     assert.strictEqual(getResourceSurfaceDocumentKind(fileName, registry), "fixture");
     const fixtureExtraction = getResourceReferenceExtraction("fixture", registry);
@@ -126,9 +140,16 @@ describe("resource surface registry", () => {
 
   it("watches non-JSON sound and font targets that participate in resolution", () => {
     const watcherPatterns = getResourceWatcherPatterns();
+    const watcherGlob = getResourceWatcherGlob();
 
     assert.ok(watcherPatterns.includes("**/assets/*/sounds/**/*.ogg"));
     assert.ok(watcherPatterns.includes("**/assets/*/font/**/*"));
+    assert.ok(watcherGlob);
+    assert.ok(watcherGlob.startsWith("{") && watcherGlob.endsWith("}"));
+    for (const pattern of watcherPatterns) {
+      assert.ok(watcherGlob.includes(pattern), `combined watcher is missing ${pattern}`);
+    }
+    assert.strictEqual(getResourceWatcherGlob([]), undefined);
   });
 
   it("derives incoming reference roots and layered aliases from descriptors", () => {

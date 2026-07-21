@@ -48,6 +48,7 @@ export function registerLazyRsglSubsystem(
   let subsystem: RsglSubsystemRegistration | undefined;
   let lifecycleGeneration = 0;
   let disposed = false;
+  let initialSignalsHandle: ReturnType<typeof setImmediate> | undefined;
   let shutdownPromise: Promise<void> | undefined;
   let teardownPromise = Promise.resolve();
   const loadInstalledSubsystem = options.loadSubsystem
@@ -115,7 +116,11 @@ export function registerLazyRsglSubsystem(
   };
   context.subscriptions.push(registration);
 
-  queueMicrotask(() => {
+  initialSignalsHandle = setImmediate(() => {
+    initialSignalsHandle = undefined;
+    if (disposed) {
+      return;
+    }
     const mode = configuredRsglMode();
     if (mode === "on" || (mode === "auto" && hasKnownRsglDocument())) {
       runInBackground(initializeKnownSignals(), "RSGL initial signals could not be processed");
@@ -250,6 +255,10 @@ export function registerLazyRsglSubsystem(
       return;
     }
     disposed = true;
+    if (initialSignalsHandle) {
+      clearImmediate(initialSignalsHandle);
+      initialSignalsHandle = undefined;
+    }
     for (const disposable of disposables.splice(0)) {
       disposable.dispose();
     }

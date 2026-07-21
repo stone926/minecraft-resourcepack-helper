@@ -17,7 +17,7 @@ import { isBlockstateDocumentPath } from "../utils/resourceGraphScanCore";
 import type { ResourceGraphPathChangeKind } from "../utils/resourceGraph";
 import {
   getResourceStructureDiscoveryGlob,
-  getResourceWatcherPatterns
+  getResourceWatcherGlob
 } from "../resources/resourceSurfaceRegistry";
 import type { ResourceDiagnosticsController } from "./registerResourceDiagnostics";
 import type { ResourceGraphController } from "./registerResourceGraph";
@@ -27,10 +27,15 @@ export interface WorkspaceEventRegistrations {
   resourceGraph: ResourceGraphController;
 }
 
+export interface WorkspaceEventController {
+  reconcileOpenedDocument(document: vscode.TextDocument): void;
+  refreshResources(): void;
+}
+
 export function registerWorkspaceEvents(
-  context: vscode.ExtensionContext,
+  context: Pick<vscode.ExtensionContext, "subscriptions">,
   registrations: WorkspaceEventRegistrations
-): void {
+): WorkspaceEventController {
   const { diagnostics, resourceGraph } = registrations;
   const refreshCoordinator = new ResourceRefreshCoordinator(
     workspaceResourceCache,
@@ -40,16 +45,32 @@ export function registerWorkspaceEvents(
   const resourceStructureOperations = new ResourceStructureOperationTracker({
     resourceDescendantExists: hasResourceDescendant
   });
+  const reconciledOpenDocuments = new WeakSet<vscode.TextDocument>();
   workspaceResourceCache.setOpenTextDocumentProvider(findOpenTextDocument);
+  context.subscriptions.push({
+    dispose: () => workspaceResourceCache.setOpenTextDocumentProvider(null)
+  });
   // These resource watchers are recursive. VS Code may apply
   // `files.watcherExclude` to them and may fold a directory deletion into one
   // parent event, so workspace membership alone is not reliable coverage.
   // Keep runtime resource reads on the short TTL/mtime verification path;
   // dedicated simple watchers can opt into hot-cache trust explicitly.
   workspaceResourceCache.setWatcherTrustProvider(null);
+  context.subscriptions.push({
+    dispose: () => {
+      workspaceResourceCache.setWatcherTrustProvider(null);
+      resourceStructureOperations.clear();
+    }
+  });
 
   let activeEditor = vscode.window.activeTextEditor;
   let decorationTimer: ReturnType<typeof setTimeout> | null = null;
+  context.subscriptions.push({
+    dispose: () => {
+      cancelDecorationRefresh();
+      disposeDecoration();
+    }
+  });
   if (activeEditor) {
     applyDecoration(activeEditor);
   }
@@ -75,8 +96,9 @@ export function registerWorkspaceEvents(
     }
   }, null, context.subscriptions);
 
-  for (const pattern of getResourceWatcherPatterns()) {
-    registerResourceWatcher(context, pattern, (uri, kind) => {
+  const resourceWatcherGlob = getResourceWatcherGlob();
+  if (resourceWatcherGlob) {
+    registerResourceWatcher(context, resourceWatcherGlob, (uri, kind) => {
       invalidateResourcePath(uri);
       resourceGraph.invalidatePath(uri, kind);
       diagnostics.refreshAllSoon();
@@ -87,30 +109,48 @@ export function registerWorkspaceEvents(
     });
   }
 
-  context.subscriptions.push(
-    vscode.workspace.onWillDeleteFiles(event => resourceStructureOperations.rememberBefore(
+  context.subscriptions.push(vscode.workspace.onWillDeleteFiles(event =>
+    resourceStructureOperations.rememberBefore(
       event.files.filter(uri => uri.scheme === "file").map(uri => uri.fsPath)
-    )),
-    vscode.workspace.onWillRenameFiles(event => resourceStructureOperations.rememberBefore(
+    )
+  ));
+  context.subscriptions.push(vscode.workspace.onWillRenameFiles(event =>
+    resourceStructureOperations.rememberBefore(
       event.files.filter(file => file.oldUri.scheme === "file").map(file => file.oldUri.fsPath)
-    )),
-    vscode.workspace.onDidCreateFiles(event => void invalidateWorkspaceDirectoryOperation(event.files)),
-    vscode.workspace.onDidDeleteFiles(event => void invalidateWorkspaceDirectoryOperation(event.files)),
-    vscode.workspace.onDidRenameFiles(event => void invalidateWorkspaceDirectoryOperation(
+    )
+  ));
+  context.subscriptions.push(vscode.workspace.onDidCreateFiles(event =>
+    void invalidateWorkspaceDirectoryOperation(event.files)
+  ));
+  context.subscriptions.push(vscode.workspace.onDidDeleteFiles(event =>
+    void invalidateWorkspaceDirectoryOperation(event.files)
+  ));
+  context.subscriptions.push(vscode.workspace.onDidRenameFiles(event =>
+    void invalidateWorkspaceDirectoryOperation(
       event.files.flatMap(file => [file.oldUri, file.newUri])
-    ))
-  );
+    )
+  ));
 
-  vscode.workspace.onDidOpenTextDocument(document => {
+  const reconcileOpenedDocument = (document: vscode.TextDocument): void => {
+    if (reconciledOpenDocuments.has(document)) {
+      return;
+    }
+    reconciledOpenDocuments.add(document);
     workspaceResourceCache.invalidateDocument(document);
     diagnostics.refresh(document);
     if (isResourceGraphDocumentPath(document.fileName)) {
       resourceGraph.invalidateDocument(document);
       resourceGraph.refreshSoon();
     }
-  }, null, context.subscriptions);
+  };
+  vscode.workspace.onDidOpenTextDocument(
+    reconcileOpenedDocument,
+    null,
+    context.subscriptions
+  );
 
   vscode.workspace.onDidCloseTextDocument(document => {
+    reconciledOpenDocuments.delete(document);
     workspaceResourceCache.invalidateDocument(document);
     diagnostics.clear(document);
     if (isResourceGraphDocumentPath(document.fileName)) {
@@ -131,22 +171,10 @@ export function registerWorkspaceEvents(
     }
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand(
-    "McResHelper.refreshResources",
-    () => refreshCoordinator.refreshAll()
-  ));
-
-  context.subscriptions.push(
-    { dispose: () => {
-      cancelDecorationRefresh();
-      disposeDecoration();
-    } },
-    { dispose: () => {
-      workspaceResourceCache.setOpenTextDocumentProvider(null);
-      workspaceResourceCache.setWatcherTrustProvider(null);
-      resourceStructureOperations.clear();
-    } }
-  );
+  return {
+    reconcileOpenedDocument,
+    refreshResources: () => refreshCoordinator.refreshAll()
+  };
 
   function scheduleDecorationRefresh(editor: vscode.TextEditor, delay = 120): void {
     cancelDecorationRefresh();
@@ -185,7 +213,7 @@ async function hasResourceDescendant(directory: string): Promise<boolean> {
 }
 
 function registerResourceWatcher(
-  context: vscode.ExtensionContext,
+  context: Pick<vscode.ExtensionContext, "subscriptions">,
   pattern: string,
   handleChange: (uri: vscode.Uri, kind: ResourceGraphPathChangeKind) => void
 ): void {

@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import type { ExtensionContext } from "vscode";
 import { localize } from "../i18n/runtime";
 import { ResourceGraphService } from "../services/resourceGraphService";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
@@ -20,15 +20,24 @@ export interface ResourceGraphController {
   refreshActiveEditor(): void;
   invalidateDocument(document: ResourceGraphTreeDocument): void;
   invalidatePath(uri: ResourceGraphUriLike, kind?: ResourceGraphPathChangeKind): void;
+  navigateNode(value: unknown, options?: { preferMaterialized?: boolean }): Promise<void>;
+  showConflictOwners(value: unknown): Promise<void>;
+  configureVanillaSource(): PromiseLike<unknown>;
+}
+
+export interface ResourceGraphRegistration {
+  readonly controller: ResourceGraphController;
+  readonly provider: ResourceGraphTreeProvider;
 }
 
 export function registerResourceGraph(
-  context: vscode.ExtensionContext,
+  context: Pick<ExtensionContext, "subscriptions">,
   navigation: ResourceUniverseNavigation
-): ResourceGraphController {
+): ResourceGraphRegistration {
   const service = new ResourceGraphService(navigation);
   const model = new ResourceGraphTreeModel(service, (message, ...args) => localize({ message, args }));
   const provider = new ResourceGraphTreeProvider(model);
+  context.subscriptions.push(provider);
   const controller: ResourceGraphController = {
     refresh: () => {
       service.invalidateAll();
@@ -37,43 +46,24 @@ export function registerResourceGraph(
     refreshSoon: (delay, invalidateInventory) => provider.refreshSoon(delay, invalidateInventory),
     refreshActiveEditor: () => provider.refreshActiveEditor(),
     invalidateDocument: document => service.invalidateDocument(document),
-    invalidatePath: (uri, kind) => service.invalidatePath(uri, kind)
-  };
-  context.subscriptions.push(
-    provider,
-    navigation.onDidChangeResources(() => provider.refreshSoon(50, true)),
-    vscode.window.createTreeView("McResHelper.resourceGraph", {
-      treeDataProvider: provider,
-      showCollapseAll: true
-    }),
-    vscode.commands.registerCommand("McResHelper.refreshResourceGraph", () => controller.refresh()),
-    vscode.commands.registerCommand("McResHelper.navigateResourceGraphNode", async value => {
+    invalidatePath: (uri, kind) => service.invalidatePath(uri, kind),
+    navigateNode: async (value, options) => {
       const target = getResourceGraphNodeNavigation(value);
       if (target) {
-        await service.navigate(target);
+        await service.navigate(target, options);
       }
-    }),
-    vscode.commands.registerCommand("McResHelper.openGeneratedResource", async value => {
-      const target = getResourceGraphNodeNavigation(value);
-      if (target) {
-        await service.navigate(target, { preferMaterialized: false });
-      }
-    }),
-    vscode.commands.registerCommand("McResHelper.openMaterializedResource", async value => {
-      const target = getResourceGraphNodeNavigation(value);
-      if (target) {
-        await service.navigate(target, { preferMaterialized: true });
-      }
-    }),
-    vscode.commands.registerCommand("McResHelper.showResourceConflictOwners", async value => {
+    },
+    showConflictOwners: async value => {
       const resource = getResourceGraphNodeModel(value)?.resource;
       if (resource) {
         await service.showConflictOwners(resource);
       }
-    }),
-    vscode.commands.registerCommand("McResHelper.configureVanillaSource", () =>
-      service.configureVanillaSource()
-    )
+    },
+    configureVanillaSource: () => service.configureVanillaSource()
+  };
+  const resourceChangeSubscription = navigation.onDidChangeResources(() =>
+    provider.refreshSoon(50, true)
   );
-  return controller;
+  context.subscriptions.push(resourceChangeSubscription);
+  return { controller, provider };
 }

@@ -60,7 +60,7 @@ describe("resource graph index contract", () => {
       "utf8"
     );
     const openHandler = source.slice(
-      source.indexOf("onDidOpenTextDocument"),
+      source.indexOf("const reconcileOpenedDocument"),
       source.indexOf("onDidCloseTextDocument")
     );
     const closeHandler = source.slice(

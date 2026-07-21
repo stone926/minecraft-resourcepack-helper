@@ -16,7 +16,7 @@ export interface ResourceDiagnosticsController extends vscode.Disposable {
 }
 
 export function registerResourceDiagnostics(
-  context: vscode.ExtensionContext,
+  context: Pick<vscode.ExtensionContext, "subscriptions">,
   navigation: ResourceUniverseNavigation
 ): ResourceDiagnosticsController {
   const collection = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper resources"));
