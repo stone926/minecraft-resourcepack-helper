@@ -1,4 +1,8 @@
 import type * as vscode from "vscode";
+import type { ResourcePackProjectService } from "../../resourceProject/resourcePackProjectService";
+import type { ResourceUniverseService } from "../../resourceUniverse/core/resourceUniverseService";
+import type { ResourceUniverseNavigationFacade } from "../../services/resourceUniverseNavigationFacade";
+import type { RsglSubsystemRegistration } from "../registerRsglSubsystem";
 import {
   rsglCommands,
   type RsglResourceNavigationRequest,
@@ -29,6 +33,32 @@ export interface RsglRuntimeOptions {
     request: RsglResourceNavigationRequest,
     signal: AbortSignal
   ) => Promise<RsglResourceNavigationResponse>;
+}
+
+export interface RsglSubsystemFactoryOptions {
+  extensionContext: vscode.ExtensionContext;
+  projects: ResourcePackProjectService;
+  universe: ResourceUniverseService;
+  navigation: ResourceUniverseNavigationFacade;
+}
+
+/** Creates the RSGL integration behind the installed feature-bundle boundary. */
+export async function createRsglSubsystem(
+  options: RsglSubsystemFactoryOptions
+): Promise<RsglSubsystemRegistration> {
+  const module = await import("../registerRsglSubsystem.js");
+  return module.registerRsglSubsystem(
+    options.extensionContext,
+    options.projects,
+    options.universe,
+    options.navigation,
+    {
+      ownsHostSignals: false,
+      registerInContext: false,
+      runtimeModuleImporter: async () => ({ createRsglRuntime }),
+      scheduleInitialSignals: false
+    }
+  );
 }
 
 export interface RsglRuntime {

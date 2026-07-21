@@ -21,6 +21,7 @@ describe("repository build graph", () => {
     ]);
     assert.deepStrictEqual(rsglHost.include, ["src/rsgl/host/**/*.ts"]);
     assert.deepStrictEqual(referencePaths(rsglHost), [
+      "./tsconfig.main.json",
       "./packages/mc-assets",
       "./packages/rsgl-core",
       "./packages/rsgl-shared"
@@ -165,6 +166,27 @@ describe("repository build graph", () => {
     const lock = readJson<{ packages?: Record<string, { version?: string }> }>(path.join(root, "package-lock.json"));
     const manifest = readJson<{ version?: string }>(path.join(packageRoot, "package.json"));
     assert.strictEqual(manifest.version, lock.packages?.["node_modules/three"]?.version);
+  });
+
+  it("keeps the root bundle physically unreachable from RSGL implementation code", async () => {
+    const root = process.cwd();
+    const bundles = await readBundleModule(root);
+    const { build } = await import("esbuild");
+    const result = await build(bundles.createEsbuildOptions(
+      bundles.bundleEntryDefinitions.root,
+      "production",
+      { write: false, sourcemap: false, metafile: true }
+    ));
+    const rsglInputs = Object.keys(result.metafile?.inputs ?? {})
+      .map(input => input.replaceAll("\\", "/"))
+      .filter(input => input.startsWith("src/rsgl/") || input.startsWith("packages/rsgl-"))
+      .sort();
+
+    assert.deepStrictEqual(rsglInputs, [
+      "src/rsgl/loadInstalledRsglSubsystem.ts",
+      "src/rsgl/registerLazyRsglSubsystem.ts",
+      "src/rsgl/rsglActivationSignals.ts"
+    ]);
   });
 });
 

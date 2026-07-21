@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 
 /**
  * Main-side References bridge for physical definition files. RSGL documents
@@ -7,7 +7,7 @@ import type { ResourceUniverseNavigationFacade } from "../services/resourceUnive
  * physical and generated consumers here.
  */
 export function createResourceReferenceProvider(
-  navigation: ResourceUniverseNavigationFacade
+  navigation: ResourceUniverseNavigation
 ): vscode.ReferenceProvider {
   return {
     provideReferences: async (document, _position, context, token) => {

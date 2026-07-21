@@ -182,6 +182,103 @@ describe("RSGL generated contribution bridge", () => {
     await controller.dispose();
   });
 
+  it("binds physical ownership through a structural provider from another class identity", async () => {
+    const context = projectContext();
+    const controller = new RsglRuntimeController(async () => new SnapshotRuntime(), {
+      mode: "off",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const physicalProvider = new CrossBundlePhysicalProvider();
+    assert.strictEqual(
+      physicalProvider instanceof PhysicalAssetContributionProvider,
+      false,
+      "the test provider deliberately has no shared constructor identity"
+    );
+    const physicalRegistration = universe.registerProvider(physicalProvider);
+
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller
+    );
+
+    assert.strictEqual(physicalProvider.bindings, 1);
+    assert.ok(physicalProvider.lookup);
+    assert.deepStrictEqual(
+      [...physicalProvider.lookup.getOwnedOutputPaths(context.projectId)],
+      []
+    );
+    await bridge.shutdown();
+    assert.strictEqual(physicalProvider.disposals, 1);
+
+    physicalRegistration.dispose();
+    await controller.dispose();
+  });
+
+  it("safely skips a physical provider without the ownership capability", async () => {
+    const context = projectContext();
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    let physicalRequests = 0;
+    const physicalRegistration = universe.registerProvider({
+      providerId: "physical",
+      getSnapshot: async () => {
+        physicalRequests++;
+        throw new Error("a provider without ownership must not be coupled");
+      }
+    });
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller
+    );
+
+    await bridge.refreshProject(context.projectId);
+
+    assert.strictEqual(physicalRequests, 0);
+    assert.strictEqual(
+      universe.index.getCoverage("rsgl", context.projectId)?.status,
+      "authoritative"
+    );
+    await bridge.shutdown();
+    physicalRegistration.dispose();
+    await controller.dispose();
+  });
+
+  it("keeps initializing when a structural ownership provider rejects binding", async () => {
+    const context = projectContext();
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const physicalProvider = new ThrowingOwnershipPhysicalProvider();
+    const physicalRegistration = universe.registerProvider(physicalProvider);
+
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller
+    );
+    await bridge.refreshProject(context.projectId);
+
+    assert.strictEqual(physicalProvider.bindingAttempts, 1);
+    assert.strictEqual(physicalProvider.snapshotRequests, 0);
+    assert.strictEqual(
+      universe.index.getCoverage("rsgl", context.projectId)?.status,
+      "authoritative"
+    );
+    await bridge.shutdown();
+    physicalRegistration.dispose();
+    await controller.dispose();
+  });
+
   it("reports malformed persisted ownership as partial without inferring paths", async () => {
     const context = projectContext();
     const controller = new RsglRuntimeController(async () => new SnapshotRuntime(), {
@@ -454,5 +551,46 @@ class OwnershipAwarePhysicalSource implements PhysicalAssetProjectSource {
         getText: () => "{}"
       }]
     };
+  }
+}
+
+class CrossBundlePhysicalProvider {
+  public readonly providerId = "physical";
+  public bindings = 0;
+  public disposals = 0;
+  public lookup?: PhysicalAssetOwnedOutputLookup;
+
+  public setOwnedOutputLookup(lookup: PhysicalAssetOwnedOutputLookup): { dispose(): void } {
+    this.bindings++;
+    this.lookup = lookup;
+    return {
+      dispose: () => {
+        if (this.lookup === lookup) {
+          this.lookup = undefined;
+          this.disposals++;
+        }
+      }
+    };
+  }
+
+  public async getSnapshot(): Promise<never> {
+    throw new Error("not used by this focused capability test");
+  }
+}
+
+class ThrowingOwnershipPhysicalProvider {
+  public readonly providerId = "physical";
+  public bindingAttempts = 0;
+  public snapshotRequests = 0;
+
+  public setOwnedOutputLookup(lookup: PhysicalAssetOwnedOutputLookup): { dispose(): void } {
+    void lookup;
+    this.bindingAttempts++;
+    throw new Error("foreign ownership binding failed");
+  }
+
+  public async getSnapshot(): Promise<never> {
+    this.snapshotRequests++;
+    throw new Error("a failed ownership binding must not be coupled");
   }
 }

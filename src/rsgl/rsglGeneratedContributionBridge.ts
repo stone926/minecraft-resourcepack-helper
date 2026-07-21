@@ -1,15 +1,20 @@
 import type { ResourcePackProjectContextDto } from "../../packages/resource-project/src";
+import type {
+  ResourceContributionProvider,
+  ResourceCoverageScope,
+  ResourceProviderUnavailableReason
+} from "../resourceUniverse/core/types";
+import type {
+  ResourceUniverseRefreshResult,
+  ResourceUniverseService
+} from "../resourceUniverse/core/resourceUniverseService";
+import type { PhysicalAssetOwnedOutputLookup } from "../resourceUniverse/providers/physicalAssetProvider";
 import {
   createRsglResourceSnapshotRequest,
   createRsglUnavailableSnapshotResponse,
-  PhysicalAssetContributionProvider,
-  RsglGeneratedProvider,
-  RsglGeneratedProviderConnection,
-  ResourceUniverseService,
-  type ResourceCoverageScope,
-  type ResourceProviderUnavailableReason,
-  type ResourceUniverseRefreshResult
-} from "../resourceUniverse";
+  RsglGeneratedProvider
+} from "../resourceUniverse/providers/rsglGeneratedProvider";
+import { RsglGeneratedProviderConnection } from "../resourceUniverse/providers/rsglGeneratedProviderConnection";
 import {
   hydrateRsglMaterializations,
   type RsglMaterializationHydrationHost
@@ -71,16 +76,15 @@ export class RsglGeneratedContributionBridge {
         this.projects.getCachedContext(projectId)?.localLayer.layerId
     });
     this.connection = new RsglGeneratedProviderConnection(universe, this.provider);
-    const physicalProvider = universe.registry.get("physical");
-    if (physicalProvider instanceof PhysicalAssetContributionProvider) {
-      this.physicalOwnershipSubscription = physicalProvider.setOwnedOutputLookup({
+    const physicalOwnership = bindPhysicalOwnership(
+      universe.registry.get("physical"),
+      {
         getOwnedOutputPaths: projectId => this.provider.getOwnedOutputPaths(projectId),
         getOwnershipRevision: projectId => this.provider.getOwnershipRevision(projectId)
-      });
-      this.coupledProviderIds = [physicalProvider.providerId];
-    } else {
-      this.coupledProviderIds = [];
-    }
+      }
+    );
+    this.physicalOwnershipSubscription = physicalOwnership?.subscription;
+    this.coupledProviderIds = physicalOwnership ? [physicalOwnership.providerId] : [];
     this.controllerSubscription = controller.onDidChangeState(state =>
       this.handleRuntimeState(state)
     );
@@ -489,6 +493,61 @@ export class RsglGeneratedContributionBridge {
     if (this.disposed) {
       throw new Error("The RSGL generated contribution bridge has been disposed.");
     }
+  }
+}
+
+interface PhysicalOwnershipProviderCapability extends ResourceContributionProvider {
+  readonly providerId: "physical";
+  setOwnedOutputLookup(lookup: PhysicalAssetOwnedOutputLookup): { dispose(): void };
+}
+
+interface BoundPhysicalOwnership {
+  providerId: "physical";
+  subscription: { dispose(): void };
+}
+
+/**
+ * Provider instances may originate in another bundle, so constructor identity
+ * is not a stable integration contract. Keep this optional seam structural and
+ * isolate capability failures from the rest of bridge initialization.
+ */
+function bindPhysicalOwnership(
+  provider: ResourceContributionProvider | undefined,
+  lookup: PhysicalAssetOwnedOutputLookup
+): BoundPhysicalOwnership | undefined {
+  if (!hasPhysicalOwnershipCapability(provider)) {
+    return undefined;
+  }
+  try {
+    const subscription = provider.setOwnedOutputLookup(lookup);
+    return isDisposable(subscription)
+      ? { providerId: provider.providerId, subscription }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasPhysicalOwnershipCapability(
+  provider: ResourceContributionProvider | undefined
+): provider is PhysicalOwnershipProviderCapability {
+  try {
+    return provider?.providerId === "physical"
+      && "setOwnedOutputLookup" in provider
+      && typeof provider.setOwnedOutputLookup === "function";
+  } catch {
+    return false;
+  }
+}
+
+function isDisposable(value: unknown): value is { dispose(): void } {
+  try {
+    return typeof value === "object"
+      && value !== null
+      && "dispose" in value
+      && typeof value.dispose === "function";
+  } catch {
+    return false;
   }
 }
 

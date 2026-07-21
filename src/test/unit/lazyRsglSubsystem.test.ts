@@ -1,0 +1,99 @@
+import * as assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import * as path from "node:path";
+
+describe("lazy RSGL subsystem", () => {
+  it("keeps cold auto/off unloaded, single-flights triggers, and recreates after off", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "const events = { open: [], visible: [], configuration: [], folders: [] };",
+      "const commands = new Map(); let mode = 'auto'; let informationMessages = 0; let errorMessages = 0;",
+      "const disposable = action => ({ dispose: action || (() => undefined) });",
+      "const registerEvent = name => listener => { events[name].push(listener); return disposable(() => { const index = events[name].indexOf(listener); if (index >= 0) events[name].splice(index, 1); }); };",
+      "const vscode = {",
+      "  commands: { registerCommand: (id, handler) => { commands.set(id, handler); return disposable(() => commands.delete(id)); } },",
+      "  l10n: { t: (value, ...args) => args.reduce((text, arg, index) => text.replace(`{${index}}`, String(arg)), value) },",
+      "  workspace: {",
+      "    textDocuments: [], workspaceFolders: [{ uri: { toString: () => 'file:///workspace' } }],",
+      "    getConfiguration: () => ({ get: (_key, fallback) => mode || fallback }),",
+      "    onDidOpenTextDocument: registerEvent('open'),",
+      "    onDidChangeConfiguration: registerEvent('configuration'),",
+      "    onDidChangeWorkspaceFolders: registerEvent('folders')",
+      "  },",
+      "  window: {",
+      "    visibleTextEditors: [],",
+      "    onDidChangeVisibleTextEditors: registerEvent('visible'),",
+      "    showInformationMessage: async () => { informationMessages++; },",
+      "    showErrorMessage: async () => { errorMessages++; }",
+      "  }",
+      "};",
+      "Module._load = function(request, ...args) { return request === 'vscode' ? vscode : originalLoad.call(this, request, ...args); };",
+      "const { registerLazyRsglSubsystem } = require(process.argv[1]);",
+      "const document = { languageId: 'rsgl', uri: { path: '/workspace/rsgl/main.rsgl', toString: () => 'file:///workspace/rsgl/main.rsgl' } };",
+      "const counters = { resourceLoads: 0, subsystemLoads: 0, commands: 0, documents: 0, refreshes: 0, applies: 0, rechecks: 0, shutdowns: [] };",
+      "const infrastructure = { projects: {}, universe: {}, navigation: {}, dispose() {} };",
+      "const resources = { ensureResources: async () => { counters.resourceLoads++; return infrastructure; } };",
+      "let releaseFirst; const firstGate = new Promise(resolve => { releaseFirst = resolve; });",
+      "const implementations = [];",
+      "const makeImplementation = id => {",
+      "  let stopped = false; const implementation = {",
+      "    controller: {},",
+      "    executeCommand: async () => { counters.commands++; },",
+      "    handleDocumentSignal: async () => { counters.documents++; },",
+      "    applyConfiguredMode: async () => { counters.applies++; },",
+      "    recheckKnownSignals: async () => { counters.rechecks++; },",
+      "    handleWorkspaceFoldersChanged: async () => undefined,",
+      "    projectRevisionChanged: async () => undefined,",
+      "    refreshGeneratedProject: async () => { counters.refreshes++; return { id }; },",
+      "    dispose: () => undefined,",
+      "    shutdown: async () => { if (!stopped) { stopped = true; counters.shutdowns.push(id); if (id === 1) throw new Error('expected shutdown failure'); } }",
+      "  }; implementations.push(implementation); return implementation;",
+      "};",
+      "const context = { subscriptions: [], asAbsolutePath: value => value };",
+      "const registration = registerLazyRsglSubsystem(context, resources, {",
+      "  loadSubsystem: async () => { const id = ++counters.subsystemLoads; if (id === 1) await firstGate; return makeImplementation(id); }",
+      "});",
+      "const turn = () => new Promise(resolve => setImmediate(resolve));",
+      "const waitFor = async predicate => { for (let index = 0; index < 100; index++) { if (predicate()) return; await turn(); } throw new Error('condition timed out'); };",
+      "(async () => {",
+      "  await turn(); assert.deepStrictEqual({ resourceLoads: counters.resourceLoads, subsystemLoads: counters.subsystemLoads }, { resourceLoads: 0, subsystemLoads: 0 });",
+      "  mode = 'off';",
+      "  await commands.get('rsgl.build')(); events.open[0](document); events.visible[0]([{ document }]); await turn();",
+      "  assert.deepStrictEqual({ resourceLoads: counters.resourceLoads, subsystemLoads: counters.subsystemLoads }, { resourceLoads: 0, subsystemLoads: 0 });",
+      "  assert.strictEqual(informationMessages, 2);",
+      "  mode = 'auto'; vscode.workspace.textDocuments = [document]; vscode.window.visibleTextEditors = [{ document }];",
+      "  events.open[0](document); events.visible[0]([{ document }]);",
+      "  const command = commands.get('rsgl.build')();",
+      "  const refresh = registration.refreshGeneratedProject('project');",
+      "  await waitFor(() => counters.subsystemLoads === 1);",
+      "  assert.strictEqual(counters.resourceLoads, 1); releaseFirst();",
+      "  await Promise.all([command, refresh]); await waitFor(() => counters.documents === 2);",
+      "  assert.deepStrictEqual({ subsystemLoads: counters.subsystemLoads, commands: counters.commands, documents: counters.documents, refreshes: counters.refreshes }, { subsystemLoads: 1, commands: 1, documents: 2, refreshes: 1 });",
+      "  mode = 'on'; events.configuration[0]({ affectsConfiguration: key => key === 'McResHelper.rsgl.enabled' }); await waitFor(() => counters.applies === 1);",
+      "  vscode.workspace.textDocuments = []; vscode.window.visibleTextEditors = []; mode = 'auto';",
+      "  events.configuration[0]({ affectsConfiguration: key => key === 'McResHelper.rsgl.enabled' }); await waitFor(() => counters.applies === 2);",
+      "  mode = 'off'; events.configuration[0]({ affectsConfiguration: key => key === 'McResHelper.rsgl.enabled' });",
+      "  await waitFor(() => counters.shutdowns.includes(1) && errorMessages === 1);",
+      "  vscode.workspace.textDocuments = [document]; vscode.window.visibleTextEditors = [{ document }]; mode = 'auto'; events.configuration[0]({ affectsConfiguration: key => key === 'McResHelper.rsgl.enabled' });",
+      "  await waitFor(() => counters.subsystemLoads === 2 && counters.applies === 3);",
+      "  assert.strictEqual(counters.resourceLoads, 2);",
+      "  await registration.shutdown();",
+      "  assert.deepStrictEqual(counters.shutdowns, [1, 2]);",
+      "  assert.strictEqual(commands.size, 0);",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const registrationPath = path.join(
+      process.cwd(),
+      "out",
+      "src",
+      "rsgl",
+      "registerLazyRsglSubsystem.js"
+    );
+    const result = spawnSync(process.execPath, ["-e", script, registrationPath], {
+      encoding: "utf8"
+    });
+
+    assert.strictEqual(result.status, 0, result.stderr);
+  });
+});

@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import type {
   ResourceLocation,
-  ResourceNavigationResult,
   ResourceProducer
-} from "../resourceUniverse";
+} from "../resourceUniverse/core/types";
+import type { ResourceNavigationResult } from "../resourceUniverse/navigation/resourceNavigationService";
 import type {
   ResourceUniverseNavigationFacade,
   UnifiedResourceCoverage

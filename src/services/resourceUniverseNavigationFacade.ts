@@ -15,19 +15,21 @@ import type {
   ResourcePackProjectService,
   RsglProjectApplicability
 } from "../resourceProject";
+import type {
+  ResourceDocumentProjection,
+  ProviderCoverage,
+  ResourceEdge,
+  ResourceLocation,
+  ResourceProducer,
+  ResourceResolutionContext,
+  ResourceResolutionScope
+} from "../resourceUniverse/core/types";
+import type { ResourceUniverseService } from "../resourceUniverse/core/resourceUniverseService";
 import {
   ResourceNavigationService,
-  type ResourceDocumentProjection,
-  type ProviderCoverage,
-  type ResourceEdge,
-  type ResourceLocation,
   type ResourceNavigationOptions,
-  type ResourceNavigationResult,
-  type ResourceProducer,
-  type ResourceResolutionContext,
-  type ResourceResolutionScope,
-  type ResourceUniverseService
-} from "../resourceUniverse";
+  type ResourceNavigationResult
+} from "../resourceUniverse/navigation/resourceNavigationService";
 import {
   generateReferenceRedirectPath,
   type ResourceReferencePathResolver
@@ -117,8 +119,69 @@ export type GeneratedResourceProjectRefresher = (
   signal?: AbortSignal
 ) => Promise<unknown>;
 
-interface UriDocument extends ResourceReferenceDocument {
+export interface ResourceUniverseDocument extends ResourceReferenceDocument {
   readonly uri: vscode.Uri;
+}
+
+/**
+ * Public navigation contract consumed by extension surfaces. Keeping callers
+ * on this structural interface lets activation provide a typed lazy adapter
+ * without exposing the concrete project/universe implementation.
+ */
+export interface ResourceUniverseNavigation {
+  setGeneratedProjectRefresher(refresher: GeneratedResourceProjectRefresher): void;
+  onDidChangeResources(listener: () => void): vscode.Disposable;
+  resolveReference(
+    document: ResourceUniverseDocument,
+    reference: ResourceReference,
+    options?: UnifiedResourceQueryOptions
+  ): Promise<UnifiedReferenceResolution>;
+  resolveLogicalDefinition(
+    sourceUri: vscode.Uri,
+    target: ResourceGraphLogicalKey,
+    scope: ResourceResolutionScope,
+    options?: Omit<UnifiedResourceQueryOptions, "includeGenerated">
+  ): Promise<UnifiedLogicalDefinitionResolution>;
+  getLogicalIncomingReferenceLocations(
+    sourceUri: vscode.Uri,
+    target: ResourceGraphLogicalKey,
+    options?: Omit<UnifiedResourceQueryOptions, "includeGenerated">
+  ): Promise<UnifiedLogicalReferenceLocations>;
+  getOutgoingReferences(
+    document: ResourceUniverseDocument,
+    options?: UnifiedResourceQueryOptions
+  ): Promise<UnifiedReferenceSet>;
+  getIncomingReferences(
+    uri: vscode.Uri,
+    relationship?: string,
+    options?: UnifiedResourceQueryOptions
+  ): Promise<UnifiedReferenceSet>;
+  ensureProjectForUri(
+    uri: vscode.Uri,
+    options?: UnifiedResourceQueryOptions
+  ): Promise<EnsuredResourceProject>;
+  getDocumentProjection(document: ResourceUniverseDocument): Promise<UnifiedDocumentProjection>;
+  getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet>;
+  getProducerOutgoingReferences(
+    producerId: string,
+    options?: UnifiedResourceQueryOptions
+  ): Promise<UnifiedReferenceSet>;
+  getProducerIncomingReferences(
+    producerId: string,
+    relationship?: string,
+    options?: UnifiedResourceQueryOptions
+  ): Promise<UnifiedReferenceSet>;
+  resolveProducerNavigation(
+    producerId: string,
+    target: ResourceGraphLogicalKey,
+    options?: ResourceNavigationOptions & UnifiedResourceQueryOptions
+  ): Promise<ResourceNavigationResult | undefined>;
+  resolveUriNavigation(
+    uri: vscode.Uri,
+    options?: ResourceNavigationOptions & UnifiedResourceQueryOptions
+  ): Promise<ResourceNavigationResult | undefined>;
+  invalidateUri(uri: vscode.Uri): readonly string[];
+  invalidateAllKnownProjects(): void;
 }
 
 interface DiscoveredResourceProject {
@@ -136,7 +199,7 @@ interface LegacyReferenceResolution {
  * resolver remains the physical winner oracle on local files, while producer
  * and origin selection is performed by ResourceUniverse/NavigationService.
  */
-export class ResourceUniverseNavigationFacade {
+export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigation {
   private readonly navigation: ResourceNavigationService;
   private readonly invalidator: ResourceProjectUniverseInvalidator;
   private readonly refreshedContextRevisions = new Map<string, string>();
@@ -161,7 +224,7 @@ export class ResourceUniverseNavigationFacade {
   }
 
   public async resolveReference(
-    document: UriDocument,
+    document: ResourceUniverseDocument,
     reference: ResourceReference,
     options: UnifiedResourceQueryOptions = {}
   ): Promise<UnifiedReferenceResolution> {
@@ -254,7 +317,7 @@ export class ResourceUniverseNavigationFacade {
   }
 
   public async getOutgoingReferences(
-    document: UriDocument,
+    document: ResourceUniverseDocument,
     options: UnifiedResourceQueryOptions = {}
   ): Promise<UnifiedReferenceSet> {
     // Graph queries explicitly consume indexed producers/edges, so they keep
@@ -401,7 +464,9 @@ export class ResourceUniverseNavigationFacade {
   }
 
   /** Provider-aware Current File projection. Handler discovery itself performs no I/O. */
-  public async getDocumentProjection(document: UriDocument): Promise<UnifiedDocumentProjection> {
+  public async getDocumentProjection(
+    document: ResourceUniverseDocument
+  ): Promise<UnifiedDocumentProjection> {
     const descriptor = {
       uri: document.uri.toString(),
       fileName: document.fileName,
@@ -588,7 +653,7 @@ export class ResourceUniverseNavigationFacade {
   }
 
   private resolveIndexedReference(
-    document: UriDocument,
+    document: ResourceUniverseDocument,
     target: ResourceGraphLogicalKey | undefined,
     legacyWinner: vscode.Uri | null,
     ensured: EnsuredResourceProject,
@@ -718,7 +783,7 @@ export class ResourceUniverseNavigationFacade {
   }
 
   private tryResolveLegacyReference(
-    document: UriDocument,
+    document: ResourceUniverseDocument,
     reference: ResourceReference
   ): LegacyReferenceResolution {
     if (document.uri.scheme !== "file") {
@@ -778,7 +843,7 @@ export class ResourceUniverseNavigationFacade {
   }
 }
 
-function isGeneratedResourceDocument(document: UriDocument): boolean {
+function isGeneratedResourceDocument(document: ResourceUniverseDocument): boolean {
   return document.languageId === "rsgl"
     || document.uri.path.toLowerCase().endsWith(".rsgl")
     || document.fileName.toLowerCase().endsWith(".rsgl");

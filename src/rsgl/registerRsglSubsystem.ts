@@ -6,34 +6,41 @@ import type {
   ResourceUniverseRefreshResult,
   ResourceUniverseService
 } from "../resourceUniverse";
+import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 import {
   createInstalledRsglRuntimeLoader,
   RsglRuntimeController,
   type InstalledRsglMaterializationProject,
-  type RsglEnablementMode,
+  type RsglRuntimeModuleImporter,
   type RsglRuntimeLoadReason
 } from "./runtime";
+import {
+  configuredRsglMode,
+  isRsglDocument,
+  rsglEnablementConfiguration,
+  rsglProxyCommands,
+  showRsglDisabledMessage
+} from "./rsglActivationSignals";
 
-const rsglEnablementConfiguration = "McResHelper.rsgl.enabled";
-const resourceResolutionConfigurations = [
-  "McResHelper.defaultMcAssetsPath",
-  "McResHelper.resourcePackLoadOrder"
-] as const;
-// These are the root bundle's proxy registrations for the public command IDs
-// declared in package.json. The lazy host owns their implementations.
-const rsglProxyCommands = {
-  build: "rsgl.build",
-  previewBuild: "rsgl.previewBuild",
-  buildDirectory: "rsgl.buildDirectory",
-  previewDirectoryBuild: "rsgl.previewDirectoryBuild",
-  buildWorkspace: "rsgl.buildWorkspace",
-  previewWorkspaceBuild: "rsgl.previewWorkspaceBuild",
-  refreshWorkspace: "rsgl.refreshWorkspace"
-} as const;
+export interface RsglSubsystemRegistrationOptions {
+  readonly ownsHostSignals?: boolean;
+  readonly registerInContext?: boolean;
+  readonly runtimeModuleImporter?: RsglRuntimeModuleImporter;
+  readonly scheduleInitialSignals?: boolean;
+}
 
 export interface RsglSubsystemRegistration extends vscode.Disposable {
   readonly controller: RsglRuntimeController;
+  executeCommand(command: string, args: readonly unknown[]): Promise<unknown>;
+  handleDocumentSignal(
+    document: vscode.TextDocument,
+    reason: RsglRuntimeLoadReason
+  ): Promise<void>;
+  applyConfiguredMode(): Promise<void>;
+  recheckKnownSignals(): Promise<void>;
+  handleWorkspaceFoldersChanged(): Promise<void>;
+  projectRevisionChanged(): Promise<void>;
   refreshGeneratedProject(
     projectId: string,
     signal?: AbortSignal
@@ -46,7 +53,8 @@ export function registerRsglSubsystem(
   context: vscode.ExtensionContext,
   projects: ResourcePackProjectService,
   universe: ResourceUniverseService,
-  navigation: ResourceUniverseNavigationFacade
+  navigation: ResourceUniverseNavigationFacade,
+  options: RsglSubsystemRegistrationOptions = {}
 ): RsglSubsystemRegistration {
   const disposables: vscode.Disposable[] = [];
   const notifiedDisabledDocuments = new Set<string>();
@@ -57,7 +65,7 @@ export function registerRsglSubsystem(
   let subsystemShutdown: Promise<void> | undefined;
   let materializationProjectHint: string | undefined;
   const controller = new RsglRuntimeController(
-    createInstalledRsglRuntimeLoader(context, undefined, {
+    createInstalledRsglRuntimeLoader(context, options.runtimeModuleImporter, {
       onMaterializationInvalidation: value =>
         getGeneratedBridge().then(generated =>
           generated.acceptMaterializationInvalidation(value, materializationProjectHint)),
@@ -73,42 +81,46 @@ export function registerRsglSubsystem(
       recheckSignals: () => queueMicrotask(() => void recheckKnownSignals())
     }
   );
-  for (const command of Object.values(rsglProxyCommands)) {
-    disposables.push(vscode.commands.registerCommand(command, (...args: unknown[]) =>
-      executeProxyCommand(command, args)
-    ));
-  }
-  disposables.push(
-    vscode.workspace.onDidOpenTextDocument(document => {
-      if (isRsglDocument(document)) {
-        void handleDocumentSignal(document, "openDocument");
-      }
-    }),
-    vscode.window.onDidChangeVisibleTextEditors(editors => {
-      for (const editor of editors) {
-        if (isRsglDocument(editor.document)) {
-          void handleDocumentSignal(editor.document, "visibleDocument");
+  if (options.ownsHostSignals !== false) {
+    for (const command of Object.values(rsglProxyCommands)) {
+      disposables.push(vscode.commands.registerCommand(command, (...args: unknown[]) =>
+        executeProxyCommand(command, args)
+      ));
+    }
+    disposables.push(
+      vscode.workspace.onDidOpenTextDocument(document => {
+        if (isRsglDocument(document)) {
+          void handleDocumentSignal(document, "openDocument");
         }
-      }
-    }),
-    vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration(rsglEnablementConfiguration)) {
-        void applyConfiguredMode();
-      } else if (resourceResolutionConfigurations.some(key => event.affectsConfiguration(key))) {
-        void controller.projectRevisionChanged();
-      }
-    }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      if ((vscode.workspace.workspaceFolders?.length ?? 0) === 0) {
-        void controller.setProjectAvailable(false);
-      } else if (configuredRsglMode() === "on") {
-        void discoverWorkspaceProject("projectMetadata");
-      }
-    })
-  );
+      }),
+      vscode.window.onDidChangeVisibleTextEditors(editors => {
+        for (const editor of editors) {
+          if (isRsglDocument(editor.document)) {
+            void handleDocumentSignal(editor.document, "visibleDocument");
+          }
+        }
+      }),
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration(rsglEnablementConfiguration)) {
+          void applyConfiguredMode();
+        } else if (affectsResourceResolutionConfiguration(event)) {
+          void controller.projectRevisionChanged();
+        }
+      }),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        void handleWorkspaceFoldersChanged();
+      })
+    );
+  }
 
   const registration: RsglSubsystemRegistration = {
     controller,
+    executeCommand: executeProxyCommand,
+    handleDocumentSignal,
+    applyConfiguredMode,
+    recheckKnownSignals,
+    handleWorkspaceFoldersChanged,
+    projectRevisionChanged: () => controller.projectRevisionChanged(),
     refreshGeneratedProject: async (projectId, signal) => {
       if (signal?.aborted) {
         return undefined;
@@ -138,14 +150,18 @@ export function registerRsglSubsystem(
       await shutdownSubsystem();
     }
   };
-  context.subscriptions.push(registration);
+  if (options.registerInContext !== false) {
+    context.subscriptions.push(registration);
+  }
 
-  queueMicrotask(() => {
-    if (configuredRsglMode() === "on") {
-      void discoverWorkspaceProject("configuration");
-    }
-    void recheckKnownSignals();
-  });
+  if (options.scheduleInitialSignals !== false) {
+    queueMicrotask(() => {
+      if (configuredRsglMode() === "on") {
+        void discoverWorkspaceProject("configuration");
+      }
+      void recheckKnownSignals();
+    });
+  }
   return registration;
 
   async function executeProxyCommand(command: string, args: readonly unknown[]): Promise<unknown> {
@@ -239,6 +255,14 @@ export function registerRsglSubsystem(
     await controller.setMode(mode);
     if (mode === "on") {
       await discoverWorkspaceProject("configuration");
+    }
+  }
+
+  async function handleWorkspaceFoldersChanged(): Promise<void> {
+    if ((vscode.workspace.workspaceFolders?.length ?? 0) === 0) {
+      await controller.setProjectAvailable(false);
+    } else if (configuredRsglMode() === "on") {
+      await discoverWorkspaceProject("projectMetadata");
     }
   }
 
@@ -374,14 +398,7 @@ export function registerRsglSubsystem(
   }
 }
 
-export function configuredRsglMode(): RsglEnablementMode {
-  const configured = vscode.workspace.getConfiguration("McResHelper").get<string>("rsgl.enabled", "auto");
-  return configured === "on" || configured === "off" ? configured : "auto";
-}
-
-export function isRsglDocument(document: Pick<vscode.TextDocument, "languageId" | "uri">): boolean {
-  return document.languageId === "rsgl" || document.uri.path.toLowerCase().endsWith(".rsgl");
-}
+export { configuredRsglMode, isRsglDocument } from "./rsglActivationSignals";
 
 function isVscodeUri(value: unknown): value is vscode.Uri {
   if (!value || typeof value !== "object") {
@@ -391,11 +408,6 @@ function isVscodeUri(value: unknown): value is vscode.Uri {
   return typeof candidate.scheme === "string"
     && typeof candidate.path === "string"
     && typeof candidate.toString === "function";
-}
-
-async function showRsglDisabledMessage(): Promise<void> {
-  await vscode.window.showInformationMessage(vscode.l10n.t("RSGL language services are disabled by McResHelper.rsgl.enabled."
-  ));
 }
 
 function portableSourceRoot(project: ResourcePackProjectContextDto): string {

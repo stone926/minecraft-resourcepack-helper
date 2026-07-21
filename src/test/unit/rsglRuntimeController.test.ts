@@ -87,6 +87,31 @@ describe("RsglRuntimeController", () => {
     assert.strictEqual(controller.getState().kind, "ready");
   });
 
+  it("keeps one ready runtime across auto and on transitions", async () => {
+    let loads = 0;
+    let disposals = 0;
+    let rechecks = 0;
+    const controller = new RsglRuntimeController(async () => {
+      loads += 1;
+      return runtime({ dispose: () => { disposals += 1; } });
+    }, {
+      mode: "auto",
+      hasActiveProject: true,
+      recheckSignals: () => { rechecks += 1; }
+    });
+
+    await controller.ensureLoaded("openDocument");
+    await controller.setMode("on");
+    await controller.setMode("auto");
+
+    assert.strictEqual(loads, 1);
+    assert.strictEqual(disposals, 0);
+    assert.strictEqual(rechecks, 2);
+    assert.strictEqual(controller.getState().kind, "ready");
+    await controller.dispose();
+    assert.strictEqual(disposals, 1);
+  });
+
   it("awaits async runtime shutdown and makes disposal terminal", async () => {
     const disposal = deferred<void>();
     let disposeCalls = 0;

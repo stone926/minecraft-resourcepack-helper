@@ -446,13 +446,19 @@ describe("combined VSIX artifact measurement", () => {
       installedBytes: 3_525_000,
       fileCount: 88,
       runtimeEntryCompressedBytes: {
-        root: 110_000,
-        rsglHost: 123_000,
+        root: 102_000,
+        rsglHost: 131_000,
         server: 255_000,
         worker: 183_000,
         modelPreview: 153_000
       }
     });
+    assert.strictEqual(
+      budgets.mainVsix.runtimeEntryCompressedBytes.root
+        + budgets.mainVsix.runtimeEntryCompressedBytes.rsglHost,
+      233_000,
+      "moving RSGL implementation code must not relax the combined root/host allowance"
+    );
     assert.deepStrictEqual(
       Object.keys(budgets.mainVsix.runtimeEntryCompressedBytes).sort(),
       [...budgetModule.mainVsixBudgetEntryIds].sort()

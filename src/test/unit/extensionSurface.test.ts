@@ -7,7 +7,8 @@ describe("extension surface", () => {
     const source = readSource("extension.ts");
 
     for (const registration of [
-      "registerResourceInfrastructure(context)",
+      "registerLazyResourceInfrastructure(context)",
+      "registerLazyRsglSubsystem(context, resources)",
       "registerResourceGraph(context, resources.navigation)",
       "registerResourceDiagnostics(context, resources.navigation)",
       "registerLanguageProviders(context, resources.navigation)",
@@ -32,6 +33,8 @@ describe("extension surface", () => {
     }
 
     assert.ok(source.split(/\r?\n/).length <= 25, "extension.ts should remain a thin composition root");
+    assert.strictEqual(source.includes('from "./registration/registerResourceInfrastructure"'), false);
+    assert.strictEqual(source.includes('from "./rsgl/registerRsglSubsystem"'), false);
   });
 
   it("registers project and universe infrastructure without activation-time scanning", () => {

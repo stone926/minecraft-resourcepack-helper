@@ -7,10 +7,12 @@ import {
 import {
   parseRsglGeneratedOwnershipManifest,
   projectParsedRsglGeneratedOwnershipManifest,
-  type RsglGeneratedMaterializationEntry,
-  type RsglGeneratedMaterializationSnapshot,
   type RsglGeneratedOwnershipManifest
-} from "../resourceUniverse";
+} from "../resourceUniverse/providers/rsglGeneratedOwnershipManifest";
+import type {
+  RsglGeneratedMaterializationEntry,
+  RsglGeneratedMaterializationSnapshot
+} from "../resourceUniverse/providers/rsglGeneratedMaterialization";
 
 export interface RsglMaterializationHydrationHost {
   readTextUri?(uri: string): Promise<string | undefined>;

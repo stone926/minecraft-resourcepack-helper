@@ -5,7 +5,7 @@ import {
   refreshResourceDiagnostics,
   type ResourceDiagnosticResolver
 } from "../diagnostics/resourceDiagnostics";
-import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 
 export interface ResourceDiagnosticsController extends vscode.Disposable {
   refresh(document: vscode.TextDocument): void;
@@ -17,7 +17,7 @@ export interface ResourceDiagnosticsController extends vscode.Disposable {
 
 export function registerResourceDiagnostics(
   context: vscode.ExtensionContext,
-  navigation: ResourceUniverseNavigationFacade
+  navigation: ResourceUniverseNavigation
 ): ResourceDiagnosticsController {
   const collection = vscode.languages.createDiagnosticCollection(vscode.l10n.t("McResHelper resources"));
   const controller = new RegisteredResourceDiagnostics(

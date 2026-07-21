@@ -1,15 +1,15 @@
 import type * as vscode from "vscode";
 import { registerCommands } from "./registration/registerCommands";
 import { registerLanguageProviders } from "./registration/registerLanguageProviders";
+import { registerLazyResourceInfrastructure } from "./registration/registerLazyResourceInfrastructure";
 import { registerResourceDiagnostics } from "./registration/registerResourceDiagnostics";
 import { registerResourceGraph } from "./registration/registerResourceGraph";
-import { registerResourceInfrastructure } from "./registration/registerResourceInfrastructure";
 import { registerWorkspaceEvents } from "./registration/registerWorkspaceEvents";
-import { registerRsglSubsystem, type RsglSubsystemRegistration } from "./rsgl/registerRsglSubsystem";
-let rsglSubsystem: RsglSubsystemRegistration | undefined;
+import { registerLazyRsglSubsystem, type LazyRsglSubsystemRegistration } from "./rsgl/registerLazyRsglSubsystem";
+let rsglSubsystem: LazyRsglSubsystemRegistration | undefined;
 export function activate(context: vscode.ExtensionContext): void {
-  const resources = registerResourceInfrastructure(context);
-  rsglSubsystem = registerRsglSubsystem(context, resources.projects, resources.universe, resources.navigation);
+  const resources = registerLazyResourceInfrastructure(context);
+  rsglSubsystem = registerLazyRsglSubsystem(context, resources);
   resources.navigation.setGeneratedProjectRefresher((projectId, signal) => rsglSubsystem?.refreshGeneratedProject(projectId, signal) ?? Promise.resolve(undefined));
   const resourceGraph = registerResourceGraph(context, resources.navigation);
   const diagnostics = registerResourceDiagnostics(context, resources.navigation);

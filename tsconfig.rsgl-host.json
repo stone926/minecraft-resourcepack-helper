@@ -13,6 +13,7 @@
     "src/rsgl/host/**/*.ts"
   ],
   "references": [
+    { "path": "./tsconfig.main.json" },
     { "path": "./packages/mc-assets" },
     { "path": "./packages/rsgl-core" },
     { "path": "./packages/rsgl-shared" }

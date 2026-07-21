@@ -5,7 +5,7 @@ import citHoverProvider from "../cit/providers/citHoverProvider";
 import resourceCompletionProvider from "../providers/resourceCompletionProvider";
 import { createResourceDefinitionProvider } from "../providers/resourceDefinitionProvider";
 import { createResourceReferenceProvider } from "../providers/resourceReferenceProvider";
-import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 import textureVarDefinitionProvider from "../providers/textureVarDefinitionProvider";
 import { getResourceDocumentSelectors } from "../resources/resourceSurfaceRegistry";
 
@@ -16,7 +16,7 @@ const citCodeActionSelectors: vscode.DocumentFilter[] = getResourceDocumentSelec
 
 export function registerLanguageProviders(
   context: vscode.ExtensionContext,
-  navigation: ResourceUniverseNavigationFacade
+  navigation: ResourceUniverseNavigation
 ): void {
   context.subscriptions.push(vscode.languages.registerDefinitionProvider(
     resourceReferenceSelectors,

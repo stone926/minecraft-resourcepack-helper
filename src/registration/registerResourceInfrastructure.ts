@@ -1,10 +1,8 @@
 import * as vscode from "vscode";
-import { ResourcePackProjectService } from "../resourceProject";
+import { ResourcePackProjectService } from "../resourceProject/resourcePackProjectService";
 import { VscodeResourcePackProjectHost } from "../resourceProject/vscodeResourceProjectHost";
-import {
-  PhysicalAssetContributionProvider,
-  ResourceUniverseService
-} from "../resourceUniverse";
+import { ResourceUniverseService } from "../resourceUniverse/core/resourceUniverseService";
+import { PhysicalAssetContributionProvider } from "../resourceUniverse/providers/physicalAssetProvider";
 import { VscodePhysicalAssetSource } from "../resourceUniverse/providers/vscodePhysicalAssetSource";
 import { LazyVscodeArchiveResources } from "../resourceUniverse/virtualFs/lazyVscodeArchiveResources";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
@@ -17,12 +15,11 @@ export interface ResourceInfrastructure extends vscode.Disposable {
 }
 
 /**
- * Main-extension composition seam for project/universe infrastructure. It
- * registers only lightweight metadata watchers; provider scans stay on demand.
+ * Creates the concrete project/universe infrastructure without transferring
+ * ownership to an extension context. Lazy composition uses this factory only
+ * after a real resource query, then owns disposal itself.
  */
-export function registerResourceInfrastructure(
-  context: vscode.ExtensionContext
-): ResourceInfrastructure {
+export function createResourceInfrastructure(): ResourceInfrastructure {
   const projects = new ResourcePackProjectService(new VscodeResourcePackProjectHost());
   const universe = new ResourceUniverseService();
   const navigation = new ResourceUniverseNavigationFacade(projects, universe);
@@ -68,7 +65,6 @@ export function registerResourceInfrastructure(
       universe.dispose();
     }
   };
-  context.subscriptions.push(registration);
   return registration;
 
   function invalidateMetadata(uri: vscode.Uri): void {
@@ -80,4 +76,16 @@ export function registerResourceInfrastructure(
       universe.removeProject(projectId);
     }
   }
+}
+
+/**
+ * Eager compatibility registration. New activation code should prefer the
+ * lazy owner and call this seam only when immediate initialization is needed.
+ */
+export function registerResourceInfrastructure(
+  context: vscode.ExtensionContext
+): ResourceInfrastructure {
+  const registration = createResourceInfrastructure();
+  context.subscriptions.push(registration);
+  return registration;
 }

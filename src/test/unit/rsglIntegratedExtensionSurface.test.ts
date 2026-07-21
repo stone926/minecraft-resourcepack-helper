@@ -61,10 +61,12 @@ describe("integrated RSGL extension surface", () => {
 
   it("loads the integrated host, language client, and build commands lazily with installed paths", () => {
     const registration = readSource("src", "rsgl", "registerRsglSubsystem.ts");
+    const lazyRegistration = readSource("src", "rsgl", "registerLazyRsglSubsystem.ts");
+    const subsystemLoader = readSource("src", "rsgl", "loadInstalledRsglSubsystem.ts");
     const loader = readSource("src", "rsgl", "runtime", "loadInstalledRsglRuntime.ts");
     const host = readSource("src", "rsgl", "host", "rsglHost.ts");
 
-    assert.ok(registration.includes("createInstalledRsglRuntimeLoader(context, undefined, {"));
+    assert.ok(registration.includes("createInstalledRsglRuntimeLoader(context, options.runtimeModuleImporter, {"));
     assert.ok(registration.includes("onMaterializationInvalidation:"));
     assert.ok(registration.includes("resolveMaterializationProject,"));
     assert.ok(registration.includes("resolveResourceNavigation:"));
@@ -82,6 +84,15 @@ describe("integrated RSGL extension surface", () => {
       false
     );
     assert.strictEqual(registration.includes('from "./host/'), false);
+    assert.ok(lazyRegistration.includes("createInstalledRsglSubsystemLoader(context)"));
+    assert.ok(lazyRegistration.includes(
+      'type RsglSubsystemRegistration = import("./registerRsglSubsystem.js")'
+    ));
+    assert.strictEqual(lazyRegistration.includes('await import("./registerRsglSubsystem.js")'), false);
+    assert.ok(subsystemLoader.includes('asAbsolutePath("bundle/features/rsglHost.js")'));
+    assert.ok(subsystemLoader.includes("return import(subsystemUrl)"));
+    assert.ok(host.includes('import("../registerRsglSubsystem.js")'));
+    assert.ok(host.includes("createRsglSubsystem"));
     assert.ok(loader.includes('path.join("bundle", "rsgl", "server.js")'));
     assert.ok(loader.includes('path.join("bundle", "rsgl", "worker.js")'));
     assert.ok(loader.includes('path.join("bundle", "rsgl", "stdlib")'));

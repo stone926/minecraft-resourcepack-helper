@@ -136,6 +136,11 @@ export class RsglRuntimeController {
       return;
     }
 
+    if (this.state.kind === "ready" || this.state.kind === "loading") {
+      await this.options.recheckSignals?.();
+      return;
+    }
+
     this.transition({ kind: "idle", generation: this.state.generation });
     await this.options.recheckSignals?.();
     if (mode === "on") {

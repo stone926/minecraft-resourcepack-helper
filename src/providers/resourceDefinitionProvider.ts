@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
 import type { ResourceLocation, ResourceNavigationResult } from "../resourceUniverse";
-import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 import { findResourceReferenceAtPosition } from "../utils/resourceReferences";
 
 export function createResourceDefinitionProvider(
-  navigation: ResourceUniverseNavigationFacade
+  navigation: ResourceUniverseNavigation
 ): vscode.DefinitionProvider {
   return {
     provideDefinition: async (document, position, token) => {

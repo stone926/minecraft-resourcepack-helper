@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { localize } from "../i18n/runtime";
 import { ResourceGraphService } from "../services/resourceGraphService";
-import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 import { ResourceGraphTreeProvider } from "../views/resourceGraphTree";
 import {
   getResourceGraphNodeModel,
@@ -24,7 +24,7 @@ export interface ResourceGraphController {
 
 export function registerResourceGraph(
   context: vscode.ExtensionContext,
-  navigation: ResourceUniverseNavigationFacade
+  navigation: ResourceUniverseNavigation
 ): ResourceGraphController {
   const service = new ResourceGraphService(navigation);
   const model = new ResourceGraphTreeModel(service, (message, ...args) => localize({ message, args }));

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { packRootFromAssetsPath } from "../../packages/mc-assets/src";
 import type {
-  ResourceUniverseNavigationFacade,
+  ResourceUniverseNavigation,
   UnifiedResolvedReference
 } from "./resourceUniverseNavigationFacade";
 import type { ResourceLocation, ResourceNavigationResult } from "../resourceUniverse";
@@ -27,7 +27,7 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
   private readonly workspaceQuery = new ResourceGraphWorkspaceCache();
   private readonly index = new ResourceGraphIndex(this.workspaceQuery);
 
-  public constructor(private readonly navigation: ResourceUniverseNavigationFacade) {}
+  public constructor(private readonly navigation: ResourceUniverseNavigation) {}
 
   public invalidateAll(): void {
     this.index.invalidate();
