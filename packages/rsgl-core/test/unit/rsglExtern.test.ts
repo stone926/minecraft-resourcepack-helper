@@ -8,6 +8,7 @@ import {
   type RsglCompileResult
 } from "../../src/compiler";
 import { parseRsgl } from "../../src/parser";
+import { parseRsglProjectConfig } from "../../src/rsglConfig";
 import { compileSource, expectNoDiagnostics } from "./helpers/compile";
 import { createTempDir } from "./helpers/fs";
 
@@ -233,6 +234,41 @@ describe("RSGL extern declarations", () => {
     assert.strictEqual(externalUnits(local)[0].external?.source, "custom");
     assert.strictEqual(externalUnits(local)[0].external?.skipExistenceCheck, false);
     assert.strictEqual(externalUnits(global)[0].external?.source, "vanilla");
+  });
+
+  it("compiles checked local declarations from parsed global config", () => {
+    const config = parseRsglProjectConfig({
+      extern: [{
+        source: "local",
+        kind: "model",
+        patterns: ["minecraft:block/handwritten"]
+      }]
+    });
+    const existenceChecks: string[] = [];
+    const compile = (exists: boolean): RsglCompileResult => compileSource(
+      blockstateUsing("global_local", "minecraft:block/handwritten"),
+      {
+        globalExterns: config.extern,
+        externResourceExists: (source, kind, id) => {
+          existenceChecks.push(`${source}:${kind}:${id}`);
+          return exists;
+        }
+      }
+    );
+
+    const present = compile(true);
+    const missing = compile(false);
+
+    expectNoDiagnostics(present);
+    assert.deepStrictEqual(missing.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.modelNotFound"
+    ]);
+    assert.deepStrictEqual(existenceChecks, [
+      "local:model:minecraft:block/handwritten",
+      "local:model:minecraft:block/handwritten"
+    ]);
+    assert.strictEqual(externalUnits(present)[0].external?.source, "local");
+    assert.strictEqual(externalUnits(present)[0].external?.skipExistenceCheck, false);
   });
 
   it("prefers local, then custom, then vanilla for equally specific declarations", () => {

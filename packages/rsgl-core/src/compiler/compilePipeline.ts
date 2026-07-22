@@ -526,7 +526,11 @@ function collectExternDeclarations(
 
   for (const [entryIndex, entry] of (globalEntries ?? []).entries()) {
     const resourceKind = getExternResourceKind(entry.kind);
-    if (!resourceKind || (entry.source !== "custom" && entry.source !== "vanilla") || !Array.isArray(entry.patterns)) {
+    if (
+      !resourceKind
+      || (entry.source !== "local" && entry.source !== "custom" && entry.source !== "vanilla")
+      || !Array.isArray(entry.patterns)
+    ) {
       diagnostics.push(configurationExternDiagnostic(
         `Invalid global extern entry at extern[${entryIndex}].`
       ));
