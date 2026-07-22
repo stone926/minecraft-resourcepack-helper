@@ -6,7 +6,6 @@ import {
 } from "../../../packages/mc-assets/src";
 import {
   createStableResourceProjectRevision,
-  isResourceProjectUriWithin,
   joinResourceProjectUri,
   resourceProjectUriBasename,
   resourceProjectUriIdentity,
@@ -24,6 +23,7 @@ import type {
   PhysicalAssetProjectScan,
   PhysicalAssetProjectSource
 } from "./physicalAssetProvider";
+import { isResourceDocumentUriWithin } from "./resourceDocumentUri";
 
 const maximumLayerDepth = 32;
 const textExtensions = new Set([".json", ".lang", ".properties", ".vsh", ".fsh", ".glsl"]);
@@ -176,12 +176,14 @@ export class VscodePhysicalAssetSource implements PhysicalAssetProjectSource {
       }
     });
     for (const document of vscode.workspace.textDocuments) {
-      const serialized = document.uri.toString();
+      if (!isIndexedFile(document.uri)) {
+        continue;
+      }
       const assetsRootUri = layer.assetsRootUris.find(rootUri =>
-        isResourceProjectUriWithin(serialized, rootUri)
+        isResourceDocumentUriWithin(document.uri, rootUri)
       );
-      if (isIndexedFile(document.uri) && assetsRootUri) {
-        byUri.set(serialized, { uri: document.uri, assetsRootUri });
+      if (assetsRootUri) {
+        byUri.set(document.uri.toString(), { uri: document.uri, assetsRootUri });
       }
     }
 
