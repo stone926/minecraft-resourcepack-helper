@@ -72,18 +72,24 @@ export class BackgroundRefreshScheduler<TKey> {
     this.armTimer(key, state, delayMs);
   }
 
-  /** Cancels pending work for one key. An active run is allowed to settle. */
-  public cancel(key: TKey): void {
+  /**
+   * Cancels pending work for one key. An active run is allowed to settle.
+   * Returns whether queued work was removed and may need to be restored by
+   * a caller whose replacement attempt does not complete successfully.
+   */
+  public cancel(key: TKey): boolean {
     const state = this.states.get(key);
     if (!state) {
-      return;
+      return false;
     }
+    const hadPendingWork = state.timer !== undefined || state.rerun;
     this.clearTimer(state);
     state.rerun = false;
     if (!state.running) {
       this.states.delete(key);
       this.notifyIdleIfNeeded();
     }
+    return hadPendingWork;
   }
 
   /** Cancels every timer and queued rerun without interrupting active runs. */

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 
 describe("JSON-first lazy RSGL integration", () => {
-  it("marks the discovered project available before the first generated refresh", () => {
+  it("distinguishes foreground snapshot cancellation from refresh failures", () => {
     const script = [
       "const assert = require('node:assert');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
@@ -12,6 +12,8 @@ describe("JSON-first lazy RSGL integration", () => {
       "  return { scheme: parsed.protocol.slice(0, -1), authority: parsed.host, path: parsed.pathname, fsPath: parsed.pathname, toString: () => value };",
       "};",
       "const disposable = () => ({ dispose() {} });",
+      "const reports = { consoleErrors: [], errorMessages: [] };",
+      "console.error = (...args) => { reports.consoleErrors.push(args); };",
       "const vscode = {",
       "  FileType: { File: 1, Directory: 2 },",
       "  Uri: { parse: createUri, joinPath: (root, name) => createUri(`${root.toString().replace(/\\/$/, '')}/${name}`) },",
@@ -23,19 +25,29 @@ describe("JSON-first lazy RSGL integration", () => {
       "    getConfiguration: () => ({ get: (_key, fallback) => fallback }),",
       "    onDidOpenTextDocument: disposable, onDidChangeConfiguration: disposable, onDidChangeWorkspaceFolders: disposable",
       "  },",
-      "  window: { visibleTextEditors: [], onDidChangeVisibleTextEditors: disposable, showInformationMessage: async () => undefined, showWarningMessage: async () => undefined, showErrorMessage: async () => undefined }",
+      "  window: { visibleTextEditors: [], onDidChangeVisibleTextEditors: disposable, showInformationMessage: async () => undefined, showWarningMessage: async () => undefined, showErrorMessage: async message => { reports.errorMessages.push(message); return undefined; } }",
       "};",
       "Module._load = function(request, ...args) { return request === 'vscode' ? vscode : originalLoad.call(this, request, ...args); };",
       "const runtimePath = require.resolve(process.argv[2]);",
       "const runtimeExports = require(runtimePath);",
-      "const counters = { hostLoads: 0, languageServerStarts: 0, snapshotRequests: 0, disposals: 0, physicalRequests: 0 };",
+      "const counters = { hostLoads: 0, languageServerStarts: 0, snapshotRequests: 0, abortedSnapshotRequests: 0, invalidationDisposals: 0, disposals: 0, physicalRequests: 0 };",
+      "let invalidationListener;",
+      "let invalidateNextSnapshot = false;",
       "const runtime = {",
       "  ensureLanguageServer: async () => { counters.languageServerStarts++; },",
-      "  requestResourceSnapshot: async request => {",
+      "  requestResourceSnapshot: async (request, signal) => {",
       "    counters.snapshotRequests++;",
+      "    if (invalidateNextSnapshot) {",
+      "      invalidateNextSnapshot = false;",
+      "      assert.strictEqual(typeof invalidationListener, 'function');",
+      "      invalidationListener({ protocolVersion: 1, projectId: request.projectContext.projectId, invalidationRevision: 'document-r2', reason: 'document' });",
+      "      assert.strictEqual(signal.aborted, true);",
+      "      counters.abortedSnapshotRequests++;",
+      "      throw signal.reason ?? Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });",
+      "    }",
       "    return { protocolVersion: request.protocolVersion, projectId: request.projectContext.projectId, requestGeneration: request.requestGeneration, revision: 'generated-r1', status: 'ok', coverage: { status: 'authoritative', revision: 'generated-r1', coveredScope: { projectId: request.projectContext.projectId } }, resources: [], edges: [] };",
       "  },",
-      "  onResourceSnapshotInvalidated: () => disposable(),",
+      "  onResourceSnapshotInvalidated: listener => { invalidationListener = listener; return { dispose: () => { invalidationListener = undefined; counters.invalidationDisposals++; } }; },",
       "  dispose: async () => { counters.disposals++; }",
       "};",
       "require.cache[runtimePath].exports = { ...runtimeExports, createInstalledRsglRuntimeLoader: () => async () => { counters.hostLoads++; return runtime; } };",
@@ -72,9 +84,23 @@ describe("JSON-first lazy RSGL integration", () => {
       "  assert.strictEqual(registration.controller.getState().kind, 'ready');",
       "  assert.deepStrictEqual({ hostLoads: counters.hostLoads, languageServerStarts: counters.languageServerStarts, snapshotRequests: counters.snapshotRequests, physicalRequests: counters.physicalRequests }, { hostLoads: 1, languageServerStarts: 1, snapshotRequests: 1, physicalRequests: 1 });",
       "  assert.strictEqual(universe.index.getCoverage('rsgl', context.projectId).status, 'authoritative');",
+      "  const document = { uri: createUri('file:///workspace/pack/rsgl/main.rsgl'), languageId: 'rsgl', fileName: '/workspace/pack/rsgl/main.rsgl' };",
+      "  invalidateNextSnapshot = true;",
+      "  await registration.handleDocumentSignal(document, 'openDocument');",
+      "  assert.deepStrictEqual({ snapshotRequests: counters.snapshotRequests, abortedSnapshotRequests: counters.abortedSnapshotRequests }, { snapshotRequests: 2, abortedSnapshotRequests: 1 });",
+      "  assert.deepStrictEqual(reports, { consoleErrors: [], errorMessages: [] });",
+      "  const refreshProject = universe.refreshProject.bind(universe);",
+      "  universe.refreshProject = async () => { throw new Error('synthetic refresh failure'); };",
+      "  await registration.handleDocumentSignal(document, 'openDocument');",
+      "  universe.refreshProject = refreshProject;",
+      "  assert.strictEqual(reports.consoleErrors.length, 1);",
+      "  assert.strictEqual(reports.errorMessages.length, 1);",
+      "  assert.match(reports.errorMessages[0], /generated resources could not be refreshed/i);",
+      "  assert.doesNotMatch(reports.errorMessages[0], /language server could not start/i);",
       "  await registration.shutdown(); physical.dispose(); universe.dispose();",
-      "  assert.strictEqual(counters.disposals, 1);",
-      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+      "  assert.deepStrictEqual({ disposals: counters.disposals, invalidationDisposals: counters.invalidationDisposals, snapshotRequests: counters.snapshotRequests }, { disposals: 1, invalidationDisposals: 1, snapshotRequests: 2 });",
+      "  assert.deepStrictEqual({ consoleErrors: reports.consoleErrors.length, errorMessages: reports.errorMessages.length }, { consoleErrors: 1, errorMessages: 1 });",
+      "})().catch(error => { process.stderr.write(`${error?.stack ?? error}\\n`); process.exitCode = 1; });"
     ].join("\n");
     const registrationPath = path.join(process.cwd(), "out", "src", "rsgl", "registerRsglSubsystem.js");
     const runtimePath = path.join(process.cwd(), "out", "src", "rsgl", "runtime", "index.js");

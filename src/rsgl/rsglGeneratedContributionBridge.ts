@@ -23,6 +23,7 @@ import {
   BackgroundRefreshScheduler,
   type BackgroundRefreshTimerHost
 } from "./backgroundRefreshScheduler";
+import { isAbortError } from "../utils/abortError";
 import {
   type RsglRuntimeController,
   type RsglRuntimeEnsureOptions,
@@ -176,12 +177,30 @@ export class RsglGeneratedContributionBridge {
       this.universe.invalidateProviderProject(this.provider.providerId, projectId, "notProbed");
       return undefined;
     }
-    this.backgroundRefreshScheduler.cancel(projectId);
-    if (this.controller.getMode() === "off") {
-      return this.connection.refreshProject(projectId, scope, signal);
+    const restorePendingRefresh = this.backgroundRefreshScheduler.cancel(projectId);
+    let replacementApplied = false;
+    try {
+      let result: ResourceUniverseRefreshResult;
+      if (this.controller.getMode() === "off") {
+        result = await this.connection.refreshProject(projectId, scope, signal);
+      } else {
+        await this.ensureMaterializations(projectId);
+        result = await this.refreshCoupledProject(projectId, scope, signal);
+      }
+      replacementApplied = result.applied;
+      return result;
+    } catch (error) {
+      // Runtime invalidation deliberately cancels the now-stale foreground
+      // snapshot and schedules its replacement. It is not a refresh failure.
+      if (signal?.aborted || isAbortError(error)) {
+        return undefined;
+      }
+      throw error;
+    } finally {
+      if (restorePendingRefresh && !replacementApplied) {
+        this.backgroundRefreshScheduler.schedule(projectId);
+      }
     }
-    await this.ensureMaterializations(projectId);
-    return this.refreshCoupledProject(projectId, scope, signal);
   }
 
   /**
@@ -685,10 +704,6 @@ function abortSignalError(signal: AbortSignal): Error {
   const error = new Error("The RSGL resource snapshot request was cancelled.");
   error.name = "AbortError";
   return error;
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 
 function errorMessage(error: unknown): string {

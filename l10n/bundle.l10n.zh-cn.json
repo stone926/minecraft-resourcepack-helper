@@ -29,6 +29,7 @@
   "RSGL build failed: {0}": "RSGL 构建失败：{0}",
   "RSGL build preview failed: {0}": "RSGL 构建预览失败：{0}",
   "RSGL build worker exited before returning a result (code {0}).": "RSGL 构建工作线程在返回结果前已退出（退出代码 {0}）。",
+  "RSGL generated resources could not be refreshed: {0}": "RSGL 生成资源无法刷新：{0}",
   "RSGL language server could not start: {0}": "RSGL 语言服务器无法启动：{0}",
   "RSGL language services are disabled by McResHelper.rsgl.enabled.": "McResHelper.rsgl.enabled 已禁用 RSGL 语言服务。",
   "RSGL command requires a resource-pack project with pack.mcmeta or rsgl.config.json.": "RSGL 命令需要包含 pack.mcmeta 或 rsgl.config.json 的资源包工程。",

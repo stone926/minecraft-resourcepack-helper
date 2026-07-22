@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { lm } from "../i18n/messages";
 import { localize } from "../i18n/runtime";
 import { createResourceReferencePathResolver } from "../utils/pathGenerator";
+import { isAbortError } from "../utils/abortError";
 import { getResourceReferences, isResourceReferenceDocument } from "../utils/resourceReferences";
 import { rangeInsideString } from "../utils/resourceRange";
 import { getCitDiagnostics } from "../cit/citDiagnostics";
@@ -69,12 +70,20 @@ export async function refreshResourceDiagnostics(
       continue;
     }
 
-    const resolution = resolveReference
-      ? await resolveReference(document, reference)
-      : {
-          targetUri: resolveResourcePath(reference, document),
-          coverage: "authoritative" as const
-        };
+    let resolution: ResourceDiagnosticResolution;
+    try {
+      resolution = resolveReference
+        ? await resolveReference(document, reference)
+        : {
+            targetUri: resolveResourcePath(reference, document),
+            coverage: "authoritative" as const
+          };
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      throw error;
+    }
     if (!isCurrentRefresh(document, collection, refresh)) {
       return;
     }

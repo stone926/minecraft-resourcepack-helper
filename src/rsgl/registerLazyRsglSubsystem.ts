@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { ResourceInfrastructure } from "../registration/registerResourceInfrastructure";
 import type { ResourceUniverseRefreshResult } from "../resourceUniverse/core/resourceUniverseService";
+import { isAbortError } from "../utils/abortError";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import {
   configuredRsglMode,
@@ -297,6 +298,9 @@ function runInBackground(promise: Promise<unknown>, message: string): void {
 }
 
 function reportBackgroundError(message: string, error: unknown): void {
+  if (isAbortError(error)) {
+    return;
+  }
   console.error(message, error);
   void vscode.window.showErrorMessage(vscode.l10n.t("{0}: {1}",
     message,

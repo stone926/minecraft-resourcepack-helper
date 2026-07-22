@@ -6,6 +6,7 @@ import type {
   ResourceUniverseRefreshResult,
   ResourceUniverseService
 } from "../resourceUniverse";
+import { isAbortError } from "../utils/abortError";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 import {
@@ -217,14 +218,33 @@ export function registerRsglSubsystem(
     if (!project) {
       return;
     }
+    let readyGenerated: GeneratedBridge | undefined;
     try {
       const generated = await getGeneratedBridge();
       generated.trackProject(project.projectId);
       await generated.ensureLanguageServer(project.projectId, reason);
-      await generated.refreshProject(project.projectId);
+      readyGenerated = generated;
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       console.error(error);
       void vscode.window.showErrorMessage(vscode.l10n.t("RSGL language server could not start: {0}",
+        error instanceof Error ? error.message : String(error)
+      ));
+      return;
+    }
+    if (!readyGenerated) {
+      return;
+    }
+    try {
+      await readyGenerated.refreshProject(project.projectId);
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      console.error(error);
+      void vscode.window.showErrorMessage(vscode.l10n.t("RSGL generated resources could not be refreshed: {0}",
         error instanceof Error ? error.message : String(error)
       ));
     }

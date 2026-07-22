@@ -34,6 +34,7 @@ import {
   generateReferenceRedirectPath,
   type ResourceReferencePathResolver
 } from "../utils/pathGenerator";
+import { isAbortError } from "../utils/abortError";
 import {
   getResourceReferences,
   type ResourceReference,
@@ -438,15 +439,20 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
       === context.contextRevision;
     if (!contextIsCurrent || !coverage || coverage.status === "unavailable") {
       try {
-        const refresh = await this.universe.refreshProviderProject("physical", context.projectId, {
-          projectId: context.projectId,
-          resolutionScopes: ["effective", "local", "custom", "vanilla"]
-        }, options.signal);
+        // The physical provider scans the whole project. Keep this canonical
+        // scope aligned with coupled generated/physical refreshes so identical
+        // work can share one in-flight snapshot.
+        const refresh = await this.universe.refreshProviderProject(
+          "physical",
+          context.projectId,
+          { projectId: context.projectId },
+          options.signal
+        );
         if (refresh.applied) {
           this.refreshedContextRevisions.set(context.projectId, context.contextRevision);
         }
-      } catch {
-        if (!options.signal?.aborted) {
+      } catch (error) {
+        if (!isAbortError(error) && !options.signal?.aborted) {
           this.universe.invalidateProviderProject("physical", context.projectId, "stale");
         }
       }
@@ -847,10 +853,6 @@ function isGeneratedResourceDocument(document: ResourceUniverseDocument): boolea
   return document.languageId === "rsgl"
     || document.uri.path.toLowerCase().endsWith(".rsgl")
     || document.fileName.toLowerCase().endsWith(".rsgl");
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 
 function resolutionContext(

@@ -17,6 +17,7 @@ import type {
 export interface ResourceUniverseRefreshResult {
   applied: boolean;
   reason?: "staleGeneration";
+  /** Snapshots completed before a service-owned cancellation made the batch stale. */
   snapshots: readonly ResourceProviderSnapshot[];
 }
 
@@ -32,13 +33,31 @@ export interface ResourceUniverseSubscription {
 
 interface ProviderProjectRequestState {
   generation: number;
-  inFlight?: {
-    signature: string;
-    generation: number;
-    controller: AbortController;
-    promise: Promise<ResourceProviderSnapshot>;
-  };
+  inFlight?: ProviderProjectInFlight;
 }
+
+interface ProviderProjectInFlight {
+  signature: string;
+  controller: AbortController;
+  consumers: Map<symbol, SnapshotRequestConsumer>;
+  settled: boolean;
+  cancelAsStale(): void;
+}
+
+interface SnapshotRequestConsumer {
+  resolve(result: SnapshotRequestResult): void;
+  reject(error: unknown): void;
+}
+
+type SnapshotRequestResult =
+  | { kind: "snapshot"; snapshot: ResourceProviderSnapshot }
+  | { kind: "stale" };
+
+type SnapshotRequestSettlement =
+  | { kind: "fulfilled"; result: SnapshotRequestResult }
+  | { kind: "rejected"; error: unknown };
+
+const staleSnapshotRequest: SnapshotRequestResult = { kind: "stale" };
 
 /**
  * Facade over provider registration, snapshot orchestration, and indexed
@@ -46,6 +65,7 @@ interface ProviderProjectRequestState {
  */
 export class ResourceUniverseService {
   private readonly requestStates = new Map<string, ProviderProjectRequestState>();
+  private readonly generationListeners = new Map<string, Set<(generation: number) => void>>();
   private readonly knownProviderProjects = new Set<string>();
   private readonly listeners = new Set<(event: ResourceUniverseChangeEvent) => void>();
 
@@ -65,15 +85,21 @@ export class ResourceUniverseService {
         disposed = true;
         registration.dispose();
         const affectedProjects = new Set<string>();
-        for (const identity of [...this.knownProviderProjects]) {
+        const identities = new Set([...this.requestStates.keys(), ...this.knownProviderProjects]);
+        for (const identity of identities) {
           const [providerId, projectId] = splitProviderProjectKey(identity);
           if (providerId !== provider.providerId) {
             continue;
           }
-          this.abortRequest(identity);
+          const wasKnown = this.knownProviderProjects.has(identity);
+          const state = this.stateFor(identity);
+          this.cancelRequest(identity);
+          this.advanceGeneration(providerId, projectId, state);
           this.index.removeProviderProject(providerId, projectId);
           this.knownProviderProjects.delete(identity);
-          affectedProjects.add(projectId);
+          if (wasKnown) {
+            affectedProjects.add(projectId);
+          }
         }
         for (const projectId of affectedProjects) {
           this.emit({ kind: "removal", projectId, providerIds: [provider.providerId] });
@@ -93,9 +119,13 @@ export class ResourceUniverseService {
     scope: ResourceCoverageScope = { projectId },
     signal?: AbortSignal
   ): Promise<ResourceUniverseRefreshResult> {
-    const snapshot = await this.requestSnapshot(providerId, projectId, scope, signal);
+    const requestResult = await this.requestSnapshot(providerId, projectId, scope, signal);
+    if (requestResult.kind === "stale") {
+      return staleRefreshResult([]);
+    }
+    const snapshot = requestResult.snapshot;
     if (!this.isCurrentSnapshot(snapshot)) {
-      return { applied: false, reason: "staleGeneration", snapshots: [snapshot] };
+      return staleRefreshResult([snapshot]);
     }
     const applied = this.index.replaceSnapshotsAtomically([snapshot]);
     if (applied) {
@@ -115,11 +145,81 @@ export class ResourceUniverseService {
     providerIds: readonly string[] = this.registry.list().map(provider => provider.providerId),
     signal?: AbortSignal
   ): Promise<ResourceUniverseRefreshResult> {
-    const snapshots = await Promise.all(providerIds.map(providerId =>
-      this.requestSnapshot(providerId, projectId, scope, signal)
-    ));
+    const batchController = new AbortController();
+    const batchDetachReason = Symbol("resource-universe-batch-detach");
+    let terminal: "stale" | "error" | undefined;
+    let firstError: unknown;
+    const unlink = signal ? linkAbortSignal(signal, batchController, reason => {
+      if (terminal === undefined) {
+        terminal = "error";
+        firstError = reason;
+      }
+    }) : undefined;
+    const requests = providerIds.map(providerId => {
+      const key = providerProjectKey(providerId, projectId);
+      const promise = this.requestSnapshot(providerId, projectId, scope, batchController.signal);
+      return {
+        key,
+        expectedGeneration: this.requestStates.get(key)?.generation,
+        promise
+      };
+    });
+    const markStale = (): void => {
+      if (terminal !== undefined) {
+        return;
+      }
+      terminal = "stale";
+      batchController.abort(batchDetachReason);
+    };
+    // A provider may finish long before its siblings. Keep its generation
+    // leased until the atomic commit so later invalidation can detach the
+    // still-pending members of this batch.
+    const generationLeases = new Map<string, () => void>();
+    for (const request of requests) {
+      if (request.expectedGeneration === undefined || generationLeases.has(request.key)) {
+        continue;
+      }
+      generationLeases.set(
+        request.key,
+        this.watchGeneration(request.key, request.expectedGeneration, markStale)
+      );
+    }
+    let requestResults: readonly SnapshotRequestResult[];
+    try {
+      requestResults = await Promise.all(requests.map(request =>
+        request.promise.then(
+          result => {
+            if (result.kind === "stale"
+              || (result.kind === "snapshot" && !this.isCurrentSnapshot(result.snapshot))) {
+              markStale();
+            }
+            return result;
+          },
+          error => {
+            if (error !== batchDetachReason && terminal === undefined) {
+              terminal = "error";
+              firstError = error;
+              batchController.abort(batchDetachReason);
+            }
+            return staleSnapshotRequest;
+          }
+        )
+      ));
+    } finally {
+      for (const release of generationLeases.values()) {
+        release();
+      }
+      unlink?.();
+    }
+    const snapshots = requestResults.flatMap(result => result.kind === "snapshot" ? [result.snapshot] : []);
+    if (terminal === "error") {
+      throw firstError;
+    }
+    if (terminal === "stale" || requestResults.some(result => result.kind === "stale")) {
+      return staleRefreshResult(snapshots);
+    }
     if (snapshots.some(snapshot => !this.isCurrentSnapshot(snapshot))) {
-      return { applied: false, reason: "staleGeneration", snapshots };
+      return staleRefreshResult(snapshots);
     }
     const applied = this.index.replaceSnapshotsAtomically(snapshots);
     if (applied && providerIds.length > 0) {
@@ -139,11 +239,8 @@ export class ResourceUniverseService {
   ): void {
     const key = providerProjectKey(providerId, projectId);
     const state = this.stateFor(key);
-    this.abortRequest(key);
-    state.generation = Math.max(
-      state.generation + 1,
-      (this.index.getSnapshotGeneration(providerId, projectId) ?? 0) + 1
-    );
+    this.cancelRequest(key);
+    this.advanceGeneration(providerId, projectId, state);
     this.knownProviderProjects.add(key);
     this.index.replaceSnapshot({
       providerId,
@@ -175,15 +272,21 @@ export class ResourceUniverseService {
 
   public removeProject(projectId: string): void {
     const providerIds = new Set<string>();
-    for (const identity of [...this.knownProviderProjects]) {
+    const identities = new Set([...this.requestStates.keys(), ...this.knownProviderProjects]);
+    for (const identity of identities) {
       const [providerId, candidateProjectId] = splitProviderProjectKey(identity);
       if (candidateProjectId !== projectId) {
         continue;
       }
-      this.abortRequest(identity);
+      const wasKnown = this.knownProviderProjects.has(identity);
+      const state = this.stateFor(identity);
+      this.cancelRequest(identity);
+      this.advanceGeneration(providerId, projectId, state);
       this.index.removeProviderProject(providerId, projectId);
       this.knownProviderProjects.delete(identity);
-      providerIds.add(providerId);
+      if (wasKnown) {
+        providerIds.add(providerId);
+      }
     }
     if (providerIds.size > 0) {
       this.emit({ kind: "removal", projectId, providerIds: [...providerIds] });
@@ -238,9 +341,10 @@ export class ResourceUniverseService {
 
   public dispose(): void {
     for (const key of this.requestStates.keys()) {
-      this.abortRequest(key);
+      this.cancelRequest(key);
     }
     this.requestStates.clear();
+    this.generationListeners.clear();
     this.listeners.clear();
   }
 
@@ -249,7 +353,7 @@ export class ResourceUniverseService {
     projectId: string,
     scope: ResourceCoverageScope,
     signal: AbortSignal | undefined
-  ): Promise<ResourceProviderSnapshot> {
+  ): Promise<SnapshotRequestResult> {
     const provider = this.registry.get(providerId);
     if (!provider) {
       return Promise.reject(new Error(`Unknown resource provider '${providerId}'.`));
@@ -257,32 +361,55 @@ export class ResourceUniverseService {
     if (scope.projectId !== projectId) {
       return Promise.reject(new Error("Resource coverage scope must belong to the requested project."));
     }
+    if (signal?.aborted) {
+      return Promise.reject(abortReason(signal));
+    }
 
     const key = providerProjectKey(providerId, projectId);
     const signature = coverageScopeSignature(scope);
     const state = this.stateFor(key);
     if (state.inFlight?.signature === signature && !state.inFlight.controller.signal.aborted) {
-      if (signal) {
-        linkAbortSignal(signal, state.inFlight.controller);
-      }
-      return state.inFlight.promise;
+      return this.consumeRequest(key, state.inFlight, signal);
     }
 
-    this.abortRequest(key);
-    const generation = Math.max(
-      state.generation + 1,
-      (this.index.getSnapshotGeneration(providerId, projectId) ?? 0) + 1
-    );
-    state.generation = generation;
+    this.cancelRequest(key);
+    const generation = this.advanceGeneration(providerId, projectId, state);
     const controller = new AbortController();
-    const unlink = signal ? linkAbortSignal(signal, controller) : undefined;
     const request = {
       projectId,
       scope,
       knownRevision: this.index.getSnapshotRevision(providerId, projectId),
       requestGeneration: generation
     };
-    const promise = provider.getSnapshot(request, controller.signal).then(snapshot => {
+    let cancelledAsStale = false;
+    let resolveStale!: (result: SnapshotRequestResult) => void;
+    const stalePromise = new Promise<SnapshotRequestResult>(resolve => {
+      resolveStale = resolve;
+    });
+    const inFlight: ProviderProjectInFlight = {
+      signature,
+      controller,
+      consumers: new Map(),
+      settled: false,
+      cancelAsStale: () => {
+        if (cancelledAsStale || inFlight.settled) {
+          return;
+        }
+        cancelledAsStale = true;
+        resolveStale(staleSnapshotRequest);
+        controller.abort();
+      }
+    };
+    state.inFlight = inFlight;
+    this.knownProviderProjects.add(key);
+
+    let providerPromise: Promise<ResourceProviderSnapshot>;
+    try {
+      providerPromise = provider.getSnapshot(request, controller.signal);
+    } catch (error) {
+      providerPromise = Promise.reject(error);
+    }
+    const providerResult = providerPromise.then(snapshot => {
       if (snapshot.providerId !== providerId || snapshot.projectId !== projectId) {
         throw new Error(`Provider '${providerId}' returned a snapshot for a different provider/project.`);
       }
@@ -291,16 +418,95 @@ export class ResourceUniverseService {
           `Provider '${providerId}' returned generation ${snapshot.generation}; expected ${generation}.`
         );
       }
-      return snapshot;
-    }).finally(() => {
-      unlink?.();
-      if (state.inFlight?.promise === promise) {
-        state.inFlight = undefined;
+      return { kind: "snapshot" as const, snapshot };
+    }).catch(error => {
+      if (cancelledAsStale) {
+        return staleSnapshotRequest;
+      }
+      throw error;
+    });
+    const completion = Promise.race([providerResult, stalePromise]);
+    void completion.then(
+      result => this.settleRequest(key, inFlight, { kind: "fulfilled", result }),
+      error => this.settleRequest(key, inFlight, { kind: "rejected", error })
+    );
+    return this.consumeRequest(key, inFlight, signal);
+  }
+
+  private consumeRequest(
+    key: string,
+    inFlight: ProviderProjectInFlight,
+    signal: AbortSignal | undefined
+  ): Promise<SnapshotRequestResult> {
+    const consumer = Symbol("resource-universe-consumer");
+    return new Promise((resolve, reject) => {
+      let completed = false;
+      const release = (): void => {
+        inFlight.consumers.delete(consumer);
+        if (signal) {
+          signal.removeEventListener("abort", abort);
+        }
+      };
+      const abort = (): void => {
+        if (completed) {
+          return;
+        }
+        completed = true;
+        release();
+        reject(abortReason(signal!));
+        if (inFlight.consumers.size === 0 && !inFlight.settled) {
+          this.cancelSpecificRequest(key, inFlight);
+        }
+      };
+      inFlight.consumers.set(consumer, {
+        resolve: result => {
+          if (completed) {
+            return;
+          }
+          completed = true;
+          release();
+          resolve(result);
+        },
+        reject: error => {
+          if (completed) {
+            return;
+          }
+          completed = true;
+          release();
+          reject(error);
+        }
+      });
+      if (signal) {
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) {
+          abort();
+        }
       }
     });
-    state.inFlight = { signature, generation, controller, promise };
-    this.knownProviderProjects.add(key);
-    return promise;
+  }
+
+  private settleRequest(
+    key: string,
+    inFlight: ProviderProjectInFlight,
+    settlement: SnapshotRequestSettlement
+  ): void {
+    if (inFlight.settled) {
+      return;
+    }
+    inFlight.settled = true;
+    const state = this.requestStates.get(key);
+    if (state?.inFlight === inFlight) {
+      state.inFlight = undefined;
+    }
+    const consumers = [...inFlight.consumers.values()];
+    inFlight.consumers.clear();
+    for (const consumer of consumers) {
+      if (settlement.kind === "fulfilled") {
+        consumer.resolve(settlement.result);
+      } else {
+        consumer.reject(settlement.error);
+      }
+    }
   }
 
   private isCurrentSnapshot(snapshot: ResourceProviderSnapshot): boolean {
@@ -317,10 +523,60 @@ export class ResourceUniverseService {
     return state;
   }
 
-  private abortRequest(key: string): void {
+  private advanceGeneration(
+    providerId: string,
+    projectId: string,
+    state: ProviderProjectRequestState
+  ): number {
+    state.generation = Math.max(
+      state.generation + 1,
+      (this.index.getSnapshotGeneration(providerId, projectId) ?? 0) + 1
+    );
+    for (const listener of this.generationListeners.get(providerProjectKey(providerId, projectId)) ?? []) {
+      listener(state.generation);
+    }
+    return state.generation;
+  }
+
+  private watchGeneration(
+    key: string,
+    expectedGeneration: number,
+    onChanged: () => void
+  ): () => void {
+    if (this.requestStates.get(key)?.generation !== expectedGeneration) {
+      onChanged();
+      return () => undefined;
+    }
+    let listeners = this.generationListeners.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      this.generationListeners.set(key, listeners);
+    }
+    const listener = (generation: number): void => {
+      if (generation !== expectedGeneration) {
+        onChanged();
+      }
+    };
+    listeners.add(listener);
+    return () => {
+      listeners!.delete(listener);
+      if (listeners!.size === 0 && this.generationListeners.get(key) === listeners) {
+        this.generationListeners.delete(key);
+      }
+    };
+  }
+
+  private cancelRequest(key: string): void {
     const state = this.requestStates.get(key);
-    state?.inFlight?.controller.abort();
-    if (state) {
+    if (state?.inFlight) {
+      this.cancelSpecificRequest(key, state.inFlight);
+    }
+  }
+
+  private cancelSpecificRequest(key: string, inFlight: ProviderProjectInFlight): void {
+    inFlight.cancelAsStale();
+    const state = this.requestStates.get(key);
+    if (state?.inFlight === inFlight) {
       state.inFlight = undefined;
     }
   }
@@ -355,12 +611,39 @@ function sorted(values: readonly string[] | undefined): readonly string[] | unde
   return values ? [...values].sort((left, right) => left.localeCompare(right, "en")) : undefined;
 }
 
-function linkAbortSignal(signal: AbortSignal, controller: AbortController): () => void {
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) {
+    return signal.reason;
+  }
+  const error = new Error("This operation was aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function linkAbortSignal(
+  signal: AbortSignal,
+  controller: AbortController,
+  onAbort?: (reason: unknown) => void
+): () => void {
+  const abort = (): void => {
+    const reason = abortReason(signal);
+    onAbort?.(reason);
+    controller.abort(reason);
+  };
   if (signal.aborted) {
-    controller.abort(signal.reason);
+    abort();
     return () => undefined;
   }
-  const abort = (): void => controller.abort(signal.reason);
   signal.addEventListener("abort", abort, { once: true });
   return () => signal.removeEventListener("abort", abort);
+}
+
+function staleRefreshResult(
+  snapshots: readonly ResourceProviderSnapshot[]
+): ResourceUniverseRefreshResult {
+  return {
+    applied: false,
+    reason: "staleGeneration",
+    snapshots
+  };
 }

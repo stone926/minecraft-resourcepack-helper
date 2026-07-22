@@ -179,6 +179,51 @@ describe("RSGL generated contribution bridge", () => {
     await controller.dispose();
   });
 
+  it("restores a pending invalidation refresh when its foreground replacement fails", async () => {
+    const context = projectContext();
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const physicalSource = new FailingPhysicalSource(context);
+    const physicalRegistration = universe.registerProvider(
+      new PhysicalAssetContributionProvider(physicalSource)
+    );
+    const timer = new BridgeTimerHost();
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller,
+      {
+        backgroundRefreshDelayMs: 250,
+        backgroundRefreshTimerHost: timer
+      }
+    );
+
+    await bridge.refreshProject(context.projectId);
+    host.emitInvalidation(snapshotInvalidation(context.projectId, "edit-before-failure"));
+    physicalSource.failNextScan = true;
+
+    await assert.rejects(
+      bridge.refreshProject(context.projectId),
+      /synthetic physical refresh failure/
+    );
+    assert.strictEqual(host.requests.length, 2);
+    assert.strictEqual(universe.index.getCoverage("rsgl", context.projectId)?.status, "unavailable");
+
+    timer.advanceBy(250);
+    await bridge.whenIdle();
+
+    assert.strictEqual(host.requests.length, 3, "the failed foreground replacement restores pending work");
+    assert.strictEqual(universe.index.getCoverage("rsgl", context.projectId)?.status, "authoritative");
+
+    await bridge.shutdown();
+    physicalRegistration.dispose();
+    await controller.dispose();
+  });
+
   it("aborts an active background snapshot before waiting for shutdown", async () => {
     const context = projectContext();
     const host = new BlockingSnapshotRuntime();
@@ -738,6 +783,20 @@ class OwnershipAwarePhysicalSource implements PhysicalAssetProjectSource {
         getText: () => "{}"
       }]
     };
+  }
+}
+
+class FailingPhysicalSource extends OwnershipAwarePhysicalSource {
+  public failNextScan = false;
+
+  public override async scanProject(
+    request: ResourceContributionRequest
+  ): Promise<PhysicalAssetProjectScan> {
+    if (this.failNextScan) {
+      this.failNextScan = false;
+      throw new Error("synthetic physical refresh failure");
+    }
+    return super.scanProject(request);
   }
 }
 

@@ -29,6 +29,7 @@
   "RSGL build failed: {0}": "RSGL build failed: {0}",
   "RSGL build preview failed: {0}": "RSGL build preview failed: {0}",
   "RSGL build worker exited before returning a result (code {0}).": "RSGL build worker exited before returning a result (code {0}).",
+  "RSGL generated resources could not be refreshed: {0}": "RSGL generated resources could not be refreshed: {0}",
   "RSGL language server could not start: {0}": "RSGL language server could not start: {0}",
   "RSGL language services are disabled by McResHelper.rsgl.enabled.": "RSGL language services are disabled by McResHelper.rsgl.enabled.",
   "RSGL command requires a resource-pack project with pack.mcmeta or rsgl.config.json.": "RSGL command requires a resource-pack project with pack.mcmeta or rsgl.config.json.",

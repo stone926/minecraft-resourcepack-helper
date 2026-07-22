@@ -68,6 +68,35 @@ describe("resource reference resolution fast path", () => {
     const result = runFacadeScript(script);
     assert.strictEqual(result.status, 0, String(result.stderr));
   });
+
+  it("does not invalidate newer physical work after an aborted reference refresh", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
+      "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
+      "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
+      "const localLayer = { layerId: 'local', role: 'local', source: 'directory', rootUri: 'file:///pack', priority: 0, metadataRevision: 'm1' };",
+      "const context = { projectId: 'project', workspaceFolderUri: 'file:///pack', projectRootUri: 'file:///pack', packRootUri: 'file:///pack', assetsRootUri: 'file:///pack/assets', rsglSourceRootUris: ['file:///pack/rsgl'], outputPackRootUri: 'file:///pack', outputAssetsRootUri: 'file:///pack/assets', localLayer, externalLayers: [], overlaySelection: [], configurationRevision: 'c1', contextRevision: 'r1' };",
+      "const projects = { resolveProject: async () => ({ context, rsglApplicability: 'conventional' }), getRsglApplicability: () => 'conventional', findCachedContextsForUri: () => [], getCachedContexts: () => [] };",
+      "let physicalRefreshes = 0; let invalidations = 0;",
+      "const index = { getCoverage: () => undefined, resolve: () => ({ status: 'missing', coverageComplete: false }), getProducersForKey: () => [] };",
+      "const universe = { index, registry: { get: () => ({}) }, refreshProviderProject: async (provider, projectId, scope) => { assert.strictEqual(provider, 'physical'); assert.strictEqual(projectId, 'project'); assert.deepStrictEqual(scope, { projectId: 'project' }, 'physical full-project work must use the canonical scope'); physicalRefreshes++; const error = new Error('superseded physical refresh'); error.name = 'AbortError'; throw error; }, invalidateProviderProject: () => { invalidations++; }, onDidChange: () => ({ dispose() {} }) };",
+      "const facade = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
+      "const document = { uri: uri('file:///pack/assets/demo/models/block/consumer.json'), fileName: '/pack/assets/demo/models/block/consumer.json', languageId: 'json', getText: () => '{}' };",
+      "const reference = { value: 'demo:block/target', valueNode: {}, target: 'models', source: 'assets', extension: 'json', kind: 'model' };",
+      "(async () => {",
+      "  const result = await facade.resolveReference(document, reference, { includeGenerated: false });",
+      "  assert.strictEqual(physicalRefreshes, 1);",
+      "  assert.strictEqual(invalidations, 0, 'an expected cancellation must not invalidate a newer physical generation');",
+      "  assert.strictEqual(result.coverage, 'unavailable');",
+      "  assert.strictEqual(result.targetUri, null);",
+      "  assert.strictEqual(result.navigation.status, 'missing');",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const result = runFacadeScript(script);
+    assert.strictEqual(result.status, 0, String(result.stderr));
+  });
 });
 
 function runFacadeScript(script: string): ReturnType<typeof spawnSync> {
