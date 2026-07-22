@@ -133,6 +133,9 @@ const diagnosticScheduler = new DirtyDiagnosticScheduler<string>({
     }
   },
   onIdle: async () => {
+    // The client already requests tokens for the edited document as its
+    // version changes. Refresh the workspace only after validation settles so
+    // dependent documents update without emitting one global request per key.
     await connection.languages.semanticTokens.refresh();
     if (dependencyVerificationUris.size === 0) {
       return;
@@ -511,9 +514,12 @@ function scheduleAffectedDocuments(
   explicitUri?: string,
   delay = 150
 ): void {
-  const affected = new Set(documentsDependingOnPath(dependenciesByDocument, changedFileName));
+  const affected = new Set<string>();
   if (explicitUri) {
     affected.add(explicitUri);
+  }
+  for (const uri of documentsDependingOnPath(dependenciesByDocument, changedFileName)) {
+    affected.add(uri);
   }
   const changedDocument = findOpenDocument(changedFileName);
   if (changedDocument) {

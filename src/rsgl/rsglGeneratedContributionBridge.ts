@@ -20,6 +20,10 @@ import {
   type RsglMaterializationHydrationHost
 } from "./rsglMaterializationHydrator";
 import {
+  BackgroundRefreshScheduler,
+  type BackgroundRefreshTimerHost
+} from "./backgroundRefreshScheduler";
+import {
   type RsglRuntimeController,
   type RsglRuntimeEnsureOptions,
   type RsglRuntimeInstance,
@@ -32,11 +36,11 @@ export interface RsglGeneratedProjectContextStore {
   getCachedContexts(): readonly ResourcePackProjectContextDto[];
 }
 
-export type RsglGeneratedContributionBridgeOptions = RsglMaterializationHydrationHost;
-
-interface BackgroundRefreshState {
-  rerun: boolean;
-  promise: Promise<void>;
+export interface RsglGeneratedContributionBridgeOptions extends RsglMaterializationHydrationHost {
+  /** Quiet period before invalidation-driven project snapshots are rebuilt. */
+  backgroundRefreshDelayMs?: number;
+  /** Injectable timer boundary for deterministic scheduling tests. */
+  backgroundRefreshTimerHost?: BackgroundRefreshTimerHost;
 }
 
 /**
@@ -49,9 +53,9 @@ export class RsglGeneratedContributionBridge {
   public readonly connection: RsglGeneratedProviderConnection;
 
   private readonly relevantProjectIds = new Set<string>();
-  private readonly activeSnapshotRequests = new Set<string>();
+  private readonly activeSnapshotRequests = new Map<string, number>();
   private readonly appliedMaterializationTransactions = new Set<string>();
-  private readonly backgroundRefreshes = new Map<string, BackgroundRefreshState>();
+  private readonly backgroundRefreshScheduler: BackgroundRefreshScheduler<string>;
   private readonly hydrationPromises = new Map<string, Promise<void>>();
   private readonly hydratedContextRevisions = new Map<string, string>();
   private readonly coupledProviderIds: readonly string[];
@@ -76,6 +80,11 @@ export class RsglGeneratedContributionBridge {
         this.projects.getCachedContext(projectId)?.localLayer.layerId
     });
     this.connection = new RsglGeneratedProviderConnection(universe, this.provider);
+    this.backgroundRefreshScheduler = new BackgroundRefreshScheduler({
+      delayMs: options.backgroundRefreshDelayMs,
+      timerHost: options.backgroundRefreshTimerHost,
+      run: projectId => this.runBackgroundRefresh(projectId)
+    });
     const physicalOwnership = bindPhysicalOwnership(
       universe.registry.get("physical"),
       {
@@ -167,6 +176,7 @@ export class RsglGeneratedContributionBridge {
       this.universe.invalidateProviderProject(this.provider.providerId, projectId, "notProbed");
       return undefined;
     }
+    this.backgroundRefreshScheduler.cancel(projectId);
     if (this.controller.getMode() === "off") {
       return this.connection.refreshProject(projectId, scope, signal);
     }
@@ -210,6 +220,7 @@ export class RsglGeneratedContributionBridge {
       }
       this.provider.replaceMaterializations(hydrated.snapshot);
       this.hydratedContextRevisions.set(context.projectId, context.contextRevision);
+      this.backgroundRefreshScheduler.cancel(context.projectId);
       await this.refreshCoupledProject(context.projectId);
       this.rememberMaterializationTransaction(invalidation.transactionId);
       return true;
@@ -222,14 +233,15 @@ export class RsglGeneratedContributionBridge {
 
   /** Used by tests and orderly shutdown to observe coalesced invalidation reloads. */
   public async whenIdle(): Promise<void> {
-    while (this.backgroundRefreshes.size > 0 || this.hydrationPromises.size > 0) {
+    while (this.hydrationPromises.size > 0) {
       await Promise.allSettled(
         [
-          ...[...this.backgroundRefreshes.values()].map(state => state.promise),
+          this.backgroundRefreshScheduler.whenIdle(),
           ...this.hydrationPromises.values()
         ]
       );
     }
+    await this.backgroundRefreshScheduler.whenIdle();
   }
 
   public dispose(): void {
@@ -257,7 +269,10 @@ export class RsglGeneratedContributionBridge {
       );
     }
 
-    this.activeSnapshotRequests.add(projectId);
+    this.activeSnapshotRequests.set(
+      projectId,
+      (this.activeSnapshotRequests.get(projectId) ?? 0) + 1
+    );
     try {
       let runtime: RsglRuntimeInstance | null;
       try {
@@ -303,7 +318,12 @@ export class RsglGeneratedContributionBridge {
         this.provider.getProjectState(projectId)?.revision
       );
     } finally {
-      this.activeSnapshotRequests.delete(projectId);
+      const remainingRequests = (this.activeSnapshotRequests.get(projectId) ?? 1) - 1;
+      if (remainingRequests > 0) {
+        this.activeSnapshotRequests.set(projectId, remainingRequests);
+      } else {
+        this.activeSnapshotRequests.delete(projectId);
+      }
     }
   }
 
@@ -379,51 +399,47 @@ export class RsglGeneratedContributionBridge {
       return;
     }
     if (this.controller.getMode() !== "off") {
-      this.scheduleBackgroundRefresh(projectId);
+      this.scheduleBackgroundRefresh(projectId, invalidationReasonFromNotification(value));
     }
   }
 
-  private scheduleBackgroundRefresh(projectId: string): void {
-    const existing = this.backgroundRefreshes.get(projectId);
-    if (existing) {
-      existing.rerun = true;
+  private scheduleBackgroundRefresh(
+    projectId: string,
+    reason: string | undefined
+  ): void {
+    this.backgroundRefreshScheduler.schedule(
+      projectId,
+      reason === "document" ? undefined : 0
+    );
+  }
+
+  private async runBackgroundRefresh(projectId: string): Promise<void> {
+    if (this.disposed
+      || this.controller.getMode() === "off"
+      || !this.relevantProjectIds.has(projectId)
+      || !this.projects.getCachedContext(projectId)) {
       return;
     }
-
-    const state = {} as BackgroundRefreshState;
-    state.rerun = false;
-    state.promise = (async () => {
-      do {
-        state.rerun = false;
-        if (this.disposed
-          || this.controller.getMode() === "off"
-          || !this.relevantProjectIds.has(projectId)
-          || !this.projects.getCachedContext(projectId)) {
-          return;
-        }
-        try {
-          await this.connection.refreshProject(projectId);
-        } catch (error) {
-          if (this.disposed
-            || !this.relevantProjectIds.has(projectId)
-            || this.controller.getMode() === "off") {
-            return;
-          }
-          if (!isAbortError(error)) {
-            this.universe.invalidateProviderProject(
-              this.provider.providerId,
-              projectId,
-              "lspFailed"
-            );
-          }
-        }
-      } while (state.rerun);
-    })().finally(() => {
-      if (this.backgroundRefreshes.get(projectId) === state) {
-        this.backgroundRefreshes.delete(projectId);
+    if (this.activeSnapshotRequests.has(projectId)) {
+      this.backgroundRefreshScheduler.schedule(projectId);
+      return;
+    }
+    try {
+      await this.connection.refreshProject(projectId);
+    } catch (error) {
+      if (this.disposed
+        || !this.relevantProjectIds.has(projectId)
+        || this.controller.getMode() === "off") {
+        return;
       }
-    });
-    this.backgroundRefreshes.set(projectId, state);
+      if (!isAbortError(error)) {
+        this.universe.invalidateProviderProject(
+          this.provider.providerId,
+          projectId,
+          "lspFailed"
+        );
+      }
+    }
   }
 
   private handleRuntimeState(state: RsglRuntimeState): void {
@@ -457,10 +473,7 @@ export class RsglGeneratedContributionBridge {
     this.hydratedContextRevisions.delete(projectId);
     this.hydrationPromises.delete(projectId);
     this.provider.removeProject(projectId);
-    const refresh = this.backgroundRefreshes.get(projectId);
-    if (refresh) {
-      refresh.rerun = false;
-    }
+    this.backgroundRefreshScheduler.cancel(projectId);
     void this.controller.setProjectAvailable(this.projects.getCachedContexts().length > 0);
   }
 
@@ -485,6 +498,7 @@ export class RsglGeneratedContributionBridge {
     this.physicalOwnershipSubscription?.dispose();
     this.unbindRuntime();
     this.relevantProjectIds.clear();
+    this.backgroundRefreshScheduler.dispose();
     this.connection.dispose();
     await this.whenIdle();
   }
@@ -603,6 +617,14 @@ function projectIdFromNotification(value: unknown): string | undefined {
   return typeof projectId === "string" && projectId.trim().length > 0
     ? projectId
     : undefined;
+}
+
+function invalidationReasonFromNotification(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const reason = (value as { reason?: unknown }).reason;
+  return typeof reason === "string" ? reason : undefined;
 }
 
 interface MaterializationInvalidation {

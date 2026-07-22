@@ -11,6 +11,10 @@ import {
   RsglGeneratedContributionBridge,
   type RsglGeneratedProjectContextStore
 } from "../../rsgl/rsglGeneratedContributionBridge";
+import type {
+  BackgroundRefreshTimerHandle,
+  BackgroundRefreshTimerHost
+} from "../../rsgl/backgroundRefreshScheduler";
 import {
   RsglRuntimeController,
   type RsglRuntimeInstance
@@ -62,7 +66,9 @@ describe("RSGL generated contribution bridge", () => {
       return host;
     }, { mode: "auto", hasActiveProject: true });
     const universe = new ResourceUniverseService();
-    const bridge = new RsglGeneratedContributionBridge(projectStore, universe, controller);
+    const bridge = new RsglGeneratedContributionBridge(projectStore, universe, controller, {
+      backgroundRefreshDelayMs: 0
+    });
 
     assert.deepStrictEqual(universe.registry.list().map(provider => provider.providerId), ["rsgl"]);
     await universe.refreshProviderProject("rsgl", context.projectId);
@@ -120,6 +126,96 @@ describe("RSGL generated contribution bridge", () => {
 
     await bridge.shutdown();
     assert.deepStrictEqual(universe.registry.list(), []);
+    await controller.dispose();
+  });
+
+  it("marks generated facts stale immediately but coalesces edit bursts before rebuilding", async () => {
+    const context = projectContext();
+    const projectStore = new ProjectStore(context);
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const timer = new BridgeTimerHost();
+    const bridge = new RsglGeneratedContributionBridge(projectStore, universe, controller, {
+      backgroundRefreshDelayMs: 250,
+      backgroundRefreshTimerHost: timer
+    });
+
+    await bridge.refreshProject(context.projectId);
+    assert.strictEqual(host.requests.length, 1);
+
+    host.emitInvalidation(snapshotInvalidation(context.projectId, "edit-r1"));
+    host.emitInvalidation(snapshotInvalidation(context.projectId, "edit-r2"));
+    host.emitInvalidation(snapshotInvalidation(context.projectId, "edit-r3"));
+
+    const staleCoverage = universe.index.getCoverage("rsgl", context.projectId);
+    assert.strictEqual(staleCoverage?.status, "unavailable");
+    assert.strictEqual(staleCoverage?.status === "unavailable" ? staleCoverage.reason : undefined, "stale");
+    assert.strictEqual(host.requests.length, 1, "typing must not start a project compile immediately");
+
+    let idle = false;
+    const idlePromise = bridge.whenIdle().then(() => { idle = true; });
+    timer.advanceBy(249);
+    await Promise.resolve();
+    assert.strictEqual(idle, false, "pending debounce work is not idle");
+    assert.strictEqual(host.requests.length, 1);
+
+    timer.advanceBy(1);
+    await idlePromise;
+    assert.strictEqual(host.requests.length, 2, "the edit burst produces one project snapshot request");
+    assert.strictEqual(universe.index.getCoverage("rsgl", context.projectId)?.status, "authoritative");
+
+    host.emitInvalidation(snapshotInvalidation(context.projectId, "edit-r4"));
+    await bridge.refreshProject(context.projectId);
+    assert.strictEqual(host.requests.length, 3, "an explicit refresh bypasses the background delay");
+    timer.advanceBy(1_000);
+    await bridge.whenIdle();
+    assert.strictEqual(host.requests.length, 3, "the explicit refresh cancels its pending background duplicate");
+
+    await bridge.shutdown();
+    await controller.dispose();
+  });
+
+  it("aborts an active background snapshot before waiting for shutdown", async () => {
+    const context = projectContext();
+    const host = new BlockingSnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const timer = new BridgeTimerHost();
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller,
+      {
+        backgroundRefreshDelayMs: 0,
+        backgroundRefreshTimerHost: timer
+      }
+    );
+
+    await bridge.refreshProject(context.projectId);
+    host.emitInvalidation(snapshotInvalidation(context.projectId, "edit-before-shutdown"));
+    timer.advanceBy(0);
+    await host.blockedRequestStarted.promise;
+
+    const shutdownPromise = bridge.shutdown();
+    await settleAsyncWork();
+    const abortedBeforeRelease = host.blockedRequestAborted;
+    if (!abortedBeforeRelease) {
+      host.releaseBlockedRequest();
+    }
+    await shutdownPromise;
+
+    assert.strictEqual(
+      abortedBeforeRelease,
+      true,
+      "disposing the provider connection must abort the snapshot before shutdown waits for it"
+    );
     await controller.dispose();
   });
 
@@ -394,7 +490,8 @@ class SnapshotRuntime implements RsglRuntimeInstance {
     this.languageServerStarts++;
   }
 
-  public async requestResourceSnapshot(value: unknown): Promise<unknown> {
+  public async requestResourceSnapshot(value: unknown, signal: AbortSignal): Promise<unknown> {
+    void signal;
     const request = value as RsglResourceSnapshotRequest;
     this.requests.push(request);
     if (request.knownRevision === "snapshot-r1") {
@@ -421,6 +518,78 @@ class SnapshotRuntime implements RsglRuntimeInstance {
 
   public dispose(): void {
     this.disposals++;
+  }
+}
+
+class BlockingSnapshotRuntime extends SnapshotRuntime {
+  public readonly blockedRequestStarted = deferred<void>();
+  public blockedRequestAborted = false;
+  private releaseBlocked?: () => void;
+
+  public override async requestResourceSnapshot(
+    value: unknown,
+    signal: AbortSignal
+  ): Promise<unknown> {
+    const request = value as RsglResourceSnapshotRequest;
+    this.requests.push(request);
+    if (this.requests.length === 1) {
+      return snapshotResponse(request);
+    }
+
+    const blocked = new Promise<unknown>((resolve, reject) => {
+      const abort = (): void => {
+        this.blockedRequestAborted = true;
+        reject(new Error("snapshot aborted"));
+      };
+      this.releaseBlocked = () => {
+        signal.removeEventListener("abort", abort);
+        resolve(snapshotResponse(request));
+      };
+      if (signal.aborted) {
+        abort();
+      } else {
+        signal.addEventListener("abort", abort, { once: true });
+      }
+    });
+    this.blockedRequestStarted.resolve();
+    return blocked;
+  }
+
+  public releaseBlockedRequest(): void {
+    this.releaseBlocked?.();
+  }
+}
+
+class BridgeTimerHost implements BackgroundRefreshTimerHost {
+  private readonly timers = new Map<number, { dueAt: number; callback: () => void }>();
+  private now = 0;
+  private nextHandle = 1;
+
+  public set(callback: () => void, delayMs: number): BackgroundRefreshTimerHandle {
+    const handle = this.nextHandle++;
+    this.timers.set(handle, { dueAt: this.now + delayMs, callback });
+    return handle as unknown as BackgroundRefreshTimerHandle;
+  }
+
+  public clear(handle: BackgroundRefreshTimerHandle): void {
+    this.timers.delete(handle as unknown as number);
+  }
+
+  public advanceBy(milliseconds: number): void {
+    const target = this.now + milliseconds;
+    while (true) {
+      const next = [...this.timers.entries()]
+        .filter(([, timer]) => timer.dueAt <= target)
+        .sort((left, right) => left[1].dueAt - right[1].dueAt || left[0] - right[0])[0];
+      if (!next) {
+        break;
+      }
+      const [handle, timer] = next;
+      this.timers.delete(handle);
+      this.now = timer.dueAt;
+      timer.callback();
+    }
+    this.now = target;
   }
 }
 
@@ -502,6 +671,24 @@ function projectContext(): ResourcePackProjectContextDto {
 
 function hashBytes(value: Uint8Array): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  resolve(value?: T | PromiseLike<T>): void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>["resolve"];
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function settleAsyncWork(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function ownershipManifest(context: ResourcePackProjectContextDto, contentHash: string): string {

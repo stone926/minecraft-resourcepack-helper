@@ -1759,6 +1759,35 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("new DirtyDiagnosticScheduler<string>"));
     assert.ok(serverSource.includes("scheduleAffectedDocuments("));
     assert.ok(serverSource.includes("diagnosticScheduler.drop("));
+    const diagnosticSchedulerSource = serverSource.slice(
+      serverSource.indexOf("const diagnosticScheduler"),
+      serverSource.indexOf("semanticCache.setOpenTextDocumentProvider")
+    );
+    assert.ok(
+      diagnosticSchedulerSource.includes("semanticTokens.refresh"),
+      "dependent documents receive one global token refresh after validation becomes idle"
+    );
+    const invalidateDocumentSource = serverSource.slice(
+      serverSource.indexOf("function invalidateDocument"),
+      serverSource.indexOf("function completionItemsForDocument")
+    );
+    assert.strictEqual(
+      invalidateDocumentSource.includes("semanticTokens.refresh"),
+      false,
+      "document edits rely on the client's document refresh instead of requesting a global refresh per key"
+    );
+    const affectedDocumentsSource = serverSource.slice(
+      serverSource.indexOf("function scheduleAffectedDocuments"),
+      serverSource.indexOf("function semanticDependencyPaths")
+    );
+    const explicitDocumentIndex = affectedDocumentsSource.indexOf("affected.add(explicitUri)");
+    const dependentDocumentsIndex = affectedDocumentsSource.indexOf("documentsDependingOnPath");
+    assert.ok(
+      explicitDocumentIndex >= 0
+        && dependentDocumentsIndex >= 0
+        && explicitDocumentIndex < dependentDocumentsIndex,
+      "the actively edited document is validated before its dependents"
+    );
     assert.strictEqual(serverSource.includes('path.extname(changedFileName).toLowerCase() !== ".json"'), false);
   });
 
