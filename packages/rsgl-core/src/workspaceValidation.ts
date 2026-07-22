@@ -224,12 +224,20 @@ export function createRsglWorkspaceValidationOptions(
   options: RsglWorkspaceValidationOptions
 ): RsglWorkspaceValidationCallbacks {
   const resolver = new WorkspaceResourceResolver(options);
+  // A blockstate JSON only describes properties that affect that pack layer's
+  // models; it is not a complete registry schema. Once the canonical output
+  // pack is known, lower custom/vanilla layers must not constrain a generated
+  // override that intentionally uses additional state properties.
+  const targetBlockstateSchemaSource = options.outputPackRoot !== undefined
+    && options.outputPackRoot !== null
+    ? "local"
+    : undefined;
   return {
     resourceExists: (kind, id) => resolver.resolve(id, minecraftResourceTarget(kind)) !== null,
     resourceContent: (kind, id) => resolver.readJson(id, minecraftResourceTarget(kind)),
     textureMetadata: id => resolver.textureMetadata(id),
     soundMetadata: id => resolver.soundMetadata(id),
-    blockstateSchema: id => resolver.blockstateSchema(id),
+    blockstateSchema: id => resolver.blockstateSchema(id, targetBlockstateSchemaSource),
     externResourceExists: (source, kind, id) => resolver.resolve(id, minecraftResourceTarget(kind), source) !== null,
     externResourceResolution: (source, kind, id) =>
       resolver.resolveWithCandidates(id, minecraftResourceTarget(kind), source),

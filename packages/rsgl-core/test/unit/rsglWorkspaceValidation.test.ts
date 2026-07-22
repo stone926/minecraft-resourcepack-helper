@@ -473,6 +473,63 @@ describe("RSGL workspace validation", () => {
     }
   });
 
+  it("does not constrain target blockstates with schemas inferred from lower pack layers", () => {
+    const root = createTempDir();
+    const sourcePack = path.join(root, "source-pack");
+    const outputPack = path.join(root, "output-pack");
+    const customPack = path.join(root, "custom-pack");
+    const sourceFile = path.join(sourcePack, "main.rsgl");
+    const localBlockstate = path.join(outputPack, "assets", "minecraft", "blockstates", "lamp.json");
+    const customBlockstate = path.join(customPack, "assets", "minecraft", "blockstates", "lamp.json");
+    const id = { namespace: "minecraft", path: "lamp" };
+    try {
+      for (const packRoot of [sourcePack, outputPack, customPack]) {
+        fs.mkdirSync(packRoot, { recursive: true });
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      }
+      fs.writeFileSync(sourceFile, "");
+      fs.mkdirSync(path.dirname(customBlockstate), { recursive: true });
+      fs.writeFileSync(customBlockstate, JSON.stringify({
+        variants: {
+          ["facing=north"]: { model: "minecraft:block/lamp" },
+          ["facing=south"]: { model: "minecraft:block/lamp" }
+        }
+      }));
+
+      const withoutLocal = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        outputPackRoot: outputPack,
+        defaultAssetsPath: null,
+        resourcePackRoots: [customPack]
+      });
+
+      assert.strictEqual(withoutLocal.blockstateSchema(id), null);
+      assert.deepStrictEqual(withoutLocal.externBlockstateSchema("custom", id), {
+        properties: { facing: ["north", "south"] }
+      });
+
+      fs.mkdirSync(path.dirname(localBlockstate), { recursive: true });
+      fs.writeFileSync(localBlockstate, JSON.stringify({
+        variants: {
+          ["power=0"]: { model: "minecraft:block/lamp" },
+          ["power=1"]: { model: "minecraft:block/lamp" }
+        }
+      }));
+      const withLocal = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        outputPackRoot: outputPack,
+        defaultAssetsPath: null,
+        resourcePackRoots: [customPack]
+      });
+
+      assert.deepStrictEqual(withLocal.blockstateSchema(id), {
+        properties: { power: ["0", "1"] }
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves local from the canonical output pack and excludes owned materializations", () => {
     const root = createTempDir();
     const sourcePack = path.join(root, "当前 source pack");
