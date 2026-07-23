@@ -57,6 +57,40 @@ describe("RSGL build worker client", () => {
     }
   });
 
+  it("omits source maps and the public manifest when build options disable them", async () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-worker-emit-options-");
+    const entry = path.join(root, "main.rsgl");
+
+    try {
+      fs.writeFileSync(entry, [
+        "text texts/end {",
+        "  content \"Hello PLAYERNAME\"",
+        "}"
+      ].join("\n"));
+
+      const outcome = await runRsglWorkerTask({
+        kind: "prepareBuild",
+        payload: {
+          stdlibRoot: testStdlibRoot,
+          source: { kind: "file", path: entry },
+          validationAnchor: entry,
+          outputRoot: path.join(root, "pack"),
+          sourceMaps: false,
+          manifest: false
+        }
+      }, workerOptions());
+
+      assert.strictEqual(outcome.type, "success");
+      if (outcome.type === "success") {
+        assert.deepStrictEqual(outcome.result.files?.map(file => file.outputPath), [
+          "assets/minecraft/texts/end.txt"
+        ]);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("compiles watcher directories in a real worker", async () => {
     const root = createTempDir("mc-resourcepack-helper-rsgl-worker-watch-");
     const sourceRoot = path.join(root, "src");

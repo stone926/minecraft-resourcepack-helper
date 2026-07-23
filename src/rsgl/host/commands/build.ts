@@ -10,7 +10,8 @@ import type {
 } from "../../../../packages/rsgl-core/src/compiler";
 import {
   loadRsglProjectConfigForSource,
-  projectCompileOptionsFromRsglConfig
+  projectCompileOptionsFromRsglConfig,
+  projectEmitOptionsFromRsglConfig
 } from "../../../../packages/rsgl-core/src/rsglConfig";
 import { resolveRsglSourceRootFromFileName } from "../../../../packages/rsgl-core/src/sourceRoot";
 import { rsglCommands } from "../../../../packages/rsgl-shared/src";
@@ -359,6 +360,7 @@ function createWorkerBuildPayload(
   const configurationScope = vscode.Uri.file(validationAnchor);
   return {
     ...projectCompileOptionsFromRsglConfig(projectConfig ?? {}),
+    ...projectEmitOptionsFromRsglConfig(projectConfig ?? {}),
     stdlibRoot,
     source: {
       kind: isDirectoryBuildContext(context) ? "directory" : "file",

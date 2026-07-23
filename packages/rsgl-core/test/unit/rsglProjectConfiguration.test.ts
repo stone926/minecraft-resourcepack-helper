@@ -5,6 +5,7 @@ import {
   effectiveNamespace,
   parseRsglProjectConfig,
   projectCompileOptionsFromRsglConfig,
+  projectEmitOptionsFromRsglConfig,
   resolveRsglCompileConfiguration,
   rsglTargetPackFormatForMinecraftVersion
 } from "../../src";
@@ -61,6 +62,20 @@ describe("RSGL project compile configuration", () => {
         edition: "java",
         packFormat: { major: 46, minor: 0 }
       }
+    });
+  });
+
+  it("maps source map and manifest settings to emit options", () => {
+    assert.deepStrictEqual(projectEmitOptionsFromRsglConfig(parseRsglProjectConfig({
+      emitSourceMap: false,
+      manifest: false
+    })), {
+      sourceMaps: false,
+      manifest: false
+    });
+    assert.deepStrictEqual(projectEmitOptionsFromRsglConfig(parseRsglProjectConfig({})), {
+      sourceMaps: true,
+      manifest: true
     });
   });
 

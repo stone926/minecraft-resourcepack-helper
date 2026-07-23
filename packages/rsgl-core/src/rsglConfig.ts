@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { findPackRoot, isValidMinecraftNamespace } from "../../mc-assets/src";
 import { parseExternResourcePattern, type RsglGlobalExternConfigEntry } from "./externDeclarations";
 import { isExternResourceKind, rsglExternResourceKinds } from "./resourceKinds";
+import type { RsglEmitOptions } from "./compiler/emit";
 import type { RsglCompileConfigurationOptions } from "./compiler/compileConfiguration";
 import {
   isRsglMinecraftVersionText,
@@ -32,6 +33,9 @@ export type RsglProjectCompileOptions = Pick<
   RsglCompileConfigurationOptions,
   "defaultNamespace" | "projectTarget" | "maxEvaluationItems" | "maxItemModelDepth"
 >;
+
+/** Output options derived from the public project configuration. */
+export type RsglProjectEmitOptions = Required<Pick<RsglEmitOptions, "sourceMaps" | "manifest">>;
 
 export interface LoadedRsglProjectConfig {
   fileName: string;
@@ -135,6 +139,16 @@ export function projectCompileOptionsFromRsglConfig(
     options.maxItemModelDepth = config.maxItemModelDepth;
   }
   return options;
+}
+
+/** Explicitly maps public output keys to compiler emit options and their defaults. */
+export function projectEmitOptionsFromRsglConfig(
+  config: RsglProjectConfig
+): RsglProjectEmitOptions {
+  return {
+    sourceMaps: config.emitSourceMap ?? true,
+    manifest: config.manifest ?? true
+  };
 }
 
 export function readRsglProjectConfig(fileName: string): RsglProjectConfig {
