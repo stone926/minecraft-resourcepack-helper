@@ -1,82 +1,71 @@
-export function formatRsglText(text: string, tabSize = 2): string {
-  const indentText = " ".repeat(tabSize);
-  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  let depth = 0;
+import { lexRsgl, parseRsgl } from "./parser";
+import { applyRsglDocumentLayout } from "./formatter/layout";
+import { buildRsglFormatDocument } from "./formatter/lines";
+import {
+  normalizeRsglFormatOptions,
+  rsglFormattingStyleRules,
+  type RsglFormatOptions
+} from "./formatter/options";
+import { printRsglFormatDocument } from "./formatter/printer";
+import {
+  collectRsglFormatterSyntaxFacts,
+  type RsglFormatterSyntaxFacts
+} from "./formatter/syntaxFacts";
 
-  const formatted = lines.map(line => {
-    const trimmedRight = line.trimEnd();
-    const trimmed = trimmedRight.trimStart();
-    if (trimmed.length === 0) {
-      return "";
-    }
+export * from "./formatter/options";
 
-    const closingCount = countLeadingClosers(trimmed);
-    const lineDepth = Math.max(0, depth - closingCount);
-    const result = `${indentText.repeat(lineDepth)}${trimmed}`;
-    depth = Math.max(0, depth + countIndentDelta(trimmed));
-    return result;
-  });
-
-  return formatted.join("\n");
+/**
+ * Formats RSGL without reconstructing syntax tokens. Strings, template
+ * strings, comments, invalid tokens, and extern globs retain their source
+ * spelling; only layout trivia is rewritten.
+ *
+ * The numeric overload remains for API compatibility and means a space-based
+ * indentation width.
+ */
+export function formatRsglText(
+  text: string,
+  options?: number | Partial<RsglFormatOptions>
+): string {
+  const resolvedOptions = normalizeRsglFormatOptions(options);
+  const factsAndTokens = formatterInput(text);
+  const rules = rsglFormattingStyleRules(resolvedOptions.style);
+  const document = buildRsglFormatDocument(factsAndTokens.tokens);
+  applyRsglDocumentLayout(document, factsAndTokens.facts, resolvedOptions, rules);
+  return printRsglFormatDocument(
+    document,
+    factsAndTokens.facts,
+    resolvedOptions,
+    rules
+  );
 }
 
-function countLeadingClosers(line: string): number {
-  let count = 0;
-  for (const char of line) {
-    if (char === "}" || char === "]" || char === ")") {
-      count++;
-    } else {
-      break;
-    }
+function formatterInput(text: string): {
+  tokens: ReturnType<typeof lexRsgl>["tokens"];
+  facts: RsglFormatterSyntaxFacts;
+} {
+  try {
+    const module = parseRsgl(text);
+    return {
+      tokens: module.tokens,
+      facts: collectRsglFormatterSyntaxFacts(module)
+    };
+  } catch {
+    return {
+      tokens: lexRsgl(text).tokens,
+      facts: emptySyntaxFacts()
+    };
   }
-  return count;
 }
 
-function countIndentDelta(line: string): number {
-  let delta = 0;
-  let inLineComment = false;
-  let inBlockComment = false;
-  let inString: "\"" | "`" | null = null;
-
-  for (let index = 0; index < line.length; index++) {
-    const char = line[index];
-    const next = line[index + 1] ?? "";
-
-    if (inLineComment) {
-      break;
-    }
-
-    if (inBlockComment) {
-      if (char === "*" && next === "/") {
-        inBlockComment = false;
-        index++;
-      }
-      continue;
-    }
-
-    if (inString) {
-      if (char === "\\") {
-        index++;
-      } else if (char === inString) {
-        inString = null;
-      }
-      continue;
-    }
-
-    if (char === "/" && next === "/") {
-      inLineComment = true;
-      index++;
-    } else if (char === "/" && next === "*") {
-      inBlockComment = true;
-      index++;
-    } else if (char === "\"" || char === "`") {
-      inString = char;
-    } else if (char === "{" || char === "[" || char === "(") {
-      delta++;
-    } else if (char === "}" || char === "]" || char === ")") {
-      delta--;
-    }
-  }
-
-  return delta;
+function emptySyntaxFacts(): RsglFormatterSyntaxFacts {
+  return {
+    bodyOpenOffsets: new Set(),
+    bodyBracePairs: [],
+    collectionOpenOffsets: new Set(),
+    delimiterDepthByTokenOffset: new Map(),
+    tightTokenPairs: new Set(),
+    unaryOperatorOffsets: new Set(),
+    spacedOperatorOffsets: new Set(),
+    indexOpenOffsets: new Set()
+  };
 }

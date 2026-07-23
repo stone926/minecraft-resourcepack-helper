@@ -77,6 +77,12 @@
         "path": "./syntaxes/rsgl.tmLanguage.json"
       }
     ],
+    "configurationDefaults": {
+      "[rsgl]": {
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true
+      }
+    },
     "jsonValidation": [
       {
         "fileMatch": "**/pack.mcmeta",
@@ -438,6 +444,44 @@
           "description": "%config.desc.rsglEnabled%",
           "default": "auto",
           "scope": "resource"
+        },
+        "McResHelper.rsgl.format.style": {
+          "type": "string",
+          "enum": [
+            "canonical",
+            "compact",
+            "expanded"
+          ],
+          "enumDescriptions": [
+            "%config.enum.rsglFormatStyle.canonical%",
+            "%config.enum.rsglFormatStyle.compact%",
+            "%config.enum.rsglFormatStyle.expanded%"
+          ],
+          "description": "%config.desc.rsglFormatStyle%",
+          "default": "canonical",
+          "scope": "language-overridable"
+        },
+        "McResHelper.rsgl.format.lineWidth": {
+          "type": "integer",
+          "description": "%config.desc.rsglFormatLineWidth%",
+          "default": 100,
+          "minimum": 40,
+          "maximum": 240,
+          "scope": "language-overridable"
+        },
+        "McResHelper.rsgl.format.braceStyle": {
+          "type": "string",
+          "enum": [
+            "sameLine",
+            "nextLine"
+          ],
+          "enumDescriptions": [
+            "%config.enum.rsglFormatBraceStyle.sameLine%",
+            "%config.enum.rsglFormatBraceStyle.nextLine%"
+          ],
+          "description": "%config.desc.rsglFormatBraceStyle%",
+          "default": "sameLine",
+          "scope": "language-overridable"
         }
       }
     }

@@ -37,6 +37,7 @@ import {
   documentsDependingOnPath,
   documentsStructurallyDependingOnPath,
   encodeSemanticTokens,
+  formattingConfigurationForSource,
   formattingEditsForDocument,
   handleSemanticWatchedFileBatch,
   identifierAtOffset,
@@ -52,6 +53,7 @@ import {
   toLspSeverity,
   toLspWorkspaceEdit,
   toValidationSettings,
+  validationSettingsFingerprint,
   workspaceRootFileNamesFromInitialization,
   workspaceValidationOptionsFor,
   type RsglValidationSettings
@@ -209,6 +211,123 @@ describe("RSGL LSP server core", () => {
         resourcePackRoots: ["folder-pack"]
       }]
     });
+  });
+
+  it("safely normalizes global and workspace-folder formatting settings", () => {
+    const workspaceFolderPath = path.resolve("workspace", "pack");
+    assert.deepStrictEqual(toValidationSettings({
+      defaultAssetsPath: null,
+      resourcePackRoots: [],
+      formatting: {
+        style: "compact",
+        lineWidth: 88,
+        braceStyle: "nextLine"
+      },
+      workspaceFolders: [{
+        workspaceFolderPath,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        formatting: {
+          style: "not-a-style",
+          lineWidth: 999,
+          braceStyle: null
+        }
+      }]
+    }), {
+      defaultAssetsPath: null,
+      resourcePackRoots: [],
+      formatting: {
+        style: "compact",
+        lineWidth: 88,
+        braceStyle: "nextLine"
+      },
+      workspaceFolders: [{
+        workspaceFolderPath,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        formatting: {
+          style: "canonical",
+          lineWidth: 240,
+          braceStyle: "sameLine"
+        }
+      }]
+    });
+  });
+
+  it("selects formatting from the longest owning workspace folder", () => {
+    const root = path.resolve("workspace");
+    const nested = path.join(root, "nested");
+    const settings: RsglValidationSettings = {
+      defaultAssetsPath: null,
+      resourcePackRoots: [],
+      formatting: {
+        style: "canonical",
+        lineWidth: 100,
+        braceStyle: "sameLine"
+      },
+      workspaceFolders: [{
+        workspaceFolderPath: root,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        formatting: {
+          style: "compact",
+          lineWidth: 80,
+          braceStyle: "sameLine"
+        }
+      }, {
+        workspaceFolderPath: nested,
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        formatting: {
+          style: "expanded",
+          lineWidth: 120,
+          braceStyle: "nextLine"
+        }
+      }]
+    };
+
+    assert.deepStrictEqual(
+      formattingConfigurationForSource(path.join(nested, "src", "main.rsgl"), settings),
+      { style: "expanded", lineWidth: 120, braceStyle: "nextLine" }
+    );
+    assert.deepStrictEqual(
+      formattingConfigurationForSource(path.resolve("elsewhere", "main.rsgl"), settings),
+      { style: "canonical", lineWidth: 100, braceStyle: "sameLine" }
+    );
+  });
+
+  it("excludes formatter-only changes from the validation settings fingerprint", () => {
+    const base = toValidationSettings({
+      stdlibRoot: path.resolve("stdlib"),
+      defaultAssetsPath: "assets",
+      resourcePackRoots: ["pack"],
+      formatting: {
+        style: "canonical",
+        lineWidth: 100,
+        braceStyle: "sameLine"
+      }
+    });
+    const styleChanged = toValidationSettings({
+      ...base,
+      formatting: {
+        style: "expanded",
+        lineWidth: 140,
+        braceStyle: "nextLine"
+      }
+    });
+    const validationChanged = toValidationSettings({
+      ...styleChanged,
+      defaultAssetsPath: "other-assets"
+    });
+
+    assert.strictEqual(
+      validationSettingsFingerprint(styleChanged),
+      validationSettingsFingerprint(base)
+    );
+    assert.notStrictEqual(
+      validationSettingsFingerprint(validationChanged),
+      validationSettingsFingerprint(base)
+    );
   });
 
   it("falls back to safe defaults for garbage settings payloads", () => {
@@ -1273,7 +1392,14 @@ describe("RSGL LSP server core", () => {
       "}"
     ].join("\n");
     const document = documentOf(unformatted);
-    const edits = formattingEditsForDocument(document, 2);
+    const formattingOptions = {
+      tabSize: 2,
+      insertSpaces: true,
+      trimTrailingWhitespace: true,
+      trimFinalNewlines: false,
+      insertFinalNewline: false
+    };
+    const edits = formattingEditsForDocument(document, formattingOptions);
 
     assert.deepStrictEqual(edits, [{
       range: {
@@ -1290,7 +1416,62 @@ describe("RSGL LSP server core", () => {
         "}"
       ].join("\n")
     }]);
-    assert.deepStrictEqual(formattingEditsForDocument(documentOf(edits[0].newText), 2), []);
+    assert.deepStrictEqual(
+      formattingEditsForDocument(documentOf(edits[0].newText), formattingOptions),
+      []
+    );
+  });
+
+  it("forwards tabs and final-newline LSP formatting options to the core formatter", () => {
+    const source = [
+      "template nested() -> model {",
+      "model block example:test {",
+      "parent minecraft:block/cube_all",
+      "}",
+      "}",
+      "",
+      ""
+    ].join("\n");
+    const document = documentOf(source);
+    const edits = formattingEditsForDocument(document, {
+      tabSize: 4,
+      insertSpaces: false,
+      trimTrailingWhitespace: true,
+      trimFinalNewlines: true,
+      insertFinalNewline: true
+    }, {
+      style: "canonical",
+      lineWidth: 100,
+      braceStyle: "sameLine"
+    });
+
+    assert.strictEqual(
+      edits[0]?.newText,
+      [
+        "template nested() -> model {",
+        "\tmodel block example:test {",
+        "\t\tparent minecraft:block/cube_all",
+        "\t}",
+        "}",
+        ""
+      ].join("\n")
+    );
+  });
+
+  it("only trims trailing whitespace when the LSP client requests it", () => {
+    const source = "let value=1   \n";
+    const preserving = formattingEditsForDocument(documentOf(source), {
+      tabSize: 2,
+      insertSpaces: true
+    });
+    const trimming = formattingEditsForDocument(documentOf(source), {
+      tabSize: 2,
+      insertSpaces: true,
+      trimTrailingWhitespace: true
+    });
+
+    assert.strictEqual(preserving[0]?.newText, "let value = 1   \n");
+    assert.strictEqual(trimming[0]?.newText, "let value = 1\n");
   });
 
   it("maps target-aware item-model completion and schema hover through the LSP surface", () => {

@@ -55,6 +55,7 @@ import {
   documentsDependingOnPath,
   documentsStructurallyDependingOnPath,
   fileNameFromUri,
+  formattingConfigurationForSource,
   formattingEditsForDocument,
   normalizeDisplayFileName,
   projectSemanticConfigurationFingerprint,
@@ -67,6 +68,7 @@ import {
   toLspReferenceLocations,
   toLspWorkspaceEdit,
   toValidationSettings,
+  validationSettingsFingerprint,
   workspaceRootFileNamesFromInitialization,
   type RsglDocumentDependencies,
   type RsglValidationSettings
@@ -184,10 +186,16 @@ connection.onInitialize(params => {
 
 connection.onDidChangeConfiguration(params => {
   const nextValidationSettings = toValidationSettings(params.settings);
-  if (nextValidationSettings.stdlibRoot !== validationSettings.stdlibRoot) {
+  const validationChanged = validationSettingsFingerprint(nextValidationSettings)
+    !== validationSettingsFingerprint(validationSettings);
+  const stdlibRootChanged = nextValidationSettings.stdlibRoot !== validationSettings.stdlibRoot;
+  validationSettings = nextValidationSettings;
+  if (!validationChanged) {
+    return;
+  }
+  if (stdlibRootChanged) {
     replaceSemanticCache(nextValidationSettings.stdlibRoot);
   }
-  validationSettings = nextValidationSettings;
   workspaceNavigationRoots = configuredWorkspaceNavigationRoots(validationSettings);
   projectTargetCache.invalidateAll();
   workspaceValidationCache.invalidateAll();
@@ -450,7 +458,12 @@ connection.onDocumentFormatting(params => {
   if (!document) {
     return [];
   }
-  return formattingEditsForDocument(document, params.options.tabSize);
+  const fileName = nativeFileNameFromUri(document.uri);
+  return formattingEditsForDocument(
+    document,
+    params.options,
+    formattingConfigurationForSource(fileName, validationSettings)
+  );
 });
 
 documents.listen(connection);

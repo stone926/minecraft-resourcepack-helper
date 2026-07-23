@@ -174,7 +174,9 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatted, [
       "item recursive {",
       "  first_match {",
-      "    when property minecraft:component predicate \"enchantments\" value [{ enchantments: minecraft:channeling }] =>",
+      "    when property minecraft:component predicate \"enchantments\" value [",
+      "      { enchantments: minecraft:channeling }",
+      "    ] =>",
       "    condition property minecraft:using_item {",
       "      on_true",
       "      empty {}",

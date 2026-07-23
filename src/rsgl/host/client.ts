@@ -30,8 +30,13 @@ import {
   type RsglResourceSnapshotInvalidationNotification,
   type RsglResourceSnapshotRequest
 } from "../../../packages/rsgl-shared/src";
+import type { RsglFormattingConfiguration } from "../../../packages/rsgl-core/src";
 import { rsglWorkspaceSourceRootCache } from "../../../packages/rsgl-core/src/sourceRoot";
-import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "./configuration";
+import {
+  configuredDefaultAssetsPath,
+  configuredResourcePackLoadOrder,
+  configuredRsglFormatting
+} from "./configuration";
 import {
   DependencyPatternWatchRegistry,
   DependencyWatchRegistry,
@@ -50,11 +55,13 @@ interface RsglValidationSettings {
   stdlibRoot: string;
   defaultAssetsPath: string | null;
   resourcePackRoots: string[];
+  formatting: RsglFormattingConfiguration;
   workspaceFolders: Array<{
     workspaceFolderUri: string;
     workspaceFolderPath: string;
     defaultAssetsPath: string | null;
     resourcePackRoots: string[];
+    formatting: RsglFormattingConfiguration;
   }>;
 }
 
@@ -240,6 +247,9 @@ export async function startRsglLanguageServer(
     if (
       event.affectsConfiguration(rsglConfigKeys.defaultAssetsPath)
       || event.affectsConfiguration(rsglConfigKeys.resourcePackLoadOrder)
+      || event.affectsConfiguration(rsglConfigKeys.style)
+      || event.affectsConfiguration(rsglConfigKeys.lineWidth)
+      || event.affectsConfiguration(rsglConfigKeys.braceStyle)
     ) {
       void client.sendNotification(DidChangeConfigurationNotification.type, {
         settings: currentRsglValidationSettings(options.stdlibRoot)
@@ -436,11 +446,13 @@ function currentRsglValidationSettings(stdlibRoot: string): RsglValidationSettin
     stdlibRoot,
     defaultAssetsPath: configuredDefaultAssetsPath(),
     resourcePackRoots: configuredResourcePackLoadOrder(),
+    formatting: configuredRsglFormatting(),
     workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
       workspaceFolderUri: folder.uri.toString(),
       workspaceFolderPath: folder.uri.fsPath,
       defaultAssetsPath: configuredDefaultAssetsPath(folder.uri),
-      resourcePackRoots: configuredResourcePackLoadOrder(folder.uri)
+      resourcePackRoots: configuredResourcePackLoadOrder(folder.uri),
+      formatting: configuredRsglFormatting(folder.uri)
     }))
   };
 }

@@ -25,9 +25,11 @@ class RsglLexer {
   public constructor(private readonly text: string) { }
 
   public lex(): LexResult {
+    let eofLeadingTrivia: Trivia[] = [];
     while (!this.isAtEnd()) {
       const leadingTrivia = this.readTrivia();
       if (this.isAtEnd()) {
+        eofLeadingTrivia = leadingTrivia;
         break;
       }
 
@@ -41,7 +43,7 @@ class RsglLexer {
       text: "",
       offset: this.text.length,
       length: 0,
-      leadingTrivia: this.readTrivia()
+      leadingTrivia: eofLeadingTrivia
     });
 
     return {

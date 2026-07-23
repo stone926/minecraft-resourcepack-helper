@@ -8,6 +8,17 @@ interface ExtensionManifest {
   extensionPack?: string[];
   contributes?: {
     commands?: Array<{ command?: string }>;
+    configuration?: {
+      properties?: Record<string, {
+        type?: string;
+        enum?: string[];
+        default?: unknown;
+        minimum?: number;
+        maximum?: number;
+        scope?: string;
+      }>;
+    };
+    configurationDefaults?: Record<string, Record<string, unknown>>;
     languages?: Array<{ id?: string; extensions?: string[]; configuration?: string }>;
     grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
     jsonValidation?: Array<{ fileMatch?: string; url?: string }>;
@@ -119,6 +130,75 @@ describe("integrated RSGL extension surface", () => {
     assert.ok(buildContexts.includes("loadRsglProjectConfigForSource"));
     assert.ok(buildContexts.includes("resolveRsglOutputPackRoot"));
     assert.strictEqual(buildContexts.includes("resolveConfiguredOutDir"), false);
+  });
+
+  it("bridges language-scoped formatting settings without waking semantic caches", () => {
+    const configuration = readSource("src", "rsgl", "host", "configuration.ts");
+    const client = readSource("src", "rsgl", "host", "client.ts");
+    const serverCore = readSource("packages", "rsgl-lsp", "src", "serverCore.ts");
+    const server = readSource("packages", "rsgl-lsp", "src", "server.ts");
+
+    assert.ok(configuration.includes('languageId: "rsgl"'));
+    assert.ok(configuration.includes("normalizeRsglFormattingConfiguration"));
+    for (const key of ["style", "lineWidth", "braceStyle"]) {
+      assert.ok(configuration.includes(`rsglConfigKeys.${key}`));
+      assert.ok(client.includes(`event.affectsConfiguration(rsglConfigKeys.${key})`));
+    }
+    assert.ok(client.includes("formatting: configuredRsglFormatting()"));
+    assert.ok(client.includes("formatting: configuredRsglFormatting(folder.uri)"));
+
+    assert.ok(serverCore.includes("validationSettingsFingerprint"));
+    assert.ok(serverCore.includes("Formatting is intentionally excluded"));
+    assert.ok(serverCore.includes("formattingConfigurationForSource"));
+    assert.ok(server.includes("const validationChanged = validationSettingsFingerprint"));
+    assert.ok(server.includes("if (!validationChanged)"));
+    assert.ok(server.includes("params.options,"));
+    assert.ok(server.includes("formattingConfigurationForSource(fileName, validationSettings)"));
+
+    const handlerStart = server.indexOf("connection.onDidChangeConfiguration");
+    const handlerEnd = server.indexOf("documents.onDidOpen", handlerStart);
+    const handler = server.slice(handlerStart, handlerEnd);
+    const styleOnlyGuard = handler.indexOf("if (!validationChanged)");
+    assert.ok(styleOnlyGuard >= 0);
+    for (const expensiveWork of [
+      "replaceSemanticCache",
+      "projectTargetCache.invalidateAll",
+      "workspaceValidationCache.invalidateAll",
+      "invalidateResourceAnalysisCache",
+      "scheduleAllOpenDocuments"
+    ]) {
+      assert.ok(
+        handler.indexOf(expensiveWork) > styleOnlyGuard,
+        `${expensiveWork} must remain behind the validation-subset guard`
+      );
+    }
+  });
+
+  it("declares stable language-overridable RSGL formatting settings", () => {
+    const manifest = readManifest();
+    const properties = manifest.contributes?.configuration?.properties ?? {};
+    const style = properties["McResHelper.rsgl.format.style"];
+    const lineWidth = properties["McResHelper.rsgl.format.lineWidth"];
+    const braceStyle = properties["McResHelper.rsgl.format.braceStyle"];
+
+    assert.deepStrictEqual(style?.enum, ["canonical", "compact", "expanded"]);
+    assert.strictEqual(style?.default, "canonical");
+    assert.strictEqual(style?.scope, "language-overridable");
+    assert.strictEqual(lineWidth?.type, "integer");
+    assert.strictEqual(lineWidth?.default, 100);
+    assert.strictEqual(lineWidth?.minimum, 40);
+    assert.strictEqual(lineWidth?.maximum, 240);
+    assert.strictEqual(lineWidth?.scope, "language-overridable");
+    assert.deepStrictEqual(braceStyle?.enum, ["sameLine", "nextLine"]);
+    assert.strictEqual(braceStyle?.default, "sameLine");
+    assert.strictEqual(braceStyle?.scope, "language-overridable");
+    assert.deepStrictEqual(
+      manifest.contributes?.configurationDefaults?.["[rsgl]"],
+      Object.fromEntries([
+        ["editor.tabSize", 2],
+        ["editor.insertSpaces", true]
+      ])
+    );
   });
 
   it("publishes local, custom, and vanilla extern sources in root-bundled schemas and grammar", () => {

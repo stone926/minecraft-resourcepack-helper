@@ -39,7 +39,10 @@ export const rsglCommands = {
 
 export const rsglConfigKeys = {
   defaultAssetsPath: "McResHelper.defaultMcAssetsPath",
-  resourcePackLoadOrder: "McResHelper.resourcePackLoadOrder"
+  resourcePackLoadOrder: "McResHelper.resourcePackLoadOrder",
+  style: "McResHelper.rsgl.format.style",
+  lineWidth: "McResHelper.rsgl.format.lineWidth",
+  braceStyle: "McResHelper.rsgl.format.braceStyle"
 } as const;
 
 export type RsglCommandId = typeof rsglCommands[keyof typeof rsglCommands];

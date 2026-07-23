@@ -27,17 +27,23 @@ describe("integrated RSGL i18n", () => {
         values.push({ label: `${command.command} title`, value: command.title });
       }
     }
-    const enabled = manifest.contributes?.configuration?.properties?.["McResHelper.rsgl.enabled"];
-    values.push({ label: "McResHelper.rsgl.enabled description", value: enabled?.description });
-    for (const [index, value] of (enabled?.enumDescriptions ?? []).entries()) {
-      values.push({ label: `McResHelper.rsgl.enabled enumDescriptions[${index}]`, value });
+    for (const [key, contribution] of Object.entries(
+      manifest.contributes?.configuration?.properties ?? {}
+    )) {
+      if (!key.startsWith("McResHelper.rsgl.")) {
+        continue;
+      }
+      values.push({ label: `${key} description`, value: contribution.description });
+      for (const [index, value] of (contribution.enumDescriptions ?? []).entries()) {
+        values.push({ label: `${key} enumDescriptions[${index}]`, value });
+      }
     }
     const validation = manifest.contributes?.jsonValidation?.find(entry =>
       entry.fileMatch === "**/rsgl.config.json"
     );
     values.push({ label: "RSGL schema URL", value: validation?.url });
 
-    assert.ok(values.length >= 12, "root manifest should expose the complete localized RSGL surface");
+    assert.ok(values.length >= 20, "root manifest should expose the complete localized RSGL surface");
     for (const { label, value } of values) {
       const key = packageNlsKey(value, label);
       assert.ok(defaultBundle[key]?.trim(), `${label} is missing from package.nls.json`);

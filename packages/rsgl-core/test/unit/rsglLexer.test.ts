@@ -3,6 +3,19 @@ import { rsglModelGeometryKeywords } from "../../src/modelGeometrySyntax";
 import { lexRsgl } from "../../src/parser";
 
 describe("RSGL lexer", () => {
+  it("retains trivia that reaches EOF on the EOF token", () => {
+    const result = lexRsgl("let value = 1  // trailing comment\r\n\r\n");
+    const eof = result.tokens[result.tokens.length - 1];
+
+    assert.strictEqual(eof.kind, "endOfFile");
+    assert.deepStrictEqual(eof.leadingTrivia.map(trivia => [trivia.kind, trivia.text]), [
+      ["whitespace", "  "],
+      ["lineComment", "// trailing comment"],
+      ["newline", "\r\n"],
+      ["newline", "\r\n"]
+    ]);
+  });
+
   it("lexes comments, strings, numbers, and resource locations", () => {
     const result = lexRsgl([
       "// resource source",

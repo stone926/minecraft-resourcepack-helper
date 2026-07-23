@@ -10,6 +10,7 @@ import {
   type CodeAction,
   type CompletionItem,
   type Diagnostic,
+  type FormattingOptions,
   type Hover,
   type Location,
   type Position,
@@ -32,6 +33,7 @@ import {
   getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
   loadRsglProjectConfigForSource,
+  normalizeRsglFormattingConfiguration,
   parseRsgl,
   prepareRsglDocumentRename,
   projectCompileOptionsFromRsglConfig,
@@ -44,6 +46,8 @@ import {
   type RsglCompletionItem,
   type RsglDiagnostic,
   type RsglDefinitionLocation,
+  type RsglFormattingConfiguration,
+  type RsglFormatOptions,
   type RsglLanguageWorkspace,
   type RsglProgramCompileOptions,
   type RsglReferenceLocation,
@@ -69,6 +73,7 @@ export interface RsglValidationSettings {
   stdlibRoot?: string;
   defaultAssetsPath: string | null;
   resourcePackRoots: string[];
+  formatting?: RsglFormattingConfiguration;
   workspaceFolders?: readonly RsglWorkspaceFolderValidationSettings[];
 }
 
@@ -77,6 +82,7 @@ export interface RsglWorkspaceFolderValidationSettings {
   workspaceFolderPath: string;
   defaultAssetsPath: string | null;
   resourcePackRoots: string[];
+  formatting?: RsglFormattingConfiguration;
 }
 
 type RsglWorkspaceAnalysisOptions = ReturnType<typeof createRsglWorkspaceValidationOptions>
@@ -130,6 +136,10 @@ export function toValidationSettings(value: unknown): RsglValidationSettings {
   const resourcePackRoots = Array.isArray(roots)
     ? roots.filter((root): root is string => typeof root === "string")
     : [];
+  const hasFormatting = Object.prototype.hasOwnProperty.call(record, "formatting");
+  const formatting = hasFormatting
+    ? normalizeRsglFormattingConfiguration(record.formatting)
+    : undefined;
   const workspaceFolders = Array.isArray(record.workspaceFolders)
     ? record.workspaceFolders.flatMap(value => {
       if (typeof value !== "object" || value === null) {
@@ -146,13 +156,17 @@ export function toValidationSettings(value: unknown): RsglValidationSettings {
       const folderRoots = Array.isArray(folder.resourcePackRoots)
         ? folder.resourcePackRoots.filter((root): root is string => typeof root === "string")
         : [];
+      const hasFolderFormatting = Object.prototype.hasOwnProperty.call(folder, "formatting");
       return [{
         ...(isSerializedWorkspaceUri(folder.workspaceFolderUri)
           ? { workspaceFolderUri: folder.workspaceFolderUri }
           : {}),
         workspaceFolderPath: path.resolve(folder.workspaceFolderPath),
         defaultAssetsPath: folderDefaultAssetsPath,
-        resourcePackRoots: folderRoots
+        resourcePackRoots: folderRoots,
+        ...(hasFolderFormatting
+          ? { formatting: normalizeRsglFormattingConfiguration(folder.formatting) }
+          : {})
       }];
     })
     : [];
@@ -160,8 +174,28 @@ export function toValidationSettings(value: unknown): RsglValidationSettings {
     ...(stdlibRoot ? { stdlibRoot } : {}),
     defaultAssetsPath,
     resourcePackRoots,
+    ...(formatting ? { formatting } : {}),
     ...(workspaceFolders.length > 0 ? { workspaceFolders } : {})
   };
+}
+
+/**
+ * Creates the identity of the settings that affect validation, semantic
+ * programs, project targets, resource analysis, and workspace navigation.
+ * Formatting is intentionally excluded so style-only changes stay cheap.
+ */
+export function validationSettingsFingerprint(settings: RsglValidationSettings): string {
+  return JSON.stringify({
+    stdlibRoot: settings.stdlibRoot ?? null,
+    defaultAssetsPath: settings.defaultAssetsPath,
+    resourcePackRoots: settings.resourcePackRoots,
+    workspaceFolders: (settings.workspaceFolders ?? []).map(folder => ({
+      workspaceFolderUri: folder.workspaceFolderUri ?? null,
+      workspaceFolderPath: folder.workspaceFolderPath,
+      defaultAssetsPath: folder.defaultAssetsPath,
+      resourcePackRoots: folder.resourcePackRoots
+    }))
+  });
 }
 
 /** Compiles the document's program and returns LSP diagnostics scoped to the document's file. */
@@ -500,10 +534,26 @@ export function completionItemsForDocument(
 /** Formats a document and converts the result into an LSP full-document edit. */
 export function formattingEditsForDocument(
   document: RsglLspDocument,
-  tabSize: number
+  options: FormattingOptions | number,
+  formatting?: RsglFormattingConfiguration
 ): TextEdit[] {
   const text = document.getText();
-  const formatted = formatRsglText(text, Number(tabSize) || 2);
+  const editorOptions: FormattingOptions = typeof options === "number"
+    ? { tabSize: options, insertSpaces: true }
+    : options;
+  const formatOptions: RsglFormatOptions = {
+    ...normalizeRsglFormattingConfiguration(formatting),
+    tabSize: Number.isFinite(editorOptions.tabSize) && editorOptions.tabSize > 0
+      ? Math.round(editorOptions.tabSize)
+      : 2,
+    insertSpaces: editorOptions.insertSpaces !== false,
+    trimTrailingWhitespace: editorOptions.trimTrailingWhitespace ?? false,
+    trimFinalNewlines: editorOptions.trimFinalNewlines ?? false,
+    ...(typeof editorOptions.insertFinalNewline === "boolean"
+      ? { insertFinalNewline: editorOptions.insertFinalNewline }
+      : {})
+  };
+  const formatted = formatRsglText(text, formatOptions);
   return formatted === text
     ? []
     : [{
@@ -589,12 +639,28 @@ function validationSettingsForSource(
   sourceFileName: string,
   settings: RsglValidationSettings
 ): Pick<RsglValidationSettings, "defaultAssetsPath" | "resourcePackRoots"> {
+  const scoped = workspaceFolderSettingsForSource(sourceFileName, settings);
+  return scoped ?? settings;
+}
+
+/** Resolves normalized formatting settings for the longest owning workspace folder. */
+export function formattingConfigurationForSource(
+  sourceFileName: string,
+  settings: RsglValidationSettings
+): RsglFormattingConfiguration {
+  const scoped = workspaceFolderSettingsForSource(sourceFileName, settings);
+  return normalizeRsglFormattingConfiguration(scoped?.formatting ?? settings.formatting);
+}
+
+function workspaceFolderSettingsForSource(
+  sourceFileName: string,
+  settings: RsglValidationSettings
+): RsglWorkspaceFolderValidationSettings | undefined {
   const source = path.resolve(sourceFileName);
-  const scoped = [...(settings.workspaceFolders ?? [])]
+  return [...(settings.workspaceFolders ?? [])]
     .filter(folder => isPathInsideOrEqual(source, folder.workspaceFolderPath))
     .sort((left, right) => path.resolve(right.workspaceFolderPath).length
       - path.resolve(left.workspaceFolderPath).length)[0];
-  return scoped ?? settings;
 }
 
 function isPathInsideOrEqual(candidate: string, root: string): boolean {
