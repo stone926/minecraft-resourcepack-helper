@@ -202,6 +202,206 @@ describe("RSGL workspace validation", () => {
     }
   });
 
+  it("resolves inherited local models through the effective pack stack", () => {
+    const root = createTempDir("rsgl-inherited-pack-stack-");
+    const sourcePack = path.join(root, "source-pack");
+    const outputPack = path.join(root, "output-pack");
+    const highCustomPack = path.join(root, "custom-high");
+    const lowCustomPack = path.join(root, "custom-low");
+    const defaultAssets = path.join(root, "default-assets");
+    const sourceFile = path.join(sourcePack, "rsgl", "main.rsgl");
+    const localParent = minecraftAssetPath(outputPack, "models/block/local_parent.json");
+    const localSharedCandidate = minecraftAssetPath(outputPack, "textures/block/shared.png");
+    const localVanillaCandidate = minecraftAssetPath(outputPack, "textures/block/vanilla_only.png");
+    const highParent = minecraftAssetPath(highCustomPack, "models/block/custom_parent.json");
+    const lowParent = minecraftAssetPath(lowCustomPack, "models/block/custom_parent.json");
+    const highShared = minecraftAssetPath(highCustomPack, "textures/block/shared.png");
+    const lowShared = minecraftAssetPath(lowCustomPack, "textures/block/shared.png");
+    const highParentTexture = minecraftAssetPath(highCustomPack, "textures/block/high_parent.png");
+    const lowParentTexture = minecraftAssetPath(lowCustomPack, "textures/block/low_parent.png");
+    const vanillaTexture = minecraftAssetPath(defaultAssets, "textures/block/vanilla_only.png");
+    const filteredVanillaTexture = minecraftAssetPath(defaultAssets, "textures/block/filtered.png");
+    const vanillaParent = minecraftAssetPath(defaultAssets, "models/block/vanilla_parent.json");
+    const sourceOnlyTexture = minecraftAssetPath(sourcePack, "textures/block/source_only.png");
+    const effectiveResolutionCalls = new Map<string, number>();
+    const usages: Array<{
+      id: string;
+      source: string;
+      resolutionScope?: string;
+      resolvedPath?: string;
+      candidatePaths?: readonly string[];
+    }> = [];
+
+    try {
+      for (const packRoot of [sourcePack, outputPack, highCustomPack, lowCustomPack]) {
+        fs.mkdirSync(packRoot, { recursive: true });
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      }
+      fs.writeFileSync(path.join(highCustomPack, "pack.mcmeta"), JSON.stringify({
+        filter: {
+          block: [{
+            namespace: "minecraft",
+            path: "textures/block/filtered\\.png"
+          }]
+        }
+      }));
+      for (const fileName of [
+        sourceFile,
+        localParent,
+        highParent,
+        lowParent,
+        highShared,
+        lowShared,
+        highParentTexture,
+        lowParentTexture,
+        vanillaTexture,
+        filteredVanillaTexture,
+        vanillaParent,
+        sourceOnlyTexture
+      ]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+      }
+
+      fs.writeFileSync(sourceFile, [
+        "extern local model minecraft:block/local_parent, minecraft:block/vanilla_parent",
+        "model block inherited_child {",
+        "  parent minecraft:block/local_parent",
+        "  textures { inherited: \"#lower\" }",
+        "}",
+        "model block strict_local_child { parent minecraft:block/vanilla_parent }"
+      ].join("\n"));
+      fs.writeFileSync(localParent, JSON.stringify({
+        parent: "minecraft:block/custom_parent",
+        textures: {
+          shared: "minecraft:block/shared",
+          vanilla: "minecraft:block/vanilla_only",
+          source_only: "minecraft:block/source_only",
+          filtered: "minecraft:block/filtered",
+          alias: "#vanilla"
+        },
+        elements: [{
+          from: [0, 0, 0],
+          to: [16, 16, 16],
+          faces: {
+            north: { texture: "#alias" }
+          }
+        }]
+      }));
+      fs.writeFileSync(highParent, JSON.stringify({
+        textures: { lower: "minecraft:block/high_parent" }
+      }));
+      fs.writeFileSync(lowParent, JSON.stringify({
+        textures: { lower: "minecraft:block/low_parent" }
+      }));
+      fs.writeFileSync(vanillaParent, "{}");
+      for (const texture of [
+        highShared,
+        lowShared,
+        highParentTexture,
+        lowParentTexture,
+        vanillaTexture,
+        filteredVanillaTexture,
+        sourceOnlyTexture
+      ]) {
+        fs.writeFileSync(texture, createPngBytes(16, 16));
+      }
+
+      const workspaceValidation = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        outputPackRoot: outputPack,
+        defaultAssetsPath: defaultAssets,
+        resourcePackRoots: [highCustomPack, lowCustomPack]
+      });
+      const result = compileRsglFile(sourceFile, {
+        ...workspaceValidation,
+        resourceResolution: (kind, id) => {
+          const key = `${kind}:${id}`;
+          effectiveResolutionCalls.set(key, (effectiveResolutionCalls.get(key) ?? 0) + 1);
+          return workspaceValidation.resourceResolution(kind, id);
+        },
+        onExternResourceUsed: usage => usages.push(usage)
+      });
+      const textureWarnings = result.diagnostics.filter(diagnostic =>
+        diagnostic.code === "rsgl.textureNotFound"
+      );
+      const modelWarnings = result.diagnostics.filter(diagnostic =>
+        diagnostic.code === "rsgl.modelNotFound"
+      );
+
+      assert.deepStrictEqual(
+        textureWarnings.map(diagnostic => diagnostic.message).sort(),
+        [
+          "Texture not found: minecraft:block/filtered",
+          "Texture not found: minecraft:block/source_only"
+        ]
+      );
+      assert.deepStrictEqual(
+        modelWarnings.map(diagnostic => diagnostic.message),
+        ["Model not found: minecraft:block/vanilla_parent"]
+      );
+      assert.strictEqual(
+        result.diagnostics.some(diagnostic =>
+          diagnostic.code === "rsgl.textureNotFound"
+          && diagnostic.message.includes("vanilla_only")
+        ),
+        false
+      );
+      assert.strictEqual(
+        result.diagnostics.some(diagnostic =>
+          diagnostic.code === "rsgl.modelNotFound"
+          && diagnostic.message.includes("custom_parent")
+        ),
+        false
+      );
+      assert.strictEqual(
+        result.diagnostics.some(diagnostic => diagnostic.code === "rsgl.unresolvedTextureVariable"),
+        false
+      );
+
+      const sharedUsage = usages.find(usage => usage.id === "minecraft:block/shared");
+      const vanillaUsage = usages.find(usage => usage.id === "minecraft:block/vanilla_only");
+      const customParentUsage = usages.find(usage => usage.id === "minecraft:block/custom_parent");
+      const highParentTextureUsage = usages.find(usage => usage.id === "minecraft:block/high_parent");
+      const filteredUsage = usages.find(usage => usage.id === "minecraft:block/filtered");
+      const strictLocalUsage = usages.find(usage => usage.id === "minecraft:block/vanilla_parent");
+      assert.strictEqual(sharedUsage?.source, "custom");
+      assert.strictEqual(sharedUsage?.resolutionScope, "effective");
+      assert.strictEqual(sharedUsage?.resolvedPath, highShared);
+      assert.strictEqual(vanillaUsage?.source, "vanilla");
+      assert.strictEqual(vanillaUsage?.resolutionScope, "effective");
+      assert.strictEqual(vanillaUsage?.resolvedPath, vanillaTexture);
+      assert.ok(vanillaUsage?.candidatePaths?.includes(localVanillaCandidate));
+      assert.strictEqual(customParentUsage?.source, "custom");
+      assert.strictEqual(customParentUsage?.resolvedPath, highParent);
+      assert.strictEqual(highParentTextureUsage?.resolvedPath, highParentTexture);
+      assert.strictEqual(filteredUsage?.resolutionScope, "effective");
+      assert.strictEqual(filteredUsage?.resolvedPath, undefined);
+      assert.strictEqual(filteredUsage?.candidatePaths?.includes(filteredVanillaTexture), false);
+      assert.strictEqual(strictLocalUsage?.source, "local");
+      assert.strictEqual(strictLocalUsage?.resolutionScope, "local");
+      assert.strictEqual(strictLocalUsage?.resolvedPath, undefined);
+      assert.strictEqual(
+        usages.some(usage => usage.id === "minecraft:block/low_parent"),
+        false
+      );
+
+      const dependencyPaths = result.dependencies.map(dependency => path.resolve(dependency.path));
+      assert.ok(dependencyPaths.includes(path.resolve(localSharedCandidate)));
+      assert.ok(dependencyPaths.includes(path.resolve(highShared)));
+      assert.ok(dependencyPaths.includes(path.resolve(vanillaTexture)));
+      assert.strictEqual(
+        effectiveResolutionCalls.get("texture:minecraft:block/vanilla_only"),
+        1
+      );
+      assert.strictEqual(
+        effectiveResolutionCalls.get("model:minecraft:block/custom_parent"),
+        1
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("validates sound, atlas, mcmeta, and overlay resources", () => {
     const checkedResources: string[] = [];
     const result = compileSource([
@@ -764,3 +964,7 @@ describe("RSGL workspace validation", () => {
     }
   });
 });
+
+function minecraftAssetPath(packRoot: string, relativePath: string): string {
+  return path.join(packRoot, "assets", "minecraft", ...relativePath.split("/"));
+}

@@ -28,29 +28,41 @@ export function createResourceValidationPassOptions(
   options: RsglResourceValidationOptions,
   overrides: ResourceValidationPassOverrides = {}
 ): RsglResourceValidationOptions {
+  const resolveResource = options.resourceResolution;
   const resolveExternalResource = options.externResourceResolution;
-  const externalResourceResolutions = resolveExternalResource
+  const resourceResolutions = resolveResource || resolveExternalResource
     ? new Map<string, RsglExternalResourceResolution>()
     : undefined;
   const passOptions: RsglResourceValidationOptions = {
     ...options,
     ...overrides,
+    ...(resolveResource
+      ? {
+          resourceResolution: (
+            kind,
+            id
+          ): RsglExternalResourceResolution => cachedResourceResolution(
+            resourceResolutions!,
+            "effective",
+            kind,
+            id,
+            () => resolveResource(kind, id)
+          )
+        }
+      : {}),
     ...(resolveExternalResource
       ? {
           externResourceResolution: (
             source,
             kind,
             id
-          ): RsglExternalResourceResolution => {
-            const key = externalResourceResolutionKey(source, kind, id);
-            const cached = externalResourceResolutions!.get(key);
-            if (cached !== undefined) {
-              return cached;
-            }
-            const resolved = resolveExternalResource(source, kind, id);
-            externalResourceResolutions!.set(key, resolved);
-            return resolved;
-          }
+          ): RsglExternalResourceResolution => cachedResourceResolution(
+            resourceResolutions!,
+            source,
+            kind,
+            id,
+            () => resolveExternalResource(source, kind, id)
+          )
         }
       : {})
   };
@@ -81,10 +93,19 @@ export function cachedExternDeclarationSelection(
   return selection;
 }
 
-function externalResourceResolutionKey(
+function cachedResourceResolution(
+  cache: Map<string, RsglExternalResourceResolution>,
   source: string,
   kind: RsglResourceExistenceKind,
-  id: string
-): string {
-  return [source, kind, id].join("\0");
+  id: string,
+  resolve: () => RsglExternalResourceResolution
+): RsglExternalResourceResolution {
+  const key = [source, kind, id].join("\0");
+  const cached = cache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const resolved = resolve();
+  cache.set(key, resolved);
+  return resolved;
 }

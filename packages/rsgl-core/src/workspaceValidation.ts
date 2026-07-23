@@ -18,6 +18,7 @@ import {
   findPackRoot,
   getConfiguredPackResourceRootCandidates,
   getDocumentResourceRootCandidates,
+  getPackStackResourceRootCandidates,
   getResourceRootCandidates,
   minecraftResourceTarget,
   normalizePathKey,
@@ -67,7 +68,12 @@ interface CachedValidationValue<T> {
 
 type RequiredResourceValidationCallbacks = Required<Pick<
   RsglResourceValidationOptions,
-  "resourceExists" | "resourceContent" | "textureMetadata" | "soundMetadata" | "blockstateSchema"
+  | "resourceExists"
+  | "resourceResolution"
+  | "resourceContent"
+  | "textureMetadata"
+  | "soundMetadata"
+  | "blockstateSchema"
 >>;
 
 export interface RsglWorkspaceValidationCallbacks extends RequiredResourceValidationCallbacks {
@@ -234,6 +240,8 @@ export function createRsglWorkspaceValidationOptions(
     : undefined;
   return {
     resourceExists: (kind, id) => resolver.resolve(id, minecraftResourceTarget(kind)) !== null,
+    resourceResolution: (kind, id) =>
+      resolver.resolveEffectiveWithCandidates(id, minecraftResourceTarget(kind)),
     resourceContent: (kind, id) => resolver.readJson(id, minecraftResourceTarget(kind)),
     textureMetadata: id => resolver.textureMetadata(id),
     soundMetadata: id => resolver.soundMetadata(id),
@@ -284,6 +292,13 @@ class WorkspaceResourceResolver {
     return this.resolveUncached(id, target, source);
   }
 
+  resolveEffectiveWithCandidates(
+    id: string,
+    target: MinecraftResourceTarget
+  ): RsglExternalResourceResolution {
+    return this.resolveUncached(id, target, undefined, true);
+  }
+
   readJson(id: string, target: MinecraftResourceTarget, source?: ExternResourceSource): JsonValue | null {
     const fileName = this.resolve(id, target, source);
     return fileName ? this.fileSystem.readJson(fileName) : null;
@@ -307,7 +322,8 @@ class WorkspaceResourceResolver {
   private resolveUncached(
     id: string,
     target: MinecraftResourceTarget,
-    source?: ExternResourceSource
+    source?: ExternResourceSource,
+    effective = false
   ): RsglExternalResourceResolution {
     const resourceId = parseResourceId(id, "minecraft");
     if (!resourceId) {
@@ -318,25 +334,28 @@ class WorkspaceResourceResolver {
     const relativePath = resourcePath.split("/");
     const roots = source
       ? this.getExternResourceRootCandidates(source, resourceId, target, resourcePath)
-      : getDocumentResourceRootCandidates(
-        this.sourceFileName,
-        target.directory,
-        this.defaultAssetsPath,
-        resourceId.namespace,
-        target.directory,
-        {
-          pathExists: fileName => this.fileSystem.exists(fileName),
-          getPackRoot: fileName => this.getPackRoot(fileName),
-          getPackMetadata: packRoot => this.getPackMetadata(packRoot),
-          resourcePath,
-          resourcePackRoots: this.resourcePackRoots
-        }
-      );
+      : effective
+        ? this.getEffectiveResourceRootCandidates(resourceId, target, resourcePath)
+        : getDocumentResourceRootCandidates(
+          this.sourceFileName,
+          target.directory,
+          this.defaultAssetsPath,
+          resourceId.namespace,
+          target.directory,
+          {
+            pathExists: fileName => this.fileSystem.exists(fileName),
+            getPackRoot: fileName => this.getPackRoot(fileName),
+            getPackMetadata: packRoot => this.getPackMetadata(packRoot),
+            resourcePath,
+            resourcePackRoots: this.resourcePackRoots
+          }
+        );
 
     const candidatePaths = roots.map(root => path.join(root, ...relativePath));
     for (const candidate of candidatePaths) {
+      const candidateSource = source ?? this.resourceSourceForPath(candidate);
       if (
-        source === "local"
+        candidateSource === "local"
         && this.isLocalResourcePathExcluded(candidate, target.isDirectory)
       ) {
         continue;
@@ -345,6 +364,7 @@ class WorkspaceResourceResolver {
         return {
           resolvedPath: candidate,
           candidatePaths,
+          ...(candidateSource ? { source: candidateSource } : {}),
           metadataPaths: this.packMetadataDependencyPaths()
         };
       }
@@ -354,6 +374,42 @@ class WorkspaceResourceResolver {
       candidatePaths,
       metadataPaths: this.packMetadataDependencyPaths()
     };
+  }
+
+  private getEffectiveResourceRootCandidates(
+    resourceId: ResourceId,
+    target: MinecraftResourceTarget,
+    resourcePath: string
+  ): string[] {
+    const packResourcePath = path.posix.join(
+      target.directory.replaceAll("\\", "/"),
+      resourcePath
+    );
+    const candidateOptions = {
+      pathExists: (fileName: string) => this.fileSystem.exists(fileName),
+      getPackRoot: (fileName: string) => this.getPackRoot(fileName),
+      getPackMetadata: (packRoot: string) => this.getPackMetadata(packRoot),
+      resourcePath: packResourcePath,
+      resourcePackRoots: this.resourcePackRoots
+    };
+    if (this.outputPackRoot) {
+      return getPackStackResourceRootCandidates(
+        this.outputPackRoot,
+        null,
+        this.defaultAssetsPath,
+        resourceId.namespace,
+        target.directory,
+        candidateOptions
+      );
+    }
+    return getDocumentResourceRootCandidates(
+      this.sourceFileName,
+      target.directory,
+      this.defaultAssetsPath,
+      resourceId.namespace,
+      target.directory,
+      candidateOptions
+    );
   }
 
   private getExternResourceRootCandidates(
@@ -396,6 +452,20 @@ class WorkspaceResourceResolver {
 
   private getPackRoot(fileName: string): string | null {
     return findPackRoot(fileName, { pathExists: candidate => this.fileSystem.exists(candidate) });
+  }
+
+  private resourceSourceForPath(fileName: string): ExternResourceSource | undefined {
+    const localPackRoot = this.outputPackRoot ?? this.getPackRoot(this.sourceFileName);
+    if (localPackRoot && isPathWithinRoot(fileName, localPackRoot)) {
+      return "local";
+    }
+    if (this.resourcePackRoots.some(packRoot => isPathWithinRoot(fileName, packRoot))) {
+      return "custom";
+    }
+    if (this.defaultAssetsPath && isPathWithinRoot(fileName, this.defaultAssetsPath)) {
+      return "vanilla";
+    }
+    return undefined;
   }
 
   private isLocalResourcePathExcluded(fileName: string, directory: boolean): boolean {
@@ -453,6 +523,13 @@ function resourcePathWithTargetExtension(resourcePath: string, target: Minecraft
   return extension && !resourcePath.endsWith(extension)
     ? `${resourcePath}${extension}`
     : resourcePath;
+}
+
+function isPathWithinRoot(fileName: string, root: string): boolean {
+  const fileKey = normalizePathKey(path.resolve(fileName));
+  const rootKey = normalizePathKey(path.resolve(root));
+  const rootPrefix = rootKey.endsWith(path.sep) ? rootKey : `${rootKey}${path.sep}`;
+  return fileKey === rootKey || fileKey.startsWith(rootPrefix);
 }
 
 function readJsonFile(fileName: string): JsonValue | null {

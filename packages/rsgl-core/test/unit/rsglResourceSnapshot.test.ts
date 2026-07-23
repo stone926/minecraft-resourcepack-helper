@@ -60,6 +60,66 @@ describe("RSGL contentless resource snapshot", () => {
     assert.strictEqual(JSON.stringify(snapshot).includes('"content"'), false);
   });
 
+  it("separates inherited effective scope from the winning physical layer", () => {
+    const fileName = path.resolve("snapshot inherited", "main.rsgl");
+    const localParent = path.resolve(
+      "snapshot inherited",
+      "local",
+      "assets",
+      "demo",
+      "models",
+      "block",
+      "parent.json"
+    );
+    const vanillaTexture = path.resolve(
+      "snapshot inherited",
+      "vanilla",
+      "assets",
+      "demo",
+      "textures",
+      "block",
+      "fallback.png"
+    );
+    const analysis = compileRsglResourceAnalysis([{
+      fileName,
+      module: parseRsgl([
+        "namespace demo",
+        "extern local model demo:block/parent",
+        "model block child { parent demo:block/parent }"
+      ].join("\n"))
+    }], {
+      externResourceResolution: (source, kind, id) => ({
+        resolvedPath: source === "local" && kind === "model" && id === "demo:block/parent"
+          ? localParent
+          : null,
+        candidatePaths: [localParent]
+      }),
+      externResourceContent: (source, kind, id) =>
+        source === "local" && kind === "model" && id === "demo:block/parent"
+          ? { textures: { all: "demo:block/fallback" } }
+          : undefined,
+      resourceResolution: (kind, id) => ({
+        resolvedPath: kind === "texture" && id === "demo:block/fallback"
+          ? vanillaTexture
+          : null,
+        candidatePaths: [vanillaTexture],
+        source: "vanilla"
+      })
+    });
+    const snapshot = createRsglResourceSnapshot(analysis, {
+      projectId: "project-inherited-effective"
+    });
+    const inheritedTexture = snapshot.edges.find(edge =>
+      edge.target.kind === "texture" && edge.target.id === "demo:block/fallback"
+    );
+
+    assert.strictEqual(inheritedTexture?.origin, "inherited");
+    assert.strictEqual(inheritedTexture?.resolutionScope, "effective");
+    assert.strictEqual(inheritedTexture?.resolvedTarget.status, "physical");
+    assert.strictEqual(inheritedTexture?.resolvedTarget.source, "vanilla");
+    assert.strictEqual(inheritedTexture?.resolvedTarget.uri, pathToFileURL(vanillaTexture).toString());
+  });
+
   it("keeps one template origin attached to every concrete final output", () => {
     const fileName = path.resolve("snapshot-template.rsgl");
     const source = [

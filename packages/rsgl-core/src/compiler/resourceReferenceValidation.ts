@@ -145,6 +145,7 @@ export function checkResourceExists(
         : (options.resourceExists?.(kind, lookupId) ?? false);
   options.onExternResourceUsed?.({
     source: declaration.source,
+    resolutionScope: declaration.source,
     resourceKind: declaration.resourceKind,
     targetKind: kind,
     id: lookupId,
@@ -193,9 +194,9 @@ export function checkResourceExists(
 }
 
 /**
- * Checks a resource referenced by already-loaded external content. Its source
- * is inherited from that content, while the concrete usage is still recorded
- * for manifests and dependency watching.
+ * Checks a resource referenced by already-loaded external content. Minecraft
+ * resolves that reference against the effective pack stack independently of
+ * the layer that supplied the containing document.
  */
 export function checkInheritedExternalResourceExists(
   consumer: RsglResourceReferenceConsumer,
@@ -236,10 +237,13 @@ export function checkInheritedExternalResourceExists(
   if (options.generatedResourceIds?.get(kind)?.has(id) || (kind === "model" && isVirtualBuiltinModelId(id))) {
     return true;
   }
+  const usesEffectiveResolution = options.resourceResolution !== undefined;
   const skipExistenceCheck = options.checkExternExistence === false;
   const resolution = skipExistenceCheck
     ? undefined
-    : resolveExternalResource(options, source, kind, id);
+    : options.resourceResolution
+      ? options.resourceResolution(kind, id)
+      : resolveExternalResource(options, source, kind, id);
   const resolvedPath = skipExistenceCheck ? null : resolution?.resolvedPath;
   const exists = skipExistenceCheck
     ? true
@@ -247,11 +251,15 @@ export function checkInheritedExternalResourceExists(
       ? resolution.resolvedPath !== null
       : options.externResourceExists
         ? options.externResourceExists(source, kind, id)
-        : (options.resourceExists?.(kind, id) ?? fallbackExists);
+        : options.resourceExists
+          ? options.resourceExists(kind, id)
+          : fallbackExists;
+  const resolvedSource = resolution?.source ?? source;
   const resourceKind = getExternResourceKindForTargetKind(kind);
   if (resourceKind) {
     options.onExternResourceUsed?.({
-      source,
+      source: resolvedSource,
+      resolutionScope: usesEffectiveResolution ? "effective" : source,
       resourceKind,
       targetKind: kind,
       id,

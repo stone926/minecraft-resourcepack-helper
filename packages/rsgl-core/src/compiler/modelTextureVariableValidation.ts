@@ -283,7 +283,7 @@ function resolveTextureVariable(
     ? canonicalizeResourceReference("model", model.content.parent, model.namespace)
     : undefined;
   const parentId = parentReference?.kind === "resource" ? parentReference.id : undefined;
-  const parentSource = parentId ? model.externalSource ?? externalModelSources.get(parentId) : undefined;
+  const parentSource = parentId ? externalModelSources.get(parentId) ?? model.externalSource : undefined;
   const parentModel = parentId ? modelResolver(parentId, parentSource) : undefined;
   return parentModel
     ? resolveTextureVariable(parentModel, name, modelResolver, externalModelSources, seen, lookupRoot)

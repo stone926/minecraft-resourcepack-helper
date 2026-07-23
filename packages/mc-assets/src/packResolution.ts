@@ -101,9 +101,34 @@ export function getDocumentResourceRootCandidates(
 ): string[] {
   const assetsRoot = findAssetsRoot(fileName, source);
   const packRoot = options.getPackRoot ? options.getPackRoot(fileName) : findPackRoot(fileName, options);
+  return getPackStackResourceRootCandidates(
+    packRoot,
+    assetsRoot,
+    defaultAssetsPath,
+    namespace,
+    target,
+    options
+  );
+}
+
+/**
+ * Returns the effective resource roots for one pack stack.
+ *
+ * The current pack is searched first, followed by configured lower-priority
+ * packs and finally Default assets. Overlay and filter behavior is preserved
+ * across the entire stack.
+ */
+export function getPackStackResourceRootCandidates(
+  packRoot: string | null,
+  currentAssetsRoot: string | null,
+  defaultAssetsPath: string | null | undefined,
+  namespace: string,
+  target: string,
+  options: ResourceRootCandidateOptions = {}
+): string[] {
   const candidates = packRoot
-    ? getPackResourceRootCandidates(packRoot, assetsRoot, namespace, target, options)
-    : getResourceRootCandidates(assetsRoot, null, namespace, target);
+    ? getPackResourceRootCandidates(packRoot, currentAssetsRoot, namespace, target, options)
+    : getResourceRootCandidates(currentAssetsRoot, null, namespace, target);
   const higherPriorityFilters = packRoot ? [...getPackMetadata(packRoot, options).filters] : [];
 
   for (const lowerPriorityPackRoot of getConfiguredLowerPriorityPackRoots(packRoot, options.resourcePackRoots)) {

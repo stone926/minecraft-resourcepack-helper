@@ -52,7 +52,7 @@ function selectionForOccurrence(
     : undefined;
   return {
     target: { kind: occurrence.kind, id: occurrence.id },
-    resolutionScope: external?.source ?? "effective",
+    resolutionScope: external?.resolutionScope ?? external?.source ?? "effective",
     declarationMode: external
       ? external.skipExistenceCheck ? "unchecked" : "checked"
       : "undeclared"

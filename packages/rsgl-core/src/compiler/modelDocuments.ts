@@ -40,19 +40,30 @@ export function createModelResolver(
       return document;
     }
 
-    const contentReader = source && options.externResourceContent
-      ? (resourceId: string) => options.externResourceContent!(source, "model", resourceId)
-      : source && options.resourceContent
-        ? (resourceId: string) => options.resourceContent!("model", resourceId)
-        : undefined;
+    const effectiveSource = source
+      ? undefined
+      : options.resourceResolution?.("model", id)?.source;
+    let contentReader: ((resourceId: string) => JsonValue | null | undefined) | undefined;
+    if (source && options.externResourceContent) {
+      contentReader = resourceId => options.externResourceContent!(source, "model", resourceId);
+    } else if (source && options.resourceContent) {
+      contentReader = resourceId => options.resourceContent!("model", resourceId);
+    } else if (effectiveSource && options.externResourceContent) {
+      contentReader = resourceId => options.externResourceContent!(effectiveSource, "model", resourceId);
+    } else if (options.resourceContent) {
+      contentReader = resourceId => options.resourceContent!("model", resourceId);
+    }
     if (!contentReader) {
       return undefined;
     }
-    const cacheKey = `${source ?? "generic"}\0${id}`;
+    const cacheKey = `${source ?? "effective"}\0${id}`;
     if (!externalDocuments.has(cacheKey)) {
       const content = contentReader(id);
       const contentObject = asObject(content);
-      externalDocuments.set(cacheKey, contentObject ? modelDocumentFromContent(id, contentObject, source) : null);
+      externalDocuments.set(
+        cacheKey,
+        contentObject ? modelDocumentFromContent(id, contentObject, source ?? effectiveSource) : null
+      );
     }
     return externalDocuments.get(cacheKey) ?? undefined;
   };

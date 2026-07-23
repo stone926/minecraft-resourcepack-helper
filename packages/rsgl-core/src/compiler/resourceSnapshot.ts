@@ -234,7 +234,7 @@ function snapshotEdge(
     sourceUri,
     documentFact
   );
-  const resolutionScope = external?.source ?? "effective";
+  const resolutionScope = external?.resolutionScope ?? external?.source ?? "effective";
   const edgeWithoutId = {
     sourceProducerId: sourceProducer.producerId,
     target,

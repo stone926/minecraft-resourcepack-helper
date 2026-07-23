@@ -51,6 +51,45 @@ describe("RSGL host resource navigation target selection", () => {
     );
   });
 
+  it("keeps inherited lookup effective when a lower physical layer wins", () => {
+    const source = [
+      "extern local model demo:block/parent",
+      "model block child { parent demo:block/parent }"
+    ].join("\n");
+    const fileName = path.resolve("inherited-effective.rsgl");
+    const analysis = compileRsglResourceAnalysis([{ fileName, module: parseRsgl(source) }], {
+      externResourceResolution: (_source, kind, id) => ({
+        resolvedPath: kind === "model" && id === "demo:block/parent"
+          ? path.resolve("local-parent.json")
+          : null,
+        candidatePaths: []
+      }),
+      externResourceContent: (_source, kind, id) =>
+        kind === "model" && id === "demo:block/parent"
+          ? { textures: { all: "demo:block/fallback" } }
+          : undefined,
+      resourceResolution: (kind, id) => ({
+        resolvedPath: kind === "texture" && id === "demo:block/fallback"
+          ? path.resolve("vanilla-fallback.png")
+          : null,
+        candidatePaths: [],
+        source: "vanilla"
+      })
+    });
+    const selections = resourceNavigationTargetsAtOffset(
+      analysis,
+      fileName,
+      source.lastIndexOf("demo:block/parent") + 3
+    );
+
+    assert.ok(selections.some(selection =>
+      selection.target.kind === "texture"
+      && selection.target.id === "demo:block/fallback"
+      && selection.resolutionScope === "effective"
+      && selection.declarationMode === "checked"
+    ));
+  });
+
   it("selects generated declarations for cross-language incoming References", () => {
     const source = "namespace demo\nmodel block generated {}";
     const fileName = path.resolve("generated.rsgl");

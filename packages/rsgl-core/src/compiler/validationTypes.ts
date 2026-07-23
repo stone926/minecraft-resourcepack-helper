@@ -38,12 +38,16 @@ export type ValidationRange = RsglCompileDiagnostic["range"];
 export interface RsglExternalResourceResolution {
   resolvedPath: string | null;
   candidatePaths: readonly string[];
+  /** Winning physical layer when the resolution spans the effective pack stack. */
+  source?: ExternResourceSource;
   /** pack.mcmeta inputs that determine overlays, filters, and pack priority. */
   metadataPaths?: readonly string[];
 }
 
 export interface RsglExternalResourceUsage {
   source: ExternResourceSource;
+  /** Scope used for lookup; inherited external references resolve effectively. */
+  resolutionScope?: "effective" | ExternResourceSource;
   resourceKind: ExternResourceKind;
   targetKind: RsglResourceExistenceKind;
   id: string;
@@ -105,6 +109,11 @@ export interface RsglResourceValidationOptions {
   textureMetadata?: (id: string) => RsglTextureMetadata | null | undefined;
   soundMetadata?: (id: string) => RsglSoundMetadata | null | undefined;
   blockstateSchema?: (id: ResourceId) => RsglBlockstateSchema | null | undefined;
+  /** Effective local -> configured packs -> Default resource-stack resolution. */
+  resourceResolution?: (
+    kind: RsglResourceExistenceKind,
+    id: string
+  ) => RsglExternalResourceResolution;
   externResourceExists?: (source: ExternResourceSource, kind: RsglResourceExistenceKind, id: string) => boolean;
   /** Preferred resolver API; retains attempted paths when no candidate exists yet. */
   externResourceResolution?: (

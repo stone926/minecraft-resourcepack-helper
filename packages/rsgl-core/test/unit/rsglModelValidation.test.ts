@@ -207,6 +207,49 @@ describe("RSGL model validation", () => {
     assert.ok(checkedResources.includes("custom:texture:minecraft:block/missing_texture"));
   });
 
+  it("preserves legacy inherited resolver priority without an effective resolver", () => {
+    let textureResolutionCalls = 0;
+    let genericExistenceCalls = 0;
+    const inheritedScopes: string[] = [];
+    const result = compileSource([
+      "extern local model minecraft:block/external_parent",
+      "model block child { parent minecraft:block/external_parent }"
+    ], {
+      externResourceResolution: (_source, kind, id) => {
+        if (kind === "texture") {
+          textureResolutionCalls++;
+        }
+        return {
+          resolvedPath: kind === "model" && id === "minecraft:block/external_parent"
+            ? "external_parent.json"
+            : null,
+          candidatePaths: []
+        };
+      },
+      externResourceContent: (_source, kind, id) =>
+        kind === "model" && id === "minecraft:block/external_parent"
+          ? { textures: { missing: "minecraft:block/missing" } }
+          : undefined,
+      resourceExists: () => {
+        genericExistenceCalls++;
+        return true;
+      },
+      onExternResourceUsed: usage => {
+        if (usage.targetKind === "texture") {
+          inheritedScopes.push(usage.resolutionScope ?? usage.source);
+        }
+      }
+    });
+
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureNotFound"
+      && diagnostic.message.includes("minecraft:block/missing")
+    ));
+    assert.strictEqual(textureResolutionCalls, 1);
+    assert.strictEqual(genericExistenceCalls, 0);
+    assert.deepStrictEqual(inheritedScopes, ["local"]);
+  });
+
   it("keeps extern var scoped to its declaring model across siblings and parent chains", () => {
     const result = compileSource([
       "model block declaring_parent {",
@@ -298,6 +341,9 @@ describe("RSGL model validation", () => {
         textures: { alias: "#root" }
       }],
       ["minecraft:block/external_root", {
+        parent: "minecraft:block/external_base"
+      }],
+      ["minecraft:block/external_base", {
         textures: { root: "minecraft:block/external_texture" }
       }],
       ["minecraft:block/external_cycle_a", {
@@ -334,6 +380,7 @@ describe("RSGL model validation", () => {
     const codes = result.diagnostics.map(diagnostic => diagnostic.code);
     assert.ok(loadedModels.includes("minecraft:block/external_child"));
     assert.ok(loadedModels.includes("minecraft:block/external_root"));
+    assert.ok(loadedModels.includes("minecraft:block/external_base"));
     assert.ok(loadedModels.includes("minecraft:block/external_cycle_a"));
     assert.ok(loadedModels.includes("minecraft:block/external_cycle_b"));
     assert.ok(checkedResources.includes("texture:minecraft:block/external_texture"));

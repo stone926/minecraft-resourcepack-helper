@@ -212,8 +212,8 @@ function validateModelParentChain(
         options,
         diagnostics
       );
-      if (current) {
-        externalModelSources.set(parentId, current.externalSource!);
+      if (current?.externalSource) {
+        externalModelSources.set(parentId, current.externalSource);
       }
       continue;
     }
@@ -252,7 +252,9 @@ function resolveTransitiveExternalModel(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[]
 ): ModelDocument | undefined {
-  const document = modelResolver(id, source);
+  const document = options.resourceResolution
+    ? modelResolver(id)
+    : modelResolver(id, source);
   const exists = checkInheritedExternalResourceExists(
     "model",
     id,
