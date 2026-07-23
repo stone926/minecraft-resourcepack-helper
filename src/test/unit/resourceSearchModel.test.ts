@@ -1,5 +1,8 @@
 import * as assert from "node:assert";
 import {
+  prepareResourceSearchInventory,
+  resourceSearchQueryKey,
+  searchPreparedResourceInventory,
   searchResourceInventory,
   type ResourceSearchInventoryEntry
 } from "../../services/resourceSearchModel";
@@ -43,6 +46,66 @@ describe("resource search model", () => {
       kinds: ["model", "blockstate", "texture"],
       limit: 1
     }).length, 1);
+  });
+
+  it("prepares normalized search fields once for repeated queries", () => {
+    const indexed = entry("model", "demo:block/Stone_Lamp", "physical");
+    let outputPathReads = 0;
+    Object.defineProperty(indexed.producer, "outputPath", {
+      enumerable: true,
+      get: () => {
+        outputPathReads++;
+        return "assets/demo/models/block/Stone_Lamp.json";
+      }
+    });
+
+    const prepared = prepareResourceSearchInventory([indexed]);
+    const readsAfterPreparation = outputPathReads;
+    assert.ok(readsAfterPreparation > 0);
+
+    assert.strictEqual(searchPreparedResourceInventory(prepared, {
+      query: "stone",
+      kinds: ["model"],
+      limit: 20
+    }).length, 1);
+    assert.strictEqual(searchPreparedResourceInventory(prepared, {
+      query: "assets/demo",
+      kinds: ["model"],
+      limit: 20
+    }).length, 1);
+    assert.strictEqual(
+      outputPathReads,
+      readsAfterPreparation,
+      "prepared searches should not reread or renormalize producer paths"
+    );
+  });
+
+  it("keeps owner candidates on prepared matches", () => {
+    const indexed = entry("model", "demo:block/conflicted", "generated");
+    const alternative = entry("model", "demo:block/conflicted", "physical").producer;
+    indexed.candidates = [indexed.producer, alternative];
+
+    const [match] = searchPreparedResourceInventory(
+      prepareResourceSearchInventory([indexed]),
+      { query: "conflicted", kinds: ["model"], limit: 20 }
+    );
+
+    assert.deepStrictEqual(match.candidates, [indexed.producer, alternative]);
+  });
+
+  it("canonicalizes equivalent query keys", () => {
+    assert.strictEqual(
+      resourceSearchQueryKey({
+        query: " ＳＴＯＮＥ ",
+        kinds: ["texture", "model", "model"],
+        limit: 20.9
+      }),
+      resourceSearchQueryKey({
+        query: "stone",
+        kinds: ["model", "texture"],
+        limit: 20
+      })
+    );
   });
 });
 

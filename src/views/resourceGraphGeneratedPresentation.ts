@@ -28,7 +28,7 @@ export function generatedResourceTooltip(resource: ResourceGraphProjectedResourc
     lines.push(`${index === 0 ? "Primary source" : "Contributor"}: ${formatLocation(location)}`);
   });
   producer.physicalOrigins.forEach(location => {
-    lines.push(`Materialized: ${formatLocation(location)}`);
+    lines.push(`${producer.origin === "generated" ? "Materialized" : "Handwritten"}: ${formatLocation(location)}`);
   });
   if (resource.candidates && resource.candidates.length > 1) {
     lines.push(`Owners: ${resource.candidates.map(candidate => candidate.producerId).join(", ")}`);

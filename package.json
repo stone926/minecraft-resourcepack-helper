@@ -176,6 +176,16 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "McResHelper.searchResourceGraph",
+        "title": "%command.title.searchResourceGraph%",
+        "icon": "$(search)"
+      },
+      {
+        "command": "McResHelper.followActiveResource",
+        "title": "%command.title.followActiveResource%",
+        "icon": "$(target)"
+      },
+      {
         "command": "McResHelper.refreshResources",
         "title": "%command.title.refreshResources%",
         "icon": "$(sync)"
@@ -278,11 +288,6 @@
     "views": {
       "mcResHelperResources": [
         {
-          "id": "McResHelper.resourceSearch",
-          "name": "%view.name.resourceSearch%",
-          "type": "webview"
-        },
-        {
           "id": "McResHelper.resourceGraph",
           "name": "%view.name.resourceGraph%"
         }
@@ -365,9 +370,19 @@
       ],
       "view/title": [
         {
+          "command": "McResHelper.searchResourceGraph",
+          "when": "view == McResHelper.resourceGraph",
+          "group": "navigation@1"
+        },
+        {
+          "command": "McResHelper.followActiveResource",
+          "when": "view == McResHelper.resourceGraph && McResHelper.resourceGraph.focusedResource",
+          "group": "navigation@2"
+        },
+        {
           "command": "McResHelper.refreshResourceGraph",
           "when": "view == McResHelper.resourceGraph",
-          "group": "navigation"
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -392,6 +407,11 @@
           "group": "inline"
         },
         {
+          "command": "McResHelper.openResourceGraphModelPreview",
+          "when": "view == McResHelper.resourceGraph && viewItem == resourceGraphFocusedModelConflict",
+          "group": "inline"
+        },
+        {
           "command": "McResHelper.openGeneratedResource",
           "when": "view == McResHelper.resourceGraph && viewItem =~ /^resourceGraphGenerated/",
           "group": "navigation@1"
@@ -403,7 +423,7 @@
         },
         {
           "command": "McResHelper.showResourceConflictOwners",
-          "when": "view == McResHelper.resourceGraph && viewItem =~ /^resourceGraphGenerated(?:Model|Resource)Conflict$/",
+          "when": "view == McResHelper.resourceGraph && viewItem =~ /^resourceGraph(?:Generated|Focused)(?:Model|Resource)Conflict$/",
           "group": "navigation@3"
         },
         {

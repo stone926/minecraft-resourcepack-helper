@@ -21,10 +21,14 @@ import type {
   ResourceEdge,
   ResourceLocation,
   ResourceProducer,
+  ResourceProviderUnavailableReason,
   ResourceResolutionContext,
   ResourceResolutionScope
 } from "../resourceUniverse/core/types";
-import type { ResourceUniverseService } from "../resourceUniverse/core/resourceUniverseService";
+import type {
+  ResourceUniverseChangeEvent,
+  ResourceUniverseService
+} from "../resourceUniverse/core/resourceUniverseService";
 import {
   ResourceNavigationService,
   type ResourceNavigationOptions,
@@ -117,12 +121,16 @@ export interface UnifiedResourceInventoryOptions {
   signal?: AbortSignal;
   /** Restricts inventory to projects explicitly discovered for this consumer. */
   projectIds?: readonly string[];
+  /** Correlates provider changes requested while assembling this inventory. */
+  causeId?: symbol;
 }
 
 export interface UnifiedResourceQueryOptions {
   /** Explicit graph/Definition/References requests may opt into the lazy RSGL provider. */
   includeGenerated?: boolean;
   signal?: AbortSignal;
+  /** Correlates provider changes requested by this query. */
+  causeId?: symbol;
 }
 
 export interface UnifiedLogicalDefinitionResolution {
@@ -139,7 +147,8 @@ export interface UnifiedLogicalReferenceLocations {
 
 export type GeneratedResourceProjectRefresher = (
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  causeId?: symbol
 ) => Promise<unknown>;
 
 export interface ResourceUniverseDocument extends ResourceReferenceDocument {
@@ -153,7 +162,7 @@ export interface ResourceUniverseDocument extends ResourceReferenceDocument {
  */
 export interface ResourceUniverseNavigation {
   setGeneratedProjectRefresher(refresher: GeneratedResourceProjectRefresher): void;
-  onDidChangeResources(listener: () => void): vscode.Disposable;
+  onDidChangeResources(listener: (event: ResourceUniverseChangeEvent) => void): vscode.Disposable;
   resolveReference(
     document: ResourceUniverseDocument,
     reference: ResourceReference,
@@ -188,6 +197,14 @@ export interface ResourceUniverseNavigation {
     kinds: readonly string[],
     options?: UnifiedResourceInventoryOptions
   ): Promise<UnifiedResourceInventory>;
+  /**
+   * Rebinds a previously selected producer to the current in-memory Universe
+   * snapshot without triggering project discovery or provider refresh work.
+   */
+  getKnownResource(
+    producerId: string,
+    target: ResourceGraphLogicalKey
+  ): UnifiedResourceProducerTarget | undefined;
   getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet>;
   getProducerOutgoingReferences(
     producerId: string,
@@ -246,8 +263,10 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     this.generatedProjectRefresher = refresher;
   }
 
-  public onDidChangeResources(listener: () => void): { dispose(): void } {
-    return this.universe.onDidChange(() => listener());
+  public onDidChangeResources(
+    listener: (event: ResourceUniverseChangeEvent) => void
+  ): { dispose(): void } {
+    return this.universe.onDidChange(listener);
   }
 
   public async resolveReference(
@@ -472,21 +491,31 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
           "physical",
           context.projectId,
           { projectId: context.projectId },
-          options.signal
+          options.signal,
+          options.causeId
         );
         if (refresh.applied) {
           this.refreshedContextRevisions.set(context.projectId, context.contextRevision);
         }
       } catch (error) {
         if (!isAbortError(error) && !options.signal?.aborted) {
-          this.universe.invalidateProviderProject("physical", context.projectId, "stale");
+          this.invalidateProviderProject(
+            "physical",
+            context.projectId,
+            "stale",
+            options.causeId
+          );
         }
       }
       coverage = this.universe.index.getCoverage("physical", context.projectId);
     }
     const coverages: UnifiedResourceCoverage[] = [visibleCoverage(coverage)];
     if (options.includeGenerated && discovered.rsglApplicability !== "none") {
-      coverages.push(await this.ensureGeneratedProject(context.projectId, options.signal));
+      coverages.push(await this.ensureGeneratedProject(
+        context.projectId,
+        options.signal,
+        options.causeId
+      ));
     }
     return {
       context,
@@ -574,7 +603,8 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
       const anchor = vscode.Uri.parse(context.projectRootUri, true);
       const ensured = await this.ensureProjectForUri(anchor, {
         includeGenerated: true,
-        signal: options.signal
+        signal: options.signal,
+        causeId: options.causeId
       });
       coverages.push(summarizeLocalPhysicalInventoryFacts(
         this.universe.index.getCoverage("physical", context.projectId),
@@ -605,6 +635,29 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
       resources: uniqueProducerTargets(resources),
       coverage: combineCoverage(coverages)
     };
+  }
+
+  public getKnownResource(
+    producerId: string,
+    target: ResourceGraphLogicalKey
+  ): UnifiedResourceProducerTarget | undefined {
+    const producer = this.universe.getProducer(producerId);
+    if (!producer) {
+      return undefined;
+    }
+    const context = this.projects.getCachedContext(producer.projectId);
+    if (!context) {
+      return undefined;
+    }
+    const navigation = this.navigation.resolveDefinition(
+      target,
+      resolutionContext(
+        context,
+        this.applicableProviderIds(true, producer.projectId)
+      )
+    );
+    return projectNavigationResources(target, navigation)
+      .find(resource => resource.producer.producerId === producerId);
   }
 
   public async getProducerOutgoingReferences(
@@ -800,7 +853,8 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
 
   private async ensureGeneratedProject(
     projectId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<UnifiedResourceCoverage> {
     if (signal?.aborted) {
       return visibleCoverage(this.universe.index.getCoverage("rsgl", projectId));
@@ -809,13 +863,14 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     if (!this.universe.registry.get("rsgl") && this.generatedProjectRefresher) {
       requestedLazyRegistration = true;
       try {
-        await this.generatedProjectRefresher(projectId, signal);
+        await this.generatedProjectRefresher(projectId, signal, causeId);
       } catch (error) {
         if (!isAbortError(error) && !signal?.aborted) {
-          this.universe.invalidateProviderProject(
+          this.invalidateProviderProject(
             "rsgl",
             projectId,
-            this.universe.registry.get("rsgl") ? "lspFailed" : "runtimeLoadFailed"
+            this.universe.registry.get("rsgl") ? "lspFailed" : "runtimeLoadFailed",
+            causeId
           );
         }
       }
@@ -827,14 +882,27 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     const shouldRefresh = shouldRequestGeneratedSnapshot(current);
     if (shouldRefresh && !requestedLazyRegistration && this.generatedProjectRefresher) {
       try {
-        await this.generatedProjectRefresher(projectId, signal);
+        await this.generatedProjectRefresher(projectId, signal, causeId);
       } catch (error) {
         if (!isAbortError(error) && !signal?.aborted) {
-          this.universe.invalidateProviderProject("rsgl", projectId, "lspFailed");
+          this.invalidateProviderProject("rsgl", projectId, "lspFailed", causeId);
         }
       }
     }
     return visibleCoverage(this.universe.index.getCoverage("rsgl", projectId));
+  }
+
+  private invalidateProviderProject(
+    providerId: string,
+    projectId: string,
+    reason: ResourceProviderUnavailableReason,
+    causeId: symbol | undefined
+  ): void {
+    if (causeId) {
+      this.universe.invalidateProviderProject(providerId, projectId, reason, causeId);
+    } else {
+      this.universe.invalidateProviderProject(providerId, projectId, reason);
+    }
   }
 
   private async ensureProducerProject(

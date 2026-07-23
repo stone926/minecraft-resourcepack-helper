@@ -25,6 +25,8 @@ export interface ResourceUniverseChangeEvent {
   kind: "replacement" | "invalidation" | "removal";
   projectId: string;
   providerIds: readonly string[];
+  /** Correlates a replacement/invalidation with the operation that requested it. */
+  causeId?: symbol;
 }
 
 export interface ResourceUniverseSubscription {
@@ -117,7 +119,8 @@ export class ResourceUniverseService {
     providerId: string,
     projectId: string,
     scope: ResourceCoverageScope = { projectId },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult> {
     const requestResult = await this.requestSnapshot(providerId, projectId, scope, signal);
     if (requestResult.kind === "stale") {
@@ -129,7 +132,12 @@ export class ResourceUniverseService {
     }
     const applied = this.index.replaceSnapshotsAtomically([snapshot]);
     if (applied) {
-      this.emit({ kind: "replacement", projectId, providerIds: [providerId] });
+      this.emit({
+        kind: "replacement",
+        projectId,
+        providerIds: [providerId],
+        ...(causeId ? { causeId } : {})
+      });
     }
     return {
       applied,
@@ -143,7 +151,8 @@ export class ResourceUniverseService {
     projectId: string,
     scope: ResourceCoverageScope = { projectId },
     providerIds: readonly string[] = this.registry.list().map(provider => provider.providerId),
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult> {
     const batchController = new AbortController();
     const batchDetachReason = Symbol("resource-universe-batch-detach");
@@ -223,7 +232,12 @@ export class ResourceUniverseService {
     }
     const applied = this.index.replaceSnapshotsAtomically(snapshots);
     if (applied && providerIds.length > 0) {
-      this.emit({ kind: "replacement", projectId, providerIds: [...providerIds] });
+      this.emit({
+        kind: "replacement",
+        projectId,
+        providerIds: [...providerIds],
+        ...(causeId ? { causeId } : {})
+      });
     }
     return {
       applied,
@@ -235,7 +249,8 @@ export class ResourceUniverseService {
   public invalidateProviderProject(
     providerId: string,
     projectId: string,
-    reason: ResourceProviderUnavailableReason = "stale"
+    reason: ResourceProviderUnavailableReason = "stale",
+    causeId?: symbol
   ): void {
     const key = providerProjectKey(providerId, projectId);
     const state = this.stateFor(key);
@@ -254,7 +269,12 @@ export class ResourceUniverseService {
       producers: [],
       edges: []
     });
-    this.emit({ kind: "invalidation", projectId, providerIds: [providerId] });
+    this.emit({
+      kind: "invalidation",
+      projectId,
+      providerIds: [providerId],
+      ...(causeId ? { causeId } : {})
+    });
   }
 
   public invalidateProject(projectId: string, reason: ResourceProviderUnavailableReason = "stale"): void {

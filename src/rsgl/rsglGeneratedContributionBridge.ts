@@ -178,11 +178,17 @@ export class RsglGeneratedContributionBridge {
   public async refreshProject(
     projectId: string,
     scope: ResourceCoverageScope = { projectId },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult | undefined> {
     this.assertActive();
     if (!this.trackProject(projectId)) {
-      this.universe.invalidateProviderProject(this.provider.providerId, projectId, "notProbed");
+      this.universe.invalidateProviderProject(
+        this.provider.providerId,
+        projectId,
+        "notProbed",
+        causeId
+      );
       return undefined;
     }
     const restorePendingRefresh = this.backgroundRefreshScheduler.cancel(projectId);
@@ -190,10 +196,10 @@ export class RsglGeneratedContributionBridge {
     try {
       let result: ResourceUniverseRefreshResult;
       if (this.controller.getMode() === "off") {
-        result = await this.connection.refreshProject(projectId, scope, signal);
+        result = await this.connection.refreshProject(projectId, scope, signal, causeId);
       } else {
         await this.ensureMaterializations(projectId);
-        result = await this.refreshCoupledProject(projectId, scope, signal);
+        result = await this.refreshCoupledProject(projectId, scope, signal, causeId);
       }
       replacementApplied = result.applied;
       return result;
@@ -427,13 +433,15 @@ export class RsglGeneratedContributionBridge {
   private refreshCoupledProject(
     projectId: string,
     scope: ResourceCoverageScope = { projectId },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult> {
     return this.universe.refreshProject(
       projectId,
       scope,
       [this.provider.providerId, ...this.coupledProviderIds],
-      signal
+      signal,
+      causeId
     );
   }
 

@@ -44,7 +44,8 @@ export interface RsglSubsystemRegistration extends vscode.Disposable {
   projectRevisionChanged(): Promise<void>;
   refreshGeneratedProject(
     projectId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult | undefined>;
   shutdown(): Promise<void>;
 }
@@ -122,7 +123,7 @@ export function registerRsglSubsystem(
     recheckKnownSignals,
     handleWorkspaceFoldersChanged,
     projectRevisionChanged: () => controller.projectRevisionChanged(),
-    refreshGeneratedProject: async (projectId, signal) => {
+    refreshGeneratedProject: async (projectId, signal, causeId) => {
       if (signal?.aborted) {
         return undefined;
       }
@@ -136,7 +137,7 @@ export function registerRsglSubsystem(
       if (signal?.aborted) {
         return undefined;
       }
-      return generated.refreshProject(projectId, { projectId }, signal);
+      return generated.refreshProject(projectId, { projectId }, signal, causeId);
     },
     dispose: () => {
       for (const disposable of disposables.splice(0)) {

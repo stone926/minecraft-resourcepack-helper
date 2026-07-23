@@ -170,6 +170,13 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
     return result.references.map(toTreeReference);
   }
 
+  public getKnownResource(
+    producerId: string,
+    target: ResourceGraphProjectedResource["target"]
+  ): ResourceGraphProjectedResource | undefined {
+    return this.navigation.getKnownResource(producerId, target);
+  }
+
   public async navigate(
     target: ResourceGraphNodeNavigation,
     options: { preferMaterialized?: boolean } = {}

@@ -24,7 +24,8 @@ export interface LazyRsglResourceInfrastructure {
 export interface LazyRsglSubsystemRegistration extends vscode.Disposable {
   refreshGeneratedProject(
     projectId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult | undefined>;
   shutdown(): Promise<void>;
 }
@@ -94,7 +95,7 @@ export function registerLazyRsglSubsystem(
   );
 
   const registration: LazyRsglSubsystemRegistration = {
-    refreshGeneratedProject: async (projectId, signal) => {
+    refreshGeneratedProject: async (projectId, signal, causeId) => {
       if (disposed || signal?.aborted) {
         return undefined;
       }
@@ -102,7 +103,7 @@ export function registerLazyRsglSubsystem(
       if (!loaded || signal?.aborted) {
         return undefined;
       }
-      return loaded.refreshGeneratedProject(projectId, signal);
+      return loaded.refreshGeneratedProject(projectId, signal, causeId);
     },
     dispose: () => {
       disposeSignals();

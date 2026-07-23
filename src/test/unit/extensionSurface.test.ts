@@ -44,8 +44,8 @@ describe("extension surface", () => {
     assert.ok(source.includes("isResourceGraphDocumentPath(document.fileName)"));
     assert.ok(source.includes("new DeferredResourceGraphTreeProvider"));
     assert.ok(source.includes("vscode.window.createTreeView"));
-    assert.ok(source.includes("new ResourceSearchViewProvider"));
-    assert.ok(source.includes("vscode.window.registerWebviewViewProvider"));
+    assert.strictEqual(source.includes("ResourceSearchViewProvider"), false);
+    assert.strictEqual(source.includes("registerWebviewViewProvider"), false);
     assert.ok(source.includes("registerResourceSurfaceCommands"));
     assert.ok(source.includes("registerResourceGraph(scope, navigation)"));
     assert.ok(source.includes("registerResourceDiagnostics(scope, navigation)"));
@@ -54,23 +54,33 @@ describe("extension surface", () => {
     assert.ok(source.includes("installation.scope.dispose()"));
   });
 
-  it("contributes a persistent resource search box beside the native graph tree", () => {
+  it("contributes resource search as part of the single native graph view", () => {
     const manifest = JSON.parse(fs.readFileSync(
       path.join(process.cwd(), "package.json"),
       "utf8"
     )) as {
-      contributes?: { views?: Record<string, Array<Record<string, unknown>>> };
+      contributes?: {
+        views?: Record<string, Array<Record<string, unknown>>>;
+        menus?: Record<string, Array<Record<string, unknown>>>;
+      };
     };
     const views = manifest.contributes?.views?.mcResHelperResources ?? [];
-    const search = views.find(view => view.id === "McResHelper.resourceSearch");
-    const graphIndex = views.findIndex(view => view.id === "McResHelper.resourceGraph");
+    const titleActions = manifest.contributes?.menus?.["view/title"] ?? [];
 
-    assert.deepStrictEqual(search, {
-      id: "McResHelper.resourceSearch",
-      name: "%view.name.resourceSearch%",
-      type: "webview"
-    });
-    assert.ok(views.indexOf(search!) < graphIndex, "search should appear above the resource graph");
+    assert.deepStrictEqual(views, [{
+      id: "McResHelper.resourceGraph",
+      name: "%view.name.resourceGraph%"
+    }]);
+    assert.ok(titleActions.some(item =>
+      item.command === "McResHelper.searchResourceGraph"
+      && item.when === "view == McResHelper.resourceGraph"
+    ));
+    assert.ok(titleActions.some(item =>
+      item.command === "McResHelper.followActiveResource"
+      && String(item.when).includes("McResHelper.resourceGraph.focusedResource")
+    ));
+    const deferred = readSource("registration", "registerDeferredResourceSurfaces.ts");
+    assert.strictEqual(deferred.includes("registerWebviewViewProvider"), false);
   });
 
   it("keeps all resource command IDs on synchronous lazy proxies", () => {
@@ -80,6 +90,8 @@ describe("extension surface", () => {
 
     for (const command of [
       "McResHelper.refreshResourceGraph",
+      "McResHelper.searchResourceGraph",
+      "McResHelper.followActiveResource",
       "McResHelper.navigateResourceGraphNode",
       "McResHelper.openGeneratedResource",
       "McResHelper.openMaterializedResource",
@@ -140,6 +152,7 @@ describe("extension surface", () => {
     assert.ok(source.includes("diagnostics.refreshAllSoon();"));
     assert.ok(source.includes("diagnostics.clear(document);"));
     assert.ok(source.includes("resourceGraph.invalidateProjectDiscovery();"));
+    assert.ok(source.includes("resourceGraph.invalidateProjectResolution();"));
     assert.strictEqual(source.includes("refreshResourceDiagnostics("), false);
   });
 

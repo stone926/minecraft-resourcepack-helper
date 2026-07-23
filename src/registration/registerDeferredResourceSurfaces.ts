@@ -5,7 +5,6 @@ import { isResourceGraphDocumentPath } from "../utils/resourceGraphSearch";
 import type { ResourceGraphTreeItem } from "../views/resourceGraphTreeItem";
 import { DeferredRegistrationOwner } from "./deferredRegistrationOwner";
 import { DeferredResourceGraphTreeProvider } from "./deferredResourceGraphTreeProvider";
-import { ResourceSearchViewProvider } from "../views/resourceSearchView";
 import { registerLanguageProviders } from "./registerLanguageProviders";
 import { registerResourceDiagnostics, type ResourceDiagnosticsController } from "./registerResourceDiagnostics";
 import { registerResourceGraph, type ResourceGraphRegistration } from "./registerResourceGraph";
@@ -68,15 +67,6 @@ export function registerDeferredResourceSurfaces(
     entryPointScope.subscriptions.push(vscode.window.createTreeView(
       "McResHelper.resourceGraph",
       { treeDataProvider: treeProvider, showCollapseAll: true }
-    ));
-    const searchViewProvider = new ResourceSearchViewProvider(
-      () => owner.ensureInstalled().resourceGraph.controller
-    );
-    entryPointScope.subscriptions.push(searchViewProvider);
-    entryPointScope.subscriptions.push(vscode.window.registerWebviewViewProvider(
-      "McResHelper.resourceSearch",
-      searchViewProvider,
-      { webviewOptions: { retainContextWhenHidden: true } }
     ));
 
     registerResourceSurfaceCommands(entryPointScope, () => {

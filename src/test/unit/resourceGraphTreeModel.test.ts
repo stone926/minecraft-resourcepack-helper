@@ -130,6 +130,84 @@ describe("resource graph tree model", () => {
     assert.strictEqual(contributedNodes[0].label, "model demo:block/from-template");
   });
 
+  it("focuses a searched resource without re-projecting the active editor", async () => {
+    const activeUri = uri(path.join("pack", "assets", "minecraft", "models", "block", "active.json"));
+    const document: ResourceGraphTreeDocument = {
+      uri: activeUri,
+      fileName: activeUri.fsPath,
+      languageId: "json",
+      version: 1,
+      getText: () => "{}"
+    };
+    const focused = projectedGenerated(
+      "focused",
+      "current",
+      "file:///pack/rsgl/main.rsgl",
+      4,
+      18
+    );
+    let projectionRequests = 0;
+    const model = new ResourceGraphTreeModel(fakeHost({
+      onProjectionRequest: () => projectionRequests++
+    }), localize);
+
+    const roots = await model.getRoots(document, focused);
+
+    assert.strictEqual(projectionRequests, 0);
+    assert.deepStrictEqual(roots.map(root => root.label), ["Selected Resource", "Blocks"]);
+    assert.strictEqual(roots[0].description, "model demo:block/focused");
+    assert.strictEqual(roots[0].resource, focused);
+    assert.strictEqual(roots[0].contextValue, "resourceGraphGeneratedModelCurrent");
+    assert.deepStrictEqual(
+      (await roots[0].getChildren()).map(section => section.label),
+      ["Origins", "References", "Referenced By", "Model Inheritance"]
+    );
+  });
+
+  it("reuses producer relations and conflict ownership for a focused physical resource", async () => {
+    const focused = projectedPhysical("texture", "demo:block/stone", "conflict");
+    const model = new ResourceGraphTreeModel(fakeHost({}), localize);
+
+    const [root] = await model.getRoots(null, focused);
+    const sections = await root.getChildren();
+
+    assert.strictEqual(root.label, "Selected Resource");
+    assert.strictEqual(root.description, "texture demo:block/stone");
+    assert.strictEqual(root.contextValue, "resourceGraphFocusedResourceConflict");
+    assert.strictEqual(root.resource, focused);
+    assert.ok(root.resourceUri?.fsPath.endsWith("stone.png"));
+    assert.deepStrictEqual(
+      sections.map(section => section.label),
+      ["Origins", "References", "Referenced By"]
+    );
+    const origins = await sections[0].getChildren();
+    assert.strictEqual(origins[0].description, "Handwritten");
+  });
+
+  it("keeps generated conflict actions bound to the generated source", async () => {
+    const current = projectedGenerated(
+      "conflicted",
+      "current",
+      "file:///pack/rsgl/main.rsgl",
+      2,
+      12
+    );
+    const focused: ResourceGraphProjectedResource = {
+      ...current,
+      producer: {
+        ...current.producer,
+        materializationState: "conflict"
+      },
+      resolutionStatus: "conflict"
+    };
+    const model = new ResourceGraphTreeModel(fakeHost({}), localize);
+
+    const [root] = await model.getRoots(null, focused);
+
+    assert.strictEqual(root.contextValue, "resourceGraphGeneratedModelConflict");
+    assert.strictEqual(root.resourceUri, undefined);
+  });
+
   it("uses RSGL-specific coverage and shows a genuine snapshot warning only once", async () => {
     const sourceUri = uri(path.join("pack", "rsgl", "main.rsgl"));
     const document: ResourceGraphTreeDocument = {
@@ -190,19 +268,23 @@ function fakeHost(options: {
   blockstates?: ResourceGraphUriLike[];
   blockInventory?: ResourceGraphBlockInventory;
   onInventoryRequest?: () => void;
+  onProjectionRequest?: () => void;
   references?: ResourceGraphTreeResolvedReference[];
   incoming?: ResourceGraphTreeResolvedReference[];
   documents?: ResourceGraphTreeDocument[];
   projection?: ResourceGraphDocumentProjection;
 }): ResourceGraphTreeModelHost {
   return {
-    getDocumentProjection: async () => options.projection ?? {
-      applicable: true,
-      providerIds: ["physical"],
-      coverage: "authoritative",
-      providerCoverages: [{ providerId: "physical", coverage: "authoritative" }],
-      resources: [],
-      contributesTo: []
+    getDocumentProjection: async () => {
+      options.onProjectionRequest?.();
+      return options.projection ?? {
+        applicable: true,
+        providerIds: ["physical"],
+        coverage: "authoritative",
+        providerCoverages: [{ providerId: "physical", coverage: "authoritative" }],
+        resources: [],
+        contributesTo: []
+      };
     },
     getBlockstateInventory: async () => {
       options.onInventoryRequest?.();
@@ -266,6 +348,40 @@ function projectedGenerated(
       outputPath: `assets/demo/models/block/${name}.json`,
       revision: "r1"
     }
+  };
+}
+
+function projectedPhysical(
+  kind: "model" | "blockstate" | "texture",
+  id: string,
+  resolutionStatus: "resolved" | "conflict"
+): ResourceGraphProjectedResource {
+  const target = { kind, id };
+  const extension = kind === "texture" ? "png" : "json";
+  const directory = kind === "blockstate" ? "blockstates" : `${kind}s`;
+  const producer = {
+    producerId: `physical:project:${kind}:${id}`,
+    providerId: "physical",
+    projectId: "project",
+    layerId: "local",
+    layerRole: "local" as const,
+    origin: "physical" as const,
+    logicalKeys: [target],
+    sourceOrigins: [],
+    physicalOrigins: [{
+      uri: `file:///pack/assets/demo/${directory}/block/stone.${extension}`,
+      origin: "physical" as const,
+      editable: true
+    }],
+    materializationState: "handwritten" as const,
+    outputPath: `assets/demo/${directory}/block/stone.${extension}`,
+    revision: "r1"
+  };
+  return {
+    target,
+    producer,
+    candidates: resolutionStatus === "conflict" ? [producer, { ...producer, producerId: `${producer.producerId}:lower` }] : [producer],
+    resolutionStatus
   };
 }
 

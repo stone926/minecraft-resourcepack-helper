@@ -167,13 +167,17 @@ export function registerWorkspaceEvents(
     if (affectsResourceResolutionConfiguration(event)) {
       workspaceResourceCache.invalidateConfiguration();
       diagnostics.refreshAll();
+      resourceGraph.invalidateProjectResolution();
       resourceGraph.refresh();
     }
   }));
 
   return {
     reconcileOpenedDocument,
-    refreshResources: () => refreshCoordinator.refreshAll()
+    refreshResources: () => {
+      resourceGraph.invalidateProjectDiscovery();
+      refreshCoordinator.refreshAll();
+    }
   };
 
   function scheduleDecorationRefresh(editor: vscode.TextEditor, delay = 120): void {

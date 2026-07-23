@@ -103,7 +103,7 @@ The **Minecraft Resources** activity bar view follows the active editor and show
 - Model Inheritance: parent models and child models.
 - Blocks: workspace blockstates grouped as entry points into blockstate -> model -> texture chains.
 - RSGL producers: live declarations and their physical materializations, including current, stale, and conflict state where applicable.
-- Resource Search: a persistent sidebar search over local and RSGL-generated blockstates, models, and textures.
+- Resource Search: the search action in the Resource Relations title bar selects a local or RSGL-generated blockstate, model, or texture and focuses its relations in the same tree. Clear the selection to resume following the active editor.
 
 The view merges physical and RSGL outgoing/incoming edges. A physical resource can navigate to a live, unbuilt RSGL declaration, while an RSGL reference can navigate to the effective local, custom, or vanilla resource. The cached workspace indexes can be refreshed manually with **McResHelper: refresh resource graph**.
 

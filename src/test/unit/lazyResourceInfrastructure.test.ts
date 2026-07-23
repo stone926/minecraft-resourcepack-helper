@@ -6,6 +6,7 @@ import type {
   ResourceUniverseNavigation,
   UnifiedBlockResourceSet
 } from "../../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseChangeEvent } from "../../resourceUniverse";
 import {
   LazyResourceInfrastructureOwner,
   type ResourceInfrastructureFactoryModule,
@@ -168,7 +169,7 @@ class FakeNavigation implements ResourceUniverseNavigation {
 
   public generatedProjectRefresher?: GeneratedResourceProjectRefresher;
   public invalidations = 0;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Set<(event: ResourceUniverseChangeEvent) => void>();
 
   public get listenerCount(): number {
     return this.listeners.size;
@@ -178,7 +179,9 @@ class FakeNavigation implements ResourceUniverseNavigation {
     this.generatedProjectRefresher = refresher;
   }
 
-  public onDidChangeResources(listener: () => void): { dispose(): void } {
+  public onDidChangeResources(
+    listener: (event: ResourceUniverseChangeEvent) => void
+  ): { dispose(): void } {
     this.listeners.add(listener);
     return { dispose: () => this.listeners.delete(listener) };
   }
@@ -222,6 +225,9 @@ class FakeNavigation implements ResourceUniverseNavigation {
       throw new Error("not used");
     };
 
+  public readonly getKnownResource:
+    ResourceUniverseNavigation["getKnownResource"] = () => undefined;
+
   public readonly getKnownBlockstateResources:
     ResourceUniverseNavigation["getKnownBlockstateResources"] = async () =>
       FakeNavigation.blockstates;
@@ -256,8 +262,13 @@ class FakeNavigation implements ResourceUniverseNavigation {
   }
 
   public emitChange(): void {
+    const event: ResourceUniverseChangeEvent = {
+      kind: "replacement",
+      projectId: "project",
+      providerIds: ["physical"]
+    };
     for (const listener of this.listeners) {
-      listener();
+      listener(event);
     }
   }
 }

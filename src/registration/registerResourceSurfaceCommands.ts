@@ -13,6 +13,12 @@ export function registerResourceSurfaceCommands(
   resolve: () => ResourceSurfaceCommandTargets
 ): void {
   register("McResHelper.refreshResourceGraph", () => resolve().resourceGraph.refresh());
+  register("McResHelper.searchResourceGraph", () =>
+    resolve().resourceGraph.showResourceSearch()
+  );
+  register("McResHelper.followActiveResource", () =>
+    resolve().resourceGraph.followActiveEditor()
+  );
   register("McResHelper.navigateResourceGraphNode", value =>
     resolve().resourceGraph.navigateNode(value)
   );

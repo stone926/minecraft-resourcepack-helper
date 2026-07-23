@@ -5,6 +5,7 @@ import type {
   ResourceNavigationOptions,
   ResourceNavigationResult
 } from "../resourceUniverse/navigation/resourceNavigationService";
+import type { ResourceUniverseChangeEvent } from "../resourceUniverse";
 import type {
   EnsuredResourceProject,
   GeneratedResourceProjectRefresher,
@@ -16,6 +17,7 @@ import type {
   UnifiedLogicalReferenceLocations,
   UnifiedReferenceResolution,
   UnifiedReferenceSet,
+  UnifiedResourceProducerTarget,
   UnifiedResourceQueryOptions
 } from "../services/resourceUniverseNavigationFacade";
 import type { ResourceReference } from "../utils/resourceReferences";
@@ -41,7 +43,7 @@ export interface LazyResourceInfrastructureRegistration extends vscode.Disposabl
 }
 
 interface ResourceChangeBinding {
-  readonly listener: () => void;
+  readonly listener: (event: ResourceUniverseChangeEvent) => void;
   subscription?: vscode.Disposable;
 }
 
@@ -68,7 +70,9 @@ export class LazyResourceUniverseNavigation implements ResourceUniverseNavigatio
     this.target?.setGeneratedProjectRefresher(refresher);
   }
 
-  public onDidChangeResources(listener: () => void): vscode.Disposable {
+  public onDidChangeResources(
+    listener: (event: ResourceUniverseChangeEvent) => void
+  ): vscode.Disposable {
     if (this.disposed) {
       return { dispose: () => undefined };
     }
@@ -155,6 +159,13 @@ export class LazyResourceUniverseNavigation implements ResourceUniverseNavigatio
     options?: Parameters<ResourceUniverseNavigation["getKnownResources"]>[1]
   ): ReturnType<ResourceUniverseNavigation["getKnownResources"]> {
     return this.withNavigation(navigation => navigation.getKnownResources(kinds, options));
+  }
+
+  public getKnownResource(
+    producerId: string,
+    target: ResourceGraphLogicalKey
+  ): UnifiedResourceProducerTarget | undefined {
+    return this.target?.getKnownResource(producerId, target);
   }
 
   public getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet> {

@@ -27,14 +27,16 @@ export class RsglGeneratedProviderConnection {
   public refreshProject(
     projectId: string,
     scope: ResourceCoverageScope = { projectId },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    causeId?: symbol
   ): Promise<ResourceUniverseRefreshResult> {
     this.assertActive();
     return this.universe.refreshProviderProject(
       this.provider.providerId,
       projectId,
       scope,
-      signal
+      signal,
+      causeId
     );
   }
 

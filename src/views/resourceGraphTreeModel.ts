@@ -69,14 +69,52 @@ export class ResourceGraphTreeModel {
     this.blockChildren = null;
   }
 
-  public async getRoots(activeDocument: ResourceGraphTreeDocument | null): Promise<ResourceGraphTreeNodeModel[]> {
-    const projection = activeDocument
+  public async getRoots(
+    activeDocument: ResourceGraphTreeDocument | null,
+    focusedResource?: ResourceGraphProjectedResource
+  ): Promise<ResourceGraphTreeNodeModel[]> {
+    const projection = !focusedResource && activeDocument
       ? await this.host.getDocumentProjection(activeDocument)
       : null;
     return [
-      this.createCurrentFileNode(activeDocument, projection),
+      focusedResource
+        ? this.createFocusedResourceNode(focusedResource)
+        : this.createCurrentFileNode(activeDocument, projection),
       this.createBlocksNode()
     ];
+  }
+
+  private createFocusedResourceNode(
+    resource: ResourceGraphProjectedResource
+  ): ResourceGraphTreeNodeModel {
+    const generated = resource.producer.origin === "generated";
+    const resourceUri = generated
+      ? generatedPreviewUri(resource.producer)
+      : resource.producer.physicalOrigins[0]
+        ? serializedUriLike(resource.producer.physicalOrigins[0].uri)
+        : undefined;
+    const identity = producerResourceIdentity(resource);
+    const visitedResources = new Set([identity]);
+    if (!generated && resourceUri) {
+      visitedResources.add(resourceUriKey(resourceUri));
+    }
+    return createNode(this.localize("Selected Resource"), "expanded", {
+      description: `${resource.target.kind} ${resource.target.id}`,
+      resourceUri,
+      navigation: {
+        kind: "producer",
+        producerId: resource.producer.producerId,
+        target: resource.target
+      },
+      resource,
+      children: () => this.createProducerResourceSections(
+        resource,
+        visitedResources
+      ),
+      icon: getGeneratedResourceIcon(resource.target.kind),
+      contextValue: getFocusedResourceContext(resource, resourceUri),
+      tooltip: generatedResourceTooltip(resource)
+    });
   }
 
   private createCurrentFileNode(
@@ -204,7 +242,7 @@ export class ResourceGraphTreeModel {
     options: { label?: string; icon?: string; description?: string } = {}
   ): ResourceGraphTreeNodeModel {
     const previewUri = generatedPreviewUri(resource.producer);
-    const identity = generatedResourceIdentity(resource);
+    const identity = producerResourceIdentity(resource);
     const alreadyVisited = visitedResources.has(identity);
     return createNode(options.label ?? generatedResourceLabel(resource), alreadyVisited ? "none" : "collapsed", {
       description: options.description ?? (alreadyVisited
@@ -220,7 +258,7 @@ export class ResourceGraphTreeModel {
       children: () => visitGeneratedResourceOnce(
         visitedResources,
         resource,
-        nextVisited => this.createGeneratedResourceSections(resource, nextVisited),
+        nextVisited => this.createProducerResourceSections(resource, nextVisited),
         this.localize
       ),
       icon: options.icon ?? getGeneratedResourceIcon(resource.target.kind),
@@ -229,22 +267,22 @@ export class ResourceGraphTreeModel {
     });
   }
 
-  private async createGeneratedResourceSections(
+  private async createProducerResourceSections(
     resource: ResourceGraphProjectedResource,
     visitedResources: ReadonlySet<string>
   ): Promise<ResourceGraphTreeNodeModel[]> {
     const nodes = [
-      this.createGeneratedOriginsGroup(resource),
+      this.createProducerOriginsGroup(resource),
       await this.createProducerOutgoingReferencesGroup(resource, visitedResources),
       this.createProducerIncomingReferencesGroup(resource, visitedResources)
     ];
     if (resource.target.kind === "model") {
-      nodes.push(this.createGeneratedModelInheritanceGroup(resource, visitedResources));
+      nodes.push(this.createProducerModelInheritanceGroup(resource, visitedResources));
     }
     return nodes;
   }
 
-  private createGeneratedOriginsGroup(resource: ResourceGraphProjectedResource): ResourceGraphTreeNodeModel {
+  private createProducerOriginsGroup(resource: ResourceGraphProjectedResource): ResourceGraphTreeNodeModel {
     const producer = resource.producer;
     const origins = [
       ...producer.sourceOrigins.map((location, index) => createNode(locationLabel(location), "none", {
@@ -258,7 +296,9 @@ export class ResourceGraphTreeModel {
         tooltip: location.uri
       })),
       ...producer.physicalOrigins.map(location => createNode(locationLabel(location), "none", {
-        description: locationDescription(location, this.localize("materialized")),
+        description: locationDescription(location, producer.origin === "generated"
+          ? this.localize("materialized")
+          : this.localize("Handwritten")),
         resourceUri: serializedUriLike(location.uri),
         navigation: { kind: "location", location },
         icon: "output",
@@ -437,7 +477,7 @@ export class ResourceGraphTreeModel {
     return nodes;
   }
 
-  private createGeneratedModelInheritanceGroup(
+  private createProducerModelInheritanceGroup(
     resource: ResourceGraphProjectedResource,
     visitedResources: ReadonlySet<string>
   ): ResourceGraphTreeNodeModel {
@@ -657,7 +697,7 @@ async function visitGeneratedResourceOnce(
   createChildren: (nextVisitedResources: ReadonlySet<string>) => Promise<ResourceGraphTreeNodeModel[]>,
   localize: ResourceGraphLocalize
 ): Promise<ResourceGraphTreeNodeModel[]> {
-  const identity = generatedResourceIdentity(resource);
+  const identity = producerResourceIdentity(resource);
   if (visitedResources.has(identity)) {
     return [createNode(generatedResourceLabel(resource), "none", {
       description: localize("already shown"),
@@ -703,7 +743,7 @@ function groupReferencesBySource(references: readonly ResourceGraphTreeResolvedR
   }>();
   for (const reference of references) {
     const key = reference.sourceResource
-      ? generatedResourceIdentity(reference.sourceResource)
+      ? producerResourceIdentity(reference.sourceResource)
       : resourceUriKey(reference.sourceUri);
     const group = groups.get(key);
     if (group) {
@@ -775,7 +815,24 @@ function getGeneratedResourceIcon(kind: string): string {
   return "symbol-object";
 }
 
-function generatedResourceIdentity(resource: ResourceGraphProjectedResource): string {
+function getFocusedResourceContext(
+  resource: ResourceGraphProjectedResource,
+  resourceUri: ResourceGraphUriLike | undefined
+): string | undefined {
+  if (resource.producer.origin === "generated") {
+    return generatedResourceContext(resource);
+  }
+  if (resource.resolutionStatus === "conflict") {
+    return resource.target.kind === "model" && resourceUri
+      ? "resourceGraphFocusedModelConflict"
+      : "resourceGraphFocusedResourceConflict";
+  }
+  return resourceUri
+    ? classifyResourceGraphPreview(resourceUri.fsPath)
+    : undefined;
+}
+
+function producerResourceIdentity(resource: ResourceGraphProjectedResource): string {
   return `producer:${resource.producer.producerId}`;
 }
 

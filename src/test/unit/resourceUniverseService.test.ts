@@ -30,6 +30,33 @@ describe("resource universe service", () => {
     assert.strictEqual(calls.length, 1);
   });
 
+  it("correlates requested provider changes with their initiating query", async () => {
+    const service = new ResourceUniverseService();
+    service.registerProvider({
+      providerId: "rsgl",
+      getSnapshot: async request =>
+        emptySnapshot("rsgl", "project", request.requestGeneration)
+    });
+    const causeId = Symbol("search-inventory");
+    const events: Array<{ kind: string; causeId?: symbol }> = [];
+    const subscription = service.onDidChange(event => events.push(event));
+
+    await service.refreshProviderProject(
+      "rsgl",
+      "project",
+      { projectId: "project" },
+      undefined,
+      causeId
+    );
+    service.invalidateProviderProject("rsgl", "project", "stale", causeId);
+
+    assert.deepStrictEqual(events.map(event => [event.kind, event.causeId]), [
+      ["replacement", causeId],
+      ["invalidation", causeId]
+    ]);
+    subscription.dispose();
+  });
+
   it("returns stale immediately when invalidated work ignores abort", async () => {
     const service = new ResourceUniverseService();
     const pending = deferred<ResourceProviderSnapshot>();
