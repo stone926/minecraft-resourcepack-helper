@@ -413,6 +413,7 @@ describe("JSON-only activation probe harness", () => {
       'const vscode = require("vscode");',
       "exports.activate = context => {",
       '  context.subscriptions.push(vscode.workspace.createFileSystemWatcher("**/*.json"));',
+      '  context.subscriptions.push(vscode.window.registerWebviewViewProvider("example.search", {}));',
       "};"
     ].join("\n"));
     const result = spawnSync(

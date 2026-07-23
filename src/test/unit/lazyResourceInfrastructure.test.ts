@@ -217,6 +217,11 @@ class FakeNavigation implements ResourceUniverseNavigation {
       throw new Error("not used");
     };
 
+  public readonly getKnownResources:
+    ResourceUniverseNavigation["getKnownResources"] = async () => {
+      throw new Error("not used");
+    };
+
   public readonly getKnownBlockstateResources:
     ResourceUniverseNavigation["getKnownBlockstateResources"] = async () =>
       FakeNavigation.blockstates;

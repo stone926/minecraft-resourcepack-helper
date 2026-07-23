@@ -103,6 +103,7 @@ The **Minecraft Resources** activity bar view follows the active editor and show
 - Model Inheritance: parent models and child models.
 - Blocks: workspace blockstates grouped as entry points into blockstate -> model -> texture chains.
 - RSGL producers: live declarations and their physical materializations, including current, stale, and conflict state where applicable.
+- Resource Search: a persistent sidebar search over local and RSGL-generated blockstates, models, and textures.
 
 The view merges physical and RSGL outgoing/incoming edges. A physical resource can navigate to a live, unbuilt RSGL declaration, while an RSGL reference can navigate to the effective local, custom, or vanilla resource. The cached workspace indexes can be refreshed manually with **McResHelper: refresh resource graph**.
 
@@ -113,9 +114,9 @@ RSGL is included in this extension and uses the same resource-pack project and r
 Integrated RSGL support includes:
 
 - `.rsgl` language registration, syntax highlighting, language configuration, diagnostics, completion, hover, and formatting.
-- RSGL build and preview commands such as **RSGL: Build Resourcepack JSON**, **RSGL: Preview Build**, **RSGL: Build Source Directory**, and workspace build variants.
+- RSGL build and preview commands such as **RSGL: Build Resourcepack JSON**, **RSGL: Preview Build**, source-directory commands, and workspace build variants. Editor builds always compile the authoritative project source root before applying project-level ownership cleanup.
 - Project compiler options in `rsgl.config.json`, including `root`, `outDir`, the Minecraft target, external-resource declarations, source maps, and evaluation limits. Project roots and output destinations resolve identically in VS Code, the language server, and the CLI.
-- Safe build-to-assets transactions. RSGL refuses to overwrite unknown handwritten files, another project's outputs, or generated files changed since their ownership manifest; stale outputs are removed only when ownership and the previous content hash both match.
+- Safe build-to-assets transactions and complete previews. RSGL reports creates, updates, stale cleanup, ownership adoption, and conflicts; it refuses to overwrite unknown handwritten files, another project's outputs, or generated files changed since their ownership manifest. Stale outputs are removed only when ownership and the previous content hash both match.
 - Cross-language navigation between physical resources and live, unbuilt RSGL producers.
 - Read-only Definition and graph navigation into configured resource-pack ZIPs and vanilla `client.jar` files through revisioned virtual URIs; archives are never extracted into the workspace.
 

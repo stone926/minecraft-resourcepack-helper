@@ -5,6 +5,7 @@ import type {
   UnifiedResolvedReference
 } from "./resourceUniverseNavigationFacade";
 import type { ResourceLocation, ResourceNavigationResult } from "../resourceUniverse";
+import { sameResourceUri } from "../resourceUniverse/core/resourceUriIdentity";
 import {
   loadResourceGraphDocument,
   ResourceGraphIndex,
@@ -55,7 +56,7 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
       };
     }
     const anchors = uniqueProjectAnchors(uris);
-    const coverage = await Promise.all(anchors.map(uri =>
+    await Promise.all(anchors.map(uri =>
       this.navigation.ensureProjectForUri(toVscodeUri(uri))
     ));
     const generated = await this.navigation.getKnownBlockstateResources();
@@ -67,16 +68,14 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
         candidates: resource.candidates,
         resolutionStatus: resource.resolutionStatus
       } satisfies ResourceGraphProjectedResource));
-    const incomplete = coverage.find(result => result.coverage !== "authoritative")
-      ?? (generated.coverage === "authoritative" ? undefined : { coverage: generated.coverage });
-    return incomplete
+    return generated.coverage !== "authoritative"
       ? {
           status: "partial",
           uris,
           resources,
-          reason: incomplete.coverage === "partial"
-            ? "Some resource providers or layers are unavailable."
-            : "Project resource coverage is unavailable."
+          reason: generated.coverage === "partial"
+            ? vscode.l10n.t("Some local or RSGL resources could not be indexed.")
+            : vscode.l10n.t("The resource inventory is unavailable.")
         }
       : { status: "authoritative", uris, resources };
   }
@@ -90,6 +89,7 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
       applicable: result.applicable,
       providerIds: result.projections.map(projection => projection.providerId),
       coverage: result.coverage,
+      providerCoverages: result.providerCoverages,
       resources: result.projections.flatMap(projection =>
         projection.resources.flatMap(projectResource)
       ),
@@ -246,7 +246,8 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
     if (result.status === "resolved") {
       const locations = [result.primary, ...result.alternatives];
       const activeUri = vscode.window.activeTextEditor?.document.uri.toString();
-      const selected = activeUri === result.primary.uri || locations.length === 1
+      const selected = (activeUri !== undefined && sameResourceUri(activeUri, result.primary.uri))
+        || locations.length === 1
         ? result.primary
         : await pickLocation(locations);
       if (selected) {

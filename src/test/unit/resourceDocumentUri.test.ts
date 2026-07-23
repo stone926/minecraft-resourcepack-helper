@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import {
   isResourceDocumentUriWithin,
+  sameResourceDocumentUri,
   type ResourceDocumentUri
 } from "../../resourceUniverse/providers/resourceDocumentUri";
 
@@ -51,6 +52,33 @@ describe("resource document URI boundary", () => {
       documentUri("not an absolute URI", "/resource.json"),
       localRoot
     ), false);
+  });
+
+  it("matches Node and VS Code Windows file URI serializations", () => {
+    assert.strictEqual(
+      sameResourceDocumentUri(
+        "file:///E:/.minecraft/resourcepacks/better_textures/rsgl/leaves.rsgl",
+        "file:///e%3A/.minecraft/resourcepacks/better_textures/rsgl/leaves.rsgl"
+      ),
+      true
+    );
+  });
+
+  it("keeps distinct files distinct", () => {
+    assert.strictEqual(
+      sameResourceDocumentUri(
+        "file:///E:/pack/rsgl/leaves.rsgl",
+        "file:///E:/pack/rsgl/amethyst.rsgl"
+      ),
+      false
+    );
+  });
+
+  it("does not equate opaque source identities", () => {
+    assert.strictEqual(
+      sameResourceDocumentUri("rsgl-source:%3Cbuiltin%3E", "rsgl-source:%3Cother%3E"),
+      false
+    );
   });
 });
 

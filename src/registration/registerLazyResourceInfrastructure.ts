@@ -150,6 +150,13 @@ export class LazyResourceUniverseNavigation implements ResourceUniverseNavigatio
     return this.withNavigation(navigation => navigation.getDocumentProjection(document));
   }
 
+  public getKnownResources(
+    kinds: readonly string[],
+    options?: Parameters<ResourceUniverseNavigation["getKnownResources"]>[1]
+  ): ReturnType<ResourceUniverseNavigation["getKnownResources"]> {
+    return this.withNavigation(navigation => navigation.getKnownResources(kinds, options));
+  }
+
   public getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet> {
     return this.withNavigation(navigation => navigation.getKnownBlockstateResources(signal));
   }

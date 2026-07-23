@@ -91,12 +91,15 @@ export class ResourceGraphTreeModel {
     }
 
     const generatedProjection = projection.providerIds.includes("rsgl");
+    const generatedCoverage = projection.providerCoverages
+      .find(item => item.providerId === "rsgl")
+      ?.coverage ?? projection.coverage;
     return createNode(this.localize("Current File"), "expanded", {
       description: path.basename(document.fileName),
       resourceUri: document.uri,
       navigation: { kind: "resourceUri", uri: document.uri },
       children: generatedProjection
-        ? this.createGeneratedDocumentGroups(projection)
+        ? this.createGeneratedDocumentGroups(projection, generatedCoverage)
         : () => this.createResourceSections(document.uri, new Set(), document),
       icon: getResourceIcon(document.fileName),
       contextValue: generatedProjection ? "resourceGraphRsglDocument" : classifyResourceGraphPreview(document.fileName)
@@ -104,41 +107,42 @@ export class ResourceGraphTreeModel {
   }
 
   private createGeneratedDocumentGroups(
-    projection: ResourceGraphDocumentProjection
+    projection: ResourceGraphDocumentProjection,
+    generatedCoverage: ResourceGraphDocumentProjection["coverage"]
   ): ResourceGraphTreeNodeModel[] {
-    return [
+    const groups = [
       this.createGeneratedProjectionGroup(
         this.localize("Generated Resources"),
         "sparkle",
-        projection.resources,
-        projection.coverage
+        projection.resources
       ),
       this.createGeneratedProjectionGroup(
         this.localize("Contributes To"),
         "references",
-        projection.contributesTo,
-        projection.coverage
+        projection.contributesTo
       )
     ];
+    return generatedCoverage === "authoritative"
+      ? groups
+      : [
+          createNode(
+            generatedCoverage === "partial"
+              ? this.localize("RSGL resource snapshot is partial")
+              : this.localize("RSGL resource snapshot is unavailable"),
+            "none",
+            { icon: generatedCoverage === "partial" ? "warning" : "question" }
+          ),
+          ...groups
+        ];
   }
 
   private createGeneratedProjectionGroup(
     label: string,
     icon: string,
-    resources: readonly ResourceGraphProjectedResource[],
-    coverage: ResourceGraphDocumentProjection["coverage"]
+    resources: readonly ResourceGraphProjectedResource[]
   ): ResourceGraphTreeNodeModel {
     const children = resources.map(resource => this.createGeneratedResourceNode(resource, new Set()));
     children.sort(compareNodes);
-    if (coverage !== "authoritative") {
-      children.unshift(createNode(
-        coverage === "partial"
-          ? this.localize("RSGL resource snapshot is partial")
-          : this.localize("RSGL resource snapshot is unavailable"),
-        "none",
-        { icon: coverage === "partial" ? "warning" : "question" }
-      ));
-    }
     return createNode(this.localize(label), children.length > 0 ? "collapsed" : "none", {
       description: resources.length.toString(),
       children: children.length > 0 ? children : [createEmptyNode(this.localize("No generated resources"))],
@@ -148,7 +152,6 @@ export class ResourceGraphTreeModel {
 
   private createBlocksNode(): ResourceGraphTreeNodeModel {
     return createNode(this.localize("Blocks"), "collapsed", {
-      description: this.localize("unknown"),
       children: () => this.getBlockChildren(),
       icon: "symbol-namespace",
       tooltip: this.localize("Load block inventory when expanded")

@@ -2,6 +2,7 @@ import {
   isResourceProjectUriWithin,
   type SerializedResourceUri
 } from "../../../packages/resource-project/src";
+export { sameResourceUri as sameResourceDocumentUri } from "../core/resourceUriIdentity";
 
 /** Minimal URI surface used at the VS Code document boundary. */
 export interface ResourceDocumentUri {

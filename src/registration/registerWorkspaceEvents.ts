@@ -200,6 +200,7 @@ export function registerWorkspaceEvents(
     }
     workspaceResourceCache.invalidateAll();
     diagnostics.refreshAllSoon();
+    resourceGraph.invalidateProjectDiscovery();
     resourceGraph.refreshSoon(undefined, true);
   }
 }

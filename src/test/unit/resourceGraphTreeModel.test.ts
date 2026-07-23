@@ -26,7 +26,7 @@ describe("resource graph tree model", () => {
 
     assert.deepStrictEqual(roots.map(root => root.label), ["Current File", "Blocks"]);
     assert.strictEqual(roots[0].description, "No resource editor");
-    assert.strictEqual(roots[1].description, "unknown");
+    assert.strictEqual(roots[1].description, undefined);
     assert.strictEqual(inventoryRequests, 0, "root rendering must not pull block inventory");
     const blocks = await roots[1].getChildren();
     assert.strictEqual(inventoryRequests, 1);
@@ -100,6 +100,7 @@ describe("resource graph tree model", () => {
         applicable: true,
         providerIds: ["rsgl"],
         coverage: "authoritative",
+        providerCoverages: [{ providerId: "rsgl", coverage: "authoritative" }],
         resources: [generated],
         contributesTo: [contributed]
       },
@@ -129,6 +130,55 @@ describe("resource graph tree model", () => {
     assert.strictEqual(contributedNodes[0].label, "model demo:block/from-template");
   });
 
+  it("uses RSGL-specific coverage and shows a genuine snapshot warning only once", async () => {
+    const sourceUri = uri(path.join("pack", "rsgl", "main.rsgl"));
+    const document: ResourceGraphTreeDocument = {
+      uri: sourceUri,
+      fileName: sourceUri.fsPath,
+      languageId: "rsgl",
+      version: 3,
+      getText: () => ""
+    };
+    const aggregatePartial = new ResourceGraphTreeModel(fakeHost({
+      projection: {
+        applicable: true,
+        providerIds: ["physical", "rsgl"],
+        coverage: "partial",
+        providerCoverages: [
+          { providerId: "physical", coverage: "partial" },
+          { providerId: "rsgl", coverage: "authoritative" }
+        ],
+        resources: [],
+        contributesTo: []
+      }
+    }), localize);
+    const [aggregateCurrent] = await aggregatePartial.getRoots(document);
+    assert.deepStrictEqual(
+      (await aggregateCurrent.getChildren()).map(node => node.label),
+      ["Generated Resources", "Contributes To"]
+    );
+
+    const rsglPartial = new ResourceGraphTreeModel(fakeHost({
+      projection: {
+        applicable: true,
+        providerIds: ["rsgl"],
+        coverage: "partial",
+        providerCoverages: [{ providerId: "rsgl", coverage: "partial" }],
+        resources: [],
+        contributesTo: []
+      }
+    }), localize);
+    const [partialCurrent] = await rsglPartial.getRoots(document);
+    assert.deepStrictEqual(
+      (await partialCurrent.getChildren()).map(node => node.label),
+      [
+        "RSGL resource snapshot is partial",
+        "Generated Resources",
+        "Contributes To"
+      ]
+    );
+  });
+
   it("keeps the pure model source free of VS Code runtime imports", () => {
     const source = fs.readFileSync(path.join(process.cwd(), "src", "views", "resourceGraphTreeModel.ts"), "utf8");
     assert.strictEqual(source.includes('from "vscode"'), false);
@@ -150,6 +200,7 @@ function fakeHost(options: {
       applicable: true,
       providerIds: ["physical"],
       coverage: "authoritative",
+      providerCoverages: [{ providerId: "physical", coverage: "authoritative" }],
       resources: [],
       contributesTo: []
     },

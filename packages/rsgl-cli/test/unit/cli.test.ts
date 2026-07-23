@@ -254,6 +254,77 @@ describe("RSGL CLI", () => {
     }
   });
 
+  it("shows stale cleanup in previews without deleting before approval", () => {
+    const root = createTempRoot();
+    const sourceRoot = path.join(root, "src");
+    const outDir = path.join(root, "pack");
+    const sourceFile = path.join(sourceRoot, "main.rsgl");
+    const staleModel = path.join(
+      outDir,
+      "assets",
+      "minecraft",
+      "models",
+      "block",
+      "stone.json"
+    );
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.writeFileSync(sourceFile, minimalModel);
+      assert.strictEqual(runRsglCli(["build", sourceRoot, "--out", outDir], captureIo().io), 0);
+      fs.writeFileSync(sourceFile, minimalModel.replaceAll("stone", "granite"));
+
+      const captured = captureIo();
+      const exitCode = runRsglCli(
+        ["build", sourceRoot, "--preview", "--out", outDir],
+        captured.io
+      );
+
+      assert.strictEqual(exitCode, 0);
+      assert.match(captured.stdout(), /## Stale Output Cleanup/);
+      assert.match(
+        captured.stdout(),
+        /delete: assets\/minecraft\/models\/block\/stone\.json/
+      );
+      assert.strictEqual(fs.existsSync(staleModel), true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports preview ownership conflicts and exits with 1", () => {
+    const root = createTempRoot();
+    const sourceRoot = path.join(root, "src");
+    const outDir = path.join(root, "pack");
+    const modelFile = path.join(
+      outDir,
+      "assets",
+      "minecraft",
+      "models",
+      "block",
+      "stone.json"
+    );
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.mkdirSync(path.dirname(modelFile), { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, "main.rsgl"), minimalModel);
+      fs.writeFileSync(modelFile, "handwritten");
+
+      const captured = captureIo();
+      const exitCode = runRsglCli(
+        ["build", sourceRoot, "--preview", "--out", outDir],
+        captured.io
+      );
+
+      assert.strictEqual(exitCode, 1);
+      assert.match(captured.stdout(), /## Conflicts/);
+      assert.match(captured.stdout(), /unownedExistingOutput/);
+      assert.match(captured.stderr(), /rsgl\.materializationConflict/);
+      assert.strictEqual(fs.readFileSync(modelFile, "utf8"), "handwritten");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("prints diagnostics to stderr and exits with 1 when compilation fails", () => {
     const root = createTempRoot();
     const sourceRoot = path.join(root, "src");

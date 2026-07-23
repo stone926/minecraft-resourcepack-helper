@@ -144,6 +144,7 @@ describe("resource surface registry", () => {
 
     assert.ok(watcherPatterns.includes("**/assets/*/sounds/**/*.ogg"));
     assert.ok(watcherPatterns.includes("**/assets/*/font/**/*"));
+    assert.ok(watcherPatterns.includes("**/rsgl.config.json"));
     assert.ok(watcherGlob);
     assert.ok(watcherGlob.startsWith("{") && watcherGlob.endsWith("}"));
     for (const pattern of watcherPatterns) {
@@ -195,6 +196,7 @@ describe("resource surface registry", () => {
       assert.strictEqual(source.includes("**/models"), false, path.basename(fileName));
     }
     assert.match(getResourceStructureDiscoveryGlob(), /pack\.mcmeta/);
+    assert.match(getResourceStructureDiscoveryGlob(), /rsgl\.config\.json/);
     assert.match(getResourceStructureDiscoveryGlob(), /assets/);
 
     const graphScan = fs.readFileSync(

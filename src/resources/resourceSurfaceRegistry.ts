@@ -284,7 +284,10 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   schemaOnlySurface("credits", "**/assets/*/texts/credits.json", "%schema.credits.url%"),
   schemaOnlySurface("gpuWarnlist", "**/assets/*/gpu_warnlist.json", "%schema.gpuWarnlist.url%"),
   schemaOnlySurface("regionalCompliancies", "**/assets/*/regional_compliancies.json", "%schema.regionalCompliancies.url%"),
-  schemaOnlySurface("rsglConfig", "**/rsgl.config.json", "%schema.rsglConfig.url%")
+  {
+    ...schemaOnlySurface("rsglConfig", "**/rsgl.config.json", "%schema.rsglConfig.url%"),
+    watcherPatterns: ["**/rsgl.config.json"]
+  }
 ];
 
 export function getResourceDocumentSelectors(
@@ -332,7 +335,7 @@ export function getResourceWatcherGlob(
  * registration modules do not grow a second resource-surface definition.
  */
 export function getResourceStructureDiscoveryGlob(): string {
-  return "{**/pack.mcmeta,**/assets/**}";
+  return "{**/pack.mcmeta,**/rsgl.config.json,**/assets/**}";
 }
 
 export function getResourceSchemaRegistrations(

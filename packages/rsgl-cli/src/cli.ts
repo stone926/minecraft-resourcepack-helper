@@ -8,7 +8,6 @@ import {
   compileDependencyPatternStructurallyMatchesPath,
   compileDependencyWatchPattern,
   createRsglMaterializationProject,
-  formatRsglBuildPreview,
   getRsglProjectConfigWatchPaths,
   assertRsglOutputPackRoot,
   loadRsglProjectConfigForSource,
@@ -129,13 +128,17 @@ export function runRsglCli(argv: string[], io: RsglCliIo = processIo): number {
 
 function build(args: RsglCliArgs, io: RsglCliIo): number {
   const context = createCliContext(args);
-  const result = args.preview
-    ? previewRsglResourcePackDirectoryBuild(context.root, context.options)
-    : buildRsglResourcePackDirectory(context.root, context.options);
+  if (args.preview) {
+    const result = previewRsglResourcePackDirectoryBuild(context.root, context.options);
+    printDiagnostics(result.diagnostics, io);
+    if (result.preview) {
+      io.writeOut(result.preview);
+    }
+    return result.diagnostics.some(diagnostic => diagnostic.severity === "error") ? 1 : 0;
+  }
+  const result = buildRsglResourcePackDirectory(context.root, context.options);
   printDiagnostics(result.diagnostics, io);
-  if (args.preview && result.plan) {
-    io.writeOut(formatRsglBuildPreview(result.plan, { sourceRoot: context.root }));
-  } else if (result.plan && (!result.materialization || result.materialization.status === "committed")) {
+  if (result.plan && (!result.materialization || result.materialization.status === "committed")) {
     io.writeOut(`RSGL build complete: ${result.plan.summary.create} created, ${result.plan.summary.update} updated, ${result.plan.summary.unchanged} unchanged.\n`);
   }
   return result.diagnostics.some(diagnostic => diagnostic.severity === "error") ? 1 : 0;

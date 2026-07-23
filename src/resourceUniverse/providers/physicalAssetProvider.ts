@@ -13,6 +13,7 @@ import {
   type PhysicalAssetScannedDocument
 } from "./physicalAssetReferenceAdapter";
 import { createPhysicalAssetSnapshot } from "./physicalAssetSnapshot";
+import { sameResourceDocumentUri } from "./resourceDocumentUri";
 
 export interface PhysicalAssetProjectScan {
   revision: string;
@@ -70,7 +71,9 @@ export class PhysicalAssetContributionProvider implements ResourceContributionPr
     request: ResourceDocumentProjectionRequest
   ): ResourceDocumentProjection {
     const resources = request.producers.filter(producer =>
-      producer.physicalOrigins.some(origin => sameDocumentUri(origin.uri, request.document.uri))
+      producer.physicalOrigins.some(origin =>
+        sameResourceDocumentUri(origin.uri, request.document.uri)
+      )
     );
     return {
       providerId: this.providerId,
@@ -80,14 +83,4 @@ export class PhysicalAssetContributionProvider implements ResourceContributionPr
       contributesTo: []
     };
   }
-}
-
-function sameDocumentUri(left: string, right: string): boolean {
-  return normalizeDocumentUri(left) === normalizeDocumentUri(right);
-}
-
-function normalizeDocumentUri(value: string): string {
-  return process.platform === "win32" && value.startsWith("file:")
-    ? value.toLowerCase()
-    : value;
 }

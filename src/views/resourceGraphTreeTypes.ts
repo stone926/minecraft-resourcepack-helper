@@ -39,6 +39,12 @@ export interface ResourceGraphDocumentProjection {
   readonly applicable: boolean;
   readonly providerIds: readonly string[];
   readonly coverage: "authoritative" | "partial" | "unavailable";
+  readonly providerCoverages: readonly {
+    providerId: string;
+    coverage: "authoritative" | "partial" | "unavailable";
+    unavailableReason?: string;
+    skippedSourceUris?: readonly string[];
+  }[];
   readonly resources: readonly ResourceGraphProjectedResource[];
   readonly contributesTo: readonly ResourceGraphProjectedResource[];
 }

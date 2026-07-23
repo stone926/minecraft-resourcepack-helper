@@ -46,8 +46,16 @@ import {
   requiresReferenceIndexRefresh,
   type LegacyReferenceEvidence
 } from "./referenceIndexRefreshPolicy";
+import {
+  combineResourceFactsCoverage as combineCoverage,
+  summarizeDocumentProviderFacts,
+  summarizeGeneratedInventoryFacts,
+  summarizeLocalPhysicalInventoryFacts,
+  type ProviderFactsCoverage,
+  type ResourceFactsCoverage
+} from "./resourceFactsCoverage";
 
-export type UnifiedResourceCoverage = "authoritative" | "partial" | "unavailable";
+export type UnifiedResourceCoverage = ResourceFactsCoverage;
 
 export interface UnifiedResolvedReference {
   reference: ResourceReference;
@@ -83,7 +91,10 @@ export interface UnifiedDocumentProjection {
   context?: ResourcePackProjectContextDto;
   projections: readonly ResourceDocumentProjection[];
   coverage: UnifiedResourceCoverage;
+  providerCoverages: readonly UnifiedProviderFactsCoverage[];
 }
+
+export type UnifiedProviderFactsCoverage = ProviderFactsCoverage;
 
 export interface UnifiedResourceProducerTarget {
   target: ResourceGraphLogicalKey;
@@ -95,6 +106,17 @@ export interface UnifiedResourceProducerTarget {
 export interface UnifiedBlockResourceSet {
   resources: readonly UnifiedResourceProducerTarget[];
   coverage: UnifiedResourceCoverage;
+}
+
+export interface UnifiedResourceInventory {
+  resources: readonly UnifiedResourceProducerTarget[];
+  coverage: UnifiedResourceCoverage;
+}
+
+export interface UnifiedResourceInventoryOptions {
+  signal?: AbortSignal;
+  /** Restricts inventory to projects explicitly discovered for this consumer. */
+  projectIds?: readonly string[];
 }
 
 export interface UnifiedResourceQueryOptions {
@@ -162,6 +184,10 @@ export interface ResourceUniverseNavigation {
     options?: UnifiedResourceQueryOptions
   ): Promise<EnsuredResourceProject>;
   getDocumentProjection(document: ResourceUniverseDocument): Promise<UnifiedDocumentProjection>;
+  getKnownResources(
+    kinds: readonly string[],
+    options?: UnifiedResourceInventoryOptions
+  ): Promise<UnifiedResourceInventory>;
   getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet>;
   getProducerOutgoingReferences(
     producerId: string,
@@ -481,36 +507,88 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     const providerIds = this.universe.getDocumentProviderIds(descriptor);
     const generatedDocument = isGeneratedResourceDocument(document);
     if (providerIds.length === 0 && !generatedDocument) {
-      return { applicable: false, projections: [], coverage: "authoritative" };
+      return {
+        applicable: false,
+        projections: [],
+        coverage: "authoritative",
+        providerCoverages: []
+      };
     }
     const includeGenerated = generatedDocument || providerIds.includes("rsgl");
     const ensured = await this.ensureProjectForUri(document.uri, { includeGenerated });
     if (!ensured.context) {
-      return { applicable: true, projections: [], coverage: ensured.coverage };
+      return {
+        applicable: true,
+        projections: [],
+        coverage: ensured.coverage,
+        providerCoverages: []
+      };
     }
+    const projections = this.universe.getDocumentProjections(
+      descriptor,
+      ensured.context.projectId
+    );
+    const providerCoverages = projections.map(projection =>
+      summarizeDocumentProviderFacts(
+        projection.providerId,
+        this.universe.index.getCoverage(projection.providerId, ensured.context!.projectId),
+        descriptor.uri
+      )
+    );
     return {
       context: ensured.context,
       applicable: true,
-      projections: this.universe.getDocumentProjections(descriptor, ensured.context.projectId),
-      coverage: ensured.coverage
+      projections,
+      coverage: combineCoverage(providerCoverages.map(item => item.coverage)),
+      providerCoverages
     };
   }
 
   /** Deferred global Blocks projection over already-discovered project contexts. */
   public async getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet> {
-    const contexts = this.projects.getCachedContexts();
-    const coverages: UnifiedResourceCoverage[] = [];
+    return this.getKnownResources(["blockstate"], { signal });
+  }
+
+  /** Deferred local-project inventory over already-discovered project contexts. */
+  public async getKnownResources(
+    kinds: readonly string[],
+    options: UnifiedResourceInventoryOptions = {}
+  ): Promise<UnifiedResourceInventory> {
+    const scopedProjectIds = options.projectIds
+      ? new Set(options.projectIds)
+      : null;
+    const contexts = this.projects.getCachedContexts()
+      .filter(context => !scopedProjectIds || scopedProjectIds.has(context.projectId));
+    const requestedKinds = new Set(kinds);
+    const cachedProjectIds = new Set(contexts.map(context => context.projectId));
+    const coverages: UnifiedResourceCoverage[] = scopedProjectIds
+      ? [...scopedProjectIds]
+          .filter(projectId => !cachedProjectIds.has(projectId))
+          .map(() => "unavailable" as const)
+      : [];
     const resources: UnifiedResourceProducerTarget[] = [];
     for (const context of contexts) {
-      if (signal?.aborted) {
+      if (options.signal?.aborted) {
         break;
       }
       const anchor = vscode.Uri.parse(context.projectRootUri, true);
-      const ensured = await this.ensureProjectForUri(anchor, { includeGenerated: true, signal });
-      coverages.push(ensured.coverage);
+      const ensured = await this.ensureProjectForUri(anchor, {
+        includeGenerated: true,
+        signal: options.signal
+      });
+      coverages.push(summarizeLocalPhysicalInventoryFacts(
+        this.universe.index.getCoverage("physical", context.projectId),
+        context.outputPackRootUri
+      ));
+      if (ensured.rsglApplicability !== "none") {
+        coverages.push(summarizeGeneratedInventoryFacts(
+          this.universe.index.getCoverage("rsgl", context.projectId)
+        ));
+      }
       const targets = uniqueLogicalKeys(this.universe.index.getProjectProducers(context.projectId)
+        .filter(producer => producer.layerRole === "local")
         .flatMap(producer => producer.logicalKeys)
-        .filter(target => target.kind === "blockstate"));
+        .filter(target => requestedKinds.has(target.kind)));
       for (const target of targets) {
         const navigation = this.navigation.resolveDefinition(
           target,
@@ -922,13 +1000,6 @@ function visibleCoverage(coverage: ProviderCoverage | undefined): UnifiedResourc
     return "unavailable";
   }
   return coverage.status === "partial" ? "partial" : "authoritative";
-}
-
-function combineCoverage(coverage: readonly UnifiedResourceCoverage[]): UnifiedResourceCoverage {
-  if (coverage.length === 0 || coverage.every(item => item === "authoritative")) {
-    return "authoritative";
-  }
-  return coverage.every(item => item === "unavailable") ? "unavailable" : "partial";
 }
 
 function uriIdentity(uri: vscode.Uri): string {

@@ -62,6 +62,44 @@ describe("resource navigation service", () => {
     assert.strictEqual(result.status === "resolved" ? result.primary.uri : "", "file:///workspace/rsgl/main.rsgl");
   });
 
+  it("uses canonical Windows URI identity for active-origin ranking and deduplication", () => {
+    const producer = generatedProducer(
+      "file:///workspace/rsgl/templates.rsgl",
+      ""
+    );
+    producer.sourceOrigins = [
+      ...producer.sourceOrigins,
+      {
+        uri: "file:///E:/pack/rsgl/main.rsgl",
+        range: { start: 10, end: 20 },
+        origin: "generated",
+        editable: true
+      },
+      {
+        uri: "file:///e%3A/pack/rsgl/main.rsgl",
+        range: { start: 10, end: 20 },
+        origin: "generated",
+        editable: true
+      }
+    ];
+    const result = serviceWith(snapshot([producer])).resolveDefinition(target, context, {
+      activeUri: "file:///e%3A/pack/rsgl/main.rsgl"
+    });
+
+    assert.strictEqual(result.status, "resolved");
+    assert.strictEqual(
+      result.status === "resolved" ? result.primary.uri : "",
+      "file:///E:/pack/rsgl/main.rsgl"
+    );
+    assert.strictEqual(
+      result.status === "resolved"
+        ? result.alternatives.filter(location => location.range?.start === 10).length
+        : -1,
+      0,
+      "equivalent Windows URI serializations should collapse to one primary location"
+    );
+  });
+
   it("reports unavailable coverage instead of claiming a target is missing", () => {
     const index = new ResourceUniverseIndex();
     index.replaceSnapshot({

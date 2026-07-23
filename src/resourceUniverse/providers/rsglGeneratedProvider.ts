@@ -33,6 +33,7 @@ import {
   uniqueRsglStrings,
   type RsglGeneratedSnapshotFacts
 } from "./rsglGeneratedSnapshotMapper";
+import { sameResourceDocumentUri } from "./resourceDocumentUri";
 
 export const rsglGeneratedProviderId = "rsgl";
 
@@ -195,12 +196,15 @@ export class RsglGeneratedProvider implements ResourceContributionProvider {
   ): ResourceDocumentProjection {
     const resources = request.producers.filter(producer => {
       const primary = producer.sourceOrigins[0];
-      return primary !== undefined && sameDocumentUri(primary.uri, request.document.uri);
+      return primary !== undefined
+        && sameResourceDocumentUri(primary.uri, request.document.uri);
     });
     const primaryIds = new Set(resources.map(producer => producer.producerId));
     const contributesTo = request.producers.filter(producer =>
       !primaryIds.has(producer.producerId)
-      && producer.sourceOrigins.slice(1).some(origin => sameDocumentUri(origin.uri, request.document.uri))
+      && producer.sourceOrigins.slice(1).some(origin =>
+        sameResourceDocumentUri(origin.uri, request.document.uri)
+      )
     );
     return {
       providerId: this.providerId,
@@ -468,16 +472,6 @@ function requireIdentity(value: string, label: string): string {
     throw new Error(`${label} must be a non-empty identity.`);
   }
   return value.trim();
-}
-
-function sameDocumentUri(left: string, right: string): boolean {
-  return normalizeDocumentUri(left) === normalizeDocumentUri(right);
-}
-
-function normalizeDocumentUri(value: string): string {
-  return process.platform === "win32" && value.startsWith("file:")
-    ? value.toLowerCase()
-    : value;
 }
 
 function serializedUriPath(value: string): string {

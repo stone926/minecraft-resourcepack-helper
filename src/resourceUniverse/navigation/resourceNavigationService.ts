@@ -6,6 +6,10 @@ import {
   type ResourceResolutionContext,
   type ResourceResolutionResult
 } from "../core";
+import {
+  resourceUriComparisonIdentity,
+  sameResourceUri
+} from "../core/resourceUriIdentity";
 
 export interface ResourceNavigationOptions {
   activeUri?: string;
@@ -140,7 +144,7 @@ function originPreferenceRank(location: ResourceLocation, preferMaterialized: bo
 }
 
 function activeLocationRank(location: ResourceLocation, activeUri: string | undefined): number {
-  return activeUri && location.uri === activeUri ? 0 : 1;
+  return activeUri && sameResourceUri(location.uri, activeUri) ? 0 : 1;
 }
 
 function editableRank(location: ResourceLocation): number {
@@ -148,10 +152,18 @@ function editableRank(location: ResourceLocation): number {
 }
 
 function uniqueLocations(locations: readonly ResourceLocation[]): ResourceLocation[] {
-  return [...new Map(locations.map(location => [
-    `${location.uri}\0${location.range?.start ?? ""}\0${location.range?.end ?? ""}`,
-    location
-  ])).values()];
+  const unique = new Map<string, ResourceLocation>();
+  for (const location of locations) {
+    const identity = [
+      resourceUriComparisonIdentity(location.uri),
+      location.range?.start ?? "",
+      location.range?.end ?? ""
+    ].join("\0");
+    if (!unique.has(identity)) {
+      unique.set(identity, location);
+    }
+  }
+  return [...unique.values()];
 }
 
 function uniqueProducers(producers: readonly ResourceProducer[]): ResourceProducer[] {

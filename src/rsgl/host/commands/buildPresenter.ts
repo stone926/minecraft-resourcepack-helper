@@ -33,7 +33,8 @@ export async function showBuildResult(result: RsglBuildResult): Promise<void> {
 }
 
 export async function showBuildPreview(result: RsglBuildPreviewResult): Promise<void> {
-  if (await showBuildErrors(result)) {
+  const hasErrors = await showBuildErrors(result);
+  if (hasErrors && !result.preview) {
     return;
   }
 
@@ -71,7 +72,9 @@ export async function showWorkspaceBuildPreview(
   const errorCount = workspaceErrorCount(entries);
   if (errorCount > 0) {
     await vscode.window.showErrorMessage(vscode.l10n.t("RSGL workspace build failed with {0} error(s); skipped {1} source directories.", errorCount, skipped.length));
-    return;
+    if (entries.every(entry => !entry.result.preview)) {
+      return;
+    }
   }
 
   const preview = await vscode.workspace.openTextDocument({

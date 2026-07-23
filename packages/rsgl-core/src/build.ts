@@ -234,7 +234,10 @@ function previewCompiledRsglBuild(
     return { diagnostics: compiled.diagnostics, dependencies: compiled.dependencies, cancelled: true };
   }
   return {
-    diagnostics: compiled.diagnostics,
+    diagnostics: [
+      ...compiled.diagnostics,
+      ...createRsglMaterializationPreviewDiagnostics(materializationPreview)
+    ],
     dependencies: compiled.dependencies,
     plan: materializationPreview.writePlan,
     materializationPreview,
@@ -245,27 +248,7 @@ function previewCompiledRsglBuild(
 export function createRsglMaterializationDiagnostics(
   materialization: RsglMaterializationTransactionResult
 ): RsglCompileDiagnostic[] {
-  const diagnostics: RsglCompileDiagnostic[] = [];
-  for (const entry of materialization.preview.ownershipPlan.writes) {
-    if (entry.action === "conflict") {
-      diagnostics.push({
-        code: "rsgl.materializationConflict",
-        severity: "error",
-        message: `Materialization conflict at '${entry.output.outputPath}' (${entry.conflictReason ?? "unknown"}).`,
-        range: { start: 0, end: 0 }
-      });
-    }
-  }
-  for (const entry of materialization.preview.ownershipPlan.stale) {
-    if (entry.action === "preserve") {
-      diagnostics.push({
-        code: "rsgl.materializationStalePreserved",
-        severity: "warning",
-        message: `Preserved stale output '${entry.previous.outputPath}' (${entry.preserveReason ?? "unknown"}).`,
-        range: { start: 0, end: 0 }
-      });
-    }
-  }
+  const diagnostics = createRsglMaterializationPreviewDiagnostics(materialization.preview);
   if (materialization.failure) {
     diagnostics.push({
       code: materialization.status === "partial"
@@ -275,6 +258,33 @@ export function createRsglMaterializationDiagnostics(
       message: materialization.failure.message,
       range: { start: 0, end: 0 }
     });
+  }
+  return diagnostics;
+}
+
+export function createRsglMaterializationPreviewDiagnostics(
+  preview: RsglMaterializationPreview
+): RsglCompileDiagnostic[] {
+  const diagnostics: RsglCompileDiagnostic[] = [];
+  for (const entry of preview.ownershipPlan.writes) {
+    if (entry.action === "conflict") {
+      diagnostics.push({
+        code: "rsgl.materializationConflict",
+        severity: "error",
+        message: `Materialization conflict at '${entry.output.outputPath}' (${entry.conflictReason ?? "unknown"}).`,
+        range: { start: 0, end: 0 }
+      });
+    }
+  }
+  for (const entry of preview.ownershipPlan.stale) {
+    if (entry.action === "preserve") {
+      diagnostics.push({
+        code: "rsgl.materializationStalePreserved",
+        severity: "warning",
+        message: `Preserved stale output '${entry.previous.outputPath}' (${entry.preserveReason ?? "unknown"}).`,
+        range: { start: 0, end: 0 }
+      });
+    }
   }
   return diagnostics;
 }

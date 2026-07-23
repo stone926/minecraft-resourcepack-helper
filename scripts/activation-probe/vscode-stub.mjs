@@ -122,6 +122,7 @@ export function createVscodeStub(options = {}) {
       activeTextEditor: undefined,
       visibleTextEditors: [],
       createTreeView: disposable,
+      registerWebviewViewProvider: disposable,
       createTextEditorDecorationType: disposable,
       onDidChangeActiveTextEditor: event,
       onDidChangeVisibleTextEditors: event,

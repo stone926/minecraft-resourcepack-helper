@@ -40,6 +40,7 @@
   "command.title.rsglPreviewWorkspaceBuild": "RSGL: Preview Workspace Builds",
   "command.title.rsglRefreshWorkspace": "RSGL: Refresh Workspace Resources and Diagnostics",
   "viewContainer.title.resources": "Minecraft Resources",
+  "view.name.resourceSearch": "Resource Search",
   "view.name.resourceGraph": "Resource Relations",
   "schema.packMcmeta.url": "./assets/linters/en/pack.mcmeta.json",
   "schema.blockstates.url": "./assets/linters/en/blockstates.json",

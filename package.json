@@ -278,6 +278,11 @@
     "views": {
       "mcResHelperResources": [
         {
+          "id": "McResHelper.resourceSearch",
+          "name": "%view.name.resourceSearch%",
+          "type": "webview"
+        },
+        {
           "id": "McResHelper.resourceGraph",
           "name": "%view.name.resourceGraph%"
         }

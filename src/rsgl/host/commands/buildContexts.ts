@@ -36,25 +36,19 @@ export function isDirectoryBuildContext(context: RsglFileBuildContext): context 
   return "sourceRoot" in context;
 }
 
-export async function resolveFileBuildContext(uri: vscode.Uri | undefined): Promise<RsglFileBuildContext | null> {
-  const document = await resolveRsglDocumentOrShowError(uri);
-  if (!document) {
-    return null;
-  }
-
-  if (document.isDirty) {
-    const saved = await document.save();
-    if (!saved) {
-      await vscode.window.showErrorMessage(vscode.l10n.t("Save the RSGL file before building."));
-      return null;
-    }
-  }
-
-  const outputRoot = await resolveOutputRoot(document.fileName);
-  return outputRoot ? { sourceFileName: document.fileName, outputRoot } : null;
+export async function resolveFileBuildContext(
+  uri: vscode.Uri | undefined
+): Promise<RsglDirectoryBuildContext | null> {
+  return resolveAuthoritativeProjectBuildContext(uri);
 }
 
 export async function resolveDirectoryBuildContext(uri: vscode.Uri | undefined): Promise<RsglDirectoryBuildContext | null> {
+  return resolveAuthoritativeProjectBuildContext(uri);
+}
+
+async function resolveAuthoritativeProjectBuildContext(
+  uri: vscode.Uri | undefined
+): Promise<RsglDirectoryBuildContext | null> {
   const document = await resolveRsglDocumentOrShowError(uri);
   if (!document) {
     return null;
@@ -65,6 +59,10 @@ export async function resolveDirectoryBuildContext(uri: vscode.Uri | undefined):
     sourceRoot = resolveProjectSourceRoot(document.fileName);
   } catch (error) {
     await showProjectConfigurationError(error);
+    return null;
+  }
+  if (!isRsglPathInsideOrEqual(document.fileName, sourceRoot)) {
+    await vscode.window.showErrorMessage(vscode.l10n.t("The current RSGL file is outside the configured source directory: {0}", sourceRoot));
     return null;
   }
   const saved = await saveRsglDocumentsInSourceRoot(sourceRoot);

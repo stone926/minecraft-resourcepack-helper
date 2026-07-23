@@ -88,6 +88,35 @@ describe("RSGL generated resource provider", () => {
     connection.dispose();
   });
 
+  it("projects Windows source origins across Node and VS Code URI serializations", async () => {
+    const generated = {
+      ...resource("windows"),
+      sourceOrigins: [{
+        uri: "file:///E:/.minecraft/resourcepacks/better_textures/rsgl/leaves.rsgl",
+        range: { start: 10, end: 20 },
+        documentVersion: 7,
+        documentSignature: "document-r7"
+      }]
+    };
+    const source = new StubSnapshotSource(request => okResponse(request, [generated]));
+    const universe = new ResourceUniverseService();
+    const provider = createProvider(source);
+    const connection = new RsglGeneratedProviderConnection(universe, provider);
+    await connection.refreshProject("project");
+
+    const [projection] = universe.getDocumentProjections({
+      uri: "file:///e%3A/.minecraft/resourcepacks/better_textures/rsgl/leaves.rsgl",
+      fileName: "E:\\.minecraft\\resourcepacks\\better_textures\\rsgl\\leaves.rsgl",
+      languageId: "rsgl"
+    }, "project");
+
+    assert.deepStrictEqual(
+      projection.resources.map(producer => producer.producerId),
+      [producerId("windows")]
+    );
+    connection.dispose();
+  });
+
   it("retains last-known siblings for partial and unavailable responses", async () => {
     let responseNumber = 0;
     const source = new StubSnapshotSource(request => {
