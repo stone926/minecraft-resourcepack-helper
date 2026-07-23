@@ -507,6 +507,214 @@ describe("RSGL generated contribution bridge", () => {
     await bridge.shutdown();
     await controller.dispose();
   });
+
+  it("keeps the committed ownership refresh on the critical path and rescans physical assets in the background", async () => {
+    const context = projectContext();
+    const host = new SnapshotRuntime();
+    const controller = new RsglRuntimeController(async () => host, {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const physicalSource = new BlockingPhysicalSource(context);
+    const physicalRegistration = universe.registerProvider(
+      new PhysicalAssetContributionProvider(physicalSource)
+    );
+    const timer = new BridgeTimerHost();
+    const materializedBytes = Buffer.from("generated model");
+    const manifestUri = `${context.outputPackRootUri}/.rsgl/manifests/project.json`;
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller,
+      {
+        backgroundRefreshDelayMs: 250,
+        backgroundRefreshTimerHost: timer,
+        listDirectoryUris: async () => [manifestUri],
+        readTextUri: async () => ownershipManifest(context, hashBytes(materializedBytes)),
+        readBinaryUri: async uri => uri.endsWith(outputPath) ? materializedBytes : undefined
+      }
+    );
+    await bridge.refreshProject(context.projectId);
+    assert.strictEqual(physicalSource.scans, 1);
+
+    physicalSource.blockNextScan();
+    const invalidation = {
+      version: 1,
+      transactionId: "transaction-background-physical",
+      projectId: context.projectId,
+      ownershipRevision: "ownership-r1",
+      state: "committed",
+      changedUris: [`${context.outputPackRootUri}/${outputPath}`],
+      deletedUris: [],
+      manifestUri
+    } as const;
+
+    assert.strictEqual(await bridge.acceptMaterializationInvalidation(invalidation), true);
+    assert.strictEqual(
+      physicalSource.scans,
+      1,
+      "the build callback must not wait for a full physical rescan"
+    );
+    assert.strictEqual(
+      universe.index.getCoverage("physical", context.projectId)?.status,
+      "unavailable"
+    );
+
+    timer.advanceBy(0);
+    await physicalSource.blockedScanStarted.promise;
+    assert.strictEqual(physicalSource.scans, 2);
+    physicalSource.releaseBlockedScan();
+    await bridge.whenIdle();
+    assert.strictEqual(
+      universe.index.getCoverage("physical", context.projectId)?.status,
+      "authoritative"
+    );
+
+    await bridge.shutdown();
+    physicalRegistration.dispose();
+    await controller.dispose();
+  });
+
+  it("waits for committed hydration during shutdown without writing late Universe state", async () => {
+    const context = projectContext();
+    const controller = new RsglRuntimeController(async () => new SnapshotRuntime(), {
+      mode: "auto",
+      hasActiveProject: true
+    });
+    const universe = new ResourceUniverseService();
+    const manifestUri = `${context.outputPackRootUri}/.rsgl/manifests/project.json`;
+    const materializedBytes = Buffer.from("generated model");
+    const manifestReadStarted = deferred<void>();
+    const manifestReadRelease = deferred<string>();
+    const bridge = new RsglGeneratedContributionBridge(
+      new ProjectStore(context),
+      universe,
+      controller,
+      {
+        listDirectoryUris: async () => [manifestUri],
+        readTextUri: async () => {
+          manifestReadStarted.resolve();
+          return manifestReadRelease.promise;
+        },
+        readBinaryUri: async uri => uri.endsWith(outputPath)
+          ? materializedBytes
+          : undefined
+      }
+    );
+    const application = bridge.acceptMaterializationInvalidation(
+      committedMaterializationInvalidation(
+        context,
+        manifestUri,
+        "transaction-shutdown-hydration"
+      )
+    );
+    await manifestReadStarted.promise;
+
+    let shutdownSettled = false;
+    const shutdown = bridge.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await settleAsyncWork();
+    const settledBeforeRelease = shutdownSettled;
+    manifestReadRelease.resolve(ownershipManifest(context, hashBytes(materializedBytes)));
+    assert.strictEqual(await application, false);
+    await shutdown;
+
+    assert.strictEqual(
+      settledBeforeRelease,
+      false,
+      "shutdown must keep the committed manifest application in its idle boundary"
+    );
+    assert.strictEqual(universe.index.getCoverage("rsgl", context.projectId), undefined);
+    assert.deepStrictEqual(universe.registry.list().map(provider => provider.providerId), []);
+
+    await controller.dispose();
+  });
+
+  it("aborts an active physical refresh before waiting for shutdown", async () => {
+    const fixture = await createBackgroundPhysicalFixture();
+    fixture.physicalSource.blockNextScan();
+    assert.strictEqual(
+      await fixture.bridge.acceptMaterializationInvalidation(
+        committedMaterializationInvalidation(
+          fixture.context,
+          fixture.manifestUri,
+          "transaction-shutdown-physical"
+        )
+      ),
+      true
+    );
+    fixture.timer.advanceBy(0);
+    await fixture.physicalSource.blockedScanStarted.promise;
+
+    let shutdownSettled = false;
+    const shutdown = fixture.bridge.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await settleUntil(() => shutdownSettled);
+    const settledBeforeRelease = shutdownSettled;
+    const abortedBeforeRelease = fixture.physicalSource.blockedScanAborted;
+    fixture.physicalSource.releaseBlockedScan();
+    await shutdown;
+
+    assert.strictEqual(
+      abortedBeforeRelease,
+      true,
+      "shutdown must abort the ResourceUniverse consumer for the active physical scan"
+    );
+    assert.strictEqual(
+      settledBeforeRelease,
+      true,
+      "shutdown must not wait for an uncooperative physical source to release"
+    );
+
+    fixture.physicalRegistration.dispose();
+    await fixture.controller.dispose();
+  });
+
+  it("aborts an active physical refresh when the generated project is forgotten", async () => {
+    const fixture = await createBackgroundPhysicalFixture();
+    fixture.physicalSource.blockNextScan();
+    assert.strictEqual(
+      await fixture.bridge.acceptMaterializationInvalidation(
+        committedMaterializationInvalidation(
+          fixture.context,
+          fixture.manifestUri,
+          "transaction-forget-physical"
+        )
+      ),
+      true
+    );
+    fixture.timer.advanceBy(0);
+    await fixture.physicalSource.blockedScanStarted.promise;
+
+    fixture.bridge.connection.dispose();
+    let idle = false;
+    const idlePromise = fixture.bridge.whenIdle().then(() => {
+      idle = true;
+    });
+    await settleUntil(() => idle);
+    const idleBeforeRelease = idle;
+    const abortedBeforeRelease = fixture.physicalSource.blockedScanAborted;
+    fixture.physicalSource.releaseBlockedScan();
+    await idlePromise;
+
+    assert.strictEqual(
+      abortedBeforeRelease,
+      true,
+      "forgetting the generated project must abort its active physical scan"
+    );
+    assert.strictEqual(
+      idleBeforeRelease,
+      true,
+      "forgetting a project must let the scheduler become idle without the source releasing"
+    );
+
+    await fixture.bridge.shutdown();
+    fixture.physicalRegistration.dispose();
+    await fixture.controller.dispose();
+  });
 });
 
 const producerId = "rsgl:project:generated";
@@ -714,6 +922,55 @@ function projectContext(): ResourcePackProjectContextDto {
   };
 }
 
+async function createBackgroundPhysicalFixture(): Promise<{
+  context: ResourcePackProjectContextDto;
+  controller: RsglRuntimeController;
+  physicalRegistration: { dispose(): void };
+  physicalSource: BlockingPhysicalSource;
+  timer: BridgeTimerHost;
+  manifestUri: string;
+  bridge: RsglGeneratedContributionBridge;
+}> {
+  const context = projectContext();
+  const host = new SnapshotRuntime();
+  const controller = new RsglRuntimeController(async () => host, {
+    mode: "auto",
+    hasActiveProject: true
+  });
+  const universe = new ResourceUniverseService();
+  const physicalSource = new BlockingPhysicalSource(context);
+  const physicalRegistration = universe.registerProvider(
+    new PhysicalAssetContributionProvider(physicalSource)
+  );
+  const timer = new BridgeTimerHost();
+  const materializedBytes = Buffer.from("generated model");
+  const manifestUri = `${context.outputPackRootUri}/.rsgl/manifests/project.json`;
+  const bridge = new RsglGeneratedContributionBridge(
+    new ProjectStore(context),
+    universe,
+    controller,
+    {
+      backgroundRefreshDelayMs: 250,
+      backgroundRefreshTimerHost: timer,
+      listDirectoryUris: async () => [manifestUri],
+      readTextUri: async () => ownershipManifest(context, hashBytes(materializedBytes)),
+      readBinaryUri: async uri => uri.endsWith(outputPath)
+        ? materializedBytes
+        : undefined
+    }
+  );
+  await bridge.refreshProject(context.projectId);
+  return {
+    context,
+    controller,
+    physicalRegistration,
+    physicalSource,
+    timer,
+    manifestUri,
+    bridge
+  };
+}
+
 function hashBytes(value: Uint8Array): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
@@ -734,6 +991,29 @@ function deferred<T>(): Deferred<T> {
 async function settleAsyncWork(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+async function settleUntil(predicate: () => boolean, attempts = 32): Promise<void> {
+  for (let attempt = 0; attempt < attempts && !predicate(); attempt++) {
+    await Promise.resolve();
+  }
+}
+
+function committedMaterializationInvalidation(
+  context: ResourcePackProjectContextDto,
+  manifestUri: string,
+  transactionId: string
+) {
+  return {
+    version: 1,
+    transactionId,
+    projectId: context.projectId,
+    ownershipRevision: "ownership-r1",
+    state: "committed",
+    changedUris: [`${context.outputPackRootUri}/${outputPath}`],
+    deletedUris: [],
+    manifestUri
+  } as const;
 }
 
 function ownershipManifest(context: ResourcePackProjectContextDto, contentHash: string): string {
@@ -766,7 +1046,11 @@ class OwnershipAwarePhysicalSource implements PhysicalAssetProjectSource {
     return { dispose: () => this.lookup === lookup && (this.lookup = undefined) };
   }
 
-  public async scanProject(request: ResourceContributionRequest): Promise<PhysicalAssetProjectScan> {
+  public async scanProject(
+    request: ResourceContributionRequest,
+    signal: AbortSignal
+  ): Promise<PhysicalAssetProjectScan> {
+    void signal;
     this.lastOwnedOutputPaths = this.lookup?.getOwnedOutputPaths(request.projectId) ?? new Set();
     this.lastOwnershipRevision = this.lookup?.getOwnershipRevision(request.projectId);
     return {
@@ -790,13 +1074,54 @@ class FailingPhysicalSource extends OwnershipAwarePhysicalSource {
   public failNextScan = false;
 
   public override async scanProject(
-    request: ResourceContributionRequest
+    request: ResourceContributionRequest,
+    signal: AbortSignal
   ): Promise<PhysicalAssetProjectScan> {
     if (this.failNextScan) {
       this.failNextScan = false;
       throw new Error("synthetic physical refresh failure");
     }
-    return super.scanProject(request);
+    return super.scanProject(request, signal);
+  }
+}
+
+class BlockingPhysicalSource extends OwnershipAwarePhysicalSource {
+  public scans = 0;
+  public blockedScanStarted = deferred<void>();
+  public blockedScanAborted = false;
+  private blockedScanRelease = deferred<void>();
+  private shouldBlockNextScan = false;
+
+  public blockNextScan(): void {
+    this.shouldBlockNextScan = true;
+    this.blockedScanStarted = deferred<void>();
+    this.blockedScanRelease = deferred<void>();
+    this.blockedScanAborted = false;
+  }
+
+  public releaseBlockedScan(): void {
+    this.blockedScanRelease.resolve();
+  }
+
+  public override async scanProject(
+    request: ResourceContributionRequest,
+    signal: AbortSignal
+  ): Promise<PhysicalAssetProjectScan> {
+    this.scans++;
+    if (this.shouldBlockNextScan) {
+      this.shouldBlockNextScan = false;
+      const markAborted = (): void => {
+        this.blockedScanAborted = true;
+      };
+      signal.addEventListener("abort", markAborted, { once: true });
+      if (signal.aborted) {
+        markAborted();
+      }
+      this.blockedScanStarted.resolve();
+      await this.blockedScanRelease.promise;
+      signal.removeEventListener("abort", markAborted);
+    }
+    return super.scanProject(request, signal);
   }
 }
 

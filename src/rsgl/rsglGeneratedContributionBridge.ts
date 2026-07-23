@@ -57,7 +57,10 @@ export class RsglGeneratedContributionBridge {
   private readonly activeSnapshotRequests = new Map<string, number>();
   private readonly appliedMaterializationTransactions = new Set<string>();
   private readonly backgroundRefreshScheduler: BackgroundRefreshScheduler<string>;
+  private readonly physicalRefreshScheduler: BackgroundRefreshScheduler<string>;
+  private readonly physicalRefreshControllers = new Map<string, AbortController>();
   private readonly hydrationPromises = new Map<string, Promise<void>>();
+  private readonly materializationInvalidationPromises = new Set<Promise<boolean>>();
   private readonly hydratedContextRevisions = new Map<string, string>();
   private readonly coupledProviderIds: readonly string[];
   private readonly controllerSubscription: { dispose(): void };
@@ -85,6 +88,11 @@ export class RsglGeneratedContributionBridge {
       delayMs: options.backgroundRefreshDelayMs,
       timerHost: options.backgroundRefreshTimerHost,
       run: projectId => this.runBackgroundRefresh(projectId)
+    });
+    this.physicalRefreshScheduler = new BackgroundRefreshScheduler({
+      delayMs: options.backgroundRefreshDelayMs,
+      timerHost: options.backgroundRefreshTimerHost,
+      run: projectId => this.runPhysicalRefresh(projectId)
     });
     const physicalOwnership = bindPhysicalOwnership(
       universe.registry.get("physical"),
@@ -228,39 +236,34 @@ export class RsglGeneratedContributionBridge {
       this.invalidatePhysicalProject(context.projectId);
       return true;
     }
+    const application = this.applyCommittedMaterializationInvalidation(invalidation, context);
+    this.materializationInvalidationPromises.add(application);
     try {
-      const hydrated = await hydrateRsglMaterializations(context, this.options, {
-        manifestUri: invalidation.manifestUri,
-        projectId: invalidation.projectId,
-        ownershipRevision: invalidation.ownershipRevision
-      });
-      if (!hydrated.expectedManifestVerified) {
-        throw new Error("The committed ownership manifest could not be verified.");
-      }
-      this.provider.replaceMaterializations(hydrated.snapshot);
-      this.hydratedContextRevisions.set(context.projectId, context.contextRevision);
-      this.backgroundRefreshScheduler.cancel(context.projectId);
-      await this.refreshCoupledProject(context.projectId);
-      this.rememberMaterializationTransaction(invalidation.transactionId);
-      return true;
-    } catch {
-      this.universe.invalidateProviderProject(this.provider.providerId, context.projectId, "stale");
-      this.invalidatePhysicalProject(context.projectId);
-      return false;
+      return await application;
+    } finally {
+      this.materializationInvalidationPromises.delete(application);
     }
   }
 
   /** Used by tests and orderly shutdown to observe coalesced invalidation reloads. */
   public async whenIdle(): Promise<void> {
-    while (this.hydrationPromises.size > 0) {
+    while (
+      this.hydrationPromises.size > 0
+      || this.materializationInvalidationPromises.size > 0
+    ) {
       await Promise.allSettled(
         [
           this.backgroundRefreshScheduler.whenIdle(),
-          ...this.hydrationPromises.values()
+          this.physicalRefreshScheduler.whenIdle(),
+          ...this.hydrationPromises.values(),
+          ...this.materializationInvalidationPromises
         ]
       );
     }
-    await this.backgroundRefreshScheduler.whenIdle();
+    await Promise.all([
+      this.backgroundRefreshScheduler.whenIdle(),
+      this.physicalRefreshScheduler.whenIdle()
+    ]);
   }
 
   public dispose(): void {
@@ -379,6 +382,48 @@ export class RsglGeneratedContributionBridge {
     return hydration;
   }
 
+  private async applyCommittedMaterializationInvalidation(
+    invalidation: MaterializationInvalidation,
+    context: ResourcePackProjectContextDto
+  ): Promise<boolean> {
+    try {
+      const hydrated = await hydrateRsglMaterializations(context, this.options, {
+        manifestUri: invalidation.manifestUri,
+        projectId: invalidation.projectId,
+        ownershipRevision: invalidation.ownershipRevision
+      });
+      if (!this.isCurrentTrackedContext(context)) {
+        return false;
+      }
+      if (!hydrated.expectedManifestVerified) {
+        throw new Error("The committed ownership manifest could not be verified.");
+      }
+      this.provider.replaceMaterializations(hydrated.snapshot);
+      this.hydratedContextRevisions.set(context.projectId, context.contextRevision);
+      this.invalidatePhysicalProject(context.projectId);
+      this.backgroundRefreshScheduler.cancel(context.projectId);
+      await this.connection.refreshProject(context.projectId);
+      if (!this.isCurrentTrackedContext(context)) {
+        return false;
+      }
+      if (this.coupledProviderIds.length > 0) {
+        this.physicalRefreshScheduler.schedule(context.projectId, 0);
+      }
+      this.rememberMaterializationTransaction(invalidation.transactionId);
+      return true;
+    } catch {
+      if (this.isCurrentTrackedContext(context)) {
+        this.universe.invalidateProviderProject(
+          this.provider.providerId,
+          context.projectId,
+          "stale"
+        );
+        this.invalidatePhysicalProject(context.projectId);
+      }
+      return false;
+    }
+  }
+
   private refreshCoupledProject(
     projectId: string,
     scope: ResourceCoverageScope = { projectId },
@@ -461,6 +506,31 @@ export class RsglGeneratedContributionBridge {
     }
   }
 
+  private async runPhysicalRefresh(projectId: string): Promise<void> {
+    if (this.disposed
+      || !this.relevantProjectIds.has(projectId)
+      || !this.projects.getCachedContext(projectId)
+      || this.coupledProviderIds.length === 0) {
+      return;
+    }
+    const controller = new AbortController();
+    this.physicalRefreshControllers.set(projectId, controller);
+    try {
+      await Promise.all(this.coupledProviderIds.map(providerId =>
+        this.universe.refreshProviderProject(
+          providerId,
+          projectId,
+          { projectId },
+          controller.signal
+        )
+      ));
+    } finally {
+      if (this.physicalRefreshControllers.get(projectId) === controller) {
+        this.physicalRefreshControllers.delete(projectId);
+      }
+    }
+  }
+
   private handleRuntimeState(state: RsglRuntimeState): void {
     if (state.kind !== "ready") {
       this.unbindRuntime();
@@ -493,7 +563,26 @@ export class RsglGeneratedContributionBridge {
     this.hydrationPromises.delete(projectId);
     this.provider.removeProject(projectId);
     this.backgroundRefreshScheduler.cancel(projectId);
+    this.physicalRefreshScheduler.cancel(projectId);
+    this.abortPhysicalRefresh(projectId);
     void this.controller.setProjectAvailable(this.projects.getCachedContexts().length > 0);
+  }
+
+  private isCurrentTrackedContext(context: ResourcePackProjectContextDto): boolean {
+    const current = this.projects.getCachedContext(context.projectId);
+    return !this.disposed
+      && this.relevantProjectIds.has(context.projectId)
+      && current?.contextRevision === context.contextRevision;
+  }
+
+  private abortPhysicalRefresh(projectId: string): void {
+    this.physicalRefreshControllers.get(projectId)?.abort();
+  }
+
+  private abortAllPhysicalRefreshes(): void {
+    for (const controller of this.physicalRefreshControllers.values()) {
+      controller.abort();
+    }
   }
 
   private rememberMaterializationTransaction(transactionId: string): void {
@@ -514,10 +603,12 @@ export class RsglGeneratedContributionBridge {
     this.disposed = true;
     this.controllerSubscription.dispose();
     this.universeSubscription.dispose();
-    this.physicalOwnershipSubscription?.dispose();
     this.unbindRuntime();
     this.relevantProjectIds.clear();
     this.backgroundRefreshScheduler.dispose();
+    this.physicalRefreshScheduler.dispose();
+    this.abortAllPhysicalRefreshes();
+    this.physicalOwnershipSubscription?.dispose();
     this.connection.dispose();
     await this.whenIdle();
   }

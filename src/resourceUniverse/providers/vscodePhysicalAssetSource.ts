@@ -15,6 +15,7 @@ import {
   type SerializedResourceUri
 } from "../../../packages/resource-project/src";
 import type { ResourcePackProjectService } from "../../resourceProject";
+import { mapWithConcurrency } from "../../utils/asyncWorkPool";
 import type { ResourceContributionRequest, ResourceLayerRole } from "../core";
 import type { ArchiveResourceStore } from "../virtualFs/archiveResourceStore";
 import type { PhysicalAssetScannedDocument } from "./physicalAssetReferenceAdapter";
@@ -187,7 +188,7 @@ export class VscodePhysicalAssetSource implements PhysicalAssetProjectSource {
       }
     }
 
-    const loaded = await mapLimit([...byUri.values()], 16, item =>
+    const loaded = await mapWithConcurrency([...byUri.values()], 16, item =>
       loadScannedDocument(item.uri, item.assetsRootUri, layer, signal)
     );
     const effectiveDocuments = new Map<string, PhysicalAssetScannedDocument>();
@@ -400,21 +401,4 @@ function throwIfAborted(signal: AbortSignal): void {
       ? signal.reason
       : new Error("Physical asset scan was cancelled.");
   }
-}
-
-async function mapLimit<T, U>(
-  values: readonly T[],
-  limit: number,
-  mapper: (value: T) => Promise<U>
-): Promise<U[]> {
-  const results = new Array<U>(values.length);
-  let nextIndex = 0;
-  async function worker(): Promise<void> {
-    while (nextIndex < values.length) {
-      const index = nextIndex++;
-      results[index] = await mapper(values[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, () => worker()));
-  return results;
 }

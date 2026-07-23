@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { mapWithConcurrency } from "./asyncWorkPool";
 import {
   createResourceReferencePathResolver,
   generateReferenceRedirectPath,
@@ -329,7 +330,7 @@ async function collectResourceDocuments(
   }
 
   const fileUris = (await workspaceCache.getResourceReferenceUris()).filter(uri => !documentsByKey.has(resourceUriKey(uri)));
-  const fileDocuments = await mapLimit(fileUris, 24, async uri => {
+  const fileDocuments = await mapWithConcurrency(fileUris, 24, async uri => {
     try {
       return await loadResourceGraphDocument(uri);
     } catch {
@@ -372,20 +373,4 @@ function uniqueResolvedReferences(references: ResolvedResourceReference[]): Reso
 function getDocumentVersion(document: ResourceGraphDocument): number | undefined {
   const version = (document as { version?: unknown }).version;
   return typeof version === "number" ? version : undefined;
-}
-
-async function mapLimit<T, U>(values: T[], limit: number, mapper: (value: T) => Promise<U>): Promise<U[]> {
-  const results = new Array<U>(values.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIndex < values.length) {
-      const currentIndex = nextIndex;
-      nextIndex++;
-      results[currentIndex] = await mapper(values[currentIndex]);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, () => worker()));
-  return results;
 }

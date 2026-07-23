@@ -75,6 +75,7 @@ export function runRsglMaterializationTransactionSync(
 
   const changed: string[] = [];
   const deleted: string[] = [];
+  const committedParentDirectories = new Set<string>();
   try {
     revalidateTransaction(request, prepared, host);
     for (const entry of prepared.preview.writePlan.entries) {
@@ -85,7 +86,7 @@ export function runRsglMaterializationTransactionSync(
         throw operationError("cancel", undefined, new Error("Materialization was cancelled."));
       }
       revalidateOutput(entry.outputPath, prepared, host);
-      host.createDirectory(path.dirname(entry.absolutePath));
+      createDirectoryOnce(path.dirname(entry.absolutePath), committedParentDirectories, host);
       try {
         host.replaceFile(stagedOutputPath(prepared, entry.outputPath), entry.absolutePath);
       } catch (error) {
@@ -115,7 +116,11 @@ export function runRsglMaterializationTransactionSync(
       throw operationError("cancel", undefined, new Error("Materialization was cancelled."));
     }
     revalidateManifestFingerprint(request, prepared, host);
-    host.createDirectory(path.dirname(prepared.preview.manifestPath));
+    createDirectoryOnce(
+      path.dirname(prepared.preview.manifestPath),
+      committedParentDirectories,
+      host
+    );
     try {
       host.replaceFile(prepared.stagedManifestPath, prepared.preview.manifestPath);
     } catch (error) {
@@ -195,6 +200,7 @@ function stageTransaction(
   host: RsglSyncMaterializationHost,
   request: RsglMaterializationRequest
 ): void {
+  const createdDirectories = new Set<string>();
   for (const entry of prepared.preview.writePlan.entries) {
     if (entry.status === "unchanged") {
       continue;
@@ -202,18 +208,18 @@ function stageTransaction(
     if (cancelled(request)) {
       throw new Error("Materialization was cancelled.");
     }
-    const payload = prepared.payloads.find(candidate => candidate.file.outputPath === entry.outputPath);
+    const payload = prepared.payloadByOutputPath.get(entry.outputPath);
     if (!payload) {
       throw new Error(`Missing materialization payload for '${entry.outputPath}'.`);
     }
     const staged = stagedOutputPath(prepared, entry.outputPath);
-    host.createDirectory(path.dirname(staged));
+    createDirectoryOnce(path.dirname(staged), createdDirectories, host);
     host.writeFile(staged, payload.content);
   }
   if (cancelled(request)) {
     throw new Error("Materialization was cancelled.");
   }
-  host.createDirectory(path.dirname(prepared.stagedManifestPath));
+  createDirectoryOnce(path.dirname(prepared.stagedManifestPath), createdDirectories, host);
   host.writeFile(prepared.stagedManifestPath, prepared.manifestContent);
 }
 
@@ -308,6 +314,18 @@ function cleanupStaging(prepared: RsglPreparedMaterialization, host: RsglSyncMat
   } catch {
     // A private, hashed staging path is safe to leave for later maintenance.
   }
+}
+
+function createDirectoryOnce(
+  directory: string,
+  createdDirectories: Set<string>,
+  host: RsglSyncMaterializationHost
+): void {
+  if (createdDirectories.has(directory)) {
+    return;
+  }
+  createdDirectories.add(directory);
+  host.createDirectory(directory);
 }
 
 function cancelled(request: RsglMaterializationRequest): boolean {

@@ -26,6 +26,10 @@ import {
   type RsglResourceReferenceConsumerContext
 } from "./resourceReferenceConsumers";
 import { validateResourceValueConsumer } from "./resourceValueValidation";
+import {
+  cachedExternDeclarationSelection,
+  type RsglExternDeclarationSelection
+} from "./validationPass";
 
 const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
 
@@ -291,8 +295,15 @@ function resolveExternDeclaration(
   diagnostics: RsglCompileDiagnostic[],
   range: ValidationRange
 ): RsglExternDeclaration | null {
-  const resourceKind = getExternResourceKindForTargetKind(kind);
-  if (!resourceKind) {
+  const normalizedScopeFile = normalizeValidationFileName(externScopeFile);
+  const selection = cachedExternDeclarationSelection(
+    options,
+    kind,
+    id,
+    normalizedScopeFile,
+    () => selectExternDeclaration(kind, id, normalizedScopeFile, options.externDeclarations ?? [])
+  );
+  if (selection.kind === "unsupported") {
     pushDiagnosticAtRange(
       diagnostics,
       "rsgl.undeclaredExternalResource",
@@ -303,20 +314,7 @@ function resolveExternDeclaration(
     );
     return null;
   }
-
-  const matches = (options.externDeclarations ?? []).filter(declaration =>
-    declaration.resourceKind === resourceKind
-    && externResourcePatternMatches(declaration.pattern, id)
-  );
-  const normalizedSourceFile = normalizeValidationFileName(externScopeFile);
-  const localMatches = matches.filter(declaration =>
-    declaration.fileName !== undefined
-    && normalizeValidationFileName(declaration.fileName) === normalizedSourceFile
-  );
-  const candidates = localMatches.length > 0
-    ? localMatches
-    : matches.filter(declaration => declaration.fileName === undefined);
-  if (candidates.length === 0) {
+  if (selection.kind === "undeclared") {
     pushDiagnosticAtRange(
       diagnostics,
       "rsgl.undeclaredExternalResource",
@@ -326,6 +324,34 @@ function resolveExternDeclaration(
       diagnosticFile
     );
     return null;
+  }
+  return selection.declaration;
+}
+
+function selectExternDeclaration(
+  kind: RsglResourceExistenceKind,
+  id: string,
+  normalizedScopeFile: string,
+  declarations: readonly RsglExternDeclaration[]
+): RsglExternDeclarationSelection {
+  const resourceKind = getExternResourceKindForTargetKind(kind);
+  if (!resourceKind) {
+    return { kind: "unsupported" };
+  }
+
+  const matches = declarations.filter(declaration =>
+    declaration.resourceKind === resourceKind
+    && externResourcePatternMatches(declaration.pattern, id)
+  );
+  const localMatches = matches.filter(declaration =>
+    declaration.fileName !== undefined
+    && normalizeValidationFileName(declaration.fileName) === normalizedScopeFile
+  );
+  const candidates = localMatches.length > 0
+    ? localMatches
+    : matches.filter(declaration => declaration.fileName === undefined);
+  if (candidates.length === 0) {
+    return { kind: "undeclared" };
   }
 
   const sorted = [...candidates].sort((left, right) =>
@@ -340,7 +366,10 @@ function resolveExternDeclaration(
   const sourceCandidates = preferredSource
     ? equallySpecific.filter(candidate => candidate.source === preferredSource)
     : equallySpecific;
-  return sourceCandidates.find(candidate => candidate.skipExistenceCheck) ?? sourceCandidates[0];
+  return {
+    kind: "selected",
+    declaration: sourceCandidates.find(candidate => candidate.skipExistenceCheck) ?? sourceCandidates[0]
+  };
 }
 
 function pushResourceDiagnostic(

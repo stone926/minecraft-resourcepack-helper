@@ -25,6 +25,7 @@ import {
   beginResourceValueValidation,
   completeResourceValueValidation
 } from "./resourceValueValidation";
+import { createResourceValidationPassOptions } from "./validationPass";
 
 export type {
   RsglExternalResourceUsage,
@@ -80,10 +81,9 @@ export function canonicalizeAndValidateResourceUnits(
       .filter(unit => unit.kind === "model" && unit.id && !isExternalResourceUnit(unit))
       .map(unit => [`${unit.id!.namespace}:${unit.id!.path}`, unit])
   );
-  const validationOptions = {
-    ...options,
+  const validationOptions = createResourceValidationPassOptions(options, {
     generatedResourceIds: createGeneratedResourceIndex(units)
-  };
+  });
   const modelResolver = createModelResolver(generatedModels, validationOptions);
   const validationContext: ResourceValidationContext = { modelResolver };
 
@@ -122,10 +122,9 @@ export function validateLegacyItemSourceUnits(
   options: RsglResourceValidationOptions = {}
 ): RsglCompileDiagnostic[] {
   const diagnostics: RsglCompileDiagnostic[] = [];
-  const validationOptions: RsglResourceValidationOptions = {
-    ...options,
+  const validationOptions = createResourceValidationPassOptions(options, {
     targetPackFormat: undefined
-  };
+  });
 
   for (const unit of units) {
     if (unit.kind !== "item" || isExternalResourceUnit(unit)) {

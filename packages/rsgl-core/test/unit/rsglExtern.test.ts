@@ -114,6 +114,59 @@ describe("RSGL extern declarations", () => {
     assert.strictEqual(externalUnits(result)[0].external?.skipExistenceCheck, false);
   });
 
+  it("resolves repeated extern references once per validation pass and refreshes the next compile", () => {
+    const textureId = "minecraft:block/repeated_resolution";
+    const candidatePath = path.resolve("extern-resolution", "repeated_resolution.png");
+    const source = [
+      `extern custom texture ${textureId}`,
+      "model block repeated_resolution {",
+      "  textures {",
+      ...Array.from({ length: 64 }, (_, index) => `    slot_${index}: ${textureId}`),
+      "  }",
+      "}"
+    ];
+    let resolvedPath: string | null = null;
+    let resolutionCalls = 0;
+    let usages: Array<{ resolvedPath?: string; range: string }> = [];
+    const compile = (): RsglCompileResult => compileSource(source, {
+      externResourceResolution: (resourceSource, kind, id) => {
+        resolutionCalls++;
+        assert.deepStrictEqual([resourceSource, kind, id], ["custom", "texture", textureId]);
+        return {
+          resolvedPath,
+          candidatePaths: [candidatePath]
+        };
+      },
+      onExternResourceUsed: usage => {
+        usages.push({
+          resolvedPath: usage.resolvedPath,
+          range: `${usage.range.start}:${usage.range.end}`
+        });
+      }
+    });
+
+    const missing = compile();
+
+    assert.strictEqual(resolutionCalls, 1);
+    assert.strictEqual(
+      missing.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.textureNotFound").length,
+      64
+    );
+    assert.strictEqual(usages.length, 64);
+    assert.strictEqual(new Set(usages.map(usage => usage.range)).size, 64);
+    assert.ok(usages.every(usage => usage.resolvedPath === undefined));
+
+    resolvedPath = candidatePath;
+    usages = [];
+    const present = compile();
+
+    expectNoDiagnostics(present);
+    assert.strictEqual(resolutionCalls, 2);
+    assert.strictEqual(usages.length, 64);
+    assert.strictEqual(new Set(usages.map(usage => usage.range)).size, 64);
+    assert.ok(usages.every(usage => usage.resolvedPath === candidatePath));
+  });
+
   it("rejects a physically available resource that has no matching extern declaration", () => {
     let physicalResolverCalls = 0;
     const result = compileSource(blockstateUsing("stone", "minecraft:block/stone"), {

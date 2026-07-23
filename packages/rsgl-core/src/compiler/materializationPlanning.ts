@@ -48,6 +48,7 @@ export interface RsglLoadedOwnershipManifests {
 export interface RsglPreparedMaterialization {
   preview: RsglMaterializationPreview;
   payloads: readonly RsglPreparedMaterializationPayload[];
+  payloadByOutputPath: ReadonlyMap<string, RsglPreparedMaterializationPayload>;
   previousContentByPath: ReadonlyMap<string, Uint8Array>;
   manifestContent: Uint8Array;
   manifestFingerprint: string;
@@ -164,6 +165,9 @@ export function createPreparedRsglMaterialization(
 ): RsglPreparedMaterialization {
   const outputRoot = path.resolve(request.outputRoot);
   assertUniqueResolvedOutputPaths(outputRoot, payloads, loaded.manifests);
+  const payloadByOutputPath = new Map(
+    payloads.map(payload => [payload.file.outputPath, payload] as const)
+  );
   const manifest = createRsglOwnershipManifestV2({
     ...request.project,
     buildRevision: materializationRevision(payloads),
@@ -189,7 +193,7 @@ export function createPreparedRsglMaterialization(
     if (entry.action === "conflict") {
       return [];
     }
-    const payload = payloads.find(candidate => candidate.file.outputPath === entry.output.outputPath);
+    const payload = payloadByOutputPath.get(entry.output.outputPath);
     if (!payload) {
       throw new Error(`Missing materialization payload for '${entry.output.outputPath}'.`);
     }
@@ -221,6 +225,7 @@ export function createPreparedRsglMaterialization(
       deletes
     },
     payloads,
+    payloadByOutputPath,
     previousContentByPath,
     manifestContent: encodeText(serializeRsglOwnershipManifestV2(manifest)),
     manifestFingerprint: loaded.fingerprint,

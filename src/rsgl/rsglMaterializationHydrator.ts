@@ -4,6 +4,7 @@ import {
   joinResourceProjectUri,
   type ResourcePackProjectContextDto
 } from "../../packages/resource-project/src";
+import { mapWithConcurrency } from "../utils/asyncWorkPool";
 import {
   parseRsglGeneratedOwnershipManifest,
   projectParsedRsglGeneratedOwnershipManifest,
@@ -38,6 +39,8 @@ interface LoadedManifest {
   actualContentHashes: ReadonlyMap<string, string>;
 }
 
+export const rsglMaterializationHydrationConcurrency = 8;
+
 /** Reads provenance only after a project becomes RSGL-relevant. */
 export async function hydrateRsglMaterializations(
   context: ResourcePackProjectContextDto,
@@ -54,10 +57,16 @@ export async function hydrateRsglMaterializations(
     ...(expected ? [expected.manifestUri] : [])
   ]);
   const issues: string[] = [];
-  const loaded: LoadedManifest[] = [];
-
-  for (const manifestUri of manifestUris) {
-    const text = await safeReadText(host, manifestUri);
+  const manifestTexts = await mapWithConcurrency(
+    manifestUris,
+    rsglMaterializationHydrationConcurrency,
+    async manifestUri => ({
+      uri: manifestUri,
+      text: await safeReadText(host, manifestUri)
+    })
+  );
+  const parsed: Array<Omit<LoadedManifest, "actualContentHashes">> = [];
+  for (const { uri: manifestUri, text } of manifestTexts) {
     if (text === undefined) {
       issues.push(`Ownership manifest could not be read: ${manifestUri}`);
       continue;
@@ -67,26 +76,41 @@ export async function hydrateRsglMaterializations(
       if (manifest.outputPackRootIdentity !== context.localLayer.layerId) {
         throw new Error("outputPackRootIdentity does not match the canonical local layer");
       }
-      const actualContentHashes = new Map<string, string>();
-      for (const file of manifest.files) {
-        const bytes = await safeReadBinary(
-          host,
-          joinResourceProjectUri(context.outputPackRootUri, file.outputPath)
-        );
-        if (bytes !== undefined) {
-          actualContentHashes.set(file.outputPath, sha256(bytes));
-        }
-      }
-      loaded.push({
+      parsed.push({
         uri: manifestUri,
         textHash: sha256(text),
-        manifest,
-        actualContentHashes
+        manifest
       });
     } catch (error) {
       issues.push(`Invalid ownership manifest '${manifestUri}': ${errorMessage(error)}`);
     }
   }
+
+  const outputUris = uniqueSorted(parsed.flatMap(item =>
+    item.manifest.files.map(file =>
+      joinResourceProjectUri(context.outputPackRootUri, file.outputPath)
+    )
+  ));
+  const outputHashes = await mapWithConcurrency(
+    outputUris,
+    rsglMaterializationHydrationConcurrency,
+    async uri => {
+      const bytes = await safeReadBinary(host, uri);
+      return [uri, bytes === undefined ? undefined : sha256(bytes)] as const;
+    }
+  );
+  const hashByUri = new Map(outputHashes.flatMap(([uri, hash]) =>
+    hash === undefined ? [] : [[uri, hash] as const]
+  ));
+  const loaded: LoadedManifest[] = parsed.map(item => ({
+    ...item,
+    actualContentHashes: new Map(item.manifest.files.flatMap(file => {
+      const hash = hashByUri.get(
+        joinResourceProjectUri(context.outputPackRootUri, file.outputPath)
+      );
+      return hash === undefined ? [] : [[file.outputPath, hash] as const];
+    }))
+  }));
 
   const ownedOutputPaths = uniqueSorted(loaded.flatMap(item =>
     item.manifest.files.map(file => file.outputPath)

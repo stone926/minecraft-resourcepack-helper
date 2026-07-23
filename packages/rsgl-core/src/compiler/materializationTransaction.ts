@@ -1,4 +1,6 @@
 import * as path from "node:path";
+import { uniqueValues } from "../../../mc-assets/src";
+import { mapWithConcurrency } from "../asyncWorkPool";
 import {
   createPreparedRsglMaterialization,
   createRsglMaterializationTransactionId,
@@ -22,6 +24,8 @@ import {
 import { createRsglMaterializationResult } from "./materializationResult";
 import { resolveRsglOutputPath } from "./write";
 import { RsglCopySourceReadError, RsglOutputFileReadError } from "./writeErrors";
+
+const materializationIoConcurrency = 8;
 
 /** Reads and classifies every targeted output without mutating the output pack. */
 export async function previewRsglMaterializationTransaction(
@@ -73,6 +77,7 @@ export async function runRsglMaterializationTransaction(
 
   const changed: string[] = [];
   const deleted: string[] = [];
+  const committedParentDirectories = new Set<string>();
   try {
     await revalidateTransaction(request, prepared, host);
     for (const entry of prepared.preview.writePlan.entries) {
@@ -83,7 +88,7 @@ export async function runRsglMaterializationTransaction(
         throw cancellationFailure();
       }
       await revalidateOutput(entry.outputPath, prepared, host);
-      await host.createDirectory(path.dirname(entry.absolutePath));
+      await createDirectoryOnce(path.dirname(entry.absolutePath), committedParentDirectories, host);
       try {
         await host.replaceFile(stagedOutputPath(prepared, entry.outputPath), entry.absolutePath);
       } catch (error) {
@@ -113,7 +118,11 @@ export async function runRsglMaterializationTransaction(
       throw cancellationFailure();
     }
     await revalidateManifestFingerprint(request, prepared, host);
-    await host.createDirectory(path.dirname(prepared.preview.manifestPath));
+    await createDirectoryOnce(
+      path.dirname(prepared.preview.manifestPath),
+      committedParentDirectories,
+      host
+    );
     try {
       await host.replaceFile(prepared.stagedManifestPath, prepared.preview.manifestPath);
     } catch (error) {
@@ -146,40 +155,49 @@ async function prepareTransaction(
   host: RsglAsyncMaterializationHost
 ): Promise<RsglPreparedMaterialization> {
   validateRequestBeforeIo(request);
-  const payloads = [];
-  for (const file of request.files) {
-    let content: Uint8Array;
-    if ("copyFrom" in file) {
-      try {
-        const copyContent = await host.readFile(file.copyFrom);
-        if (copyContent === undefined) {
-          throw new RsglCopySourceReadError(file.copyFrom);
+  const payloads = await mapWithConcurrency(
+    request.files,
+    materializationIoConcurrency,
+    async file => {
+      let content: Uint8Array;
+      if ("copyFrom" in file) {
+        try {
+          const copyContent = await host.readFile(file.copyFrom);
+          if (copyContent === undefined) {
+            throw new RsglCopySourceReadError(file.copyFrom);
+          }
+          content = copyContent;
+        } catch (error) {
+          if (error instanceof RsglCopySourceReadError) {
+            throw error;
+          }
+          throw new RsglCopySourceReadError(file.copyFrom, { cause: error });
         }
-        content = copyContent;
-      } catch (error) {
-        if (error instanceof RsglCopySourceReadError) {
-          throw error;
-        }
-        throw new RsglCopySourceReadError(file.copyFrom, { cause: error });
+      } else {
+        content = Buffer.from(file.content, "utf8");
       }
-    } else {
-      content = Buffer.from(file.content, "utf8");
+      return prepareRsglMaterializationPayload(file, content, request.outputRoot);
     }
-    payloads.push(prepareRsglMaterializationPayload(file, content, request.outputRoot));
-  }
+  );
   const loaded = await loadOwnershipManifests(request, host);
-  const previousContent = new Map<string, Uint8Array>();
-  for (const outputPath of materializationOutputPaths(payloads, loaded.current)) {
-    const absolutePath = resolveRsglOutputPath(request.outputRoot, outputPath);
-    try {
-      const content = await host.readFile(absolutePath);
-      if (content !== undefined) {
-        previousContent.set(outputPath, content);
+  const previousEntries = await mapWithConcurrency(
+    materializationOutputPaths(payloads, loaded.current),
+    materializationIoConcurrency,
+    async outputPath => {
+      const absolutePath = resolveRsglOutputPath(request.outputRoot, outputPath);
+      try {
+        const content = await host.readFile(absolutePath);
+        return content === undefined ? undefined : [outputPath, content] as const;
+      } catch (error) {
+        throw new RsglOutputFileReadError(absolutePath, { cause: error });
       }
-    } catch (error) {
-      throw new RsglOutputFileReadError(absolutePath, { cause: error });
     }
-  }
+  );
+  const previousContent = new Map(
+    previousEntries.filter(
+      (entry): entry is readonly [string, Uint8Array] => entry !== undefined
+    )
+  );
   return createPreparedRsglMaterialization(
     request,
     transactionId,
@@ -194,25 +212,45 @@ async function stageTransaction(
   host: RsglAsyncMaterializationHost,
   request: RsglMaterializationRequest
 ): Promise<void> {
-  for (const entry of prepared.preview.writePlan.entries) {
+  const stagedOutputs = prepared.preview.writePlan.entries.flatMap(entry => {
     if (entry.status === "unchanged") {
-      continue;
+      return [];
     }
-    if (cancelled(request)) {
-      throw cancellationFailure();
-    }
-    const payload = prepared.payloads.find(candidate => candidate.file.outputPath === entry.outputPath);
+    const payload = prepared.payloadByOutputPath.get(entry.outputPath);
     if (!payload) {
       throw new Error(`Missing materialization payload for '${entry.outputPath}'.`);
     }
     const staged = stagedOutputPath(prepared, entry.outputPath);
-    await host.createDirectory(path.dirname(staged));
-    await host.writeFile(staged, payload.content);
-  }
+    return [{ staged, content: payload.content }];
+  });
+  const stagingParentDirectories = uniqueValues([
+    ...stagedOutputs.map(output => path.dirname(output.staged)),
+    path.dirname(prepared.stagedManifestPath)
+  ]);
+
+  await mapWithConcurrency(
+    stagingParentDirectories,
+    materializationIoConcurrency,
+    async directory => {
+      if (cancelled(request)) {
+        throw cancellationFailure();
+      }
+      await host.createDirectory(directory);
+    }
+  );
+  await mapWithConcurrency(
+    stagedOutputs,
+    materializationIoConcurrency,
+    async output => {
+      if (cancelled(request)) {
+        throw cancellationFailure();
+      }
+      await host.writeFile(output.staged, output.content);
+    }
+  );
   if (cancelled(request)) {
     throw cancellationFailure();
   }
-  await host.createDirectory(path.dirname(prepared.stagedManifestPath));
   await host.writeFile(prepared.stagedManifestPath, prepared.manifestContent);
 }
 
@@ -221,15 +259,23 @@ async function revalidateTransaction(
   prepared: RsglPreparedMaterialization,
   host: RsglAsyncMaterializationHost
 ): Promise<void> {
-  await revalidateManifestFingerprint(request, prepared, host);
-  for (const entry of prepared.preview.writePlan.entries) {
-    await revalidateOutput(entry.outputPath, prepared, host);
-  }
-  for (const entry of prepared.preview.deletes) {
-    if (entry.status === "delete") {
-      await revalidateOutput(entry.outputPath, prepared, host);
+  await revalidateManifestFingerprint(request, prepared, host, true);
+  const outputPaths = uniqueValues([
+    ...prepared.preview.writePlan.entries.map(entry => entry.outputPath),
+    ...prepared.preview.deletes
+      .filter(entry => entry.status === "delete")
+      .map(entry => entry.outputPath)
+  ]);
+  await mapWithConcurrency(
+    outputPaths,
+    materializationIoConcurrency,
+    async outputPath => {
+      if (cancelled(request)) {
+        throw cancellationFailure();
+      }
+      await revalidateOutput(outputPath, prepared, host);
     }
-  }
+  );
 }
 
 async function revalidateOutput(
@@ -257,9 +303,10 @@ async function revalidateOutput(
 async function revalidateManifestFingerprint(
   request: RsglMaterializationRequest,
   prepared: RsglPreparedMaterialization,
-  host: RsglAsyncMaterializationHost
+  host: RsglAsyncMaterializationHost,
+  stopIfCancelled = false
 ): Promise<void> {
-  const loaded = await loadOwnershipManifests(request, host);
+  const loaded = await loadOwnershipManifests(request, host, stopIfCancelled);
   if (loaded.fingerprint !== prepared.manifestFingerprint) {
     throw operationError(
       "revalidate",
@@ -271,26 +318,50 @@ async function revalidateManifestFingerprint(
 
 async function loadOwnershipManifests(
   request: RsglMaterializationRequest,
-  host: RsglAsyncMaterializationHost
+  host: RsglAsyncMaterializationHost,
+  stopIfCancelled = false
 ): Promise<RsglLoadedOwnershipManifests> {
   const directory = resolveRsglOutputPath(request.outputRoot, rsglOwnershipManifestDirectory);
   const names = await host.readDirectory(directory);
-  const raw: Array<{ fileName: string; content: Uint8Array }> = [];
-  for (const name of [...names].sort((left, right) => left.localeCompare(right, "en"))) {
-    if (!name.toLowerCase().endsWith(".json")) {
-      continue;
+  const manifestNames = [...names]
+    .sort((left, right) => left.localeCompare(right, "en"))
+    .filter(name => {
+      if (!name.toLowerCase().endsWith(".json")) {
+        return false;
+      }
+      if (path.basename(name) !== name) {
+        throw new Error(`Invalid ownership manifest directory entry '${name}'.`);
+      }
+      return true;
+    });
+  const raw = await mapWithConcurrency(
+    manifestNames,
+    materializationIoConcurrency,
+    async name => {
+      if (stopIfCancelled && cancelled(request)) {
+        throw cancellationFailure();
+      }
+      const fileName = path.join(directory, name);
+      const content = await host.readFile(fileName);
+      if (content === undefined) {
+        throw new Error(`Ownership manifest '${fileName}' disappeared while it was being read.`);
+      }
+      return { fileName, content };
     }
-    if (path.basename(name) !== name) {
-      throw new Error(`Invalid ownership manifest directory entry '${name}'.`);
-    }
-    const fileName = path.join(directory, name);
-    const content = await host.readFile(fileName);
-    if (content === undefined) {
-      throw new Error(`Ownership manifest '${fileName}' disappeared while it was being read.`);
-    }
-    raw.push({ fileName, content });
-  }
+  );
   return parseRsglOwnershipManifestFiles(raw, request.project);
+}
+
+async function createDirectoryOnce(
+  directory: string,
+  createdDirectories: Set<string>,
+  host: RsglAsyncMaterializationHost
+): Promise<void> {
+  if (createdDirectories.has(directory)) {
+    return;
+  }
+  createdDirectories.add(directory);
+  await host.createDirectory(directory);
 }
 
 function validateRequestBeforeIo(request: RsglMaterializationRequest): void {

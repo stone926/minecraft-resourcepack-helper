@@ -85,6 +85,11 @@ export interface RsglMaterializationTransactionResult {
   failure?: RsglMaterializationFailure;
 }
 
+/**
+ * Read, directory-creation, staging-write, and revalidation calls may run
+ * concurrently in bounded batches. Implementations must therefore be
+ * reentrant; final replace/delete/manifest commits remain serialized.
+ */
 export interface RsglAsyncMaterializationHost {
   /** Returns undefined only when the path is absent. */
   readFile(fileName: string): Promise<Uint8Array | undefined>;
