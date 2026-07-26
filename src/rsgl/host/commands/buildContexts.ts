@@ -141,7 +141,7 @@ async function resolveRsglDocument(uri: vscode.Uri | undefined): Promise<vscode.
     return active;
   }
   const document = await vscode.workspace.openTextDocument(target);
-  return isRsglDocument(document) ? document : null;
+  return isRsglDocumentLike(document) ? document : null;
 }
 
 async function resolveOutputRoot(fileName: string): Promise<string | null> {
@@ -182,7 +182,7 @@ async function saveRsglDocumentsInSourceRoots(sourceRoots: readonly string[]): P
     if (
       document.isDirty &&
       document.uri.scheme === "file" &&
-      isRsglDocument(document) &&
+      isRsglDocumentLike(document) &&
       sourceRoots.some(sourceRoot => isPathInsideOrEqual(document.fileName, sourceRoot))
     ) {
       const saved = await document.save();
@@ -203,10 +203,6 @@ function resolveWorkspaceOutputRoot(sourceRoot: RsglDiscoveredSourceRoot): strin
 async function findWorkspaceRsglFiles(): Promise<string[]> {
   const rsglFiles = await vscode.workspace.findFiles("**/*.rsgl", "{**/.git/**,**/.vscode/**,**/node_modules/**}");
   return rsglFiles.map(uri => uri.fsPath);
-}
-
-function isRsglDocument(document: vscode.TextDocument): boolean {
-  return isRsglDocumentLike(document);
 }
 
 function isPathInsideOrEqual(fileName: string, directory: string): boolean {
