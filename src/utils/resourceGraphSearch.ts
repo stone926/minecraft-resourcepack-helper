@@ -1,15 +1,17 @@
 import * as path from "node:path";
-import { normalizePathKey, parseAssetsPath } from "../../packages/mc-assets/src";
+import {
+  getAssetsResource,
+  normalizePathKey,
+  stripPathExtension,
+  type AssetsResource
+} from "../../packages/mc-assets/src";
 import {
   getResourceIncomingReferenceRoots,
   isResourceSurfaceFile,
   type ResourceIncomingReferenceRoot
 } from "../resources/resourceSurfaceRegistry";
 
-export interface AssetResource {
-  namespace: string;
-  resourcePath: string;
-}
+export type AssetResource = AssetsResource;
 
 export interface IncomingReferenceSearch {
   readonly values: Set<string>;
@@ -51,15 +53,7 @@ export function createIncomingReferenceSearch(targetUri: AssetUriLike): Incoming
 }
 
 export function getAssetResource(fsPath: string): AssetResource | null {
-  const parsed = parseAssetsPath(fsPath);
-  if (!parsed || parsed.relativeSegments.length === 0) {
-    return null;
-  }
-
-  return {
-    namespace: parsed.namespace,
-    resourcePath: parsed.relativeSegments.join("/")
-  };
+  return getAssetsResource(fsPath);
 }
 
 export function resourceUriKey(uri: AssetUriLike): string {
@@ -81,7 +75,7 @@ export function isResourceGraphDocumentPath(fileName: string): boolean {
 function getPossibleReferencePaths(resourcePath: string): Set<string> {
   const paths = new Set<string>();
   const normalizedResourcePath = resourcePath.replaceAll("\\", "/");
-  const pathWithoutExtension = stripExtension(normalizedResourcePath);
+  const pathWithoutExtension = stripPathExtension(normalizedResourcePath);
   const basenameWithoutExtension = path.posix.basename(pathWithoutExtension);
   const basename = path.posix.basename(normalizedResourcePath);
   for (const targetRoot of getResourceIncomingReferenceRoots()) {
@@ -160,9 +154,4 @@ function addJsonStringValues(values: Set<string>, value: string): void {
     values.add(JSON.stringify(value.replaceAll("/", "\\")));
     values.add(JSON.stringify(value).replaceAll("/", "\\/"));
   }
-}
-
-function stripExtension(value: string): string {
-  const extension = path.posix.extname(value);
-  return extension ? value.slice(0, -extension.length) : value;
 }

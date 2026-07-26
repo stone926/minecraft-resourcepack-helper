@@ -1,58 +1,22 @@
 import * as vscode from "vscode";
+import {
+  isRsglResourceNavigationRequest,
+  type RsglResourceNavigationLocationDto,
+  type RsglResourceNavigationReason,
+  type RsglResourceNavigationRequest,
+  type RsglResourceNavigationResponse
+} from "../../packages/rsgl-shared/src/resourceNavigationProtocol";
 import { throwIfAborted } from "../utils/abortError";
 import type {
   ResourceLocation,
   ResourceProducer
 } from "../resourceUniverse/core/types";
 import type { ResourceNavigationResult } from "../resourceUniverse/navigation/resourceNavigationService";
+import { combineResourceFactsCoverage } from "../services/resourceFactsCoverage";
 import type {
   ResourceUniverseNavigationFacade,
   UnifiedResourceCoverage
 } from "../services/resourceUniverseNavigationFacade";
-
-type RsglResourceNavigationOperation = "definition" | "references";
-type RsglResourceNavigationCoverage = "authoritative" | "partial" | "unavailable";
-type RsglResourceNavigationReason =
-  | "noProject"
-  | "noProducer"
-  | "providerUnavailable"
-  | "noNavigableOrigin"
-  | "existenceCheckDisabled"
-  | "resolutionIncomplete"
-  | "conflict"
-  | "cancelled"
-  | "internalError";
-
-interface RsglResourceNavigationRequest {
-  protocolVersion: 1;
-  requestGeneration: number;
-  operation: RsglResourceNavigationOperation;
-  sourceContext: { documentUri: string; sourceRootUri?: string; projectId?: string };
-  target: { kind: string; id: string };
-  resolutionScope: "effective" | "local" | "custom" | "vanilla";
-  declarationMode: "checked" | "unchecked" | "undeclared";
-  includeDeclaration?: boolean;
-}
-
-interface RsglResourceNavigationLocationDto {
-  uri: string;
-  range?: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-  origin: "physical" | "generated" | "materialized";
-}
-
-interface RsglResourceNavigationResponse {
-  protocolVersion: 1;
-  requestGeneration: number;
-  operation: RsglResourceNavigationOperation;
-  projectId?: string;
-  status: "resolved" | "multiple" | "conflict" | "missing" | "incomplete" | "unchecked" | "unavailable" | "cancelled";
-  coverage: RsglResourceNavigationCoverage;
-  locations: readonly RsglResourceNavigationLocationDto[];
-  reason?: RsglResourceNavigationReason;
-}
 
 /** Main-extension endpoint for the LSP's server-to-client navigation request. */
 export async function resolveRsglResourceNavigation(
@@ -60,7 +24,7 @@ export async function resolveRsglResourceNavigation(
   value: unknown,
   signal: AbortSignal
 ): Promise<RsglResourceNavigationResponse> {
-  if (!isNavigationRequest(value)) {
+  if (!isRsglResourceNavigationRequest(value)) {
     throw new TypeError("The RSGL resource navigation request failed its runtime guard.");
   }
   if (signal.aborted) {
@@ -142,7 +106,7 @@ async function resolveReferences(
       : undefined
   ]);
   const context = incoming.context ?? definition?.context;
-  const coverage = combineCoverage([incoming.coverage, definition?.coverage].filter(
+  const coverage = combineResourceFactsCoverage([incoming.coverage, definition?.coverage].filter(
     (item): item is UnifiedResourceCoverage => item !== undefined
   ));
   if (!context || !matchesRequestedProject(request, context.projectId)) {
@@ -284,7 +248,7 @@ async function toProtocolLocation(
 function response(
   request: RsglResourceNavigationRequest,
   status: RsglResourceNavigationResponse["status"],
-  coverage: UnifiedResourceCoverage | RsglResourceNavigationCoverage,
+  coverage: UnifiedResourceCoverage,
   locations: readonly RsglResourceNavigationLocationDto[],
   reason?: RsglResourceNavigationReason,
   projectId?: string
@@ -306,35 +270,6 @@ function matchesRequestedProject(request: RsglResourceNavigationRequest, project
     || request.sourceContext.projectId === projectId;
 }
 
-function combineCoverage(coverages: readonly UnifiedResourceCoverage[]): UnifiedResourceCoverage {
-  if (coverages.length === 0 || coverages.every(coverage => coverage === "authoritative")) {
-    return "authoritative";
-  }
-  return coverages.every(coverage => coverage === "unavailable") ? "unavailable" : "partial";
-}
-
 function isCancellationError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || /cancel/i.test(error.message));
-}
-
-/** The lazy host applies the canonical shared guard before invoking this root callback. */
-function isNavigationRequest(value: unknown): value is RsglResourceNavigationRequest {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const request = value as Partial<RsglResourceNavigationRequest>;
-  return request.protocolVersion === 1
-    && Number.isSafeInteger(request.requestGeneration)
-    && (request.requestGeneration ?? -1) >= 0
-    && (request.operation === "definition" || request.operation === "references")
-    && typeof request.sourceContext?.documentUri === "string"
-    && typeof request.target?.kind === "string"
-    && typeof request.target?.id === "string"
-    && (request.resolutionScope === "effective"
-      || request.resolutionScope === "local"
-      || request.resolutionScope === "custom"
-      || request.resolutionScope === "vanilla")
-    && (request.declarationMode === "checked"
-      || request.declarationMode === "unchecked"
-      || request.declarationMode === "undeclared");
 }

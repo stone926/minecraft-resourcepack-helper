@@ -42,7 +42,8 @@ export default tseslint.config(
   {
     files: [
       "src/resourceUniverse/providers/rsglGeneratedProvider.ts",
-      "src/resourceUniverse/providers/rsglGeneratedSnapshotMapper.ts"
+      "src/resourceUniverse/providers/rsglGeneratedSnapshotMapper.ts",
+      "src/rsgl/rsglResourceNavigationBridge.ts"
     ],
     rules: {
       "no-restricted-imports": ["error", {

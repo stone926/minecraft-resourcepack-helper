@@ -150,7 +150,7 @@ export class RsglGeneratedContributionBridge {
       throw new RsglGeneratedRuntimeError("runtimeLoadFailed", error);
     }
     if (!runtime) {
-      this.markProjectUnavailable(projectId, unavailableReasonForState(this.controller.getState()));
+      this.markProjectUnavailable(projectId, unavailableReasonFor(this.controller.getState(), "query"));
       return null;
     }
     this.bindRuntime(runtime);
@@ -321,7 +321,7 @@ export class RsglGeneratedContributionBridge {
       if (!runtime) {
         return createRsglUnavailableSnapshotResponse(
           request,
-          unavailableReasonForState(this.controller.getState()),
+          unavailableReasonFor(this.controller.getState(), "query"),
           this.provider.getProjectState(projectId)?.revision
         );
       }
@@ -543,7 +543,7 @@ export class RsglGeneratedContributionBridge {
     if (state.kind !== "ready") {
       this.unbindRuntime();
     }
-    const reason = unavailableReasonForRuntimeTransition(state);
+    const reason = unavailableReasonFor(state, "transition");
     if (!reason) {
       return;
     }
@@ -696,33 +696,29 @@ class RsglGeneratedRuntimeError extends Error {
   }
 }
 
-function unavailableReasonForState(state: RsglRuntimeState): ResourceProviderUnavailableReason {
-  if (state.kind === "suspended") {
-    return state.reason === "disabled" ? "disabled" : "notProbed";
-  }
-  if (state.kind === "loading") {
-    return "loading";
-  }
-  if (state.kind === "failed") {
-    return "runtimeLoadFailed";
-  }
-  if (state.kind === "ready") {
-    return "lspStarting";
-  }
-  return state.kind === "disposed" ? "disabled" : "notProbed";
-}
-
-function unavailableReasonForRuntimeTransition(
-  state: RsglRuntimeState
+function unavailableReasonFor(state: RsglRuntimeState, context: "query"): ResourceProviderUnavailableReason;
+function unavailableReasonFor(
+  state: RsglRuntimeState,
+  context: "transition"
+): ResourceProviderUnavailableReason | undefined;
+function unavailableReasonFor(
+  state: RsglRuntimeState,
+  context: "query" | "transition"
 ): ResourceProviderUnavailableReason | undefined {
+  if (state.kind === "suspended") {
+    return state.reason === "disabled" ? "disabled" : "notProbed";
+  }
   if (state.kind === "loading") {
     return "loading";
   }
   if (state.kind === "failed") {
     return "runtimeLoadFailed";
   }
-  if (state.kind === "suspended") {
-    return state.reason === "disabled" ? "disabled" : "notProbed";
+  if (context === "query") {
+    if (state.kind === "ready") {
+      return "lspStarting";
+    }
+    return state.kind === "disposed" ? "disabled" : "notProbed";
   }
   return state.kind === "idle" ? "notProbed" : undefined;
 }

@@ -198,31 +198,15 @@ function mapCoverage(coverage: RsglProviderCoverageDto): ProviderCoverage {
     return {
       status: "authoritative",
       revision: coverage.revision,
-      coveredScope: copyCoverageScope(coverage.coveredScope)
+      coveredScope: cloneScope(coverage.coveredScope)
     };
   }
   return {
     status: "partial",
     revision: coverage.revision,
-    authoritativeScopes: coverage.authoritativeScopes.map(copyCoverageScope),
-    unavailableScopes: coverage.unavailableScopes.map(copyCoverageScope),
+    authoritativeScopes: coverage.authoritativeScopes.map(cloneScope),
+    unavailableScopes: coverage.unavailableScopes.map(cloneScope),
     skippedSourceUris: [...coverage.skippedSourceUris]
-  };
-}
-
-function copyCoverageScope(scope: {
-  projectId: string;
-  resolutionScopes?: readonly ("effective" | "local" | "custom" | "vanilla")[];
-  kinds?: readonly string[];
-  namespaces?: readonly string[];
-  pathPrefixes?: readonly string[];
-}) {
-  return {
-    projectId: scope.projectId,
-    ...(scope.resolutionScopes ? { resolutionScopes: [...scope.resolutionScopes] } : {}),
-    ...(scope.kinds ? { kinds: [...scope.kinds] } : {}),
-    ...(scope.namespaces ? { namespaces: [...scope.namespaces] } : {}),
-    ...(scope.pathPrefixes ? { pathPrefixes: [...scope.pathPrefixes] } : {})
   };
 }
 

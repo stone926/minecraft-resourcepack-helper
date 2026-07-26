@@ -1,4 +1,4 @@
-import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
+import { semanticModelForRsglLanguageFile } from "./semanticOccurrences";
 import {
   MemberExprNode,
   ObjectExprNode,
@@ -368,8 +368,7 @@ function semanticModelForMemberFile(
   program: RsglMemberLanguageProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = rsglPathKey(resolveRsglPath(fileName));
-  return program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
+  return semanticModelForRsglLanguageFile(program, fileName);
 }
 
 function touchesRange(range: TextRange, offset: number): boolean {

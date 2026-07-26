@@ -328,6 +328,24 @@ export function parseAssetsPath(fileName: string): ParsedAssetsPath | null {
   };
 }
 
+export interface AssetsResource {
+  namespace: string;
+  resourcePath: string;
+}
+
+/** Namespace plus slash-joined resource path for a file under an assets root. */
+export function getAssetsResource(fileName: string): AssetsResource | null {
+  const parsed = parseAssetsPath(fileName);
+  if (!parsed || parsed.relativeSegments.length === 0) {
+    return null;
+  }
+
+  return {
+    namespace: parsed.namespace,
+    resourcePath: parsed.relativeSegments.join("/")
+  };
+}
+
 function findSourceIndex(segments: string[], sourceSegments: string[]): number {
   for (let index = segments.length - sourceSegments.length; index >= 0; index--) {
     const matches = sourceSegments.every((segment, offset) => segments[index + offset] === segment);

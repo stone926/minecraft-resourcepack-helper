@@ -1,4 +1,23 @@
 export const rsglFileGlob = "**/*.rsgl";
+export const rsglLanguageId = "rsgl";
+export const rsglFileExtension = ".rsgl";
+
+/**
+ * Structural `.rsgl` document predicate for lazily loaded RSGL surfaces.
+ * The root activation bundle keeps its own copy in `rsglActivationSignals`
+ * because the build contract forbids it from reaching this package.
+ */
+export function isRsglDocumentLike(document: {
+  languageId?: string;
+  fileName?: string;
+  uriPath?: string;
+}): boolean {
+  if (document.languageId === rsglLanguageId) {
+    return true;
+  }
+  return [document.fileName, document.uriPath]
+    .some(value => value !== undefined && value.toLowerCase().endsWith(rsglFileExtension));
+}
 
 export * from "./resourceSnapshotProtocol";
 export * from "./resourceNavigationProtocol";

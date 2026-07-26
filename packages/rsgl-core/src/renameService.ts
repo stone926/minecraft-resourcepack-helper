@@ -1,5 +1,6 @@
 import type { MemberExprNode, TextRange } from "./parser";
 import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
+import { semanticModelForRsglLanguageFile } from "./semanticOccurrences";
 import { walkRsglModule } from "./parser/astTraversal";
 import { createRsglExportMaps } from "./semantic/exportResolution";
 import { resolveModuleNamespaceExpressionMember } from "./semantic/moduleNamespace";
@@ -297,8 +298,7 @@ function semanticModelForFile(
   models: readonly RsglSemanticModel[],
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = rsglPathKey(resolveRsglPath(fileName));
-  return models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
+  return semanticModelForRsglLanguageFile({ models }, fileName);
 }
 
 function containsOffset(range: TextRange, offset: number): boolean {

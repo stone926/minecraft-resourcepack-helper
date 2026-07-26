@@ -2,10 +2,11 @@ import * as path from "node:path";
 import { citResourceTypeFor, getCitAssetCandidates } from "../../cit/citAssetResolver";
 import { isCitModelFileName, isCitPropertiesFileName } from "../../cit/citPaths";
 import {
+  getAssetsResource,
   getResourceFileCandidates as getSharedResourceFileCandidates,
-  parseAssetsPath,
   parseResourceLocation,
   resolveResourceFile,
+  stripPathExtension,
   type ResourceFileRequest
 } from "../../../packages/mc-assets/src";
 import { modelSourceForFile } from "../../services/modelParentChain";
@@ -184,7 +185,7 @@ function resourceIdForResolvedCandidate(
 ): string {
   const location = parseResourceLocation(resourcePath, extension);
   if (location.isValid && target !== "models" && target !== "textures") {
-    return `${location.namespace}:${stripExtension(location.resourcePath.replaceAll(path.sep, "/"))}`;
+    return `${location.namespace}:${stripPathExtension(location.resourcePath.replaceAll(path.sep, "/"))}`;
   }
 
   if (target === "models" || target === "textures") {
@@ -195,28 +196,16 @@ function resourceIdForResolvedCandidate(
 }
 
 export function modelResourceIdFromFileName(fileName: string): string {
-  const assetResource = getAssetResource(fileName);
+  const assetResource = getAssetsResource(fileName);
   if (!assetResource || !assetResource.resourcePath.startsWith("models/")) {
     return path.basename(fileName, path.extname(fileName));
   }
 
-  return `${assetResource.namespace}:${stripExtension(assetResource.resourcePath.slice("models/".length))}`;
-}
-
-function getAssetResource(fileName: string): { namespace: string; resourcePath: string } | null {
-  const parsed = parseAssetsPath(fileName);
-  if (!parsed || parsed.relativeSegments.length === 0) {
-    return null;
-  }
-
-  return {
-    namespace: parsed.namespace,
-    resourcePath: parsed.relativeSegments.join("/")
-  };
+  return `${assetResource.namespace}:${stripPathExtension(assetResource.resourcePath.slice("models/".length))}`;
 }
 
 function resourceIdFromFileName(fileName: string): string {
-  const assetResource = getAssetResource(fileName);
+  const assetResource = getAssetsResource(fileName);
   if (!assetResource) {
     return path.basename(fileName, path.extname(fileName));
   }
@@ -228,10 +217,5 @@ function resourceIdFromFileName(fileName: string): string {
       ? "textures/"
       : "";
   const rawPath = typedPrefix ? resourcePath.slice(typedPrefix.length) : resourcePath;
-  return `${assetResource.namespace}:${stripExtension(rawPath)}`;
-}
-
-function stripExtension(value: string): string {
-  const extension = path.posix.extname(value);
-  return extension ? value.slice(0, -extension.length) : value;
+  return `${assetResource.namespace}:${stripPathExtension(rawPath)}`;
 }

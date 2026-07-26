@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { localize } from "../i18n/runtime";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
+import { toVsCodeDiagnosticSeverity } from "./diagnosticSeverity";
 import {
   getPackImageResourceIssues,
   type PackImageResourceHost
@@ -9,7 +10,6 @@ import {
 import {
   getSemanticDiagnostics as getCoreSemanticDiagnostics,
   type SemanticDiagnostic,
-  type SemanticDiagnosticSeverity,
   type SemanticDiagnosticsDocument,
   type SemanticDiagnosticsHost
 } from "./semanticDiagnosticsCore";
@@ -53,12 +53,6 @@ function toVsCodeDiagnostic(diagnostic: SemanticDiagnostic): vscode.Diagnostic {
       new vscode.Position(diagnostic.range.end.line, diagnostic.range.end.character)
     ),
     localize(diagnostic.message),
-    toVsCodeSeverity(diagnostic.severity)
+    toVsCodeDiagnosticSeverity(diagnostic.severity)
   );
-}
-
-function toVsCodeSeverity(severity: SemanticDiagnosticSeverity): vscode.DiagnosticSeverity {
-  return severity === "information"
-    ? vscode.DiagnosticSeverity.Information
-    : vscode.DiagnosticSeverity.Warning;
 }

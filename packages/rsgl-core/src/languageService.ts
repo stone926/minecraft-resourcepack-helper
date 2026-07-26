@@ -1,4 +1,4 @@
-import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
+import { semanticModelForRsglLanguageFile } from "./semanticOccurrences";
 import {
   getRsglCompletionItemsForContext,
   type RsglCompletionItem,
@@ -406,6 +406,5 @@ export function semanticModelForFile(
   semanticProgram: RsglWorkspaceSemanticProgram,
   fileName: string
 ): RsglSemanticModel | undefined {
-  const key = rsglPathKey(resolveRsglPath(fileName));
-  return semanticProgram.program.models.find(model => rsglPathKey(resolveRsglPath(model.fileName)) === key);
+  return semanticModelForRsglLanguageFile(semanticProgram.program, fileName);
 }

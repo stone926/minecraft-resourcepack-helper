@@ -8,3 +8,10 @@ export function startsWithPathSegment(value: string, segment: string): boolean {
   const firstSegment = separator < 0 ? value : value.slice(0, separator);
   return firstSegment.length > 0 && firstSegment.toLowerCase() === segment.toLowerCase();
 }
+
+/** Drops the final `.ext` of a slash-separated resource path, if any. */
+export function stripPathExtension(value: string): string {
+  const separator = value.lastIndexOf("/");
+  const dot = value.lastIndexOf(".");
+  return dot > separator + 1 ? value.slice(0, dot) : value;
+}

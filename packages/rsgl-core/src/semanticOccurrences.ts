@@ -219,7 +219,7 @@ export function sameRsglSemanticTarget(
 }
 
 export function semanticModelForRsglLanguageFile(
-  program: Pick<RsglProgram, "models">,
+  program: { models: readonly RsglSemanticModel[] },
   fileName: string
 ): RsglSemanticModel | undefined {
   const key = rsglPathKey(resolveRsglPath(fileName));

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { parseAssetsPath } from "../../../packages/mc-assets/src";
+import { parseAssetsPath, stripPathExtension } from "../../../packages/mc-assets/src";
 
 export type CitTemplateType = "item" | "armor" | "elytra" | "enchantment";
 
@@ -96,7 +96,7 @@ function inferItemResource(resource: AssetResourceInfo): {
 } | null {
   const resourcePath = resource.resourcePath.replaceAll("\\", "/");
   if (resourcePath.startsWith("items/") && resourcePath.endsWith(".json")) {
-    const idPath = stripExtension(resourcePath.slice("items/".length));
+    const idPath = stripPathExtension(resourcePath.slice("items/".length));
     return {
       itemId: `${resource.namespace}:${idPath}`,
       fileStem: path.posix.basename(idPath)
@@ -104,7 +104,7 @@ function inferItemResource(resource: AssetResourceInfo): {
   }
 
   if (resourcePath.startsWith("models/item/") && resourcePath.endsWith(".json")) {
-    const idPath = stripExtension(resourcePath.slice("models/item/".length));
+    const idPath = stripPathExtension(resourcePath.slice("models/item/".length));
     return {
       itemId: `${resource.namespace}:${idPath}`,
       fileStem: path.posix.basename(idPath),
@@ -113,7 +113,7 @@ function inferItemResource(resource: AssetResourceInfo): {
   }
 
   if (resourcePath.startsWith("textures/item/") && resourcePath.endsWith(".png")) {
-    const idPath = stripExtension(resourcePath.slice("textures/item/".length));
+    const idPath = stripPathExtension(resourcePath.slice("textures/item/".length));
     return {
       itemId: `${resource.namespace}:${idPath}`,
       fileStem: path.posix.basename(idPath),
@@ -124,7 +124,3 @@ function inferItemResource(resource: AssetResourceInfo): {
   return null;
 }
 
-function stripExtension(value: string): string {
-  const extension = path.posix.extname(value);
-  return extension ? value.slice(0, -extension.length) : value;
-}

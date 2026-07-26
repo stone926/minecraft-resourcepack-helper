@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   assertRsglOutputPackRoot,
@@ -11,7 +10,7 @@ import {
   type RsglDiscoveredSourceRoot
 } from "../../../../packages/rsgl-core/src/sourceRoot";
 import { isRsglPathInsideOrEqual } from "../../../../packages/rsgl-core/src/pathIdentity";
-import { rsglLanguageId } from "../language";
+import { isRsglDocumentLike, rsglLanguageId } from "../../../../packages/rsgl-shared/src";
 
 export interface RsglFileBuildContext {
   sourceFileName: string;
@@ -142,9 +141,7 @@ async function resolveRsglDocument(uri: vscode.Uri | undefined): Promise<vscode.
     return active;
   }
   const document = await vscode.workspace.openTextDocument(target);
-  return document.languageId === rsglLanguageId || path.extname(document.fileName).toLowerCase() === ".rsgl"
-    ? document
-    : null;
+  return isRsglDocument(document) ? document : null;
 }
 
 async function resolveOutputRoot(fileName: string): Promise<string | null> {
@@ -209,7 +206,7 @@ async function findWorkspaceRsglFiles(): Promise<string[]> {
 }
 
 function isRsglDocument(document: vscode.TextDocument): boolean {
-  return document.languageId === rsglLanguageId || path.extname(document.fileName).toLowerCase() === ".rsgl";
+  return isRsglDocumentLike(document);
 }
 
 function isPathInsideOrEqual(fileName: string, directory: string): boolean {

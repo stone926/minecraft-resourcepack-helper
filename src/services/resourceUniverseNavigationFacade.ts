@@ -47,6 +47,7 @@ import {
   type ResourceReferenceDocument
 } from "../utils/resourceReferences";
 import { ResourceProjectUniverseInvalidator } from "./resourceProjectUniverseInvalidator";
+import { isRsglDocument } from "../rsgl/rsglActivationSignals";
 import { shouldRequestGeneratedSnapshot } from "./generatedResourceRefreshPolicy";
 import {
   requiresReferenceIndexRefresh,
@@ -998,9 +999,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
 }
 
 function isGeneratedResourceDocument(document: ResourceUniverseDocument): boolean {
-  return document.languageId === "rsgl"
-    || document.uri.path.toLowerCase().endsWith(".rsgl")
-    || document.fileName.toLowerCase().endsWith(".rsgl");
+  return isRsglDocument(document);
 }
 
 function resolutionContext(

@@ -7,6 +7,7 @@ import {
   type RsglResourceSnapshotRequest,
   type RsglResourceSnapshotResponse
 } from "../../../packages/rsgl-shared/src/resourceSnapshotProtocol";
+import { isRsglDocumentLike } from "../../../packages/rsgl-shared/src";
 import type { ResourcePackProjectContextDto } from "../../../packages/resource-project/src";
 import { abortSignalError } from "../../utils/abortError";
 import type {
@@ -187,9 +188,11 @@ export class RsglGeneratedProvider implements ResourceContributionProvider {
   }
 
   public canHandleDocument(document: ResourceDocumentDescriptor): boolean {
-    return document.languageId === "rsgl"
-      || document.fileName.toLowerCase().endsWith(".rsgl")
-      || serializedUriPath(document.uri).toLowerCase().endsWith(".rsgl");
+    return isRsglDocumentLike({
+      languageId: document.languageId,
+      fileName: document.fileName,
+      uriPath: serializedUriPath(document.uri)
+    });
   }
 
   public getDocumentProjection(

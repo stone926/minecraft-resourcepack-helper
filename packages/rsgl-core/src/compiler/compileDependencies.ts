@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import {
+  isRsglPathInsideOrEqual,
   resolvedRsglPathKey,
   resolveRsglPath
 } from "../pathIdentity";
@@ -112,11 +113,7 @@ export function compileDependencyPatternStructurallyMatchesPath(
 
 /** Uses RSGL path identity to test whether `candidate` is inside `root`. */
 export function compileDependencyPathContains(root: string, candidate: string): boolean {
-  const rootKey = resolvedRsglPathKey(root);
-  const candidateKey = resolvedRsglPathKey(candidate);
-  const relative = path.relative(rootKey, candidateKey);
-  return relative === ""
-    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+  return isRsglPathInsideOrEqual(candidate, root);
 }
 
 /**

@@ -1,1 +1,1 @@
-export const rsglLanguageId = "rsgl";
+export { rsglLanguageId } from "../../../packages/rsgl-shared/src";

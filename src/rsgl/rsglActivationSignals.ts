@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 export type ConfiguredRsglMode = "auto" | "on" | "off";
 
 export const rsglEnablementConfiguration = "McResHelper.rsgl.enabled";
+const enablementSection = rsglEnablementConfiguration.slice(0, rsglEnablementConfiguration.indexOf("."));
+const enablementSetting = rsglEnablementConfiguration.slice(rsglEnablementConfiguration.indexOf(".") + 1);
 
 export const rsglProxyCommands = {
   build: "rsgl.build",
@@ -15,14 +17,21 @@ export const rsglProxyCommands = {
 } as const;
 
 export function configuredRsglMode(): ConfiguredRsglMode {
-  const configured = vscode.workspace.getConfiguration("McResHelper").get<string>("rsgl.enabled", "auto");
+  const configured = vscode.workspace.getConfiguration(enablementSection).get<string>(enablementSetting, "auto");
   return configured === "on" || configured === "off" ? configured : "auto";
 }
 
+/**
+ * Root-bundle `.rsgl` document predicate. Lazily loaded RSGL surfaces use
+ * `isRsglDocumentLike` from rsgl-shared instead; the build contract keeps
+ * this bundle physically unreachable from that package.
+ */
 export function isRsglDocument(
-  document: Pick<vscode.TextDocument, "languageId" | "uri">
+  document: Pick<vscode.TextDocument, "languageId" | "uri"> & { fileName?: string }
 ): boolean {
-  return document.languageId === "rsgl" || document.uri.path.toLowerCase().endsWith(".rsgl");
+  return document.languageId === "rsgl"
+    || document.uri.path.toLowerCase().endsWith(".rsgl")
+    || (document.fileName?.toLowerCase().endsWith(".rsgl") ?? false);
 }
 
 export async function showRsglDisabledMessage(): Promise<void> {
