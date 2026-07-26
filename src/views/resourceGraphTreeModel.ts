@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import {
-  getAssetResource,
   isModelDocumentPath,
   isResourceGraphDocumentPath,
   resourceUriKey
@@ -17,11 +16,29 @@ import {
   locationLabel,
   serializedUriLike
 } from "./resourceGraphGeneratedPresentation";
+import {
+  getFocusedResourceContext,
+  getGeneratedResourceIcon,
+  getReferenceIcon,
+  getReferenceLabel,
+  getResourceIcon,
+  getResourcePathLabel,
+  referenceDescription
+} from "./resourceGraphNodePresentation";
+import {
+  compareNodes,
+  createCountedGroup,
+  createEmptyNode,
+  createNode,
+  groupReferencesBySource,
+  isOnlyEmptyNode,
+  producerResourceIdentity,
+  visitGeneratedResourceOnce,
+  visitResourceOnce
+} from "./resourceGraphTreeNodeFactory";
 import type {
-  ResourceGraphCollapsibleState,
   ResourceGraphDocumentProjection,
   ResourceGraphLocalize,
-  ResourceGraphNodeNavigation,
   ResourceGraphProjectedResource,
   ResourceGraphTreeDocument,
   ResourceGraphTreeModelHost,
@@ -43,19 +60,6 @@ export type {
   ResourceGraphTreeResolvedReference,
   ResourceGraphUriLike
 } from "./resourceGraphTreeTypes";
-
-type ResourceGraphChildren = ResourceGraphTreeNodeModel[] | (() => Promise<ResourceGraphTreeNodeModel[]>);
-
-interface ResourceGraphNodeOptions {
-  readonly description?: string;
-  readonly resourceUri?: ResourceGraphUriLike;
-  readonly navigation?: ResourceGraphNodeNavigation;
-  readonly resource?: ResourceGraphProjectedResource;
-  readonly children?: ResourceGraphChildren;
-  readonly icon?: string;
-  readonly contextValue?: string;
-  readonly tooltip?: string;
-}
 
 export class ResourceGraphTreeModel {
   private blockChildren: Promise<ResourceGraphTreeNodeModel[]> | null = null;
@@ -181,11 +185,7 @@ export class ResourceGraphTreeModel {
   ): ResourceGraphTreeNodeModel {
     const children = resources.map(resource => this.createGeneratedResourceNode(resource, new Set()));
     children.sort(compareNodes);
-    return createNode(this.localize(label), children.length > 0 ? "collapsed" : "none", {
-      description: resources.length.toString(),
-      children: children.length > 0 ? children : [createEmptyNode(this.localize("No generated resources"))],
-      icon
-    });
+    return createCountedGroup(label, icon, children, createEmptyNode(this.localize("No generated resources")));
   }
 
   private createBlocksNode(): ResourceGraphTreeNodeModel {
@@ -306,11 +306,7 @@ export class ResourceGraphTreeModel {
         tooltip: location.uri
       }))
     ];
-    return createNode(this.localize("Origins"), origins.length > 0 ? "collapsed" : "none", {
-      description: origins.length.toString(),
-      children: origins.length > 0 ? origins : [createEmptyNode(this.localize("No origins"))],
-      icon: "source-control"
-    });
+    return createCountedGroup(this.localize("Origins"), "source-control", origins, createEmptyNode(this.localize("No origins")));
   }
 
   private async createProducerOutgoingReferencesGroup(
@@ -385,13 +381,7 @@ export class ResourceGraphTreeModel {
     visitedResources: ReadonlySet<string>
   ): ResourceGraphTreeNodeModel {
     const referenceNodes = references.map(reference => this.createOutgoingReferenceNode(reference, visitedResources));
-    return createNode(this.localize("References"), referenceNodes.length > 0 ? "collapsed" : "none", {
-      description: referenceNodes.length.toString(),
-      children: referenceNodes.length > 0
-        ? referenceNodes
-        : [createEmptyNode(this.localize("No references"))],
-      icon: "arrow-right"
-    });
+    return createCountedGroup(this.localize("References"), "arrow-right", referenceNodes, createEmptyNode(this.localize("No references")));
   }
 
   private createOutgoingReferenceNode(
@@ -413,11 +403,7 @@ export class ResourceGraphTreeModel {
           icon: getReferenceIcon(reference)
         });
       }
-      return createNode(getReferenceLabel(reference, this.localize), "none", {
-        description: this.localize("missing"),
-        icon: "warning",
-        contextValue: "resourceGraphMissing"
-      });
+      return this.createMissingReferenceNode(reference);
     }
     if (resolvedReference.targetResource?.producer.origin === "generated") {
       return this.createGeneratedResourceNode(resolvedReference.targetResource, visitedResources, {
@@ -433,24 +419,25 @@ export class ResourceGraphTreeModel {
     });
   }
 
+  private createMissingReferenceNode(reference: ResourceReference): ResourceGraphTreeNodeModel {
+    return createNode(getReferenceLabel(reference, this.localize), "none", {
+      description: this.localize("missing"),
+      icon: "warning",
+      contextValue: "resourceGraphMissing"
+    });
+  }
+
   private createIncomingReferencesGroup(
     uri: ResourceGraphUriLike,
     visitedResources: ReadonlySet<string>
   ): ResourceGraphTreeNodeModel {
     return createNode(this.localize("Referenced By"), "collapsed", {
-      children: () => this.createIncomingReferenceNodes(uri, visitedResources),
+      children: async () => this.createIncomingReferenceNodesFrom(
+        await this.host.getIncomingReferences(uri),
+        visitedResources
+      ),
       icon: "arrow-left"
     });
-  }
-
-  private async createIncomingReferenceNodes(
-    uri: ResourceGraphUriLike,
-    visitedResources: ReadonlySet<string>
-  ): Promise<ResourceGraphTreeNodeModel[]> {
-    return this.createIncomingReferenceNodesFrom(
-      await this.host.getIncomingReferences(uri),
-      visitedResources
-    );
   }
 
   private createIncomingReferenceNodesFrom(
@@ -463,18 +450,20 @@ export class ResourceGraphTreeModel {
     }
     const nodes = groups.map(group => group.sourceResource?.producer.origin === "generated"
       ? this.createGeneratedResourceNode(group.sourceResource, visitedResources, {
-          description: group.references.length === 1
-            ? referenceDescription(group.references[0], this.localize)
-            : this.localize("{0} references", group.references.length)
+          description: this.describeReferenceGroup(group.references)
         })
       : this.createResourceNode(group.sourceUri, visitedResources, {
-        description: group.references.length === 1
-          ? referenceDescription(group.references[0], this.localize)
-          : this.localize("{0} references", group.references.length),
+        description: this.describeReferenceGroup(group.references),
         icon: getResourceIcon(group.sourceUri.fsPath)
       }));
     nodes.sort(compareNodes);
     return nodes;
+  }
+
+  private describeReferenceGroup(references: readonly ResourceGraphTreeResolvedReference[]): string {
+    return references.length === 1
+      ? referenceDescription(references[0], this.localize)
+      : this.localize("{0} references", references.length);
   }
 
   private createProducerModelInheritanceGroup(
@@ -491,11 +480,7 @@ export class ResourceGraphTreeModel {
           visitedResources
         );
         return [
-          createNode(this.localize("Parent Models"), parents.length > 0 ? "collapsed" : "none", {
-            description: parents.length.toString(),
-            children: parents.length > 0 ? parents : [createEmptyNode(this.localize("No parent model"))],
-            icon: "arrow-up"
-          }),
+          createCountedGroup(this.localize("Parent Models"), "arrow-up", parents, createEmptyNode(this.localize("No parent model"))),
           createNode(this.localize("Child Models"), isOnlyEmptyNode(children) ? "none" : "collapsed", {
             description: isOnlyEmptyNode(children) ? "0" : children.length.toString(),
             children,
@@ -525,16 +510,8 @@ export class ResourceGraphTreeModel {
     const parentNodes = await this.createParentModelNodes(document, visitedModels);
     const childNodes = await this.createChildModelNodes(uri, visitedModels);
     return [
-      createNode(this.localize("Parent Models"), parentNodes.length > 0 ? "collapsed" : "none", {
-        description: parentNodes.length.toString(),
-        children: parentNodes.length > 0 ? parentNodes : [createEmptyNode(this.localize("No parent model"))],
-        icon: "arrow-up"
-      }),
-      createNode(this.localize("Child Models"), childNodes.length > 0 ? "collapsed" : "none", {
-        description: childNodes.length.toString(),
-        children: childNodes.length > 0 ? childNodes : [createEmptyNode(this.localize("No child models"))],
-        icon: "arrow-down"
-      })
+      createCountedGroup(this.localize("Parent Models"), "arrow-up", parentNodes, createEmptyNode(this.localize("No parent model"))),
+      createCountedGroup(this.localize("Child Models"), "arrow-down", childNodes, createEmptyNode(this.localize("No child models")))
     ];
   }
 
@@ -553,11 +530,7 @@ export class ResourceGraphTreeModel {
       }
       return reference.targetUri
         ? this.createParentModelNode(reference.targetUri, reference.reference, visitedModels)
-        : Promise.resolve(createNode(getReferenceLabel(reference.reference, this.localize), "none", {
-            description: this.localize("missing"),
-            icon: "warning",
-            contextValue: "resourceGraphMissing"
-          }));
+        : Promise.resolve(this.createMissingReferenceNode(reference.reference));
     }));
     nodes.sort(compareNodes);
     return nodes;
@@ -600,9 +573,7 @@ export class ResourceGraphTreeModel {
     const groups = groupReferencesBySource(await this.host.getChildModelReferences(uri));
     const nodes = await Promise.all(groups.map(group => group.sourceResource?.producer.origin === "generated"
       ? Promise.resolve(this.createGeneratedResourceNode(group.sourceResource, visitedModels, {
-          description: group.references.length === 1
-            ? referenceDescription(group.references[0], this.localize)
-            : this.localize("{0} references", group.references.length),
+          description: this.describeReferenceGroup(group.references),
           icon: "file-code"
         }))
       : this.createChildModelNode(group.sourceUri, group.references, visitedModels)
@@ -651,206 +622,4 @@ export class ResourceGraphTreeModel {
       return null;
     }
   }
-}
-
-function createNode(
-  label: string,
-  collapsibleState: ResourceGraphCollapsibleState,
-  options: ResourceGraphNodeOptions = {}
-): ResourceGraphTreeNodeModel {
-  const getChildren = toChildrenProvider(options.children);
-  return {
-    label,
-    collapsibleState,
-    description: options.description,
-    resourceUri: options.resourceUri,
-    navigation: options.navigation,
-    resource: options.resource,
-    materializationState: options.resource?.producer.materializationState,
-    icon: options.icon ?? "file",
-    contextValue: options.contextValue,
-    tooltip: options.tooltip ?? options.resourceUri?.fsPath,
-    getChildren
-  };
-}
-
-function createEmptyNode(label: string): ResourceGraphTreeNodeModel {
-  return createNode(label, "none", { icon: "circle-slash" });
-}
-
-function createAlreadyShownNode(
-  uri: ResourceGraphUriLike,
-  localize: ResourceGraphLocalize
-): ResourceGraphTreeNodeModel {
-  return createNode(getResourcePathLabel(uri), "none", {
-    description: localize("already shown"),
-    resourceUri: uri,
-    navigation: { kind: "resourceUri", uri },
-    icon: getResourceIcon(uri.fsPath),
-    contextValue: classifyResourceGraphPreview(uri.fsPath)
-  });
-}
-
-async function visitGeneratedResourceOnce(
-  visitedResources: ReadonlySet<string>,
-  resource: ResourceGraphProjectedResource,
-  createChildren: (nextVisitedResources: ReadonlySet<string>) => Promise<ResourceGraphTreeNodeModel[]>,
-  localize: ResourceGraphLocalize
-): Promise<ResourceGraphTreeNodeModel[]> {
-  const identity = producerResourceIdentity(resource);
-  if (visitedResources.has(identity)) {
-    return [createNode(generatedResourceLabel(resource), "none", {
-      description: localize("already shown"),
-      navigation: {
-        kind: "producer",
-        producerId: resource.producer.producerId,
-        target: resource.target
-      },
-      resource,
-      icon: getGeneratedResourceIcon(resource.target.kind),
-      contextValue: generatedResourceContext(resource),
-      tooltip: generatedResourceTooltip(resource)
-    })];
-  }
-  const nextVisitedResources = new Set(visitedResources);
-  nextVisitedResources.add(identity);
-  return createChildren(nextVisitedResources);
-}
-
-async function visitResourceOnce(
-  visitedResources: ReadonlySet<string>,
-  uri: ResourceGraphUriLike,
-  createChildren: (nextVisitedResources: ReadonlySet<string>) => Promise<ResourceGraphTreeNodeModel[]>,
-  localize: ResourceGraphLocalize
-): Promise<ResourceGraphTreeNodeModel[]> {
-  if (visitedResources.has(resourceUriKey(uri))) {
-    return [createAlreadyShownNode(uri, localize)];
-  }
-  const nextVisitedResources = new Set(visitedResources);
-  nextVisitedResources.add(resourceUriKey(uri));
-  return createChildren(nextVisitedResources);
-}
-
-function groupReferencesBySource(references: readonly ResourceGraphTreeResolvedReference[]): Array<{
-  sourceUri: ResourceGraphUriLike;
-  sourceResource?: ResourceGraphProjectedResource;
-  references: ResourceGraphTreeResolvedReference[];
-}> {
-  const groups = new Map<string, {
-    sourceUri: ResourceGraphUriLike;
-    sourceResource?: ResourceGraphProjectedResource;
-    references: ResourceGraphTreeResolvedReference[];
-  }>();
-  for (const reference of references) {
-    const key = reference.sourceResource
-      ? producerResourceIdentity(reference.sourceResource)
-      : resourceUriKey(reference.sourceUri);
-    const group = groups.get(key);
-    if (group) {
-      group.references.push(reference);
-    } else {
-      groups.set(key, {
-        sourceUri: reference.sourceUri,
-        sourceResource: reference.sourceResource,
-        references: [reference]
-      });
-    }
-  }
-  return [...groups.values()];
-}
-
-function referenceDescription(
-  reference: ResourceGraphTreeResolvedReference,
-  localize: ResourceGraphLocalize
-): string {
-  const label = getReferenceLabel(reference.reference, localize);
-  return reference.sourceRange
-    ? `${label} · ${reference.sourceRange.start}–${reference.sourceRange.end}`
-    : label;
-}
-
-function getReferenceLabel(reference: ResourceReference, localize: ResourceGraphLocalize): string {
-  switch (reference.kind) {
-    case "model": return localize("model: {0}", reference.value);
-    case "texture": return localize("texture: {0}", reference.value);
-    case "textureDirectory": return localize("texture directory: {0}", reference.value);
-    case "font": return localize("font: {0}", reference.value);
-    case "fontFile": return localize("font file: {0}", reference.value);
-    case "shader": return localize("shader: {0}", reference.value);
-    default: return localize("sound: {0}", reference.value);
-  }
-}
-
-function getReferenceIcon(reference: ResourceReference): string {
-  if (reference.kind === "textureDirectory") {
-    return "folder";
-  }
-  if (["model", "shader", "font", "fontFile"].includes(reference.kind)) {
-    return "file-code";
-  }
-  return "file-media";
-}
-
-function getResourceIcon(fileName: string): string {
-  const extension = path.extname(fileName).toLowerCase();
-  if (extension === ".json") {
-    return isModelDocumentPath(fileName) ? "file-code" : "json";
-  }
-  if (extension === ".png" || extension === ".ogg") {
-    return "file-media";
-  }
-  if (extension === ".vsh" || extension === ".fsh" || extension === ".glsl") {
-    return "file-code";
-  }
-  return extension ? "file" : "folder";
-}
-
-function getGeneratedResourceIcon(kind: string): string {
-  if (kind === "model" || kind === "blockstate" || kind === "item" || kind === "font") {
-    return "file-code";
-  }
-  if (kind === "texture" || kind === "sound") {
-    return "file-media";
-  }
-  return "symbol-object";
-}
-
-function getFocusedResourceContext(
-  resource: ResourceGraphProjectedResource,
-  resourceUri: ResourceGraphUriLike | undefined
-): string | undefined {
-  if (resource.producer.origin === "generated") {
-    return generatedResourceContext(resource);
-  }
-  if (resource.resolutionStatus === "conflict") {
-    return resource.target.kind === "model" && resourceUri
-      ? "resourceGraphFocusedModelConflict"
-      : "resourceGraphFocusedResourceConflict";
-  }
-  return resourceUri
-    ? classifyResourceGraphPreview(resourceUri.fsPath)
-    : undefined;
-}
-
-function producerResourceIdentity(resource: ResourceGraphProjectedResource): string {
-  return `producer:${resource.producer.producerId}`;
-}
-
-function isOnlyEmptyNode(nodes: readonly ResourceGraphTreeNodeModel[]): boolean {
-  return nodes.length === 1 && nodes[0].icon === "circle-slash";
-}
-
-function getResourcePathLabel(uri: ResourceGraphUriLike): string {
-  const resource = getAssetResource(uri.fsPath);
-  return resource ? `${resource.namespace}:${resource.resourcePath}` : path.basename(uri.fsPath);
-}
-
-function compareNodes(left: ResourceGraphTreeNodeModel, right: ResourceGraphTreeNodeModel): number {
-  return left.label.localeCompare(right.label);
-}
-
-function toChildrenProvider(children: ResourceGraphChildren | undefined): () => Promise<ResourceGraphTreeNodeModel[]> {
-  return typeof children === "function"
-    ? children
-    : () => Promise.resolve(children ?? []);
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -579,17 +580,7 @@ function printUsage() {
   ].join("\n"));
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
-
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   try {
     const options = parseJsonOnlyActivationBudgetArguments(process.argv.slice(2));
     if (options.help) {

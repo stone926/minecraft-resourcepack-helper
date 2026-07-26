@@ -1,3 +1,4 @@
+import { sha256File } from "../lib/hash.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import {
   createReadStream,
@@ -168,7 +169,7 @@ export async function hashPreparedExtensionTree(extensionRoot) {
       if (!entryStat.isFile()) {
         throw new Error(`Prepared extension tree contains a non-file entry: ${relativeEntry}`);
       }
-      const file = await hashFile(absoluteEntry);
+      const file = await sha256File(absoluteEntry);
       if (file.bytes !== entryStat.size) {
         throw new Error(`Prepared extension file changed while it was hashed: ${relativeEntry}`);
       }
@@ -719,7 +720,7 @@ async function readArtifactIdentity(fileName) {
   if (!before.isFile() || before.size <= 0) {
     throw new Error(`Prepared VSIX artifact must be a non-empty regular file: ${fileName}`);
   }
-  const hashed = await hashFile(fileName);
+  const hashed = await sha256File(fileName);
   const after = statSync(fileName);
   if (!after.isFile() || hashed.bytes !== before.size || after.size !== before.size
     || after.mtimeMs !== before.mtimeMs) {
@@ -728,19 +729,6 @@ async function readArtifactIdentity(fileName) {
   return Object.freeze({ sha256: hashed.sha256, bytes: hashed.bytes });
 }
 
-function hashFile(fileName) {
-  return new Promise((resolve, reject) => {
-    const hash = createHash("sha256");
-    let bytes = 0;
-    const stream = createReadStream(fileName);
-    stream.on("data", chunk => {
-      bytes += chunk.length;
-      hash.update(chunk);
-    });
-    stream.on("error", reject);
-    stream.on("end", () => resolve({ bytes, sha256: hash.digest("hex") }));
-  });
-}
 
 function assertArtifactIdentity(actual, expected, label) {
   if (!sameArtifact(actual, expected)) {

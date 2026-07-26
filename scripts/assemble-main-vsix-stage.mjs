@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -487,17 +488,8 @@ function assertMainVsixStageBundleMode(bundleMode) {
   }
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   const result = assembleMainVsixStage(parseMainVsixStageArguments(process.argv.slice(2)));
   console.log(`main VSIX stage files: ${result.files.length}`);
   console.log(`main VSIX stage content hash: ${result.contentHash}`);

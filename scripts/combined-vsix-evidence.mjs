@@ -1,3 +1,4 @@
+import { sha256Hex } from "./lib/hash.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -36,7 +37,7 @@ export async function captureCombinedVsixModeEvidence(options) {
     const archivePath = `extension/${jsonAsset.path}`;
     const packagedBytes = archive.capturedEntries[`extension/${jsonAsset.path}`];
     const metadata = archive.entries.find(entry => entry.path === archivePath && !entry.directory);
-    if (!packagedBytes || !metadata || sha256(packagedBytes) !== jsonAsset.contentSha256
+    if (!packagedBytes || !metadata || sha256Hex(packagedBytes) !== jsonAsset.contentSha256
       || metadata.installedBytes !== jsonAsset.bytes) {
       throw new Error(`${options.mode} VSIX JSON differs from the verified stage: ${jsonAsset.path}`);
     }
@@ -51,7 +52,7 @@ export async function captureCombinedVsixModeEvidence(options) {
     throw new Error(`${options.mode} VSIX publish manifest was not captured.`);
   }
   const stagedManifestBytes = readFileSync(path.join(stageRoot, "package.json"));
-  if (sha256(manifestBytes) !== sha256(stagedManifestBytes)) {
+  if (sha256Hex(manifestBytes) !== sha256Hex(stagedManifestBytes)) {
     throw new Error(`${options.mode} VSIX publish manifest differs from the verified stage.`);
   }
   const manifestValue = parseJson(manifestBytes, `${options.mode} extension/package.json`);
@@ -65,8 +66,8 @@ export async function captureCombinedVsixModeEvidence(options) {
       throw new Error(`${options.mode} runtime entry is missing: ${runtimePath}`);
     }
     const rawBytes = readFileSync(rawFile);
-    const rawHash = sha256(rawBytes);
-    if (rawHash !== sha256(archiveBytes)) {
+    const rawHash = sha256Hex(rawBytes);
+    if (rawHash !== sha256Hex(archiveBytes)) {
       throw new Error(`${options.mode} VSIX runtime bytes differ from the built entry: ${runtimePath}`);
     }
     runtimeEntries[id] = Object.freeze({
@@ -88,7 +89,7 @@ export async function captureCombinedVsixModeEvidence(options) {
     const metadata = archive.entries.find(entry => entry.path === archivePath && !entry.directory);
     const packagedBytes = archive.capturedEntries[archivePath];
     const packaged = options.mode === "development";
-    if (packaged && (!metadata || !packagedBytes || sha256(packagedBytes) !== sha256(bytes))) {
+    if (packaged && (!metadata || !packagedBytes || sha256Hex(packagedBytes) !== sha256Hex(bytes))) {
       throw new Error(`Development VSIX source map differs from the built map: ${mapPath}`);
     }
     if (!packaged && (metadata || packagedBytes)) {
@@ -97,7 +98,7 @@ export async function captureCombinedVsixModeEvidence(options) {
     return Object.freeze({
       path: mapPath,
       rawBytes: bytes.length,
-      sha256: sha256(bytes),
+      sha256: sha256Hex(bytes),
       packaged,
       vsixCompressedBytes: metadata?.compressedBytes ?? 0,
       installedBytes: metadata?.installedBytes ?? 0
@@ -160,7 +161,7 @@ function readAndVerifyStage(stageRoot, manifestFile) {
   for (const file of manifest.files) {
     const absoluteFile = path.join(stageRoot, ...file.path.split("/"));
     const bytes = readFileSync(absoluteFile);
-    const fileHash = sha256(bytes);
+    const fileHash = sha256Hex(bytes);
     if (bytes.length !== file.bytes || fileHash !== file.sha256) {
       throw new Error(`Main VSIX stage contents manifest mismatch: ${file.path}`);
     }
@@ -181,7 +182,7 @@ function readAndVerifyStage(stageRoot, manifestFile) {
         bytes: bytes.length,
         semanticHash: semanticJsonHash(value),
         contentSha256: fileHash,
-        compactSha256: sha256(compactBytes),
+        compactSha256: sha256Hex(compactBytes),
         compactBytes: compactBytes.length
       }));
     }
@@ -194,7 +195,7 @@ function readAndVerifyStage(stageRoot, manifestFile) {
   }
   return Object.freeze({
     contentHash: manifest.contentHash,
-    manifestSha256: sha256(manifestBytes),
+    manifestSha256: sha256Hex(manifestBytes),
     paths,
     files: manifest.files.map(file => Object.freeze({ ...file })),
     vscodeIgnore,
@@ -260,6 +261,3 @@ function compareNames(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}

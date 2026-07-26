@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { sha256Hex } from "./lib/hash.mjs";
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -221,7 +223,7 @@ function readToolchainIdentity(repositoryRoot) {
     vsce: readPackageVersion(repositoryRoot, "@vscode/vsce"),
     yauzl: readPackageVersion(repositoryRoot, "yauzl"),
     yazl: readPackageVersion(repositoryRoot, "yazl"),
-    packageLockSha256: sha256(lockBytes)
+    packageLockSha256: sha256Hex(lockBytes)
   };
   return Object.freeze({ ...identity, fingerprint: semanticJsonHash(identity) });
 }
@@ -313,20 +315,7 @@ function parseJson(bytes, label) {
   }
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
-
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   await runCombinedVsixMeasurement(parseCombinedVsixMeasurementArguments(process.argv.slice(2)));
 }

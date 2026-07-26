@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync
 } from "node:fs";
+import { isMainModule } from "../lib/moduleIdentity.mjs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -245,6 +246,6 @@ function parseSha256(value, label) {
   return value;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === scriptFile) {
+if (isMainModule(import.meta.url)) {
   runExtensionHostSample(parseExtensionHostSampleArguments(process.argv.slice(2)));
 }

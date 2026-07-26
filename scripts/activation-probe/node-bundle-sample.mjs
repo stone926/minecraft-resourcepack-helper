@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "../lib/moduleIdentity.mjs";
 import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -187,17 +188,8 @@ function sanitizeMessage(message, roots) {
   return sanitized;
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   let exitCode = 0;
   try {
     const options = parseArguments(process.argv.slice(2));

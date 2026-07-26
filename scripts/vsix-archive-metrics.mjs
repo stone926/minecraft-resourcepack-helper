@@ -1,3 +1,4 @@
+import { sha256File } from "./lib/hash.mjs";
 import { createHash } from "node:crypto";
 import { createReadStream, statSync } from "node:fs";
 import path from "node:path";
@@ -221,14 +222,8 @@ function normalizeLimits(overrides = {}) {
   return result;
 }
 
-function hashFile(fileName) {
-  return new Promise((resolve, reject) => {
-    const hash = createHash("sha256");
-    const stream = createReadStream(fileName);
-    stream.on("data", chunk => hash.update(chunk));
-    stream.on("error", reject);
-    stream.on("end", () => resolve(hash.digest("hex")));
-  });
+async function hashFile(fileName) {
+  return (await sha256File(fileName)).sha256;
 }
 
 function sum(entries, property) {

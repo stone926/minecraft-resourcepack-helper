@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync
 } from "node:fs";
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -167,11 +168,7 @@ function isProcessAlive(pid) {
   }
 }
 
-function isMainModule() {
-  return process.argv[1] && path.resolve(process.argv[1]) === scriptFile;
-}
-
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   const [extensionRoot, codeExecutable, screenshotOutput] = process.argv.slice(2);
   if (!extensionRoot) {
     throw new Error(

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
@@ -414,14 +415,8 @@ function printUsage() {
   ].join("\n"));
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  return pathIdentity(process.argv[1]) === pathIdentity(scriptFile);
-}
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   try {
     const options = parsePairedActivationComparisonArguments(process.argv.slice(2));
     if (options.help) {

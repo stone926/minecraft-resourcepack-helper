@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -392,14 +393,7 @@ function printUsage() {
   ].join("\n"));
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  return pathIdentity(process.argv[1]) === pathIdentity(scriptFile);
-}
-
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   try {
     const options = parsePairedActivationVerificationArguments(process.argv.slice(2));
     if (options.help) {

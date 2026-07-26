@@ -1,3 +1,4 @@
+import { sha256Hex } from "./lib/hash.mjs";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -91,7 +92,7 @@ export function createStageContentsManifest(files, sourceDateEpoch, options = {}
   const entries = files.map(file => ({
     path: normalizeStagePathForAllowList(file.path, allowedForbiddenPaths),
     bytes: file.content.length,
-    sha256: sha256(file.content)
+    sha256: sha256Hex(file.content)
   })).sort((left, right) => compareNames(left.path, right.path));
   const contentHash = createHash("sha256");
   for (const entry of entries) {
@@ -356,9 +357,6 @@ function validateExistingStageRoot(stageRoot) {
   }
 }
 
-function sha256(content) {
-  return createHash("sha256").update(content).digest("hex");
-}
 
 function requiredString(value, label) {
   if (typeof value !== "string" || value.length === 0) {

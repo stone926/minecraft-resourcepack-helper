@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { sha256Hex } from "./lib/hash.mjs";
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -225,7 +227,7 @@ async function loadCompiledBenchmarkApi(repositoryRoot) {
     Object.freeze({
       path: relativePortable(repositoryRoot, fileName),
       bytes: lstatSync(fileName).size,
-      sha256: sha256(readFileSync(fileName))
+      sha256: sha256Hex(readFileSync(fileName))
     })
   ])));
   return Object.freeze({ api, inputs });
@@ -311,10 +313,6 @@ function shellDisplayArgument(argument) {
     : JSON.stringify(argument);
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
 function normalizeOptionalEnvironmentValue(value) {
   if (typeof value !== "string") {
     return null;
@@ -332,17 +330,8 @@ function printUsage() {
   ].join("\n"));
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   try {
     const options = parseResourceUniverseBenchmarkArguments(process.argv.slice(2));
     if (options.help) {

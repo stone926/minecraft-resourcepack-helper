@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -331,16 +332,7 @@ function assertFrozenArtifactBudget(label, actual, maximum) {
   assertWithinBudget(label, actual, maximum);
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   await verifyBuildBudgets(parseBudgetArguments(process.argv.slice(2)));
 }

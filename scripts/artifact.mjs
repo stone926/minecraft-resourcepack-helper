@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,17 +101,8 @@ function defaultExecuteStep(step, context) {
   );
 }
 
-function isMainModule() {
-  if (!process.argv[1]) {
-    return false;
-  }
-  const invoked = path.resolve(process.argv[1]);
-  return process.platform === "win32"
-    ? invoked.toLowerCase() === scriptFile.toLowerCase()
-    : invoked === scriptFile;
-}
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   const { command, targetName, commandArgs } = parseArtifactArguments(process.argv.slice(2));
   executeArtifactPlan(createArtifactPlan(command, targetName, commandArgs));
 }
