@@ -3,7 +3,11 @@ import {
   tryParseMinecraftResourceId,
   type MinecraftResourceId
 } from "./resourceId";
-import { minecraftResourceTarget } from "./resourceTargets";
+import {
+  canonicalMinecraftResourceKind,
+  inferMinecraftResourceKindFromDirectory,
+  minecraftResourceTarget
+} from "./resourceTargets";
 
 export interface ResourceGraphLogicalKey {
   kind: string;
@@ -31,13 +35,6 @@ export interface CanonicalizeResourceGraphOutputPathOptions {
   fileSystemCaseSensitive?: boolean;
 }
 
-const canonicalKindAliases: Readonly<Record<string, string>> = {
-  texture_directory: "textureDirectory",
-  font_file: "fontFile",
-  shader_vertex: "shaderVertex",
-  shader_fragment: "shaderFragment"
-};
-
 /**
  * Canonicalizes a typed Minecraft resource identity without consulting the
  * filesystem. Concrete producer identity, same-producer aliases, and aggregate
@@ -49,7 +46,7 @@ export function canonicalizeResourceGraphIdentity(
   value: string,
   options: CanonicalizeResourceGraphIdentityOptions = {}
 ): CanonicalResourceGraphIdentity | null {
-  const normalizedKind = canonicalResourceGraphKind(kind);
+  const normalizedKind = canonicalMinecraftResourceKind(kind);
   const initial = tryParseMinecraftResourceId(
     value.replaceAll("\\", "/"),
     options.defaultNamespace ?? "minecraft"
@@ -93,8 +90,8 @@ export function canonicalizeResourceGraphIdentity(
   return {
     primaryKey,
     primaryCategory: primaryKind === "textureDirectory" ? "aggregate" : "concrete",
-    aliasKeys: uniqueLogicalKeys(aliasKeys, primaryKey),
-    aggregateMemberships: uniqueLogicalKeys(aggregateMemberships, primaryKey)
+    aliasKeys: uniqueSecondaryLogicalKeys(aliasKeys, primaryKey),
+    aggregateMemberships: uniqueSecondaryLogicalKeys(aggregateMemberships, primaryKey)
   };
 }
 
@@ -121,7 +118,7 @@ export function canonicalizeResourceGraphOutputPath(
   const namespace = segments[assetsIndex + 1];
   const directory = structuralSegments[assetsIndex + 2];
   const resourcePath = segments.slice(assetsIndex + 3).join("/");
-  const inference = inferOutputKind(directory, resourcePath);
+  const inference = inferMinecraftResourceKindFromDirectory(directory, resourcePath);
   if (!inference) {
     return null;
   }
@@ -160,10 +157,6 @@ export function normalizeResourceGraphFileSystemPath(
   }
   const identity = `${prefix}${segments.join("/")}`;
   return options.caseSensitive === false ? identity.toLowerCase() : identity;
-}
-
-function canonicalResourceGraphKind(kind: string): string {
-  return canonicalKindAliases[kind] ?? kind;
 }
 
 function resolveShaderKind(
@@ -217,49 +210,18 @@ function textureDirectoryMemberships(id: MinecraftResourceId): ResourceGraphLogi
   return memberships;
 }
 
-function uniqueLogicalKeys(
+export function logicalKeyIdentity(key: ResourceGraphLogicalKey): string {
+  return `${key.kind}\0${key.id}`;
+}
+
+export function uniqueLogicalKeys<TKey extends ResourceGraphLogicalKey>(keys: readonly TKey[]): TKey[] {
+  return [...new Map(keys.map(key => [logicalKeyIdentity(key), key])).values()];
+}
+
+function uniqueSecondaryLogicalKeys(
   keys: readonly ResourceGraphLogicalKey[],
   primaryKey: ResourceGraphLogicalKey
 ): ResourceGraphLogicalKey[] {
   const primaryIdentity = logicalKeyIdentity(primaryKey);
-  return [...new Map(keys
-    .filter(key => logicalKeyIdentity(key) !== primaryIdentity)
-    .map(key => [logicalKeyIdentity(key), key]))
-    .values()];
+  return uniqueLogicalKeys(keys.filter(key => logicalKeyIdentity(key) !== primaryIdentity));
 }
-
-function logicalKeyIdentity(key: ResourceGraphLogicalKey): string {
-  return `${key.kind}\0${key.id}`;
-}
-
-function inferOutputKind(
-  directory: string,
-  resourcePath: string
-): { kind: string; extension: string } | null {
-  if (directory === "shaders") {
-    return resourcePath.endsWith(".vsh")
-      ? { kind: "shaderVertex", extension: "vsh" }
-      : resourcePath.endsWith(".fsh")
-        ? { kind: "shaderFragment", extension: "fsh" }
-        : null;
-  }
-  const descriptor = outputKindByDirectory[directory];
-  return descriptor && resourcePath.endsWith(`.${descriptor.extension}`)
-    ? descriptor
-    : null;
-}
-
-const outputKindByDirectory: Readonly<Record<string, { kind: string; extension: string }>> = {
-  models: { kind: "model", extension: "json" },
-  blockstates: { kind: "blockstate", extension: "json" },
-  items: { kind: "item", extension: "json" },
-  textures: { kind: "texture", extension: "png" },
-  sounds: { kind: "sound", extension: "ogg" },
-  font: { kind: "font", extension: "json" },
-  atlases: { kind: "atlas", extension: "json" },
-  particles: { kind: "particles", extension: "json" },
-  equipment: { kind: "equipment", extension: "json" },
-  waypoint_style: { kind: "waypoint_style", extension: "json" },
-  post_effect: { kind: "post_effect", extension: "json" },
-  lang: { kind: "lang", extension: "json" }
-};

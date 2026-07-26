@@ -30,7 +30,7 @@ export function getModelReferences(ast: JsonDocumentNode, source: string): Resou
 
   for (const item of objectMembers(ast.body)) {
     if (memberName(item) === "parent") {
-      pushReference(references, item.value, "models", source, "json", "model", "modelParent");
+      pushReference(references, item.value, "models", source, "model", { relationship: "modelParent" });
     } else if (memberName(item) === "textures") {
       for (const textureEntry of objectMembers(item.value)) {
         pushModelTextureReference(references, textureEntry.value, source);
@@ -87,7 +87,7 @@ function pushBlockstateModelVariantReferences(references: ResourceReference[], n
 function pushModelPropertyReferences(references: ResourceReference[], node: JsonAstNode, source: string) {
   for (const modelEntry of objectMembers(node)) {
     if (memberName(modelEntry) === "model") {
-      pushReference(references, modelEntry.value, "models", source, "json", "model");
+      pushReference(references, modelEntry.value, "models", source, "model");
     }
   }
 }
@@ -95,12 +95,12 @@ function pushModelPropertyReferences(references: ResourceReference[], node: Json
 function pushModelTextureReference(references: ResourceReference[], valueNode: JsonAstNode, source: string): void {
   const directTexture = stringValue(valueNode);
   if (directTexture !== undefined) {
-    pushReference(references, valueNode, "textures", source, "png", "texture");
+    pushReference(references, valueNode, "textures", source, "texture");
     return;
   }
 
   const sprite = objectMembers(valueNode).find(member => memberName(member) === "sprite");
   if (sprite) {
-    pushReference(references, sprite.value, "textures", source, "png", "texture");
+    pushReference(references, sprite.value, "textures", source, "texture");
   }
 }

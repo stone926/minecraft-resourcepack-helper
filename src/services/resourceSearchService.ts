@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { uniqueValues } from "../../packages/mc-assets/src";
 import type { ResourceUniverseChangeEvent } from "../resourceUniverse";
 import type { ResourceGraphPathChangeKind } from "../utils/resourceGraph";
+import { throwIfAborted } from "../utils/abortError";
 import type {
   ResourceUniverseNavigation,
   UnifiedResourceInventory
@@ -331,16 +332,4 @@ function cancellationToken(signal: AbortSignal): vscode.CancellationToken {
       };
     }
   };
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (!signal?.aborted) {
-    return;
-  }
-  if (signal.reason !== undefined) {
-    throw signal.reason;
-  }
-  const error = new Error("This operation was aborted");
-  error.name = "AbortError";
-  throw error;
 }

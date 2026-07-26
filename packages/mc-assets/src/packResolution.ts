@@ -218,6 +218,21 @@ export function findPackRoot(fileName: string, options: FindPackRootOptions = {}
   }
 }
 
+/** Every ancestor `pack.mcmeta` candidate from the file's directory up to `stopAt`/FS root. */
+export function ancestorPackMetadataCandidates(fileName: string, stopAt?: string | null): string[] {
+  let directory = path.dirname(path.normalize(fileName));
+  const root = path.parse(directory).root;
+  const normalizedStop = stopAt ? path.normalize(stopAt) : null;
+  const candidates: string[] = [];
+  while (true) {
+    candidates.push(path.join(directory, "pack.mcmeta"));
+    if (directory === root || directory === normalizedStop) {
+      return candidates;
+    }
+    directory = path.dirname(directory);
+  }
+}
+
 export function packRootFromAssetsPath(fileName: string): string | null {
   const normalizedPath = path.normalize(fileName);
   const parsedPath = path.parse(normalizedPath);

@@ -1,4 +1,5 @@
 import { uniqueValues } from "../../../packages/mc-assets/src";
+import { throwIfAborted } from "../../utils/abortError";
 import {
   createStableResourceProjectRevision,
   resourceProjectUriIdentity,
@@ -115,12 +116,12 @@ export class ArchiveResourceStore {
         `Layer '${descriptor.layerId}' is not a ZIP or client JAR layer.`
       );
     }
-    throwIfAborted(signal);
+    throwIfAborted(signal, "Archive resource mount was cancelled.");
 
     const sourceUri = descriptor.rootUri;
     const sourceIdentity = resourceProjectUriIdentity(sourceUri);
     const stat = await this.host.stat(sourceUri);
-    throwIfAborted(signal);
+    throwIfAborted(signal, "Archive resource mount was cancelled.");
     if (!stat || stat.type !== "file") {
       throw new ArchiveResourceStoreError(
         "sourceUnavailable",
@@ -254,9 +255,9 @@ export class ArchiveResourceStore {
         `Unable to read archive layer '${descriptor.rootUri}': ${error instanceof Error ? error.message : String(error)}`
       );
     }
-    throwIfAborted(signal);
+    throwIfAborted(signal, "Archive resource mount was cancelled.");
     const verifiedStat = await this.host.stat(descriptor.rootUri);
-    throwIfAborted(signal);
+    throwIfAborted(signal, "Archive resource mount was cancelled.");
     if (!verifiedStat || verifiedStat.type !== "file" || !sameSourceStat(initialStat, verifiedStat)) {
       throw new ArchiveResourceStoreError(
         "sourceChanged",
@@ -380,14 +381,6 @@ function resourceAuthority(uri: SerializedResourceUri): string {
     return new URL(uri).hostname.toLowerCase();
   } catch {
     return "";
-  }
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
-    throw signal.reason instanceof Error
-      ? signal.reason
-      : new Error("Archive resource mount was cancelled.");
   }
 }
 

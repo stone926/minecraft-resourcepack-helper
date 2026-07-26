@@ -24,7 +24,7 @@ function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: Reso
   if (type === "directory") {
     const source = getObjectMemberValue(sourceEntry, "source");
     if (source) {
-      pushReference(references, source, "textures", "atlases", null, "textureDirectory");
+      pushReference(references, source, "textures", "atlases", "textureDirectory");
     }
     return;
   }
@@ -39,12 +39,12 @@ function collectAtlasSourceReferences(sourceEntry: JsonAstNode, references: Reso
 
     const permutations = getObjectMemberValue(sourceEntry, "permutations");
     for (const permutation of objectMembers(permutations)) {
-      pushReference(references, permutation.value, "textures", "atlases", "png", "texture");
+      pushReference(references, permutation.value, "textures", "atlases", "texture");
     }
 
     const textures = getObjectMemberValue(sourceEntry, "textures");
     for (const texture of arrayElements(textures)) {
-      pushReference(references, texture, "textures", "atlases", "png", "texture");
+      pushReference(references, texture, "textures", "atlases", "texture");
     }
   }
 }
@@ -56,6 +56,6 @@ function pushAtlasTextureMemberReference(
 ): void {
   const value = getObjectMemberValue(sourceEntry, member);
   if (value) {
-    pushReference(references, value, "textures", "atlases", "png", "texture");
+    pushReference(references, value, "textures", "atlases", "texture");
   }
 }

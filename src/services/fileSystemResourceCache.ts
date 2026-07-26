@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
 import {
+  ancestorPackMetadataCandidates,
   findPackRoot,
   normalizePathKey,
   parsePackMetadata,
@@ -22,11 +23,14 @@ import {
   type WatcherTrustProvider
 } from "./fileFreshnessPolicy";
 import { ResourceCacheMetrics } from "./resourceCacheMetrics";
-import type {
-  CacheEntry,
-  CacheTextDocument,
-  ResourceCacheGenerationState,
-  VersionedCacheEntry
+import {
+  getCachedVersionedValue,
+  missingFileVersion,
+  openDocumentFileVersion,
+  type CacheEntry,
+  type CacheTextDocument,
+  type ResourceCacheGenerationState,
+  type VersionedCacheEntry
 } from "./resourceCacheTypes";
 
 interface DocumentAstCacheEntry {
@@ -103,7 +107,7 @@ export class FileSystemResourceCache {
 
   getDirectoryEntries(directory: string): Promise<Dirent[] | null> {
     const key = normalizePathKey(directory);
-    const version = this.getFileVersion(directory) ?? `missing:${this.state.getResourceFsGeneration()}`;
+    const version = this.getFileVersion(directory) ?? missingFileVersion(this.state.getResourceFsGeneration());
     const cached = this.directoryEntriesCache.get(key);
     if (cached && cached.version === version) {
       this.metrics.hit("directoryEntries");
@@ -118,7 +122,7 @@ export class FileSystemResourceCache {
 
   getDirectoryEntriesSync(directory: string): Dirent[] | null {
     const key = normalizePathKey(directory);
-    const version = this.getFileVersion(directory) ?? `missing:${this.state.getResourceFsGeneration()}`;
+    const version = this.getFileVersion(directory) ?? missingFileVersion(this.state.getResourceFsGeneration());
     const cached = this.directoryEntriesSyncCache.get(key);
     if (cached && cached.version === version) {
       this.metrics.hit("directoryEntriesSync");
@@ -167,7 +171,7 @@ export class FileSystemResourceCache {
   getFileVersion(fileName: string): string | null {
     const openDocument = this.findOpenTextDocument(fileName);
     if (openDocument && typeof openDocument.version === "number") {
-      return `open:${openDocument.version}`;
+      return openDocumentFileVersion(openDocument.version);
     }
 
     return this.freshness.getFileVersion(fileName);
@@ -209,7 +213,7 @@ export class FileSystemResourceCache {
   getPackMetadata(packRoot: string): PackMetadata {
     const key = normalizePathKey(packRoot);
     const mcmetaPath = path.join(packRoot, "pack.mcmeta");
-    const version = this.getFileVersion(mcmetaPath) ?? `missing:${this.state.getResourceFsGeneration()}`;
+    const version = this.getFileVersion(mcmetaPath) ?? missingFileVersion(this.state.getResourceFsGeneration());
     const cached = this.packMetadataCache.get(key);
     if (cached && cached.version === version) {
       this.metrics.hit("packMetadata");
@@ -326,18 +330,8 @@ export class FileSystemResourceCache {
     fileName: string,
     compute: () => T
   ): T {
-    const key = normalizePathKey(fileName);
-    const version = this.getFileVersion(fileName) ?? `missing:${this.state.getResourceFsGeneration()}`;
-    const cached = cache.get(key);
-    if (cached && cached.version === version) {
-      this.metrics.hit(cacheName);
-      return cached.value;
-    }
-
-    this.metrics.miss(cacheName);
-    const value = compute();
-    cache.set(key, { version, value });
-    return value;
+    const version = this.getFileVersion(fileName) ?? missingFileVersion(this.state.getResourceFsGeneration());
+    return getCachedVersionedValue(this.metrics, cacheName, cache, normalizePathKey(fileName), version, compute);
   }
 
   private getFreshGenerationalValue<T>(
@@ -395,18 +389,4 @@ function parsePackMetadataSafely(text: string): PackMetadata {
 
 function documentKey(document: CacheTextDocument): string {
   return document.uri ? document.uri.toString() : normalizePathKey(document.fileName);
-}
-
-function ancestorPackMetadataCandidates(fileName: string, stopAt?: string): string[] {
-  let directory = path.dirname(path.normalize(fileName));
-  const root = path.parse(directory).root;
-  const normalizedStop = stopAt ? path.normalize(stopAt) : null;
-  const candidates: string[] = [];
-  while (true) {
-    candidates.push(path.join(directory, "pack.mcmeta"));
-    if (directory === root || directory === normalizedStop) {
-      return candidates;
-    }
-    directory = path.dirname(directory);
-  }
 }

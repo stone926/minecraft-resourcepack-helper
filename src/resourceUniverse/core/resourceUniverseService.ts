@@ -1,4 +1,5 @@
 import type { ResourceGraphLogicalKey } from "../../../packages/mc-assets/src";
+import { abortSignalReason } from "../../utils/abortError";
 import { ResourceContributionRegistry, type ResourceProviderRegistration } from "./resourceContributionRegistry";
 import { ResourceUniverseIndex } from "./resourceUniverseIndex";
 import type {
@@ -382,7 +383,7 @@ export class ResourceUniverseService {
       return Promise.reject(new Error("Resource coverage scope must belong to the requested project."));
     }
     if (signal?.aborted) {
-      return Promise.reject(abortReason(signal));
+      return Promise.reject(abortSignalReason(signal));
     }
 
     const key = providerProjectKey(providerId, projectId);
@@ -473,7 +474,7 @@ export class ResourceUniverseService {
         }
         completed = true;
         release();
-        reject(abortReason(signal!));
+        reject(abortSignalReason(signal!));
         if (inFlight.consumers.size === 0 && !inFlight.settled) {
           this.cancelSpecificRequest(key, inFlight);
         }
@@ -631,22 +632,13 @@ function sorted(values: readonly string[] | undefined): readonly string[] | unde
   return values ? [...values].sort((left, right) => left.localeCompare(right, "en")) : undefined;
 }
 
-function abortReason(signal: AbortSignal): unknown {
-  if (signal.reason !== undefined) {
-    return signal.reason;
-  }
-  const error = new Error("This operation was aborted");
-  error.name = "AbortError";
-  return error;
-}
-
 function linkAbortSignal(
   signal: AbortSignal,
   controller: AbortController,
   onAbort?: (reason: unknown) => void
 ): () => void {
   const abort = (): void => {
-    const reason = abortReason(signal);
+    const reason = abortSignalReason(signal);
     onAbort?.(reason);
     controller.abort(reason);
   };

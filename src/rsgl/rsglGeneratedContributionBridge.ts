@@ -23,7 +23,7 @@ import {
   BackgroundRefreshScheduler,
   type BackgroundRefreshTimerHost
 } from "./backgroundRefreshScheduler";
-import { isAbortError } from "../utils/abortError";
+import { abortSignalError, isAbortError } from "../utils/abortError";
 import {
   type RsglRuntimeController,
   type RsglRuntimeEnsureOptions,
@@ -316,7 +316,7 @@ export class RsglGeneratedContributionBridge {
         );
       }
       if (signal.aborted) {
-        throw abortSignalError(signal);
+        throw abortSignalError(signal, "The RSGL resource snapshot request was cancelled.");
       }
       if (!runtime) {
         return createRsglUnavailableSnapshotResponse(
@@ -338,7 +338,7 @@ export class RsglGeneratedContributionBridge {
       );
     } catch {
       if (signal.aborted) {
-        throw abortSignalError(signal);
+        throw abortSignalError(signal, "The RSGL resource snapshot request was cancelled.");
       }
       return createRsglUnavailableSnapshotResponse(
         request,
@@ -794,15 +794,6 @@ function requireIdentity(value: string, label: string): string {
     throw new Error(`${label} must be a non-empty identity.`);
   }
   return value.trim();
-}
-
-function abortSignalError(signal: AbortSignal): Error {
-  if (signal.reason instanceof Error) {
-    return signal.reason;
-  }
-  const error = new Error("The RSGL resource snapshot request was cancelled.");
-  error.name = "AbortError";
-  return error;
 }
 
 function errorMessage(error: unknown): string {

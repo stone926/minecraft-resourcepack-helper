@@ -8,6 +8,7 @@ import {
   type RsglResourceSnapshotResponse
 } from "../../../packages/rsgl-shared/src/resourceSnapshotProtocol";
 import type { ResourcePackProjectContextDto } from "../../../packages/resource-project/src";
+import { abortSignalError } from "../../utils/abortError";
 import type {
   ProviderCoverage,
   ResourceContributionProvider,
@@ -142,7 +143,7 @@ export class RsglGeneratedProvider implements ResourceContributionProvider {
       value = await this.source.requestSnapshot(request, signal);
     } catch (error) {
       if (signal.aborted) {
-        throw abortError(signal);
+        throw abortSignalError(signal, "The RSGL resource snapshot request was aborted.");
       }
       return this.unavailableSnapshot(
         request,
@@ -152,7 +153,7 @@ export class RsglGeneratedProvider implements ResourceContributionProvider {
       );
     }
     if (signal.aborted) {
-      throw abortError(signal);
+      throw abortSignalError(signal, "The RSGL resource snapshot request was aborted.");
     }
     if (state.epoch !== requestEpoch) {
       return this.unavailableSnapshot(request, state, "stale");
@@ -456,15 +457,6 @@ export class RsglGeneratedProvider implements ResourceContributionProvider {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function abortError(signal: AbortSignal): Error {
-  if (signal.reason instanceof Error) {
-    return signal.reason;
-  }
-  const error = new Error("The RSGL resource snapshot request was aborted.");
-  error.name = "AbortError";
-  return error;
 }
 
 function requireIdentity(value: string, label: string): string {

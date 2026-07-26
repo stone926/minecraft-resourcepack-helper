@@ -106,7 +106,7 @@ function collectLooseItemModelReferences(node: JsonAstNode, references: Resource
   for (const member of objectMembers(node)) {
     const name = memberName(member);
     if (name === "model" || name === "base") {
-      pushReference(references, member.value, "models", "items", "json", "model");
+      pushReference(references, member.value, "models", "items", "model");
     } else if (name === "texture") {
       pushItemSpecialTextureReference(references, node, member.value);
     }
@@ -121,19 +121,19 @@ function collectLooseItemModelReferences(node: JsonAstNode, references: Resource
 function pushItemSpecialTextureReference(references: ResourceReference[], node: JsonAstNode, valueNode: JsonAstNode) {
   const type = getMinecraftType(node);
   if (type === "chest") {
-    pushReference(references, valueNode, "textures/entity/chest", "items", "png", "texture");
+    pushReference(references, valueNode, "textures/entity/chest", "items", "texture");
   } else if (type === "shulker_box") {
-    pushReference(references, valueNode, "textures/entity/shulker", "items", "png", "texture");
+    pushReference(references, valueNode, "textures/entity/shulker", "items", "texture");
   } else if (type === "copper_golem_statue") {
-    pushReference(references, valueNode, "", "items", "png", "texture");
+    pushReference(references, valueNode, "", "items", "texture");
   } else if (type === "head") {
-    pushReference(references, valueNode, "textures/entity", "items", "png", "texture");
+    pushReference(references, valueNode, "textures/entity", "items", "texture");
   }
 }
 
 function pushItemModelReference(references: ResourceReference[], node: JsonAstNode, name: string): void {
   const memberValue = getObjectMemberValue(node, name);
   if (memberValue) {
-    pushReference(references, memberValue, "models", "items", "json", "model");
+    pushReference(references, memberValue, "models", "items", "model");
   }
 }

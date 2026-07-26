@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { throwIfAborted } from "../utils/abortError";
 import type {
   ResourceLocation,
   ResourceProducer
@@ -259,10 +260,10 @@ async function toProtocolLocation(
   if (!location.range) {
     return { uri: location.uri, origin: location.origin };
   }
-  throwIfAborted(signal);
+  throwIfAborted(signal, "Resource navigation was cancelled.");
   try {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(location.uri, true));
-    throwIfAborted(signal);
+    throwIfAborted(signal, "Resource navigation was cancelled.");
     const length = document.getText().length;
     return {
       uri: location.uri,
@@ -310,12 +311,6 @@ function combineCoverage(coverages: readonly UnifiedResourceCoverage[]): Unified
     return "authoritative";
   }
   return coverages.every(coverage => coverage === "unavailable") ? "unavailable" : "partial";
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
-    throw signal.reason instanceof Error ? signal.reason : new Error("Resource navigation was cancelled.");
-  }
 }
 
 function isCancellationError(error: unknown): boolean {

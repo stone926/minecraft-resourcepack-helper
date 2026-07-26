@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   canonicalizeResourceGraphIdentity,
   canonicalizeResourceGraphOutputPath,
+  logicalKeyIdentity,
   uniqueValues,
   type ResourceGraphLogicalKey
 } from "../../../mc-assets/src";
@@ -448,10 +449,6 @@ function uniqueByIdentity<T>(values: readonly T[], identity: (value: T) => strin
 
 function uniqueStrings(values: readonly string[]): string[] {
   return uniqueValues(values).sort(compareOrdinal);
-}
-
-function logicalKeyIdentity(key: ResourceGraphLogicalKey): string {
-  return `${key.kind}\0${key.id}`;
 }
 
 function locationIdentity(value: RsglResourceSnapshotLocation): string {

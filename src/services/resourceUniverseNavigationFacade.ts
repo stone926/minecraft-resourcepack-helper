@@ -4,6 +4,7 @@ import {
   canonicalizeResourceGraphOutputPath,
   minecraftResourceTarget,
   normalizePathKey,
+  uniqueLogicalKeys,
   type ResourceGraphLogicalKey
 } from "../../packages/mc-assets/src";
 import {
@@ -41,6 +42,7 @@ import {
 import { isAbortError } from "../utils/abortError";
 import {
   getResourceReferences,
+  isResourceReferenceKind,
   type ResourceReference,
   type ResourceReferenceDocument
 } from "../utils/resourceReferences";
@@ -1074,11 +1076,6 @@ function uriIdentity(uri: vscode.Uri): string {
   return uri.scheme === "file" ? `file:${normalizePathKey(uri.fsPath)}` : uri.toString();
 }
 
-function isResourceReferenceKind(value: string): value is ResourceReference["kind"] {
-  return ["model", "texture", "textureDirectory", "font", "fontFile", "shader", "sound"]
-    .includes(value);
-}
-
 function referenceKindForLogicalKind(kind: string): ResourceReference["kind"] | null {
   if (kind === "shaderVertex" || kind === "shaderFragment") {
     return "shader";
@@ -1097,10 +1094,6 @@ function resolvedLocationUri(result: ResourceNavigationResult): vscode.Uri | nul
 function preferredProducerUri(producer: ResourceProducer): vscode.Uri | null {
   const uri = producer.sourceOrigins[0]?.uri ?? producer.physicalOrigins[0]?.uri;
   return uri ? vscode.Uri.parse(uri, true) : null;
-}
-
-function uniqueLogicalKeys(keys: readonly ResourceGraphLogicalKey[]): ResourceGraphLogicalKey[] {
-  return [...new Map(keys.map(key => [`${key.kind}\0${key.id}`, key])).values()];
 }
 
 function projectNavigationResources(

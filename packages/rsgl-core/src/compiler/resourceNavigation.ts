@@ -1,4 +1,5 @@
 import type { TextRange } from "../parser";
+import { logicalKeyIdentity } from "../../../mc-assets/src";
 import { resolveRsglPath, rsglPathKey } from "../pathIdentity";
 import type { RsglSourceFile } from "../semantic";
 import {
@@ -273,7 +274,7 @@ function targetOf(
 function targetKey(
   target: RsglResourceNavigationTarget | RsglGeneratedResourceKey
 ): string {
-  return `${target.kind}\0${target.id}`;
+  return logicalKeyIdentity(target);
 }
 
 function compareOccurrences(

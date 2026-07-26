@@ -1,4 +1,8 @@
-import { minecraftResourceTarget, tryParseMinecraftResourceId } from "../../../mc-assets/src";
+import {
+  minecraftResourceTarget,
+  tryParseMinecraftResourceId,
+  uniqueLogicalKeys
+} from "../../../mc-assets/src";
 import { isExternalResourceUnit, type ResourceUnit } from "./ir";
 import type { RsglResourceExistenceKind } from "./validationTypes";
 
@@ -39,10 +43,7 @@ export function generatedResourceKeysForUnit(
   }
   keys.push(...generatedIdsFromOutputPath(unit).map(([kind, id]) => ({ kind, id })));
 
-  return [...new Map(keys.map(key => [
-    `${key.kind}\0${key.id}`,
-    key
-  ])).values()];
+  return uniqueLogicalKeys(keys);
 }
 
 /** Indexes every concrete compiler output that can satisfy a typed reference. */

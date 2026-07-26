@@ -9,6 +9,10 @@ export function isSamePath(left: string, right: string): boolean {
   return normalizePathKey(left) === normalizePathKey(right);
 }
 
+export function normalizeOptionalPathKey(value: string | null | undefined): string {
+  return value ? normalizePathKey(value) : "";
+}
+
 export function findByNormalizedPath<T>(
   values: Iterable<T>,
   fileName: string,

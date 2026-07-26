@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import {
+  ancestorPackMetadataCandidates,
   getDocumentResourceRootCandidates,
+  normalizeOptionalPathKey,
   normalizePathKey,
   parseResourceLocation,
   resolveResourceFile,
@@ -56,7 +58,7 @@ export class ResourceResolutionCache {
       request.target,
       namespace,
       resourcePath,
-      normalizeOptionalPath(request.defaultAssetsPath),
+      normalizeOptionalPathKey(request.defaultAssetsPath),
       (request.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
       this.state.getConfigurationVersion()
     ].join("\0");
@@ -107,7 +109,7 @@ export class ResourceResolutionCache {
       request.resourcePath,
       location.namespace,
       location.resourcePath,
-      normalizeOptionalPath(request.defaultAssetsPath),
+      normalizeOptionalPathKey(request.defaultAssetsPath),
       (request.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
       this.state.getConfigurationVersion()
     ].join("\0");
@@ -204,7 +206,7 @@ export class ResourceResolutionCache {
     const sourcePackRoot = this.host.getPackRoot(request.sourceFileName);
     return uniqueValues([
       request.sourceFileName,
-      ...getAncestorPackMetadataCandidates(request.sourceFileName, sourcePackRoot),
+      ...ancestorPackMetadataCandidates(request.sourceFileName, sourcePackRoot),
       ...(request.resourcePackRoots ?? []).map(root => path.join(root, "pack.mcmeta"))
     ]);
   }
@@ -215,24 +217,5 @@ export class ResourceResolutionCache {
 
   private verificationTimestamp(): number {
     return this.host.verificationTimestamp?.() ?? 0;
-  }
-}
-
-function normalizeOptionalPath(value: string | null | undefined): string {
-  return value ? normalizePathKey(value) : "";
-}
-
-function getAncestorPackMetadataCandidates(fileName: string, stopAt: string | null): string[] {
-  let directory = path.dirname(path.normalize(fileName));
-  const root = path.parse(directory).root;
-  const normalizedStop = stopAt ? path.normalize(stopAt) : null;
-  const candidates: string[] = [];
-
-  while (true) {
-    candidates.push(path.join(directory, "pack.mcmeta"));
-    if (directory === root || directory === normalizedStop) {
-      return candidates;
-    }
-    directory = path.dirname(directory);
   }
 }

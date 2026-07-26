@@ -16,6 +16,7 @@ import {
 } from "../../../packages/resource-project/src";
 import type { ResourcePackProjectService } from "../../resourceProject";
 import { mapWithConcurrency } from "../../utils/asyncWorkPool";
+import { throwIfAborted } from "../../utils/abortError";
 import type { ResourceContributionRequest, ResourceLayerRole } from "../core";
 import type { ArchiveResourceStore } from "../virtualFs/archiveResourceStore";
 import type { PhysicalAssetScannedDocument } from "./physicalAssetReferenceAdapter";
@@ -130,7 +131,7 @@ export class VscodePhysicalAssetSource implements PhysicalAssetProjectSource {
       ...context.externalLayers,
       ...(context.vanillaLayer ? [context.vanillaLayer] : [])
     ]) {
-      throwIfAborted(signal);
+      throwIfAborted(signal, "Physical asset scan was cancelled.");
       let layerRootUri = descriptor.rootUri;
       if (descriptor.source === "zip" || descriptor.source === "clientJar") {
         if (!this.archiveResources) {
@@ -215,7 +216,7 @@ async function collectLayerFileUris(
     depth: 0
   }];
   while (queue.length > 0) {
-    throwIfAborted(signal);
+    throwIfAborted(signal, "Physical asset scan was cancelled.");
     const current = queue.shift()!;
     let entries: [string, vscode.FileType][];
     try {
@@ -246,7 +247,7 @@ async function loadScannedDocument(
   layer: ScannableLayer,
   signal: AbortSignal
 ): Promise<PhysicalAssetScannedDocument | null> {
-  throwIfAborted(signal);
+  throwIfAborted(signal, "Physical asset scan was cancelled.");
   const openDocument = vscode.workspace.textDocuments.find(document =>
     document.uri.toString() === uri.toString()
   );
@@ -326,7 +327,7 @@ async function packAssetsRoots(
   baseRoots: readonly SerializedResourceUri[],
   signal: AbortSignal
 ): Promise<SerializedResourceUri[]> {
-  throwIfAborted(signal);
+  throwIfAborted(signal, "Physical asset scan was cancelled.");
   let metadata: ReturnType<typeof parsePackMetadata> | undefined;
   try {
     const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(
@@ -392,13 +393,5 @@ function decodeUriPath(value: string): string {
     return decodeURIComponent(value);
   } catch {
     return value;
-  }
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
-    throw signal.reason instanceof Error
-      ? signal.reason
-      : new Error("Physical asset scan was cancelled.");
   }
 }

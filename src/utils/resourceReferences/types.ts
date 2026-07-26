@@ -20,7 +20,21 @@ export interface ResourceReferenceValueNode {
   hitLoc?: AstLocation | null;
 }
 
-export type ResourceReferenceKind = "model" | "texture" | "textureDirectory" | "font" | "fontFile" | "shader" | "sound";
+export const resourceReferenceKinds = [
+  "model",
+  "texture",
+  "textureDirectory",
+  "font",
+  "fontFile",
+  "shader",
+  "sound"
+] as const;
+
+export type ResourceReferenceKind = (typeof resourceReferenceKinds)[number];
+
+export function isResourceReferenceKind(value: string): value is ResourceReferenceKind {
+  return (resourceReferenceKinds as readonly string[]).includes(value);
+}
 export type ResourceReferenceRelationship = "modelParent";
 export type ResourceReferenceResolveMode = "cit";
 export type ResourceReferenceOrigin = "citAutoDiscovery";

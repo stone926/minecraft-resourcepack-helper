@@ -3,7 +3,12 @@ import type { OggMetadata, PngMetadata } from "../../packages/mc-assets/src";
 import type { PngAlphaMask } from "../modelPreview/bake/AlphaMask";
 import { LruCache } from "./lruCache";
 import { ResourceCacheMetrics } from "./resourceCacheMetrics";
-import type { ResourceCacheGenerationState, VersionedCacheEntry } from "./resourceCacheTypes";
+import {
+  getCachedVersionedValue,
+  missingFileVersion,
+  type ResourceCacheGenerationState,
+  type VersionedCacheEntry
+} from "./resourceCacheTypes";
 
 export interface MediaMetadataCacheHost {
   getFileVersion(fileName: string): string | null;
@@ -79,17 +84,7 @@ export class MediaMetadataCache {
     fileName: string,
     compute: () => T
   ): T {
-    const key = normalizePathKey(fileName);
-    const version = this.host.getFileVersion(fileName) ?? `missing:${this.state.getResourceFsGeneration()}`;
-    const cached = cache.get(key);
-    if (cached && cached.version === version) {
-      this.metrics.hit(cacheName);
-      return cached.value;
-    }
-
-    this.metrics.miss(cacheName);
-    const value = compute();
-    cache.set(key, { version, value });
-    return value;
+    const version = this.host.getFileVersion(fileName) ?? missingFileVersion(this.state.getResourceFsGeneration());
+    return getCachedVersionedValue(this.metrics, cacheName, cache, normalizePathKey(fileName), version, compute);
   }
 }

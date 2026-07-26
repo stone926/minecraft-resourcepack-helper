@@ -1,4 +1,5 @@
 import {
+  logicalKeyIdentity,
   uniqueValues,
   type ResourceGraphLogicalKey
 } from "../../../packages/mc-assets/src";
@@ -129,7 +130,7 @@ export class ResourceUniverseIndex {
   }
 
   public getAggregateMembers(target: ResourceGraphLogicalKey): ResourceProducer[] {
-    return [...(this.aggregateByKey.get(logicalKey(target)) ?? [])]
+    return [...(this.aggregateByKey.get(logicalKeyIdentity(target)) ?? [])]
       .map(producerId => this.producers.get(producerId))
       .filter((producer): producer is ResourceProducer => producer !== undefined);
   }
@@ -142,7 +143,7 @@ export class ResourceUniverseIndex {
   }
 
   public getIncoming(target: ResourceGraphLogicalKey): ResourceEdge[] {
-    return [...(this.incomingByTarget.get(logicalKey(target)) ?? [])]
+    return [...(this.incomingByTarget.get(logicalKeyIdentity(target)) ?? [])]
       .map(edgeId => this.edges.get(edgeId))
       .filter((edge): edge is ResourceEdge => edge !== undefined)
       .sort(compareEdges);
@@ -223,8 +224,8 @@ export class ResourceUniverseIndex {
     const priorities = new Map(context.orderedLayerIds.map((layerId, index) => [layerId, index]));
     const applicableProviderIds = new Set(context.applicableProviderIds);
     const result: ResourceResolvedCandidate[] = [];
-    const concreteIds = this.concreteByKey.get(logicalKey(target)) ?? new Set<string>();
-    const aliasIds = this.aliasByKey.get(logicalKey(target)) ?? new Set<string>();
+    const concreteIds = this.concreteByKey.get(logicalKeyIdentity(target)) ?? new Set<string>();
+    const aliasIds = this.aliasByKey.get(logicalKeyIdentity(target)) ?? new Set<string>();
     for (const producerId of new Set([...concreteIds, ...aliasIds])) {
       const producer = this.producers.get(producerId);
       if (!producer
@@ -317,7 +318,7 @@ export class ResourceUniverseIndex {
   }
 
   private producerIdsForKey(target: ResourceGraphLogicalKey): string[] {
-    const key = logicalKey(target);
+    const key = logicalKeyIdentity(target);
     return uniqueValues([
       ...(this.concreteByKey.get(key) ?? []),
       ...(this.aliasByKey.get(key) ?? [])
@@ -330,13 +331,13 @@ export class ResourceUniverseIndex {
     }
     this.producers.set(producer.producerId, producer);
     for (const key of producer.logicalKeys) {
-      addIndexValue(this.concreteByKey, logicalKey(key), producer.producerId);
+      addIndexValue(this.concreteByKey, logicalKeyIdentity(key), producer.producerId);
     }
     for (const key of producer.aliasKeys ?? []) {
-      addIndexValue(this.aliasByKey, logicalKey(key), producer.producerId);
+      addIndexValue(this.aliasByKey, logicalKeyIdentity(key), producer.producerId);
     }
     for (const key of producer.aggregateMemberships ?? []) {
-      addIndexValue(this.aggregateByKey, logicalKey(key), producer.producerId);
+      addIndexValue(this.aggregateByKey, logicalKeyIdentity(key), producer.producerId);
     }
   }
 
@@ -346,13 +347,13 @@ export class ResourceUniverseIndex {
       return;
     }
     for (const key of producer.logicalKeys) {
-      removeIndexValue(this.concreteByKey, logicalKey(key), producerId);
+      removeIndexValue(this.concreteByKey, logicalKeyIdentity(key), producerId);
     }
     for (const key of producer.aliasKeys ?? []) {
-      removeIndexValue(this.aliasByKey, logicalKey(key), producerId);
+      removeIndexValue(this.aliasByKey, logicalKeyIdentity(key), producerId);
     }
     for (const key of producer.aggregateMemberships ?? []) {
-      removeIndexValue(this.aggregateByKey, logicalKey(key), producerId);
+      removeIndexValue(this.aggregateByKey, logicalKeyIdentity(key), producerId);
     }
     this.producers.delete(producerId);
   }
@@ -363,7 +364,7 @@ export class ResourceUniverseIndex {
     }
     this.edges.set(edge.edgeId, edge);
     addIndexValue(this.outgoingByProducer, edge.sourceProducerId, edge.edgeId);
-    addIndexValue(this.incomingByTarget, logicalKey(edge.target), edge.edgeId);
+    addIndexValue(this.incomingByTarget, logicalKeyIdentity(edge.target), edge.edgeId);
   }
 
   private removeEdge(edgeId: string): void {
@@ -372,7 +373,7 @@ export class ResourceUniverseIndex {
       return;
     }
     removeIndexValue(this.outgoingByProducer, edge.sourceProducerId, edgeId);
-    removeIndexValue(this.incomingByTarget, logicalKey(edge.target), edgeId);
+    removeIndexValue(this.incomingByTarget, logicalKeyIdentity(edge.target), edgeId);
     this.edges.delete(edgeId);
   }
 
@@ -432,10 +433,6 @@ function producerMatchesScope(producer: ResourceProducer, scope: ResourceResolut
 
 function providerProjectKey(providerId: string, projectId: string): string {
   return `${providerId}\0${projectId}`;
-}
-
-function logicalKey(target: ResourceGraphLogicalKey): string {
-  return `${target.kind}\0${target.id}`;
 }
 
 function addIndexValue(map: Map<string, Set<string>>, key: string, value: string): void {

@@ -1,4 +1,4 @@
-import { normalizePathKey } from "../../packages/mc-assets/src";
+import { normalizeOptionalPathKey, normalizePathKey } from "../../packages/mc-assets/src";
 import type { JsonDocumentNode } from "../utils/jsonAst";
 import type { RawModelDocument, ResolvedModel } from "../modelPreview/model/ModelDocument";
 import { DependencyIndex } from "./dependencyIndex";
@@ -12,11 +12,12 @@ import {
   type ModelParentChainHost
 } from "./modelParentChain";
 import { ResourceCacheMetrics } from "./resourceCacheMetrics";
-import type {
-  CacheEntry,
-  CacheTextDocument,
-  ResourceCacheGenerationState,
-  ResourceConfiguration
+import {
+  openDocumentFileVersion,
+  type CacheEntry,
+  type CacheTextDocument,
+  type ResourceCacheGenerationState,
+  type ResourceConfiguration
 } from "./resourceCacheTypes";
 
 export interface ModelResourceCacheHost extends ModelParentChainHost {
@@ -212,13 +213,13 @@ export class ModelResourceCache {
     configuration: ResourceConfiguration
   ): string {
     const version = typeof document.version === "number"
-      ? `open:${document.version}`
+      ? openDocumentFileVersion(document.version)
       : this.host.getFileVersion(document.fileName) ?? "unknown";
     return [
       normalizePathKey(document.fileName),
       version,
       source,
-      normalizeOptionalPath(configuration.defaultAssetsPath),
+      normalizeOptionalPathKey(configuration.defaultAssetsPath),
       (configuration.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|"),
       this.state.getConfigurationVersion()
     ].join("\0");
@@ -234,8 +235,4 @@ export class ModelResourceCache {
       this.modelCacheDependencies.release(cacheKey);
     }
   }
-}
-
-function normalizeOptionalPath(value: string | null | undefined): string {
-  return value ? normalizePathKey(value) : "";
 }

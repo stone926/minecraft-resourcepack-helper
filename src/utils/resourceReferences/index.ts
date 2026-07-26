@@ -1,6 +1,7 @@
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import { LruCache } from "../../services/lruCache";
+import { openDocumentFileVersion } from "../../services/resourceCacheTypes";
 import { getCitPropertyReferences } from "../../cit/citProperties";
 import {
   filterResourceReferencesForSurface,
@@ -19,10 +20,12 @@ import {
 
 export { getReferencesForDocumentKind } from "./dispatch";
 export { getResourceReferenceDocumentKind } from "./documentKind";
+export { isResourceReferenceKind, resourceReferenceKinds } from "./types";
 export type {
   ResourceReference,
   ResourceReferenceDocument,
   ResourceReferenceDocumentKind,
+  ResourceReferenceKind,
   ResourceReferenceOrigin,
   ResourceReferencePosition,
   ResourceReferenceRelationship,
@@ -158,7 +161,7 @@ function getResourceReferenceCacheDescriptor(document: ResourceReferenceDocument
 
 function getResourceReferenceDocumentVersion(document: ResourceReferenceDocument): string | null {
   if (typeof document.version === "number") {
-    return `open:${document.version}`;
+    return openDocumentFileVersion(document.version);
   }
 
   const fileVersion = workspaceResourceCache.getFileVersion(document.fileName);
