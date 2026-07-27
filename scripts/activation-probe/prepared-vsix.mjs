@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { combinedVsixRuntimeEntries } from "../combined-vsix-layout.mjs";
 import { readVsixArchiveMetrics } from "../vsix-archive-metrics.mjs";
 
 const require = createRequire(import.meta.url);
@@ -37,7 +38,7 @@ export const PREPARED_VSIX_CACHE_RELATIVE_PATH = Object.freeze([
 const MARKER_FILE_NAME = "prepared-vsix.json";
 const REQUIRED_EXTENSION_FILES = Object.freeze([
   "package.json",
-  "bundle/extension.js"
+  combinedVsixRuntimeEntries.root
 ]);
 const ARTIFACT_DIRECTORY_NAME = /^[a-f0-9]{64}$/;
 const GENERATION_DIRECTORY_NAME = /^[a-f0-9]{64}\.g\d{8}$/;

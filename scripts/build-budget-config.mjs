@@ -1,18 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleEntryDefinitions } from "./build-bundles.mjs";
+import { bundleEntryDefinitions, bundleTargetProfiles } from "./build-bundles.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultBudgetFile = path.join(scriptDirectory, "build-budgets.json");
 
-export const mainVsixBudgetEntryIds = Object.freeze([
-  "root",
-  "rsglHost",
-  "server",
-  "worker",
-  "modelPreview"
-]);
+export const mainVsixBudgetEntryIds = bundleTargetProfiles.main;
 
 export function readBuildBudgetConfiguration(fileName = defaultBudgetFile) {
   let value;

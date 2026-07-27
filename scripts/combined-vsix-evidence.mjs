@@ -2,6 +2,7 @@ import { sha256Hex } from "./lib/hash.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { mainVsixStageLayout } from "./assemble-main-vsix-stage.mjs";
 import {
   combinedVsixRuntimeEntries,
   combinedVsixRuntimeSourceMaps,
@@ -16,12 +17,10 @@ const vsceCanonicalRootFileNames = Object.freeze({
 });
 
 export async function captureCombinedVsixModeEvidence(options) {
-  const stageRoot = path.join(options.repositoryRoot, "dist", "vsix-stage", "main");
+  const stageRoot = path.join(options.repositoryRoot, mainVsixStageLayout.root);
   const stageManifestFile = path.join(
     options.repositoryRoot,
-    "dist",
-    "vsix-stage",
-    "main.contents.json"
+    mainVsixStageLayout.contentsManifest
   );
   const stage = readAndVerifyStage(stageRoot, stageManifestFile);
   const archive = await readVsixArchiveMetrics(options.artifactFile, {

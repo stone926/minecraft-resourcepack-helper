@@ -2,6 +2,7 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
+const { bundleEntryOutfiles } = require("../lib/bundleEntries.cjs");
 const {
   analyzeRenderedModelPng,
   assertRenderedCheckerTexture,
@@ -243,11 +244,13 @@ function isExtensionOwnedCaller(value) {
   return normalize(value).includes(normalize(extensionRoot));
 }
 
+const rsglBundleSubpaths = ["rsglHost", "server", "worker"].map(
+  id => `/${bundleEntryOutfiles[id].toLowerCase()}`
+);
+
 function isRsglRuntimePath(value) {
   const normalized = value.replaceAll("\\", "/").toLowerCase();
-  return normalized.includes("/bundle/features/rsglhost.js")
-    || normalized.includes("/bundle/rsgl/server.js")
-    || normalized.includes("/bundle/rsgl/worker.js")
+  return rsglBundleSubpaths.some(subpath => normalized.includes(subpath))
     || /\/packages\/rsgl-(?:core|lsp|shared)(?:\/|$)/.test(normalized);
 }
 

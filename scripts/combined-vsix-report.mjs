@@ -389,7 +389,8 @@ function compareStageContents(development, production) {
 }
 
 function assertSingleVsixManifest(manifest) {
-  if (manifest.main !== "./bundle/extension.js" && manifest.main !== "bundle/extension.js") {
+  const rootRuntimeEntry = combinedVsixRuntimeEntries.root;
+  if (manifest.main !== `./${rootRuntimeEntry}` && manifest.main !== rootRuntimeEntry) {
     throw new Error("Combined VSIX manifest must have one canonical root extension entry.");
   }
   if (manifest.extensionPack !== undefined || manifest.extensionDependencies !== undefined) {

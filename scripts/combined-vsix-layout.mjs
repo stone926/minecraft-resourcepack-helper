@@ -1,10 +1,8 @@
-export const combinedVsixRuntimeEntries = Object.freeze({
-  root: "bundle/extension.js",
-  rsglHost: "bundle/features/rsglHost.js",
-  server: "bundle/rsgl/server.js",
-  worker: "bundle/rsgl/worker.js",
-  modelPreview: "bundle/model-preview.js"
-});
+import { bundleEntryDefinitions, bundleTargetProfiles } from "./build-bundles.mjs";
+
+export const combinedVsixRuntimeEntries = Object.freeze(Object.fromEntries(
+  bundleTargetProfiles.main.map(id => [id, bundleEntryDefinitions[id].outfile])
+));
 
 export const combinedVsixRuntimeSourceMaps = Object.freeze(
   Object.values(combinedVsixRuntimeEntries).map(entryPath => `${entryPath}.map`).sort()

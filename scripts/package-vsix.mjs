@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mainVsixStageLayout } from "./assemble-main-vsix-stage.mjs";
 import { prepareVsixPackageArguments } from "./vsix-package-output.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -10,7 +11,7 @@ const repoRoot = path.resolve(__dirname, "..");
 
 const targets = {
   main: {
-    cwd: path.join(repoRoot, "dist", "vsix-stage", "main"),
+    cwd: path.join(repoRoot, mainVsixStageLayout.root),
     defaultArgs: ["--no-dependencies"],
   },
 };

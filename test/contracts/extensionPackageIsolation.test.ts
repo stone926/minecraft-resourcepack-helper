@@ -74,7 +74,7 @@ describe("single extension package boundary", () => {
     const packager = fs.readFileSync(path.join(root, "scripts", "package-vsix.mjs"), "utf8");
     assert.match(assembler, /delete manifest\.dependencies/);
     assert.match(assembler, /delete manifest\.devDependencies/);
-    assert.match(packager, /dist", "vsix-stage", "main/);
+    assert.match(packager, /mainVsixStageLayout\.root/);
     assert.match(packager, /--no-dependencies/);
   });
 });

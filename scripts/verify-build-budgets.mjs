@@ -140,9 +140,9 @@ export async function verifyBuildBudgets(options = {}) {
       verifiedEntries.add(entryId);
     }
     if (step.target === "main") {
-      verifyActivationBudget("root", "src/extension.ts");
+      verifyActivationBudget("root", bundleEntryDefinitions.root.entryPoint);
       verifyColdActivationBudget("root", bundleEntryDefinitions.root.outfile);
-      verifyActivationBudget("rsglHost", "src/rsgl/host/rsglHost.ts");
+      verifyActivationBudget("rsglHost", bundleEntryDefinitions.rsglHost.entryPoint);
       verifyColdActivationBudget("rsglHost", bundleEntryDefinitions.rsglHost.outfile);
       verifyRsglBundleIsolation(true);
     } else if (step.target === "rsgl-cli") {

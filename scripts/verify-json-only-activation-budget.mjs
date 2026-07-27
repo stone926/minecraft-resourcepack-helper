@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readBuildBudgetConfiguration } from "./build-budget-config.mjs";
+import { combinedVsixRuntimeEntries } from "./combined-vsix-layout.mjs";
 import {
   activationProbeReportSchemaVersion,
   extensionHostProcessInstanceKey,
@@ -468,14 +469,11 @@ export async function verifyMeasuredVsix(report, label, requireCombinedVsix) {
     throw new Error(`${label} measured VSIX bytes or SHA-256 no longer match the report.`);
   }
   const paths = new Set(metrics.entries.filter(entry => !entry.directory).map(entry => entry.path));
-  const required = ["extension/package.json", "extension/bundle/extension.js"];
+  const required = ["extension/package.json", `extension/${combinedVsixRuntimeEntries.root}`];
   if (requireCombinedVsix) {
-    required.push(
-      "extension/bundle/features/rsglHost.js",
-      "extension/bundle/rsgl/server.js",
-      "extension/bundle/rsgl/worker.js",
-      "extension/bundle/model-preview.js"
-    );
+    required.push(...Object.entries(combinedVsixRuntimeEntries)
+      .filter(([id]) => id !== "root")
+      .map(([, runtimePath]) => `extension/${runtimePath}`));
     if ([...paths].some(entryPath => entryPath.toLowerCase().endsWith(".js.map"))) {
       throw new Error("candidate combined production VSIX must not contain JavaScript source maps.");
     }

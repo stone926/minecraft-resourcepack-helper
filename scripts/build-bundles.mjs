@@ -14,6 +14,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import bundleEntriesCjs from "./lib/bundleEntries.cjs";
+
+const { bundleEntryOutfiles } = bundleEntriesCjs;
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -33,7 +36,7 @@ const analysisRoot = path.join(repositoryRoot, bundleAnalysisOutputs.directory);
 export const bundleEntryDefinitions = Object.freeze({
   root: entry({
     entryPoint: "src/extension.ts",
-    outfile: "bundle/extension.js",
+    outfile: bundleEntryOutfiles.root,
     platform: "node",
     format: "cjs",
     target: "node22",
@@ -42,7 +45,7 @@ export const bundleEntryDefinitions = Object.freeze({
   }),
   rsglHost: entry({
     entryPoint: "src/rsgl/host/rsglHost.ts",
-    outfile: "bundle/features/rsglHost.js",
+    outfile: bundleEntryOutfiles.rsglHost,
     platform: "node",
     format: "cjs",
     target: "node22",
@@ -51,21 +54,21 @@ export const bundleEntryDefinitions = Object.freeze({
   }),
   server: entry({
     entryPoint: "packages/rsgl-lsp/src/server.ts",
-    outfile: "bundle/rsgl/server.js",
+    outfile: bundleEntryOutfiles.server,
     platform: "node",
     format: "cjs",
     target: "node22"
   }),
   worker: entry({
     entryPoint: "src/rsgl/host/commands/buildWorker.ts",
-    outfile: "bundle/rsgl/worker.js",
+    outfile: bundleEntryOutfiles.worker,
     platform: "node",
     format: "cjs",
     target: "node22"
   }),
   modelPreview: entry({
     entryPoint: "webviews/modelPreview/main.js",
-    outfile: "bundle/model-preview.js",
+    outfile: bundleEntryOutfiles.modelPreview,
     platform: "browser",
     format: "esm",
     target: "es2022",
@@ -73,7 +76,7 @@ export const bundleEntryDefinitions = Object.freeze({
   }),
   cli: entry({
     entryPoint: "packages/rsgl-cli/src/main.ts",
-    outfile: "packages/rsgl-cli/dist/rsgl.js",
+    outfile: bundleEntryOutfiles.cli,
     platform: "node",
     format: "cjs",
     target: "node20",
