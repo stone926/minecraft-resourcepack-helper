@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { windowsComSpecInvocation } from "./npm-invocation.mjs";
 
 export function resolveCodeExecutable(explicit) {
   const candidates = [
@@ -28,10 +29,7 @@ export function resolveCodeExecutable(explicit) {
 
 export function codeInvocation(executable, args) {
   if (process.platform === "win32" && /\.(?:cmd|bat)$/i.test(executable)) {
-    return {
-      file: process.env.ComSpec ?? "cmd.exe",
-      args: ["/d", "/s", "/c", quoteWindowsCommand([executable, ...args])]
-    };
+    return windowsComSpecInvocation([executable, ...args]);
   }
   const prefix = process.platform !== "win32" && !process.env.DISPLAY
     ? findCommand("which", "xvfb-run")
@@ -73,8 +71,4 @@ function findCommand(command, executable) {
     return undefined;
   }
   return result.stdout.split(/\r?\n/).map(value => value.trim()).find(Boolean);
-}
-
-function quoteWindowsCommand(values) {
-  return values.map(value => `"${String(value).replaceAll('"', '""')}"`).join(" ");
 }

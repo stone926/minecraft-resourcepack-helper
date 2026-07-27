@@ -20,13 +20,22 @@ export function resolveNpmInvocation(args, options = {}) {
   }
 
   if (platform === "win32") {
-    return {
-      file: environment.ComSpec || "cmd.exe",
-      args: ["/d", "/s", "/c", ["npm", ...args].map(quoteCmdArgument).join(" ")]
-    };
+    return windowsComSpecInvocation(["npm", ...args], environment);
   }
 
   return { file: "npm", args };
+}
+
+/**
+ * One shared cmd.exe invocation shape for Windows commands that must run
+ * through ComSpec (npm fallback, .cmd/.bat shims). Arguments pass through a
+ * conservative whitelist; anything else is double-quoted with `""` escapes.
+ */
+export function windowsComSpecInvocation(commandParts, environment = process.env) {
+  return {
+    file: environment.ComSpec || "cmd.exe",
+    args: ["/d", "/s", "/c", commandParts.map(quoteCmdArgument).join(" ")]
+  };
 }
 
 /**

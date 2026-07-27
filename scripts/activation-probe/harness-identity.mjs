@@ -32,6 +32,7 @@ export const ACTIVATION_HARNESS_FILES = Object.freeze([
   "../lib/stats.mjs",
   "../measure-json-only-activation-comparison.mjs",
   "../measure-json-only-activation.mjs",
+  "../npm-invocation.mjs",
   "../verify-json-only-activation-budget.mjs",
   "../verify-json-only-activation-comparison.mjs",
   "../vsix-archive-metrics.mjs"
