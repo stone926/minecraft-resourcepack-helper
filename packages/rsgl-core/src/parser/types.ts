@@ -355,6 +355,9 @@ export type RsglStatementBodyNode =
   | ItemFirstMatchBodyNode
   | ItemModelTemplateBodyNode;
 
+/** Kind discriminants of every statement-bearing body node. */
+export type RsglBodyNodeKind = RsglStatementBodyNode["kind"];
+
 export interface ResourceBodyNode extends RsglNode {
   kind: "ResourceBody";
   statements: ResourceStatementNode[];

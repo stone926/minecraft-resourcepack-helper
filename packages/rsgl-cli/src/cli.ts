@@ -7,12 +7,12 @@ import {
   compileDependencyMatchesPath,
   compileDependencyPatternStructurallyMatchesPath,
   compileDependencyWatchPattern,
+  compileOptionsFromProjectConfig,
   createRsglMaterializationProject,
   getRsglProjectConfigWatchPaths,
   assertRsglOutputPackRoot,
   isRsglPathInsideOrEqual,
   loadRsglProjectConfigForSource,
-  projectCompileOptionsFromRsglConfig,
   projectEmitOptionsFromRsglConfig,
   previewRsglResourcePackDirectoryBuild,
   rebaseCompileDependencyWatchPattern,
@@ -22,7 +22,6 @@ import {
   type RsglBuildOptions,
   type RsglBuildResult
 } from "../../rsgl-core/src";
-import { createRsglWorkspaceValidationOptions } from "../../rsgl-core/src/workspaceValidation";
 
 export interface RsglCliArgs {
   command: string;
@@ -529,14 +528,9 @@ function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: stri
       materializationSourceRoot: root,
       adoptUnownedIdentical: args.adoptIdentical,
       ...projectEmitOptionsFromRsglConfig(config),
-      ...projectCompileOptionsFromRsglConfig(config),
-      globalExterns: config.extern,
-      checkExternExistence: config.checkExternExistence,
-      ...createRsglWorkspaceValidationOptions({
+      ...compileOptionsFromProjectConfig(config, {
         sourceFileName: root,
-        outputPackRoot: outputRoot,
-        defaultAssetsPath: config.defaultAssetsPath,
-        resourcePackRoots: config.resourcePackRoots
+        outputPackRoot: outputRoot
       })
     }
   };
@@ -561,7 +555,7 @@ function createCliContextWithoutConfig(
       adoptUnownedIdentical: args.adoptIdentical,
       sourceMaps: true,
       manifest: true,
-      ...createRsglWorkspaceValidationOptions({ sourceFileName: root, outputPackRoot: outputRoot })
+      ...compileOptionsFromProjectConfig({}, { sourceFileName: root, outputPackRoot: outputRoot })
     }
   };
 }

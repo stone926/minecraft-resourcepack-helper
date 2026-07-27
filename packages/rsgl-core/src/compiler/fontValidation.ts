@@ -1,3 +1,4 @@
+import { fontProviderRequiredFields } from "../fontProviders";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import {
   canonicalizeJsonResourceReference,
@@ -14,15 +15,6 @@ import {
 } from "./validationPrimitives";
 import type { RsglResourceValidationOptions } from "./validationTypes";
 import { appendGeneratedPath } from "./sourcePaths";
-
-const providerRequiredFields = new Map<string, string[]>([
-  ["bitmap", ["file", "chars", "ascent"]],
-  ["space", ["advances"]],
-  ["ttf", ["file"]],
-  ["unihex", ["hex_file"]],
-  ["reference", ["id"]],
-  ["legacy_unicode", ["template", "sizes"]]
-]);
 
 export function validateFontMetadata(
   unit: ResourceUnit,
@@ -68,7 +60,7 @@ function validateFontProvider(
   }
 
   const type = stripMinecraftPrefix(provider.type);
-  const requiredFields = type ? providerRequiredFields.get(type) : undefined;
+  const requiredFields = type ? fontProviderRequiredFields.get(type) : undefined;
   if (!type || !requiredFields) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidFontProviderType", "Font provider must define a known provider type.");
     return;

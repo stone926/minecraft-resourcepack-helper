@@ -1,4 +1,5 @@
 import type {
+  RsglBodyNodeKind,
   RsglModule,
   RsglNode,
   RsglToken,
@@ -11,20 +12,27 @@ import {
 } from "./delimiterStack";
 import { tightOperatorWouldRetokenize } from "./lexicalSafety";
 
-const bodyKinds = new Set([
-  "Block",
-  "ResourceBody",
-  "VariantBody",
-  "MultipartBody",
-  "BlockstateChoiceBody",
-  "ItemSelectBody",
-  "ItemRangeBody",
-  "ItemCompositeBody",
-  "ItemFirstMatchBody",
-  "ItemModelTemplateBody",
-  "BlockstateVariantsRootBody",
-  "BlockstateMultipartRootBody"
-]);
+/**
+ * Every statement-bearing body kind receives brace-pair layout. The Record
+ * constraint fails to compile when parser/types.ts adds, removes, or renames
+ * a body node kind without this table being updated.
+ */
+const bodyKindTable = {
+  Block: true,
+  ResourceBody: true,
+  VariantBody: true,
+  MultipartBody: true,
+  BlockstateChoiceBody: true,
+  ItemSelectBody: true,
+  ItemRangeBody: true,
+  ItemCompositeBody: true,
+  ItemFirstMatchBody: true,
+  ItemModelTemplateBody: true,
+  BlockstateVariantsRootBody: true,
+  BlockstateMultipartRootBody: true
+} as const satisfies Record<RsglBodyNodeKind, true>;
+
+const bodyKinds: ReadonlySet<string> = new Set(Object.keys(bodyKindTable));
 
 const tightRangeKinds = new Set(["ResourceLocationExpr"]);
 
@@ -206,6 +214,13 @@ export function collectRsglFormatterSyntaxFacts(
   };
 }
 
+/**
+ * Formatter-local reflective walk, intentionally separate from
+ * parser/astTraversal: the structured walker visits only known node shapes,
+ * while formatting must reach every node-like value — including unknown and
+ * error-recovery nodes — so brace and operator facts stay correct for
+ * malformed sources.
+ */
 function visitAstValue(value: unknown, visitor: (node: RsglNode) => void): void {
   if (Array.isArray(value)) {
     value.forEach(item => visitAstValue(item, visitor));

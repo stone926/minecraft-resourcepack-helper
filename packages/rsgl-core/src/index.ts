@@ -11,6 +11,7 @@ export * from "./itemModelSchema";
 export * from "./itemModelSyntax";
 export * from "./memberLanguageIntelligence";
 export * from "./pathIdentity";
+export * from "./projectCompileOptions";
 export * from "./projectTargetCache";
 export * from "./referenceService";
 export * from "./resourceKinds";

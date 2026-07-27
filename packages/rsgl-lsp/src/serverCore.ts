@@ -22,6 +22,7 @@ import {
 import {
   compileRsglModule,
   compileRsglProgram,
+  compileOptionsFromProjectConfig,
   formatRsglText,
   getRsglProjectConfigWatchPaths,
   getRsglDocumentCompletionItems,
@@ -56,12 +57,10 @@ import {
   type RsglRenameEdit,
   type RsglSemanticToken,
   type RsglSymbol,
-  type RsglWorkspaceSemanticProgram
+  type RsglWorkspaceSemanticProgram,
+  type RsglWorkspaceValidationCache,
+  type RsglWorkspaceValidationCallbacks
 } from "../../rsgl-core/src";
-import {
-  createRsglWorkspaceValidationOptions,
-  type RsglWorkspaceValidationCache
-} from "../../rsgl-core/src/workspaceValidation";
 import type { RsglResourceSnapshotRequest } from "../../rsgl-shared/src";
 import type { RsglResourceAnalysisConfiguration } from "./resourceAnalysisCache";
 import {
@@ -86,7 +85,7 @@ export interface RsglWorkspaceFolderValidationSettings {
   formatting?: RsglFormattingConfiguration;
 }
 
-type RsglWorkspaceAnalysisOptions = ReturnType<typeof createRsglWorkspaceValidationOptions>
+type RsglWorkspaceAnalysisOptions = RsglWorkspaceValidationCallbacks
   & RsglResourceValidationOptions
   & RsglCompileConfigurationOptions
   & Pick<RsglProgramCompileOptions, "stdlibRoot">;
@@ -430,17 +429,14 @@ function resolvedResourceAnalysisConfiguration(
       ]
     : [];
   const compileOptions: RsglWorkspaceAnalysisOptions = {
-    ...projectCompileOptionsFromRsglConfig(projectConfig ?? {}),
-    ...(settings.stdlibRoot ? { stdlibRoot: settings.stdlibRoot } : {}),
-    ...createRsglWorkspaceValidationOptions({
+    ...compileOptionsFromProjectConfig(projectConfig ?? {}, {
       sourceFileName,
       outputPackRoot,
       defaultAssetsPath,
       resourcePackRoots,
       cache: validationCache
     }),
-    globalExterns: projectConfig?.extern,
-    checkExternExistence: projectConfig?.checkExternExistence,
+    ...(settings.stdlibRoot ? { stdlibRoot: settings.stdlibRoot } : {}),
     ...(projectContext?.targetPackFormat
       ? { targetPackFormat: projectContext.targetPackFormat }
       : {})

@@ -3,6 +3,7 @@ import {
   typeKindForResourceValueKind
 } from "../resourceIdSemantics";
 import type { RsglResourceValueKind } from "../resourceIdSemantics";
+import { fontProviderNames } from "../fontProviders";
 import {
   anyType,
   booleanType,
@@ -19,30 +20,32 @@ import {
   textureIdType
 } from "./types";
 
-const enumConstants = [
-  "north",
-  "east",
-  "south",
-  "west",
-  "up",
-  "down",
-  "x",
-  "y",
-  "z",
-  "top",
-  "bottom",
-  "none",
-  "low",
-  "tall",
+/** Cardinal and vertical directions. */
+const directionConstants = ["north", "east", "south", "west", "up", "down"];
+
+/** Rotation axes. */
+const axisConstants = ["x", "y", "z"];
+
+/** Vertical block halves (slabs, trapdoor and stair halves). */
+const blockHalfConstants = ["top", "bottom"];
+
+/** Wall connection heights, including the shared 'none' literal. */
+const wallHeightConstants = ["none", "low", "tall"];
+
+/** Stair shapes. */
+const stairShapeConstants = [
   "straight",
   "inner_left",
   "inner_right",
   "outer_left",
-  "outer_right",
-  "spawn",
-  "day_time",
-  "daytime",
-  "moon_phase",
+  "outer_right"
+];
+
+/** Compass targets and clock time sources used by item model properties. */
+const itemPropertySourceConstants = ["spawn", "day_time", "daytime", "moon_phase"];
+
+/** Wood block-set members and the cube model parents used by wood templates. */
+const woodBlocksetConstants = [
   "planks",
   "cube",
   "cube_all",
@@ -57,16 +60,22 @@ const enumConstants = [
   "sign",
   "hanging_sign",
   "boat",
-  "chest_boat",
-  "model",
-  "blockstate",
-  "item",
-  "bitmap",
-  "space",
-  "ttf",
-  "unihex",
-  "reference",
-  "legacy_unicode"
+  "chest_boat"
+];
+
+/** Resource kind names accepted as bare identifiers. */
+const resourceKindConstants = ["model", "blockstate", "item"];
+
+const enumConstants = [
+  ...directionConstants,
+  ...axisConstants,
+  ...blockHalfConstants,
+  ...wallHeightConstants,
+  ...stairShapeConstants,
+  ...itemPropertySourceConstants,
+  ...woodBlocksetConstants,
+  ...resourceKindConstants,
+  ...fontProviderNames
 ];
 
 export function createBuiltinSymbols(): RsglSymbol[] {

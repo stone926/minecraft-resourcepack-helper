@@ -22,12 +22,12 @@ import {
   loadRsglProjectConfigForSource,
   RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
+  RsglWorkspaceValidationCache,
   resolveRsglNavigationSourceRoot,
   type CompileDependency,
   type RsglResourceNavigationIndex,
   type RsglWorkspaceSemanticProgram
 } from "../../rsgl-core/src";
-import { RsglWorkspaceValidationCache } from "../../rsgl-core/src/workspaceValidation";
 import {
   rsglDependencyPathsNotification,
   rsglDependencyStructureChangedNotification,

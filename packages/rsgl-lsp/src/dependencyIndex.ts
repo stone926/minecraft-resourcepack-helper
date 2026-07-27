@@ -6,9 +6,9 @@ import {
   compileDependencyPatternStructurallyMatchesPath,
   compileDependencyWatchPatternKey,
   normalizeCompileDependencyWatchPattern,
+  type CompileDependency,
   type CompileDependencyWatchPattern
-} from "../../rsgl-core/src/compiler/compileDependencies";
-import type { CompileDependency } from "../../rsgl-core/src/compiler/base/types";
+} from "../../rsgl-core/src";
 
 export type RsglDependencyWatchPattern = CompileDependencyWatchPattern;
 
