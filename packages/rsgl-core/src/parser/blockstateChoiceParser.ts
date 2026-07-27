@@ -1,3 +1,4 @@
+import { blockstateModelOptionMessages } from "../diagnosticMessages";
 import { choiceBodyParseContext } from "./bodyParseContext";
 import type { ResourceStatementParserHost } from "./statementParserHost";
 import type {
@@ -215,7 +216,7 @@ export function validateBlockstateChoiceEnd(host: ResourceStatementParserHost): 
     validateStatementEnd(
       host,
       "rsgl.blockstateWeightInvalidContext",
-      "weight is only valid after an option inside a random choice."
+      blockstateModelOptionMessages.weightOutsideRandomChoice
     );
     return;
   }

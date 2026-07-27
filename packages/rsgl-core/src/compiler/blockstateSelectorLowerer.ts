@@ -1,4 +1,5 @@
 import type { ExprNode } from "../parser";
+import { blockstateSelectorMessages } from "../diagnosticMessages";
 import { blockstateVariantKey } from "./blockstateKeys";
 import {
   evaluateExpressionResult,
@@ -41,7 +42,7 @@ export function lowerBlockstateSelector(
         : "rsgl.invalidBlockstateSelectorKey",
       keyIssue.kind === "duplicateObjectKey"
         ? "A blockstate selector property resolves to a duplicate canonical key."
-        : "A computed blockstate selector key must evaluate to a scalar value.",
+        : blockstateSelectorMessages.computedKeyMustBeScalar,
       keyIssue.sourceRange,
       keyIssue.sourceFile
     );
@@ -67,7 +68,7 @@ export function lowerBlockstateSelector(
   if (Object.keys(value).length === 0) {
     host.onError(
       "rsgl.emptyBlockstateSelectorUseWildcard",
-      "An empty variants selector must be written as 'case *'.",
+      blockstateSelectorMessages.emptySelectorUseWildcard,
       expression.range,
       context.sourceFile
     );

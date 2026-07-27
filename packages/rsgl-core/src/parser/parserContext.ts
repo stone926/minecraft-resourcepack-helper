@@ -1,3 +1,4 @@
+import { blockSyntaxMessages } from "../diagnosticMessages";
 import { RsglDiagnostic, RsglToken, TextRange } from "./types";
 
 export class ParserContext {
@@ -17,7 +18,7 @@ export class ParserContext {
       return;
     }
 
-    this.consumeBalancedEnclosure("{", "}", "Expected '}' after block.");
+    this.consumeBalancedEnclosure("{", "}", blockSyntaxMessages.expectedCloseAfterBlock);
   }
 
   protected consumeBalancedEnclosure(openText: string, closeText: string, message: string): void {

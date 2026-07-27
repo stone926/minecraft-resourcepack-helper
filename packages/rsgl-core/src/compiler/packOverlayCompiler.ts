@@ -1,3 +1,4 @@
+import { packOverlayMessages } from "../diagnosticMessages";
 import {
   BlockNode,
   ExprNode,
@@ -83,7 +84,7 @@ export function compileOverlayDecl(
 ): void {
   const directory = staticText(statement.directory, context);
   if (!directory || !/^[a-z0-9_-]+$/.test(directory)) {
-    options.onError("rsgl.invalidOverlayDirectory", "Overlay directory must contain only lowercase letters, numbers, '_' or '-'.", statement.directory.range);
+    options.onError("rsgl.invalidOverlayDirectory", packOverlayMessages.invalidOverlayDirectory, statement.directory.range);
     return;
   }
 

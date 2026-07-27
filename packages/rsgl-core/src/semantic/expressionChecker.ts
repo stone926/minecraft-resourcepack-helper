@@ -1,3 +1,4 @@
+import { resourceBodyMessages, statePredicateMessages } from "../diagnosticMessages";
 import type {
   ExprNode,
   LetDeclNode,
@@ -105,7 +106,7 @@ export function checkCompileTimeCondition(
   if (containsStatePredicate(type)) {
     context.diagnostics.push(diagnostic(
       "rsgl.statePredicateCompileTimeCondition",
-      "StatePredicate describes runtime block state and cannot control compile-time if/conditional execution.",
+      statePredicateMessages.compileTimeCondition,
       expression.range
     ));
   }
@@ -292,7 +293,7 @@ export function checkTemplateUseExpression(
     const type = checkExpression(context, expression, scope);
     context.diagnostics.push(diagnostic(
       "rsgl.functionValueCannotUse",
-      "use requires a template call or a registered resource-body helper.",
+      resourceBodyMessages.useRequiresTemplateCallOrHelper,
       expression.range
     ));
     return type;

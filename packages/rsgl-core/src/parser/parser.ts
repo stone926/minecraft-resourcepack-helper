@@ -1,3 +1,4 @@
+import { externSyntaxMessages } from "../diagnosticMessages";
 import {
   isResourceKeyword,
   isTopLevelKeyword
@@ -385,7 +386,7 @@ class RsglParser extends StatementParser {
     if (this.current().text === "var") {
       this.addDiagnostic(
         "rsgl.externVarInvalidContext",
-        "'extern var' is only valid directly inside a model resource body.",
+        externSyntaxMessages.externVarOutsideModelBody,
         tokenRange(this.current())
       );
     }
@@ -413,7 +414,7 @@ class RsglParser extends StatementParser {
     if (bang.offset !== externToken.offset + externToken.length) {
       this.addDiagnostic(
         "rsgl.externBangMustBeAdjacent",
-        "The '!' modifier must immediately follow 'extern' without whitespace or comments.",
+        externSyntaxMessages.bangMustFollowExtern,
         tokenRange(bang)
       );
     }

@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { materializationCancellationMessages } from "../diagnosticMessages";
 import {
   bytesEqual,
   createPreparedRsglMaterialization,
@@ -44,7 +45,7 @@ export function runRsglMaterializationTransactionSync(
   if (cancelled(request)) {
     return createRsglMaterializationResult(transactionId, "cancelled", prepared, [], [], false, {
       operation: "cancel",
-      message: "Materialization was cancelled before staging."
+      message: materializationCancellationMessages.cancelledBeforeStaging
     });
   }
 
@@ -69,7 +70,7 @@ export function runRsglMaterializationTransactionSync(
     cleanupStaging(prepared, host);
     return createRsglMaterializationResult(transactionId, "cancelled", prepared, [], [], false, {
       operation: "cancel",
-      message: "Materialization was cancelled before commit."
+      message: materializationCancellationMessages.cancelledBeforeCommit
     });
   }
 
@@ -83,7 +84,7 @@ export function runRsglMaterializationTransactionSync(
         continue;
       }
       if (cancelled(request)) {
-        throw operationError("cancel", undefined, new Error("Materialization was cancelled."));
+        throw operationError("cancel", undefined, new Error(materializationCancellationMessages.cancelled));
       }
       revalidateOutput(entry.outputPath, prepared, host);
       createDirectoryOnce(path.dirname(entry.absolutePath), committedParentDirectories, host);
@@ -102,7 +103,7 @@ export function runRsglMaterializationTransactionSync(
         continue;
       }
       if (cancelled(request)) {
-        throw operationError("cancel", undefined, new Error("Materialization was cancelled."));
+        throw operationError("cancel", undefined, new Error(materializationCancellationMessages.cancelled));
       }
       revalidateOutput(entry.outputPath, prepared, host);
       try {
@@ -113,7 +114,7 @@ export function runRsglMaterializationTransactionSync(
       deleted.push(entry.outputPath);
     }
     if (cancelled(request)) {
-      throw operationError("cancel", undefined, new Error("Materialization was cancelled."));
+      throw operationError("cancel", undefined, new Error(materializationCancellationMessages.cancelled));
     }
     revalidateManifestFingerprint(request, prepared, host);
     createDirectoryOnce(
@@ -206,7 +207,7 @@ function stageTransaction(
       continue;
     }
     if (cancelled(request)) {
-      throw new Error("Materialization was cancelled.");
+      throw new Error(materializationCancellationMessages.cancelled);
     }
     const payload = prepared.payloadByOutputPath.get(entry.outputPath);
     if (!payload) {
@@ -217,7 +218,7 @@ function stageTransaction(
     host.writeFile(staged, payload.content);
   }
   if (cancelled(request)) {
-    throw new Error("Materialization was cancelled.");
+    throw new Error(materializationCancellationMessages.cancelled);
   }
   createDirectoryOnce(path.dirname(prepared.stagedManifestPath), createdDirectories, host);
   host.writeFile(prepared.stagedManifestPath, prepared.manifestContent);

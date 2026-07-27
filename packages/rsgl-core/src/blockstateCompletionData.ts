@@ -1,3 +1,7 @@
+import {
+  blockstateModelOptions,
+  type RsglBlockstateModelOptionName
+} from "./blockstateModelOptions";
 import type { RsglCompletionCandidate } from "./completionData";
 import type { BlockstateMode } from "./parser";
 
@@ -58,32 +62,20 @@ export const blockstateChoiceCompletions = [
   }
 ] as const satisfies readonly RsglCompletionCandidate[];
 
-export const blockstateModelOptionCompletions = [
-  {
-    label: "x",
-    insertText: "x: ${1:90}",
-    detail: "Blockstate model x rotation",
+const blockstateModelOptionDetails: Record<RsglBlockstateModelOptionName, string> = {
+  x: "Blockstate model x rotation",
+  y: "Blockstate model y rotation",
+  z: "Blockstate model z rotation",
+  uvlock: "Lock blockstate model UVs after rotation"
+};
+
+export const blockstateModelOptionCompletions: readonly RsglCompletionCandidate[] =
+  blockstateModelOptions.map(option => ({
+    label: option.name,
+    insertText: `${option.name}: ${option.type === "boolean" ? "${1:true}" : "${1:90}"}`,
+    detail: blockstateModelOptionDetails[option.name],
     kind: "property"
-  },
-  {
-    label: "y",
-    insertText: "y: ${1:90}",
-    detail: "Blockstate model y rotation",
-    kind: "property"
-  },
-  {
-    label: "z",
-    insertText: "z: ${1:90}",
-    detail: "Blockstate model z rotation",
-    kind: "property"
-  },
-  {
-    label: "uvlock",
-    insertText: "uvlock: ${1:true}",
-    detail: "Lock blockstate model UVs after rotation",
-    kind: "property"
-  }
-] as const satisfies readonly RsglCompletionCandidate[];
+  }));
 
 export const blockstatePredicateCompletions = [
   {

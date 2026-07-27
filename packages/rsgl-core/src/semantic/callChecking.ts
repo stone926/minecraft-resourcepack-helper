@@ -1,3 +1,4 @@
+import { callArgumentMessages } from "../diagnosticMessages";
 import {
   ArgumentNode,
   CallExprNode,
@@ -185,7 +186,7 @@ function checkFunctionCallArguments(
     if (arg.name) {
       context.diagnostics.push(diagnostic(
         "rsgl.namedArgumentsRequireSignature",
-        "Named arguments require a concrete let-bound function signature.",
+        callArgumentMessages.namedArgumentsRequireSignature,
         arg.range
       ));
     }

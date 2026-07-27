@@ -1,3 +1,4 @@
+import { resourceBodyMessages } from "../diagnosticMessages";
 import {
   BlockNode,
   BlockstateChoiceBodyNode,
@@ -470,7 +471,7 @@ export class RsglResourceBodyChecker {
     }
     this.context.diagnostics.push(diagnostic(
       "rsgl.textureVariableInvalidContext",
-      "Texture variables are only valid in model texture sinks.",
+      resourceBodyMessages.textureVariableOutsideModelSink,
       expression.range
     ));
   }

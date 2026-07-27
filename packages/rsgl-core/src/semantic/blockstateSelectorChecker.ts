@@ -4,6 +4,7 @@ import type {
   ObjectPropertyNode,
   RsglNode
 } from "../parser";
+import { blockstateSelectorMessages } from "../diagnosticMessages";
 import { mergeObjectTypeAlternatives } from "./collectionRecordTypes";
 import { diagnostic } from "./diagnostics";
 import { checkExpression } from "./expressionChecker";
@@ -19,6 +20,9 @@ import {
   stringType
 } from "./types";
 
+const scalarSelectorValueMessage =
+  "Blockstate selector values must be scalar strings, numbers, or booleans.";
+
 /** Checks a structured variants selector without changing ordinary records. */
 export function checkBlockstateSelector(
   context: RsglExpressionCheckContext,
@@ -29,7 +33,7 @@ export function checkBlockstateSelector(
     if (selector.properties.length === 0) {
       context.diagnostics.push(diagnostic(
         "rsgl.emptyBlockstateSelectorUseWildcard",
-        "An empty variants selector must be written as 'case *'.",
+        blockstateSelectorMessages.emptySelectorUseWildcard,
         selector.range
       ));
     }
@@ -50,7 +54,7 @@ export function checkBlockstateSelector(
       if (!isPotentialStateScalar(property.type)) {
         context.diagnostics.push(diagnostic(
           "rsgl.invalidBlockstateSelectorValue",
-          "Blockstate selector values must be scalar strings, numbers, or booleans.",
+          scalarSelectorValueMessage,
           selector.range
         ));
         break;
@@ -78,7 +82,7 @@ function checkInlineStateObject(
             if (!isPotentialStateScalar(spreadProperty.type)) {
               context.diagnostics.push(diagnostic(
                 "rsgl.invalidBlockstateSelectorValue",
-                "Blockstate selector values must be scalar strings, numbers, or booleans.",
+                scalarSelectorValueMessage,
                 property.range
               ));
             }
@@ -109,7 +113,7 @@ function checkInlineStateObject(
     if (!isPotentialStateScalar(valueType)) {
       context.diagnostics.push(diagnostic(
         "rsgl.invalidBlockstateSelectorValue",
-        "Blockstate selector values must be scalar strings, numbers, or booleans.",
+        scalarSelectorValueMessage,
         property.value.range
       ));
     }
@@ -145,7 +149,7 @@ function checkStatePropertyKey(
   if (!isPotentialStateScalar(keyType)) {
     context.diagnostics.push(diagnostic(
       "rsgl.invalidBlockstateSelectorKey",
-      "A computed blockstate selector key must evaluate to a scalar value.",
+      blockstateSelectorMessages.computedKeyMustBeScalar,
       property.key.expression.range
     ));
   }

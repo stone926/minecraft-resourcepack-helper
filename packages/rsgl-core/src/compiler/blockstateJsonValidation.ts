@@ -1,6 +1,8 @@
 import { validateBlockstateStateDomains } from "./blockstateStateValidation";
 import { blockstateMultipartPath, blockstateVariantPath } from "./compilerHelpers";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
+import { blockstateModelOptions } from "../blockstateModelOptions";
+import { blockstateRootMessages } from "../diagnosticMessages";
 import { appendGeneratedPath } from "./sourcePaths";
 import { pushDiagnosticAtRange, sourceRangeForGeneratedPath } from "./validationDiagnostics";
 import { asObject } from "./validationPrimitives";
@@ -40,7 +42,7 @@ export function validateBlockstateUnit(
     pushDiagnosticAtRange(
       diagnostics,
       "rsgl.invalidBlockstateVariantsRoot",
-      "Blockstate root field 'variants' must be an object.",
+      blockstateRootMessages.variantsMustBeObject,
       "error",
       sourceRangeForGeneratedPath(unit, "/variants")
     );
@@ -62,7 +64,7 @@ export function validateBlockstateUnit(
     pushDiagnosticAtRange(
       diagnostics,
       "rsgl.invalidBlockstateMultipartRoot",
-      "Blockstate root field 'multipart' must be an array.",
+      blockstateRootMessages.multipartMustBeArray,
       "error",
       sourceRangeForGeneratedPath(unit, "/multipart")
     );
@@ -320,12 +322,15 @@ function validateBlockstateModelObject(
       sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "model"))
     );
   }
-  for (const axis of ["x", "y", "z"]) {
+  for (const option of blockstateModelOptions) {
+    if (option.type !== "number") {
+      continue;
+    }
     validateBlockstateRotation(
-      axis,
-      model[axis],
+      option.name,
+      model[option.name],
       diagnostics,
-      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, axis))
+      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, option.name))
     );
   }
   if ("z" in model && options.targetPackFormat && options.targetPackFormat.major < 75) {
@@ -337,14 +342,19 @@ function validateBlockstateModelObject(
       sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "z"))
     );
   }
-  if ("uvlock" in model && typeof model.uvlock !== "boolean") {
-    pushDiagnosticAtRange(
-      diagnostics,
-      "rsgl.invalidBlockstateUvlock",
-      "Blockstate model uvlock must be a boolean.",
-      "error",
-      sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, "uvlock"))
-    );
+  for (const option of blockstateModelOptions) {
+    if (option.type !== "boolean") {
+      continue;
+    }
+    if (option.name in model && typeof model[option.name] !== "boolean") {
+      pushDiagnosticAtRange(
+        diagnostics,
+        "rsgl.invalidBlockstateUvlock",
+        `Blockstate model ${option.name} must be a boolean.`,
+        "error",
+        sourceRangeForGeneratedPath(unit, appendGeneratedPath(generatedPath, option.name))
+      );
+    }
   }
   if ("weight" in model && !allowWeight) {
     pushDiagnosticAtRange(

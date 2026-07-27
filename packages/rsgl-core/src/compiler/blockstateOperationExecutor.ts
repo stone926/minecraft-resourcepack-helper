@@ -1,3 +1,4 @@
+import { resourceBodyMessages } from "../diagnosticMessages";
 import type {
   BlockstateMode,
   BlockstateMultipartEntryNode,
@@ -343,7 +344,7 @@ export class BlockstateOperationExecutor {
     if (!isJsonObject(value)) {
       this.host.onError(
         "rsgl.invalidMergeFragment",
-        "merge must evaluate to an object fragment.",
+        resourceBodyMessages.mergeMustBeObjectFragment,
         operation.statement.value.range,
         context.sourceFile
       );

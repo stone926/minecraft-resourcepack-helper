@@ -1,3 +1,4 @@
+import { blockstateRootMessages } from "../diagnosticMessages";
 import {
   blockstateMultipartPath,
   blockstateVariantPath
@@ -282,7 +283,7 @@ export class BlockstateRootMerger {
     if (Object.prototype.hasOwnProperty.call(content, "variants") && !isJsonObject(content.variants)) {
       this.host.onError(
         "rsgl.invalidBlockstateVariantsRoot",
-        "Blockstate root field 'variants' must be an object.",
+        blockstateRootMessages.variantsMustBeObject,
         sourceRange,
         context?.sourceFile
       );
@@ -291,7 +292,7 @@ export class BlockstateRootMerger {
     if (Object.prototype.hasOwnProperty.call(content, "multipart") && !Array.isArray(content.multipart)) {
       this.host.onError(
         "rsgl.invalidBlockstateMultipartRoot",
-        "Blockstate root field 'multipart' must be an array.",
+        blockstateRootMessages.multipartMustBeArray,
         sourceRange,
         context?.sourceFile
       );

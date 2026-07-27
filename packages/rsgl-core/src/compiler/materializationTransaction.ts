@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { uniqueValues } from "../../../mc-assets/src";
+import { materializationCancellationMessages } from "../diagnosticMessages";
 import { mapWithConcurrency } from "../asyncWorkPool";
 import {
   createPreparedRsglMaterialization,
@@ -51,7 +52,7 @@ export async function runRsglMaterializationTransaction(
   if (cancelled(request)) {
     return createRsglMaterializationResult(transactionId, "cancelled", prepared, [], [], false, {
       operation: "cancel",
-      message: "Materialization was cancelled before staging."
+      message: materializationCancellationMessages.cancelledBeforeStaging
     });
   }
 
@@ -71,7 +72,7 @@ export async function runRsglMaterializationTransaction(
     await cleanupStaging(prepared, host);
     return createRsglMaterializationResult(transactionId, "cancelled", prepared, [], [], false, {
       operation: "cancel",
-      message: "Materialization was cancelled before commit."
+      message: materializationCancellationMessages.cancelledBeforeCommit
     });
   }
 
@@ -394,7 +395,7 @@ function cancelled(request: RsglMaterializationRequest): boolean {
 }
 
 function cancellationFailure(): Error & { materializationFailure: RsglMaterializationFailure } {
-  return operationError("cancel", undefined, new Error("Materialization was cancelled."));
+  return operationError("cancel", undefined, new Error(materializationCancellationMessages.cancelled));
 }
 
 function operationError(

@@ -1,3 +1,4 @@
+import { packOverlayMessages } from "../diagnosticMessages";
 import { JsonValue, ResourceUnit, RsglCompileDiagnostic } from "./ir";
 import { pushUnitDiagnostic } from "./validationDiagnostics";
 import {
@@ -278,7 +279,7 @@ function validatePackOverlays(
         diagnostics,
         unit,
         "rsgl.invalidOverlayDirectory",
-        "Overlay directory must contain only lowercase letters, numbers, '_' or '-'.",
+        packOverlayMessages.invalidOverlayDirectory,
         "error",
         entryPath
       );

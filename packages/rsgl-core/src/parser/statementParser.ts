@@ -1,3 +1,4 @@
+import { blockSyntaxMessages, externSyntaxMessages } from "../diagnosticMessages";
 import { ExpressionParser } from "./expressionParser";
 import { unquoteString } from "./typeParser";
 import {
@@ -311,7 +312,7 @@ export abstract class StatementParser extends ExpressionParser {
       statements.push(this.parseTopLevelStatement());
       this.ensureProgress(mark, "Unable to parse block statement; skipping token.");
     }
-    this.expectText("}", "Expected '}' after block.");
+    this.expectText("}", blockSyntaxMessages.expectedCloseAfterBlock);
     return {
       kind: "Block",
       statements,
@@ -488,7 +489,7 @@ export abstract class StatementParser extends ExpressionParser {
       if (bang.offset !== start.offset + start.length) {
         this.addDiagnostic(
           "rsgl.externBangMustBeAdjacent",
-          "The '!' modifier must immediately follow 'extern' without whitespace or comments.",
+          externSyntaxMessages.bangMustFollowExtern,
           tokenRange(bang)
         );
       }
@@ -547,7 +548,7 @@ export abstract class StatementParser extends ExpressionParser {
     if (!inModelRoot) {
       this.addDiagnostic(
         "rsgl.externVarInvalidContext",
-        "'extern var' is only valid directly inside a model resource body.",
+        externSyntaxMessages.externVarOutsideModelBody,
         tokenRange(start)
       );
     }

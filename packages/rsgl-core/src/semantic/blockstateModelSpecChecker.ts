@@ -4,6 +4,11 @@ import type {
   ObjectPropertyNode,
   TextRange
 } from "../parser";
+import {
+  blockstateModelOptionNameSet,
+  blockstateModelOptionType
+} from "../blockstateModelOptions";
+import { blockstateModelOptionMessages } from "../diagnosticMessages";
 import { diagnostic } from "./diagnostics";
 import {
   checkAssignable,
@@ -15,11 +20,8 @@ import {
   booleanType,
   modelIdType,
   numberType,
-  type RsglScope,
-  type RsglType
+  type RsglScope
 } from "./types";
-
-const modelOptionNames = new Set(["x", "y", "z", "uvlock"]);
 
 export function checkBlockstateModelSpec(
   context: RsglExpressionCheckContext,
@@ -43,7 +45,7 @@ export function checkBlockstateModelSpec(
       checkExpression(context, property.expression, scope);
       context.diagnostics.push(diagnostic(
         "rsgl.invalidBlockstateModelOptionsSpread",
-        "A blockstate 'with' block only accepts explicit x, y, z, and uvlock fields.",
+        blockstateModelOptionMessages.spreadNotAllowed,
         property.range
       ));
       continue;
@@ -64,7 +66,7 @@ export function checkBlockstateModelSpec(
     if (seen.has(name)) {
       context.diagnostics.push(diagnostic(
         "rsgl.duplicateBlockstateModelField",
-        `Blockstate model option '${name}' is specified more than once.`,
+        blockstateModelOptionMessages.duplicateOption(name),
         property.key.range
       ));
     }
@@ -73,16 +75,16 @@ export function checkBlockstateModelSpec(
       checkExpression(context, property.value, scope);
       context.diagnostics.push(diagnostic(
         "rsgl.blockstateWeightInvalidContext",
-        "weight is only valid after an option inside a random choice.",
+        blockstateModelOptionMessages.weightOutsideRandomChoice,
         property.key.range
       ));
       continue;
     }
-    if (!modelOptionNames.has(name)) {
+    if (!blockstateModelOptionNameSet.has(name)) {
       checkExpression(context, property.value, scope);
       context.diagnostics.push(diagnostic(
         "rsgl.unknownBlockstateModelField",
-        `Unknown blockstate model option '${name}'.`,
+        blockstateModelOptionMessages.unknownOption(name),
         property.key.range
       ));
       continue;
@@ -113,17 +115,18 @@ function checkModelOption(
   expression: ExprNode,
   scope: RsglScope
 ): void {
-  const expected = name === "uvlock" ? booleanType : numberType;
+  const optionType = blockstateModelOptionType(name);
+  const expected = optionType === "boolean" ? booleanType : numberType;
   const actual = checkExpressionForExpectedType(context, expression, scope, expected);
   checkAssignable(context, expected, actual, expression);
   if (
-    name !== "uvlock"
+    optionType === "number"
     && expression.kind === "NumberLiteral"
     && !isQuarterTurn(expression.value)
   ) {
     context.diagnostics.push(diagnostic(
       "rsgl.invalidBlockstateRotation",
-      `Blockstate model ${name} rotation must be one of 0, 90, 180, or 270.`,
+      blockstateModelOptionMessages.invalidRotation(name),
       expression.range
     ));
   }
@@ -148,15 +151,6 @@ function isQuarterTurn(value: number): boolean {
 
 function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value > 0;
-}
-
-export const blockstateModelOptionNames = modelOptionNames;
-
-export function blockstateModelOptionExpectedType(name: string): RsglType | undefined {
-  if (name === "uvlock") {
-    return booleanType;
-  }
-  return name === "x" || name === "y" || name === "z" ? numberType : undefined;
 }
 
 export type BlockstateModelSpecSourceRange = TextRange;

@@ -1,3 +1,4 @@
+import { resourceBodyMessages } from "../diagnosticMessages";
 import {
   ExprNode,
   ResourceBodyNode,
@@ -200,7 +201,7 @@ export function applyResourceBodyStatement(
         true
       );
     } else {
-      options.onError?.("rsgl.invalidMergeFragment", "merge must evaluate to an object fragment.", statement.value.range);
+      options.onError?.("rsgl.invalidMergeFragment", resourceBodyMessages.mergeMustBeObjectFragment, statement.value.range);
     }
   } else if (statement.kind === "UseDecl") {
     const fragment = options.onUseFragment?.(statement, context);

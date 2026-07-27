@@ -1,4 +1,5 @@
 import { bindRsglArguments } from "../arguments";
+import { callArgumentMessages } from "../diagnosticMessages";
 import { ArgumentNode, ExprNode, RsglDiagnostic } from "../parser";
 import { walkRsglModule } from "../parser/astTraversal";
 import { diagnostic } from "./diagnostics";
@@ -136,7 +137,7 @@ class ResolvedImportCallValidator {
       if (arg.name) {
         this.diagnostics.push(diagnostic(
           "rsgl.namedArgumentsRequireSignature",
-          "Named arguments require a concrete let-bound function signature.",
+          callArgumentMessages.namedArgumentsRequireSignature,
           arg.range
         ));
       }

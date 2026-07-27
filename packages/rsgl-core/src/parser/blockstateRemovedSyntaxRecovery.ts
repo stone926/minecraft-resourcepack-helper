@@ -1,3 +1,5 @@
+import { blockstateModelOptionNames } from "../blockstateModelOptions";
+import { blockstateModelOptionMessages } from "../diagnosticMessages";
 import type { ResourceStatementParserHost } from "./statementParserHost";
 import type { UnknownStmtNode } from "./types";
 
@@ -27,7 +29,7 @@ export function rejectRemovedModelModifierProperty(
   host.addDiagnostic(
     weight ? "rsgl.blockstateWeightInvalidContext" : "rsgl.legacyBlockstateModelModifiers",
     weight
-      ? "weight is only valid after an option inside a random choice."
+      ? blockstateModelOptionMessages.weightOutsideRandomChoice
       : `Trailing blockstate model modifier '${start.text}' is no longer supported; attach it to the preceding model with 'with { ${start.text}: ... }'.`,
     host.nodeRanges(start, start).range
   );
@@ -112,4 +114,4 @@ const removedSyntaxEnclosures = new Map([
   ["(", { open: "(", close: ")", message: "Expected ')' after the removed blockstate expression." }]
 ]);
 
-const blockstateModelModifierNames = new Set(["x", "y", "z", "uvlock", "weight"]);
+const blockstateModelModifierNames = new Set([...blockstateModelOptionNames, "weight"]);

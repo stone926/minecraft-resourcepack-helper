@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { canonicalizeResourceGraphOutputPath } from "../../../mc-assets/src";
+import { blockstateModelOptionNames } from "../blockstateModelOptions";
 import { BinaryCopyRef, isExternalResourceUnit, JsonValue, ResourceKind, ResourceUnit, RsglSourceMap } from "./ir";
 import { createJsonObject, setJsonObjectProperty } from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
@@ -7,7 +8,7 @@ import { getRsglResourceKindDescriptor } from "../resourceKinds";
 
 const objectFieldOrder: Record<string, string[]> = {
   model: ["parent", "ambientocclusion", "gui_light", "display", "textures", "elements"],
-  blockstateModel: ["model", "x", "y", "z", "uvlock", "weight"],
+  blockstateModel: ["model", ...blockstateModelOptionNames, "weight"],
   item: ["hand_animation_on_swap", "oversized_in_gui", "swap_animation_scale", "model"],
   itemModel: ["type", "property", "component", "index", "scale", "cases", "entries", "fallback", "model", "models", "tints"]
 };

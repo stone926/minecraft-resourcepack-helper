@@ -1,4 +1,5 @@
 import type { RsglDiagnostic, TemplateDeclNode } from "../parser";
+import { resourceBodyMessages } from "../diagnosticMessages";
 import { getRsglResourceBodyHelperDescriptor } from "../resourceBodyHelpers";
 import {
   normalizeTemplateCallerContext,
@@ -116,7 +117,7 @@ class ResolvedTemplateUseValidator {
       this.push(fileDiagnostic(
         site.fileName,
         "rsgl.functionValueCannotUse",
-        "use requires a template call or a registered resource-body helper.",
+        resourceBodyMessages.useRequiresTemplateCallOrHelper,
         expression.range
       ));
       return;
@@ -127,7 +128,7 @@ class ResolvedTemplateUseValidator {
       this.push(fileDiagnostic(
         site.fileName,
         "rsgl.functionValueCannotUse",
-        "use requires a template call or a registered resource-body helper.",
+        resourceBodyMessages.useRequiresTemplateCallOrHelper,
         expression.range
       ));
       return;
@@ -219,7 +220,7 @@ class ResolvedTemplateUseValidator {
       this.push(fileDiagnostic(
         site.fileName,
         "rsgl.textureVariableInvalidContext",
-        "Texture variables are only valid in model texture sinks.",
+        resourceBodyMessages.textureVariableOutsideModelSink,
         site.record.expression.range
       ));
     }

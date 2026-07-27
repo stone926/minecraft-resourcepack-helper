@@ -2,6 +2,7 @@ import {
   ExprNode,
   TextRange
 } from "../parser";
+import { statePredicateMessages } from "../diagnosticMessages";
 import { builtinEffect } from "../semantic/builtins";
 import { findLambdaImpureCalls } from "../semantic/lambdaPurity";
 import { typeKindForResourceValueKind } from "../resourceIdSemantics";
@@ -169,7 +170,7 @@ export function evaluateCompileTimeCondition(
     context.onEvaluationFailure?.();
     context.onError?.(
       "rsgl.statePredicateCompileTimeCondition",
-      "StatePredicate describes runtime block state and cannot control compile-time if/conditional execution.",
+      statePredicateMessages.compileTimeCondition,
       expression.range,
       context.sourceFile
     );

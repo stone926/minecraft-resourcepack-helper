@@ -4,6 +4,11 @@ import type {
   ObjectPropertyNode,
   TextRange
 } from "../parser";
+import {
+  blockstateModelOptionNameSet,
+  blockstateModelOptionType
+} from "../blockstateModelOptions";
+import { blockstateModelOptionMessages } from "../diagnosticMessages";
 import type { RsglResourceValueObservation } from "./evaluatedResourceValues";
 import {
   evaluateExpressionResult,
@@ -105,21 +110,21 @@ export function lowerBlockstateModelSpec(
     if (property.kind === "ObjectSpread") {
       host.onError(
         "rsgl.invalidBlockstateModelOptionsSpread",
-        "A blockstate 'with' block only accepts explicit x, y, z, and uvlock fields.",
+        blockstateModelOptionMessages.spreadNotAllowed,
         property.range,
         context.sourceFile
       );
       return undefined;
     }
     const name = staticPropertyName(property);
-    if (!name || !knownModelOptions.has(name)) {
+    if (!name || !blockstateModelOptionNameSet.has(name)) {
       host.onError(
         name === "weight"
           ? "rsgl.blockstateWeightInvalidContext"
           : "rsgl.unknownBlockstateModelField",
         name === "weight"
-          ? "weight is only valid after an option inside a random choice."
-          : `Unknown blockstate model option '${name ?? "computed"}'.`,
+          ? blockstateModelOptionMessages.weightOutsideRandomChoice
+          : blockstateModelOptionMessages.unknownOption(name ?? "computed"),
         property.key.range,
         context.sourceFile
       );
@@ -128,7 +133,7 @@ export function lowerBlockstateModelSpec(
     if (seen.has(name)) {
       host.onError(
         "rsgl.duplicateBlockstateModelField",
-        `Blockstate model option '${name}' is specified more than once.`,
+        blockstateModelOptionMessages.duplicateOption(name),
         property.key.range,
         context.sourceFile
       );
@@ -176,7 +181,7 @@ function validateModelOption(
   context: RsglCompileContext,
   host: BlockstateModelSpecLoweringHost
 ): boolean {
-  if (name === "uvlock") {
+  if (blockstateModelOptionType(name) === "boolean") {
     if (typeof value === "boolean") {
       return true;
     }
@@ -193,7 +198,7 @@ function validateModelOption(
   }
   host.onError(
     "rsgl.invalidBlockstateRotation",
-    `Blockstate model ${name} rotation must be one of 0, 90, 180, or 270.`,
+    blockstateModelOptionMessages.invalidRotation(name),
     expression.range,
     context.sourceFile
   );
@@ -201,8 +206,7 @@ function validateModelOption(
 }
 
 function isDefaultModelOption(name: string, value: JsonValue | undefined): boolean {
-  return (name === "uvlock" && value === false)
-    || (name !== "uvlock" && value === 0);
+  return blockstateModelOptionType(name) === "boolean" ? value === false : value === 0;
 }
 
 function canonicalModelId(value: JsonValue | undefined, namespace: string): string | undefined {
@@ -234,5 +238,3 @@ function mapping(
 ): BlockstateModelSpecMapping {
   return { generatedPath, sourceRange, context, ...(origin ? { origin } : {}) };
 }
-
-const knownModelOptions = new Set(["x", "y", "z", "uvlock"]);
