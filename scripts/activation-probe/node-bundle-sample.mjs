@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { isMainModule } from "../lib/moduleIdentity.mjs";
+import { parseInteger, parseSha256 } from "../lib/parse.mjs";
 import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -143,21 +144,6 @@ function parseArguments(args) {
     settleMilliseconds,
     sampleOutput: path.resolve(values.get("--sample-out"))
   };
-}
-
-function parseSha256(value, label) {
-  if (!/^[a-f0-9]{64}$/.test(value)) {
-    throw new Error(`${label} must be a lowercase SHA-256 digest.`);
-  }
-  return value;
-}
-
-function parseInteger(value, label, minimum, maximum) {
-  const parsed = Number(value);
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(`${label} must be an integer from ${minimum} through ${maximum}.`);
-  }
-  return parsed;
 }
 
 async function settle(milliseconds) {

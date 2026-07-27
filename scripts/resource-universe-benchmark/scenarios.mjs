@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import path from "node:path";
+import { pathIdentity } from "../lib/paths.mjs";
 import { createStoredZipFixture } from "./zip-fixture.mjs";
 import {
   measureAsynchronous,
@@ -588,9 +589,4 @@ function evenlySelect(values, requestedCount) {
     selected.push(values[Math.floor(index * values.length / count)]);
   }
   return selected;
-}
-
-function pathIdentity(value) {
-  const resolved = path.resolve(value);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }

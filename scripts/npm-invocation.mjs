@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 /**
@@ -46,6 +47,16 @@ export function npmEnvironmentWithCache(cacheDirectory, environment = process.en
 
 function isNpmCliEntry(fileName) {
   return /(?:^|[\\/])npm-cli\.js$/i.test(fileName);
+}
+
+/** Runs one foreground npm command with a disposable npm cache. */
+export function runNpm(args, cwd, cacheRoot) {
+  const invocation = resolveNpmInvocation(args);
+  execFileSync(invocation.file, invocation.args, {
+    cwd,
+    stdio: "inherit",
+    env: npmEnvironmentWithCache(cacheRoot)
+  });
 }
 
 function quoteCmdArgument(value) {

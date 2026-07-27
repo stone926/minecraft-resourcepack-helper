@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -13,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { npmEnvironmentWithCache, resolveNpmInvocation } from "./npm-invocation.mjs";
+import { runNpm } from "./npm-invocation.mjs";
 import { npmArchiveBaseName } from "./release-targets.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -63,13 +62,4 @@ function resolveOutput(args) {
     return path.resolve(repoRoot, args[0].slice("--out=".length));
   }
   throw new Error("Usage: package-rsgl-cli.mjs [--out <archive.tgz>]");
-}
-
-function runNpm(args, cwd, cacheRoot) {
-  const invocation = resolveNpmInvocation(args);
-  execFileSync(invocation.file, invocation.args, {
-    cwd,
-    stdio: "inherit",
-    env: npmEnvironmentWithCache(cacheRoot)
-  });
 }

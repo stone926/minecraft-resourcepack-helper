@@ -1,4 +1,6 @@
 import { sha256File } from "../lib/hash.mjs";
+import { compareText, requiredString } from "../lib/parse.mjs";
+import { isPathAtOrBelow } from "../lib/paths.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import {
   createReadStream,
@@ -708,12 +710,9 @@ function assertPortableRelativePath(value) {
 }
 
 function assertPathWithin(parent, candidate, label) {
-  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
-  if (relative === "" || (!path.isAbsolute(relative)
-    && relative !== ".." && !relative.startsWith(`..${path.sep}`))) {
-    return;
+  if (!isPathAtOrBelow(parent, candidate)) {
+    throw new Error(`${label}: ${candidate}`);
   }
-  throw new Error(`${label}: ${candidate}`);
 }
 
 async function readArtifactIdentity(fileName) {
@@ -764,15 +763,4 @@ function pathEntryExists(value) {
     }
     throw error;
   }
-}
-
-function compareText(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function requiredString(value, label) {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${label} must be a non-empty string.`);
-  }
-  return value;
 }

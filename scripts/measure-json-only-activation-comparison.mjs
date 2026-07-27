@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import { isMainModule } from "./lib/moduleIdentity.mjs";
-import { execFileSync } from "node:child_process";
+import { parseFlagValues } from "./lib/cli-args.mjs";
+import { readRepositoryCommit } from "./lib/git.mjs";
+import { parseInteger, shellDisplayArgument } from "./lib/parse.mjs";
+import { pathIdentity, relativeOrAbsoluteFrom } from "./lib/paths.mjs";
 import {
   mkdirSync,
   mkdtempSync,
@@ -42,6 +45,7 @@ import { compareJsonOnlyActivationReports } from "./verify-json-only-activation-
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
+const relativeOrAbsolute = relativeOrAbsoluteFrom(repositoryRoot);
 
 export const pairedActivationComparisonSchemaVersion = 1;
 export const defaultPairedActivationComparisonInputs = Object.freeze({
@@ -53,34 +57,11 @@ export const defaultPairedActivationComparisonInputs = Object.freeze({
 });
 
 export function parsePairedActivationComparisonArguments(args) {
-  const values = new Map();
-  let help = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--help" || argument === "-h") {
-      if (help) {
-        throw new Error("--help may only be specified once.");
-      }
-      help = true;
-      continue;
-    }
-    const equals = argument.indexOf("=");
-    const flag = equals >= 0 ? argument.slice(0, equals) : argument;
-    if (!["--baseline", "--candidate", "--out", "--iterations", "--settle-ms", "--workspace", "--code"].includes(flag)) {
-      throw new Error(`Unknown paired activation comparison argument: ${argument}`);
-    }
-    if (values.has(flag)) {
-      throw new Error(`${flag} may only be specified once.`);
-    }
-    const value = equals >= 0 ? argument.slice(equals + 1) : args[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value after ${flag}.`);
-    }
-    values.set(flag, value);
-    if (equals < 0) {
-      index += 1;
-    }
-  }
+  const { values, help } = parseFlagValues(args, {
+    helpArguments: ["--help", "-h"],
+    eagerKnownFlags: ["--baseline", "--candidate", "--out", "--iterations", "--settle-ms", "--workspace", "--code"],
+    unknownArgument: argument => `Unknown paired activation comparison argument: ${argument}`
+  });
   return Object.freeze({
     help,
     baselinePath: path.resolve(repositoryRoot, values.get("--baseline")
@@ -196,7 +177,7 @@ export async function measurePairedActivationComparison(options) {
       schemaVersion: pairedActivationComparisonSchemaVersion,
       measurement: "json-only-activation-paired-comparison",
       generatedAt: new Date().toISOString(),
-      repositoryCommit: readRepositoryCommit(),
+      repositoryCommit: readRepositoryCommit(repositoryRoot),
       comparisonRunId,
       trustBoundary: activationEvidenceTrustBoundary,
       measurementTimeOrigin: performance.timeOrigin,
@@ -348,15 +329,6 @@ function assertPairedActivationOutputSafety(options) {
   });
 }
 
-function parseInteger(value, label, minimum, maximum, multiple = 1) {
-  const parsed = Number(value);
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed)
-    || parsed < minimum || parsed > maximum || parsed % multiple !== 0) {
-    throw new Error(`${label} must be an integer from ${minimum} through ${maximum}${multiple > 1 ? ` divisible by ${multiple}` : ""}.`);
-  }
-  return parsed;
-}
-
 function createReproductionCommand(options) {
   const args = [
     "node",
@@ -374,36 +346,6 @@ function createReproductionCommand(options) {
     args.push("--code", options.codeExecutable);
   }
   return args.map(shellDisplayArgument).join(" ");
-}
-
-function relativeOrAbsolute(fileName) {
-  const relative = path.relative(repositoryRoot, path.resolve(fileName));
-  return relative && !path.isAbsolute(relative) && relative !== ".."
-    && !relative.startsWith(`..${path.sep}`)
-    ? relative.replaceAll("\\", "/")
-    : path.resolve(fileName);
-}
-
-function shellDisplayArgument(value) {
-  return /^[A-Za-z0-9_./:\\-]+$/.test(value) ? value : JSON.stringify(value);
-}
-
-function pathIdentity(value) {
-  const resolved = path.resolve(value);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-}
-
-
-function readRepositoryCommit() {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      windowsHide: true
-    }).trim();
-  } catch {
-    return null;
-  }
 }
 
 function printUsage() {

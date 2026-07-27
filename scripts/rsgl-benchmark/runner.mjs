@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
+import { percentile } from "../lib/stats.mjs";
 import {
   createRsglBenchmarkScenarios,
   resolveRsglBenchmarkProfile
@@ -77,11 +78,6 @@ function measureScenario(scenario, profile, profileName) {
     medianMs: percentile(sorted, 0.5),
     p95Ms: percentile(sorted, 0.95)
   };
-}
-
-function percentile(sorted, fraction) {
-  const index = Math.max(0, Math.ceil(sorted.length * fraction) - 1);
-  return sorted[index];
 }
 
 function csvCell(value) {

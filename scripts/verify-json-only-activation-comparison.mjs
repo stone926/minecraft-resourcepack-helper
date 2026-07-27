@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import { isMainModule } from "./lib/moduleIdentity.mjs";
+import { parseFlagValues } from "./lib/cli-args.mjs";
+import { requireNonNegativeInteger } from "./lib/parse.mjs";
+import { pathIdentity, relativeOrAbsoluteFrom } from "./lib/paths.mjs";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -32,6 +35,7 @@ import {
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
+const relativeOrAbsolute = relativeOrAbsoluteFrom(repositoryRoot);
 const EXTENSION_HOST_TIME_ORIGIN_TOLERANCE_MILLISECONDS = 1_000;
 
 export const pairedActivationComparisonSchemaVersion = 1;
@@ -41,34 +45,12 @@ export const defaultPairedActivationVerificationInputs = Object.freeze({
 });
 
 export function parsePairedActivationVerificationArguments(args) {
-  const values = new Map();
-  let help = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--help" || argument === "-h") {
-      if (help) {
-        throw new Error("--help may only be specified once.");
-      }
-      help = true;
-      continue;
-    }
-    const equals = argument.indexOf("=");
-    const flag = equals >= 0 ? argument.slice(0, equals) : argument;
-    if (!["--report", "--out"].includes(flag)) {
-      throw new Error(`Unknown paired activation verification argument: ${argument}`);
-    }
-    if (values.has(flag)) {
-      throw new Error(`${flag} may only be specified once.`);
-    }
-    const value = equals >= 0 ? argument.slice(equals + 1) : args[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing path after ${flag}.`);
-    }
-    values.set(flag, value);
-    if (equals < 0) {
-      index += 1;
-    }
-  }
+  const { values, help } = parseFlagValues(args, {
+    helpArguments: ["--help", "-h"],
+    eagerKnownFlags: ["--report", "--out"],
+    unknownArgument: argument => `Unknown paired activation verification argument: ${argument}`,
+    missingValueNoun: "path"
+  });
   const reportFile = path.resolve(repositoryRoot, values.get("--report")
     ?? defaultPairedActivationVerificationInputs.report);
   const outputFile = path.resolve(repositoryRoot, values.get("--out")
@@ -358,31 +340,11 @@ function sameTree(left, right) {
     && left?.bytes === right?.bytes;
 }
 
-function requireNonNegativeInteger(value, label) {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${label} must be a non-negative integer.`);
-  }
-  return value;
-}
-
 function requireFinite(value, label) {
   if (!Number.isFinite(value)) {
     throw new Error(`${label} must be finite.`);
   }
   return value;
-}
-
-function relativeOrAbsolute(fileName) {
-  const relative = path.relative(repositoryRoot, path.resolve(fileName));
-  return relative && !path.isAbsolute(relative) && relative !== ".."
-    && !relative.startsWith(`..${path.sep}`)
-    ? relative.replaceAll("\\", "/")
-    : path.resolve(fileName);
-}
-
-function pathIdentity(value) {
-  const resolved = path.resolve(value);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 

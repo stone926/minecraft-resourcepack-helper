@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isSortedUnique } from "./lib/parse.mjs";
 import {
   combinedVsixArtifactNames,
   combinedVsixRuntimeEntries,
@@ -729,18 +730,6 @@ function sortJson(value) {
     );
   }
   return value;
-}
-
-function isSortedUnique(values) {
-  for (let index = 0; index < values.length; index += 1) {
-    if (typeof values[index] !== "string") {
-      return false;
-    }
-    if (index > 0 && values[index - 1] >= values[index]) {
-      return false;
-    }
-  }
-  return true;
 }
 
 function assertDeepEqual(actual, expected, message) {

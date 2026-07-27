@@ -14,6 +14,8 @@ import {
   writeFileSync
 } from "node:fs";
 import path from "node:path";
+import { compareText as compareNames } from "./lib/parse.mjs";
+import { samePath } from "./lib/paths.mjs";
 
 export const stageContentsSchemaVersion = 1;
 export const forbiddenStageSuffixes = Object.freeze([".map"]);
@@ -383,12 +385,6 @@ function isPathAtOrBelow(parent, target) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function samePath(left, right) {
-  return process.platform === "win32"
-    ? left.toLowerCase() === right.toLowerCase()
-    : left === right;
-}
-
 function comparePathDepthThenName(left, right) {
   const depth = left.split("/").length - right.split("/").length;
   return depth || compareNames(left, right);
@@ -397,8 +393,4 @@ function comparePathDepthThenName(left, right) {
 function comparePathDepthDescending(left, right) {
   const depth = right.split("/").length - left.split("/").length;
   return depth || compareNames(right, left);
-}
-
-function compareNames(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

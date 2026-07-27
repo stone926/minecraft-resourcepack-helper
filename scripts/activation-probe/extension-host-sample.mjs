@@ -10,6 +10,9 @@ import {
   statSync
 } from "node:fs";
 import { isMainModule } from "../lib/moduleIdentity.mjs";
+import { parseFlagValues } from "../lib/cli-args.mjs";
+import { parseInteger, parseSha256 } from "../lib/parse.mjs";
+import { samePath } from "../lib/paths.mjs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -28,26 +31,9 @@ const scriptDirectory = path.dirname(scriptFile);
 const extensionTestPath = path.join(scriptDirectory, "extension-host-run.cjs");
 
 export function parseExtensionHostSampleArguments(args) {
-  const values = new Map();
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (!argument.startsWith("--")) {
-      throw new Error(`Unexpected Extension Host sample argument: ${argument}`);
-    }
-    const equals = argument.indexOf("=");
-    const flag = equals >= 0 ? argument.slice(0, equals) : argument;
-    if (values.has(flag)) {
-      throw new Error(`${flag} may only be specified once.`);
-    }
-    const value = equals >= 0 ? argument.slice(equals + 1) : args[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value after ${flag}.`);
-    }
-    values.set(flag, value);
-    if (equals < 0) {
-      index += 1;
-    }
-  }
+  const { values } = parseFlagValues(args, {
+    unexpectedArgument: argument => `Unexpected Extension Host sample argument: ${argument}`
+  });
   const required = [
     "--artifact",
     "--extension-root",
@@ -220,30 +206,6 @@ function assertInput(fileName, label, directory = false) {
 
 function canonicalPath(value) {
   return realpathSync.native(path.resolve(value));
-}
-
-function samePath(left, right) {
-  if (typeof left !== "string" || typeof right !== "string") {
-    return false;
-  }
-  return process.platform === "win32"
-    ? left.toLowerCase() === right.toLowerCase()
-    : left === right;
-}
-
-function parseInteger(value, label, minimum, maximum) {
-  const parsed = Number(value);
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(`${label} must be an integer from ${minimum} through ${maximum}.`);
-  }
-  return parsed;
-}
-
-function parseSha256(value, label) {
-  if (!/^[a-f0-9]{64}$/.test(value)) {
-    throw new Error(`${label} must be a lowercase SHA-256 digest.`);
-  }
-  return value;
 }
 
 if (isMainModule(import.meta.url)) {

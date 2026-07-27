@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
+import { percentile } from "../lib/stats.mjs";
 
 export function measureSynchronous(action, iterations) {
   assertPositiveInteger(iterations, "measurement iterations");
@@ -61,10 +62,6 @@ export function createDistribution(values) {
     max: sorted[sorted.length - 1],
     mean: sum / sorted.length
   });
-}
-
-function percentile(sorted, fraction) {
-  return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)];
 }
 
 function assertPositiveInteger(value, label) {

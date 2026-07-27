@@ -2,7 +2,10 @@
 
 import { sha256Hex } from "./lib/hash.mjs";
 import { isMainModule } from "./lib/moduleIdentity.mjs";
-import { execFileSync } from "node:child_process";
+import { runGitCapture } from "./lib/git.mjs";
+import { writeJsonAtomically } from "./lib/json-file.mjs";
+import { shellDisplayArgument } from "./lib/parse.mjs";
+import { assertPathAtOrBelow } from "./lib/paths.mjs";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -10,9 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
+  rmSync
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -250,25 +251,12 @@ function requireFunction(moduleValue, name) {
 
 function readGitIdentity(repositoryRoot) {
   try {
-    const sha = runGit(repositoryRoot, ["rev-parse", "HEAD"]);
-    const status = runGit(repositoryRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
+    const sha = runGitCapture(repositoryRoot, ["rev-parse", "HEAD"]);
+    const status = runGitCapture(repositoryRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
     return Object.freeze({ sha, dirty: status.length > 0 });
   } catch {
     return Object.freeze({ sha: null, dirty: null });
   }
-}
-
-function runGit(repositoryRoot, args) {
-  return execFileSync(
-    "git",
-    ["-c", `safe.directory=${repositoryRoot.replaceAll("\\", "/")}`, ...args],
-    {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      windowsHide: true
-    }
-  ).trim();
 }
 
 function prepareOutput(paths) {
@@ -288,29 +276,8 @@ function removeExactRegularFile(fileName) {
   rmSync(fileName, { force: true });
 }
 
-function writeJsonAtomically(fileName, value) {
-  const temporary = `${fileName}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(temporary, fileName);
-}
-
-function assertPathAtOrBelow(parent, candidate, label) {
-  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
-  if (relative !== "" && (relative === ".."
-    || relative.startsWith(`..${path.sep}`)
-    || path.isAbsolute(relative))) {
-    throw new Error(`${label} must stay inside ${parent}: ${candidate}`);
-  }
-}
-
 function relativePortable(root, fileName) {
   return path.relative(root, fileName).replaceAll("\\", "/");
-}
-
-function shellDisplayArgument(argument) {
-  return /^[A-Za-z0-9_./:@=+\\-]+$/.test(argument)
-    ? argument
-    : JSON.stringify(argument);
 }
 
 function normalizeOptionalEnvironmentValue(value) {

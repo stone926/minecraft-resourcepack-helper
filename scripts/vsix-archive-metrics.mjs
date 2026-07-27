@@ -2,6 +2,7 @@ import { sha256File } from "./lib/hash.mjs";
 import { createHash } from "node:crypto";
 import { createReadStream, statSync } from "node:fs";
 import path from "node:path";
+import { requiredString } from "./lib/parse.mjs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -228,11 +229,4 @@ async function hashFile(fileName) {
 
 function sum(entries, property) {
   return entries.reduce((total, entry) => total + (entry.directory ? 0 : entry[property]), 0);
-}
-
-function requiredString(value, label) {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${label} must be a non-empty string.`);
-  }
-  return value;
 }

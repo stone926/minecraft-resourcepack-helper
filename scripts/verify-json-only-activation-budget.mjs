@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
 import { isMainModule } from "./lib/moduleIdentity.mjs";
+import { parseFlagValues } from "./lib/cli-args.mjs";
+import { requireNonNegativeInteger } from "./lib/parse.mjs";
+import { pathIdentity, relativeOrAbsoluteFrom } from "./lib/paths.mjs";
+import { percentile, sum } from "./lib/stats.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -19,6 +23,7 @@ import { readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
+const relativeOrAbsolute = relativeOrAbsoluteFrom(repositoryRoot);
 const canonicalExtensionHostSampleRunner = path.join(
   scriptDirectory,
   "activation-probe",
@@ -32,34 +37,12 @@ export const defaultJsonOnlyActivationBudgetInputs = Object.freeze({
 });
 
 export function parseJsonOnlyActivationBudgetArguments(args) {
-  const values = new Map();
-  let help = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--help" || argument === "-h") {
-      if (help) {
-        throw new Error("--help may only be specified once.");
-      }
-      help = true;
-      continue;
-    }
-    const equals = argument.indexOf("=");
-    const flag = equals >= 0 ? argument.slice(0, equals) : argument;
-    if (!["--baseline", "--candidate", "--out"].includes(flag)) {
-      throw new Error(`Unknown JSON-only activation budget argument: ${argument}`);
-    }
-    if (values.has(flag)) {
-      throw new Error(`${flag} may only be specified once.`);
-    }
-    const value = equals >= 0 ? argument.slice(equals + 1) : args[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing path after ${flag}.`);
-    }
-    values.set(flag, value);
-    if (equals < 0) {
-      index += 1;
-    }
-  }
+  const { values, help } = parseFlagValues(args, {
+    helpArguments: ["--help", "-h"],
+    eagerKnownFlags: ["--baseline", "--candidate", "--out"],
+    unknownArgument: argument => `Unknown JSON-only activation budget argument: ${argument}`,
+    missingValueNoun: "path"
+  });
   const result = Object.freeze({
     help,
     baselineFile: path.resolve(repositoryRoot, values.get("--baseline")
@@ -493,17 +476,13 @@ export async function verifyMeasuredVsix(report, label, requireCombinedVsix) {
 
 function percentile95(values) {
   const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)];
+  return percentile(sorted, 0.95);
 }
 
 function assertMetricMatches(actual, expected, label) {
   if (actual !== expected) {
     throw new Error(`${label} does not match the p95 recomputed from raw samples.`);
   }
-}
-
-function sum(samples, selector) {
-  return samples.reduce((total, sample) => total + selector(sample), 0);
 }
 
 function assertDisjoint(leftValues, rightValues, label) {
@@ -542,30 +521,11 @@ function requireFiniteMetric(value, label) {
   return value;
 }
 
-function requireNonNegativeInteger(value, label) {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${label} must be a non-negative integer.`);
-  }
-  return value;
-}
-
 function requirePositiveInteger(value, label) {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${label} must be a positive integer.`);
   }
   return value;
-}
-
-function relativeOrAbsolute(fileName) {
-  const relative = path.relative(repositoryRoot, fileName);
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
-    ? relative.replaceAll("\\", "/")
-    : path.resolve(fileName).replaceAll("\\", "/");
-}
-
-function pathIdentity(fileName) {
-  const resolved = path.resolve(fileName);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function printUsage() {

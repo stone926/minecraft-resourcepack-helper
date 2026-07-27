@@ -2,6 +2,11 @@
 
 import { sha256Hex } from "./lib/hash.mjs";
 import { isMainModule } from "./lib/moduleIdentity.mjs";
+import { readHeadCommitTimestamp, runGitCapture } from "./lib/git.mjs";
+import { writeJsonAtomically } from "./lib/json-file.mjs";
+import { parseJson } from "./lib/parse.mjs";
+import { assertPathAtOrBelow } from "./lib/paths.mjs";
+import { defaultExecuteStep, formatStepCommand } from "./lib/steps.mjs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -10,9 +15,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync
+  rmSync
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -128,12 +131,8 @@ export async function runCombinedVsixMeasurement(options = {}) {
 
   for (const step of createCombinedVsixMeasurementPlan(paths)) {
     assertGitIdentityUnchanged(paths.repositoryRoot, git);
-    console.log(`> node ${step.script}${step.args.length > 0 ? ` ${step.args.join(" ")}` : ""}`);
-    execFileSync(
-      process.execPath,
-      [path.join(paths.repositoryRoot, ...step.script.split("/")), ...step.args],
-      { cwd: paths.repositoryRoot, stdio: "inherit", env: environment }
-    );
+    console.log(formatStepCommand(step));
+    defaultExecuteStep(step, { repositoryRoot: paths.repositoryRoot, env: environment });
     assertGitIdentityUnchanged(paths.repositoryRoot, git);
     if (step.captureMode) {
       evidence[step.captureMode] = await captureCombinedVsixModeEvidence({
@@ -184,10 +183,10 @@ export async function runCombinedVsixMeasurement(options = {}) {
 }
 
 function assertCleanGitCheckout(repositoryRoot) {
-  const commit = runGit(repositoryRoot, ["rev-parse", "--verify", "HEAD"]);
-  const tree = runGit(repositoryRoot, ["rev-parse", "HEAD^{tree}"]);
-  const commitTimestamp = runGit(repositoryRoot, ["show", "-s", "--format=%ct", "HEAD"]);
-  const status = runGit(repositoryRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
+  const commit = runGitCapture(repositoryRoot, ["rev-parse", "--verify", "HEAD"]);
+  const tree = runGitCapture(repositoryRoot, ["rev-parse", "HEAD^{tree}"]);
+  const commitTimestamp = readHeadCommitTimestamp(repositoryRoot);
+  const status = runGitCapture(repositoryRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
   if (status.length > 0) {
     throw new Error(
       "Combined VSIX measurement requires a clean Git checkout (tracked and untracked files)."
@@ -278,41 +277,9 @@ function assertNoSymlinkPath(repositoryRoot, target) {
   }
 }
 
-function writeJsonAtomically(fileName, value) {
-  const temporary = `${fileName}.tmp`;
-  removeExactOutputFile(temporary, path.dirname(fileName));
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(temporary, fileName);
-}
-
-function runGit(repositoryRoot, args) {
-  return execFileSync(
-    "git",
-    ["-c", `safe.directory=${repositoryRoot.replaceAll("\\", "/")}`, ...args],
-    { cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-  ).trim();
-}
 
 function nodeStep(id, script, args, captureMode) {
   return Object.freeze({ id, script, args: Object.freeze(args), captureMode });
-}
-
-function assertPathAtOrBelow(parent, candidate, label) {
-  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
-  if (relative === "" || (relative !== ".."
-    && !relative.startsWith(`..${path.sep}`)
-    && !path.isAbsolute(relative))) {
-    return;
-  }
-  throw new Error(`${label} must stay inside ${parent}: ${candidate}`);
-}
-
-function parseJson(bytes, label) {
-  try {
-    return JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, ""));
-  } catch (error) {
-    throw new Error(`Invalid JSON in ${label}.`, { cause: error });
-  }
 }
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { isMainModule } from "./lib/moduleIdentity.mjs";
-import { execFileSync } from "node:child_process";
+import { executeNodeSteps, nodeStep } from "./lib/steps.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,12 +54,7 @@ export function createArtifactPlan(command, targetName, args = []) {
 }
 
 export function executeArtifactPlan(plan, options = {}) {
-  const executeStep = options.executeStep ?? defaultExecuteStep;
-  const logger = options.logger ?? console;
-  for (const step of plan) {
-    logger.log(`> node ${step.script}${step.args.length > 0 ? ` ${step.args.join(" ")}` : ""}`);
-    executeStep(step, { repositoryRoot });
-  }
+  executeNodeSteps(plan, { repositoryRoot, ...options });
 }
 
 export function parseArtifactArguments(args) {
@@ -87,18 +82,6 @@ function budgetStep(targetName, artifactPath, bundleMode) {
     args.push("--bundle-mode", bundleMode);
   }
   return nodeStep(`verify ${targetName} budgets`, "scripts/verify-build-budgets.mjs", args);
-}
-
-function nodeStep(label, script, args = []) {
-  return Object.freeze({ label, script, args: Object.freeze(args) });
-}
-
-function defaultExecuteStep(step, context) {
-  execFileSync(
-    process.execPath,
-    [path.resolve(context.repositoryRoot, step.script), ...step.args],
-    { cwd: context.repositoryRoot, stdio: "inherit" }
-  );
 }
 
 

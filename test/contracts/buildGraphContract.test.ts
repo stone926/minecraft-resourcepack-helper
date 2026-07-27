@@ -123,7 +123,9 @@ describe("repository build graph", () => {
 
     const vsixScript = fs.readFileSync(path.join(root, "scripts", "package-vsix.mjs"), "utf8");
     assert.ok(vsixScript.includes("SOURCE_DATE_EPOCH"));
-    assert.ok(vsixScript.includes('"--format=%ct"'));
+    assert.ok(vsixScript.includes("readHeadCommitTimestamp"));
+    const gitLibrary = fs.readFileSync(path.join(root, "scripts", "lib", "git.mjs"), "utf8");
+    assert.ok(gitLibrary.includes('"--format=%ct"'));
     assert.match(vsixScript, /env: \{ \.\.\.process\.env, SOURCE_DATE_EPOCH: sourceDateEpoch \}/);
 
     const budgets = readJson<{

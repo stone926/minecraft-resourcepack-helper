@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pathIdentity } from "../lib/paths.mjs";
 import { validateActivationProbeSample } from "./schema.mjs";
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -129,9 +130,4 @@ function readSample(result, sampleOutput) {
   } catch (error) {
     throw new Error("Extension Host runner wrote an invalid sample JSON.", { cause: error });
   }
-}
-
-function pathIdentity(value) {
-  const resolved = path.resolve(value);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }

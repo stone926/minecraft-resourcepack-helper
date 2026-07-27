@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readHeadCommitTimestamp } from "./lib/git.mjs";
 import { mainVsixStageLayout } from "./assemble-main-vsix-stage.mjs";
 import { prepareVsixPackageArguments } from "./vsix-package-output.mjs";
 
@@ -42,18 +43,7 @@ function resolveSourceDateEpoch() {
 
   let commitTimestamp;
   try {
-    commitTimestamp = execFileSync(
-      "git",
-      [
-        "-c",
-        `safe.directory=${repoRoot.replaceAll("\\", "/")}`,
-        "show",
-        "-s",
-        "--format=%ct",
-        "HEAD"
-      ],
-      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-    ).trim();
+    commitTimestamp = readHeadCommitTimestamp(repoRoot);
   } catch (error) {
     throw new Error(
       "VSIX packaging requires SOURCE_DATE_EPOCH or a Git checkout to produce reproducible archives.",

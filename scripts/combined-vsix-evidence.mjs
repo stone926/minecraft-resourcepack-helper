@@ -1,4 +1,9 @@
 import { sha256Hex } from "./lib/hash.mjs";
+import {
+  compareText as compareNames,
+  isSortedUnique,
+  parseJson
+} from "./lib/parse.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -243,20 +248,4 @@ export function vsceArchivePathForStagePath(stagePath) {
   return `extension/${archiveRelativePath}`;
 }
 
-function parseJson(bytes, label) {
-  try {
-    return JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, ""));
-  } catch (error) {
-    throw new Error(`Invalid JSON in ${label}.`, { cause: error });
-  }
-}
-
-function isSortedUnique(values) {
-  return values.every((value, index) => typeof value === "string"
-    && (index === 0 || values[index - 1] < value));
-}
-
-function compareNames(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
 

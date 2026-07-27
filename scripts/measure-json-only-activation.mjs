@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
 import { isMainModule } from "./lib/moduleIdentity.mjs";
+import { parseFlagValues } from "./lib/cli-args.mjs";
+import { readRepositoryCommit } from "./lib/git.mjs";
+import { errorMessage, parseInteger, shellDisplayArgument } from "./lib/parse.mjs";
+import { pathIdentity, relativeOrAbsoluteFrom } from "./lib/paths.mjs";
+import { percentile, sum } from "./lib/stats.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -37,6 +42,7 @@ import {
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
+const relativeOrAbsolute = relativeOrAbsoluteFrom(repositoryRoot);
 const nodeBundleSampleRunner = path.join(scriptDirectory, "activation-probe", "node-bundle-sample.mjs");
 
 export const defaultActivationProbeOutputs = Object.freeze({
@@ -47,31 +53,10 @@ export const defaultActivationProbeOutputs = Object.freeze({
 export { activationProbeAdapters, extensionHostRunnerProtocol };
 
 export function parseActivationProbeArguments(args) {
-  const values = new Map();
-  const booleanFlags = new Set();
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (!argument.startsWith("--")) {
-      throw new Error(`Unexpected activation probe argument: ${argument}`);
-    }
-    const equals = argument.indexOf("=");
-    const flag = equals >= 0 ? argument.slice(0, equals) : argument;
-    if (booleanFlags.has(flag) || values.has(flag)) {
-      throw new Error(`${flag} may only be specified once.`);
-    }
-    if (flag === "--help") {
-      booleanFlags.add(flag);
-      continue;
-    }
-    const value = equals >= 0 ? argument.slice(equals + 1) : args[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value after ${flag}.`);
-    }
-    values.set(flag, value);
-    if (equals < 0) {
-      index += 1;
-    }
-  }
+  const { values, booleanFlags } = parseFlagValues(args, {
+    unexpectedArgument: argument => `Unexpected activation probe argument: ${argument}`,
+    switchFlags: ["--help"]
+  });
 
   const knownFlags = new Set([
     "--adapter",
@@ -368,7 +353,7 @@ export function createActivationProbeReport(
     measurement: "json-only-activation",
     probeRunId,
     generatedAt: new Date().toISOString(),
-    repositoryCommit: readRepositoryCommit(),
+    repositoryCommit: readRepositoryCommit(repositoryRoot),
     scope,
     command: createReproductionCommand(options),
     rawOutput: relativeOrAbsolute(options.outputPath),
@@ -417,8 +402,8 @@ export function createActivationProbeReport(
         || processIdentity.distinctProcessInstanceCount === successful.length)
       && (options.adapter !== "extension-host" || scope.canonicalRunner === true)
       && (options.adapter !== "extension-host"
-        || successful.every(sample => normalizedPathIdentity(sample.activatedExtensionRoot)
-          === normalizedPathIdentity(preparedExtension.extensionRoot)))
+        || successful.every(sample => pathIdentity(sample.activatedExtensionRoot)
+          === pathIdentity(preparedExtension.extensionRoot)))
       && hardConditions.passed,
     samples
   });
@@ -645,11 +630,6 @@ function validateProbeInputs(options) {
   }
 }
 
-function normalizedPathIdentity(value) {
-  const resolved = path.resolve(value);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-}
-
 export function createJsonOnlyWorkspace() {
   const root = mkdtempSync(path.join(os.tmpdir(), "mcres-json-only-pack-"));
   const modelDirectory = path.join(root, "assets", "probe", "models", "block");
@@ -742,22 +722,14 @@ function distribution(values) {
     return null;
   }
   const sorted = [...values].sort((left, right) => left - right);
-  const sum = sorted.reduce((total, value) => total + value, 0);
+  const total = sorted.reduce((accumulated, value) => accumulated + value, 0);
   return {
     min: sorted[0],
     median: percentile(sorted, 0.5),
     p95: percentile(sorted, 0.95),
     max: sorted[sorted.length - 1],
-    mean: sum / sorted.length
+    mean: total / sorted.length
   };
-}
-
-function percentile(sorted, quantile) {
-  return sorted[Math.max(0, Math.ceil(sorted.length * quantile) - 1)];
-}
-
-function sum(samples, selector) {
-  return samples.reduce((total, sample) => total + selector(sample), 0);
 }
 
 function inferExtensionRoot(bundlePath) {
@@ -769,43 +741,6 @@ function inferExtensionRoot(bundlePath) {
     directory = path.dirname(directory);
   }
   return path.dirname(bundlePath);
-}
-
-function parseInteger(value, label, minimum, maximum) {
-  const parsed = Number(value);
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(`${label} must be an integer from ${minimum} through ${maximum}.`);
-  }
-  return parsed;
-}
-
-function relativeOrAbsolute(fileName) {
-  const relative = path.relative(repositoryRoot, fileName);
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
-    ? relative.replaceAll("\\", "/")
-    : path.resolve(fileName).replaceAll("\\", "/");
-}
-
-function shellDisplayArgument(argument) {
-  return /^[A-Za-z0-9_./:@=-]+$/.test(argument)
-    ? argument
-    : JSON.stringify(argument);
-}
-
-function readRepositoryCommit() {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-  } catch {
-    return undefined;
-  }
-}
-
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function printUsage() {

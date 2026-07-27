@@ -5,6 +5,8 @@ import {
   statSync
 } from "node:fs";
 import path from "node:path";
+import { requiredString } from "../lib/parse.mjs";
+import { isPathAtOrBelow as isPathWithin, samePath } from "../lib/paths.mjs";
 
 export function assertSafeEvidenceOutput(options) {
   if (!options || typeof options !== "object") {
@@ -74,21 +76,3 @@ function sameExistingFile(left, right) {
     && leftStat.ino === rightStat.ino;
 }
 
-function isPathWithin(parent, candidate) {
-  const relative = path.relative(parent, candidate);
-  return relative === "" || (!path.isAbsolute(relative)
-    && relative !== ".." && !relative.startsWith(`..${path.sep}`));
-}
-
-function samePath(left, right) {
-  return process.platform === "win32"
-    ? left.toLowerCase() === right.toLowerCase()
-    : left === right;
-}
-
-function requiredString(value, label) {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${label} must be a non-empty string.`);
-  }
-  return value;
-}

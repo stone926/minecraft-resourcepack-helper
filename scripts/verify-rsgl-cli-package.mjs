@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { resolveInstalledCliInvocation } from "./installed-cli-invocation.mjs";
-import { npmEnvironmentWithCache, resolveNpmInvocation } from "./npm-invocation.mjs";
+import { runNpm } from "./npm-invocation.mjs";
 
 const [archiveArgument] = process.argv.slice(2);
 if (!archiveArgument) {
@@ -65,15 +65,6 @@ try {
   console.log(`RSGL CLI package smoke passed: ${archive}`);
 } finally {
   rmSync(installationRoot, { recursive: true, force: true });
-}
-
-function runNpm(args, cwd, cacheRoot) {
-  const invocation = resolveNpmInvocation(args);
-  execFileSync(invocation.file, invocation.args, {
-    cwd,
-    stdio: "inherit",
-    env: npmEnvironmentWithCache(cacheRoot)
-  });
 }
 
 function runInstalledCli(entry, shim, args, cwd) {
