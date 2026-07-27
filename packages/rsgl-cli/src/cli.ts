@@ -10,6 +10,7 @@ import {
   createRsglMaterializationProject,
   getRsglProjectConfigWatchPaths,
   assertRsglOutputPackRoot,
+  isRsglPathInsideOrEqual,
   loadRsglProjectConfigForSource,
   projectCompileOptionsFromRsglConfig,
   projectEmitOptionsFromRsglConfig,
@@ -345,7 +346,7 @@ function isRsglWatchEventRelevant(
   const candidateExists = pathExists(changedPath);
   const candidateIsDirectory = candidateExists && isDirectory(changedPath);
   return dependencies.some(dependency => {
-    if (isPathWithinRoot(changedPath, dependency.path)) {
+    if (isRsglPathInsideOrEqual(dependency.path, changedPath)) {
       return true;
     }
     const pattern = compileDependencyWatchPattern(dependency);
@@ -376,7 +377,7 @@ function syncExternalDependencyWatchers(
   let expanded = false;
   for (const dependency of dependencies) {
     const dependencyPath = path.resolve(dependency.path);
-    if (!isPathWithinRoot(root, dependencyPath)) {
+    if (!isRsglPathInsideOrEqual(dependencyPath, root)) {
       const pattern = compileDependencyWatchPattern(dependency);
       const watchDirectory = pattern
         ? rebaseCompileDependencyWatchPattern(pattern, isDirectory).basePath
@@ -477,12 +478,6 @@ function pathExists(fileName: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isPathWithinRoot(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === ""
-    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 function normalizeWatchPath(fileName: string): string {

@@ -296,6 +296,45 @@ describe("RSGL LSP server core", () => {
     );
   });
 
+  it("folds workspace-folder path case on Windows only", () => {
+    const windows = process.platform === "win32";
+    const settings: RsglValidationSettings = {
+      defaultAssetsPath: null,
+      resourcePackRoots: [],
+      formatting: {
+        style: "canonical",
+        lineWidth: 100,
+        braceStyle: "sameLine"
+      },
+      workspaceFolders: [{
+        workspaceFolderPath: windows ? "E:\\Foo" : "/Foo",
+        defaultAssetsPath: null,
+        resourcePackRoots: [],
+        formatting: {
+          style: "compact",
+          lineWidth: 80,
+          braceStyle: "sameLine"
+        }
+      }]
+    };
+
+    const configuration = formattingConfigurationForSource(
+      windows ? "e:\\foo\\main.rsgl" : "/foo/main.rsgl",
+      settings
+    );
+    if (windows) {
+      assert.deepStrictEqual(
+        configuration,
+        { style: "compact", lineWidth: 80, braceStyle: "sameLine" }
+      );
+    } else {
+      assert.deepStrictEqual(
+        configuration,
+        { style: "canonical", lineWidth: 100, braceStyle: "sameLine" }
+      );
+    }
+  });
+
   it("excludes formatter-only changes from the validation settings fingerprint", () => {
     const base = toValidationSettings({
       stdlibRoot: path.resolve("stdlib"),

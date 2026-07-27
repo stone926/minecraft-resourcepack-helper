@@ -14,6 +14,7 @@ import type {
 import { inferBlockstateSchemaFromContent, parseResourceId } from "./compiler";
 import type { ExternResourceSource } from "./externDeclarations";
 import { BoundedCache } from "./boundedCache";
+import { isRsglPathInsideOrEqual } from "./pathIdentity";
 import {
   findPackRoot,
   getConfiguredPackResourceRootCandidates,
@@ -456,13 +457,13 @@ class WorkspaceResourceResolver {
 
   private resourceSourceForPath(fileName: string): ExternResourceSource | undefined {
     const localPackRoot = this.outputPackRoot ?? this.getPackRoot(this.sourceFileName);
-    if (localPackRoot && isPathWithinRoot(fileName, localPackRoot)) {
+    if (localPackRoot && isRsglPathInsideOrEqual(fileName, localPackRoot)) {
       return "local";
     }
-    if (this.resourcePackRoots.some(packRoot => isPathWithinRoot(fileName, packRoot))) {
+    if (this.resourcePackRoots.some(packRoot => isRsglPathInsideOrEqual(fileName, packRoot))) {
       return "custom";
     }
-    if (this.defaultAssetsPath && isPathWithinRoot(fileName, this.defaultAssetsPath)) {
+    if (this.defaultAssetsPath && isRsglPathInsideOrEqual(fileName, this.defaultAssetsPath)) {
       return "vanilla";
     }
     return undefined;
@@ -523,13 +524,6 @@ function resourcePathWithTargetExtension(resourcePath: string, target: Minecraft
   return extension && !resourcePath.endsWith(extension)
     ? `${resourcePath}${extension}`
     : resourcePath;
-}
-
-function isPathWithinRoot(fileName: string, root: string): boolean {
-  const fileKey = normalizePathKey(path.resolve(fileName));
-  const rootKey = normalizePathKey(path.resolve(root));
-  const rootPrefix = rootKey.endsWith(path.sep) ? rootKey : `${rootKey}${path.sep}`;
-  return fileKey === rootKey || fileKey.startsWith(rootPrefix);
 }
 
 function readJsonFile(fileName: string): JsonValue | null {

@@ -32,6 +32,7 @@ import {
   getRsglDocumentSignatureHelpInfo,
   getRsglDocumentSemanticTokens,
   getRsglCompletionItems,
+  isRsglPathInsideOrEqual,
   loadRsglProjectConfigForSource,
   normalizeRsglFormattingConfiguration,
   parseRsgl,
@@ -658,15 +659,9 @@ function workspaceFolderSettingsForSource(
 ): RsglWorkspaceFolderValidationSettings | undefined {
   const source = path.resolve(sourceFileName);
   return [...(settings.workspaceFolders ?? [])]
-    .filter(folder => isPathInsideOrEqual(source, folder.workspaceFolderPath))
+    .filter(folder => isRsglPathInsideOrEqual(source, folder.workspaceFolderPath))
     .sort((left, right) => path.resolve(right.workspaceFolderPath).length
       - path.resolve(left.workspaceFolderPath).length)[0];
-}
-
-function isPathInsideOrEqual(candidate: string, root: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === ""
-    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 /** Returns every offset-based definition target for protocol clients that support locations. */

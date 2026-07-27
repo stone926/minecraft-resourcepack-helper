@@ -84,11 +84,8 @@ export function rsglSourceUriFromFileName(
   return pathToFileURL(path.resolve(fileName)).toString();
 }
 
-export function isNativePathInsideOrEqual(candidate: string, root: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === ""
-    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
-}
+/** Canonical "inside or equal" containment for native paths (case-folded on win32). */
+export { isRsglPathInsideOrEqual as isNativePathInsideOrEqual } from "../../rsgl-core/src";
 
 function mapUriWithinRoot(
   uri: string,
