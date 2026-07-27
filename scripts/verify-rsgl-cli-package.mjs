@@ -4,8 +4,12 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveInstalledCliInvocation } from "./installed-cli-invocation.mjs";
 import { runNpm } from "./npm-invocation.mjs";
+import { releaseTargets } from "./release-targets.mjs";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const [archiveArgument] = process.argv.slice(2);
 if (!archiveArgument) {
@@ -16,6 +20,8 @@ const archive = path.resolve(archiveArgument);
 if (!existsSync(archive)) {
   throw new Error(`RSGL CLI package does not exist: ${archive}`);
 }
+
+const cliPackageName = readCliPackageName();
 
 const installationRoot = mkdtempSync(path.join(tmpdir(), "rsgl-cli-install-"));
 try {
@@ -32,8 +38,7 @@ try {
   const installedRoot = path.join(
     installationRoot,
     "node_modules",
-    "@minecraft-resourcepack-helper",
-    "rsgl-cli"
+    ...cliPackageName.split("/")
   );
   const manifest = JSON.parse(readFileSync(path.join(installedRoot, "package.json"), "utf8"));
   const binPath = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.rsgl;
@@ -65,6 +70,15 @@ try {
   console.log(`RSGL CLI package smoke passed: ${archive}`);
 } finally {
   rmSync(installationRoot, { recursive: true, force: true });
+}
+
+function readCliPackageName() {
+  const manifestFile = path.join(repoRoot, releaseTargets["rsgl-cli"].manifestPath);
+  const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+  if (typeof manifest.name !== "string" || manifest.name.length === 0) {
+    throw new Error(`RSGL CLI package manifest has no name: ${manifestFile}`);
+  }
+  return manifest.name;
 }
 
 function runInstalledCli(entry, shim, args, cwd) {
