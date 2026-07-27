@@ -2,6 +2,7 @@ import type { TextRange } from "../parser";
 import { logicalKeyIdentity } from "../../../mc-assets/src";
 import { resolveRsglPath, rsglPathKey } from "../pathIdentity";
 import type { RsglSourceFile } from "../semantic";
+import { touchesRange } from "../textRangeQueries";
 import {
   compileRsglProgram,
   type RsglProgramCompileOptions
@@ -204,9 +205,7 @@ function touchedTargets(
   const occurrences = index.occurrencesByFile.get(
     rsglPathKey(resolveRsglPath(fileName))
   ) ?? [];
-  const touched = occurrences.filter(occurrence =>
-    occurrence.range.start <= offset && offset <= occurrence.range.end
-  );
+  const touched = occurrences.filter(occurrence => touchesRange(occurrence.range, offset));
   if (touched.length === 0) {
     return [];
   }

@@ -6,6 +6,7 @@ import { createRsglExportMaps } from "./semantic/exportResolution";
 import { resolveModuleNamespaceExpressionMember } from "./semantic/moduleNamespace";
 import { originalRsglSymbolDeclaration } from "./semantic/symbolDefinition";
 import type { RsglProgram, RsglSemanticModel, RsglSymbol } from "./semantic/types";
+import { touchesRange } from "./textRangeQueries";
 
 type RenameProgram = Pick<RsglProgram, "models" | "importGraph">;
 
@@ -84,7 +85,7 @@ function resolveRenameTarget(
     enterExpression(expression) {
       if (
         expression.kind === "MemberExpr"
-        && containsOffset(expression.property.range, offset)
+        && touchesRange(expression.property.range, offset)
         && (!memberExpression || rangeLength(expression.property.range) < rangeLength(memberExpression.property.range))
       ) {
         memberExpression = expression;
@@ -108,17 +109,17 @@ function resolveRenameTarget(
   const namespaceSymbol = model.symbols.find(symbol =>
     symbol.kind === "namespace"
     && symbol.range
-    && containsOffset(symbol.range, offset)
+    && touchesRange(symbol.range, offset)
   ) ?? model.references.find(reference =>
     reference.symbol?.kind === "namespace"
-    && containsOffset(reference.range, offset)
+    && touchesRange(reference.range, offset)
   )?.symbol;
   if (!namespaceSymbol?.range) {
     return undefined;
   }
   const occurrenceRange = model.references.find(reference =>
     reference.symbol === namespaceSymbol
-    && containsOffset(reference.range, offset)
+    && touchesRange(reference.range, offset)
   )?.range ?? namespaceSymbol.range;
   return {
     kind: "namespaceAlias",
@@ -299,10 +300,6 @@ function semanticModelForFile(
   fileName: string
 ): RsglSemanticModel | undefined {
   return semanticModelForRsglLanguageFile({ models }, fileName);
-}
-
-function containsOffset(range: TextRange, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }
 
 function sameRange(left: TextRange, right: TextRange): boolean {

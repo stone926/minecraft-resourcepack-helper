@@ -1,4 +1,5 @@
 import { semanticModelForRsglLanguageFile } from "./semanticOccurrences";
+import { touchesRange } from "./textRangeQueries";
 import {
   MemberExprNode,
   ObjectExprNode,
@@ -369,10 +370,6 @@ function semanticModelForMemberFile(
   fileName: string
 ): RsglSemanticModel | undefined {
   return semanticModelForRsglLanguageFile(program, fileName);
-}
-
-function touchesRange(range: TextRange, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }
 
 function rangeLength(range: TextRange): number {

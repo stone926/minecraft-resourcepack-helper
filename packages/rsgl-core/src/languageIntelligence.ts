@@ -21,6 +21,7 @@ import {
   semanticModelForRsglLanguageFile,
   type RsglSemanticOccurrenceProgram
 } from "./semanticOccurrences";
+import { touchesRange } from "./textRangeQueries";
 import {
   formatTemplateOutputMetadata,
   ResolvedTemplateOutputMetadata
@@ -322,10 +323,6 @@ function semanticModelForLanguageFile(
   fileName: string
 ): RsglSemanticModel | undefined {
   return semanticModelForRsglLanguageFile(program, fileName);
-}
-
-function touchesRange(range: TextRange, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }
 
 function sameRange(left: TextRange, right: TextRange): boolean {

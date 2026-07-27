@@ -14,6 +14,7 @@ import {
   type RsglStatement
 } from "./parser";
 import { walkRsglModule } from "./parser/astTraversal";
+import { touchesRange } from "./textRangeQueries";
 
 export type RsglItemModelCompletionOwner =
   | "itemRoot"
@@ -146,7 +147,7 @@ function itemModelScopeAt(
         scope = "itemModelTemplate";
         bodyRange = statement.body.range;
       }
-      if (!scope || !bodyRange || !rangeContains(bodyRange, offset)) {
+      if (!scope || !bodyRange || !touchesRange(bodyRange, offset)) {
         return undefined;
       }
       const span = bodyRange.end - bodyRange.start;
@@ -407,10 +408,6 @@ function itemModelOwnerForNode(node: ItemModelNode): RsglItemModelCompletionOwne
     default:
       return assertNeverItemModel(node);
   }
-}
-
-function rangeContains(range: { start: number; end: number }, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }
 
 function assertNeverItemModel(value: never): never {

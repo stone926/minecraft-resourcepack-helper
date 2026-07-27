@@ -1,6 +1,7 @@
 import type { TextRange } from "./parser";
 import { walkRsglModule } from "./parser/astTraversal";
 import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
+import { touchesRange } from "./textRangeQueries";
 import { createRsglExportMaps } from "./semantic/exportResolution";
 import {
   canonicalRsglSymbol,
@@ -302,10 +303,6 @@ function valueExportMapsForContext(
   context.valueExportMaps ??= program.valueExportMaps
     ?? createRsglExportMaps(program.models, program.importGraph).maps;
   return context.valueExportMaps;
-}
-
-function touchesRange(range: TextRange, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }
 
 function sameRange(left: TextRange, right: TextRange): boolean {

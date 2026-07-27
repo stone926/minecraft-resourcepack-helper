@@ -26,6 +26,7 @@ import {
 } from "./itemModelSchema";
 import { effectiveItemModelTargetFormat } from "./itemModelTarget";
 import type { RsglHoverInfo } from "./languageIntelligence";
+import { touchesRange } from "./textRangeQueries";
 
 type PropertyFamily = keyof typeof itemModelPropertySchemas;
 
@@ -98,7 +99,7 @@ export function getRsglItemModelHoverInfo(
         visitItemModel(statement.model);
         return;
       case "PropertyStmt":
-        if (itemRoot && contains(statement.name.range, offset)) {
+        if (itemRoot && touchesRange(statement.name.range, offset)) {
           const field = itemModelRootFields.find(candidate => candidate.name === statement.name.text);
           if (field) {
             select(fieldHover(statement.name.range, field, "item definition root", target));
@@ -158,7 +159,7 @@ export function getRsglItemModelHoverInfo(
         }
         const property = propertySchema("select", node.property);
         for (const statement of node.body.statements) {
-          if (statement.kind === "ItemSelectCase" && contains(statement.when.range, offset)) {
+          if (statement.kind === "ItemSelectCase" && touchesRange(statement.when.range, offset)) {
             select(selectWhenHover(statement.when.range, property, target));
             return;
           }
@@ -204,7 +205,7 @@ function propertyHover(
   target: ItemModelFormat | undefined,
   offset: number
 ): RsglHoverInfo | undefined {
-  if (!contains(expression.range, offset)) {
+  if (!touchesRange(expression.range, offset)) {
     return undefined;
   }
   const schema = propertySchema(family, expression);
@@ -232,7 +233,7 @@ function propertyOptionHover(
   target: ItemModelFormat | undefined,
   offset: number
 ): RsglHoverInfo | undefined {
-  if (!contains(option.name.range, offset)) {
+  if (!touchesRange(option.name.range, offset)) {
     return undefined;
   }
   const property = propertySchema(family, propertyExpression);
@@ -277,7 +278,7 @@ function postfixOptionsHover(
       continue;
     }
     const name = staticPropertyName(entry);
-    if (contains(entry.key.range, offset)) {
+    if (touchesRange(entry.key.range, offset)) {
       if (name === "tints") {
         return {
           range: entry.key.range,
@@ -333,7 +334,7 @@ function typedObjectHover(
     entry.kind === "ObjectProperty" && staticPropertyName(entry) === "type"
   );
   const subtype = typeEntry ? staticSchemaName(typeEntry.value) : undefined;
-  if (typeEntry && contains(typeEntry.value.range, offset) && subtype) {
+  if (typeEntry && touchesRange(typeEntry.value.range, offset) && subtype) {
     const schema = owner === "special"
       ? findItemModelSpecialSchema(subtype)
       : findItemModelTintSchema(subtype);
@@ -349,7 +350,7 @@ function typedObjectHover(
     ? specialFields(subtype, target)
     : tintFields(subtype, target);
   for (const entry of object.properties) {
-    if (entry.kind !== "ObjectProperty" || !contains(entry.key.range, offset)) {
+    if (entry.kind !== "ObjectProperty" || !touchesRange(entry.key.range, offset)) {
       continue;
     }
     const name = staticPropertyName(entry);
@@ -382,7 +383,7 @@ function transformationHover(object: ObjectExprNode, offset: number): RsglHoverI
       continue;
     }
     const name = staticPropertyName(entry);
-    if (name && contains(entry.key.range, offset) && details.has(name)) {
+    if (name && touchesRange(entry.key.range, offset) && details.has(name)) {
       return { range: entry.key.range, label: `transformation.${name}`, detail: details.get(name) };
     }
     if (entry.value.kind === "ObjectExpr") {
@@ -414,7 +415,7 @@ function constructorHover(
     return undefined;
   }
   const range = { start: node.range.start, end: node.range.start + keyword.length };
-  if (!contains(range, offset)) {
+  if (!touchesRange(range, offset)) {
     return undefined;
   }
   return {
@@ -524,10 +525,6 @@ function staticPropertyName(property: ObjectPropertyNode): string | undefined {
     return String(property.key.value);
   }
   return undefined;
-}
-
-function contains(range: TextRange, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }
 
 function assertNeverItemModel(value: never): never {

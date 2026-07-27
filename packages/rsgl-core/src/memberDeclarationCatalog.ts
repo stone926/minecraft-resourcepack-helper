@@ -1,5 +1,6 @@
 import { resolveRsglPath, rsglPathKey } from "./pathIdentity";
 import type { TextRange, TypeNode } from "./parser";
+import { touchesRange } from "./textRangeQueries";
 import type {
   RsglObjectProperty,
   RsglProgram,
@@ -261,8 +262,4 @@ function memberPropertyOwnerRangeKey(
 
 function memberOwnerFileKey(fileName: string): string {
   return rsglPathKey(resolveRsglPath(fileName));
-}
-
-function touchesRange(range: TextRange, offset: number): boolean {
-  return range.start <= offset && offset <= range.end;
 }

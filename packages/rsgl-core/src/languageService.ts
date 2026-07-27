@@ -28,6 +28,7 @@ import {
   type RsglSemanticToken
 } from "./semanticTokens";
 import { formatType } from "./semantic/typeRelations";
+import { touchesRange } from "./textRangeQueries";
 import { getRsglItemModelHoverInfo } from "./itemModelLanguageIntelligence";
 import { isItemModelCompletionKeyPosition } from "./itemModelCompletionContext";
 import type { ItemModelFormat } from "./itemModelSchema";
@@ -372,13 +373,13 @@ function completionNamespaceAt(
   let insideType = false;
   walkRsglModule(model.module, {
     enterType(type) {
-      if (type.range.start <= offset && offset <= type.range.end) {
+      if (touchesRange(type.range, offset)) {
         insideType = true;
       }
     },
     enterStatement(statement) {
       if ((statement.kind === "ImportDecl" || statement.kind === "ExportDecl")
-        && statement.range.start <= offset && offset <= statement.range.end) {
+        && touchesRange(statement.range, offset)) {
         return "skipChildren";
       }
       return undefined;
@@ -389,7 +390,7 @@ function completionNamespaceAt(
   }
   const ambiguousImportOrExport = model.module.statements.some(statement =>
     (statement.kind === "ImportDecl" || statement.kind === "ExportDecl")
-    && statement.range.start <= offset && offset <= statement.range.end
+    && touchesRange(statement.range, offset)
   );
   return ambiguousImportOrExport ? "both" : "value";
 }
