@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type * as vscode from "vscode";
+import type { RsglMaterializationInvalidationDto } from "../../../packages/rsgl-shared/src";
 import type { RsglRuntimeInstance, RsglRuntimeLoader } from "./types";
 
 export interface InstalledRsglMaterializationProject {
@@ -11,16 +12,7 @@ export interface InstalledRsglMaterializationProject {
   outputPackRootIdentity: string;
 }
 
-export interface InstalledRsglMaterializationInvalidation {
-  version: 1;
-  transactionId: string;
-  projectId: string;
-  ownershipRevision: string;
-  state: "committed" | "partial";
-  changedUris: readonly string[];
-  deletedUris: readonly string[];
-  manifestUri: string;
-}
+export type InstalledRsglMaterializationInvalidation = RsglMaterializationInvalidationDto;
 
 export interface InstalledRsglRuntimeIntegration {
   onMaterializationInvalidation?: (

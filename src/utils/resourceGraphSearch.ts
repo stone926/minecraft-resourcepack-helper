@@ -56,6 +56,11 @@ export function getAssetResource(fsPath: string): AssetResource | null {
   return getAssetsResource(fsPath);
 }
 
+/**
+ * fsPath-domain identity key for tree/search visited-sets. For serialized-URI
+ * equality (percent-encoding, drive-letter casing) use
+ * `resourceUniverse/core/resourceUriIdentity` instead.
+ */
 export function resourceUriKey(uri: AssetUriLike): string {
   return uri.scheme === "file" ? normalizePathKey(uri.fsPath) : uri.toString();
 }

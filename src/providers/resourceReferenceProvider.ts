@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import { toVscodeLocation, uniqueVscodeLocations } from "../utils/resourceLocationVscode";
 
 /**
  * Main-side References bridge for physical definition files. RSGL documents
@@ -20,36 +21,13 @@ export function createResourceReferenceProvider(
         return undefined;
       }
 
-      const locations = await Promise.all(result.references.map(async reference => {
-        if (token.isCancellationRequested) {
-          return undefined;
-        }
-        const uri = reference.sourceUri;
-        try {
-          const source = await vscode.workspace.openTextDocument(uri);
-          const range = reference.sourceRange
-            ? new vscode.Range(
-                source.positionAt(reference.sourceRange.start),
-                source.positionAt(reference.sourceRange.end)
-              )
-            : new vscode.Range(0, 0, 0, 0);
-          return new vscode.Location(uri, range);
-        } catch {
-          return new vscode.Location(uri, new vscode.Position(0, 0));
-        }
-      }));
+      const locations = await Promise.all(result.references.map(reference =>
+        toVscodeLocation({ uri: reference.sourceUri, range: reference.sourceRange }, token)
+      ));
       if (context.includeDeclaration) {
         locations.unshift(new vscode.Location(document.uri, new vscode.Position(0, 0)));
       }
-      return uniqueLocations(locations.filter((location): location is vscode.Location => !!location));
+      return uniqueVscodeLocations(locations.filter((location): location is vscode.Location => !!location));
     }
   };
-}
-
-function uniqueLocations(locations: readonly vscode.Location[]): vscode.Location[] {
-  return [...new Map(locations.map(location => [
-    `${location.uri.toString()}\0${location.range.start.line}\0${location.range.start.character}`
-      + `\0${location.range.end.line}\0${location.range.end.character}`,
-    location
-  ])).values()];
 }

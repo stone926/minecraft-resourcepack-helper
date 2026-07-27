@@ -5,19 +5,21 @@ import * as path from "node:path";
 describe("resource universe visible migration contract", () => {
   it("routes physical Definition and graph resolution through one navigation facade", () => {
     const definition = readSource("providers", "resourceDefinitionProvider.ts");
+    const locationBridge = readSource("utils", "resourceLocationVscode.ts");
     const graph = readSource("services", "resourceGraphService.ts");
     const facade = readSource("services", "resourceUniverseNavigationFacade.ts");
 
     assert.ok(definition.includes("navigation.resolveReference(document, reference, {"));
     assert.ok(definition.includes("includeGenerated: true"));
-    assert.ok(definition.includes("document.positionAt(location.range.start)"));
+    assert.ok(definition.includes("toVscodeLocation(location, token)"));
+    assert.ok(locationBridge.includes("document.positionAt(location.range.start)"));
     assert.ok(definition.includes("navigation.primary, ...navigation.alternatives"));
     assert.strictEqual(definition.includes("generateReferenceRedirectPath"), false);
     assert.ok(graph.includes("navigation.getOutgoingReferences"));
     assert.ok(graph.includes("navigation.getIncomingReferences"));
     assert.ok(facade.includes("new ResourceNavigationService"));
     assert.ok(facade.includes("resolveProducerDefinition"));
-    assert.ok(facade.includes('["physical", ...(generatedApplicable ? ["rsgl"] : [])]'));
+    assert.ok(facade.includes("[physicalProviderId, ...(generatedApplicable ? [rsglGeneratedProviderId] : [])]"));
     assert.strictEqual(
       facade.includes(".filter(providerId => this.universe.registry.get(providerId)"),
       false

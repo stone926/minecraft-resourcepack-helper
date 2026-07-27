@@ -276,7 +276,7 @@
   "No navigable resource definition is available.": "没有可跳转的资源定义。",
   "{0} references": "{0} 处引用",
   "{0}: {1}": "{0}：{1}",
-  "Resource tooling could not be initialized: {0}": "资源工具初始化失败：{0}",
+  "Resource tooling could not be initialized": "资源工具初始化失败",
   "Blockstate": "方块状态",
   "Conflict": "冲突",
   "Current": "最新",

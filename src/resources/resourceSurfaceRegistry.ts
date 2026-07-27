@@ -511,3 +511,14 @@ function shaderSurface<const K extends "shaderCore" | "shaderPost">(
 function schemaOnlySurface(id: string, fileMatch: string, url: string): ResourceSurfaceDescriptor {
   return { id, schema: [{ fileMatch, url }] };
 }
+
+const shaderSourceExtensions = new Set(
+  (resourceSurfaceRegistry.find(surface => surface.id === "shaderInclude")?.graphFileExtensions ?? [])
+    .map(extension => extension.toLowerCase())
+);
+
+/** Shader source-file test derived from the shaderInclude surface's extension list. */
+export function isShaderSourceFileName(fileName: string): boolean {
+  const dot = fileName.lastIndexOf(".");
+  return dot >= 0 && shaderSourceExtensions.has(fileName.slice(dot + 1).toLowerCase());
+}

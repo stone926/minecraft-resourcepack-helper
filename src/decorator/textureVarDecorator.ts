@@ -2,8 +2,11 @@ import * as vscode from "vscode";
 import { isResourceSurfaceFile } from "../resources/resourceSurfaceRegistry";
 import { modelSourceForFile } from "../services/modelParentChain";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { arrayElements, JsonAstNode, memberName, objectMembers, stringValue } from "../utils/jsonAst";
-import { createTextureVariableDefinitionResolver } from "../utils/modelTexture";
+import { JsonAstNode, memberName, objectMembers } from "../utils/jsonAst";
+import {
+  collectTextureVariableReferenceNodes,
+  createTextureVariableDefinitionResolver
+} from "../utils/modelTexture";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
 
@@ -35,36 +38,12 @@ export function applyDecoration(editor: vscode.TextEditor): void {
   const ranges: vscode.Range[] = [];
   const textureVariableResolver = createTextureVariableDefinitionResolver(ast, editor.document, getResourceConfiguration, modelSource);
 
-  for (const item of objectMembers(ast.body)) {
-    if (memberName(item) !== "elements") {
-      continue;
-    }
-
-    for (const element of arrayElements(item.value)) {
-      const faces = objectMembers(element).find(member => memberName(member) === "faces");
-      for (const face of objectMembers(faces?.value)) {
-        const textureEntry = objectMembers(face.value).find(member => memberName(member) === "texture");
-        const textureReference = stringValue(textureEntry?.value);
-        if (
-          textureEntry &&
-          textureReference?.startsWith("#") &&
-          !textureDefinitions.has(textureReference.slice(1)) &&
-          !textureVariableResolver.has(textureReference)
-        ) {
-          pushRange(ranges, textureEntry.value);
-        }
-      }
-    }
-  }
-
-  for (const texture of objectMembers(texturesAst?.value)) {
-    const value = stringValue(texture.value);
+  for (const reference of collectTextureVariableReferenceNodes(ast.body)) {
     if (
-      value?.startsWith("#") &&
-      !textureDefinitions.has(value.slice(1)) &&
-      !textureVariableResolver.has(value)
+      !textureDefinitions.has(reference.value.slice(1)) &&
+      !textureVariableResolver.has(reference.value)
     ) {
-      pushRange(ranges, texture.value);
+      pushRange(ranges, reference.node);
     }
   }
 

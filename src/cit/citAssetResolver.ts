@@ -2,7 +2,8 @@ import * as path from "node:path";
 import { packRootFromAssetsPath, startsWithPathSegment } from "../../packages/mc-assets/src";
 import {
   getCitAutoDiscoveryPathCandidates,
-  getCitPathCandidates
+  getCitPathCandidates,
+  hasExplicitRelativePathPrefix
 } from "./citPaths";
 import type { CitResourceType } from "./citKeyResolution";
 
@@ -92,6 +93,5 @@ function shouldTryTypedResourceFallback(value: string): boolean {
 
   const normalizedValue = cleanValue.replace(/[\\/]+/g, path.sep);
   return !startsWithPathSegment(normalizedValue, "assets") &&
-    !normalizedValue.startsWith(`.${path.sep}`) &&
-    !normalizedValue.startsWith(`..${path.sep}`);
+    !hasExplicitRelativePathPrefix(normalizedValue);
 }

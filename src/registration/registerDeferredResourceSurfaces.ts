@@ -1,3 +1,4 @@
+import { reportBackgroundError } from "../utils/backgroundErrors";
 import * as vscode from "vscode";
 import { isSemanticDiagnosticsDocument } from "../diagnostics/semanticDiagnosticsCore";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
@@ -42,7 +43,7 @@ export function registerDeferredResourceSurfaces(
       schedule: callback => setImmediate(callback),
       cancel: handle => clearImmediate(handle)
     },
-    error => reportDeferredRegistrationError(error),
+    error => reportBackgroundError(vscode.l10n.t("Resource tooling could not be initialized"), error),
     installation => installation.scope.dispose(),
     () => {
       bootstrap?.dispose();
@@ -154,9 +155,3 @@ function isDeferredResourceDocument(document: vscode.TextDocument): boolean {
     || isSemanticDiagnosticsDocument(document);
 }
 
-function reportDeferredRegistrationError(error: unknown): void {
-  console.error("Resource tooling could not be initialized.", error);
-  void vscode.window.showErrorMessage(vscode.l10n.t("Resource tooling could not be initialized: {0}",
-    error instanceof Error ? error.message : String(error)
-  ));
-}

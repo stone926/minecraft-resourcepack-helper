@@ -1,3 +1,4 @@
+import { isShaderSourceFileName } from "../resources/resourceSurfaceRegistry";
 import * as path from "node:path";
 import {
   isValidMinecraftNamespace,
@@ -281,7 +282,7 @@ function isCompletableEntry(
   }
 
   if (reference.kind === "shader" && reference.extension === null) {
-    return entry.isDirectory() || (entry.isFile() && isShaderSourceFile(entry.name));
+    return entry.isDirectory() || (entry.isFile() && isShaderSourceFileName(entry.name));
   }
 
   if (reference.extension === null) {
@@ -291,6 +292,3 @@ function isCompletableEntry(
   return entry.isDirectory() || (entry.isFile() && entry.name.endsWith(`.${reference.extension}`));
 }
 
-function isShaderSourceFile(fileName: string): boolean {
-  return /\.(?:glsl|vsh|fsh)$/i.test(fileName);
-}

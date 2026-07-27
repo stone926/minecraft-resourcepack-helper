@@ -127,11 +127,13 @@ function withExtension(value: string, resourceType: CitResourceType): string {
   return `${value}${resourceType === "textures" ? ".png" : ".json"}`;
 }
 
+/** `./`- or `../`-prefixed separator-normalized values (shared with the asset resolver). */
+export function hasExplicitRelativePathPrefix(value: string): boolean {
+  return value.startsWith(`.${path.sep}`) || value.startsWith(`..${path.sep}`);
+}
+
 function isForcedRelativePath(value: string): boolean {
-  return value === "." ||
-    value === ".." ||
-    value.startsWith(`.${path.sep}`) ||
-    value.startsWith(`..${path.sep}`);
+  return value === "." || value === ".." || hasExplicitRelativePathPrefix(value);
 }
 
 function containsPathSeparator(value: string): boolean {

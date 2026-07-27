@@ -276,7 +276,7 @@
   "No navigable resource definition is available.": "No navigable resource definition is available.",
   "{0} references": "{0} references",
   "{0}: {1}": "{0}: {1}",
-  "Resource tooling could not be initialized: {0}": "Resource tooling could not be initialized: {0}",
+  "Resource tooling could not be initialized": "Resource tooling could not be initialized",
   "Blockstate": "Blockstate",
   "Conflict": "Conflict",
   "Current": "Current",

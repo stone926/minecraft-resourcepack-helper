@@ -1,3 +1,4 @@
+import { physicalProviderId } from "../resourceUniverse/core/providerIds";
 import { uniqueValues } from "../../packages/mc-assets/src";
 import type { SerializedResourceUri } from "../../packages/resource-project/src";
 import type { ResourcePackProjectService } from "../resourceProject";
@@ -18,14 +19,14 @@ export class ResourceProjectUniverseInvalidator {
       .map(context => context.projectId);
     const uniqueProjectIds = uniqueValues(projectIds);
     for (const projectId of uniqueProjectIds) {
-      this.universe.invalidateProviderProject("physical", projectId, "stale");
+      this.universe.invalidateProviderProject(physicalProviderId, projectId, "stale");
     }
     return uniqueProjectIds;
   }
 
   public invalidateAllKnownProjects(): void {
     for (const context of this.projects.getCachedContexts()) {
-      this.universe.invalidateProviderProject("physical", context.projectId, "stale");
+      this.universe.invalidateProviderProject(physicalProviderId, context.projectId, "stale");
     }
   }
 }

@@ -3,7 +3,6 @@ import {
   canonicalizeResourceGraphIdentity,
   canonicalizeResourceGraphOutputPath,
   minecraftResourceTarget,
-  normalizePathKey,
   uniqueLogicalKeys,
   type ResourceGraphLogicalKey
 } from "../../packages/mc-assets/src";
@@ -35,6 +34,8 @@ import {
   type ResourceNavigationOptions,
   type ResourceNavigationResult
 } from "../resourceUniverse/navigation/resourceNavigationService";
+import { resourceUriComparisonIdentity } from "../resourceUniverse/core/resourceUriIdentity";
+import { physicalProviderId, rsglGeneratedProviderId } from "../resourceUniverse/core/providerIds";
 import {
   generateReferenceRedirectPath,
   type ResourceReferencePathResolver
@@ -348,7 +349,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
       return { coverage: ensured.coverage, locations: [] };
     }
     const locations = this.universe.getIncoming(target)
-      .filter(edge => edge.projectId === ensured.context!.projectId && edge.providerId === "physical")
+      .filter(edge => edge.projectId === ensured.context!.projectId && edge.providerId === physicalProviderId)
       .flatMap(edge => {
         if (edge.sourceLocation) {
           return [edge.sourceLocation];
@@ -482,7 +483,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
       };
     }
 
-    let coverage = this.universe.index.getCoverage("physical", context.projectId);
+    let coverage = this.universe.getCoverage(physicalProviderId, context.projectId);
     const contextIsCurrent = this.refreshedContextRevisions.get(context.projectId)
       === context.contextRevision;
     if (!contextIsCurrent || !coverage || coverage.status === "unavailable") {
@@ -510,7 +511,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
           );
         }
       }
-      coverage = this.universe.index.getCoverage("physical", context.projectId);
+      coverage = this.universe.getCoverage(physicalProviderId, context.projectId);
     }
     const coverages: UnifiedResourceCoverage[] = [visibleCoverage(coverage)];
     if (options.includeGenerated && discovered.rsglApplicability !== "none") {
@@ -546,7 +547,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
         providerCoverages: []
       };
     }
-    const includeGenerated = generatedDocument || providerIds.includes("rsgl");
+    const includeGenerated = generatedDocument || providerIds.includes(rsglGeneratedProviderId);
     const ensured = await this.ensureProjectForUri(document.uri, { includeGenerated });
     if (!ensured.context) {
       return {
@@ -563,7 +564,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     const providerCoverages = projections.map(projection =>
       summarizeDocumentProviderFacts(
         projection.providerId,
-        this.universe.index.getCoverage(projection.providerId, ensured.context!.projectId),
+        this.universe.getCoverage(projection.providerId, ensured.context!.projectId),
         descriptor.uri
       )
     );
@@ -610,15 +611,15 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
         causeId: options.causeId
       });
       coverages.push(summarizeLocalPhysicalInventoryFacts(
-        this.universe.index.getCoverage("physical", context.projectId),
+        this.universe.getCoverage(physicalProviderId, context.projectId),
         context.outputPackRootUri
       ));
       if (ensured.rsglApplicability !== "none") {
         coverages.push(summarizeGeneratedInventoryFacts(
-          this.universe.index.getCoverage("rsgl", context.projectId)
+          this.universe.getCoverage(rsglGeneratedProviderId, context.projectId)
         ));
       }
-      const targets = uniqueLogicalKeys(this.universe.index.getProjectProducers(context.projectId)
+      const targets = uniqueLogicalKeys(this.universe.getProjectProducers(context.projectId)
         .filter(producer => producer.layerRole === "local")
         .flatMap(producer => producer.logicalKeys)
         .filter(target => requestedKinds.has(target.kind)));
@@ -860,10 +861,10 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     causeId?: symbol
   ): Promise<UnifiedResourceCoverage> {
     if (signal?.aborted) {
-      return visibleCoverage(this.universe.index.getCoverage("rsgl", projectId));
+      return visibleCoverage(this.universe.getCoverage(rsglGeneratedProviderId, projectId));
     }
     let requestedLazyRegistration = false;
-    if (!this.universe.registry.get("rsgl") && this.generatedProjectRefresher) {
+    if (!this.universe.hasProvider(rsglGeneratedProviderId) && this.generatedProjectRefresher) {
       requestedLazyRegistration = true;
       try {
         await this.generatedProjectRefresher(projectId, signal, causeId);
@@ -872,16 +873,16 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
           this.invalidateProviderProject(
             "rsgl",
             projectId,
-            this.universe.registry.get("rsgl") ? "lspFailed" : "runtimeLoadFailed",
+            this.universe.hasProvider(rsglGeneratedProviderId) ? "lspFailed" : "runtimeLoadFailed",
             causeId
           );
         }
       }
     }
-    if (!this.universe.registry.get("rsgl")) {
+    if (!this.universe.hasProvider(rsglGeneratedProviderId)) {
       return "unavailable";
     }
-    const current = this.universe.index.getCoverage("rsgl", projectId);
+    const current = this.universe.getCoverage(rsglGeneratedProviderId, projectId);
     const shouldRefresh = shouldRequestGeneratedSnapshot(current);
     if (shouldRefresh && !requestedLazyRegistration && this.generatedProjectRefresher) {
       try {
@@ -892,7 +893,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
         }
       }
     }
-    return visibleCoverage(this.universe.index.getCoverage("rsgl", projectId));
+    return visibleCoverage(this.universe.getCoverage(rsglGeneratedProviderId, projectId));
   }
 
   private invalidateProviderProject(
@@ -934,7 +935,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
       ?? (projectId === undefined ? undefined : this.projects.getRsglApplicability(projectId));
     const generatedApplicable = includeGenerated
       && applicability !== "none";
-    return ["physical", ...(generatedApplicable ? ["rsgl"] : [])];
+    return [physicalProviderId, ...(generatedApplicable ? [rsglGeneratedProviderId] : [])];
   }
 
   private tryResolveLegacyReference(
@@ -956,11 +957,11 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     projectId: string,
     winner: vscode.Uri
   ): ResourceProducer | undefined {
-    const winnerIdentity = uriIdentity(winner);
-    return this.universe.index.getProducersForKey(target).find(producer =>
+    const winnerIdentity = resourceUriComparisonIdentity(winner.toString());
+    return this.universe.getProducersForKey(target).find(producer =>
       producer.projectId === projectId
-      && producer.providerId === "physical"
-      && producer.physicalOrigins.some(origin => uriIdentity(vscode.Uri.parse(origin.uri, true)) === winnerIdentity)
+      && producer.providerId === physicalProviderId
+      && producer.physicalOrigins.some(origin => resourceUriComparisonIdentity(origin.uri) === winnerIdentity)
     );
   }
 
@@ -1004,7 +1005,7 @@ function isGeneratedResourceDocument(document: ResourceUniverseDocument): boolea
 
 function resolutionContext(
   context: ResourcePackProjectContextDto,
-  applicableProviderIds: readonly string[] = ["physical"],
+  applicableProviderIds: readonly string[] = [physicalProviderId],
   scope: ResourceResolutionScope = "effective"
 ): ResourceResolutionContext {
   return {
@@ -1069,10 +1070,6 @@ function visibleCoverage(coverage: ProviderCoverage | undefined): UnifiedResourc
     return "unavailable";
   }
   return coverage.status === "partial" ? "partial" : "authoritative";
-}
-
-function uriIdentity(uri: vscode.Uri): string {
-  return uri.scheme === "file" ? `file:${normalizePathKey(uri.fsPath)}` : uri.toString();
 }
 
 function referenceKindForLogicalKind(kind: string): ResourceReference["kind"] | null {
@@ -1141,7 +1138,7 @@ function uniqueResolvedReferences(
 
 function uniqueResourceLocations(locations: readonly ResourceLocation[]): ResourceLocation[] {
   return [...new Map(locations.map(location => [[
-    location.uri,
+    resourceUriComparisonIdentity(location.uri),
     location.range?.start ?? "",
     location.range?.end ?? "",
     location.origin

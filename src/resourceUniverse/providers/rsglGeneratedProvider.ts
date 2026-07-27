@@ -37,7 +37,8 @@ import {
 } from "./rsglGeneratedSnapshotMapper";
 import { sameResourceDocumentUri } from "./resourceDocumentUri";
 
-export const rsglGeneratedProviderId = "rsgl";
+export { rsglGeneratedProviderId } from "../core/providerIds";
+import { rsglGeneratedProviderId } from "../core/providerIds";
 
 export type { RsglGeneratedMaterializationSnapshot } from "./rsglGeneratedMaterialization";
 

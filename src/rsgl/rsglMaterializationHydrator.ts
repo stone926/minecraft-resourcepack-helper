@@ -5,6 +5,7 @@ import {
   type ResourcePackProjectContextDto
 } from "../../packages/resource-project/src";
 import { mapWithConcurrency } from "../utils/asyncWorkPool";
+import { sameResourceUri } from "../resourceUniverse/core/resourceUriIdentity";
 import {
   parseRsglGeneratedOwnershipManifest,
   projectParsedRsglGeneratedOwnershipManifest,
@@ -236,10 +237,7 @@ function isJsonUri(uri: string): boolean {
 }
 
 function sameUri(left: string, right: string): boolean {
-  return left === right || (process.platform === "win32"
-    && left.startsWith("file:")
-    && right.startsWith("file:")
-    && left.toLowerCase() === right.toLowerCase());
+  return sameResourceUri(left, right);
 }
 
 function sha256(value: string | Uint8Array): string {

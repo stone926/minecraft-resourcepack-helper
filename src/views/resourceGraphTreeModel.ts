@@ -5,6 +5,7 @@ import {
   resourceUriKey
 } from "../utils/resourceGraphSearch";
 import type { ResourceReference } from "../utils/resourceReferences/types";
+import { rsglGeneratedProviderId } from "../resourceUniverse/core/providerIds";
 import { classifyResourceGraphPreview } from "./resourceGraphPreviewClassifier";
 import {
   generatedPreviewUri,
@@ -132,9 +133,9 @@ export class ResourceGraphTreeModel {
       });
     }
 
-    const generatedProjection = projection.providerIds.includes("rsgl");
+    const generatedProjection = projection.providerIds.includes(rsglGeneratedProviderId);
     const generatedCoverage = projection.providerCoverages
-      .find(item => item.providerId === "rsgl")
+      .find(item => item.providerId === rsglGeneratedProviderId)
       ?.coverage ?? projection.coverage;
     return createNode(this.localize("Current File"), "expanded", {
       description: path.basename(document.fileName),

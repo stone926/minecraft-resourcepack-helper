@@ -1,8 +1,4 @@
-import type {
-  ResourceContributionProvider,
-  ResourceContributionRequest,
-  ResourceProviderSnapshot
-} from "./types";
+import type { ResourceContributionProvider } from "./types";
 
 export interface ResourceProviderRegistration {
   dispose(): void;
@@ -37,22 +33,5 @@ export class ResourceContributionRegistry {
   public list(): readonly ResourceContributionProvider[] {
     return [...this.providers.values()]
       .sort((left, right) => left.providerId.localeCompare(right.providerId, "en"));
-  }
-
-  public async requestSnapshots(
-    request: ResourceContributionRequest,
-    signal: AbortSignal,
-    providerIds?: readonly string[]
-  ): Promise<ResourceProviderSnapshot[]> {
-    const selected = providerIds
-      ? providerIds.map(providerId => {
-          const provider = this.providers.get(providerId);
-          if (!provider) {
-            throw new Error(`Unknown resource provider '${providerId}'.`);
-          }
-          return provider;
-        })
-      : this.list();
-    return Promise.all(selected.map(provider => provider.getSnapshot(request, signal)));
   }
 }

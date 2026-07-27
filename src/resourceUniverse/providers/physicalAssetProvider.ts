@@ -7,6 +7,7 @@ import type {
   ResourceDocumentProjection,
   ResourceDocumentProjectionRequest
 } from "../core";
+import { physicalProviderId } from "../core/providerIds";
 import { canonicalizeResourceGraphOutputPath } from "../../../packages/mc-assets/src";
 import {
   adaptPhysicalAssetDocuments,
@@ -37,7 +38,7 @@ export interface PhysicalAssetOwnedOutputLookup {
 }
 
 export class PhysicalAssetContributionProvider implements ResourceContributionProvider {
-  public readonly providerId = "physical";
+  public readonly providerId = physicalProviderId;
 
   public constructor(private readonly source: PhysicalAssetProjectSource) {}
 

@@ -6,6 +6,7 @@ import type {
   RsglResourceSnapshotResponse
 } from "../../../packages/rsgl-shared/src/resourceSnapshotProtocol";
 import { uniqueValues } from "../../../packages/mc-assets/src";
+import { resourceUriComparisonIdentity } from "../core/resourceUriIdentity";
 import type {
   ProviderCoverage,
   ResourceEdge,
@@ -216,7 +217,7 @@ function copyLogicalKey(key: { kind: string; id: string }) {
 
 function uniqueLocations(locations: readonly ResourceLocation[]): ResourceLocation[] {
   return [...new Map(locations.map(location => [
-    `${location.uri}\0${location.range?.start ?? ""}\0${location.range?.end ?? ""}`,
+    `${resourceUriComparisonIdentity(location.uri)}\0${location.range?.start ?? ""}\0${location.range?.end ?? ""}`,
     location
   ])).values()];
 }
@@ -243,46 +244,18 @@ function mergeByIdentity<T>(
 function cloneResources(
   resources: NonNullable<RsglResourceSnapshotResponse["resources"]>
 ): NonNullable<RsglResourceSnapshotResponse["resources"]> {
-  return resources.map(resource => ({
-    ...resource,
-    logicalKeys: resource.logicalKeys.map(key => ({ ...key })),
-    ...(resource.aliasKeys ? { aliasKeys: resource.aliasKeys.map(key => ({ ...key })) } : {}),
-    ...(resource.aggregateMemberships
-      ? { aggregateMemberships: resource.aggregateMemberships.map(key => ({ ...key })) }
-      : {}),
-    sourceOrigins: resource.sourceOrigins.map(location => cloneLocation(location))
-  }));
+  return structuredClone(resources);
 }
 
 function cloneEdges(edges: readonly RsglResourceEdgeDto[]): RsglResourceEdgeDto[] {
-  return edges.map(edge => ({
-    ...edge,
-    target: { ...edge.target },
-    sourceLocation: cloneLocation(edge.sourceLocation),
-    ...(edge.resolvedTarget ? {
-      resolvedTarget: {
-        ...edge.resolvedTarget,
-        ...(edge.resolvedTarget.candidateUris
-          ? { candidateUris: [...edge.resolvedTarget.candidateUris] }
-          : {}),
-        ...(edge.resolvedTarget.metadataUris
-          ? { metadataUris: [...edge.resolvedTarget.metadataUris] }
-          : {})
-      }
-    } : {})
-  }));
+  return structuredClone(edges) as RsglResourceEdgeDto[];
 }
 
 function cloneLocation<T extends {
   uri: string;
   range?: { start: number; end: number };
-  documentVersion?: number;
-  documentSignature?: string;
 }>(location: T): T {
-  return {
-    ...location,
-    ...(location.range ? { range: { ...location.range } } : {})
-  };
+  return structuredClone(location);
 }
 
 function cloneScope<T extends {

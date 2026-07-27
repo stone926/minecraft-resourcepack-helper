@@ -24,6 +24,11 @@ import {
   type BackgroundRefreshTimerHost
 } from "./backgroundRefreshScheduler";
 import { abortSignalError, isAbortError } from "../utils/abortError";
+import { physicalProviderId } from "../resourceUniverse/core/providerIds";
+import {
+  parseRsglMaterializationInvalidation,
+  type RsglMaterializationInvalidationDto
+} from "../../packages/rsgl-shared/src";
 import {
   type RsglRuntimeController,
   type RsglRuntimeEnsureOptions,
@@ -95,7 +100,7 @@ export class RsglGeneratedContributionBridge {
       run: projectId => this.runPhysicalRefresh(projectId)
     });
     const physicalOwnership = bindPhysicalOwnership(
-      universe.registry.get("physical"),
+      universe.getRegisteredProvider(physicalProviderId),
       {
         getOwnedOutputPaths: projectId => this.provider.getOwnedOutputPaths(projectId),
         getOwnershipRevision: projectId => this.provider.getOwnershipRevision(projectId)
@@ -227,7 +232,7 @@ export class RsglGeneratedContributionBridge {
     projectIdHint?: string
   ): Promise<boolean> {
     this.assertActive();
-    const invalidation = parseMaterializationInvalidation(value);
+    const invalidation = parseRsglMaterializationInvalidation(value);
     if (!invalidation || this.appliedMaterializationTransactions.has(invalidation.transactionId)) {
       return false;
     }
@@ -389,7 +394,7 @@ export class RsglGeneratedContributionBridge {
   }
 
   private async applyCommittedMaterializationInvalidation(
-    invalidation: MaterializationInvalidation,
+    invalidation: RsglMaterializationInvalidationDto,
     context: ResourcePackProjectContextDto
   ): Promise<boolean> {
     try {
@@ -664,7 +669,7 @@ function hasPhysicalOwnershipCapability(
   provider: ResourceContributionProvider | undefined
 ): provider is PhysicalOwnershipProviderCapability {
   try {
-    return provider?.providerId === "physical"
+    return provider?.providerId === physicalProviderId
       && "setOwnedOutputLookup" in provider
       && typeof provider.setOwnedOutputLookup === "function";
   } catch {
@@ -741,49 +746,6 @@ function invalidationReasonFromNotification(value: unknown): string | undefined 
   return typeof reason === "string" ? reason : undefined;
 }
 
-interface MaterializationInvalidation {
-  transactionId: string;
-  projectId: string;
-  ownershipRevision: string;
-  state: "committed" | "partial";
-  manifestUri: string;
-}
-
-function parseMaterializationInvalidation(value: unknown): MaterializationInvalidation | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  if (record.version !== 1
-    || (record.state !== "committed" && record.state !== "partial")
-    || !isSerializedUri(record.manifestUri)
-    || !isSerializedUriArray(record.changedUris)
-    || !isSerializedUriArray(record.deletedUris)) {
-    return undefined;
-  }
-  try {
-    return {
-      transactionId: requireIdentity(record.transactionId as string, "transactionId"),
-      projectId: requireIdentity(record.projectId as string, "projectId"),
-      ownershipRevision: requireIdentity(record.ownershipRevision as string, "ownershipRevision"),
-      state: record.state,
-      manifestUri: record.manifestUri
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function isSerializedUriArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every(isSerializedUri);
-}
-
-function isSerializedUri(value: unknown): value is string {
-  return typeof value === "string"
-    && /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value)
-    && !/^[a-zA-Z]:[\\/]/.test(value)
-    && !value.includes("\0");
-}
 
 function requireIdentity(value: string, label: string): string {
   if (typeof value !== "string" || value.trim().length === 0 || value.includes("\0")) {

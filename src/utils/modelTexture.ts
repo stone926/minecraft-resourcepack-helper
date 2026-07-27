@@ -4,7 +4,14 @@ import {
 } from "../services/modelParentChain";
 import type { ResourceConfiguration } from "../services/resourceCacheTypes";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { JsonDocumentNode } from "./jsonAst";
+import {
+  arrayElements,
+  memberName,
+  objectMembers,
+  stringValue,
+  type JsonAstNode,
+  JsonDocumentNode
+} from "./jsonAst";
 
 interface ModelDocument {
   fileName: string;
@@ -48,4 +55,44 @@ export function createTextureVariableDefinitionResolver(
   source = modelSourceForFile(document.fileName)
 ): TextureVariableDefinitionResolver {
   return new TextureVariableDefinitionResolver(ast, document, configuration, source);
+}
+
+export interface ModelTextureVariableReference {
+  node: JsonAstNode;
+  /** Raw reference including the leading `#`. */
+  value: string;
+}
+
+/** `#variable` reference value nodes from `textures` and `elements[].faces.*.texture`. */
+export function collectTextureVariableReferenceNodes(
+  modelBody: JsonAstNode | null | undefined
+): ModelTextureVariableReference[] {
+  const references: ModelTextureVariableReference[] = [];
+  for (const member of objectMembers(modelBody)) {
+    const name = memberName(member);
+    if (name === "textures") {
+      for (const texture of objectMembers(member.value)) {
+        pushTextureVariableReference(references, texture.value);
+      }
+    } else if (name === "elements") {
+      for (const element of arrayElements(member.value)) {
+        const faces = objectMembers(element).find(face => memberName(face) === "faces");
+        for (const face of objectMembers(faces?.value)) {
+          const texture = objectMembers(face.value).find(faceMember => memberName(faceMember) === "texture");
+          pushTextureVariableReference(references, texture?.value);
+        }
+      }
+    }
+  }
+  return references;
+}
+
+function pushTextureVariableReference(
+  references: ModelTextureVariableReference[],
+  node: JsonAstNode | null | undefined
+): void {
+  const value = node ? stringValue(node) : undefined;
+  if (node && value?.startsWith("#")) {
+    references.push({ node, value });
+  }
 }

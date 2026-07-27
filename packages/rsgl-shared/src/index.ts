@@ -21,6 +21,7 @@ export function isRsglDocumentLike(document: {
 
 export * from "./resourceSnapshotProtocol";
 export * from "./resourceNavigationProtocol";
+export * from "./materializationProtocol";
 
 /** Server-to-client notification carrying current exact and patterned watch dependencies. */
 export const rsglDependencyPathsNotification = "rsgl/dependencyPaths";

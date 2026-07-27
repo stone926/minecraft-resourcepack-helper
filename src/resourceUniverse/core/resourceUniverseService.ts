@@ -8,6 +8,7 @@ import type {
   ResourceDocumentDescriptor,
   ResourceDocumentProjection,
   ResourceEdge,
+  ProviderCoverage,
   ResourceProducer,
   ResourceProviderSnapshot,
   ResourceProviderUnavailableReason,
@@ -87,24 +88,8 @@ export class ResourceUniverseService {
         }
         disposed = true;
         registration.dispose();
-        const affectedProjects = new Set<string>();
-        const identities = new Set([...this.requestStates.keys(), ...this.knownProviderProjects]);
-        for (const identity of identities) {
-          const [providerId, projectId] = splitProviderProjectKey(identity);
-          if (providerId !== provider.providerId) {
-            continue;
-          }
-          const wasKnown = this.knownProviderProjects.has(identity);
-          const state = this.stateFor(identity);
-          this.cancelRequest(identity);
-          this.advanceGeneration(providerId, projectId, state);
-          this.index.removeProviderProject(providerId, projectId);
-          this.knownProviderProjects.delete(identity);
-          if (wasKnown) {
-            affectedProjects.add(projectId);
-          }
-        }
-        for (const projectId of affectedProjects) {
+        const removed = this.removeProviderProjects(providerId => providerId === provider.providerId);
+        for (const projectId of removed.keys()) {
           this.emit({ kind: "removal", projectId, providerIds: [provider.providerId] });
         }
       }
@@ -292,11 +277,22 @@ export class ResourceUniverseService {
   }
 
   public removeProject(projectId: string): void {
-    const providerIds = new Set<string>();
+    const removed = this.removeProviderProjects((_, candidateProjectId) => candidateProjectId === projectId);
+    const providerIds = removed.get(projectId);
+    if (providerIds && providerIds.size > 0) {
+      this.emit({ kind: "removal", projectId, providerIds: [...providerIds] });
+    }
+  }
+
+  /** Cancels, invalidates, and unindexes every matching provider/project pair. */
+  private removeProviderProjects(
+    matches: (providerId: string, projectId: string) => boolean
+  ): Map<string, Set<string>> {
+    const removedKnownByProject = new Map<string, Set<string>>();
     const identities = new Set([...this.requestStates.keys(), ...this.knownProviderProjects]);
     for (const identity of identities) {
-      const [providerId, candidateProjectId] = splitProviderProjectKey(identity);
-      if (candidateProjectId !== projectId) {
+      const [providerId, projectId] = splitProviderProjectKey(identity);
+      if (!matches(providerId, projectId)) {
         continue;
       }
       const wasKnown = this.knownProviderProjects.has(identity);
@@ -306,12 +302,12 @@ export class ResourceUniverseService {
       this.index.removeProviderProject(providerId, projectId);
       this.knownProviderProjects.delete(identity);
       if (wasKnown) {
-        providerIds.add(providerId);
+        const providers = removedKnownByProject.get(projectId) ?? new Set<string>();
+        providers.add(providerId);
+        removedKnownByProject.set(projectId, providers);
       }
     }
-    if (providerIds.size > 0) {
-      this.emit({ kind: "removal", projectId, providerIds: [...providerIds] });
-    }
+    return removedKnownByProject;
   }
 
   public resolve(target: ResourceGraphLogicalKey, context: ResourceResolutionContext): ResourceResolutionResult {
@@ -328,6 +324,26 @@ export class ResourceUniverseService {
 
   public getOutgoing(producerId: string): ResourceEdge[] {
     return this.index.getOutgoing(producerId);
+  }
+
+  public getCoverage(providerId: string, projectId: string): ProviderCoverage | undefined {
+    return this.index.getCoverage(providerId, projectId);
+  }
+
+  public getProjectProducers(projectId: string): ResourceProducer[] {
+    return this.index.getProjectProducers(projectId);
+  }
+
+  public getProducersForKey(target: ResourceGraphLogicalKey): ResourceProducer[] {
+    return this.index.getProducersForKey(target);
+  }
+
+  public hasProvider(providerId: string): boolean {
+    return this.registry.get(providerId) !== undefined;
+  }
+
+  public getRegisteredProvider(providerId: string): ResourceContributionProvider | undefined {
+    return this.registry.get(providerId);
   }
 
   /** Returns provider ids without requesting snapshots or loading runtimes. */
