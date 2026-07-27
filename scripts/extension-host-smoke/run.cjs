@@ -2,7 +2,16 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
-const { bundleEntryOutfiles } = require("../lib/bundleEntries.cjs");
+const {
+  assert,
+  createExtensionOwnedCallerPredicate,
+  instrumentProcessStarts,
+  isRsglOwnedPath,
+  requiredEnvironment,
+  rsglHostLoaded,
+  serializeError,
+  settle
+} = require("../activation-probe/lib/instrumentation-core.cjs");
 const {
   analyzeRenderedModelPng,
   assertRenderedCheckerTexture,
@@ -13,10 +22,24 @@ const extensionId = "stone926.minecraft-resourcepack-helper";
 const resultFile = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_RESULT");
 const workspaceRoot = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_WORKSPACE");
 const extensionRoot = requiredEnvironment("MCRES_EXTENSION_HOST_SMOKE_EXTENSION_ROOT");
+const isExtensionOwnedCaller = createExtensionOwnedCallerPredicate(extensionRoot);
+const isRsglRuntimePath = isRsglOwnedPath;
 
 async function run() {
   const processStarts = [];
-  const restoreProcessInstrumentation = instrumentProcessStarts(processStarts);
+  const restoreProcessInstrumentation = instrumentProcessStarts(childProcess, processStarts, {
+    sanitize,
+    isExtensionOwnedCaller,
+    isRsglRuntimePath,
+    callsiteLabel: "packaged-extension-host-smoke-callsite",
+    decorateEvent: event => {
+      event.attribution = event.rsgl
+        ? "rsgl"
+        : event.extensionOwned
+          ? "extension"
+          : "hostNoise";
+    }
+  });
   const result = {
     schemaVersion: 1,
     extensionId,
@@ -179,81 +202,6 @@ async function showDocument(uri) {
   await vscode.window.showTextDocument(document, { preview: false });
 }
 
-function rsglHostLoaded() {
-  return Object.keys(require.cache).some(fileName =>
-    /bundle[\\/]features[\\/]rsglHost\.js$/i.test(fileName)
-  );
-}
-
-function instrumentProcessStarts(events) {
-  const originals = new Map();
-  for (const api of ["spawn", "spawnSync", "fork", "exec", "execSync", "execFile", "execFileSync"]) {
-    const original = childProcess[api];
-    originals.set(api, original);
-    childProcess[api] = function instrumentedProcessStart(...args) {
-      const eventArguments = sanitizeArguments(args);
-      const caller = captureCaller();
-      const event = {
-        api,
-        arguments: eventArguments,
-        caller: sanitize(caller),
-        extensionOwned: isExtensionOwnedCaller(caller),
-        rsgl: eventArguments.some(isRsglRuntimePath) || isRsglRuntimePath(caller)
-      };
-      event.attribution = event.rsgl
-        ? "rsgl"
-        : event.extensionOwned
-          ? "extension"
-          : "hostNoise";
-      events.push(event);
-      const child = original.apply(this, args);
-      event.pid = child?.pid;
-      return child;
-    };
-  }
-  return () => {
-    for (const [api, original] of originals) {
-      childProcess[api] = original;
-    }
-  };
-}
-
-function sanitizeArguments(args) {
-  return args.flatMap(value => {
-    if (typeof value === "string") {
-      return [sanitize(value)];
-    }
-    if (Array.isArray(value)) {
-      return value.filter(item => typeof item === "string").map(sanitize);
-    }
-    if (value instanceof URL) {
-      return [sanitize(value.href)];
-    }
-    return [];
-  });
-}
-
-function captureCaller() {
-  return new Error("packaged-extension-host-smoke-callsite").stack ?? "";
-}
-
-function isExtensionOwnedCaller(value) {
-  const normalize = candidate => process.platform === "win32"
-    ? candidate.replaceAll("\\", "/").toLowerCase()
-    : candidate.replaceAll("\\", "/");
-  return normalize(value).includes(normalize(extensionRoot));
-}
-
-const rsglBundleSubpaths = ["rsglHost", "server", "worker"].map(
-  id => `/${bundleEntryOutfiles[id].toLowerCase()}`
-);
-
-function isRsglRuntimePath(value) {
-  const normalized = value.replaceAll("\\", "/").toLowerCase();
-  return rsglBundleSubpaths.some(subpath => normalized.includes(subpath))
-    || /\/packages\/rsgl-(?:core|lsp|shared)(?:\/|$)/.test(normalized);
-}
-
 function sanitize(value) {
   return String(value)
     .replaceAll(workspaceRoot, "<workspace>")
@@ -296,34 +244,8 @@ async function waitUntil(predicate, message, timeout = 15_000) {
   throw new Error(lastError ? `${message} ${serializeError(lastError).message}` : message);
 }
 
-function settle(milliseconds) {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
-}
-
-function assert(value, message) {
-  if (!value) {
-    throw new Error(message);
-  }
-}
-
 function writeResult(result) {
   fs.writeFileSync(resultFile, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-}
-
-function serializeError(error) {
-  return {
-    name: error instanceof Error ? error.name : "Error",
-    message: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined
-  };
-}
-
-function requiredEnvironment(name) {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable ${name}.`);
-  }
-  return value;
 }
 
 module.exports = { run };

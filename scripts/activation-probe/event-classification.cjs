@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  isAllowedRootActivationSourcePath,
+  isRsglOwnedPath
+} = require("./lib/instrumentation-core.cjs");
+
 function recomputeExtensionHostEventFacts(sample) {
   const rsglModuleLoads = sample.moduleLoads.filter(event =>
     isRsglModuleLoadEvent(event)).length;
@@ -61,7 +66,13 @@ function isRsglSourceWatcher(value) {
 
 function isRsglRuntimePath(value) {
   const normalized = normalizeSignal(value);
-  return normalized.includes("rsglhost")
+  if (isAllowedRootActivationSourcePath(normalized)) {
+    return false;
+  }
+  // The shared structured rule plus the probe-only leak signatures: the RSGL
+  // LSP client package and generic rsgl tokens keep unexpected loads visible.
+  return isRsglOwnedPath(normalized)
+    || normalized.includes("rsglhost")
     || normalized.includes("vscode-languageclient")
     || /(?:^|[\/._-])rsgl(?:[\/._-]|$)/.test(normalized);
 }

@@ -1,11 +1,16 @@
 import Module, { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "../lib/parse.mjs";
 
 const require = createRequire(import.meta.url);
 const childProcess = require("node:child_process");
 const fileSystem = require("node:fs");
 const workerThreads = require("node:worker_threads");
+const {
+  isAllowedRootActivationSourcePath,
+  isRsglOwnedPath
+} = require("./lib/instrumentation-core.cjs");
 const {
   createDeferredModuleLoadRecorder,
   snapshotModuleParent
@@ -187,7 +192,13 @@ export function installNodeActivationInstrumentation(options) {
 
 export function isRsglSignal(value) {
   const normalized = String(value ?? "").replaceAll("\\", "/").toLowerCase();
-  return normalized.includes(".rsgl")
+  if (isAllowedRootActivationSourcePath(normalized)) {
+    return false;
+  }
+  // The shared structured rule plus the node-bundle adapter's leak signatures:
+  // .rsgl source targets, the RSGL LSP client package, and generic rsgl tokens.
+  return isRsglOwnedPath(normalized)
+    || normalized.includes(".rsgl")
     || normalized.includes("rsglhost")
     || normalized.includes("vscode-languageclient")
     || /(?:^|[\/._-])rsgl(?:[\/._-]|$)/.test(normalized);
@@ -264,8 +275,4 @@ function isPathAtOrBelow(parent, target) {
   }
   const relative = path.relative(parent, target);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
 }

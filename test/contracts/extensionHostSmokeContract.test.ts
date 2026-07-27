@@ -115,9 +115,15 @@ describe("packaged Extension Host smoke contract", () => {
   it("separates host process noise without weakening extension and RSGL zero assertions", () => {
     const harness = read("scripts", "verify-extension-host-smoke.mjs");
     const runner = read("scripts", "extension-host-smoke", "run.cjs");
+    const instrumentationCore = read(
+      "scripts",
+      "activation-probe",
+      "lib",
+      "instrumentation-core.cjs"
+    );
     assert.match(harness, /MCRES_EXTENSION_HOST_SMOKE_EXTENSION_ROOT: resolvedExtensionRoot/);
-    assert.match(runner, /extensionOwned: isExtensionOwnedCaller\(caller\)/);
-    assert.match(runner, /rsgl: eventArguments\.some\(isRsglRuntimePath\)/);
+    assert.match(instrumentationCore, /extensionOwned: isExtensionOwnedCaller\(caller\)/);
+    assert.match(instrumentationCore, /rsgl: eventArguments\.some\(isRsglRuntimePath\)/);
     assert.match(runner, /assertNoExtensionProcessStarts\(processStarts, "JSON-only activation"\)/);
     assert.match(runner, /assertNoExtensionProcessStarts\(processStarts, "McResHelper\.rsgl\.enabled=off"\)/);
     assert.match(runner, /hostNoise: processStarts\.filter/);

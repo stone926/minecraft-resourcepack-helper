@@ -6,6 +6,17 @@ const { performance } = require("node:perf_hooks");
 const workerThreads = require("node:worker_threads");
 const vscode = require("vscode");
 const {
+  assert,
+  captureCaller: captureCallerWithLabel,
+  createExtensionOwnedCallerPredicate,
+  instrumentProcessStarts,
+  requiredEnvironment,
+  rsglHostLoaded,
+  sanitizeArguments: sanitizeArgumentsWith,
+  serializeError,
+  settle
+} = require("./lib/instrumentation-core.cjs");
+const {
   createTargetVscodeApiInstrumentation
 } = require("./target-vscode-api.cjs");
 const {
@@ -34,6 +45,11 @@ const settleMilliseconds = Number(requiredEnvironment("MCRES_ACTIVATION_SETTLE_M
 const sourceWorkspace = requiredEnvironment("MCRES_ACTIVATION_SOURCE_WORKSPACE");
 const workspaceRoot = requiredEnvironment("MCRES_ACTIVATION_WORKSPACE");
 const extensionRoot = requiredEnvironment("MCRES_ACTIVATION_EXTENSION_ROOT");
+
+const callsiteLabel = "activation-probe-callsite";
+const captureCaller = () => captureCallerWithLabel(callsiteLabel);
+const sanitizeArguments = args => sanitizeArgumentsWith(args, sanitize);
+const isExtensionOwnedCaller = createExtensionOwnedCallerPredicate(extensionRoot);
 
 async function run() {
   const events = createEventCollections();
@@ -66,7 +82,13 @@ async function run() {
 
   try {
     restorers.push(instrumentModuleLoads(events, installedHooks, deferredModuleLoads));
-    restorers.push(instrumentProcessStarts(events.processSpawns, installedHooks));
+    restorers.push(instrumentProcessStarts(childProcess, events.processSpawns, {
+      sanitize,
+      isExtensionOwnedCaller,
+      isRsglRuntimePath,
+      callsiteLabel,
+      onHookInstalled: hook => installedHooks.push(hook)
+    }));
     restorers.push(instrumentWorkers(events.workerSpawns, installedHooks, events.instrumentationWarnings));
     restorers.push(instrumentFilesystemWalks(events.filesystemWalks, installedHooks, events.instrumentationWarnings));
 
@@ -210,35 +232,6 @@ function instrumentModuleLoads(events, installedHooks, deferredModuleLoads) {
   };
 }
 
-function instrumentProcessStarts(events, installedHooks) {
-  const originals = new Map();
-  for (const api of ["spawn", "spawnSync", "fork", "exec", "execSync", "execFile", "execFileSync"]) {
-    const original = childProcess[api];
-    originals.set(api, original);
-    childProcess[api] = function instrumentedProcessStart(...args) {
-      const eventArguments = sanitizeArguments(args);
-      const caller = captureCaller();
-      const event = {
-        api,
-        arguments: eventArguments,
-        caller: sanitize(caller),
-        extensionOwned: isExtensionOwnedCaller(caller),
-        rsgl: eventArguments.some(isRsglRuntimePath) || isRsglRuntimePath(caller)
-      };
-      events.push(event);
-      const result = original.apply(this, args);
-      event.pid = result?.pid;
-      return result;
-    };
-    installedHooks.push(`child_process.${api}`);
-  }
-  return () => {
-    for (const [api, original] of originals) {
-      childProcess[api] = original;
-    }
-  };
-}
-
 function instrumentWorkers(events, installedHooks, warnings) {
   const OriginalWorker = workerThreads.Worker;
   try {
@@ -304,44 +297,12 @@ function instrumentFilesystemWalks(events, installedHooks, warnings) {
   return () => restorers.reverse().forEach(restore => restore());
 }
 
-function rsglHostLoaded() {
-  return Object.keys(require.cache).some(fileName =>
-    /bundle[\\/]features[\\/]rsglHost\.js$/i.test(fileName)
-  );
-}
-
 function isRecursiveWalk(api, args, target) {
   if (api === "glob" || api === "globSync") {
     return String(target).includes("**");
   }
   return args.slice(1).some(value =>
     value && typeof value === "object" && value.recursive === true);
-}
-
-function captureCaller() {
-  return new Error("activation-probe-callsite").stack ?? "";
-}
-
-function isExtensionOwnedCaller(value) {
-  const normalize = candidate => process.platform === "win32"
-    ? candidate.replaceAll("\\", "/").toLowerCase()
-    : candidate.replaceAll("\\", "/");
-  return normalize(value).includes(normalize(extensionRoot));
-}
-
-function sanitizeArguments(args) {
-  return args.flatMap(value => {
-    if (typeof value === "string") {
-      return [sanitize(value)];
-    }
-    if (Array.isArray(value)) {
-      return value.filter(item => typeof item === "string").map(sanitize);
-    }
-    if (value instanceof URL) {
-      return [sanitize(value.href)];
-    }
-    return [];
-  });
 }
 
 function displayTarget(value) {
@@ -373,16 +334,6 @@ function sanitize(value) {
   ]);
 }
 
-function settle(milliseconds) {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
-}
-
-function assert(value, message) {
-  if (!value) {
-    throw new Error(message);
-  }
-}
-
 function canonicalPath(value) {
   return fs.realpathSync.native(path.resolve(value));
 }
@@ -393,24 +344,8 @@ function samePath(left, right) {
     : left === right;
 }
 
-function serializeError(error) {
-  return {
-    name: error instanceof Error ? error.name : "Error",
-    message: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined
-  };
-}
-
 function writeSample(sample) {
   fs.writeFileSync(sampleOutput, `${JSON.stringify(sample, null, 2)}\n`, "utf8");
-}
-
-function requiredEnvironment(name) {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable ${name}.`);
-  }
-  return value;
 }
 
 module.exports = { run };
