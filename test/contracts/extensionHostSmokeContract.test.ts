@@ -132,7 +132,7 @@ describe("packaged Extension Host smoke contract", () => {
   });
 
   function read(...segments: string[]): string {
-    return fs.readFileSync(path.join(root, ...segments), "utf8");
+    return fs.readFileSync(path.join(root, ...segments), "utf8").replaceAll("\r\n", "\n");
   }
 });
 
