@@ -3,6 +3,7 @@ import {
   uniqueValues,
   type ResourceGraphLogicalKey
 } from "../../../packages/mc-assets/src";
+import { mergeByIdentity, providerProjectKey } from "./identity";
 import { projectProviderCoverage } from "./providerCoverage";
 import type {
   ProviderCoverage,
@@ -431,9 +432,6 @@ function producerMatchesScope(producer: ResourceProducer, scope: ResourceResolut
   return true;
 }
 
-function providerProjectKey(providerId: string, projectId: string): string {
-  return `${providerId}\0${projectId}`;
-}
 
 function addIndexValue(map: Map<string, Set<string>>, key: string, value: string): void {
   const values = map.get(key);
@@ -467,16 +465,3 @@ function compareProducers(left: ResourceProducer, right: ResourceProducer): numb
   return left.producerId.localeCompare(right.producerId, "en");
 }
 
-function mergeByIdentity<T>(
-  previous: readonly T[],
-  next: readonly T[],
-  identity: (value: T) => string
-): T[] {
-  const merged = new Map(previous.map(value => [identity(value), value]));
-  for (const value of next) {
-    merged.set(identity(value), value);
-  }
-  return [...merged.values()].sort((left, right) =>
-    identity(left).localeCompare(identity(right), "en")
-  );
-}

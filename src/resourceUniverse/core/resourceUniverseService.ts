@@ -1,3 +1,4 @@
+import { providerProjectKey } from "./identity";
 import type { ResourceGraphLogicalKey } from "../../../packages/mc-assets/src";
 import { abortSignalReason } from "../../utils/abortError";
 import { ResourceContributionRegistry, type ResourceProviderRegistration } from "./resourceContributionRegistry";
@@ -625,9 +626,6 @@ export class ResourceUniverseService {
   }
 }
 
-function providerProjectKey(providerId: string, projectId: string): string {
-  return `${providerId}\0${projectId}`;
-}
 
 function splitProviderProjectKey(identity: string): [string, string] {
   const separator = identity.indexOf("\0");

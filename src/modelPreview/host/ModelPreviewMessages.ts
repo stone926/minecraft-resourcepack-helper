@@ -33,3 +33,18 @@ export type WebviewToHost =
   | { type: "screenshotResult"; requestId: string; pngDataUri: string }
   | { type: "screenshotError"; requestId: string; error: ModelPreviewError }
   | ({ type: "renderIssue" } & WebviewLocalizedMessage);
+
+type SharedModelPreviewMessageTypes = typeof import("../../../webviews/modelPreview/messageTypes");
+
+/** Two-way compile-time guard: these unions and the webview's shared message-type module must not drift. */
+type AssertSameUnion<A extends C, B extends A, C = B> = [A, B, C];
+export type ModelPreviewMessageTypeContract = [
+  AssertSameUnion<
+    HostToWebview["type"],
+    keyof SharedModelPreviewMessageTypes["hostToWebviewMessageTypes"]
+  >,
+  AssertSameUnion<
+    WebviewToHost["type"],
+    keyof SharedModelPreviewMessageTypes["webviewToHostMessageTypes"]
+  >
+];

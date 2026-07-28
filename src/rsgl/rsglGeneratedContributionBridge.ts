@@ -1,3 +1,5 @@
+import { requireIdentity } from "../resourceUniverse/core/identity";
+import { errorMessage } from "../utils/errorMessage";
 import type { ResourcePackProjectContextDto } from "../../packages/resource-project/src";
 import type {
   ResourceContributionProvider,
@@ -747,13 +749,4 @@ function invalidationReasonFromNotification(value: unknown): string | undefined 
 }
 
 
-function requireIdentity(value: string, label: string): string {
-  if (typeof value !== "string" || value.trim().length === 0 || value.includes("\0")) {
-    throw new Error(`${label} must be a non-empty identity.`);
-  }
-  return value.trim();
-}
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

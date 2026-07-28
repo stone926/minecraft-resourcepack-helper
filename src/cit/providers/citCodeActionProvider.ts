@@ -1,10 +1,11 @@
+import { internalCommands } from "../../commandIds";
 import * as vscode from "vscode";
 import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
 import { getResourceReferences, type ResourceReference } from "../../utils/resourceReferences";
 import { MissingCitResourceApplicationService } from "../services/missingCitResourceApplicationService";
 import { MissingCitResourcePlanner } from "../services/missingCitResourcePlanner";
 
-export const createMissingCitResourceCommand = "McResHelper.createMissingCitResource";
+export const createMissingCitResourceCommand = internalCommands.createMissingCitResource;
 
 const missingResourcePlanner = new MissingCitResourcePlanner();
 const missingResourceApplication = new MissingCitResourceApplicationService();

@@ -1,3 +1,4 @@
+import { errorMessage } from "../../utils/errorMessage";
 import { joinResourceProjectUri } from "../../../packages/resource-project/src";
 import type { RsglGeneratedMaterializationSnapshot } from "./rsglGeneratedMaterialization";
 
@@ -145,6 +146,3 @@ function requirePortableOutputPath(value: unknown, label: string): string {
   return outputPath;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

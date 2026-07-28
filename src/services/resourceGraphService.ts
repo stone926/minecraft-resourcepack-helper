@@ -1,3 +1,4 @@
+import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
 import * as vscode from "vscode";
 import { packRootFromAssetsPath } from "../../packages/mc-assets/src";
 import type {
@@ -238,7 +239,7 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
   public configureVanillaSource(): Thenable<unknown> {
     return vscode.commands.executeCommand(
       "workbench.action.openSettings",
-      "McResHelper.defaultMcAssetsPath"
+      resourceConfigurationKeys.defaultAssetsPath
     );
   }
 

@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { contributedCommands, internalCommands } from "../../commandIds";
 
 describe("extension surface", () => {
   it("keeps activate as a thin registration orchestrator", () => {
@@ -88,20 +89,22 @@ describe("extension surface", () => {
     const graph = readSource("registration", "registerResourceGraph.ts");
     const workspaceEvents = readSource("registration", "registerWorkspaceEvents.ts");
 
-    for (const command of [
-      "McResHelper.refreshResourceGraph",
-      "McResHelper.searchResourceGraph",
-      "McResHelper.followActiveResource",
-      "McResHelper.navigateResourceGraphNode",
-      "McResHelper.openGeneratedResource",
-      "McResHelper.openMaterializedResource",
-      "McResHelper.showResourceConflictOwners",
-      "McResHelper.configureVanillaSource",
-      "McResHelper.refreshResources"
+    for (const commandReference of [
+      "contributedCommands.refreshResourceGraph",
+      "contributedCommands.searchResourceGraph",
+      "contributedCommands.followActiveResource",
+      "internalCommands.navigateResourceGraphNode",
+      "contributedCommands.openGeneratedResource",
+      "contributedCommands.openMaterializedResource",
+      "contributedCommands.showResourceConflictOwners",
+      "contributedCommands.configureVanillaSource",
+      "contributedCommands.refreshResources"
     ]) {
-      assert.ok(proxies.includes(command), `lazy proxy should own ${command}`);
-      assert.strictEqual(graph.includes(`registerCommand("${command}"`), false);
-      assert.strictEqual(workspaceEvents.includes(`registerCommand("${command}"`), false);
+      assert.ok(proxies.includes(`register(${commandReference}`), `lazy proxy should own ${commandReference}`);
+    }
+    for (const source of [graph, workspaceEvents]) {
+      assert.strictEqual(source.includes("registerCommand("), false,
+        "resource commands must register only through the lazy proxy module");
     }
   });
 
@@ -221,6 +224,22 @@ describe("extension surface", () => {
     )?.[0] ?? "";
     assert.ok(openDocumentLookup.length > 0);
     assert.strictEqual(openDocumentLookup.includes("normalizePathKey("), false);
+  });
+  it("keeps commandIds as the single source for the manifest command surface", () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")
+    ) as { contributes?: { commands?: Array<{ command: string }> } };
+    const manifestCommands = (manifest.contributes?.commands ?? [])
+      .map(entry => entry.command)
+      .filter(id => id.startsWith("McResHelper."));
+    assert.deepStrictEqual(
+      [...manifestCommands].sort(),
+      Object.values(contributedCommands).slice().sort()
+    );
+    for (const id of Object.values(internalCommands)) {
+      assert.strictEqual(manifestCommands.includes(id), false,
+        `${id} is internal and must stay out of the manifest`);
+    }
   });
 });
 

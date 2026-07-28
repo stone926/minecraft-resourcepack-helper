@@ -3,6 +3,7 @@ import {
   type ResourceReference,
   type ResourceReferenceDocument
 } from "../../utils/resourceReferences";
+import { isEditableUri } from "../core/identity";
 import type { ResourceLayerRole } from "../core";
 import type {
   PhysicalResourceDocumentFact,
@@ -104,6 +105,3 @@ function offsetAt(
   return Math.min(textLength, lineStart + Math.max(0, oneBasedColumn - 1));
 }
 
-function isEditableUri(uri: string): boolean {
-  return uri.startsWith("file:") || uri.startsWith("vscode-remote:");
-}

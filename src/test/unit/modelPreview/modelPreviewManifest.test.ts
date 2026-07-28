@@ -105,7 +105,7 @@ describe("model preview manifest", () => {
     assert.strictEqual(script.includes("this.resizeFromPointer(event);"), false, "clicking the resizer should not switch to manual height");
     assert.ok(script.includes("updateCollapsedLayout()"), "details collapse state should update the outer layout");
     assert.ok(script.includes('this.panel.querySelectorAll("[data-details-section]")'), "collapse state should only inspect the details panel");
-    assert.ok(script.includes('vscode.postMessage({ type: "refreshPreview" })'), "toolbar should expose a manual refresh message");
+    assert.ok(script.includes('vscode.postMessage({ type: webviewToHostMessageTypes.refreshPreview })'), "toolbar should expose a manual refresh message");
     assert.ok(script.includes("Math.sin(fitFov / 2)"), "perspective camera should fit using the active FOV");
     assert.ok(padding && Number(padding[1]) >= 1.35, "initial preview should leave a comfortable camera margin");
   });
@@ -119,8 +119,8 @@ describe("model preview manifest", () => {
     assert.ok(messageTypes.includes('{ type: "screenshotError"; requestId: string; error: ModelPreviewError }'));
     assert.ok(panelSource.includes("openTextDocument(uri)"), "host should open text resources itself");
     assert.ok(panelSource.includes("Resource file does not exist"), "missing files should produce an explicit message");
-    assert.ok(script.includes('type: "openResource"'), "webview should request host resource opening");
-    assert.ok(script.includes('type: "screenshotError"'), "capture failures should reject the exact pending request");
+    assert.ok(script.includes('type: webviewToHostMessageTypes.openResource'), "webview should request host resource opening");
+    assert.ok(script.includes('type: webviewToHostMessageTypes.screenshotError'), "capture failures should reject the exact pending request");
   });
 
   it("supports export sizing, background options, and explicit webview disposal", () => {

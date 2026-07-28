@@ -1,3 +1,4 @@
+import { isEditableUri, requireIdentity } from "../core/identity";
 import { uniqueValues } from "../../../packages/mc-assets/src";
 import type { ResourceMaterializationState, ResourceLocation } from "../core";
 
@@ -211,13 +212,4 @@ function requireSerializedUri(value: string): string {
   return uri;
 }
 
-function requireIdentity(value: string, label: string): string {
-  if (typeof value !== "string" || value.trim().length === 0 || value.includes("\0")) {
-    throw new Error(`${label} must be a non-empty identity.`);
-  }
-  return value.trim();
-}
 
-function isEditableUri(uri: string): boolean {
-  return uri.startsWith("file:") || uri.startsWith("vscode-remote:");
-}

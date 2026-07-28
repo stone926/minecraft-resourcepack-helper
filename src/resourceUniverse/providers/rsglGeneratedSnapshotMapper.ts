@@ -5,6 +5,7 @@ import type {
   RsglResourceLocationDto,
   RsglResourceSnapshotResponse
 } from "../../../packages/rsgl-shared/src/resourceSnapshotProtocol";
+import { isEditableUri, mergeByIdentity } from "../core/identity";
 import { uniqueValues } from "../../../packages/mc-assets/src";
 import { resourceUriComparisonIdentity } from "../core/resourceUriIdentity";
 import type {
@@ -233,13 +234,6 @@ function assertUnique<T>(values: readonly T[], identity: (value: T) => string, l
   }
 }
 
-function mergeByIdentity<T>(
-  previous: readonly T[],
-  incoming: readonly T[],
-  identity: (value: T) => string
-): T[] {
-  return [...new Map([...previous, ...incoming].map(value => [identity(value), value])).values()];
-}
 
 function cloneResources(
   resources: NonNullable<RsglResourceSnapshotResponse["resources"]>
@@ -274,6 +268,3 @@ function cloneScope<T extends {
   };
 }
 
-function isEditableUri(uri: string): boolean {
-  return uri.startsWith("file:") || uri.startsWith("vscode-remote:");
-}

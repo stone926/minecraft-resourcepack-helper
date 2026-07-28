@@ -1,3 +1,4 @@
+import { internalCommands } from "../commandIds";
 import * as vscode from "vscode";
 import {
   ResourceCompletionService,
@@ -19,7 +20,7 @@ interface ResourceCompletionContext {
   includeQuotes: boolean;
 }
 
-export const triggerResourceCompletionCommand = "McResHelper.triggerResourceCompletion";
+export const triggerResourceCompletionCommand = internalCommands.triggerResourceCompletion;
 
 const resourceCompletionService = new ResourceCompletionService(workspaceResourceCache);
 

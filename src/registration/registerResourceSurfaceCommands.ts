@@ -1,3 +1,4 @@
+import { contributedCommands, internalCommands } from "../commandIds";
 import * as vscode from "vscode";
 import type { ResourceGraphController } from "./registerResourceGraph";
 import type { WorkspaceEventController } from "./registerWorkspaceEvents";
@@ -12,29 +13,29 @@ export function registerResourceSurfaceCommands(
   context: Pick<vscode.ExtensionContext, "subscriptions">,
   resolve: () => ResourceSurfaceCommandTargets
 ): void {
-  register("McResHelper.refreshResourceGraph", () => resolve().resourceGraph.refresh());
-  register("McResHelper.searchResourceGraph", () =>
+  register(contributedCommands.refreshResourceGraph, () => resolve().resourceGraph.refresh());
+  register(contributedCommands.searchResourceGraph, () =>
     resolve().resourceGraph.showResourceSearch()
   );
-  register("McResHelper.followActiveResource", () =>
+  register(contributedCommands.followActiveResource, () =>
     resolve().resourceGraph.followActiveEditor()
   );
-  register("McResHelper.navigateResourceGraphNode", value =>
+  register(internalCommands.navigateResourceGraphNode, value =>
     resolve().resourceGraph.navigateNode(value)
   );
-  register("McResHelper.openGeneratedResource", value =>
+  register(contributedCommands.openGeneratedResource, value =>
     resolve().resourceGraph.navigateNode(value, { preferMaterialized: false })
   );
-  register("McResHelper.openMaterializedResource", value =>
+  register(contributedCommands.openMaterializedResource, value =>
     resolve().resourceGraph.navigateNode(value, { preferMaterialized: true })
   );
-  register("McResHelper.showResourceConflictOwners", value =>
+  register(contributedCommands.showResourceConflictOwners, value =>
     resolve().resourceGraph.showConflictOwners(value)
   );
-  register("McResHelper.configureVanillaSource", () =>
+  register(contributedCommands.configureVanillaSource, () =>
     resolve().resourceGraph.configureVanillaSource()
   );
-  register("McResHelper.refreshResources", () => resolve().workspaceEvents.refreshResources());
+  register(contributedCommands.refreshResources, () => resolve().workspaceEvents.refreshResources());
 
   function register(command: string, handler: (...args: unknown[]) => unknown): void {
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));

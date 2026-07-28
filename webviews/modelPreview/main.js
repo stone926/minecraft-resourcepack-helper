@@ -1,4 +1,8 @@
 import { vscode, t } from "./webviewApi.js";
+import {
+  hostToWebviewMessageTypes,
+  webviewToHostMessageTypes
+} from "./messageTypes.js";
 import { DetailsPanelController } from "./detailsPanel.js";
 import { PreviewRenderer } from "./previewRenderer.js";
 
@@ -24,7 +28,7 @@ class PreviewApp {
     this.exportCancel = document.getElementById("exportCancel");
 
     this.addDomListener(document.getElementById("resetView"), "click", () => this.renderer.resetView());
-    this.addDomListener(document.getElementById("refreshPreview"), "click", () => vscode.postMessage({ type: "refreshPreview" }));
+    this.addDomListener(document.getElementById("refreshPreview"), "click", () => vscode.postMessage({ type: webviewToHostMessageTypes.refreshPreview }));
     this.addDomListener(document.getElementById("viewPreset"), "change", event => this.renderer.setViewPreset(event.target.value));
     this.addDomListener(document.getElementById("cameraMode"), "click", event => {
       const mode = this.renderer.toggleCameraMode();
@@ -42,7 +46,7 @@ class PreviewApp {
     this.onBeforeUnload = () => this.dispose();
     window.addEventListener("message", this.onWindowMessage);
     window.addEventListener("beforeunload", this.onBeforeUnload);
-    vscode.postMessage({ type: "ready" });
+    vscode.postMessage({ type: webviewToHostMessageTypes.ready });
   }
 
   async handleMessage(message) {
@@ -50,20 +54,20 @@ class PreviewApp {
       return;
     }
 
-    if (message.type === "updatePreview") {
+    if (message.type === hostToWebviewMessageTypes.updatePreview) {
       this.renderer.setDocument(message.document);
       this.renderIssues(message.document.issues);
       this.renderDependencies(message.document.dependencies);
       return;
     }
 
-    if (message.type === "requestScreenshot") {
+    if (message.type === hostToWebviewMessageTypes.requestScreenshot) {
       try {
         const pngDataUri = await this.renderer.capture(message.options ?? {});
-        vscode.postMessage({ type: "screenshotResult", requestId: message.requestId, pngDataUri });
+        vscode.postMessage({ type: webviewToHostMessageTypes.screenshotResult, requestId: message.requestId, pngDataUri });
       } catch (error) {
         vscode.postMessage({
-          type: "screenshotError",
+          type: webviewToHostMessageTypes.screenshotError,
           requestId: message.requestId,
           error: {
             code: "captureFailed",
@@ -74,7 +78,7 @@ class PreviewApp {
       return;
     }
 
-    if (message.type === "dispose") {
+    if (message.type === hostToWebviewMessageTypes.dispose) {
       this.dispose();
     }
   }
@@ -103,7 +107,7 @@ class PreviewApp {
     }
 
     this.exportDialog.close();
-    vscode.postMessage({ type: "exportImage", options });
+    vscode.postMessage({ type: webviewToHostMessageTypes.exportImage, options });
   }
 
   readExportOptions() {
@@ -213,7 +217,7 @@ function createResourceButton(text, uri, range) {
   button.type = "button";
   button.className = "resource-link";
   button.textContent = text;
-  button.addEventListener("click", () => vscode.postMessage({ type: "openResource", uri, range }));
+  button.addEventListener("click", () => vscode.postMessage({ type: webviewToHostMessageTypes.openResource, uri, range }));
   return button;
 }
 

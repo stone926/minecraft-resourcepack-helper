@@ -1,3 +1,5 @@
+import { rsglConfigKeys } from "../../../packages/rsgl-shared/src";
+import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -124,8 +126,8 @@ describe("integrated RSGL extension surface", () => {
     assert.ok(client.includes("rsglDependencyStructureChangedNotification"));
     assert.strictEqual(client.includes('createFileSystemWatcher("**/*.json")'), false);
 
-    assert.ok(shared.includes('defaultAssetsPath: "McResHelper.defaultMcAssetsPath"'));
-    assert.ok(shared.includes('resourcePackLoadOrder: "McResHelper.resourcePackLoadOrder"'));
+    assert.strictEqual(rsglConfigKeys.defaultAssetsPath, resourceConfigurationKeys.defaultAssetsPath);
+    assert.strictEqual(rsglConfigKeys.resourcePackLoadOrder, resourceConfigurationKeys.resourcePackLoadOrder);
     assert.strictEqual(shared.includes('"rsgl.outDir"'), false);
     assert.ok(buildContexts.includes("loadRsglProjectConfigForSource"));
     assert.ok(buildContexts.includes("resolveRsglOutputPackRoot"));

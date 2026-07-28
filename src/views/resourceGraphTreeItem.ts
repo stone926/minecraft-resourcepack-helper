@@ -1,3 +1,4 @@
+import { internalCommands } from "../commandIds";
 import * as vscode from "vscode";
 import type {
   ResourceGraphCollapsibleState,
@@ -20,7 +21,7 @@ export class ResourceGraphTreeItem extends vscode.TreeItem {
     this.resourceUri = model.resourceUri ? toVscodeUri(model.resourceUri) : undefined;
     if (model.navigation) {
       this.command = {
-        command: "McResHelper.navigateResourceGraphNode",
+        command: internalCommands.navigateResourceGraphNode,
         title: vscode.l10n.t("Open Resource"),
         arguments: [model.navigation]
       };

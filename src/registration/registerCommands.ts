@@ -1,3 +1,4 @@
+import { contributedCommands, internalCommands } from "../commandIds";
 import * as vscode from "vscode";
 import createCitTemplateCommand from "../cit/commands/createCitTemplate";
 import generateCitForCurrentItemCommand from "../cit/commands/generateCitForCurrentItem";
@@ -14,11 +15,11 @@ import { workspaceResourceCache } from "../services/workspaceResourceCache";
 
 export function registerCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("McResHelper.openDefaultMcAssetsPath", openDefaultMcAssetsPath),
-    vscode.commands.registerCommand("McResHelper.createNewResourcePack", createNewResourcePack),
-    vscode.commands.registerCommand("McResHelper.createNewResourcePackRoot", createNewResourcePackRoot),
-    vscode.commands.registerCommand("McResHelper.createCitTemplate", createCitTemplateCommand),
-    vscode.commands.registerCommand("McResHelper.generateCitForCurrentItem", generateCitForCurrentItemCommand),
+    vscode.commands.registerCommand(contributedCommands.openDefaultMcAssetsPath, openDefaultMcAssetsPath),
+    vscode.commands.registerCommand(contributedCommands.createNewResourcePack, createNewResourcePack),
+    vscode.commands.registerCommand(contributedCommands.createNewResourcePackRoot, createNewResourcePackRoot),
+    vscode.commands.registerCommand(contributedCommands.createCitTemplate, createCitTemplateCommand),
+    vscode.commands.registerCommand(contributedCommands.generateCitForCurrentItem, generateCitForCurrentItemCommand),
     vscode.commands.registerCommand(createMissingCitResourceCommand, createMissingCitResource)
   );
 
@@ -26,7 +27,7 @@ export function registerCommands(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "McResHelper.showWorkspaceResourceCacheStats",
+      internalCommands.showWorkspaceResourceCacheStats,
       () => vscode.window.showInformationMessage(JSON.stringify(workspaceResourceCache.getStats()))
     ),
     vscode.commands.registerCommand(triggerResourceCompletionCommand, () => {
@@ -44,27 +45,27 @@ function registerModelPreviewCommands(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "McResHelper.openModelPreview",
+      contributedCommands.openModelPreview,
       async (...args: Parameters<ModelPreviewCommandRuntime["open"]>) => (await runtime()).open(...args)
     ),
     vscode.commands.registerCommand(
-      "McResHelper.openResourceGraphModelPreview",
+      contributedCommands.openResourceGraphModelPreview,
       async (...args: Parameters<ModelPreviewCommandRuntime["openGraphNode"]>) =>
         (await runtime()).openGraphNode(...args)
     ),
     vscode.commands.registerCommand(
-      "McResHelper.openUnsupportedModelPreviewResource",
+      contributedCommands.openUnsupportedModelPreviewResource,
       () => vscode.window.showInformationMessage(
         vscode.l10n.t("Model preview supports model JSON resources only for now")
       )
     ),
     vscode.commands.registerCommand(
-      "McResHelper.exportModelPreviewImage",
+      contributedCommands.exportModelPreviewImage,
       async (...args: Parameters<ModelPreviewCommandRuntime["exportImage"]>) =>
         (await runtime()).exportImage(...args)
     ),
     vscode.commands.registerCommand(
-      "McResHelper.captureModelPreviewImage",
+      internalCommands.captureModelPreviewImage,
       async (...args: Parameters<ModelPreviewCommandRuntime["captureImage"]>) =>
         (await runtime()).captureImage(...args)
     )

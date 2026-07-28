@@ -1,3 +1,4 @@
+import { errorMessage } from "../utils/errorMessage";
 import { createHash } from "node:crypto";
 import { uniqueValues } from "../../packages/mc-assets/src";
 import {
@@ -252,6 +253,3 @@ function uniqueSorted(values: readonly string[]): string[] {
   return uniqueValues(values).sort((left, right) => left.localeCompare(right, "en"));
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

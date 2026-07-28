@@ -4,6 +4,7 @@ import {
   TextureLoader
 } from "three";
 import { vscode } from "./webviewApi.js";
+import { webviewToHostMessageTypes } from "./messageTypes.js";
 
 const TEXTURE_LOAD_SETTLE_MILLISECONDS = 3000;
 
@@ -66,7 +67,7 @@ export class PreviewTextureCache {
           return;
         }
         vscode.postMessage({
-          type: "renderIssue",
+          type: webviewToHostMessageTypes.renderIssue,
           code: "Texture load failed: {0}",
           args: [String(error)]
         });
