@@ -2,6 +2,7 @@ import type { Dirent } from "node:fs";
 import * as path from "node:path";
 import { TextDecoder } from "node:util";
 import { lm, type LocalizedMessage } from "../i18n/messages";
+import { getTextResourceFileKind } from "../resources/resourceSurfaceRegistry";
 import type { PngMetadata } from "../../packages/mc-assets/src";
 
 export type NonJsonIssueSeverity = "warning" | "information";
@@ -141,19 +142,7 @@ function getColormapIssues(packRoot: string, host: PackImageResourceHost): FileR
 }
 
 function getTextResourceKind(fileName: string): "splashes" | "endText" | "postcredits" | null {
-  if (/[\\/]assets[\\/][^\\/]+[\\/]texts[\\/]splashes\.txt$/i.test(fileName)) {
-    return "splashes";
-  }
-
-  if (/[\\/]assets[\\/][^\\/]+[\\/]texts[\\/]end\.txt$/i.test(fileName)) {
-    return "endText";
-  }
-
-  if (/[\\/]assets[\\/][^\\/]+[\\/]texts[\\/]postcredits\.txt$/i.test(fileName)) {
-    return "postcredits";
-  }
-
-  return null;
+  return getTextResourceFileKind(fileName);
 }
 
 function isValidUtf8(bytes: Uint8Array): boolean {

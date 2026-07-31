@@ -1,8 +1,8 @@
 import { isCitPropertiesFileName } from "../../cit/citPaths";
+import { isAssetsModelJsonFileName } from "../../resources/resourceSurfaceRegistry";
 
 export function isModelPreviewFileName(fileName: string): boolean {
-  return /[\\/]assets[\\/][^\\/]+[\\/]models[\\/].+\.json$/i.test(fileName) ||
-    isCitPropertiesFileName(fileName);
+  return isAssetsModelJsonFileName(fileName) || isCitPropertiesFileName(fileName);
 }
 
 export function isPackMetadataFileName(fileName: string): boolean {

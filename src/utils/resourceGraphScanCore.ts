@@ -1,4 +1,6 @@
 import * as path from "node:path";
+import { minecraftResourceDirectory } from "../../packages/mc-assets/src";
+import { ignoredWorkspaceDirectoryNames } from "../resources/resourceSurfaceRegistry";
 import { isModelDocumentPath, isResourceGraphDocumentPath } from "./resourceGraphSearch";
 
 export const resourceGraphConfiguredRootMaxDepth = 32;
@@ -105,11 +107,14 @@ function normalizeMaxDepth(value: number | undefined): number {
 }
 
 function shouldSkipDirectory(name: string): boolean {
-  return ignoredDirectoryNames.has(name.toLowerCase());
+  return ignoredWorkspaceDirectoryNames.has(name.toLowerCase());
 }
+
+const blockstateDocumentPattern = new RegExp(
+  String.raw`[\\/]assets[\\/][^\\/]+[\\/]${minecraftResourceDirectory("blockstate")}[\\/][^\\/]+\.json$`,
+  "i"
+);
 
 export function isBlockstateDocumentPath(fileName: string): boolean {
-  return /[\\/]assets[\\/][^\\/]+[\\/]blockstates[\\/][^\\/]+\.json$/i.test(fileName);
+  return blockstateDocumentPattern.test(fileName);
 }
-
-const ignoredDirectoryNames = new Set([".git", "node_modules", "out"]);

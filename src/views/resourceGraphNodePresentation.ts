@@ -1,3 +1,7 @@
+import {
+  minecraftResourceExtensionIconCategory,
+  minecraftResourceKindIconCategory
+} from "../../packages/mc-assets/src";
 import * as path from "node:path";
 import { getAssetResource, isModelDocumentPath } from "../utils/resourceGraphSearch";
 import type { ResourceReference } from "../utils/resourceReferences/types";
@@ -47,23 +51,28 @@ export function getResourceIcon(fileName: string): string {
   if (extension === ".json") {
     return isModelDocumentPath(fileName) ? "file-code" : "json";
   }
-  if (extension === ".png" || extension === ".ogg") {
+  if (extension === ".glsl") {
+    return "file-code";
+  }
+  const category = extension
+    ? minecraftResourceExtensionIconCategory(extension.slice(1))
+    : undefined;
+  if (category === "media") {
     return "file-media";
   }
-  if (extension === ".vsh" || extension === ".fsh" || extension === ".glsl") {
+  if (category === "code" || extension === ".vsh" || extension === ".fsh") {
     return "file-code";
   }
   return extension ? "file" : "folder";
 }
 
 export function getGeneratedResourceIcon(kind: string): string {
-  if (kind === "model" || kind === "blockstate" || kind === "item" || kind === "font") {
-    return "file-code";
-  }
-  if (kind === "texture" || kind === "sound") {
-    return "file-media";
-  }
-  return "symbol-object";
+  const category = minecraftResourceKindIconCategory(kind);
+  return category === "code"
+    ? "file-code"
+    : category === "media"
+      ? "file-media"
+      : "symbol-object";
 }
 
 export function getFocusedResourceContext(

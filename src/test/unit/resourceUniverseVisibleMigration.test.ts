@@ -54,7 +54,7 @@ describe("resource universe visible migration contract", () => {
 
     assert.ok(workspaceEvents.includes("resourceGraph.invalidatePath(uri, kind)"));
     assert.ok(graph.includes("this.navigation.invalidateUri"));
-    assert.ok(infrastructure.includes('"**/{rsgl.config.json,pack.mcmeta}"'));
+    assert.ok(infrastructure.includes("resourceProjectAnchorWatcherGlob"));
     assert.ok(infrastructure.includes("universe.removeProject(projectId)"));
   });
 

@@ -1,3 +1,4 @@
+import { isTextResourcePath } from "../../packages/mc-assets/src";
 import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
 import * as vscode from "vscode";
 import { packRootFromAssetsPath } from "../../packages/mc-assets/src";
@@ -411,5 +412,5 @@ async function openLocation(location: ResourceLocation): Promise<void> {
 }
 
 function isTextResource(uri: vscode.Uri): boolean {
-  return /\.(?:json|mcmeta|properties|rsgl|vsh|fsh|glsl|txt|lang)$/i.test(uri.path);
+  return isTextResourcePath(uri.path);
 }

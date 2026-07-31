@@ -2,6 +2,8 @@ import * as path from "node:path";
 import { parseAssetsPath, startsWithPathSegment, uniqueValues } from "../../packages/mc-assets/src";
 import type { CitResourceType } from "./citKeyResolution";
 
+export const citresewnSourceDirectory = "citresewn";
+
 export interface CitDocumentInfo {
   namespace: string;
   source: string;
@@ -16,7 +18,7 @@ export function isCitModelFileName(fileName: string): boolean {
 }
 
 export function getCitDocumentSource(fileName: string): string {
-  return getCitDocumentInfo(fileName)?.source ?? "citresewn";
+  return getCitDocumentInfo(fileName)?.source ?? citresewnSourceDirectory;
 }
 
 export function getCitDocumentNamespace(fileName: string): string {
@@ -146,7 +148,7 @@ function isCitRelativePath(segments: string[]): boolean {
   }
 
   const [root] = segments.map(segment => segment.toLowerCase());
-  if (root === "citresewn") {
+  if (root === citresewnSourceDirectory) {
     return true;
   }
 

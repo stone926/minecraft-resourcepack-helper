@@ -7,6 +7,7 @@ import {
   type ResourcePackProjectContextDto,
   type SerializedResourceUri
 } from "../../packages/resource-project/src";
+import { isResourceProjectAnchorFileName } from "../../packages/resource-project/src";
 import { discoverResourcePackProject } from "./resourceProjectDiscovery";
 import type {
   ResourcePackProjectDiscoveryOptions,
@@ -128,7 +129,7 @@ export class ResourcePackProjectService {
     for (const [key, entry] of this.entries) {
       const parent = resourceProjectUriParent(uri);
       const newProjectMetadataCouldShadow = parent !== null
-        && (basename === "rsgl.config.json" || basename === "pack.mcmeta")
+        && isResourceProjectAnchorFileName(basename)
         && isResourceProjectUriWithin(entry.sourceUri, parent);
       if (!entry.dependencyIdentities.has(identity) && !newProjectMetadataCouldShadow) {
         continue;

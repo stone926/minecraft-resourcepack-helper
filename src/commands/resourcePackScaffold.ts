@@ -1,8 +1,35 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getResourceIncomingReferenceRoots } from "../resources/resourceSurfaceRegistry";
 import { defaultPackPng, getPackMcmeta } from "./constants";
 
-export const resourcePackNamespaceDirectories = [
+/** Directories created only by scaffolding, on top of the registry's reference roots. */
+const scaffoldOnlyDirectories = [
+  "textures/block",
+  "textures/font",
+  "textures/gui",
+  "textures/item",
+  "shaders/post"
+];
+
+function referenceRootsUnder(prefix: string): string[] {
+  return getResourceIncomingReferenceRoots()
+    .map(root => root.root)
+    .filter(root => root === prefix || root.startsWith(`${prefix}/`));
+}
+
+function withAncestors(directories: readonly string[]): string[] {
+  const all = new Set<string>();
+  for (const directory of directories) {
+    const segments = directory.split("/");
+    for (let index = 1; index <= segments.length; index++) {
+      all.add(segments.slice(0, index).join("/"));
+    }
+  }
+  return [...all].sort();
+}
+
+export const resourcePackNamespaceDirectories: readonly string[] = [
   "atlases",
   "blockstates",
   "equipment",
@@ -14,31 +41,15 @@ export const resourcePackNamespaceDirectories = [
   path.join("models", "item"),
   "particles",
   "post_effect",
-  "shaders",
-  path.join("shaders", "core"),
-  path.join("shaders", "include"),
-  path.join("shaders", "post"),
   "sounds",
   "texts",
-  "textures",
-  path.join("textures", "block"),
-  path.join("textures", "entity"),
-  path.join("textures", "entity", "bed"),
-  path.join("textures", "entity", "chest"),
-  path.join("textures", "entity", "equipment"),
-  path.join("textures", "entity", "shulker"),
-  path.join("textures", "entity", "signs"),
-  path.join("textures", "entity", "signs", "hanging"),
-  path.join("textures", "effect"),
-  path.join("textures", "font"),
-  path.join("textures", "gui"),
-  path.join("textures", "gui", "sprites"),
-  path.join("textures", "gui", "sprites", "hud"),
-  path.join("textures", "gui", "sprites", "hud", "locator_bar_dot"),
-  path.join("textures", "item"),
-  path.join("textures", "particle"),
-  "waypoint_style"
-] as const;
+  "waypoint_style",
+  ...withAncestors([
+    ...referenceRootsUnder("textures"),
+    ...referenceRootsUnder("shaders"),
+    ...scaffoldOnlyDirectories
+  ]).map(directory => path.join(...directory.split("/")))
+];
 
 export function writePackScaffold(packPath: string, namespace: string, packFormat: string, description: string) {
   fs.mkdirSync(packPath);

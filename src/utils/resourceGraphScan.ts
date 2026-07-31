@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as vscode from "vscode";
 import { getAssetsRootPathCandidates, uniqueValues } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { getResourceGraphDiscoveryGlob } from "../resources/resourceSurfaceRegistry";
+import { getIgnoredWorkspaceGlob, getResourceGraphDiscoveryGlob } from "../resources/resourceSurfaceRegistry";
 import { getResourceConfiguration } from "./resourceConfiguration";
 import { resourceUriKey } from "./resourceGraphSearch";
 import {
@@ -21,7 +21,7 @@ export interface ResourceGraphWorkspaceSnapshot {
 export async function collectResourceGraphWorkspaceSnapshot(): Promise<ResourceGraphWorkspaceSnapshot> {
   const workspaceUris = await vscode.workspace.findFiles(
     getResourceGraphDiscoveryGlob(),
-    "**/node_modules/**"
+    getIgnoredWorkspaceGlob()
   );
   const workspaceSnapshot = classifyResourceGraphPaths(
     workspaceUris.map(uri => uri.fsPath),

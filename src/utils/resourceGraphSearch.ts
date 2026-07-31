@@ -7,6 +7,7 @@ import {
 } from "../../packages/mc-assets/src";
 import {
   getResourceIncomingReferenceRoots,
+  isModelJsonFileName,
   isResourceSurfaceFile,
   type ResourceIncomingReferenceRoot
 } from "../resources/resourceSurfaceRegistry";
@@ -66,7 +67,7 @@ export function resourceUriKey(uri: AssetUriLike): string {
 }
 
 export function isModelDocumentPath(fileName: string): boolean {
-  return /[\\/]models[\\/].+\.json$/i.test(fileName);
+  return isModelJsonFileName(fileName);
 }
 
 export function isResourceJsonDocumentPath(fileName: string): boolean {

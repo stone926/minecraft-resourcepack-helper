@@ -1,3 +1,4 @@
+import { resourceProjectAnchorWatcherGlob } from "../../packages/resource-project/src";
 import * as vscode from "vscode";
 import { ResourcePackProjectService } from "../resourceProject/resourcePackProjectService";
 import { VscodeResourcePackProjectHost } from "../resourceProject/vscodeResourceProjectHost";
@@ -36,7 +37,7 @@ export function createResourceInfrastructure(): ResourceInfrastructure {
   ];
 
   const metadataWatcher = vscode.workspace.createFileSystemWatcher(
-    "**/{rsgl.config.json,pack.mcmeta}"
+    resourceProjectAnchorWatcherGlob
   );
   metadataWatcher.onDidCreate(invalidateMetadata, null, disposables);
   metadataWatcher.onDidChange(invalidateMetadata, null, disposables);

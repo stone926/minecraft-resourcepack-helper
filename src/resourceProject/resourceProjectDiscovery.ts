@@ -14,6 +14,7 @@ import {
   type ResourceProjectTopologyHost,
   type SerializedResourceUri
 } from "../../packages/resource-project/src";
+import { packMetadataFileName, rsglProjectConfigFileName } from "../../packages/resource-project/src";
 import { parseResourceProjectConfiguration } from "./projectConfiguration";
 import type {
   ResourcePackProjectDiscoveryOptions,
@@ -25,7 +26,7 @@ import type {
 } from "./types";
 
 const defaultMaxStatProbes = 96;
-const projectConfigurationFileName = "rsgl.config.json";
+const projectConfigurationFileName = rsglProjectConfigFileName;
 
 interface ProjectConfigurationDiscovery {
   configuration?: ResourceProjectConfigurationDto;
@@ -98,7 +99,7 @@ export async function discoverResourcePackProject(
         ? "conventional"
         : "none";
     }
-    const packMetadataUri = joinResourceProjectUri(context.outputPackRootUri, "pack.mcmeta");
+    const packMetadataUri = joinResourceProjectUri(context.outputPackRootUri, packMetadataFileName);
     rememberDependency(dependencyUris, packMetadataUri);
     const packMetadata = await host.readTextFile(packMetadataUri);
     context = withHostRevisions(

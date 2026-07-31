@@ -4,6 +4,7 @@ import {
   objectMembers,
   stringValue
 } from "../utils/jsonAst";
+import { modelSourceForFileName } from "../resources/resourceSurfaceRegistry";
 import type { ResourceFileRequest } from "../../packages/mc-assets/src";
 import type { ResourceConfiguration } from "./resourceCacheTypes";
 import { ModelParentTraversal } from "./modelParentTraversal";
@@ -105,13 +106,5 @@ function findParentModel(ast: JsonDocumentNode): string | null {
 }
 
 export function modelSourceForFile(fileName: string): string {
-  if (/[\\/]models[\\/]item[\\/]/i.test(fileName)) {
-    return "models/item";
-  }
-
-  if (/[\\/]models[\\/]block[\\/]/i.test(fileName)) {
-    return "models/block";
-  }
-
-  return "models";
+  return modelSourceForFileName(fileName);
 }

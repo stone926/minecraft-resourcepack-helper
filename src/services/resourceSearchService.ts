@@ -1,3 +1,8 @@
+import {
+  isResourceProjectAnchorFileName,
+  resourceProjectAnchorSearchGlob
+} from "../../packages/resource-project/src";
+import { getIgnoredWorkspaceGlob } from "../resources/resourceSurfaceRegistry";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { uniqueValues } from "../../packages/mc-assets/src";
@@ -184,7 +189,7 @@ export class ResourceSearchService implements vscode.Disposable {
       return;
     }
     const basename = path.basename(fileName).toLowerCase();
-    if (basename !== "pack.mcmeta" && basename !== "rsgl.config.json") {
+    if (!isResourceProjectAnchorFileName(basename)) {
       return;
     }
     if (kind === "change") {
@@ -308,8 +313,8 @@ export class ResourceSearchService implements vscode.Disposable {
 
 async function discoverProjectAnchors(signal: AbortSignal): Promise<vscode.Uri[]> {
   const discovered = await vscode.workspace.findFiles(
-    "{**/pack.mcmeta,**/rsgl.config.json}",
-    "{**/.git/**,**/node_modules/**,**/out/**}",
+    resourceProjectAnchorSearchGlob,
+    getIgnoredWorkspaceGlob(),
     undefined,
     cancellationToken(signal)
   );

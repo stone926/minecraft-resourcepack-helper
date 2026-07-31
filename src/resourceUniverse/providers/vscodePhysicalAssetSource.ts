@@ -5,6 +5,7 @@ import {
   uniqueValues
 } from "../../../packages/mc-assets/src";
 import {
+  packMetadataFileName,
   createStableResourceProjectRevision,
   joinResourceProjectUri,
   resourceProjectUriBasename,
@@ -17,6 +18,7 @@ import {
 import type { ResourcePackProjectService } from "../../resourceProject";
 import { mapWithConcurrency } from "../../utils/asyncWorkPool";
 import { throwIfAborted } from "../../utils/abortError";
+import { ignoredWorkspaceDirectoryNames } from "../../resources/resourceSurfaceRegistry";
 import type { ResourceContributionRequest, ResourceLayerRole } from "../core";
 import type { ArchiveResourceStore } from "../virtualFs/archiveResourceStore";
 import type { PhysicalAssetScannedDocument } from "./physicalAssetReferenceAdapter";
@@ -28,6 +30,7 @@ import type {
 import { isResourceDocumentUriWithin } from "./resourceDocumentUri";
 
 const maximumLayerDepth = 32;
+/** Narrower indexing subset of mc-assets' textResourceFileExtensions (scan policy). */
 const textExtensions = new Set([".json", ".lang", ".properties", ".vsh", ".fsh", ".glsl"]);
 const indexedExtensions = new Set([
   ...textExtensions,
@@ -39,7 +42,7 @@ const indexedExtensions = new Set([
   ".woff",
   ".woff2"
 ]);
-const ignoredDirectories = new Set([".git", "node_modules", "out"]);
+const ignoredDirectories = ignoredWorkspaceDirectoryNames;
 
 interface ScannableLayer {
   descriptor: ResourceLayerDescriptor;
@@ -331,7 +334,7 @@ async function packAssetsRoots(
   let metadata: ReturnType<typeof parsePackMetadata> | undefined;
   try {
     const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(
-      joinResourceProjectUri(packRootUri, "pack.mcmeta"),
+      joinResourceProjectUri(packRootUri, packMetadataFileName),
       true
     ));
     metadata = parsePackMetadata(JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown);

@@ -1,5 +1,5 @@
 import { uniqueValues } from "../../packages/mc-assets/src";
-import { isCitModelFileName, isCitPropertiesFileName } from "../cit/citPaths";
+import { citresewnSourceDirectory, isCitModelFileName, isCitPropertiesFileName } from "../cit/citPaths";
 import type { JsonDocumentNode } from "../utils/jsonAst";
 import {
   getEquipmentReferences,
@@ -99,7 +99,7 @@ const referenceCapabilities: readonly ResourceSurfaceCapability[] = [
 const modelPreviewWhen =
   "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/";
 const citPreviewWhen =
-  "resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]citresewn(?:[\\\\/]|$)/";
+  `resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${citresewnSourceDirectory}(?:[\\\\/]|$)/`;
 const citGenerationWhen =
   "resourceExtname =~ /\\.(json|png)$/ && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:items|models[\\\\/]item|textures[\\\\/]item)(?:[\\\\/]|$)/";
 
@@ -204,7 +204,7 @@ const referenceSurfaceRegistry = [
     id: "citModel",
     documentKind: "citModel",
     language: "json",
-    selectorPatterns: ["**/assets/*/citresewn/*.json", "**/assets/*/citresewn/**/*.json"],
+    selectorPatterns: [`**/assets/*/${citresewnSourceDirectory}/*.json`, `**/assets/*/${citresewnSourceDirectory}/**/*.json`],
     capabilities: [...referenceCapabilities, "citCodeAction"],
     referenceExtraction: { mode: "json", extract: getCitModelReferences },
     referenceTargets: ["model", "texture"],
@@ -214,8 +214,8 @@ const referenceSurfaceRegistry = [
   {
     id: "citProperties",
     documentKind: "citProperties",
-    selectorPatterns: ["**/assets/*/citresewn/*.properties", "**/assets/*/citresewn/**/*.properties"],
-    watcherPatterns: ["**/assets/*/citresewn/*.properties", "**/assets/*/citresewn/**/*.properties"],
+    selectorPatterns: [`**/assets/*/${citresewnSourceDirectory}/*.properties`, `**/assets/*/${citresewnSourceDirectory}/**/*.properties`],
+    watcherPatterns: [`**/assets/*/${citresewnSourceDirectory}/*.properties`, `**/assets/*/${citresewnSourceDirectory}/**/*.properties`],
     capabilities: [...referenceCapabilities, "citLanguage", "citCodeAction"],
     referenceExtraction: { mode: "citProperties" },
     referenceTargets: ["model", "texture"],
@@ -251,8 +251,8 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
     id: "textureAssets",
     watcherPatterns: [
       "**/assets/*/textures/**/*.png",
-      "**/assets/*/citresewn/*.png",
-      "**/assets/*/citresewn/**/*.png"
+      `**/assets/*/${citresewnSourceDirectory}/*.png`,
+      `**/assets/*/${citresewnSourceDirectory}/**/*.png`
     ],
     incomingReferenceRoots: [
       { root: "textures" },
@@ -521,4 +521,56 @@ const shaderSourceExtensions = new Set(
 export function isShaderSourceFileName(fileName: string): boolean {
   const dot = fileName.lastIndexOf(".");
   return dot >= 0 && shaderSourceExtensions.has(fileName.slice(dot + 1).toLowerCase());
+}
+
+/** Directories every workspace scan and anchor discovery skips. */
+export const ignoredWorkspaceDirectoryNames: ReadonlySet<string> = new Set([".git", "node_modules", "out"]);
+
+/** `findFiles` exclude glob derived from the ignored-directory set. */
+export function getIgnoredWorkspaceGlob(): string {
+  return `{${[...ignoredWorkspaceDirectoryNames].map(name => `**/${name}/**`).join(",")}}`;
+}
+
+const modelsSurfacePattern = resourceSurfaceRegistry
+  .find(surface => surface.id === "models")?.fileNamePattern;
+
+/** Model-JSON test shared with graph search; anchored variant is for previews. */
+export function isModelJsonFileName(fileName: string): boolean {
+  return modelsSurfacePattern?.test(fileName) ?? false;
+}
+
+const assetsModelJsonPattern = /[\\/]assets[\\/][^\\/]+[\\/]models[\\/].+\.json$/i;
+
+export function isAssetsModelJsonFileName(fileName: string): boolean {
+  return assetsModelJsonPattern.test(fileName);
+}
+
+const modelsItemPrefixPattern = /[\\/]models[\\/]item[\\/]/i;
+const modelsBlockPrefixPattern = /[\\/]models[\\/]block[\\/]/i;
+
+/** Blockstate-model source directory owning a model file (mirrors modelsItem/modelsBlock surfaces). */
+export function modelSourceForFileName(fileName: string): "models/item" | "models/block" | "models" {
+  if (modelsItemPrefixPattern.test(fileName)) {
+    return "models/item";
+  }
+  if (modelsBlockPrefixPattern.test(fileName)) {
+    return "models/block";
+  }
+  return "models";
+}
+
+export type TextResourceFileKind = "splashes" | "endText" | "postcredits";
+
+const textResourceKindsByBaseName: ReadonlyMap<string, TextResourceFileKind> = new Map([
+  ["splashes.txt", "splashes"],
+  ["end.txt", "endText"],
+  ["postcredits.txt", "postcredits"]
+]);
+
+const textsDirectoryPattern = /[\\/]assets[\\/][^\\/]+[\\/]texts[\\/]([^\\/]+)$/i;
+
+/** Kind of a semantic `assets/<ns>/texts/*.txt` document, or null. */
+export function getTextResourceFileKind(fileName: string): TextResourceFileKind | null {
+  const match = textsDirectoryPattern.exec(fileName);
+  return match ? textResourceKindsByBaseName.get(match[1].toLowerCase()) ?? null : null;
 }

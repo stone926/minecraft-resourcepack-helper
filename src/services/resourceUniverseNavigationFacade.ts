@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import {
+  minecraftReferenceKindForResourceKind,
   canonicalizeResourceGraphIdentity,
   canonicalizeResourceGraphOutputPath,
   minecraftResourceTarget,
@@ -1073,10 +1074,8 @@ function visibleCoverage(coverage: ProviderCoverage | undefined): UnifiedResourc
 }
 
 function referenceKindForLogicalKind(kind: string): ResourceReference["kind"] | null {
-  if (kind === "shaderVertex" || kind === "shaderFragment") {
-    return "shader";
-  }
-  return isResourceReferenceKind(kind) ? kind : null;
+  const collapsed = minecraftReferenceKindForResourceKind(kind);
+  return collapsed !== null && isResourceReferenceKind(collapsed) ? collapsed : null;
 }
 
 function resolvedProducer(result: ResourceNavigationResult | undefined): ResourceProducer | undefined {

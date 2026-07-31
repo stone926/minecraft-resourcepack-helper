@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
+import { getTextResourceFileKind } from "../resources/resourceSurfaceRegistry";
 import {
   getTextResourceIssues,
   type FileResourceIssue,
@@ -509,5 +510,5 @@ function parseNamespacedValue(value: string, defaultNamespace: string | null): {
 }
 
 function isTextResourceDocument(fileName: string): boolean {
-  return /[\\/]assets[\\/][^\\/]+[\\/]texts[\\/](?:splashes|end|postcredits)\.txt$/i.test(fileName);
+  return getTextResourceFileKind(fileName) !== null;
 }
