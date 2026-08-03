@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getModelPreviewWatcherPatterns } from "../../../modelPreview/host/modelPreviewWatchTargets";
 import { readCombinedModelPreviewScript, readModelPreviewScripts } from "../helpers/webviewScripts";
 
 interface PackageJson {
@@ -158,8 +159,17 @@ describe("model preview manifest", () => {
       path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWatcher.ts"),
       "utf8"
     );
+    const patterns = getModelPreviewWatcherPatterns();
 
-    assert.ok(watcherSource.includes('this.watchWorkspaceFiles("**/pack.mcmeta")'));
+    assert.ok(watcherSource.includes("getModelPreviewWatcherPatterns"), "watcher globs should derive from the resource surface registry");
+    // The derived set must cover the previously hand-written watch list.
+    assert.ok(patterns.includes("**/models/**/*.json"), "models selector covers **/assets/*/models/**/*.json");
+    assert.ok(patterns.includes("**/assets/*/citresewn/**/*.json"));
+    assert.ok(patterns.includes("**/assets/*/textures/**/*.png"));
+    assert.ok(patterns.includes("**/assets/*/citresewn/**/*.png"));
+    assert.ok(patterns.includes("**/assets/*/textures/**/*.png.mcmeta"));
+    assert.ok(patterns.includes("**/assets/*/citresewn/**/*.properties"));
+    assert.ok(patterns.includes("**/pack.mcmeta"));
     assert.ok(watcherSource.includes("isPackMetadataFileName(event.document.fileName)"));
     assert.ok(watcherSource.includes("onDidDeleteFiles"));
     assert.ok(watcherSource.includes("onDidRenameFiles"));

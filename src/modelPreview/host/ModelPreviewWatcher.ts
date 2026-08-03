@@ -3,6 +3,7 @@ import { isCitPropertiesFileName } from "../../cit/citPaths";
 import { affectsResourceResolutionConfiguration } from "../../utils/resourceConfigurationKeys";
 import { ModelDependencyTracker } from "../service/ModelDependencyTracker";
 import { isModelPreviewFileName, isPackMetadataFileName } from "./modelPreviewFiles";
+import { getModelPreviewWatcherPatterns } from "./modelPreviewWatchTargets";
 import { ModelPreviewRefreshScheduler } from "./ModelPreviewRefreshScheduler";
 
 export class ModelPreviewWatcher implements vscode.Disposable {
@@ -15,13 +16,9 @@ export class ModelPreviewWatcher implements vscode.Disposable {
     private readonly updateTargetFromActiveEditor: (uri: vscode.Uri) => void
   ) {
     this.refreshScheduler = new ModelPreviewRefreshScheduler(reason => this.refresh(reason));
-    this.watchWorkspaceFiles("**/assets/*/models/**/*.json");
-    this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.json");
-    this.watchWorkspaceFiles("**/assets/*/textures/**/*.png");
-    this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.png");
-    this.watchWorkspaceFiles("**/assets/*/textures/**/*.png.mcmeta");
-    this.watchWorkspaceFiles("**/assets/*/citresewn/**/*.properties");
-    this.watchWorkspaceFiles("**/pack.mcmeta");
+    for (const pattern of getModelPreviewWatcherPatterns()) {
+      this.watchWorkspaceFiles(pattern);
+    }
 
     this.disposables.push(vscode.workspace.onDidChangeTextDocument(event => {
       if (event.document.uri.scheme !== "file" || (
