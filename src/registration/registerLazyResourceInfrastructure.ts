@@ -11,7 +11,6 @@ import type {
   GeneratedResourceProjectRefresher,
   ResourceUniverseDocument,
   ResourceUniverseNavigation,
-  UnifiedBlockResourceSet,
   UnifiedDocumentProjection,
   UnifiedLogicalDefinitionResolution,
   UnifiedLogicalReferenceLocations,
@@ -168,9 +167,6 @@ export class LazyResourceUniverseNavigation implements ResourceUniverseNavigatio
     return this.target?.getKnownResource(producerId, target);
   }
 
-  public getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet> {
-    return this.withNavigation(navigation => navigation.getKnownBlockstateResources(signal));
-  }
 
   public getProducerOutgoingReferences(
     producerId: string,

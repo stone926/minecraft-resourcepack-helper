@@ -61,7 +61,7 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
     await Promise.all(anchors.map(uri =>
       this.navigation.ensureProjectForUri(toVscodeUri(uri))
     ));
-    const generated = await this.navigation.getKnownBlockstateResources();
+    const generated = await this.navigation.getKnownResources(["blockstate"]);
     const resources = generated.resources
       .filter(resource => resource.producer.origin === "generated")
       .map(resource => ({

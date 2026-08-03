@@ -45,7 +45,7 @@ describe("lazy resource infrastructure", () => {
 
     const firstEnsure = owner.ensureResources();
     const secondEnsure = owner.ensureResources();
-    const query = owner.navigation.getKnownBlockstateResources();
+    const query = owner.navigation.getKnownResources(["blockstate"]);
     assert.strictEqual(moduleLoads, 1);
     assert.strictEqual(firstEnsure, secondEnsure);
     releaseModule?.();
@@ -92,7 +92,7 @@ describe("lazy resource infrastructure", () => {
     );
     let creates = 0;
     const owner = new LazyResourceInfrastructureOwner<FakeInfrastructure>(() => pendingModule);
-    const query = owner.navigation.getKnownBlockstateResources();
+    const query = owner.navigation.getKnownResources(["blockstate"]);
 
     owner.dispose();
     releaseModule?.({
@@ -220,17 +220,12 @@ class FakeNavigation implements ResourceUniverseNavigation {
       throw new Error("not used");
     };
 
-  public readonly getKnownResources:
-    ResourceUniverseNavigation["getKnownResources"] = async () => {
-      throw new Error("not used");
-    };
-
   public readonly getKnownResource:
     ResourceUniverseNavigation["getKnownResource"] = () => undefined;
 
-  public readonly getKnownBlockstateResources:
-    ResourceUniverseNavigation["getKnownBlockstateResources"] = async () =>
-      FakeNavigation.blockstates;
+  public readonly getKnownResources:
+    ResourceUniverseNavigation["getKnownResources"] = async kinds =>
+      kinds.includes("blockstate") ? FakeNavigation.blockstates : { resources: [], coverage: "authoritative" };
 
   public readonly getProducerOutgoingReferences:
     ResourceUniverseNavigation["getProducerOutgoingReferences"] = async () => {

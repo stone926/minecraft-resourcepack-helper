@@ -210,7 +210,6 @@ export interface ResourceUniverseNavigation {
     producerId: string,
     target: ResourceGraphLogicalKey
   ): UnifiedResourceProducerTarget | undefined;
-  getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet>;
   getProducerOutgoingReferences(
     producerId: string,
     options?: UnifiedResourceQueryOptions
@@ -579,9 +578,6 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
   }
 
   /** Deferred global Blocks projection over already-discovered project contexts. */
-  public async getKnownBlockstateResources(signal?: AbortSignal): Promise<UnifiedBlockResourceSet> {
-    return this.getKnownResources(["blockstate"], { signal });
-  }
 
   /** Deferred local-project inventory over already-discovered project contexts. */
   public async getKnownResources(
