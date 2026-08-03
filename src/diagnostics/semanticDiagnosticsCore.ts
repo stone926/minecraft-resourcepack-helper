@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
 import { getTextResourceFileKind } from "../resources/resourceSurfaceRegistry";
+import { maxModelParentDepth } from "../services/modelParentTraversal";
 import {
   getTextResourceIssues,
   type FileResourceIssue,
@@ -251,7 +252,9 @@ function getModelDiagnostics(
   const parent = getObjectMember(ast.body, "parent");
   const chain = host.getModelParentChain(document, ast, configuration);
 
-  if (chain.length > 11) {
+  // The chain includes the entry model itself, so a chain of maxModelParentDepth + 1
+  // models is still within Minecraft's parent-depth budget.
+  if (chain.length > maxModelParentDepth + 1) {
     pushDiagnostic(diagnostics, parent?.value ?? ast.body, lm("Model parent chain exceeds Minecraft's maximum depth of 10."));
   }
 
