@@ -97,6 +97,7 @@ import {
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
+const openingDocuments = new WeakSet<TextDocument>();
 let semanticCache = RsglWorkspaceSemanticCache.create();
 const resourceAnalysisCache = new RsglResourceAnalysisCache();
 const projectTargetCache = new RsglProjectTargetCache();
@@ -205,18 +206,24 @@ connection.onDidChangeConfiguration(params => {
 });
 
 documents.onDidOpen(event => {
-  invalidateDocument(event.document);
+  openingDocuments.add(event.document);
+  synchronizeDocumentSource(event.document);
   scheduleAffectedDocuments(nativeFileNameFromUri(event.document.uri), event.document.uri, 0);
 });
 documents.onDidChangeContent(event => {
-  invalidateDocument(event.document);
+  // TextDocuments emits onDidChangeContent once for the same object on open.
+  // The onDidOpen path already synchronized and scheduled that initial text.
+  if (openingDocuments.delete(event.document)) {
+    return;
+  }
+  invalidateDocumentSource(event.document);
   scheduleAffectedDocuments(nativeFileNameFromUri(event.document.uri), event.document.uri);
 });
 documents.onDidClose(event => {
   const fileName = nativeFileNameFromUri(event.document.uri);
   diagnosticScheduler.drop(event.document.uri);
   dependencyVerificationUris.delete(event.document.uri);
-  semanticCache.invalidatePath(fileName);
+  semanticCache.closePath(fileName);
   dependenciesByDocument.delete(event.document.uri);
   publishDependencyPaths();
   publishResourceSnapshotInvalidations("document", [fileName]);
@@ -503,7 +510,13 @@ function validateDocument(document: TextDocument): void {
   }
 }
 
-function invalidateDocument(document: TextDocument): void {
+function synchronizeDocumentSource(document: TextDocument): void {
+  const fileName = nativeFileNameFromUri(document.uri);
+  semanticCache.synchronizePath(fileName);
+  publishResourceSnapshotInvalidations("document", [fileName]);
+}
+
+function invalidateDocumentSource(document: TextDocument): void {
   const fileName = nativeFileNameFromUri(document.uri);
   semanticCache.invalidatePath(fileName);
   publishResourceSnapshotInvalidations("document", [fileName]);

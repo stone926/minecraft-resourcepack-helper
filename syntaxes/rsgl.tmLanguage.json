@@ -92,13 +92,19 @@
     "blockstateDeclarations": {
       "patterns": [
         {
-          "begin": "\\b(blockstate)([ \\t]+)(variants|multipart)([ \\t]+)(?:(?:`(?:\\\\.|[^`\\\\])*`)|(?:\\\"(?:\\\\.|[^\\\"\\\\])*\\\")|[^\\r\\n{`\\\"])+?[ \\t]*(\\{)",
+          "begin": "\\b(blockstate)([ \\t]+)(variants|multipart)([ \\t]+)(?:(`(?:\\\\.|[^`\\\\])*`)|(\\\"(?:\\\\.|[^\\\"\\\\])*\\\")|([^\\r\\n{`\\\"]+?))[ \\t]*(\\{)",
           "beginCaptures": {
             "1": {
               "name": "storage.type.rsgl"
             },
             "3": {
               "name": "storage.modifier.blockstate-mode.rsgl"
+            },
+            "5": {
+              "name": "string.template.rsgl"
+            },
+            "6": {
+              "name": "string.quoted.double.rsgl"
             }
           },
           "end": "\\}",

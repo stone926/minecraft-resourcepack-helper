@@ -50,6 +50,18 @@ function expectToken(
 }
 
 describe("RSGL semantic tokens", () => {
+  it("memoizes tokens for an unchanged bound semantic model", () => {
+    const model = bindRsglModule(parseRsgl("let value = 1"));
+    const first = getRsglSemanticTokens(model);
+
+    assert.strictEqual(Object.isFrozen(first), true);
+    assert.strictEqual(getRsglSemanticTokens(model), first);
+    assert.notStrictEqual(
+      getRsglSemanticTokens(bindRsglModule(parseRsgl("let value = 2"))),
+      first
+    );
+  });
+
   const declaration = modifier("declaration");
   const readonlyFlag = modifier("readonly");
   const defaultLibrary = modifier("defaultLibrary");

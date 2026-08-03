@@ -99,6 +99,27 @@ export class RsglWorkspaceSourceCache {
     this.directoryListings.clear();
   }
 
+  /** Drops one cached source without implying a filesystem structure change. */
+  public evictPath(fileName: string): void {
+    this.sourceFiles.delete(rsglPathKey(normalizeSourceFileName(fileName)));
+  }
+
+  /**
+   * Reconciles an open-document lifecycle transition with the effective source.
+   * Parsed identity is retained when opening or closing a document does not
+   * change its text, allowing dependent semantic programs to remain hot.
+   */
+  public synchronizePath(fileName: string): boolean {
+    const normalizedFileName = normalizeSourceFileName(fileName);
+    const fileKey = rsglPathKey(normalizedFileName);
+    const previous = this.sourceFiles.get(fileKey)?.sourceFile ?? null;
+    const current = this.readSourceFile(normalizedFileName);
+    if (!previous || !current) {
+      this.directoryListings.clear();
+    }
+    return current !== previous;
+  }
+
   public invalidateAll(): void {
     this.sourceFiles.clear();
     this.directoryListings.clear();
@@ -280,6 +301,13 @@ export class RsglWorkspaceSourceCache {
       return cached.sourceFile;
     }
 
+    if (cached && sourceFileTextEquals(cached.sourceFile, readResult.text)) {
+      cached.kind = kind;
+      cached.versionKey = readResult.versionKey;
+      cached.verifiedAtMs = verifiedAtMs;
+      return cached.sourceFile;
+    }
+
     const sourceFile = {
       fileName,
       module: parseRsgl(readResult.text)
@@ -370,6 +398,23 @@ function hashText(text: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return hash.toString(36);
+}
+
+function sourceFileTextEquals(sourceFile: RsglSourceFile, text: string): boolean {
+  let offset = 0;
+  for (const token of sourceFile.module.tokens) {
+    for (const trivia of token.leadingTrivia) {
+      if (!text.startsWith(trivia.text, offset)) {
+        return false;
+      }
+      offset += trivia.text.length;
+    }
+    if (!text.startsWith(token.text, offset)) {
+      return false;
+    }
+    offset += token.text.length;
+  }
+  return offset === text.length;
 }
 
 function fsVersionKey(stat: RsglWorkspaceSourceFileStat): string {

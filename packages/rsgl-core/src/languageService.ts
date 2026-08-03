@@ -123,7 +123,7 @@ export function getRsglDocumentCompletionItems(
 export function getRsglDocumentSemanticTokens(
   document: RsglLanguageDocument,
   workspace: RsglLanguageWorkspace
-): RsglSemanticToken[] {
+): readonly RsglSemanticToken[] {
   return getRsglSemanticTokens(semanticModelForRsglDocument(document, workspace));
 }
 

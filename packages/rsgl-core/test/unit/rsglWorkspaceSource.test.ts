@@ -120,6 +120,32 @@ describe("RSGL workspace source cache", () => {
     assert.strictEqual(io.reads, 2);
   });
 
+  it("retains parsed source identity across unchanged preview open and close transitions", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-source-preview-");
+    try {
+      const mainFile = path.join(root, "preview.rsgl");
+      const text = "let value = 1";
+      let open = false;
+      fs.writeFileSync(mainFile, text);
+
+      const cache = new RsglWorkspaceSourceCache();
+      cache.setOpenTextDocumentProvider(fileName => open && path.normalize(fileName) === path.normalize(mainFile)
+        ? { fileName: mainFile, version: 1, getText: () => text }
+        : null);
+
+      const fromDisk = cache.loadProgramFromEntry(mainFile)[0];
+      open = true;
+      assert.strictEqual(cache.synchronizePath(mainFile), false);
+      assert.strictEqual(cache.loadProgramFromEntry(mainFile)[0], fromDisk);
+
+      open = false;
+      assert.strictEqual(cache.synchronizePath(mainFile), false);
+      assert.strictEqual(cache.loadProgramFromEntry(mainFile)[0], fromDisk);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("caches directory enumeration until TTL expiry or watcher invalidation", () => {
     const root = path.resolve("virtual-directory-cache");
     const mainFile = path.join(root, "main.rsgl");

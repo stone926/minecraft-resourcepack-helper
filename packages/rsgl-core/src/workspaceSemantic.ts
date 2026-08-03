@@ -28,6 +28,11 @@ export interface RsglWorkspaceSemanticLoadOptions {
   semanticConfigurationFingerprint?: string;
 }
 
+export interface RsglWorkspaceSemanticCacheOptions extends RsglWorkspaceSourceCacheOptions {
+  /** Number of recently closed entry programs retained for preview-tab reopen. */
+  maximumRetainedClosedPaths?: number;
+}
+
 interface RsglCachedSemanticProgram {
   signature: string;
   dependencyKeys: Set<string>;
@@ -36,40 +41,114 @@ interface RsglCachedSemanticProgram {
 }
 
 const defaultSemanticConfigurationFingerprint = resolveRsglCompileConfiguration().semanticFingerprint;
+const defaultMaximumRetainedClosedPaths = 32;
 
 export class RsglWorkspaceSemanticCache {
   private readonly sourceFileIds = new WeakMap<RsglSourceFile, number>();
   private readonly programs = new Map<string, RsglCachedSemanticProgram>();
+  private readonly retainedClosedPaths = new Map<string, string>();
+  private readonly maximumRetainedClosedPaths: number;
   private nextSourceFileId = 1;
 
-  public constructor(private readonly sourceCache = new RsglWorkspaceSourceCache()) { }
+  public constructor(
+    private readonly sourceCache = new RsglWorkspaceSourceCache(),
+    maximumRetainedClosedPaths = defaultMaximumRetainedClosedPaths
+  ) {
+    this.maximumRetainedClosedPaths = normalizeRetainedClosedPathLimit(maximumRetainedClosedPaths);
+  }
 
-  public static create(options: RsglWorkspaceSourceCacheOptions = {}): RsglWorkspaceSemanticCache {
-    return new RsglWorkspaceSemanticCache(new RsglWorkspaceSourceCache(options));
+  public static create(options: RsglWorkspaceSemanticCacheOptions = {}): RsglWorkspaceSemanticCache {
+    return new RsglWorkspaceSemanticCache(
+      new RsglWorkspaceSourceCache(options),
+      normalizeRetainedClosedPathLimit(options.maximumRetainedClosedPaths)
+    );
   }
 
   public setOpenTextDocumentProvider(provider: RsglOpenTextDocumentProvider | null): void {
     this.sourceCache.setOpenTextDocumentProvider(provider);
+    this.retainedClosedPaths.clear();
     this.invalidatePrograms();
   }
 
   public invalidatePath(fileName: string): void {
     const normalizedFileName = resolveRsglPath(fileName);
-    const key = rsglPathKey(normalizedFileName);
+    this.retainedClosedPaths.delete(rsglPathKey(normalizedFileName));
     this.sourceCache.invalidatePath(normalizedFileName);
+    this.invalidateProgramsForPath(normalizedFileName);
+  }
 
+  /**
+   * Updates the effective open/disk source without evicting semantic work when
+   * a document lifecycle transition leaves its content unchanged.
+   */
+  public synchronizePath(fileName: string): boolean {
+    const normalizedFileName = resolveRsglPath(fileName);
+    this.retainedClosedPaths.delete(rsglPathKey(normalizedFileName));
+    return this.synchronizeEffectivePath(normalizedFileName);
+  }
+
+  /** Retains one unchanged closed entry in a bounded preview-reopen window. */
+  public closePath(fileName: string): boolean {
+    const normalizedFileName = resolveRsglPath(fileName);
+    const changed = this.synchronizeEffectivePath(normalizedFileName);
+    const entryProgramKey = semanticProgramKey("entry", normalizedFileName);
+    if (!changed && this.programs.has(entryProgramKey)) {
+      this.retainClosedPath(normalizedFileName);
+    } else {
+      this.retainedClosedPaths.delete(rsglPathKey(normalizedFileName));
+      this.evictEntryPath(normalizedFileName);
+    }
+    return changed;
+  }
+
+  private synchronizeEffectivePath(normalizedFileName: string): boolean {
+    const changed = this.sourceCache.synchronizePath(normalizedFileName);
+    if (changed) {
+      this.invalidateProgramsForPath(normalizedFileName);
+    }
+    return changed;
+  }
+
+  private retainClosedPath(normalizedFileName: string): void {
+    const key = rsglPathKey(normalizedFileName);
+    this.retainedClosedPaths.delete(key);
+    this.retainedClosedPaths.set(key, normalizedFileName);
+    while (this.retainedClosedPaths.size > this.maximumRetainedClosedPaths) {
+      const oldest = this.retainedClosedPaths.entries().next().value as [string, string] | undefined;
+      if (!oldest) {
+        return;
+      }
+      this.retainedClosedPaths.delete(oldest[0]);
+      this.evictEntryPath(oldest[1]);
+    }
+  }
+
+  private evictEntryPath(normalizedFileName: string): void {
+    const key = rsglPathKey(normalizedFileName);
+    this.programs.delete(semanticProgramKey("entry", normalizedFileName));
+    if (![...this.programs.values()].some(program => program.dependencyKeys.has(key))) {
+      this.sourceCache.evictPath(normalizedFileName);
+    }
+  }
+
+  private invalidateProgramsForPath(normalizedFileName: string): void {
+    const key = rsglPathKey(normalizedFileName);
     for (const [programKey, cached] of this.programs) {
       if (
         cached.dependencyKeys.has(key) ||
         (cached.rootDirectoryKey && isPathInsideOrEqual(normalizedFileName, cached.rootDirectoryKey))
       ) {
         this.programs.delete(programKey);
+        if (cached.result.sourceKind === "entry") {
+          this.retainedClosedPaths.delete(rsglPathKey(cached.result.sourceName));
+        }
       }
     }
   }
 
   public invalidateAll(): void {
     this.sourceCache.invalidateAll();
+    this.retainedClosedPaths.clear();
     this.invalidatePrograms();
   }
 
@@ -115,7 +194,7 @@ export class RsglWorkspaceSemanticCache {
       semanticConfigurationFingerprint: string;
     }
   ): RsglWorkspaceSemanticProgram {
-    const programKey = `${sourceKind}:${rsglPathKey(sourceName)}`;
+    const programKey = semanticProgramKey(sourceKind, sourceName);
     const signature = this.createProgramSignature(files, options.semanticConfigurationFingerprint);
     const cached = this.programs.get(programKey);
     if (cached?.signature === signature) {
@@ -164,4 +243,17 @@ export class RsglWorkspaceSemanticCache {
 
 function isPathInsideOrEqual(fileName: string, directoryKey: string): boolean {
   return isRsglPathInsideOrEqual(fileName, directoryKey);
+}
+
+function normalizeRetainedClosedPathLimit(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : defaultMaximumRetainedClosedPaths;
+}
+
+function semanticProgramKey(
+  sourceKind: RsglWorkspaceSemanticProgram["sourceKind"],
+  sourceName: string
+): string {
+  return `${sourceKind}:${rsglPathKey(sourceName)}`;
 }

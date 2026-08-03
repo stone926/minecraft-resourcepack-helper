@@ -1987,15 +1987,37 @@ describe("RSGL LSP server core", () => {
       diagnosticSchedulerSource.includes("semanticTokens.refresh"),
       "dependent documents receive one global token refresh after validation becomes idle"
     );
-    const invalidateDocumentSource = serverSource.slice(
-      serverSource.indexOf("function invalidateDocument"),
+    const synchronizeDocumentSource = serverSource.slice(
+      serverSource.indexOf("function synchronizeDocumentSource"),
       serverSource.indexOf("function completionItemsForDocument")
     );
     assert.strictEqual(
-      invalidateDocumentSource.includes("semanticTokens.refresh"),
+      synchronizeDocumentSource.includes("semanticTokens.refresh"),
       false,
       "document edits rely on the client's document refresh instead of requesting a global refresh per key"
     );
+    assert.ok(
+      synchronizeDocumentSource.includes("semanticCache.synchronizePath(fileName)"),
+      "document lifecycle transitions retain unchanged semantic programs"
+    );
+    assert.ok(
+      serverSource.includes("openingDocuments.delete(event.document)"),
+      "the synthetic content event emitted for didOpen must not evict the synchronized preview cache"
+    );
+    const invalidateDocumentSource = serverSource.slice(
+      serverSource.indexOf("function invalidateDocumentSource"),
+      serverSource.indexOf("function completionItemsForDocument")
+    );
+    assert.ok(
+      invalidateDocumentSource.includes("semanticCache.invalidatePath(fileName)"),
+      "actual edits stay lazily invalidated instead of parsing inside the change notification"
+    );
+    const closeDocumentSource = serverSource.slice(
+      serverSource.indexOf("documents.onDidClose"),
+      serverSource.indexOf("connection.onDidChangeWatchedFiles")
+    );
+    assert.ok(closeDocumentSource.includes("semanticCache.closePath(fileName)"));
+    assert.strictEqual(closeDocumentSource.includes("semanticCache.invalidatePath(fileName)"), false);
     const affectedDocumentsSource = serverSource.slice(
       serverSource.indexOf("function scheduleAffectedDocuments"),
       serverSource.indexOf("function semanticDependencyPaths")

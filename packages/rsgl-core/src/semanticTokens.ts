@@ -45,10 +45,10 @@ export const rsglSemanticTokenModifiers: readonly string[] = [
  * identifiers, so a token can never span a line break.
  */
 export interface RsglSemanticToken {
-  start: number;
-  length: number;
-  tokenType: number;
-  tokenModifiers: number;
+  readonly start: number;
+  readonly length: number;
+  readonly tokenType: number;
+  readonly tokenModifiers: number;
 }
 
 const namespaceTokenType = rsglSemanticTokenTypes.indexOf("namespace");
@@ -67,8 +67,14 @@ interface RsglTokenClassification {
   tokenModifiers: number;
 }
 
+const tokensBySemanticModel = new WeakMap<RsglSemanticModel, readonly RsglSemanticToken[]>();
+
 /** Computes the semantic highlighting tokens for one bound RSGL module. */
-export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticToken[] {
+export function getRsglSemanticTokens(model: RsglSemanticModel): readonly RsglSemanticToken[] {
+  const cached = tokensBySemanticModel.get(model);
+  if (cached) {
+    return cached;
+  }
   const candidates: RsglSemanticToken[] = [];
   const referenceStarts = collectReferenceStarts(model.references);
 
@@ -85,7 +91,9 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): RsglSemanticTok
     collectReferenceToken(reference, candidates);
   }
 
-  return normalizeTokens(candidates);
+  const tokens = Object.freeze(normalizeTokens(candidates));
+  tokensBySemanticModel.set(model, tokens);
+  return tokens;
 }
 
 /** Emits aliases from the type namespace, which is separate from value symbols. */

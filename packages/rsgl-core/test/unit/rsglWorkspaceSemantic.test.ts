@@ -167,6 +167,72 @@ describe("RSGL workspace semantic cache", () => {
     }
   });
 
+  it("keeps preview reopen highlighting hot until effective text changes", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-preview-");
+    try {
+      const mainFile = path.join(root, "preview.rsgl");
+      const diskText = "let value = 1";
+      let openText: string | null = null;
+      fs.writeFileSync(mainFile, diskText);
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      cache.setOpenTextDocumentProvider(fileName => openText !== null
+        && path.normalize(fileName) === path.normalize(mainFile)
+        ? { fileName: mainFile, version: 1, getText: () => openText! }
+        : null);
+
+      const initial = cache.loadProgramFromEntry(mainFile);
+      openText = diskText;
+      assert.strictEqual(cache.synchronizePath(mainFile), false);
+      assert.strictEqual(cache.loadProgramFromEntry(mainFile).program, initial.program);
+
+      openText = null;
+      assert.strictEqual(cache.closePath(mainFile), false);
+      assert.strictEqual(cache.loadProgramFromEntry(mainFile).program, initial.program);
+
+      openText = "let value = 2";
+      assert.strictEqual(cache.synchronizePath(mainFile), true);
+      assert.notStrictEqual(cache.loadProgramFromEntry(mainFile).program, initial.program);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds semantic programs retained for closed preview entries", () => {
+    const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-preview-limit-");
+    try {
+      const firstFile = path.join(root, "first.rsgl");
+      const secondFile = path.join(root, "second.rsgl");
+      const unopenedFile = path.join(root, "unopened.rsgl");
+      fs.writeFileSync(firstFile, "let first = 1");
+      fs.writeFileSync(secondFile, "let second = 2");
+      fs.writeFileSync(unopenedFile, "let unopened = 3");
+
+      const cache = RsglWorkspaceSemanticCache.create({ maximumRetainedClosedPaths: 1 });
+      const directory = cache.loadProgramFromDirectory(root);
+      const first = cache.loadProgramFromEntry(firstFile);
+      cache.closePath(firstFile);
+      const second = cache.loadProgramFromEntry(secondFile);
+      cache.closePath(secondFile);
+      cache.synchronizePath(unopenedFile);
+      cache.closePath(unopenedFile);
+
+      assert.notStrictEqual(cache.loadProgramFromEntry(firstFile).program, first.program);
+      assert.strictEqual(
+        cache.loadProgramFromEntry(secondFile).program,
+        second.program,
+        "closing a path without an entry program must not consume the retention window"
+      );
+      assert.strictEqual(
+        cache.loadProgramFromDirectory(root).program,
+        directory.program,
+        "evicting a closed entry must preserve directory programs that share its source"
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reuses and refreshes bound directory programs", () => {
     const root = createTempDir("mc-resourcepack-helper-rsgl-semantic-");
     try {

@@ -204,7 +204,7 @@ describe("RSGL TextMate grammar", () => {
       "blockstate variants stairs {",
       "  case { facing: north } => minecraft:block/stairs",
       "}",
-      "blockstate multipart wall {",
+      "blockstate multipart \"wall\" {",
       "  part always => minecraft:block/wall",
       "}"
     ].join("\n");
@@ -214,6 +214,7 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "blockstate", "storage.type.rsgl", 1);
     expectScope(tokenization, source, "variants", "storage.modifier.blockstate-mode.rsgl", 0);
     expectScope(tokenization, source, "multipart", "storage.modifier.blockstate-mode.rsgl", 0);
+    expectScopeAcross(tokenization, source, "\"wall\"", "string.quoted.double.rsgl");
     const declaration = repositoryPatterns(grammar, "blockstateDeclarations")[0];
     assert.ok(declaration.begin);
     const headerPattern = new RegExp(declaration.begin);
@@ -263,9 +264,10 @@ describe("RSGL TextMate grammar", () => {
     const match = new RegExp(declaration.begin, "d").exec(header);
     assert.ok(match?.indices, "Expected the blockstate header to match.");
     assert.strictEqual(match[0], header);
-    assert.deepStrictEqual(match.indices[5], [header.length - 1, header.length]);
+    assert.deepStrictEqual(match.indices[8], [header.length - 1, header.length]);
 
     const tokenization = tokenizeGrammar(grammar, source);
+    expectScopeAcross(tokenization, source, "`${name}_door`", "string.template.rsgl");
     expectScope(tokenization, source, "for", "keyword.control.rsgl");
     expectScope(tokenization, source, "\"lower\"", "string.quoted.double.rsgl");
     expectNoScope(tokenization, source, "\"lower\"", "string.template.rsgl");
