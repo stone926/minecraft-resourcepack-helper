@@ -5,6 +5,7 @@ import {
   refreshResourceDiagnostics,
   type ResourceDiagnosticResolver
 } from "../diagnostics/resourceDiagnostics";
+import { createKeyedDebouncer, createTrailingDebouncer } from "../utils/debounce";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 
 export interface ResourceDiagnosticsController extends vscode.Disposable {
@@ -32,8 +33,8 @@ export function registerResourceDiagnostics(
 }
 
 class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly documentRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly documentRefreshDebouncer = createKeyedDebouncer();
+  private readonly refreshAllDebouncer = createTrailingDebouncer();
 
   constructor(
     private readonly collection: vscode.DiagnosticCollection,
@@ -46,12 +47,9 @@ class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
   }
 
   refreshSoon(document: vscode.TextDocument, delay = 150): void {
-    const key = document.uri.toString();
-    this.cancelDocumentRefresh(key);
-    this.documentRefreshTimers.set(key, setTimeout(() => {
-      this.documentRefreshTimers.delete(key);
+    this.documentRefreshDebouncer.schedule(document.uri.toString(), () => {
       void refreshResourceDiagnostics(document, this.collection, this.resolveReference);
-    }, delay));
+    }, delay);
   }
 
   clear(document: vscode.TextDocument): void {
@@ -66,34 +64,17 @@ class RegisteredResourceDiagnostics implements ResourceDiagnosticsController {
   }
 
   refreshAllSoon(delay = 250): void {
-    if (this.refreshTimer) {
-      clearTimeout(this.refreshTimer);
-    }
-
-    this.refreshTimer = setTimeout(() => {
-      this.refreshTimer = null;
-      this.refreshAll();
-    }, delay);
+    this.refreshAllDebouncer.schedule(() => this.refreshAll(), delay);
   }
 
   dispose(): void {
-    if (this.refreshTimer) {
-      clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-    for (const timer of this.documentRefreshTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.documentRefreshTimers.clear();
+    this.refreshAllDebouncer.cancel();
+    this.documentRefreshDebouncer.cancelAll();
     disposeResourceDiagnosticsRefreshes(this.collection);
     this.collection.dispose();
   }
 
   private cancelDocumentRefresh(key: string): void {
-    const timer = this.documentRefreshTimers.get(key);
-    if (timer) {
-      clearTimeout(timer);
-      this.documentRefreshTimers.delete(key);
-    }
+    this.documentRefreshDebouncer.cancel(key);
   }
 }

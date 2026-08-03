@@ -1,25 +1,11 @@
 import type * as vscode from "vscode";
 import type { ResourceGraphLogicalKey } from "../../packages/mc-assets/src";
-import type { ResourceResolutionScope } from "../resourceUniverse/core/types";
-import type {
-  ResourceNavigationOptions,
-  ResourceNavigationResult
-} from "../resourceUniverse/navigation/resourceNavigationService";
 import type { ResourceUniverseChangeEvent } from "../resourceUniverse";
 import type {
-  EnsuredResourceProject,
   GeneratedResourceProjectRefresher,
-  ResourceUniverseDocument,
   ResourceUniverseNavigation,
-  UnifiedDocumentProjection,
-  UnifiedLogicalDefinitionResolution,
-  UnifiedLogicalReferenceLocations,
-  UnifiedReferenceResolution,
-  UnifiedReferenceSet,
-  UnifiedResourceProducerTarget,
-  UnifiedResourceQueryOptions
+  UnifiedResourceProducerTarget
 } from "../services/resourceUniverseNavigationFacade";
-import type { ResourceReference } from "../utils/resourceReferences";
 import type { ResourceInfrastructure } from "./registerResourceInfrastructure";
 
 export interface ResourceNavigationInfrastructure extends vscode.Disposable {
@@ -94,114 +80,39 @@ export class LazyResourceUniverseNavigation implements ResourceUniverseNavigatio
     };
   }
 
-  public resolveReference(
-    document: ResourceUniverseDocument,
-    reference: ResourceReference,
-    options?: UnifiedResourceQueryOptions
-  ): Promise<UnifiedReferenceResolution> {
-    return this.withNavigation(navigation => navigation.resolveReference(document, reference, options));
-  }
-
-  public resolveLogicalDefinition(
-    sourceUri: vscode.Uri,
-    target: ResourceGraphLogicalKey,
-    scope: ResourceResolutionScope,
-    options?: Omit<UnifiedResourceQueryOptions, "includeGenerated">
-  ): Promise<UnifiedLogicalDefinitionResolution> {
-    return this.withNavigation(navigation =>
-      navigation.resolveLogicalDefinition(sourceUri, target, scope, options)
-    );
-  }
-
-  public getLogicalIncomingReferenceLocations(
-    sourceUri: vscode.Uri,
-    target: ResourceGraphLogicalKey,
-    options?: Omit<UnifiedResourceQueryOptions, "includeGenerated">
-  ): Promise<UnifiedLogicalReferenceLocations> {
-    return this.withNavigation(navigation =>
-      navigation.getLogicalIncomingReferenceLocations(sourceUri, target, options)
-    );
-  }
-
-  public getOutgoingReferences(
-    document: ResourceUniverseDocument,
-    options?: UnifiedResourceQueryOptions
-  ): Promise<UnifiedReferenceSet> {
-    return this.withNavigation(navigation => navigation.getOutgoingReferences(document, options));
-  }
-
-  public getIncomingReferences(
-    uri: vscode.Uri,
-    relationship?: string,
-    options?: UnifiedResourceQueryOptions
-  ): Promise<UnifiedReferenceSet> {
-    return this.withNavigation(navigation =>
-      navigation.getIncomingReferences(uri, relationship, options)
-    );
-  }
-
-  public ensureProjectForUri(
-    uri: vscode.Uri,
-    options?: UnifiedResourceQueryOptions
-  ): Promise<EnsuredResourceProject> {
-    return this.withNavigation(navigation => navigation.ensureProjectForUri(uri, options));
-  }
-
-  public getDocumentProjection(
-    document: ResourceUniverseDocument
-  ): Promise<UnifiedDocumentProjection> {
-    return this.withNavigation(navigation => navigation.getDocumentProjection(document));
-  }
-
-  public getKnownResources(
-    kinds: readonly string[],
-    options?: Parameters<ResourceUniverseNavigation["getKnownResources"]>[1]
-  ): ReturnType<ResourceUniverseNavigation["getKnownResources"]> {
-    return this.withNavigation(navigation => navigation.getKnownResources(kinds, options));
-  }
+  // Async query forwarders. Each signature is taken directly from the
+  // navigation contract, so `implements ResourceUniverseNavigation` fails to
+  // compile when a contract method is missing here or drifts from it.
+  public readonly resolveReference: ResourceUniverseNavigation["resolveReference"] = (...args) =>
+    this.withNavigation(navigation => navigation.resolveReference(...args));
+  public readonly resolveLogicalDefinition: ResourceUniverseNavigation["resolveLogicalDefinition"] = (...args) =>
+    this.withNavigation(navigation => navigation.resolveLogicalDefinition(...args));
+  public readonly getLogicalIncomingReferenceLocations: ResourceUniverseNavigation["getLogicalIncomingReferenceLocations"] = (...args) =>
+    this.withNavigation(navigation => navigation.getLogicalIncomingReferenceLocations(...args));
+  public readonly getOutgoingReferences: ResourceUniverseNavigation["getOutgoingReferences"] = (...args) =>
+    this.withNavigation(navigation => navigation.getOutgoingReferences(...args));
+  public readonly getIncomingReferences: ResourceUniverseNavigation["getIncomingReferences"] = (...args) =>
+    this.withNavigation(navigation => navigation.getIncomingReferences(...args));
+  public readonly ensureProjectForUri: ResourceUniverseNavigation["ensureProjectForUri"] = (...args) =>
+    this.withNavigation(navigation => navigation.ensureProjectForUri(...args));
+  public readonly getDocumentProjection: ResourceUniverseNavigation["getDocumentProjection"] = (...args) =>
+    this.withNavigation(navigation => navigation.getDocumentProjection(...args));
+  public readonly getKnownResources: ResourceUniverseNavigation["getKnownResources"] = (...args) =>
+    this.withNavigation(navigation => navigation.getKnownResources(...args));
+  public readonly getProducerOutgoingReferences: ResourceUniverseNavigation["getProducerOutgoingReferences"] = (...args) =>
+    this.withNavigation(navigation => navigation.getProducerOutgoingReferences(...args));
+  public readonly getProducerIncomingReferences: ResourceUniverseNavigation["getProducerIncomingReferences"] = (...args) =>
+    this.withNavigation(navigation => navigation.getProducerIncomingReferences(...args));
+  public readonly resolveProducerNavigation: ResourceUniverseNavigation["resolveProducerNavigation"] = (...args) =>
+    this.withNavigation(navigation => navigation.resolveProducerNavigation(...args));
+  public readonly resolveUriNavigation: ResourceUniverseNavigation["resolveUriNavigation"] = (...args) =>
+    this.withNavigation(navigation => navigation.resolveUriNavigation(...args));
 
   public getKnownResource(
     producerId: string,
     target: ResourceGraphLogicalKey
   ): UnifiedResourceProducerTarget | undefined {
     return this.target?.getKnownResource(producerId, target);
-  }
-
-
-  public getProducerOutgoingReferences(
-    producerId: string,
-    options?: UnifiedResourceQueryOptions
-  ): Promise<UnifiedReferenceSet> {
-    return this.withNavigation(navigation =>
-      navigation.getProducerOutgoingReferences(producerId, options)
-    );
-  }
-
-  public getProducerIncomingReferences(
-    producerId: string,
-    relationship?: string,
-    options?: UnifiedResourceQueryOptions
-  ): Promise<UnifiedReferenceSet> {
-    return this.withNavigation(navigation =>
-      navigation.getProducerIncomingReferences(producerId, relationship, options)
-    );
-  }
-
-  public resolveProducerNavigation(
-    producerId: string,
-    target: ResourceGraphLogicalKey,
-    options?: ResourceNavigationOptions & UnifiedResourceQueryOptions
-  ): Promise<ResourceNavigationResult | undefined> {
-    return this.withNavigation(navigation =>
-      navigation.resolveProducerNavigation(producerId, target, options)
-    );
-  }
-
-  public resolveUriNavigation(
-    uri: vscode.Uri,
-    options?: ResourceNavigationOptions & UnifiedResourceQueryOptions
-  ): Promise<ResourceNavigationResult | undefined> {
-    return this.withNavigation(navigation => navigation.resolveUriNavigation(uri, options));
   }
 
   /** No loaded index means there is no cache to invalidate. */

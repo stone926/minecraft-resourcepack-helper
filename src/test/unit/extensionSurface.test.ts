@@ -165,7 +165,7 @@ describe("extension surface", () => {
     const decorator = readSource("decorator", "textureVarDecorator.ts");
 
     assert.ok(workspaceEvents.includes("scheduleDecorationRefresh(activeEditor);"));
-    assert.ok(diagnostics.includes("documentRefreshTimers"));
+    assert.ok(diagnostics.includes("createKeyedDebouncer"));
     assert.ok(diagnostics.includes("refreshSoon(document: vscode.TextDocument"));
     assert.ok(decorator.includes("resourceConfigurationKeys.undefinedTextureVariableColor"));
     assert.ok(decorator.includes('isResourceSurfaceFile(editor.document.uri.fsPath, "textureVariables")'));
