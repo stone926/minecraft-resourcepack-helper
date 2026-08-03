@@ -27,6 +27,47 @@ export interface LazyResourceInfrastructureRegistration extends vscode.Disposabl
   ensureResources(): Promise<ResourceInfrastructure>;
 }
 
+/**
+ * Async query methods forwarded through infrastructure loading; sync and
+ * special-semantics methods stay handwritten. Kept as a runtime list so the
+ * forwarder's coverage is inspectable and type-checked in one place.
+ */
+export const asyncForwardedMethods = [
+  "resolveReference",
+  "resolveLogicalDefinition",
+  "getLogicalIncomingReferenceLocations",
+  "getOutgoingReferences",
+  "getIncomingReferences",
+  "ensureProjectForUri",
+  "getDocumentProjection",
+  "getKnownResources",
+  "getProducerOutgoingReferences",
+  "getProducerIncomingReferences",
+  "resolveProducerNavigation",
+  "resolveUriNavigation"
+] as const;
+
+type AsyncForwardedMethod = (typeof asyncForwardedMethods)[number];
+
+type PromiseReturningKeys<T> = {
+  [K in keyof T]: T[K] extends (...args: never[]) => Promise<unknown> ? K : never;
+}[keyof T];
+
+type AssertExact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+
+/**
+ * Compile-time guard: the forwarded list must cover *exactly* the async query
+ * methods on the contract. Adding a Promise-returning method to the interface
+ * without adding it here (or vice versa) turns the assignment target into
+ * `never`, which fails the `= true` below — the build breaks instead of
+ * silently forwarding or silently not forwarding.
+ */
+const asyncForwarderCoverage: AssertExact<
+  AsyncForwardedMethod,
+  PromiseReturningKeys<ResourceUniverseNavigation>
+> extends true ? true : never = true;
+void asyncForwarderCoverage;
+
 interface ResourceChangeBinding {
   readonly listener: (event: ResourceUniverseChangeEvent) => void;
   subscription?: vscode.Disposable;
@@ -80,33 +121,35 @@ export class LazyResourceUniverseNavigation implements ResourceUniverseNavigatio
     };
   }
 
-  // Async query forwarders. Each signature is taken directly from the
-  // navigation contract, so `implements ResourceUniverseNavigation` fails to
-  // compile when a contract method is missing here or drifts from it.
-  public readonly resolveReference: ResourceUniverseNavigation["resolveReference"] = (...args) =>
-    this.withNavigation(navigation => navigation.resolveReference(...args));
-  public readonly resolveLogicalDefinition: ResourceUniverseNavigation["resolveLogicalDefinition"] = (...args) =>
-    this.withNavigation(navigation => navigation.resolveLogicalDefinition(...args));
-  public readonly getLogicalIncomingReferenceLocations: ResourceUniverseNavigation["getLogicalIncomingReferenceLocations"] = (...args) =>
-    this.withNavigation(navigation => navigation.getLogicalIncomingReferenceLocations(...args));
-  public readonly getOutgoingReferences: ResourceUniverseNavigation["getOutgoingReferences"] = (...args) =>
-    this.withNavigation(navigation => navigation.getOutgoingReferences(...args));
-  public readonly getIncomingReferences: ResourceUniverseNavigation["getIncomingReferences"] = (...args) =>
-    this.withNavigation(navigation => navigation.getIncomingReferences(...args));
-  public readonly ensureProjectForUri: ResourceUniverseNavigation["ensureProjectForUri"] = (...args) =>
-    this.withNavigation(navigation => navigation.ensureProjectForUri(...args));
-  public readonly getDocumentProjection: ResourceUniverseNavigation["getDocumentProjection"] = (...args) =>
-    this.withNavigation(navigation => navigation.getDocumentProjection(...args));
-  public readonly getKnownResources: ResourceUniverseNavigation["getKnownResources"] = (...args) =>
-    this.withNavigation(navigation => navigation.getKnownResources(...args));
-  public readonly getProducerOutgoingReferences: ResourceUniverseNavigation["getProducerOutgoingReferences"] = (...args) =>
-    this.withNavigation(navigation => navigation.getProducerOutgoingReferences(...args));
-  public readonly getProducerIncomingReferences: ResourceUniverseNavigation["getProducerIncomingReferences"] = (...args) =>
-    this.withNavigation(navigation => navigation.getProducerIncomingReferences(...args));
-  public readonly resolveProducerNavigation: ResourceUniverseNavigation["resolveProducerNavigation"] = (...args) =>
-    this.withNavigation(navigation => navigation.resolveProducerNavigation(...args));
-  public readonly resolveUriNavigation: ResourceUniverseNavigation["resolveUriNavigation"] = (...args) =>
-    this.withNavigation(navigation => navigation.resolveUriNavigation(...args));
+  /**
+   * Generic async forwarder. The generic is bound only to the *return type*:
+   * at each field initializer `K` narrows to one literal method name, so the
+   * field's signature is exactly the contract's. Inside, the call is bridged
+   * through an `unknown` signature because TS cannot distribute `Parameters`
+   * over an uninstantiated union method key; `AsyncForwarderCoverage` plus the
+   * `implements` check below keep the list honest.
+   */
+  private readonly forwardAsync = <K extends AsyncForwardedMethod>(
+    method: K
+  ): ResourceUniverseNavigation[K] => {
+    return ((...args: unknown[]) =>
+      this.withNavigation(navigation =>
+        (navigation[method] as unknown as (...callArgs: unknown[]) => Promise<unknown>)(...args)
+      )) as unknown as ResourceUniverseNavigation[K];
+  };
+
+  public readonly resolveReference = this.forwardAsync("resolveReference");
+  public readonly resolveLogicalDefinition = this.forwardAsync("resolveLogicalDefinition");
+  public readonly getLogicalIncomingReferenceLocations = this.forwardAsync("getLogicalIncomingReferenceLocations");
+  public readonly getOutgoingReferences = this.forwardAsync("getOutgoingReferences");
+  public readonly getIncomingReferences = this.forwardAsync("getIncomingReferences");
+  public readonly ensureProjectForUri = this.forwardAsync("ensureProjectForUri");
+  public readonly getDocumentProjection = this.forwardAsync("getDocumentProjection");
+  public readonly getKnownResources = this.forwardAsync("getKnownResources");
+  public readonly getProducerOutgoingReferences = this.forwardAsync("getProducerOutgoingReferences");
+  public readonly getProducerIncomingReferences = this.forwardAsync("getProducerIncomingReferences");
+  public readonly resolveProducerNavigation = this.forwardAsync("resolveProducerNavigation");
+  public readonly resolveUriNavigation = this.forwardAsync("resolveUriNavigation");
 
   public getKnownResource(
     producerId: string,
