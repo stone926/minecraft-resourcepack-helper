@@ -1,14 +1,17 @@
 import { internalCommands } from "../commandIds";
 import * as vscode from "vscode";
+import { minecraftReferenceKindForResourceKind } from "../../packages/mc-assets/src";
 import {
   ResourceCompletionService,
   type ResourceCompletionCandidate
 } from "../services/resourceCompletionService";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import {
   inferIncompleteResourceCompletionContext,
   type ResourceCompletionTextRange
 } from "../utils/resourceCompletionContext";
+import { parsePartialResourcePath } from "../utils/resourceCompletionPaths";
 import { findResourceReferenceAtPosition, type ResourceReference } from "../utils/resourceReferences";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { rangeInsideString } from "../utils/resourceRange";
@@ -24,25 +27,86 @@ export const triggerResourceCompletionCommand = internalCommands.triggerResource
 
 const resourceCompletionService = new ResourceCompletionService(workspaceResourceCache);
 
-const resourceCompletionProvider: vscode.CompletionItemProvider = {
-  async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
-    const context = getResourceCompletionContext(document, position);
-    if (!context) {
-      return null;
+export function createResourceCompletionProvider(
+  navigation?: Pick<ResourceUniverseNavigation, "getKnownResources">
+): vscode.CompletionItemProvider {
+  return {
+    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
+      const context = getResourceCompletionContext(document, position);
+      if (!context) {
+        return null;
+      }
+
+      const candidates = await resourceCompletionService.getCompletionCandidates({
+        documentFileName: context.documentFileName,
+        reference: context.reference,
+        configuration: getResourceConfiguration()
+      });
+      const generated = navigation
+        ? await getGeneratedCompletionCandidates(navigation, context)
+        : [];
+      const items = [...candidates, ...generated].map(candidate => createCompletionItem(candidate, context));
+
+      return items.length > 0 ? items : null;
     }
+  };
+}
 
-    const candidates = await resourceCompletionService.getCompletionCandidates({
-      documentFileName: context.documentFileName,
-      reference: context.reference,
-      configuration: getResourceConfiguration()
-    });
-    const items = candidates.map(candidate => createCompletionItem(candidate, context));
-
-    return items.length > 0 ? items : null;
-  }
-};
+const resourceCompletionProvider = createResourceCompletionProvider();
 
 export default resourceCompletionProvider;
+
+/**
+ * Adds last-known generated-resource completions. Reads only the in-memory
+ * Universe inventory (never triggers project discovery or RSGL runtime
+ * loading), so completion stays cheap and lazy-load neutral.
+ */
+async function getGeneratedCompletionCandidates(
+  navigation: Pick<ResourceUniverseNavigation, "getKnownResources">,
+  context: ResourceCompletionContext
+): Promise<ResourceCompletionCandidate[]> {
+  const partialPath = parsePartialResourcePath(context.reference.value);
+  if (!partialPath || context.reference.value.startsWith("#")) {
+    return [];
+  }
+  try {
+    const inventory = await navigation.getKnownResources([context.reference.kind]);
+    return inventory.resources.flatMap(item => {
+      if (item.producer.origin !== "generated") {
+        return [];
+      }
+      const collapsed = minecraftReferenceKindForResourceKind(item.target.kind);
+      if (collapsed !== context.reference.kind) {
+        return [];
+      }
+      const sep = item.target.id.indexOf(":");
+      if (sep < 0) {
+        return [];
+      }
+      const namespace = item.target.id.slice(0, sep);
+      const idPath = item.target.id.slice(sep + 1);
+      if (partialPath.explicitNamespace && namespace !== partialPath.namespace) {
+        return [];
+      }
+      const fileName = idPath.split("/").pop() ?? idPath;
+      if (partialPath.directory && !idPath.startsWith(`${partialPath.directory}/`)) {
+        return [];
+      }
+      if (!fileName.startsWith(partialPath.prefix)) {
+        return [];
+      }
+      return [{
+        label: fileName,
+        kind: "file" as const,
+        value: `${namespace}:${idPath}`,
+        filterText: idPath,
+        retriggerSuggest: false
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
 
 function getResourceCompletionContext(document: vscode.TextDocument, position: vscode.Position): ResourceCompletionContext | null {
   const reference = findResourceReferenceAtPosition(document, position);

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import citCodeActionProvider from "../cit/providers/citCodeActionProvider";
 import citCompletionProvider from "../cit/providers/citCompletionProvider";
 import citHoverProvider from "../cit/providers/citHoverProvider";
-import resourceCompletionProvider from "../providers/resourceCompletionProvider";
+import { createResourceCompletionProvider } from "../providers/resourceCompletionProvider";
 import { createResourceDefinitionProvider } from "../providers/resourceDefinitionProvider";
 import { createResourceReferenceProvider } from "../providers/resourceReferenceProvider";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
@@ -35,7 +35,7 @@ export function registerLanguageProviders(
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     resourceReferenceSelectors,
-    resourceCompletionProvider,
+    createResourceCompletionProvider(navigation),
     "\"",
     "<",
     "/",
