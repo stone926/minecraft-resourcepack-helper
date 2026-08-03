@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { createTrailingDebouncer } from "../utils/debounce";
 import { ResourceGraphTreeItem } from "./resourceGraphTreeItem";
 import {
   ResourceGraphTreeModel,
@@ -14,7 +15,7 @@ interface FocusedResourceIdentity {
 export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<ResourceGraphTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ResourceGraphTreeItem | undefined | null | void>();
   private readonly onDidChangeFocusEmitter = new vscode.EventEmitter<boolean>();
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly refreshDebouncer = createTrailingDebouncer();
   private focusedResource: FocusedResourceIdentity | undefined;
   public readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   public readonly onDidChangeFocus = this.onDidChangeFocusEmitter.event;
@@ -28,7 +29,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   ) { }
 
   public refresh(): void {
-    this.clearRefreshTimer();
+    this.refreshDebouncer.cancel();
     this.model.invalidate();
     this.onDidChangeTreeDataEmitter.fire();
   }
@@ -59,9 +60,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 
   public refreshSoon(delay = 250, invalidateInventory = false): void {
-    this.clearRefreshTimer();
-    this.refreshTimer = setTimeout(() => {
-      this.refreshTimer = null;
+    this.refreshDebouncer.schedule(() => {
       if (invalidateInventory) {
         this.model.invalidate();
       }
@@ -70,7 +69,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 
   public dispose(): void {
-    this.clearRefreshTimer();
+    this.refreshDebouncer.cancel();
     this.focusedResource = undefined;
     this.onDidChangeFocusEmitter.dispose();
     this.onDidChangeTreeDataEmitter.dispose();
@@ -105,12 +104,6 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
     return undefined;
   }
 
-  private clearRefreshTimer(): void {
-    if (this.refreshTimer) {
-      clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-  }
 }
 
 function activeResourceGraphDocument(): ResourceGraphTreeDocument | null {

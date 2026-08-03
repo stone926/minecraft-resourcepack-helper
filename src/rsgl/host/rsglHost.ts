@@ -53,7 +53,6 @@ export async function createRsglSubsystem(
     options.universe,
     options.navigation,
     {
-      ownsHostSignals: false,
       registerInContext: false,
       runtimeModuleImporter: async () => ({ createRsglRuntime }),
       scheduleInitialSignals: false

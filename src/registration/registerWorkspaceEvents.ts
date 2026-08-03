@@ -5,6 +5,7 @@ import {
   disposeDecoration,
   updateDecoration
 } from "../decorator/textureVarDecorator";
+import { createTrailingDebouncer } from "../utils/debounce";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { ResourceRefreshCoordinator } from "../services/resourceRefreshCoordinator";
 import { ResourceStructureOperationTracker } from "../services/resourceStructureOperationTracker";
@@ -64,7 +65,7 @@ export function registerWorkspaceEvents(
   });
 
   let activeEditor = vscode.window.activeTextEditor;
-  let decorationTimer: ReturnType<typeof setTimeout> | null = null;
+  const decorationDebouncer = createTrailingDebouncer();
   context.subscriptions.push({
     dispose: () => {
       cancelDecorationRefresh();
@@ -181,9 +182,7 @@ export function registerWorkspaceEvents(
   };
 
   function scheduleDecorationRefresh(editor: vscode.TextEditor, delay = 120): void {
-    cancelDecorationRefresh();
-    decorationTimer = setTimeout(() => {
-      decorationTimer = null;
+    decorationDebouncer.schedule(() => {
       if (activeEditor === editor) {
         applyDecoration(editor);
       }
@@ -191,10 +190,7 @@ export function registerWorkspaceEvents(
   }
 
   function cancelDecorationRefresh(): void {
-    if (decorationTimer) {
-      clearTimeout(decorationTimer);
-      decorationTimer = null;
-    }
+    decorationDebouncer.cancel();
   }
 
   async function invalidateWorkspaceDirectoryOperation(uris: readonly vscode.Uri[]): Promise<void> {

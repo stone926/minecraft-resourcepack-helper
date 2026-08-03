@@ -288,6 +288,7 @@ export class LazyResourceInfrastructureOwner<
 > implements vscode.Disposable {
   public readonly navigation: ResourceUniverseNavigation;
   private readonly navigationAdapter: LazyResourceUniverseNavigation;
+  /** Inline single-flight: this activation-facing module must stay free of runtime imports (see utils/singleFlight). */
   private loadPromise?: Promise<TResources>;
   private loaded?: TResources;
   private disposed = false;
@@ -312,7 +313,7 @@ export class LazyResourceInfrastructureOwner<
     const attempt = this.loadConcreteInfrastructure();
     this.loadPromise = attempt;
     void attempt.catch(() => {
-      if (!this.disposed && this.loadPromise === attempt) {
+      if (this.loadPromise === attempt) {
         this.loadPromise = undefined;
       }
     });
@@ -324,6 +325,7 @@ export class LazyResourceInfrastructureOwner<
       return;
     }
     this.disposed = true;
+    this.loadPromise = undefined;
     this.navigationAdapter.dispose();
     const loaded = this.loaded;
     this.loaded = undefined;

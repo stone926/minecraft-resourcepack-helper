@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { createTrailingDebouncer } from "../utils/debounce";
 import {
   resourceSearchKinds,
   type ResourceSearchKind,
@@ -28,7 +29,7 @@ interface ActivePicker {
 export class ResourceGraphSearchQuickPick implements vscode.Disposable {
   private readonly selectedKinds = new Set<ResourceSearchKind>(resourceSearchKinds);
   private active: ActivePicker | undefined;
-  private searchTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly searchDebouncer = createTrailingDebouncer();
   private activeSearchController: AbortController | undefined;
   private requestSequence = 0;
   private lastQuery = "";
@@ -148,8 +149,7 @@ export class ResourceGraphSearchQuickPick implements vscode.Disposable {
     }
     picker.busy = true;
     picker.items = [resourceSearchStatusItem(vscode.l10n.t("Searching resources…"))];
-    this.searchTimer = setTimeout(() => {
-      this.searchTimer = undefined;
+    this.searchDebouncer.schedule(() => {
       const controller = new AbortController();
       this.activeSearchController = controller;
       void this.runSearch(picker, requestId, query, kinds, controller);
@@ -231,10 +231,7 @@ export class ResourceGraphSearchQuickPick implements vscode.Disposable {
   }
 
   private cancelScheduledSearch(): void {
-    if (this.searchTimer) {
-      clearTimeout(this.searchTimer);
-      this.searchTimer = undefined;
-    }
+    this.searchDebouncer.cancel();
   }
 
   private cancelActiveSearch(): void {

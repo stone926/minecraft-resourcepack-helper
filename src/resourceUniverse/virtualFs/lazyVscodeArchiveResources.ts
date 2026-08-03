@@ -1,4 +1,5 @@
 import type * as vscode from "vscode";
+import { createSingleFlight } from "../../utils/singleFlight";
 import type {
   ResourceLayerDescriptor
 } from "../../../packages/resource-project/src";
@@ -23,7 +24,7 @@ type ArchiveResourceModules = readonly [
  * initialization cost during extension activation.
  */
 export class LazyVscodeArchiveResources implements vscode.Disposable {
-  private loadPromise?: Promise<LoadedArchiveResources>;
+  private readonly loadFlight = createSingleFlight<LoadedArchiveResources>();
   private loaded?: LoadedArchiveResources;
   private disposed = false;
 
@@ -46,6 +47,7 @@ export class LazyVscodeArchiveResources implements vscode.Disposable {
       return;
     }
     this.disposed = true;
+    this.loadFlight.clear();
     const loaded = this.loaded;
     this.loaded = undefined;
     loaded?.dispose();
@@ -55,7 +57,7 @@ export class LazyVscodeArchiveResources implements vscode.Disposable {
     if (this.disposed) {
       return Promise.reject(new Error("Archive resources have been disposed."));
     }
-    return this.loadPromise ??= this.loadModules().then(([storeModule, vscodeModule]) => {
+    return this.loadFlight.run(() => this.loadModules().then(([storeModule, vscodeModule]) => {
       if (this.disposed) {
         throw new Error("Archive resources were disposed while loading.");
       }
@@ -92,12 +94,7 @@ export class LazyVscodeArchiveResources implements vscode.Disposable {
         disposeReverse(initialized);
         throw error;
       }
-    }).catch(error => {
-      if (!this.disposed) {
-        this.loadPromise = undefined;
-      }
-      throw error;
-    });
+    }));
   }
 }
 

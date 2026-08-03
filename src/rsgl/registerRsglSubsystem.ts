@@ -7,7 +7,6 @@ import type {
   ResourceUniverseService
 } from "../resourceUniverse";
 import { isAbortError } from "../utils/abortError";
-import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 import {
   createInstalledRsglRuntimeLoader,
@@ -19,13 +18,11 @@ import {
 import {
   configuredRsglMode,
   isRsglDocument,
-  rsglEnablementConfiguration,
   rsglProxyCommands,
   showRsglDisabledMessage
 } from "./rsglActivationSignals";
 
 export interface RsglSubsystemRegistrationOptions {
-  readonly ownsHostSignals?: boolean;
   readonly registerInContext?: boolean;
   readonly runtimeModuleImporter?: RsglRuntimeModuleImporter;
   readonly scheduleInitialSignals?: boolean;
@@ -83,38 +80,6 @@ export function registerRsglSubsystem(
       recheckSignals: () => queueMicrotask(() => void recheckKnownSignals())
     }
   );
-  if (options.ownsHostSignals !== false) {
-    for (const command of Object.values(rsglProxyCommands)) {
-      disposables.push(vscode.commands.registerCommand(command, (...args: unknown[]) =>
-        executeProxyCommand(command, args)
-      ));
-    }
-    disposables.push(
-      vscode.workspace.onDidOpenTextDocument(document => {
-        if (isRsglDocument(document)) {
-          void handleDocumentSignal(document, "openDocument");
-        }
-      }),
-      vscode.window.onDidChangeVisibleTextEditors(editors => {
-        for (const editor of editors) {
-          if (isRsglDocument(editor.document)) {
-            void handleDocumentSignal(editor.document, "visibleDocument");
-          }
-        }
-      }),
-      vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration(rsglEnablementConfiguration)) {
-          void applyConfiguredMode();
-        } else if (affectsResourceResolutionConfiguration(event)) {
-          void controller.projectRevisionChanged();
-        }
-      }),
-      vscode.workspace.onDidChangeWorkspaceFolders(() => {
-        void handleWorkspaceFoldersChanged();
-      })
-    );
-  }
-
   const registration: RsglSubsystemRegistration = {
     controller,
     executeCommand: executeProxyCommand,
