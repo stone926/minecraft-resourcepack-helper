@@ -1,9 +1,10 @@
 import * as path from "node:path";
-import { packRootFromAssetsPath, startsWithPathSegment } from "../../packages/mc-assets/src";
+import { startsWithPathSegment } from "../../packages/mc-assets/src";
 import {
   getCitAutoDiscoveryPathCandidates,
   getCitPathCandidates,
-  hasExplicitRelativePathPrefix
+  hasExplicitRelativePathPrefix,
+  resolveCitPackRoot
 } from "./citPaths";
 import type { CitResourceType } from "./citKeyResolution";
 
@@ -43,7 +44,7 @@ export function getCitAssetCandidates(
   resourceType: CitAssetResolutionType,
   host: CitAssetResolutionHost
 ): string[] {
-  const packRoot = host.getPackRoot?.(sourceFileName) ?? packRootFromAssetsPath(sourceFileName);
+  const packRoot = resolveCitPackRoot(sourceFileName, fileName => host.getPackRoot?.(fileName));
   if (!packRoot) {
     return [];
   }

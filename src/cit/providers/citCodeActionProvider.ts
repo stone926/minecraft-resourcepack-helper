@@ -1,3 +1,4 @@
+import { jsonAstLocationToLineCharacterRange } from "../../utils/astLocationRanges";
 import { internalCommands } from "../../commandIds";
 import * as vscode from "vscode";
 import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
@@ -68,8 +69,13 @@ function referenceRangeIntersects(reference: ResourceReference, range: vscode.Ra
     return false;
   }
 
+  return rangeFromJsonAstLocation(loc).intersection(range) !== undefined;
+}
+
+function rangeFromJsonAstLocation(loc: { start: { line: number; column: number }; end: { line: number; column: number } }): vscode.Range {
+  const pair = jsonAstLocationToLineCharacterRange(loc);
   return new vscode.Range(
-    new vscode.Position(loc.start.line - 1, loc.start.column),
-    new vscode.Position(loc.end.line - 1, loc.end.column)
-  ).intersection(range) !== undefined;
+    new vscode.Position(pair.start.line, pair.start.character),
+    new vscode.Position(pair.end.line, pair.end.character)
+  );
 }

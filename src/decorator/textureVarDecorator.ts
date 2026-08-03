@@ -3,6 +3,7 @@ import { isResourceSurfaceFile } from "../resources/resourceSurfaceRegistry";
 import { modelSourceForFile } from "../services/modelParentChain";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { JsonAstNode, memberName, objectMembers } from "../utils/jsonAst";
+import { jsonAstLocationToLineCharacterRange } from "../utils/astLocationRanges";
 import {
   collectTextureVariableReferenceNodes,
   createTextureVariableDefinitionResolver
@@ -76,12 +77,11 @@ function createDecorationType(): vscode.TextEditorDecorationType {
 }
 
 function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined): void {
-  if (!node?.loc) {
-    return;
+  if (node?.loc) {
+    const pair = jsonAstLocationToLineCharacterRange(node.loc);
+    ranges.push(new vscode.Range(
+      new vscode.Position(pair.start.line, pair.start.character),
+      new vscode.Position(pair.end.line, pair.end.character)
+    ));
   }
-
-  ranges.push(new vscode.Range(
-    new vscode.Position(node.loc.start.line - 1, node.loc.start.column - 1),
-    new vscode.Position(node.loc.end.line - 1, node.loc.end.column - 1)
-  ));
 }

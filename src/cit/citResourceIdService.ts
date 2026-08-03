@@ -1,8 +1,9 @@
+import { resolveCitPackRoot } from "./citPaths";
+import { qualifyMinecraftResourceId } from "../../packages/mc-assets/src";
 import * as path from "node:path";
 import {
   getAssetsRootPathCandidates,
   normalizePathKey,
-  packRootFromAssetsPath,
   uniqueValues
 } from "../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
@@ -381,7 +382,7 @@ function collectJsonIds(directory: string, namespace: string, prefix: string, ta
 
 function getAssetsRoots(documentFileName: string, configuration: CitResourceIdConfiguration): string[] {
   const roots: string[] = [];
-  const packRoot = workspaceResourceCache.getPackRoot(documentFileName) ?? packRootFromAssetsPath(documentFileName);
+  const packRoot = resolveCitPackRoot(documentFileName, fileName => workspaceResourceCache.getPackRoot(fileName));
   if (packRoot) {
     addAssetsRootCandidates(roots, packRoot);
   }
@@ -404,8 +405,7 @@ function addAssetsRootCandidates(roots: string[], candidate: string): void {
 }
 
 function normalizeResourceId(value: string): string {
-  const clean = value.trim();
-  return clean.includes(":") ? clean : `minecraft:${clean}`;
+  return qualifyMinecraftResourceId(value.trim());
 }
 
 function joinResourcePath(left: string, right: string): string {

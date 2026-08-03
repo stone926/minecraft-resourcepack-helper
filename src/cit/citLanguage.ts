@@ -1,3 +1,4 @@
+import { citLocationToLineCharacterRange } from "../utils/astLocationRanges";
 import { uniqueValues } from "../../packages/mc-assets/src";
 import { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
 import { resolveCitKey, resolveCitType } from "./citKeyResolution";
@@ -303,14 +304,5 @@ function findValueTokenStart(lineText: string, valueStart: number, cursor: numbe
 }
 
 function toTextRange(location: CitPropertyEntry["keyRange"]): CitTextRange {
-  return {
-    start: {
-      line: location.start.line - 1,
-      character: location.start.column
-    },
-    end: {
-      line: location.end.line - 1,
-      character: location.end.column
-    }
-  };
+  return citLocationToLineCharacterRange(location);
 }

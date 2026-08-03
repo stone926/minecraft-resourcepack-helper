@@ -140,7 +140,7 @@ function rangeInsideStringNode(node: JsonAstNode): PreviewRange | undefined {
   return {
     start: {
       line: value.loc.start.line - 1,
-      character: value.loc.start.column
+      character: Math.max(0, value.loc.start.column - 1)
     },
     end: {
       line: value.loc.end.line - 1,

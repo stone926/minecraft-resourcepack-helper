@@ -1,9 +1,9 @@
-import { packRootFromAssetsPath } from "../../../packages/mc-assets/src";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import type { ResourceReference } from "../../utils/resourceReferences";
 import { citResourceTypeFor } from "../citAssetResolver";
 import type { CitResourceType } from "../citKeyResolution";
-import { getCitPathCandidates } from "../citPaths";
+import {
+  resolveCitPackRoot, getCitPathCandidates } from "../citPaths";
 
 export interface CitPackRootResolver {
   getPackRoot(fileName: string): string | null;
@@ -31,8 +31,7 @@ export class MissingCitResourcePlanner {
       return null;
     }
 
-    const packRoot = this.packRoots.getPackRoot(documentFileName)
-      ?? packRootFromAssetsPath(documentFileName);
+    const packRoot = resolveCitPackRoot(documentFileName, fileName => this.packRoots.getPackRoot(fileName));
     if (!packRoot) {
       return null;
     }

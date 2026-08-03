@@ -1,5 +1,12 @@
 import * as path from "node:path";
-import { parseAssetsPath, startsWithPathSegment, uniqueValues } from "../../packages/mc-assets/src";
+import {
+  minecraftResourceTarget,
+  packRootFromAssetsPath,
+  parseAssetsPath,
+  parseMinecraftResourceId,
+  startsWithPathSegment,
+  uniqueValues
+} from "../../packages/mc-assets/src";
 import type { CitResourceType } from "./citKeyResolution";
 
 export const citresewnSourceDirectory = "citresewn";
@@ -107,26 +114,33 @@ export function getCitAutoDiscoveryPathCandidates(
 }
 
 function parseCitResourceLocation(value: string): { namespace: string; resourcePath: string } | null {
-  const namespaceSeparator = value.indexOf(":");
-  if (namespaceSeparator < 0) {
+  const parsed = parseMinecraftResourceId(value);
+  if (!parsed.hasExplicitNamespace || !parsed.path) {
     return null;
   }
-
-  const namespace = value.slice(0, namespaceSeparator).trim() || "minecraft";
-  const resourcePath = value.slice(namespaceSeparator + 1).trim();
-  if (!resourcePath) {
-    return null;
-  }
-
-  return { namespace, resourcePath };
+  // CIT historically accepts loosely-formed ids; validity is deliberately not enforced.
+  return { namespace: parsed.namespace, resourcePath: parsed.path };
 }
+
+const citResourceKindByType: Record<CitResourceType, string> = {
+  textures: "texture",
+  models: "model"
+};
 
 function withExtension(value: string, resourceType: CitResourceType): string {
   if (path.extname(value) !== "") {
     return value;
   }
 
-  return `${value}${resourceType === "textures" ? ".png" : ".json"}`;
+  return `${value}.${minecraftResourceTarget(citResourceKindByType[resourceType]).extension}`;
+}
+
+/** Shared CIT pack-root fallback: explicit host lookup, then the assets-path heuristic. */
+export function resolveCitPackRoot(
+  fileName: string,
+  getPackRoot: (fileName: string) => string | null | undefined
+): string | null {
+  return getPackRoot(fileName) ?? packRootFromAssetsPath(fileName);
 }
 
 /** `./`- or `../`-prefixed separator-normalized values (shared with the asset resolver). */

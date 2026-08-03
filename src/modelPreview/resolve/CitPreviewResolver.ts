@@ -1,3 +1,4 @@
+import { citLocationToLineCharacterRange } from "../../utils/astLocationRanges";
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
 import { getCitAssetCandidates } from "../../cit/citAssetResolver";
@@ -204,14 +205,5 @@ function findCanonicalAssetEntry(
 }
 
 function toPreviewRange(location: CitPropertyEntry["valueRange"]) {
-  return {
-    start: {
-      line: location.start.line - 1,
-      character: location.start.column
-    },
-    end: {
-      line: location.end.line - 1,
-      character: location.end.column
-    }
-  };
+  return citLocationToLineCharacterRange(location);
 }

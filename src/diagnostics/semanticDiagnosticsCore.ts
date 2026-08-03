@@ -6,7 +6,8 @@ import {
   type FileResourceIssue,
   type NonJsonIssueSeverity
 } from "./nonJsonResourceChecks";
-import { findAssetsRoot, parseAssetsPath } from "../../packages/mc-assets/src";
+import { parseMinecraftResourceId, findAssetsRoot, parseAssetsPath } from "../../packages/mc-assets/src";
+import { jsonAstLocationToLineCharacterRange } from "../utils/astLocationRanges";
 import {
   getResourceSemanticDiagnosticsKind,
   type ResourceSemanticDiagnosticsKind
@@ -490,23 +491,15 @@ function rangeFromNode(node: JsonAstNode | null | undefined): SemanticDiagnostic
   if (!node?.loc) {
     return null;
   }
-
-  return {
-    start: { line: node.loc.start.line - 1, character: node.loc.start.column - 1 },
-    end: { line: node.loc.end.line - 1, character: node.loc.end.column - 1 }
-  };
+  return jsonAstLocationToLineCharacterRange(node.loc);
 }
 
 function parseNamespacedValue(value: string, defaultNamespace: string | null): { namespace: string; path: string } | null {
-  const separator = value.indexOf(":");
-  if (separator >= 0) {
-    return {
-      namespace: value.slice(0, separator),
-      path: value.slice(separator + 1)
-    };
+  const parsed = parseMinecraftResourceId(value, defaultNamespace ?? undefined);
+  if (!parsed.hasExplicitNamespace && !defaultNamespace) {
+    return null;
   }
-
-  return defaultNamespace ? { namespace: defaultNamespace, path: value } : null;
+  return { namespace: parsed.namespace, path: parsed.path };
 }
 
 function isTextResourceDocument(fileName: string): boolean {

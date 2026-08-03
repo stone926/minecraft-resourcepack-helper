@@ -1,3 +1,4 @@
+import { citLocationToLineCharacterRange } from "../utils/astLocationRanges";
 import * as vscode from "vscode";
 import { citResourceIdService } from "./citResourceIdService";
 import { isCitPropertiesFileName } from "./citPaths";
@@ -33,12 +34,17 @@ export function getCitDiagnostics(
   }).map(toVsCodeDiagnostic);
 }
 
+function rangeFromCitLocation(location: CitDiagnostic["range"]): vscode.Range {
+  const range = citLocationToLineCharacterRange(location);
+  return new vscode.Range(
+    new vscode.Position(range.start.line, range.start.character),
+    new vscode.Position(range.end.line, range.end.character)
+  );
+}
+
 function toVsCodeDiagnostic(diagnostic: CitDiagnostic): vscode.Diagnostic {
   return new vscode.Diagnostic(
-    new vscode.Range(
-      new vscode.Position(diagnostic.range.start.line - 1, diagnostic.range.start.column),
-      new vscode.Position(diagnostic.range.end.line - 1, diagnostic.range.end.column)
-    ),
+    rangeFromCitLocation(diagnostic.range),
     localize(diagnostic.message),
     toVsCodeDiagnosticSeverity(diagnostic.severity)
   );
