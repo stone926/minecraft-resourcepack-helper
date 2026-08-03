@@ -15,10 +15,8 @@ import {
 } from "./collectionBuiltinInference";
 import { diagnostic } from "./diagnostics";
 import { checkModuleNamespaceMember } from "./moduleNamespace";
-import { inferProductType, RsglProductSourceIssue } from "./productTypeInference";
 import { createChildScope, lookup } from "./scopes";
 import { formatType, isAssignable } from "./typeRelations";
-import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   anyType,
   numberType,
@@ -158,19 +156,7 @@ export function checkCallExpression(
     );
   }
 
-  const argumentTypes = checkArguments(context, symbol.signature, args, scope, expression.range, host);
-  if (symbol.kind === "builtin" && callee.name.text === "product") {
-    const sourceType = argumentTypes.get("source");
-    if (!sourceType) {
-      return symbol.signature.returnType;
-    }
-    const product = inferProductType(
-      sourceType,
-      inferredUnionBudgetOptions(context.diagnostics, expression.range)
-    );
-    reportProductSourceIssues(context, product.issues, expression);
-    return product.type;
-  }
+  checkArguments(context, symbol.signature, args, scope, expression.range, host);
   return symbol.signature.returnType;
 }
 
@@ -343,21 +329,4 @@ function checkArguments(
     }
   }
   return argumentTypes;
-}
-
-function reportProductSourceIssues(
-  context: RsglExpressionCheckContext,
-  issues: readonly RsglProductSourceIssue[],
-  expression: CallExprNode
-): void {
-  for (const issue of issues) {
-    const subject = issue.propertyName
-      ? `Product dimension '${issue.propertyName}'`
-      : "Product source";
-    context.diagnostics.push(diagnostic(
-      "rsgl.productSourceNotIterable",
-      `${subject} must be a List or Range, got ${formatType(issue.actualType)}.`,
-      issue.declarationRange ?? expression.range
-    ));
-  }
 }

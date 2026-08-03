@@ -2,6 +2,10 @@ import {
   rsglExternResourceCompletionDescriptors,
   rsglResourceCompletionDescriptors
 } from "./resourceKinds";
+import {
+  collectionBuiltinDescriptors,
+  jsonResourceFragmentBuiltinDescriptors
+} from "./builtinRegistry";
 import { rsglModelGeometryCompletionDescriptors } from "./modelGeometrySyntax";
 import {
   getRsglCompletionContext,
@@ -241,23 +245,16 @@ export const builtinRsglCompletions: RsglCompletionCandidate[] = [
     kind: "function" as const
   })),
   { label: "seq", insertText: "seq(${1:i} => \"minecraft:block/name_\" + ${1:i}, ${1:i}: ${2:0..3})", detail: "Compile-time string sequence", kind: "function" },
-  { label: "atlasDirectory", detail: "Atlas directory source helper", kind: "function" },
-  { label: "particlesSeq", insertText: "particlesSeq(\"${1:minecraft:particle/explosion_{0..2}}\", pad: ${2:0})", detail: "Particle texture sequence helper", kind: "function" },
-  { label: "mcmetaAnimation", detail: "PNG animation metadata helper", kind: "function" },
-  { label: "nineSliceGui", detail: "PNG GUI nine-slice metadata helper", kind: "function" },
-  { label: "equipmentLayers", detail: "Equipment layer helper", kind: "function" },
+  ...jsonResourceFragmentBuiltinDescriptors.map(descriptor => ({
+    ...descriptor.completion,
+    kind: "function" as const
+  })),
   { label: "startsWith", insertText: "startsWith(${1:str}, ${2:prefix})", detail: "Compile-time string prefix predicate", kind: "function" },
   { label: "endsWith", insertText: "endsWith(${1:str}, ${2:suffix})", detail: "Compile-time string suffix predicate", kind: "function" },
-  { label: "map", insertText: "map(${1:source}, ${2:item} => ${3:value})", detail: "Transform each collection item", kind: "function" },
-  { label: "filter", insertText: "filter(${1:source}, ${2:item} => ${3:condition})", detail: "Keep collection items matching a Boolean predicate", kind: "function" },
-  { label: "flatMap", insertText: "flatMap(${1:source}, ${2:item} => ${3:items})", detail: "Transform and flatten collection items", kind: "function" },
-  { label: "concat", insertText: "concat(${1:sources})", detail: "Concatenate compile-time collections", kind: "function" },
-  { label: "join", insertText: "join(${1:source}, ${2:separator})", detail: "Join a string list", kind: "function" },
-  { label: "entries", insertText: "entries(${1:object})", detail: "List an object's key/value entries", kind: "function" },
-  { label: "keys", insertText: "keys(${1:object})", detail: "List an object's keys", kind: "function" },
-  { label: "values", insertText: "values(${1:object})", detail: "List an object's values", kind: "function" },
-  { label: "mergeObjects", insertText: "mergeObjects(${1:objects})", detail: "Shallow-merge compile-time objects", kind: "function" },
-  { label: "has", insertText: "has(${1:object}, ${2:key})", detail: "Test whether an object has a key", kind: "function" },
+  ...collectionBuiltinDescriptors.map(descriptor => ({
+    ...descriptor.completion,
+    kind: "function" as const
+  })),
   { label: "replace", insertText: "replace(${1:str}, ${2:old}, ${3:new})", detail: "Compile-time string replacement", kind: "function" },
   { label: "padStart", insertText: "padStart(${1:str}, ${2:len}, ${3:pad})", detail: "Compile-time left padding", kind: "function" },
   { label: "padEnd", insertText: "padEnd(${1:str}, ${2:len}, ${3:pad})", detail: "Compile-time right padding", kind: "function" },

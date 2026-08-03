@@ -1,4 +1,9 @@
 import type { TextRange } from "../parser";
+import {
+  collectionBuiltinNamesForLayer,
+  getCollectionBuiltinDescriptor,
+  type RsglCollectionEvalHandler
+} from "../builtinRegistry";
 import type {
   EvaluationResult,
   EvaluationValue,
@@ -72,22 +77,34 @@ export type CollectionBuiltinEvaluation =
       trace?: CollectionEvaluationTrace;
     };
 
-const collectionBuiltinNames = new Set([
-  "map",
-  "filter",
-  "flatMap",
-  "concat",
-  "join",
-  "entries",
-  "keys",
-  "values",
-  "mergeObjects",
-  "product"
-]);
+const collectionBuiltinNames = new Set(collectionBuiltinNamesForLayer("eval"));
 
 export function isCollectionRuntimeBuiltinName(name: string): boolean {
   return collectionBuiltinNames.has(name);
 }
+
+type CollectionBuiltinEvaluator = (
+  args: readonly CollectionBuiltinArgument[],
+  range: TextRange,
+  host: CollectionBuiltinHost
+) => CollectionBuiltinEvaluation;
+
+/**
+ * Runtime handlers keyed by the registry's `eval` handler keys.
+ * The registry (../builtinRegistry.ts) decides which builtin routes here.
+ */
+const collectionEvaluationHandlers = {
+  map: evaluateMap,
+  filter: evaluateFilter,
+  flatMap: evaluateFlatMap,
+  concat: evaluateConcat,
+  join: evaluateJoin,
+  entries: evaluateEntries,
+  keys: evaluateKeys,
+  values: evaluateValues,
+  mergeObjects: evaluateMergeObjects,
+  product: evaluateProduct
+} satisfies Record<RsglCollectionEvalHandler, CollectionBuiltinEvaluator>;
 
 export function evaluateCollectionBuiltin(
   name: string,
@@ -95,33 +112,11 @@ export function evaluateCollectionBuiltin(
   range: TextRange,
   host: CollectionBuiltinHost
 ): CollectionBuiltinEvaluation {
-  if (!isCollectionRuntimeBuiltinName(name)) {
+  const handlerKey = getCollectionBuiltinDescriptor(name)?.eval;
+  if (!handlerKey) {
     return { handled: false };
   }
-
-  switch (name) {
-    case "map":
-      return evaluateMap(args, range, host);
-    case "filter":
-      return evaluateFilter(args, range, host);
-    case "flatMap":
-      return evaluateFlatMap(args, range, host);
-    case "concat":
-      return evaluateConcat(args, range, host);
-    case "join":
-      return evaluateJoin(args, range, host);
-    case "entries":
-      return evaluateEntries(args, range, host);
-    case "keys":
-      return evaluateKeys(args, range, host);
-    case "values":
-      return evaluateValues(args, range, host);
-    case "mergeObjects":
-      return evaluateMergeObjects(args, range, host);
-    case "product":
-      return evaluateProduct(args, range, host);
-  }
-  return { handled: false };
+  return collectionEvaluationHandlers[handlerKey](args, range, host);
 }
 
 function evaluateMap(

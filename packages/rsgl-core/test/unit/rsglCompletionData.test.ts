@@ -73,6 +73,7 @@ describe("RSGL completion data", () => {
       "keys",
       "values",
       "mergeObjects",
+      "product",
       "has"
     ]) {
       assert.ok(topLevel.some(candidate => candidate.label === label), `missing ${label} completion`);

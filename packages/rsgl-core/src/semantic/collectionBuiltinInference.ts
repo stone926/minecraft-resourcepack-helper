@@ -10,9 +10,15 @@ import {
   RsglArgumentAssignment,
   RsglArgumentBinding
 } from "../arguments";
+import {
+  collectionBuiltinNamesForLayer,
+  getCollectionBuiltinDescriptor,
+  type RsglCollectionInferHandler
+} from "../builtinRegistry";
 import { diagnostic } from "./diagnostics";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { checkLambdaExpression } from "./lambdaTyping";
+import { inferProductType, RsglProductSourceIssue } from "./productTypeInference";
 import {
   expectedObjectType,
   mergeObjectTypeAlternatives,
@@ -28,6 +34,7 @@ import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   anyType,
   booleanType,
+  jsonType,
   neverType,
   numberType,
   RsglParameterSymbol,
@@ -38,18 +45,7 @@ import {
   unknownType
 } from "./types";
 
-const collectionBuiltinNames = new Set([
-  "map",
-  "filter",
-  "flatMap",
-  "concat",
-  "join",
-  "entries",
-  "keys",
-  "values",
-  "mergeObjects",
-  "has"
-]);
+const collectionBuiltinNames = new Set(collectionBuiltinNamesForLayer("infer"));
 
 export interface RsglCollectionCheckHost {
   checkExpression(
@@ -81,6 +77,29 @@ export function isCollectionBuiltinName(name: string): boolean {
   return collectionBuiltinNames.has(name);
 }
 
+type CollectionInferenceHandler = (
+  session: CollectionArgumentSession,
+  expectedReturnType: RsglType | undefined
+) => RsglType;
+
+/**
+ * Inference handlers keyed by the registry's `infer` handler keys.
+ * The registry (../builtinRegistry.ts) decides which builtin routes here.
+ */
+const collectionInferenceHandlers = {
+  map: (session, expectedReturnType) => checkMap(session, expectedReturnType),
+  filter: (session, expectedReturnType) => checkFilter(session, expectedReturnType),
+  flatMap: (session, expectedReturnType) => checkFlatMap(session, expectedReturnType),
+  concat: (session, expectedReturnType) => checkConcat(session, expectedReturnType),
+  join: session => checkJoin(session),
+  entries: session => checkRecordProjection(session, "entries"),
+  keys: session => checkRecordProjection(session, "keys"),
+  values: session => checkRecordProjection(session, "values"),
+  mergeObjects: (session, expectedReturnType) => checkMergeObjects(session, expectedReturnType),
+  has: session => checkHas(session),
+  product: session => checkProduct(session)
+} satisfies Record<RsglCollectionInferHandler, CollectionInferenceHandler>;
+
 /**
  * Checks collection builtins whose result depends on argument structure.
  * The central signature still owns arity/rest binding; this module owns only
@@ -98,39 +117,10 @@ export function checkCollectionBuiltinCall(
     ? expression.callee.name.text
     : "";
   const session = new CollectionArgumentSession(context, expression, scope, signature, host);
-  let result: RsglType;
-
-  switch (name) {
-    case "map":
-      result = checkMap(session, expectedReturnType);
-      break;
-    case "filter":
-      result = checkFilter(session, expectedReturnType);
-      break;
-    case "flatMap":
-      result = checkFlatMap(session, expectedReturnType);
-      break;
-    case "concat":
-      result = checkConcat(session, expectedReturnType);
-      break;
-    case "join":
-      result = checkJoin(session);
-      break;
-    case "entries":
-    case "keys":
-    case "values":
-      result = checkRecordProjection(session, name);
-      break;
-    case "mergeObjects":
-      result = checkMergeObjects(session, expectedReturnType);
-      break;
-    case "has":
-      result = checkHas(session);
-      break;
-    default:
-      result = signature.returnType;
-      break;
-  }
+  const handlerKey = getCollectionBuiltinDescriptor(name)?.infer;
+  const result = handlerKey
+    ? collectionInferenceHandlers[handlerKey](session, expectedReturnType)
+    : signature.returnType;
 
   session.finish();
   return result;
@@ -427,6 +417,36 @@ function checkHas(session: CollectionArgumentSession): RsglType {
     session.checkExpected(key, stringType);
   }
   return booleanType;
+}
+
+function checkProduct(session: CollectionArgumentSession): RsglType {
+  const source = session.primary("source");
+  if (!source) {
+    return listOf(jsonType);
+  }
+  const sourceType = session.check(source, jsonType);
+  const product = inferProductType(
+    sourceType,
+    inferredUnionBudgetOptions(session.context.diagnostics, session.expression.range)
+  );
+  reportProductSourceIssues(session, product.issues);
+  return product.type;
+}
+
+function reportProductSourceIssues(
+  session: CollectionArgumentSession,
+  issues: readonly RsglProductSourceIssue[]
+): void {
+  for (const issue of issues) {
+    const subject = issue.propertyName
+      ? `Product dimension '${issue.propertyName}'`
+      : "Product source";
+    session.context.diagnostics.push(diagnostic(
+      "rsgl.productSourceNotIterable",
+      `${subject} must be a List or Range, got ${formatType(issue.actualType)}.`,
+      issue.declarationRange ?? session.expression.range
+    ));
+  }
 }
 
 function checkIterableArgument(

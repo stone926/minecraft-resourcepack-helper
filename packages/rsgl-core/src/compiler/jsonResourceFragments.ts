@@ -6,7 +6,11 @@ import {
   TextRange,
   UseDeclNode
 } from "../parser";
-import type { RsglGenericJsonResourceKind } from "../resourceKinds";
+import {
+  getJsonResourceFragmentBuiltinDescriptor,
+  type RsglJsonResourceFragmentHandler,
+  type RsglJsonResourceFragmentKind
+} from "../builtinRegistry";
 import {
   EvaluationContext,
   type EvaluationOrigin,
@@ -36,7 +40,7 @@ import {
 } from "./sequences";
 import { appendGeneratedPath } from "./sourcePaths";
 
-export type JsonResourceFragmentKind = RsglGenericJsonResourceKind | "mcmeta";
+export type JsonResourceFragmentKind = RsglJsonResourceFragmentKind;
 
 interface EvaluatedFragmentArg<T> {
   arg: ArgumentNode;
@@ -60,24 +64,29 @@ export function compileJsonResourceUseFragment(
     return undefined;
   }
 
-  if (kind === "atlas" && call.callee.name.text === "atlasDirectory") {
-    return compileAtlasDirectory(call, context, options);
-  }
-  if (kind === "particles" && call.callee.name.text === "particlesSeq") {
-    return compileParticlesSeq(call, context, options);
-  }
-  if (kind === "mcmeta" && call.callee.name.text === "mcmetaAnimation") {
-    return compileMcmetaAnimation(call, context, options);
-  }
-  if (kind === "mcmeta" && call.callee.name.text === "nineSliceGui") {
-    return compileNineSliceGui(call, context, options);
-  }
-  if (kind === "equipment" && call.callee.name.text === "equipmentLayers") {
-    return compileEquipmentLayers(call, context, options);
-  }
-
-  return undefined;
+  const descriptor = getJsonResourceFragmentBuiltinDescriptor(kind, call.callee.name.text);
+  return descriptor
+    ? jsonResourceFragmentHandlers[descriptor.handler](call, context, options)
+    : undefined;
 }
+
+type JsonResourceFragmentCompileHandler = (
+  call: CallExprNode & { callee: IdentifierExprNode },
+  context: EvaluationContext,
+  options: JsonValueSinkOptions
+) => ResourceBodyFragment | undefined;
+
+/**
+ * Sugar-fragment handlers keyed by the registry's handler keys.
+ * ../builtinRegistry.ts owns the (resource kind, callee name) pairs.
+ */
+const jsonResourceFragmentHandlers = {
+  atlasDirectory: compileAtlasDirectory,
+  particlesSeq: compileParticlesSeq,
+  mcmetaAnimation: compileMcmetaAnimation,
+  nineSliceGui: compileNineSliceGui,
+  equipmentLayers: compileEquipmentLayers
+} satisfies Record<RsglJsonResourceFragmentHandler, JsonResourceFragmentCompileHandler>;
 
 function compileAtlasDirectory(
   call: CallExprNode & { callee: IdentifierExprNode },
