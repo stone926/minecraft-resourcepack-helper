@@ -25,7 +25,13 @@ export class ResourceDependencyResolver {
   constructor(
     private readonly fileSystem: ModelPreviewFileSystem,
     private readonly configuration: ModelPreviewConfiguration,
-    private readonly observeDependency?: (fileName: string) => void
+    private readonly observeDependency?: (fileName: string) => void,
+    /**
+     * Shared workspace resolution used for non-CIT lookups. CIT-sourced
+     * references keep the preview-local candidate path because the shared
+     * resolver has no CIT candidate semantics.
+     */
+    private readonly resolveSharedResourcePath?: (request: ResourceFileRequest) => string | null
   ) { }
 
   resolveModelFileName(resourcePath: string, sourceFileName: string): ResolvedResourceFile | null {
@@ -66,11 +72,13 @@ export class ResourceDependencyResolver {
       extension,
       this.configuration
     );
-    const { fileName } = resolveResourceFile(
-      request,
-      { pathExists: candidate => this.fileSystem.fileExists(candidate) },
-      candidates
-    );
+    const fileName = this.canUseSharedResolution(sourceFileName, target, extension)
+      ? this.resolveSharedResourcePath!(request)
+      : resolveResourceFile(
+        request,
+        { pathExists: candidate => this.fileSystem.fileExists(candidate) },
+        candidates
+      ).fileName;
     if (fileName) {
       const resolved = {
         fileName,
@@ -110,6 +118,14 @@ export class ResourceDependencyResolver {
     );
     this.candidateFiles.set(key, candidates);
     return candidates;
+  }
+  private canUseSharedResolution(sourceFileName: string, target: string, extension: string | null): boolean {
+    if (!this.resolveSharedResourcePath) {
+      return false;
+    }
+
+    const citResourceType = citResourceTypeFor(target, extension);
+    return !citResourceType || (!isCitModelFileName(sourceFileName) && !isCitPropertiesFileName(sourceFileName));
   }
 }
 

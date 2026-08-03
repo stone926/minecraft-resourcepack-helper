@@ -15,7 +15,8 @@ import { lm } from "../../i18n/messages";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { collectModelJsonLocations } from "../model/ModelJsonLocations";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
-import { normalizePathKey } from "../../../packages/mc-assets/src";
+import { normalizePathKey, type ResourceFileRequest } from "../../../packages/mc-assets/src";
+import { createFileSystemModelLoader, type ParentChainModelLoader } from "./RawModelLoader";
 import { ResourceDependencyResolver, modelResourceIdFromFileName } from "./ResourceDependencyResolver";
 import { normalizeDisplayTransforms, normalizePartialDisplayTransforms } from "./TransformNormalizer";
 import { TextOffsetMap } from "../../utils/textOffsets";
@@ -43,9 +44,11 @@ export class ParentChainResolver {
     private readonly issues: ModelIssueCollector,
     private readonly cancellationToken?: ModelPreviewCancellationToken,
     private readonly rawModelCache?: RawModelDocumentCache,
-    private readonly observeDependency?: (fileName: string) => void
+    private readonly observeDependency?: (fileName: string) => void,
+    private readonly modelLoader: ParentChainModelLoader = createFileSystemModelLoader(fileSystem),
+    resolveResourcePath?: (request: ResourceFileRequest) => string | null
   ) {
-    this.resources = new ResourceDependencyResolver(fileSystem, configuration, observeDependency);
+    this.resources = new ResourceDependencyResolver(fileSystem, configuration, observeDependency, resolveResourcePath);
   }
 
   async resolve(entryFileName: string): Promise<ResolvedModel | null> {
@@ -121,7 +124,7 @@ export class ParentChainResolver {
   private async loadRawModelUncached(fileName: string): Promise<RawModelDocument> {
     let text: string;
     try {
-      text = await this.fileSystem.readTextFile(fileName);
+      text = await this.modelLoader.readModelText(fileName);
     } catch {
       this.issues.error(lm("Model JSON could not be read"), fileName);
       return { fileName, text: "", data: null };
@@ -129,7 +132,7 @@ export class ParentChainResolver {
 
     throwIfCancellationRequested(this.cancellationToken);
     try {
-      const rawValue = JSON.parse(text) as unknown;
+      const rawValue = this.modelLoader.parseModelValue(fileName, text);
       const locations = collectModelJsonLocations(text);
       return {
         fileName,

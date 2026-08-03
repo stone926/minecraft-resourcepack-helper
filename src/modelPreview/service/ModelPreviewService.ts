@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { lm } from "../../i18n/messages";
 import { isCitPropertiesFileName } from "../../cit/citPaths";
 import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
-import { normalizePathKey } from "../../../packages/mc-assets/src";
+import { normalizePathKey, type ResourceFileRequest } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency, ResolvedModel } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
@@ -12,6 +12,7 @@ import { CuboidBaker } from "../bake/CuboidBaker";
 import { createGeneratedItemElements } from "../bake/GeneratedItemModel";
 import { CitPreviewResolver } from "../resolve/CitPreviewResolver";
 import { ParentChainResolver } from "../resolve/ParentChainResolver";
+import type { ParentChainModelLoader } from "../resolve/RawModelLoader";
 import { TextureReferenceResolver } from "../resolve/TextureReferenceResolver";
 import { collectPackMetadataDependencies } from "../resolve/PackMetadataDependencies";
 import { dependencyKey, fileUriString } from "../paths";
@@ -28,6 +29,10 @@ export interface ModelPreviewServiceOptions {
   fileSystem?: ModelPreviewFileSystem;
   configuration?: () => ModelPreviewConfiguration;
   artifactCache?: ModelPreviewArtifactCacheStore;
+  /** Raw-model loading backend; hosts inject the shared workspace-cache loader. */
+  modelLoader?: ParentChainModelLoader;
+  /** Shared workspace resource-path resolution for non-CIT references. */
+  resolveResourcePath?: (request: ResourceFileRequest) => string | null;
 }
 
 const maxConsistencyAttempts = 3;
@@ -43,11 +48,15 @@ export class ModelPreviewService {
   private readonly fileSystem: ModelPreviewFileSystem;
   private readonly getConfiguration: () => ModelPreviewConfiguration;
   private readonly cache: ModelPreviewCache;
+  private readonly modelLoader: ParentChainModelLoader | undefined;
+  private readonly resolveResourcePath: ((request: ResourceFileRequest) => string | null) | undefined;
 
   constructor(options: ModelPreviewServiceOptions = {}) {
     this.fileSystem = options.fileSystem ?? nodeFileSystem;
     this.getConfiguration = options.configuration ?? (() => ({}));
     this.cache = new ModelPreviewCache(options.artifactCache);
+    this.modelLoader = options.modelLoader;
+    this.resolveResourcePath = options.resolveResourcePath;
   }
 
   getPreviewDocument(fileName: string, cancellationToken?: ModelPreviewCancellationToken): Promise<ModelPreviewDocument> {
@@ -262,7 +271,9 @@ export class ModelPreviewService {
       issues,
       cancellationToken,
       this.cache,
-      dependency => versionSnapshot.observe(dependency)
+      dependency => versionSnapshot.observe(dependency),
+      this.modelLoader,
+      this.resolveResourcePath
     );
     const model = await modelResolver.resolve(fileName);
     parentSnapshot?.merge(versionSnapshot);

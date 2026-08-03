@@ -4,6 +4,7 @@ import { getResourceConfiguration } from "../../utils/resourceConfiguration";
 import { getResourceGraphNodeUri } from "../../views/resourceGraphTreeItem";
 import { ModelPreviewHostFileSystem } from "../host/ModelPreviewHostFileSystem";
 import type { ScreenshotOptions } from "../host/ModelPreviewMessages";
+import { createWorkspaceCacheModelLoader, resolveWorkspaceResourcePath } from "../host/workspaceCacheModelBackend";
 import { ModelPreviewService } from "../service/ModelPreviewService";
 import {
   captureModelPreviewImageCommand,
@@ -19,10 +20,13 @@ export interface ModelPreviewCommandRuntime {
 }
 
 export function createModelPreviewCommandRuntime(extensionUri: vscode.Uri): ModelPreviewCommandRuntime {
+  const fileSystem = new ModelPreviewHostFileSystem();
   const service = new ModelPreviewService({
-    fileSystem: new ModelPreviewHostFileSystem(),
+    fileSystem,
     configuration: getResourceConfiguration,
-    artifactCache: workspaceResourceCache.modelPreviewArtifacts
+    artifactCache: workspaceResourceCache.modelPreviewArtifacts,
+    modelLoader: createWorkspaceCacheModelLoader(fileSystem),
+    resolveResourcePath: resolveWorkspaceResourcePath
   });
   const open = openModelPreviewCommand(extensionUri, service);
   const exportImage = exportModelPreviewImageCommand(extensionUri, service);
