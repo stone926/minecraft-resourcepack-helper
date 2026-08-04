@@ -31,6 +31,8 @@ export interface RsglResourceNavigationTarget {
 export interface RsglResourceNavigationOccurrence
   extends RsglResourceNavigationLocation, RsglResourceNavigationTarget {
   role: "definition" | "reference";
+  /** False for transitive dependency facts that have no literal at this range. */
+  selectable: boolean;
 }
 
 /** Immutable, protocol-neutral lookup over one concrete compile result. */
@@ -133,6 +135,7 @@ export function createRsglResourceNavigationIndex(
           kind: target.kind,
           id: target.id,
           role: "definition",
+          selectable: true,
           fileName: origin.sourceFile,
           range: origin.sourceRange
         });
@@ -141,12 +144,14 @@ export function createRsglResourceNavigationIndex(
   }
 
   for (const reference of references) {
+    const location = reference.navigationLocation ?? reference;
     occurrences.push({
       kind: reference.targetKind,
       id: reference.id,
       role: "reference",
-      fileName: reference.sourceFile,
-      range: reference.range
+      selectable: reference.origin === "direct",
+      fileName: location.sourceFile,
+      range: location.range
     });
   }
 
@@ -205,7 +210,9 @@ function touchedTargets(
   const occurrences = index.occurrencesByFile.get(
     rsglPathKey(resolveRsglPath(fileName))
   ) ?? [];
-  const touched = occurrences.filter(occurrence => touchesRange(occurrence.range, offset));
+  const touched = occurrences.filter(occurrence =>
+    occurrence.selectable && touchesRange(occurrence.range, offset)
+  );
   if (touched.length === 0) {
     return [];
   }
@@ -232,13 +239,17 @@ function normalizeOccurrences(
   for (const occurrence of occurrences) {
     const fileName = resolveRsglPath(occurrence.fileName);
     const normalized = { ...occurrence, fileName };
-    unique.set([
+    const identity = [
       occurrence.role,
       targetKey(occurrence),
       rsglPathKey(fileName),
       occurrence.range.start,
       occurrence.range.end
-    ].join("\0"), normalized);
+    ].join("\0");
+    const previous = unique.get(identity);
+    unique.set(identity, previous
+      ? { ...normalized, selectable: previous.selectable || normalized.selectable }
+      : normalized);
   }
   return [...unique.values()].sort(compareOccurrences);
 }

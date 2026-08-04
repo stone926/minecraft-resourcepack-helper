@@ -8,6 +8,7 @@ import type {
 } from "./evaluationTypes";
 import {
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath
 } from "./evaluationProvenance";
@@ -19,6 +20,7 @@ export function bindEvaluationValue(
   value: EvaluationValue,
   origin?: EvaluationOrigin,
   pathOrigins: readonly EvaluationPathOrigin[] = [],
+  selectionPathOrigins: readonly EvaluationPathOrigin[] = [],
   valueIssues: readonly EvaluationValueIssue[] = []
 ): void {
   context.variables.set(name, value);
@@ -37,6 +39,13 @@ export function bindEvaluationValue(
     originsByName.delete(name);
   }
   context.valuePathOrigins = originsByName;
+  const selectionsByName = new Map(context.valueSelectionPathOrigins ?? []);
+  if (selectionPathOrigins.length > 0) {
+    selectionsByName.set(name, [...selectionPathOrigins]);
+  } else {
+    selectionsByName.delete(name);
+  }
+  context.valueSelectionPathOrigins = selectionsByName;
   const issuesByName = new Map(context.valueIssues ?? []);
   if (valueIssues.length > 0) {
     issuesByName.set(name, [...valueIssues]);
@@ -54,12 +63,14 @@ export function bindEvaluationResult(
   sourceFile = context.sourceFile
 ): void {
   const pathOrigins = materializeEvaluationPathOrigins(result, sourceFile);
+  const selectionPathOrigins = materializeEvaluationSelectionPathOrigins(result, sourceFile);
   bindEvaluationValue(
     context,
     name,
     result.value,
     originForEvaluationPath(pathOrigins, "") ?? result.origin,
     pathOrigins,
+    selectionPathOrigins,
     materializeEvaluationValueIssues(result, sourceFile)
   );
 }

@@ -7,6 +7,7 @@ import {
   childEvaluationContext,
   evaluateExpressionResult,
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath,
   selectEvaluationPathOrigins,
@@ -607,17 +608,26 @@ function appendRangeFrames(
     return;
   }
   const origins = materializeEvaluationPathOrigins(result, context.sourceFile);
+  const selectionOrigins = materializeEvaluationSelectionPathOrigins(
+    result,
+    context.sourceFile
+  );
   const issues = materializeEvaluationValueIssues(result, context.sourceFile);
   for (const [index, frame] of result.value.entries()) {
     const loopContext = childEvaluationContext(context, { index, frame });
     const selectedPath = `/${index}`;
     const selectedOrigins = selectEvaluationPathOrigins(origins, selectedPath);
+    const selectedSelectionOrigins = selectEvaluationPathOrigins(
+      selectionOrigins,
+      selectedPath
+    );
     bindEvaluationValue(
       loopContext,
       "frame",
       frame,
       originForEvaluationPath(selectedOrigins, ""),
       selectedOrigins,
+      selectedSelectionOrigins,
       selectEvaluationValueIssues(issues, selectedPath)
     );
     const entryPath = appendGeneratedPath(appendGeneratedPath(generatedPath, "entries"), String(entries.length));

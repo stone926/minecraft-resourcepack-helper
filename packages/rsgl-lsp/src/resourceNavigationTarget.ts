@@ -30,7 +30,9 @@ export function resourceNavigationTargetsAtOffset(
   const fileKey = rsglPathKey(resolveRsglPath(fileName));
   const occurrences = analysis.index.occurrencesByFile.get(fileKey) ?? [];
   const touched = occurrences.filter(occurrence =>
-    occurrence.range.start <= offset && offset <= occurrence.range.end
+    occurrence.selectable
+    && occurrence.range.start <= offset
+    && offset <= occurrence.range.end
   );
   if (touched.length === 0) {
     return [];
@@ -63,11 +65,12 @@ function sameOccurrence(
   usage: RsglResourceAnalysisResult["externalResources"][number],
   occurrence: RsglResourceNavigationOccurrence
 ): boolean {
+  const location = usage.navigationLocation ?? usage;
   return usage.targetKind === occurrence.kind
     && usage.id === occurrence.id
-    && rsglPathKey(resolveRsglPath(usage.sourceFile)) === rsglPathKey(occurrence.fileName)
-    && usage.range.start === occurrence.range.start
-    && usage.range.end === occurrence.range.end;
+    && rsglPathKey(resolveRsglPath(location.sourceFile)) === rsglPathKey(occurrence.fileName)
+    && location.range.start === occurrence.range.start
+    && location.range.end === occurrence.range.end;
 }
 
 function rangeLength(occurrence: RsglResourceNavigationOccurrence): number {

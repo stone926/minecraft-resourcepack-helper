@@ -36,6 +36,11 @@ export interface RsglResourceValueObservation {
   readonly generatedPath: string;
   readonly valueKind: RsglResourceValueKind | "textureVariable";
   readonly range: TextRange;
+  /** Selected value syntax, kept separate from the diagnostic/source-map location. */
+  readonly valueLocation?: {
+    readonly range: TextRange;
+    readonly sourceFile?: string;
+  };
   readonly sourceFile?: string;
 }
 

@@ -65,12 +65,32 @@ export function materializeEvaluationPathOrigins(
   result: Pick<EvaluationResult, "pathOrigins" | "pathRanges">,
   sourceFile?: string
 ): EvaluationPathOrigin[] {
-  const inheritedOrigins = deduplicatePathEntries(result.pathOrigins);
+  return materializePathOrigins(result.pathOrigins, result.pathRanges, sourceFile);
+}
+
+/** Converts exact selected value syntax to durable cross-binding origins. */
+export function materializeEvaluationSelectionPathOrigins(
+  result: Pick<EvaluationResult, "selectionPathOrigins" | "valuePathRanges">,
+  sourceFile?: string
+): EvaluationPathOrigin[] {
+  return materializePathOrigins(
+    result.selectionPathOrigins,
+    result.valuePathRanges,
+    sourceFile
+  );
+}
+
+function materializePathOrigins(
+  inherited: readonly EvaluationPathOrigin[],
+  ranges: readonly EvaluationPathRange[],
+  sourceFile?: string
+): EvaluationPathOrigin[] {
+  const inheritedOrigins = deduplicatePathEntries(inherited);
   if (!sourceFile) {
     return inheritedOrigins;
   }
   const origins = [...inheritedOrigins];
-  for (const item of result.pathRanges) {
+  for (const item of ranges) {
     if (!originForEvaluationPath(inheritedOrigins, item.generatedPath)) {
       origins.push({
         generatedPath: item.generatedPath,

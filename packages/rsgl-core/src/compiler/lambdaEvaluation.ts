@@ -116,6 +116,9 @@ export function captureEvaluationContext(context: EvaluationContext): Evaluation
     variables: new Map(context.variables),
     valueOrigins: context.valueOrigins ? new Map(context.valueOrigins) : undefined,
     valuePathOrigins: context.valuePathOrigins ? new Map(context.valuePathOrigins) : undefined,
+    valueSelectionPathOrigins: context.valueSelectionPathOrigins
+      ? new Map(context.valueSelectionPathOrigins)
+      : undefined,
     valueIssues: context.valueIssues ? new Map(context.valueIssues) : undefined
   };
 }

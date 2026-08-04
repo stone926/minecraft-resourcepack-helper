@@ -25,6 +25,7 @@ import {
   bindEvaluationResult,
   evaluateExpressionResult,
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath
 } from "./evaluate";
@@ -51,6 +52,7 @@ export interface RsglModuleCompileEnvironment {
   importedValues: Map<string, EvaluationValue>;
   importedValueOrigins: Map<string, EvaluationOrigin>;
   importedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
+  importedValueSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
   importedValueIssues: Map<string, EvaluationValueIssue[]>;
   importedTemplates: Map<string, RsglTemplateDefinition>;
   /** Exact direct top-level evaluations keyed by their declaration node. */
@@ -59,11 +61,13 @@ export interface RsglModuleCompileEnvironment {
   allValues: Map<string, EvaluationValue>;
   allValueOrigins: Map<string, EvaluationOrigin>;
   allValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
+  allValueSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
   allValueIssues: Map<string, EvaluationValueIssue[]>;
   allTemplates: Map<string, RsglTemplateDefinition>;
   exportedValues: Map<string, EvaluationValue>;
   exportedValueOrigins: Map<string, EvaluationOrigin>;
   exportedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
+  exportedValueSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
   exportedValueIssues: Map<string, EvaluationValueIssue[]>;
   exportedTemplates: Map<string, RsglTemplateDefinition>;
 }
@@ -84,6 +88,7 @@ export interface RsglTemplateDefinition {
   values: Map<string, EvaluationValue>;
   valueOrigins?: Map<string, EvaluationOrigin>;
   valuePathOrigins?: Map<string, EvaluationPathOrigin[]>;
+  valueSelectionPathOrigins?: Map<string, EvaluationPathOrigin[]>;
   valueIssues?: Map<string, EvaluationValueIssue[]>;
   templates: Map<string, RsglTemplateDefinition>;
 }
@@ -93,6 +98,7 @@ export interface RsglExternalValueDefinition {
   value: EvaluationValue;
   origin?: EvaluationOrigin;
   pathOrigins?: readonly EvaluationPathOrigin[];
+  selectionPathOrigins?: readonly EvaluationPathOrigin[];
   valueIssues?: readonly EvaluationValueIssue[];
 }
 
@@ -229,6 +235,7 @@ export function mapToExternalValues(
   values: Map<string, EvaluationValue>,
   origins: ReadonlyMap<string, EvaluationOrigin> = new Map(),
   pathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
+  selectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
   valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]> = new Map()
 ): RsglExternalValueDefinition[] {
   return Array.from(values, ([name, value]) => ({
@@ -236,6 +243,9 @@ export function mapToExternalValues(
     value,
     ...(origins.get(name) ? { origin: origins.get(name) } : {}),
     ...(pathOrigins.get(name) ? { pathOrigins: pathOrigins.get(name) } : {}),
+    ...(selectionPathOrigins.get(name)
+      ? { selectionPathOrigins: selectionPathOrigins.get(name) }
+      : {}),
     ...(valueIssues.get(name) ? { valueIssues: valueIssues.get(name) } : {})
   }));
 }
@@ -253,6 +263,7 @@ function createEmptyCompileEnvironment(
     importedValues: new Map(),
     importedValueOrigins: new Map(),
     importedValuePathOrigins: new Map(),
+    importedValueSelectionPathOrigins: new Map(),
     importedValueIssues: new Map(),
     importedTemplates: new Map(),
     localEvaluationResults: new Map(),
@@ -260,11 +271,13 @@ function createEmptyCompileEnvironment(
     allValues: new Map(),
     allValueOrigins: new Map(),
     allValuePathOrigins: new Map(),
+    allValueSelectionPathOrigins: new Map(),
     allValueIssues: new Map(),
     allTemplates: new Map(),
     exportedValues: new Map(),
     exportedValueOrigins: new Map(),
     exportedValuePathOrigins: new Map(),
+    exportedValueSelectionPathOrigins: new Map(),
     exportedValueIssues: new Map(),
     exportedTemplates: new Map()
   };
@@ -292,6 +305,7 @@ function collectImportedEnvironmentBindings(
         values: targetEnvironment.exportedValues,
         valueOrigins: targetEnvironment.exportedValueOrigins,
         valuePathOrigins: targetEnvironment.exportedValuePathOrigins,
+        valueSelectionPathOrigins: targetEnvironment.exportedValueSelectionPathOrigins,
         valueIssues: targetEnvironment.exportedValueIssues,
         templates: targetEnvironment.exportedTemplates
       });
@@ -303,20 +317,24 @@ function collectImportedEnvironmentBindings(
         environment.importedValues,
         environment.importedValueOrigins,
         environment.importedValuePathOrigins,
+        environment.importedValueSelectionPathOrigins,
         environment.importedValueIssues,
         targetEnvironment.exportedValues,
         targetEnvironment.exportedValueOrigins,
         targetEnvironment.exportedValuePathOrigins,
+        targetEnvironment.exportedValueSelectionPathOrigins,
         targetEnvironment.exportedValueIssues
       );
       copyValueBindings(
         environment.allValues,
         environment.allValueOrigins,
         environment.allValuePathOrigins,
+        environment.allValueSelectionPathOrigins,
         environment.allValueIssues,
         targetEnvironment.exportedValues,
         targetEnvironment.exportedValueOrigins,
         targetEnvironment.exportedValuePathOrigins,
+        targetEnvironment.exportedValueSelectionPathOrigins,
         targetEnvironment.exportedValueIssues
       );
       copyTemplates(environment.importedTemplates, targetEnvironment.exportedTemplates);
@@ -335,6 +353,12 @@ function collectImportedEnvironmentBindings(
           environment.importedValueOrigins,
           environment.importedValuePathOrigins
         );
+        copyAliasedValueSelectionPathOrigins(
+          item.imported,
+          item.local,
+          targetEnvironment.exportedValueSelectionPathOrigins,
+          environment.importedValueSelectionPathOrigins
+        );
         copyAliasedValueIssues(
           item.imported,
           item.local,
@@ -348,6 +372,12 @@ function collectImportedEnvironmentBindings(
           targetEnvironment.exportedValuePathOrigins,
           environment.allValueOrigins,
           environment.allValuePathOrigins
+        );
+        copyAliasedValueSelectionPathOrigins(
+          item.imported,
+          item.local,
+          targetEnvironment.exportedValueSelectionPathOrigins,
+          environment.allValueSelectionPathOrigins
         );
         copyAliasedValueIssues(
           item.imported,
@@ -389,6 +419,12 @@ function collectExportedEnvironmentBindings(
           environment.exportedValueOrigins,
           environment.exportedValuePathOrigins
         );
+        copyAliasedValueSelectionPathOrigins(
+          localName,
+          exportedName,
+          environment.allValueSelectionPathOrigins,
+          environment.exportedValueSelectionPathOrigins
+        );
         copyAliasedValueIssues(
           localName,
           exportedName,
@@ -417,10 +453,12 @@ function collectExportedEnvironmentBindings(
         environment.exportedValues,
         environment.exportedValueOrigins,
         environment.exportedValuePathOrigins,
+        environment.exportedValueSelectionPathOrigins,
         environment.exportedValueIssues,
         targetEnvironment.exportedValues,
         targetEnvironment.exportedValueOrigins,
         targetEnvironment.exportedValuePathOrigins,
+        targetEnvironment.exportedValueSelectionPathOrigins,
         targetEnvironment.exportedValueIssues
       );
       copyTemplates(environment.exportedTemplates, targetEnvironment.exportedTemplates);
@@ -435,6 +473,12 @@ function collectExportedEnvironmentBindings(
           targetEnvironment.exportedValuePathOrigins,
           environment.exportedValueOrigins,
           environment.exportedValuePathOrigins
+        );
+        copyAliasedValueSelectionPathOrigins(
+          specifier.local,
+          specifier.exported,
+          targetEnvironment.exportedValueSelectionPathOrigins,
+          environment.exportedValueSelectionPathOrigins
         );
         copyAliasedValueIssues(
           specifier.local,
@@ -475,6 +519,7 @@ function evaluateLocalEnvironmentValues(
     ]),
     valueOrigins: new Map(environment.importedValueOrigins),
     valuePathOrigins: new Map(environment.importedValuePathOrigins),
+    valueSelectionPathOrigins: new Map(environment.importedValueSelectionPathOrigins),
     valueIssues: new Map(environment.importedValueIssues),
     sourceFile: model.fileName,
     mappingReason: "direct",
@@ -525,6 +570,12 @@ function recordLocalEnvironmentValue(
   } else {
     environment.allValuePathOrigins.delete(name);
   }
+  const selectionPathOrigins = materializeEvaluationSelectionPathOrigins(result, sourceFile);
+  if (selectionPathOrigins.length > 0) {
+    environment.allValueSelectionPathOrigins.set(name, selectionPathOrigins);
+  } else {
+    environment.allValueSelectionPathOrigins.delete(name);
+  }
   const issues = materializeEvaluationValueIssues(result, sourceFile);
   if (issues.length > 0) {
     environment.allValueIssues.set(name, issues);
@@ -559,6 +610,7 @@ function collectLocalEnvironmentTemplates(
       );
       definition.valueOrigins = environment.allValueOrigins;
       definition.valuePathOrigins = environment.allValuePathOrigins;
+      definition.valueSelectionPathOrigins = environment.allValueSelectionPathOrigins;
       definition.valueIssues = environment.allValueIssues;
       environment.allTemplates.set(statement.name.text, definition);
     }
@@ -586,10 +638,12 @@ function copyValueBindings(
   target: Map<string, EvaluationValue>,
   targetOrigins: Map<string, EvaluationOrigin>,
   targetPathOrigins: Map<string, EvaluationPathOrigin[]>,
+  targetSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>,
   targetIssues: Map<string, EvaluationValueIssue[]>,
   source: ReadonlyMap<string, EvaluationValue>,
   sourceOrigins: ReadonlyMap<string, EvaluationOrigin>,
   sourcePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
+  sourceSelectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
   sourceIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>
 ): void {
   for (const [name, value] of source) {
@@ -603,8 +657,28 @@ function copyValueBindings(
         targetOrigins,
         targetPathOrigins
       );
+      copyAliasedValueSelectionPathOrigins(
+        name,
+        name,
+        sourceSelectionPathOrigins,
+        targetSelectionPathOrigins
+      );
       copyAliasedValueIssues(name, name, sourceIssues, targetIssues);
     }
+  }
+}
+
+function copyAliasedValueSelectionPathOrigins(
+  sourceName: string,
+  targetName: string,
+  source: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
+  target: Map<string, EvaluationPathOrigin[]>
+): void {
+  const origins = source.get(sourceName);
+  if (origins) {
+    target.set(targetName, [...origins]);
+  } else {
+    target.delete(targetName);
   }
 }
 

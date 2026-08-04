@@ -7,6 +7,7 @@ import {
   deduplicatePathEntries,
   deduplicateValueIssues,
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath,
   rangeForEvaluationPath,
@@ -105,7 +106,9 @@ function buildEvaluationResult(
       value,
       direct.pathRanges,
       pathOrigins,
-      frame.context.valueIssues?.get(expression.name.text) ?? direct.valueIssues
+      frame.context.valueIssues?.get(expression.name.text) ?? direct.valueIssues,
+      direct.valuePathRanges,
+      frame.context.valueSelectionPathOrigins?.get(expression.name.text) ?? []
     );
   }
 
@@ -191,7 +194,9 @@ function buildEvaluationResult(
         value,
         [{ generatedPath: "", sourceRange: expression.range }],
         pathOrigins,
-        member?.valueIssues ?? direct.valueIssues
+        member?.valueIssues ?? direct.valueIssues,
+        direct.valuePathRanges,
+        member?.selectionPathOrigins ?? []
       );
     }
     return object
@@ -276,7 +281,12 @@ function buildEvaluationResult(
           value,
           argument.result.pathRanges,
           materializeEvaluationPathOrigins(argument.result, argument.context.sourceFile),
-          materializeEvaluationValueIssues(argument.result, argument.context.sourceFile)
+          materializeEvaluationValueIssues(argument.result, argument.context.sourceFile),
+          argument.result.valuePathRanges,
+          materializeEvaluationSelectionPathOrigins(
+            argument.result,
+            argument.context.sourceFile
+          )
         );
       }
     }
@@ -295,7 +305,9 @@ function buildEvaluationResult(
           value,
           [{ generatedPath: "", sourceRange: expression.range }],
           pathOrigins,
-          materializeEvaluationValueIssues(body.result, body.context.sourceFile)
+          materializeEvaluationValueIssues(body.result, body.context.sourceFile),
+          body.result.valuePathRanges,
+          materializeEvaluationSelectionPathOrigins(body.result, body.context.sourceFile)
         );
       }
     }
@@ -352,17 +364,23 @@ function structuralEvaluationResult(
   children: readonly EvaluationResult[],
   additionalIssues: readonly EvaluationValueIssue[] = []
 ): EvaluationResult {
+  const pathRanges = deduplicatePathEntries([
+    { generatedPath: "", sourceRange: range },
+    ...children.flatMap(child => child.pathRanges)
+  ]);
   return evaluationResult(
     value,
-    deduplicatePathEntries([
-      { generatedPath: "", sourceRange: range },
-      ...children.flatMap(child => child.pathRanges)
-    ]),
+    pathRanges,
     deduplicatePathEntries(children.flatMap(child => child.pathOrigins)),
     deduplicateValueIssues([
       ...children.flatMap(child => child.valueIssues),
       ...additionalIssues
-    ])
+    ]),
+    deduplicatePathEntries([
+      { generatedPath: "", sourceRange: range },
+      ...children.flatMap(child => child.valuePathRanges)
+    ]),
+    deduplicatePathEntries(children.flatMap(child => child.selectionPathOrigins))
   );
 }
 
@@ -384,7 +402,9 @@ function tracedCollectionEvaluationResult(
       materializeEvaluationPathOrigins(selected, sourceFile),
       path.source.omitValueIssues
         ? []
-        : materializeEvaluationValueIssues(selected, sourceFile)
+        : materializeEvaluationValueIssues(selected, sourceFile),
+      sourceFile === frame.context.sourceFile ? selected.valuePathRanges : [],
+      materializeEvaluationSelectionPathOrigins(selected, sourceFile)
     );
     return rebaseEvaluationResult(durable, path.outputPath);
   });
@@ -401,7 +421,9 @@ function wrappedEvaluationResult(
     value,
     [{ generatedPath: "", sourceRange: range }, ...ranges],
     selected.pathOrigins,
-    selected.valueIssues
+    selected.valueIssues,
+    selected.valuePathRanges,
+    selected.selectionPathOrigins
   );
 }
 
@@ -419,7 +441,9 @@ function selectedEvaluationResult(
       ...selected.pathRanges.filter(item => item.generatedPath !== "")
     ],
     selected.pathOrigins,
-    selected.valueIssues
+    selected.valueIssues,
+    selected.valuePathRanges,
+    selected.selectionPathOrigins
   );
 }
 
@@ -427,7 +451,9 @@ function evaluationResult(
   value: EvaluationValue,
   pathRanges: readonly EvaluationPathRange[],
   pathOrigins: readonly EvaluationPathOrigin[],
-  valueIssues: readonly EvaluationValueIssue[] = []
+  valueIssues: readonly EvaluationValueIssue[] = [],
+  valuePathRanges: readonly EvaluationPathRange[] = pathRanges,
+  selectionPathOrigins: readonly EvaluationPathOrigin[] = []
 ): EvaluationResult {
   const origins = deduplicatePathEntries(pathOrigins);
   const origin = originForEvaluationPath(origins, "") ?? mergeEvaluationOrigins(origins);
@@ -443,6 +469,8 @@ function evaluationResult(
     value,
     ...(origin ? { origin } : {}),
     pathOrigins: origins,
+    selectionPathOrigins: deduplicatePathEntries(selectionPathOrigins),
+    valuePathRanges: deduplicatePathEntries(valuePathRanges),
     pathRanges: deduplicatePathEntries(pathRanges),
     valueIssues: deduplicateValueIssues([
       ...valueIssues,
@@ -470,6 +498,14 @@ function rebaseEvaluationResult(
     result.valueIssues.map(item => ({
       ...item,
       generatedPath: appendEvaluationPath(basePath, item.generatedPath)
+    })),
+    result.valuePathRanges.map(item => ({
+      ...item,
+      generatedPath: appendEvaluationPath(basePath, item.generatedPath)
+    })),
+    result.selectionPathOrigins.map(item => ({
+      ...item,
+      generatedPath: appendEvaluationPath(basePath, item.generatedPath)
     }))
   );
 }
@@ -479,9 +515,16 @@ export function selectEvaluationResultPath(
   selectedPath: string
 ): EvaluationResult {
   const ranges = selectPathEntries(result.pathRanges, selectedPath);
+  const valueRanges = selectPathEntries(result.valuePathRanges, selectedPath);
   const origins = selectPathEntries(result.pathOrigins, selectedPath);
+  const selectionOrigins = selectPathEntries(result.selectionPathOrigins, selectedPath);
   const inheritedRange = rangeForEvaluationPath(result.pathRanges, selectedPath);
+  const inheritedValueRange = rangeForEvaluationPath(result.valuePathRanges, selectedPath);
   const inheritedOrigin = originForEvaluationPath(result.pathOrigins, selectedPath);
+  const inheritedSelectionOrigin = originForEvaluationPath(
+    result.selectionPathOrigins,
+    selectedPath
+  );
   return evaluationResult(
     result.value,
     ranges.length > 0
@@ -490,7 +533,17 @@ export function selectEvaluationResultPath(
     origins.length > 0
       ? origins
       : inheritedOrigin ? [{ generatedPath: "", ...inheritedOrigin }] : [],
-    selectPathEntries(result.valueIssues, selectedPath)
+    selectPathEntries(result.valueIssues, selectedPath),
+    valueRanges.length > 0
+      ? valueRanges
+      : inheritedValueRange
+        ? [{ generatedPath: "", sourceRange: inheritedValueRange }]
+        : [],
+    selectionOrigins.length > 0
+      ? selectionOrigins
+      : inheritedSelectionOrigin
+        ? [{ generatedPath: "", ...inheritedSelectionOrigin }]
+        : []
   );
 }
 

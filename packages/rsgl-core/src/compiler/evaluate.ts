@@ -83,6 +83,7 @@ export {
 } from "./evaluationBindings";
 export {
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath,
   rangeForEvaluationPath,

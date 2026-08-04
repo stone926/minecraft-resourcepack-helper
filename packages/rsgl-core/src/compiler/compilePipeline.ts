@@ -280,6 +280,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
         environment.importedValues,
         environment.importedValueOrigins,
         environment.importedValuePathOrigins,
+        environment.importedValueSelectionPathOrigins,
         environment.importedValueIssues
       ),
       environment,

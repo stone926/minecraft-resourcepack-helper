@@ -118,6 +118,50 @@ describe("RSGL resource language service", () => {
     }, "rsgl-resource-dynamic-binding-");
   });
 
+  it("resolves finite interpolated model references to their shared template declaration", () => {
+    withTempDir(root => {
+      const fileName = path.join(root, "note-blocks.rsgl");
+      const text = [
+        "template noteOverlayModel(suffix: Json) {",
+        "  model block `note_block_${suffix}` {}",
+        "}",
+        "for note in 0..2 {",
+        "  use noteOverlayModel(note)",
+        "}",
+        "blockstate multipart note_block {",
+        "  for note in 0..2 {",
+        "    part when $state.note == note => `block/note_block_${note}`",
+        "  }",
+        "}"
+      ].join("\n");
+      fs.writeFileSync(fileName, text);
+      const workspace = resourceWorkspace(root);
+      const document = { fileName, getText: () => text };
+      const declarationStart = text.indexOf("`note_block_${suffix}`");
+      const referenceStart = text.indexOf("`block/note_block_${note}`");
+      const interpolationStart = text.indexOf("${note}", referenceStart) + 2;
+      const loopVariableStart = text.lastIndexOf("note in 0..2");
+
+      assert.deepStrictEqual(
+        getRsglDocumentDefinitionLocations(document, referenceStart + 2, workspace),
+        [{
+          fileName,
+          range: {
+            start: declarationStart,
+            end: declarationStart + "`note_block_${suffix}`".length
+          }
+        }]
+      );
+      assert.deepStrictEqual(
+        getRsglDocumentDefinitionLocation(document, interpolationStart + 1, workspace),
+        {
+          fileName,
+          range: { start: loopVariableStart, end: loopVariableStart + "note".length }
+        }
+      );
+    }, "rsgl-resource-interpolated-definition-");
+  });
+
   it("applies the project default namespace to resource navigation", () => {
     withTempDir(root => {
       const fileName = path.join(root, "default-namespace.rsgl");

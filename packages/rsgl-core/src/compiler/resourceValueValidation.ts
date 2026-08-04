@@ -92,20 +92,29 @@ function resourceValueObservation(
   range: ValidationRange,
   generatedPath: string | undefined
 ): RsglResourceValueObservation | undefined {
-  const observations = unit.validation?.resourceValueObservations ?? [];
   if (generatedPath !== undefined) {
-    for (let index = observations.length - 1; index >= 0; index--) {
-      if (observations[index].generatedPath === generatedPath) {
-        return observations[index];
-      }
-    }
-    return undefined;
+    return resourceValueObservationForGeneratedPath(unit, generatedPath);
   }
+  const observations = unit.validation?.resourceValueObservations ?? [];
   for (let index = observations.length - 1; index >= 0; index--) {
     const observation = observations[index];
     if (observation.range === range
       || (observation.range.start === range.start && observation.range.end === range.end)) {
       return observation;
+    }
+  }
+  return undefined;
+}
+
+/** Returns the effective typed value observation at one final JSON path. */
+export function resourceValueObservationForGeneratedPath(
+  unit: ResourceUnit,
+  generatedPath: string
+): RsglResourceValueObservation | undefined {
+  const observations = unit.validation?.resourceValueObservations ?? [];
+  for (let index = observations.length - 1; index >= 0; index--) {
+    if (observations[index].generatedPath === generatedPath) {
+      return observations[index];
     }
   }
   return undefined;

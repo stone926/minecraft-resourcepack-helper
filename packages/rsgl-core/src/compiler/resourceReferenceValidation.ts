@@ -17,6 +17,7 @@ import type {
   RsglCheckedResourceReference,
   RsglExternalResourceResolution,
   RsglResourceExistenceKind,
+  RsglResourceNavigationSourceLocation,
   RsglResourceValidationOptions,
   ValidationRange
 } from "./validationTypes";
@@ -25,7 +26,10 @@ import {
   type RsglResourceReferenceConsumer,
   type RsglResourceReferenceConsumerContext
 } from "./resourceReferenceConsumers";
-import { validateResourceValueConsumer } from "./resourceValueValidation";
+import {
+  resourceValueObservationForGeneratedPath,
+  validateResourceValueConsumer
+} from "./resourceValueValidation";
 import {
   cachedExternDeclarationSelection,
   type RsglExternDeclarationSelection
@@ -78,6 +82,12 @@ export function checkResourceExists(
     return { available: false, external: false };
   }
   const sourceFile = sourceFileForValidationRange(unit, range);
+  const navigationLocation = resourceValueLocation
+    ? resourceValueNavigationLocation(
+      resourceValueLocation.unit,
+      resourceValueLocation.generatedPath
+    )
+    : undefined;
   const reference = canonicalizeResourceReference(consumer, rawValue, defaultNamespace, consumerContext);
   if (reference.kind === "invalid") {
     pushDiagnosticAtRange(
@@ -100,6 +110,7 @@ export function checkResourceExists(
     id: lookupId,
     sourceFile,
     range,
+    ...(navigationLocation ? { navigationLocation } : {}),
     ...referenceConsumerFacts(
       consumer,
       unit,
@@ -152,6 +163,7 @@ export function checkResourceExists(
     skipExistenceCheck,
     sourceFile,
     range,
+    ...(navigationLocation ? { navigationLocation } : {}),
     ...referenceConsumerFacts(
       consumer,
       unit,
@@ -400,6 +412,23 @@ function pushResourceDiagnostic(
 
 function normalizeValidationFileName(fileName: string): string {
   return rsglPathKey(fileName);
+}
+
+function resourceValueNavigationLocation(
+  unit: ResourceUnit,
+  generatedPath: string
+): RsglResourceNavigationSourceLocation | undefined {
+  const observation = resourceValueObservationForGeneratedPath(unit, generatedPath);
+  if (!observation) {
+    return undefined;
+  }
+  const range = observation.valueLocation?.range ?? observation.range;
+  return {
+    sourceFile: observation.valueLocation?.sourceFile
+      ?? observation.sourceFile
+      ?? sourceFileForValidationRange(unit, observation.range),
+    range
+  };
 }
 
 function resolveExternalResource(

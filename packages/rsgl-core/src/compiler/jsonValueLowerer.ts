@@ -39,6 +39,11 @@ export interface JsonValueSinkOptions {
 export interface JsonRuntimeValueAdapterContext {
   generatedPath: string;
   range: TextRange;
+  /** Most specific executed expression, independent from diagnostic provenance. */
+  valueLocation?: {
+    range: TextRange;
+    sourceFile?: string;
+  };
   sourceFile?: string;
 }
 
@@ -265,6 +270,16 @@ function cloneSerializableValue(
   const sourceFile = origin?.sourceFile
     ?? result.origin?.sourceFile
     ?? host.sourceFile;
+  const selectionOrigin = originForEvaluationPath(
+    result.selectionPathOrigins,
+    generatedPath
+  );
+  const valueRange = selectionOrigin?.sourceRange
+    ?? rangeForEvaluationPath(result.valuePathRanges, generatedPath)
+    ?? range;
+  const valueSourceFile = selectionOrigin?.sourceFile
+    ?? host.sourceFile
+    ?? sourceFile;
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
   }
@@ -300,6 +315,10 @@ function cloneSerializableValue(
   const adapterContext: JsonRuntimeValueAdapterContext = {
     generatedPath: joinGeneratedPath(host.generatedPathPrefix ?? "", generatedPath),
     range,
+    valueLocation: {
+      range: valueRange,
+      ...(valueSourceFile ? { sourceFile: valueSourceFile } : {})
+    },
     ...(sourceFile ? { sourceFile } : {})
   };
   for (const adapter of host.adapters ?? []) {

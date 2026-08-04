@@ -9,6 +9,7 @@ import {
   childEvaluationContext,
   evaluateExpressionResult,
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath,
   selectEvaluationPathOrigins,
@@ -41,6 +42,7 @@ export function createLoopContext(
   sourceRange: { start: number; end: number },
   bindingOrigins: ReadonlyMap<string, EvaluationOrigin> = new Map(),
   bindingPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
+  bindingSelectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
   bindingValueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]> = new Map()
 ): EvaluationContext {
   const loopReason = context.mappingReason === "direct" || !context.mappingReason
@@ -60,6 +62,10 @@ export function createLoopContext(
   loopContext.valuePathOrigins = new Map([
     ...(context.valuePathOrigins ?? []),
     ...bindingPathOrigins
+  ]);
+  loopContext.valueSelectionPathOrigins = new Map([
+    ...(context.valueSelectionPathOrigins ?? []),
+    ...bindingSelectionPathOrigins
   ]);
   loopContext.valueIssues = new Map([
     ...(context.valueIssues ?? []),
@@ -82,6 +88,7 @@ export function forEachLoopContext(
     bindings: Record<string, EvaluationValue>,
     bindingOrigins: Map<string, EvaluationOrigin>,
     bindingPathOrigins: Map<string, readonly EvaluationPathOrigin[]>,
+    bindingSelectionPathOrigins: Map<string, readonly EvaluationPathOrigin[]>,
     bindingValueIssues: Map<string, readonly EvaluationValueIssue[]>
   ): void => {
     if (index >= dimensions.length) {
@@ -91,6 +98,7 @@ export function forEachLoopContext(
         statement.range,
         bindingOrigins,
         bindingPathOrigins,
+        bindingSelectionPathOrigins,
         bindingValueIssues
       ));
       return;
@@ -105,6 +113,10 @@ export function forEachLoopContext(
     iterableContext.valuePathOrigins = new Map([
       ...(context.valuePathOrigins ?? []),
       ...bindingPathOrigins
+    ]);
+    iterableContext.valueSelectionPathOrigins = new Map([
+      ...(context.valueSelectionPathOrigins ?? []),
+      ...bindingSelectionPathOrigins
     ]);
     iterableContext.valueIssues = new Map([
       ...(context.valueIssues ?? []),
@@ -139,6 +151,10 @@ export function forEachLoopContext(
       iterableResult,
       iterableContext.sourceFile
     );
+    const iterableSelectionOrigins = materializeEvaluationSelectionPathOrigins(
+      iterableResult,
+      iterableContext.sourceFile
+    );
     const iterableIssues = materializeEvaluationValueIssues(
       iterableResult,
       iterableContext.sourceFile
@@ -147,10 +163,15 @@ export function forEachLoopContext(
     for (const [valueIndex, value] of iterable.entries()) {
       const indexedPath = `/${valueIndex}`;
       const itemOrigins = selectEvaluationPathOrigins(iterableOrigins, indexedPath);
+      const itemSelectionOrigins = selectEvaluationPathOrigins(
+        iterableSelectionOrigins,
+        indexedPath
+      );
       const itemIssues = selectEvaluationValueIssues(iterableIssues, indexedPath);
       const iterableOrigin = originForEvaluationPath(itemOrigins, "");
       const nextOrigins = new Map(bindingOrigins);
       const nextPathOrigins = new Map(bindingPathOrigins);
+      const nextSelectionPathOrigins = new Map(bindingSelectionPathOrigins);
       const nextValueIssues = new Map(bindingValueIssues);
       const selectedBindings = selectLoopBindings(bindingMappings, value);
       for (const mapping of bindingMappings) {
@@ -173,6 +194,14 @@ export function forEachLoopContext(
                 `/${escapeJsonPointerSegment(sourceProperty)}`
               )
             : [];
+        const bindingItemSelectionOrigins = mapping.kind === "wholeValue"
+          ? itemSelectionOrigins
+          : sourceProperty !== undefined
+            ? selectEvaluationPathOrigins(
+                itemSelectionOrigins,
+                `/${escapeJsonPointerSegment(sourceProperty)}`
+              )
+            : [];
         const bindingOrigin = originForEvaluationPath(bindingItemOrigins, "") ?? iterableOrigin;
         const bindingName = mapping.binding.text;
         if (bindingOrigin) {
@@ -185,6 +214,11 @@ export function forEachLoopContext(
         } else {
           nextPathOrigins.delete(bindingName);
         }
+        if (bindingItemSelectionOrigins.length > 0) {
+          nextSelectionPathOrigins.set(bindingName, bindingItemSelectionOrigins);
+        } else {
+          nextSelectionPathOrigins.delete(bindingName);
+        }
         if (bindingItemIssues.length > 0) {
           nextValueIssues.set(bindingName, bindingItemIssues);
         } else {
@@ -194,11 +228,11 @@ export function forEachLoopContext(
       walk(index + 1, {
         ...bindings,
         ...selectedBindings
-      }, nextOrigins, nextPathOrigins, nextValueIssues);
+      }, nextOrigins, nextPathOrigins, nextSelectionPathOrigins, nextValueIssues);
     }
   };
 
-  walk(0, {}, new Map(), new Map(), new Map());
+  walk(0, {}, new Map(), new Map(), new Map(), new Map());
 }
 
 function escapeJsonPointerSegment(value: string): string {

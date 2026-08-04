@@ -14,6 +14,7 @@ import {
   evaluateExpressionResult,
   hasEvaluationValueBinding,
   materializeEvaluationPathOrigins,
+  materializeEvaluationSelectionPathOrigins,
   materializeEvaluationValueIssues,
   originForEvaluationPath,
   RawGlobLoader,
@@ -131,6 +132,10 @@ export function createTemplateExpansion(
     ...(templateBaseContext.valuePathOrigins ?? []),
     ...binding.pathOrigins
   ]);
+  templateContext.valueSelectionPathOrigins = new Map([
+    ...(templateBaseContext.valueSelectionPathOrigins ?? []),
+    ...binding.selectionPathOrigins
+  ]);
   templateContext.valueIssues = new Map([
     ...(templateBaseContext.valueIssues ?? []),
     ...binding.valueIssues
@@ -197,6 +202,7 @@ interface BoundCallableValues {
   values: Record<string, EvaluationValue>;
   origins: Map<string, EvaluationOrigin>;
   pathOrigins: Map<string, EvaluationPathOrigin[]>;
+  selectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
   valueIssues: Map<string, EvaluationValueIssue[]>;
 }
 
@@ -211,6 +217,7 @@ function bindCallableValues(
   const values: Record<string, EvaluationValue> = {};
   const origins = new Map<string, EvaluationOrigin>();
   const pathOrigins = new Map<string, EvaluationPathOrigin[]>();
+  const selectionPathOrigins = new Map<string, EvaluationPathOrigin[]>();
   const valueIssues = new Map<string, EvaluationValueIssue[]>();
   const binding = bindRsglArguments(parameters, expression.args, {
     callRange: expression.range,
@@ -264,6 +271,13 @@ function bindCallableValues(
     if (materialized.length > 0) {
       pathOrigins.set(name, materialized);
     }
+    const materializedSelection = materializeEvaluationSelectionPathOrigins(
+      result,
+      callContext.sourceFile
+    );
+    if (materializedSelection.length > 0) {
+      selectionPathOrigins.set(name, materializedSelection);
+    }
     const origin = originForEvaluationPath(materialized, "") ?? result.origin;
     if (origin) {
       origins.set(name, origin);
@@ -290,6 +304,10 @@ function bindCallableValues(
         ...(definitionContext.valuePathOrigins ?? []),
         ...pathOrigins
       ]);
+      defaultContext.valueSelectionPathOrigins = new Map([
+        ...(definitionContext.valueSelectionPathOrigins ?? []),
+        ...selectionPathOrigins
+      ]);
       defaultContext.valueIssues = new Map([
         ...(definitionContext.valueIssues ?? []),
         ...valueIssues
@@ -311,6 +329,13 @@ function bindCallableValues(
       if (materialized.length > 0) {
         pathOrigins.set(name, materialized);
       }
+      const materializedSelection = materializeEvaluationSelectionPathOrigins(
+        result,
+        definitionContext.sourceFile
+      );
+      if (materializedSelection.length > 0) {
+        selectionPathOrigins.set(name, materializedSelection);
+      }
       const origin = originForEvaluationPath(materialized, "") ?? result.origin;
       if (origin) {
         origins.set(name, origin);
@@ -321,7 +346,7 @@ function bindCallableValues(
       }
     }
   }
-  return { values, origins, pathOrigins, valueIssues };
+  return { values, origins, pathOrigins, selectionPathOrigins, valueIssues };
 }
 
 function normalizeCallableValue(
@@ -367,6 +392,9 @@ function createTemplateBaseContext(
     resolvedExpectedTypes: template.resolvedExpectedTypes,
     valueOrigins: template.valueOrigins ? new Map(template.valueOrigins) : undefined,
     valuePathOrigins: template.valuePathOrigins ? new Map(template.valuePathOrigins) : undefined,
+    valueSelectionPathOrigins: template.valueSelectionPathOrigins
+      ? new Map(template.valueSelectionPathOrigins)
+      : undefined,
     valueIssues: template.valueIssues ? new Map(template.valueIssues) : undefined,
     valueBindingNames: new Set(template.values.keys()),
     sourceFile: template.fileName,

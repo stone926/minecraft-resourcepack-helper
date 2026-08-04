@@ -44,6 +44,12 @@ export interface RsglExternalResourceResolution {
   metadataPaths?: readonly string[];
 }
 
+/** Exact source syntax that users can select for resource navigation. */
+export interface RsglResourceNavigationSourceLocation {
+  sourceFile: string;
+  range: ValidationRange;
+}
+
 export interface RsglExternalResourceUsage {
   source: ExternResourceSource;
   /** Scope used for lookup; inherited external references resolve effectively. */
@@ -54,6 +60,8 @@ export interface RsglExternalResourceUsage {
   skipExistenceCheck: boolean;
   sourceFile: string;
   range: ValidationRange;
+  /** Separate from the dependency range when a value flowed through a parent/template. */
+  navigationLocation?: RsglResourceNavigationSourceLocation;
   consumerOutputPath: string;
   consumerKind: string;
   consumerId?: string;
@@ -72,6 +80,8 @@ export interface RsglResourceReferenceUsage {
   id: string;
   sourceFile: string;
   range: ValidationRange;
+  /** Separate from the dependency range when a value flowed through a parent/template. */
+  navigationLocation?: RsglResourceNavigationSourceLocation;
   /** Concrete final output that owns this reference edge. */
   consumerOutputPath: string;
   consumerKind: string;

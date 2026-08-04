@@ -91,6 +91,15 @@ export interface EvaluationResult {
   value: EvaluationValue;
   origin?: EvaluationOrigin;
   pathOrigins: EvaluationPathOrigin[];
+  /** Durable form of the exact executed value syntax across lexical boundaries. */
+  selectionPathOrigins: EvaluationPathOrigin[];
+  /**
+   * Most specific executed syntax that produced each value path. Unlike
+   * pathRanges, wrappers such as conditionals do not replace the selected
+   * branch. These ranges are local to the current evaluator source file;
+   * selectionPathOrigins carries the same semantics across bindings.
+   */
+  valuePathRanges: EvaluationPathRange[];
   pathRanges: EvaluationPathRange[];
   valueIssues: EvaluationValueIssue[];
 }
@@ -110,6 +119,8 @@ export interface EvaluationContext {
   valueOrigins?: ReadonlyMap<string, EvaluationOrigin>;
   /** JSON-pointer-level origins for structured lexical values. */
   valuePathOrigins?: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
+  /** Exact selected value syntax retained separately from diagnostic provenance. */
+  valueSelectionPathOrigins?: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
   /** Runtime value-shape issues retained across lexical bindings. */
   valueIssues?: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
   sourceFile?: string;

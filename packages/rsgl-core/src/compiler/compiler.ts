@@ -465,6 +465,9 @@ export class RsglCompiler {
       valuePathOrigins: new Map(externalValues.flatMap(item =>
         item.pathOrigins ? [[item.name, item.pathOrigins] as const] : []
       )),
+      valueSelectionPathOrigins: new Map(externalValues.flatMap(item =>
+        item.selectionPathOrigins ? [[item.name, item.selectionPathOrigins] as const] : []
+      )),
       valueIssues: new Map(externalValues.flatMap(item =>
         item.valueIssues ? [[item.name, item.valueIssues] as const] : []
       )),

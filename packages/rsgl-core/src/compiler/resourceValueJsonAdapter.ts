@@ -37,6 +37,7 @@ export function createResourceValueJsonAdapter(
           generatedPath: context.generatedPath,
           valueKind: value.resourceKind,
           range: context.range,
+          ...(context.valueLocation ? { valueLocation: context.valueLocation } : {}),
           ...(context.sourceFile ? { sourceFile: context.sourceFile } : {})
         });
         return { kind: "value", value: scalar };
@@ -49,6 +50,7 @@ export function createResourceValueJsonAdapter(
           generatedPath: context.generatedPath,
           valueKind: "textureVariable",
           range: context.range,
+          ...(context.valueLocation ? { valueLocation: context.valueLocation } : {}),
           ...(context.sourceFile ? { sourceFile: context.sourceFile } : {})
         });
         return { kind: "value", value: evaluatedResourceValueToString(value) };

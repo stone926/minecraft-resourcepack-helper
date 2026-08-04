@@ -12,6 +12,7 @@ export interface ModuleNamespaceValueOptions {
   values: ReadonlyMap<string, EvaluationValue>;
   valueOrigins: ReadonlyMap<string, EvaluationOrigin>;
   valuePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
+  valueSelectionPathOrigins?: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
   valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
   templates: ReadonlyMap<string, RsglTemplateDefinition>;
 }
@@ -20,6 +21,7 @@ export interface ModuleNamespaceValueMember {
   value: EvaluationValue;
   origin?: EvaluationOrigin;
   pathOrigins: readonly EvaluationPathOrigin[];
+  selectionPathOrigins: readonly EvaluationPathOrigin[];
   valueIssues: readonly EvaluationValueIssue[];
 }
 
@@ -40,6 +42,7 @@ export class ModuleNamespaceValue {
   public readonly values: ReadonlyMap<string, EvaluationValue>;
   public readonly valueOrigins: ReadonlyMap<string, EvaluationOrigin>;
   public readonly valuePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
+  public readonly valueSelectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
   public readonly valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
   public readonly templates: ReadonlyMap<string, RsglTemplateDefinition>;
 
@@ -49,6 +52,7 @@ export class ModuleNamespaceValue {
     this.values = options.values;
     this.valueOrigins = options.valueOrigins;
     this.valuePathOrigins = options.valuePathOrigins;
+    this.valueSelectionPathOrigins = options.valueSelectionPathOrigins ?? new Map();
     this.valueIssues = options.valueIssues;
     this.templates = options.templates;
     Object.freeze(this);
@@ -63,6 +67,7 @@ export class ModuleNamespaceValue {
       value: this.values.get(name),
       ...(origin ? { origin } : {}),
       pathOrigins: this.valuePathOrigins.get(name) ?? [],
+      selectionPathOrigins: this.valueSelectionPathOrigins.get(name) ?? [],
       valueIssues: this.valueIssues.get(name) ?? []
     };
   }
