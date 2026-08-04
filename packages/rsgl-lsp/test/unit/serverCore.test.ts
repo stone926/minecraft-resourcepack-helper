@@ -1963,7 +1963,17 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("documentDependenciesForCompile(entry.dependencies, [])"));
     assert.match(
       serverSource,
-      /function loadResourceNavigation\([\s\S]*?return loadResourceAnalysis\(sourceFileName, loadedSemanticProgram\)\.analysis\.index/
+      /function loadResourceNavigation\([\s\S]*?return loadDocumentResourceAnalysis\(sourceFileName, loadedSemanticProgram\)\.analysis\.index/
+    );
+    assert.match(
+      serverSource,
+      /function loadDocumentResourceAnalysis\([\s\S]*?loadedSemanticProgram \?\? loadNavigationSemanticProgram\(sourceFileName\)/,
+      "physical navigation must load the configured source root, not treat the RSGL file as a directory"
+    );
+    assert.match(
+      serverSource,
+      /const entry = loadDocumentResourceAnalysis\(fileName\)/,
+      "Definition/References fallback must use document-aware resource analysis"
     );
     assert.match(
       serverSource,

@@ -627,7 +627,17 @@ function loadResourceNavigation(
   sourceFileName: string,
   loadedSemanticProgram?: RsglWorkspaceSemanticProgram
 ): RsglResourceNavigationIndex {
-  return loadResourceAnalysis(sourceFileName, loadedSemanticProgram).analysis.index;
+  return loadDocumentResourceAnalysis(sourceFileName, loadedSemanticProgram).analysis.index;
+}
+
+function loadDocumentResourceAnalysis(
+  sourceFileName: string,
+  loadedSemanticProgram?: RsglWorkspaceSemanticProgram
+): RsglResourceAnalysisEntry {
+  return loadResourceAnalysis(
+    sourceFileName,
+    loadedSemanticProgram ?? loadNavigationSemanticProgram(sourceFileName)
+  );
 }
 
 function loadResourceAnalysis(
@@ -669,7 +679,7 @@ async function requestMainResourceNavigation(
   let selections;
   try {
     const fileName = nativeFileNameFromUri(document.uri);
-    const entry = loadResourceAnalysis(fileName);
+    const entry = loadDocumentResourceAnalysis(fileName);
     selections = resourceNavigationTargetsAtOffset(
       entry.analysis,
       fileName,
