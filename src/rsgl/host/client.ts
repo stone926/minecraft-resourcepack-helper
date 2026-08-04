@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   DidChangeConfigurationNotification,
   DidChangeWatchedFilesNotification,
   FileChangeType,
   LanguageClient,
+  SemanticTokensRegistrationType,
   TransportKind,
   type LanguageClientOptions,
   type ServerOptions
@@ -50,6 +52,10 @@ import {
   DependencyStructureWatchRegistry,
   type DependencyStructureWatchSelector
 } from "./dependencyStructureWatch";
+import {
+  provideRsglSemanticTokens,
+  RsglSemanticTokenReplayCache
+} from "./semanticTokenReplayCache";
 
 interface RsglValidationSettings {
   stdlibRoot: string;
@@ -98,6 +104,7 @@ export async function startRsglLanguageServer(
     debug: { module: options.serverPath, transport: TransportKind.ipc }
   };
   const rsglWatcher = vscode.workspace.createFileSystemWatcher(rsglFileGlob);
+  const semanticTokenReplayCache = new RsglSemanticTokenReplayCache();
   const hostDisposables: vscode.Disposable[] = [rsglWatcher];
   const resourceSnapshotInvalidationListeners = new Set<(
     notification: RsglResourceSnapshotInvalidationNotification
@@ -109,11 +116,47 @@ export async function startRsglLanguageServer(
       { scheme: "vscode-remote", language: "rsgl" }
     ],
     initializationOptions: () => currentRsglValidationSettings(options.stdlibRoot),
+    middleware: {
+      provideDocumentSemanticTokens: (document, token, next) => {
+        const uri = document.uri.toString();
+        const text = document.getText();
+        return provideRsglSemanticTokens(semanticTokenReplayCache, {
+          uri,
+          text,
+          isCancellationRequested: () => token.isCancellationRequested,
+          next: () => next(document, token),
+          createReplay: replay => new vscode.SemanticTokens(replay.data, replay.resultId)
+        });
+      }
+    },
     synchronize: {
       fileEvents: [rsglWatcher]
     }
   };
   const client = new LanguageClient("rsgl", "RSGL", serverOptions, clientOptions);
+  hostDisposables.push(vscode.window.onDidChangeVisibleTextEditors(editors => {
+    // Preview replacement creates a fresh editor model. Wake the provider only
+    // after that model is visible so VS Code does not defer its attachment retry.
+    const emitters = new Set<vscode.EventEmitter<void>>();
+    for (const editor of editors) {
+      const document = editor.document;
+      if (document.languageId !== "rsgl") {
+        continue;
+      }
+      const provider = client
+        .getFeature(SemanticTokensRegistrationType.method)
+        .getProvider(document);
+      if (
+        provider
+        && semanticTokenReplayCache.claimImmediateRefresh(document.uri.toString())
+      ) {
+        emitters.add(provider.onDidChangeSemanticTokensEmitter);
+      }
+    }
+    for (const emitter of emitters) {
+      emitter.fire();
+    }
+  }));
   hostDisposables.push(client.onRequest(
     rsglResourceNavigationRequest,
     async (value: unknown, token: vscode.CancellationToken) => {
@@ -153,9 +196,27 @@ export async function startRsglLanguageServer(
     }
   ));
   hostDisposables.push(
-    rsglWatcher.onDidCreate(uri => rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath)),
-    rsglWatcher.onDidDelete(uri => rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath)),
+    vscode.workspace.onDidOpenTextDocument(document => {
+      if (document.languageId === "rsgl") {
+        semanticTokenReplayCache.prepareOpen(document.uri.toString(), document.getText());
+      }
+    }),
+    vscode.workspace.onDidChangeTextDocument(event => {
+      if (event.document.languageId === "rsgl" && event.contentChanges.length > 0) {
+        semanticTokenReplayCache.invalidateAll();
+      }
+    }),
+    rsglWatcher.onDidCreate(uri => {
+      semanticTokenReplayCache.invalidateAll();
+      rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath);
+    }),
+    rsglWatcher.onDidChange(() => semanticTokenReplayCache.invalidateAll()),
+    rsglWatcher.onDidDelete(uri => {
+      semanticTokenReplayCache.invalidateAll();
+      rsglWorkspaceSourceRootCache.invalidatePath(uri.fsPath);
+    }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      semanticTokenReplayCache.invalidateAll();
       rsglWorkspaceSourceRootCache.invalidateAll();
       void client.sendNotification(DidChangeConfigurationNotification.type, {
         settings: currentRsglValidationSettings(options.stdlibRoot)
@@ -163,11 +224,13 @@ export async function startRsglLanguageServer(
     })
   );
   const sendDependencyChange = (uri: vscode.Uri, type: FileChangeType) => {
+    semanticTokenReplayCache.invalidateAll();
     void client.sendNotification(DidChangeWatchedFilesNotification.type, {
       changes: [{ uri: uri.toString(), type }]
     });
   };
   const sendDependencyStructureChange = (uri: vscode.Uri) => {
+    semanticTokenReplayCache.invalidateAll();
     void client.sendNotification(rsglDependencyStructureChangedNotification, {
       paths: [uri.fsPath]
     });
@@ -234,6 +297,9 @@ export async function startRsglLanguageServer(
         ...patternUpdate.added.map(dependencyPatternProbePath)
       ];
       if (addedDependencyPaths.length > 0) {
+        if (addedDependencyPaths.some(invalidatesRsglSemanticTokens)) {
+          semanticTokenReplayCache.invalidateAll();
+        }
         void client.sendNotification(DidChangeWatchedFilesNotification.type, {
           changes: addedDependencyPaths.map(fileName => ({
             uri: vscode.Uri.file(fileName).toString(),
@@ -244,13 +310,17 @@ export async function startRsglLanguageServer(
     }
   );
   hostDisposables.push(vscode.workspace.onDidChangeConfiguration(event => {
+    const semanticResolutionChanged = event.affectsConfiguration(rsglConfigKeys.defaultAssetsPath)
+      || event.affectsConfiguration(rsglConfigKeys.resourcePackLoadOrder);
     if (
-      event.affectsConfiguration(rsglConfigKeys.defaultAssetsPath)
-      || event.affectsConfiguration(rsglConfigKeys.resourcePackLoadOrder)
+      semanticResolutionChanged
       || event.affectsConfiguration(rsglConfigKeys.style)
       || event.affectsConfiguration(rsglConfigKeys.lineWidth)
       || event.affectsConfiguration(rsglConfigKeys.braceStyle)
     ) {
+      if (semanticResolutionChanged) {
+        semanticTokenReplayCache.invalidateAll();
+      }
       void client.sendNotification(DidChangeConfigurationNotification.type, {
         settings: currentRsglValidationSettings(options.stdlibRoot)
       });
@@ -276,6 +346,7 @@ export async function startRsglLanguageServer(
       if (disposed) {
         throw new Error("The RSGL language server has been disposed.");
       }
+      semanticTokenReplayCache.invalidateAll();
       rsglWorkspaceSourceRootCache.invalidateAll();
       await client.sendNotification(rsglRefreshWorkspaceNotification);
     },
@@ -322,6 +393,7 @@ export async function startRsglLanguageServer(
     dispose: () => disposePromise ??= (async () => {
       disposed = true;
       resourceSnapshotInvalidationListeners.clear();
+      semanticTokenReplayCache.invalidateAll();
       disposeHostDisposables(hostDisposables);
       rsglWorkspaceSourceRootCache.invalidateAll();
       await client.stop();
@@ -469,6 +541,11 @@ function isExistingDirectory(fileName: string): boolean {
   } catch {
     return false;
   }
+}
+
+function invalidatesRsglSemanticTokens(fileName: string): boolean {
+  return path.extname(fileName).toLowerCase() === ".rsgl"
+    || path.basename(fileName).toLowerCase() === "rsgl.config.json";
 }
 
 function structuralWatchPattern(selector: DependencyStructureWatchSelector) {

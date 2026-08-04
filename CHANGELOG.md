@@ -8,7 +8,7 @@
 - fix: make build-to-assets transactions reject unknown, cross-project, and user-modified targets, and clean stale output only when ownership and the previous content hash are proven.
 - feat: navigate configured resource-pack ZIPs and vanilla client jars through an extraction-free read-only virtual filesystem.
 - perf: keep RSGL diagnostics and semantic highlighting responsive by coalescing edit-triggered project snapshots and prioritizing the active document.
-- fix: retain RSGL semantic highlighting across unchanged preview-tab reopen cycles and color complete template-string blockstate names.
+- fix: retain and immediately replay RSGL semantic highlighting across unchanged preview-tab reopen cycles, and color complete template-string blockstate names.
 - fix: treat superseded ResourceUniverse snapshots as expected cancellation so RSGL invalidation cannot be misreported as a language-server startup failure.
 - build: publish one production-staged VSIX with five isolated entries, a tree-shaken Three.js preview, reproducible contents hashes, and no source maps or second extension artifact.
 

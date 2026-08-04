@@ -134,6 +134,25 @@ describe("integrated RSGL extension surface", () => {
     assert.strictEqual(buildContexts.includes("resolveConfiguredOutDir"), false);
   });
 
+  it("replays identical preview semantic tokens before refreshing through the server", () => {
+    const client = readSource("src", "rsgl", "host", "client.ts");
+
+    assert.ok(client.includes("new RsglSemanticTokenReplayCache()"));
+    assert.ok(client.includes("provideDocumentSemanticTokens: (document, token, next)"));
+    assert.ok(client.includes("provideRsglSemanticTokens(semanticTokenReplayCache"));
+    assert.ok(client.includes("createReplay: replay => new vscode.SemanticTokens"));
+    assert.ok(client.includes("onDidOpenTextDocument"));
+    assert.ok(client.includes("semanticTokenReplayCache.prepareOpen"));
+    assert.ok(client.includes("onDidChangeVisibleTextEditors"));
+    assert.ok(client.includes("claimImmediateRefresh"));
+    assert.ok(client.includes("onDidChangeSemanticTokensEmitter"));
+    assert.ok(client.includes("onDidChangeTextDocument"));
+    assert.ok(client.includes("semanticTokenReplayCache.invalidateAll()"));
+    assert.ok(client.includes("addedDependencyPaths.some(invalidatesRsglSemanticTokens)"));
+    assert.ok(client.includes("if (semanticResolutionChanged)"));
+    assert.ok(client.includes('path.basename(fileName).toLowerCase() === "rsgl.config.json"'));
+  });
+
   it("bridges language-scoped formatting settings without waking semantic caches", () => {
     const configuration = readSource("src", "rsgl", "host", "configuration.ts");
     const client = readSource("src", "rsgl", "host", "client.ts");
