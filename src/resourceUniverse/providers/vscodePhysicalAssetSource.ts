@@ -20,6 +20,7 @@ import { mapWithConcurrency } from "../../utils/asyncWorkPool";
 import { throwIfAborted } from "../../utils/abortError";
 import { ignoredWorkspaceDirectoryNames } from "../../resources/resourceSurfaceRegistry";
 import type { ResourceContributionRequest, ResourceLayerRole } from "../core";
+import { sameResourceUri } from "../core/resourceUriIdentity";
 import type { ArchiveResourceStore } from "../virtualFs/archiveResourceStore";
 import type { PhysicalAssetScannedDocument } from "./physicalAssetReferenceAdapter";
 import type {
@@ -27,6 +28,15 @@ import type {
   PhysicalAssetProjectScan,
   PhysicalAssetProjectSource
 } from "./physicalAssetProvider";
+import {
+  resolveExactPhysicalAssetDefinition,
+  type PhysicalAssetDefinitionLayerRoots,
+  type PhysicalAssetDefinitionRequest,
+  type PhysicalAssetDefinitionResolution,
+  type PhysicalAssetDefinitionResolver,
+  type PhysicalAssetDefinitionResolverHost,
+  type PhysicalAssetDefinitionTargetProbe
+} from "./physicalAssetDefinitionResolver";
 import { isResourceDocumentUriWithin } from "./resourceDocumentUri";
 
 const maximumLayerDepth = 32;
@@ -50,8 +60,19 @@ interface ScannableLayer {
   assetsRootUris: readonly SerializedResourceUri[];
 }
 
+type LayerAssetsRootDiscovery =
+  | {
+      status: "ready";
+      assetsRootUris: readonly SerializedResourceUri[];
+      complete: boolean;
+    }
+  | { status: "unsupported" | "unavailable" };
+
 /** Project-bounded VS Code scanner. It is invoked only by an explicit provider request. */
-export class VscodePhysicalAssetSource implements PhysicalAssetProjectSource {
+export class VscodePhysicalAssetSource implements
+  PhysicalAssetProjectSource,
+  PhysicalAssetDefinitionResolver,
+  PhysicalAssetDefinitionResolverHost {
   private ownedOutputLookup?: PhysicalAssetOwnedOutputLookup;
 
   public constructor(
@@ -68,6 +89,102 @@ export class VscodePhysicalAssetSource implements PhysicalAssetProjectSource {
         }
       }
     };
+  }
+
+  public resolveExactDefinition(
+    request: PhysicalAssetDefinitionRequest,
+    signal?: AbortSignal
+  ): Promise<PhysicalAssetDefinitionResolution> {
+    return resolveExactPhysicalAssetDefinition(request, this, signal);
+  }
+
+  public async getOrderedAssetsRootUris(
+    context: ResourcePackProjectContextDto,
+    layer: ResourceLayerDescriptor,
+    signal?: AbortSignal
+  ): Promise<PhysicalAssetDefinitionLayerRoots> {
+    const cancellation = signal ?? new AbortController().signal;
+    const roots = await this.resolveLayerAssetsRootUris(context, layer, cancellation);
+    if (roots.status !== "ready") {
+      return roots;
+    }
+    return roots.complete
+      ? { status: "ready", assetsRootUris: roots.assetsRootUris }
+      : { status: "unavailable" };
+  }
+
+  private async resolveLayerAssetsRootUris(
+    context: ResourcePackProjectContextDto,
+    layer: ResourceLayerDescriptor,
+    cancellation: AbortSignal
+  ): Promise<LayerAssetsRootDiscovery> {
+    throwIfAborted(cancellation, "Physical asset Definition resolution was cancelled.");
+    if (layer.layerId === context.localLayer.layerId) {
+      const roots = await packAssetsRoots(
+        context.outputPackRootUri,
+        [context.outputAssetsRootUri],
+        cancellation
+      );
+      return { status: "ready", ...roots };
+    }
+
+    let layerRootUri = layer.rootUri;
+    if (layer.source === "zip" || layer.source === "clientJar") {
+      if (!this.archiveResources) {
+        return { status: "unsupported" };
+      }
+      try {
+        layerRootUri = (await this.archiveResources.mountLayer(layer, cancellation)).rootUri;
+      } catch {
+        return { status: "unavailable" };
+      }
+    } else if (layer.source !== "directory") {
+      return { status: "unsupported" };
+    }
+
+    const configured = await configuredAssetsRoots(layerRootUri, cancellation);
+    if (configured.assetsRootUris.length === 0) {
+      return { status: "unavailable" };
+    }
+    const packRoot = resourceProjectUriParent(configured.assetsRootUris[0]);
+    const roots = packRoot
+      ? await packAssetsRoots(packRoot, configured.assetsRootUris, cancellation)
+      : configured;
+    return {
+      status: "ready",
+      assetsRootUris: roots.assetsRootUris,
+      complete: configured.complete && roots.complete
+    };
+  }
+
+  public async probeTargetUri(
+    uri: SerializedResourceUri,
+    signal?: AbortSignal
+  ): Promise<PhysicalAssetDefinitionTargetProbe> {
+    if (signal) {
+      throwIfAborted(signal, "Physical asset Definition resolution was cancelled.");
+    }
+    const target = vscode.Uri.parse(uri, true);
+    if (vscode.workspace.textDocuments.some(document =>
+      sameResourceUri(document.uri.toString(), target.toString())
+    )) {
+      return "file";
+    }
+    try {
+      const stat = await vscode.workspace.fs.stat(target);
+      if ((stat.type & vscode.FileType.File) !== 0) {
+        return "file";
+      }
+      return (stat.type & vscode.FileType.Directory) !== 0 ? "missing" : "unavailable";
+    } catch (error) {
+      return isFileNotFoundError(error)
+        ? "missing"
+        : "unavailable";
+    }
+  }
+
+  public isOwnedOutput(projectId: string, outputPath: string): boolean {
+    return this.ownedOutputLookup?.getOwnedOutputPaths(projectId).has(outputPath) ?? false;
   }
 
   public async scanProject(
@@ -120,47 +237,23 @@ export class VscodePhysicalAssetSource implements PhysicalAssetProjectSource {
     context: ResourcePackProjectContextDto,
     signal: AbortSignal
   ): Promise<{ layers: ScannableLayer[]; unavailableUris: SerializedResourceUri[] }> {
-    const localRoots = await packAssetsRoots(
-      context.outputPackRootUri,
-      [context.outputAssetsRootUri],
-      signal
-    );
-    const layers: ScannableLayer[] = [{
-      descriptor: context.localLayer,
-      assetsRootUris: localRoots
-    }];
+    const layers: ScannableLayer[] = [];
     const unavailableUris: SerializedResourceUri[] = [];
     for (const descriptor of [
+      context.localLayer,
       ...context.externalLayers,
       ...(context.vanillaLayer ? [context.vanillaLayer] : [])
     ]) {
       throwIfAborted(signal, "Physical asset scan was cancelled.");
-      let layerRootUri = descriptor.rootUri;
-      if (descriptor.source === "zip" || descriptor.source === "clientJar") {
-        if (!this.archiveResources) {
-          unavailableUris.push(descriptor.rootUri);
-          continue;
-        }
-        try {
-          layerRootUri = (await this.archiveResources.mountLayer(descriptor, signal)).rootUri;
-        } catch {
-          unavailableUris.push(descriptor.rootUri);
-          continue;
-        }
-      } else if (descriptor.source !== "directory") {
+      const roots = await this.resolveLayerAssetsRootUris(context, descriptor, signal);
+      if (roots.status !== "ready") {
         unavailableUris.push(descriptor.rootUri);
         continue;
       }
-      const baseRoots = await configuredAssetsRoots(layerRootUri);
-      if (baseRoots.length === 0) {
+      layers.push({ descriptor, assetsRootUris: roots.assetsRootUris });
+      if (!roots.complete) {
         unavailableUris.push(descriptor.rootUri);
-        continue;
       }
-      const packRoot = resourceProjectUriParent(baseRoots[0]);
-      const assetsRootUris = packRoot
-        ? await packAssetsRoots(packRoot, baseRoots, signal)
-        : baseRoots;
-      layers.push({ descriptor, assetsRootUris });
     }
     return { layers, unavailableUris };
   }
@@ -299,7 +392,16 @@ async function loadScannedDocument(
   };
 }
 
-async function configuredAssetsRoots(rootUri: SerializedResourceUri): Promise<SerializedResourceUri[]> {
+interface AssetsRootDiscovery {
+  assetsRootUris: SerializedResourceUri[];
+  /** False when an I/O failure makes the effective root order uncertain. */
+  complete: boolean;
+}
+
+async function configuredAssetsRoots(
+  rootUri: SerializedResourceUri,
+  signal: AbortSignal
+): Promise<AssetsRootDiscovery> {
   const candidates: SerializedResourceUri[] = [];
   if (resourceProjectUriBasename(rootUri).toLowerCase() === "assets") {
     candidates.push(rootUri);
@@ -311,36 +413,46 @@ async function configuredAssetsRoots(rootUri: SerializedResourceUri): Promise<Se
   candidates.push(joinResourceProjectUri(rootUri, "assets"));
   const existing: SerializedResourceUri[] = [];
   const identities = new Set<string>();
+  let complete = true;
   for (const candidate of candidates) {
+    throwIfAborted(signal, "Physical asset root discovery was cancelled.");
     const identity = resourceProjectUriIdentity(candidate);
     if (identities.has(identity)) {
       continue;
     }
     identities.add(identity);
-    const type = await statType(candidate);
-    if (type !== null && (type & vscode.FileType.Directory) !== 0) {
+    const probe = await probeUriType(candidate);
+    throwIfAborted(signal, "Physical asset root discovery was cancelled.");
+    if (probe.status === "unavailable") {
+      complete = false;
+    } else if (probe.status === "ready" && (probe.type & vscode.FileType.Directory) !== 0) {
       existing.push(candidate);
     }
   }
-  return existing;
+  return { assetsRootUris: existing, complete };
 }
 
 async function packAssetsRoots(
   packRootUri: SerializedResourceUri,
   baseRoots: readonly SerializedResourceUri[],
   signal: AbortSignal
-): Promise<SerializedResourceUri[]> {
+): Promise<AssetsRootDiscovery> {
   throwIfAborted(signal, "Physical asset scan was cancelled.");
   let metadata: ReturnType<typeof parsePackMetadata> | undefined;
+  let complete = true;
   try {
     const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(
       joinResourceProjectUri(packRootUri, packMetadataFileName),
       true
     ));
     metadata = parsePackMetadata(JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown);
-  } catch {
+  } catch (error) {
     metadata = undefined;
+    if (!isFileNotFoundError(error)) {
+      complete = false;
+    }
   }
+  throwIfAborted(signal, "Physical asset scan was cancelled.");
   const overlays = metadata
     ? metadata.overlays.filter(overlayApplies).map(overlay =>
         joinResourceProjectUri(packRootUri, overlay.directory, "assets")
@@ -349,17 +461,24 @@ async function packAssetsRoots(
   const result: SerializedResourceUri[] = [];
   const identities = new Set<string>();
   for (const rootUri of [...overlays, ...baseRoots]) {
+    throwIfAborted(signal, "Physical asset root discovery was cancelled.");
     const identity = resourceProjectUriIdentity(rootUri);
     if (identities.has(identity)) {
       continue;
     }
     identities.add(identity);
-    const type = await statType(rootUri);
-    if (type !== null && (type & vscode.FileType.Directory) !== 0) {
+    const probe = await probeUriType(rootUri);
+    throwIfAborted(signal, "Physical asset root discovery was cancelled.");
+    if (probe.status === "unavailable") {
+      complete = false;
+    } else if (probe.status === "ready" && (probe.type & vscode.FileType.Directory) !== 0) {
       result.push(rootUri);
     }
   }
-  return result.length > 0 ? result : [...baseRoots];
+  return {
+    assetsRootUris: result.length > 0 ? result : [...baseRoots],
+    complete
+  };
 }
 
 function packRelativeOutputPath(uri: vscode.Uri, assetsRootUri: SerializedResourceUri): string {
@@ -383,12 +502,23 @@ function languageIdFor(extension: string): string {
   return extension === ".json" ? "json" : extension === ".properties" ? "properties" : "plaintext";
 }
 
-async function statType(uri: SerializedResourceUri): Promise<vscode.FileType | null> {
+type UriTypeProbe =
+  | { status: "ready"; type: vscode.FileType }
+  | { status: "missing" | "unavailable" };
+
+async function probeUriType(uri: SerializedResourceUri): Promise<UriTypeProbe> {
   try {
-    return (await vscode.workspace.fs.stat(vscode.Uri.parse(uri, true))).type;
-  } catch {
-    return null;
+    return {
+      status: "ready",
+      type: (await vscode.workspace.fs.stat(vscode.Uri.parse(uri, true))).type
+    };
+  } catch (error) {
+    return { status: isFileNotFoundError(error) ? "missing" : "unavailable" };
   }
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return error instanceof vscode.FileSystemError && error.code === "FileNotFound";
 }
 
 function decodeUriPath(value: string): string {

@@ -41,6 +41,41 @@ describe("resource reference resolution fast path", () => {
     assert.strictEqual(result.status, 0, String(result.stderr));
   });
 
+  it("resolves an exact RSGL physical Definition without refreshing the project index", () => {
+    const script = [
+      "const assert = require('node:assert');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
+      "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
+      "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
+      "const localLayer = { layerId: 'local', role: 'local', source: 'directory', rootUri: 'file:///pack', priority: 0, metadataRevision: 'm1' };",
+      "const context = { projectId: 'project', workspaceFolderUri: 'file:///pack', projectRootUri: 'file:///pack', packRootUri: 'file:///pack', assetsRootUri: 'file:///pack/assets', rsglSourceRootUris: ['file:///pack/rsgl'], outputPackRootUri: 'file:///pack', outputAssetsRootUri: 'file:///pack/assets', localLayer, externalLayers: [], overlaySelection: [], configurationRevision: 'c1', contextRevision: 'r1' };",
+      "const projects = { resolveProject: async () => ({ context, rsglApplicability: 'conventional' }), getRsglApplicability: () => 'conventional', findCachedContextsForUri: () => [], getCachedContexts: () => [] };",
+      "let refreshed = false; let physicalRefreshes = 0; let exactCalls = 0; let indexResolutions = 0; let exactMode = 'resolved';",
+      "const coverage = { status: 'authoritative', revision: 'physical-r1', coveredScope: { projectId: 'project' } };",
+      "const index = { getCoverage: () => refreshed ? coverage : undefined, resolve: target => { indexResolutions++; return { status: 'missing', target, coverageComplete: true, candidates: [], unavailableProviderIds: [] }; } };",
+      "const universe = { index, getCoverage: () => refreshed ? coverage : undefined, refreshProviderProject: async () => { physicalRefreshes++; refreshed = true; return { applied: true }; }, invalidateProviderProject: () => undefined, onDidChange: () => ({ dispose() {} }), getProducersForKey: () => [], getProjectProducers: () => [], hasProvider: () => true, getRegisteredProvider: () => ({}) };",
+      "const exact = { resolveExactDefinition: async request => { exactCalls++; assert.strictEqual(request.scope, 'local'); if (exactMode === 'resolved') return { status: 'resolved', target: request.target, definition: { uri: 'file:///pack/assets/demo/models/block/target.json', outputPath: 'assets/demo/models/block/target.json', assetsRootUri: 'file:///pack/assets', layer: localLayer } }; if (exactMode === 'missing') return { status: 'missing', target: request.target, outputPath: 'assets/demo/models/block/target.json' }; if (exactMode === 'throw') throw new Error('exact probe failed'); return { status: 'fallback', target: request.target, reason: 'unsupportedLayer' }; } };",
+      "const facade = new ResourceUniverseNavigationFacade(projects, universe, () => null); facade.setPhysicalDefinitionResolver(exact);",
+      "const source = uri('file:///pack/rsgl/main.rsgl'); const target = { kind: 'model', id: 'demo:block/target' };",
+      "(async () => {",
+      "  let result = await facade.resolveLogicalDefinition(source, target, 'local');",
+      "  assert.deepStrictEqual(result.directLocations, [{ uri: 'file:///pack/assets/demo/models/block/target.json', origin: 'physical' }]);",
+      "  exactMode = 'missing'; result = await facade.resolveLogicalDefinition(source, target, 'local');",
+      "  assert.deepStrictEqual(result.directLocations, []);",
+      "  exactMode = 'throw'; result = await facade.resolveLogicalDefinition(source, target, 'local');",
+      "  assert.strictEqual(result.navigation.status, 'missing');",
+      "  refreshed = false; exactMode = 'fallback'; result = await facade.resolveLogicalDefinition(source, target, 'local');",
+      "  assert.strictEqual(result.navigation.status, 'missing');",
+      "  exactMode = 'must-not-run'; result = await facade.resolveLogicalDefinition(source, target, 'local');",
+      "  assert.strictEqual(result.navigation.status, 'missing');",
+      "  assert.deepStrictEqual({ exactCalls, physicalRefreshes, indexResolutions }, { exactCalls: 4, physicalRefreshes: 2, indexResolutions: 3 });",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const result = runFacadeScript(script);
+    assert.strictEqual(result.status, 0, String(result.stderr));
+  });
+
   it("fully refreshes References and filters incoming edges to the current project", () => {
     const script = [
       "const assert = require('node:assert');",

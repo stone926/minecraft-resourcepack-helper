@@ -15,6 +15,8 @@ export interface RsglResourceAnalysisConfiguration {
 }
 
 export interface RsglResourceAnalysisEntry {
+  /** Stable only for this cache entry's lifetime; changes after recompilation. */
+  cacheIdentity: number;
   semanticProgram: RsglWorkspaceSemanticProgram;
   configurationKey: string;
   analysis: RsglResourceAnalysisResult;
@@ -40,6 +42,7 @@ export class RsglResourceAnalysisCache {
     Map<string, RsglResourceAnalysisEntry>
   >();
   private readonly compile: NonNullable<RsglResourceAnalysisCacheOptions["compile"]>;
+  private nextEntryIdentity = 1;
 
   public constructor(options: RsglResourceAnalysisCacheOptions = {}) {
     this.compile = options.compile ?? ((semanticProgram, compileOptions) =>
@@ -65,6 +68,7 @@ export class RsglResourceAnalysisCache {
       semanticProgram: semanticProgram.program
     });
     const entry: RsglResourceAnalysisEntry = {
+      cacheIdentity: this.nextEntryIdentity++,
       semanticProgram,
       configurationKey: configuration.cacheKey,
       analysis,

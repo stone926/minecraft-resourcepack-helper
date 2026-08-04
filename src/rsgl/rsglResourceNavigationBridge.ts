@@ -63,6 +63,7 @@ async function resolveDefinition(
     request.resolutionScope,
     { signal }
   );
+  throwIfAborted(signal, "Resource navigation was cancelled.");
   if (!result.context || !matchesRequestedProject(request, result.context.projectId)) {
     return response(request, "unavailable", result.coverage, [], "noProject");
   }
@@ -75,6 +76,26 @@ async function resolveDefinition(
       "existenceCheckDisabled",
       result.context.projectId
     );
+  }
+  if (result.directLocations !== undefined) {
+    const locations = await toProtocolLocations(result.directLocations, signal);
+    return locations.length > 0
+      ? response(
+          request,
+          "resolved",
+          result.coverage,
+          locations,
+          result.coverage === "authoritative" ? undefined : "resolutionIncomplete",
+          result.context.projectId
+        )
+      : response(
+          request,
+          result.coverage === "authoritative" ? "missing" : "incomplete",
+          result.coverage,
+          [],
+          result.coverage === "authoritative" ? "noProducer" : "providerUnavailable",
+          result.context.projectId
+        );
   }
   if (!result.navigation) {
     return response(request, "unavailable", result.coverage, [], "providerUnavailable", result.context.projectId);
@@ -105,6 +126,7 @@ async function resolveReferences(
         )
       : undefined
   ]);
+  throwIfAborted(signal, "Resource navigation was cancelled.");
   const context = incoming.context ?? definition?.context;
   const coverage = combineResourceFactsCoverage([incoming.coverage, definition?.coverage].filter(
     (item): item is UnifiedResourceCoverage => item !== undefined
@@ -114,6 +136,7 @@ async function resolveReferences(
   }
   const sourceLocations = [
     ...incoming.locations,
+    ...(definition?.directLocations ?? []),
     ...(definition?.navigation ? locationsForNavigation(definition.navigation) : [])
   ];
   const locations = await toProtocolLocations(sourceLocations, signal);
@@ -221,10 +244,10 @@ async function toProtocolLocation(
   location: ResourceLocation,
   signal: AbortSignal
 ): Promise<RsglResourceNavigationLocationDto> {
+  throwIfAborted(signal, "Resource navigation was cancelled.");
   if (!location.range) {
     return { uri: location.uri, origin: location.origin };
   }
-  throwIfAborted(signal, "Resource navigation was cancelled.");
   try {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(location.uri, true));
     throwIfAborted(signal, "Resource navigation was cancelled.");

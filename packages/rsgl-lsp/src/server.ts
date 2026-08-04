@@ -25,7 +25,6 @@ import {
   RsglWorkspaceValidationCache,
   resolveRsglNavigationSourceRoot,
   type CompileDependency,
-  type RsglResourceNavigationIndex,
   type RsglWorkspaceSemanticProgram
 } from "../../rsgl-core/src";
 import {
@@ -106,6 +105,7 @@ const projectTargetCache = new RsglProjectTargetCache();
 const workspaceValidationCache = new RsglWorkspaceValidationCache();
 const dependenciesByDocument = new Map<string, RsglDocumentDependencies>();
 const resourceNavigationDependenciesByRoot = new Map<string, RsglDocumentDependencies>();
+const publishedResourceAnalysisIdentityByRoot = new Map<string, number>();
 const dependencyVerificationUris = new Set<string>();
 let publishedDependencyPaths = "";
 let workspaceNavigationRoots: string[] = [];
@@ -373,11 +373,12 @@ connection.onDefinition(async (params, token) => {
   if (!document) {
     return null;
   }
+  const navigationSession = createDocumentResourceNavigationSession();
   const definitions = definitionLocationsForDocument(
     document,
     nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
-    documentLanguageWorkspace()
+    documentLanguageWorkspace(navigationSession)
   );
   const coreLocations = definitions.length > 0
     ? await toLspDefinitionLocations(definitions, loadLanguageDocument)
@@ -390,7 +391,8 @@ connection.onDefinition(async (params, token) => {
     document,
     document.offsetAt(params.position),
     false,
-    token
+    token,
+    navigationSession.entry
   );
   return locations.length > 0 ? locations : null;
 });
@@ -400,12 +402,13 @@ connection.onReferences(async (params, token) => {
   if (!document) {
     return [];
   }
+  const navigationSession = createDocumentResourceNavigationSession();
   const references = referenceLocationsForDocument(
     document,
     nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     params.context.includeDeclaration,
-    documentLanguageWorkspace()
+    documentLanguageWorkspace(navigationSession)
   );
   const [coreLocations, physicalLocations] = await Promise.all([
     toLspReferenceLocations(references, loadLanguageDocument),
@@ -414,7 +417,8 @@ connection.onReferences(async (params, token) => {
       document,
       document.offsetAt(params.position),
       params.context.includeDeclaration,
-      token
+      token,
+      navigationSession.entry
     )
   ]);
   return mergeLspResourceLocations([coreLocations, physicalLocations]);
@@ -569,14 +573,28 @@ function semanticDependencyPaths(fileName: string): string[] {
   }
 }
 
-function documentLanguageWorkspace() {
+interface DocumentResourceNavigationSession {
+  entry?: RsglResourceAnalysisEntry;
+}
+
+function createDocumentResourceNavigationSession(): DocumentResourceNavigationSession {
+  return {};
+}
+
+function documentLanguageWorkspace(navigationSession?: DocumentResourceNavigationSession) {
   return {
     loadProgramFromEntry: (entryFileName: string) => loadSemanticProgram(entryFileName),
     loadProgramForNavigation: (sourceFileName: string) => loadNavigationSemanticProgram(sourceFileName),
     loadResourceNavigation: (
       sourceFileName: string,
       semanticProgram?: RsglWorkspaceSemanticProgram
-    ) => loadResourceNavigation(sourceFileName, semanticProgram),
+    ) => {
+      const entry = loadDocumentResourceAnalysis(sourceFileName, semanticProgram);
+      if (navigationSession) {
+        navigationSession.entry = entry;
+      }
+      return entry.analysis.index;
+    },
     projectItemModelTargetFormatForSource: (sourceFileName: string) =>
       projectTargetCache.projectItemModelTargetFormatForSource(sourceFileName)
   };
@@ -623,13 +641,6 @@ function loadNavigationSemanticProgramFromRoot(
   );
 }
 
-function loadResourceNavigation(
-  sourceFileName: string,
-  loadedSemanticProgram?: RsglWorkspaceSemanticProgram
-): RsglResourceNavigationIndex {
-  return loadDocumentResourceAnalysis(sourceFileName, loadedSemanticProgram).analysis.index;
-}
-
 function loadDocumentResourceAnalysis(
   sourceFileName: string,
   loadedSemanticProgram?: RsglWorkspaceSemanticProgram
@@ -658,11 +669,15 @@ function loadResourceAnalysis(
       nativePathMappings
     )
   );
-  resourceNavigationDependenciesByRoot.set(
-    normalizePathKey(semanticProgram.rootDirectory ?? semanticProgram.sourceName),
-    documentDependenciesForCompile(entry.dependencies, [])
-  );
-  publishDependencyPaths();
+  const rootKey = normalizePathKey(semanticProgram.rootDirectory ?? semanticProgram.sourceName);
+  if (publishedResourceAnalysisIdentityByRoot.get(rootKey) !== entry.cacheIdentity) {
+    resourceNavigationDependenciesByRoot.set(
+      rootKey,
+      documentDependenciesForCompile(entry.dependencies, [])
+    );
+    publishedResourceAnalysisIdentityByRoot.set(rootKey, entry.cacheIdentity);
+    publishDependencyPaths();
+  }
   return entry;
 }
 
@@ -671,7 +686,8 @@ async function requestMainResourceNavigation(
   document: TextDocument,
   offset: number,
   includeDeclaration: boolean,
-  token: CancellationToken
+  token: CancellationToken,
+  preloadedEntry?: RsglResourceAnalysisEntry
 ): Promise<Location[]> {
   if (token.isCancellationRequested) {
     return [];
@@ -679,13 +695,16 @@ async function requestMainResourceNavigation(
   let selections;
   try {
     const fileName = nativeFileNameFromUri(document.uri);
-    const entry = loadDocumentResourceAnalysis(fileName);
+    const entry = preloadedEntry ?? loadDocumentResourceAnalysis(fileName);
     selections = resourceNavigationTargetsAtOffset(
       entry.analysis,
       fileName,
       offset
     );
   } catch {
+    return [];
+  }
+  if (token.isCancellationRequested) {
     return [];
   }
   if (selections.length === 0) {
@@ -722,6 +741,7 @@ async function requestMainResourceNavigation(
 
 function invalidateResourceAnalysisCache(clearDependencies: boolean): void {
   resourceAnalysisCache.invalidateAll();
+  publishedResourceAnalysisIdentityByRoot.clear();
   if (clearDependencies && resourceNavigationDependenciesByRoot.size > 0) {
     resourceNavigationDependenciesByRoot.clear();
     publishDependencyPaths();

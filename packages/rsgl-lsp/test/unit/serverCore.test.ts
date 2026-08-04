@@ -1956,14 +1956,15 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("resolveRsglNavigationSourceRoot"));
     assert.ok(serverSource.includes("workspaceRootFileNamesFromInitialization(params)"));
     assert.ok(serverSource.includes("...workspaceNavigationRoots"));
-    assert.ok(serverSource.includes("loadResourceNavigation"));
+    assert.ok(serverSource.includes("loadResourceNavigation:"));
     assert.ok(serverSource.includes("resourceAnalysisCache.getOrCreate"));
     assert.ok(serverSource.includes("resourceAnalysisConfigurationFor"));
     assert.ok(serverSource.includes("resourceNavigationDependenciesByRoot"));
     assert.ok(serverSource.includes("documentDependenciesForCompile(entry.dependencies, [])"));
     assert.match(
       serverSource,
-      /function loadResourceNavigation\([\s\S]*?return loadDocumentResourceAnalysis\(sourceFileName, loadedSemanticProgram\)\.analysis\.index/
+      /loadResourceNavigation:[\s\S]*?const entry = loadDocumentResourceAnalysis\(sourceFileName, semanticProgram\)[\s\S]*?navigationSession\.entry = entry[\s\S]*?return entry\.analysis\.index/,
+      "one Definition/References request must retain the analysis used by the core lookup"
     );
     assert.match(
       serverSource,
@@ -1972,8 +1973,18 @@ describe("RSGL LSP server core", () => {
     );
     assert.match(
       serverSource,
-      /const entry = loadDocumentResourceAnalysis\(fileName\)/,
-      "Definition/References fallback must use document-aware resource analysis"
+      /const entry = preloadedEntry \?\? loadDocumentResourceAnalysis\(fileName\)/,
+      "the physical fallback must reuse the core lookup analysis before loading again"
+    );
+    assert.match(
+      serverSource,
+      /publishedResourceAnalysisIdentityByRoot\.get\(rootKey\) !== entry\.cacheIdentity[\s\S]*?publishedResourceAnalysisIdentityByRoot\.set\(rootKey, entry\.cacheIdentity\)[\s\S]*?publishDependencyPaths\(\)/,
+      "a hot analysis hit must not rebuild and republish thousands of unchanged dependencies"
+    );
+    assert.match(
+      serverSource,
+      /function invalidateResourceAnalysisCache[\s\S]*?publishedResourceAnalysisIdentityByRoot\.clear\(\)/,
+      "analysis invalidation must make the next entry publish its dependencies"
     );
     assert.match(
       serverSource,

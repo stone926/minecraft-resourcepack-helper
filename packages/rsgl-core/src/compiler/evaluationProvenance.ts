@@ -119,6 +119,9 @@ export function selectPathEntries<T extends { generatedPath: string }>(
 export function deduplicatePathEntries<T extends { generatedPath: string }>(
   entries: readonly T[]
 ): T[] {
+  if (entries.length < 2) {
+    return entries.length === 0 ? [] : [entries[0]];
+  }
   const byPath = new Map<string, T>();
   for (const entry of entries) {
     byPath.set(entry.generatedPath, entry);
@@ -130,6 +133,9 @@ export function deduplicatePathEntries<T extends { generatedPath: string }>(
 export function deduplicateValueIssues(
   issues: readonly EvaluationValueIssue[]
 ): EvaluationValueIssue[] {
+  if (issues.length < 2) {
+    return issues.length === 0 ? [] : [issues[0]];
+  }
   const byIdentity = new Map<string, EvaluationValueIssue>();
   for (const issue of issues) {
     byIdentity.set(JSON.stringify([
@@ -147,11 +153,17 @@ function mostSpecificPathEntry<T extends { generatedPath: string }>(
   entries: readonly T[],
   generatedPath: string
 ): T | undefined {
-  return entries
-    .filter(item => item.generatedPath === generatedPath || (
-      item.generatedPath === "" || generatedPath.startsWith(`${item.generatedPath}/`)
-    ))
-    .sort((left, right) => right.generatedPath.length - left.generatedPath.length)[0];
+  let mostSpecific: T | undefined;
+  for (const item of entries) {
+    if (
+      (item.generatedPath === generatedPath || item.generatedPath === ""
+        || generatedPath.startsWith(`${item.generatedPath}/`))
+      && (mostSpecific === undefined || item.generatedPath.length > mostSpecific.generatedPath.length)
+    ) {
+      mostSpecific = item;
+    }
+  }
+  return mostSpecific;
 }
 
 /**

@@ -37,6 +37,7 @@ import {
 } from "../resourceUniverse/navigation/resourceNavigationService";
 import { resourceUriComparisonIdentity } from "../resourceUniverse/core/resourceUriIdentity";
 import { physicalProviderId, rsglGeneratedProviderId } from "../resourceUniverse/core/providerIds";
+import type { PhysicalAssetDefinitionResolver } from "../resourceUniverse/providers/physicalAssetDefinitionResolver";
 import {
   generateReferenceRedirectPath,
   type ResourceReferencePathResolver
@@ -141,6 +142,8 @@ export interface UnifiedResourceQueryOptions {
 export interface UnifiedLogicalDefinitionResolution {
   context?: ResourcePackProjectContextDto;
   coverage: UnifiedResourceCoverage;
+  /** Exact physical result; an empty array is an authoritative target miss. */
+  directLocations?: readonly ResourceLocation[];
   navigation?: ResourceNavigationResult;
 }
 
@@ -252,6 +255,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
   private readonly invalidator: ResourceProjectUniverseInvalidator;
   private readonly refreshedContextRevisions = new Map<string, string>();
   private generatedProjectRefresher?: GeneratedResourceProjectRefresher;
+  private physicalDefinitionResolver?: PhysicalAssetDefinitionResolver;
 
   public constructor(
     private readonly projects: ResourcePackProjectService,
@@ -265,6 +269,11 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
   /** Late-bound because the lazy RSGL subsystem is composed after core infrastructure. */
   public setGeneratedProjectRefresher(refresher: GeneratedResourceProjectRefresher): void {
     this.generatedProjectRefresher = refresher;
+  }
+
+  /** Late-bound to avoid making project scanning part of facade construction. */
+  public setPhysicalDefinitionResolver(resolver: PhysicalAssetDefinitionResolver): void {
+    this.physicalDefinitionResolver = resolver;
   }
 
   public onDidChangeResources(
@@ -316,7 +325,52 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     scope: ResourceResolutionScope,
     options: Omit<UnifiedResourceQueryOptions, "includeGenerated"> = {}
   ): Promise<UnifiedLogicalDefinitionResolution> {
-    const ensured = await this.ensureProjectForUri(sourceUri, {
+    const discovered = await this.discoverProjectForUri(sourceUri);
+    if (!discovered.context) {
+      return { coverage: "unavailable" };
+    }
+
+    const currentCoverage = this.universe.getCoverage(
+      physicalProviderId,
+      discovered.context.projectId
+    );
+    const currentIndexIsUsable = this.refreshedContextRevisions.get(discovered.context.projectId)
+      === discovered.context.contextRevision
+      && currentCoverage !== undefined
+      && currentCoverage.status !== "unavailable";
+    if (!currentIndexIsUsable && this.physicalDefinitionResolver) {
+      try {
+        const exact = await this.physicalDefinitionResolver.resolveExactDefinition({
+          context: discovered.context,
+          target,
+          scope
+        }, options.signal);
+        if (exact.status === "resolved") {
+          return {
+            context: discovered.context,
+            coverage: "authoritative",
+            directLocations: [{
+              uri: exact.definition.uri,
+              origin: "physical"
+            }]
+          };
+        }
+        if (exact.status === "missing") {
+          return {
+            context: discovered.context,
+            coverage: "authoritative",
+            directLocations: []
+          };
+        }
+      } catch (error) {
+        if (isAbortError(error) || options.signal?.aborted) {
+          throw error;
+        }
+        // An optimization failure must retain the complete provider/index path.
+      }
+    }
+
+    const ensured = await this.refreshDiscoveredProject(discovered, {
       ...options,
       includeGenerated: false
     });

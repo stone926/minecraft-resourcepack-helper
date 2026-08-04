@@ -28,8 +28,10 @@ export function createResourceInfrastructure(): ResourceInfrastructure {
     vscode,
     uri => navigation.invalidateUri(uri)
   );
+  const physicalSource = new VscodePhysicalAssetSource(projects, archiveResources);
+  navigation.setPhysicalDefinitionResolver(physicalSource);
   const physicalProvider = universe.registerProvider(new PhysicalAssetContributionProvider(
-    new VscodePhysicalAssetSource(projects, archiveResources)
+    physicalSource
   ));
   const disposables: vscode.Disposable[] = [
     physicalProvider,
