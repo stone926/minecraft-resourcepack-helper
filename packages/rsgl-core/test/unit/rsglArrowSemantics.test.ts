@@ -97,52 +97,51 @@ describe("RSGL arrow semantics", () => {
     assert.strictEqual(itemSelectFallback(select), undefined);
   });
 
-  it("reports every output-contract arrow used in a mapping at the arrow token", () => {
-    const source = [
-      "let identity = value -> value",
-      "let choose = (left, right) -> left",
-      "let result = match mode { (north) -> \"north\" }",
-      "blockstate variants lamp { case ({ powered: true }) -> minecraft:block/lamp_on }",
-      "blockstate multipart lamp_overlay { part when ($state.powered == true) -> minecraft:block/lamp_glow }",
-      "item potion {",
-      "  select property minecraft:potion_contents {",
-      "    case (\"minecraft:healing\") -> minecraft:item/potion_healing",
-      "  }",
-      "}"
-    ].join("\n");
-
-    const module = parseRsgl(source);
-    const diagnostics = module.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.unexpectedOutputContractArrow"
+  it("does not recognize an output-contract arrow as a lambda or blockstate mapping", () => {
+    const lambda = parseRsgl("let identity = value -> value");
+    assert.ok(lambda.diagnostics.some(diagnostic => diagnostic.severity === "error"));
+    assert.ok(lambda.diagnostics.every(diagnostic => !/unexpected(?:OutputContract|Mapping)Arrow/.test(diagnostic.code)));
+    const declaration = lambda.statements[0];
+    assert.strictEqual(
+      declaration.kind === "LetDecl" ? declaration.value.kind : undefined,
+      "IdentifierExpr"
     );
+    assert.ok(lambda.statements.some(statement => statement.kind === "UnknownStmt"));
 
-    assert.strictEqual(diagnostics.length, 6);
-    assert.ok(diagnostics.every(diagnostic =>
-      source.slice(diagnostic.range.start, diagnostic.range.end) === "->"
-    ));
-    assert.ok(diagnostics.some(diagnostic => diagnostic.message.includes("lambda expression")));
-    assert.ok(diagnostics.some(diagnostic => diagnostic.message.includes("match arm")));
-    assert.ok(diagnostics.some(diagnostic => diagnostic.message.includes("item select case")));
-    assert.strictEqual(module.diagnostics.length, diagnostics.length, "wrong arrows should recover without cascades");
+    const source = "blockstate variants lamp { case * -> minecraft:block/lamp }";
+    const blockstate = parseRsgl(source);
+    assert.deepStrictEqual(blockstate.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.expectedMappingArrow"
+    ]);
+    const resource = blockstate.statements[0];
+    assert.strictEqual(
+      resource.kind === "ResourceDecl" ? resource.body.statements[0]?.kind : undefined,
+      "UnknownStmt"
+    );
+    assert.deepStrictEqual(compileRsglModule(blockstate).units, []);
   });
 
-  it("reports mapping arrows used in output contracts and preserves recovered declarations", () => {
-    const source = [
-      "type Mapper = (Json) => ModelId",
-      "template fields() => model { parent minecraft:block/cube_all }"
-    ].join("\n");
-
-    const module = parseRsgl(source);
-    const diagnostics = module.diagnostics.filter(diagnostic =>
-      diagnostic.code === "rsgl.unexpectedMappingArrow"
+  it("does not recognize a mapping arrow as an output contract", () => {
+    const typeAlias = parseRsgl("type Mapper = (Json) => ModelId");
+    assert.ok(typeAlias.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedOutputContractArrow"));
+    const declaration = typeAlias.statements[0];
+    assert.strictEqual(
+      declaration.kind === "TypeAliasDecl" && declaration.typeAnnotation.kind === "FunctionType"
+        ? declaration.typeAnnotation.returnType.kind
+        : undefined,
+      "MissingType"
     );
 
-    assert.strictEqual(diagnostics.length, 2);
-    assert.ok(diagnostics.every(diagnostic =>
-      source.slice(diagnostic.range.start, diagnostic.range.end) === "=>"
+    const template = parseRsgl("template fields() => model { parent minecraft:block/cube_all }");
+    assert.ok(template.diagnostics.some(diagnostic => diagnostic.severity === "error"));
+    const templateDeclaration = template.statements[0];
+    assert.strictEqual(
+      templateDeclaration.kind === "TemplateDecl" ? templateDeclaration.declaredOutputDialect : undefined,
+      undefined
+    );
+    assert.ok([...typeAlias.diagnostics, ...template.diagnostics].every(diagnostic =>
+      !/unexpected(?:OutputContract|Mapping)Arrow/.test(diagnostic.code)
     ));
-    assert.deepStrictEqual(module.statements.map(statement => statement.kind), ["TypeAliasDecl", "TemplateDecl"]);
-    assert.strictEqual(module.diagnostics.length, diagnostics.length);
   });
 
   it("reports a missing function output contract without consuming the return type or next declaration", () => {
@@ -256,41 +255,39 @@ describe("RSGL arrow semantics", () => {
   });
 
   it("does not consume a closing body delimiter when a mapping RHS is missing", () => {
-    for (const arrow of ["=>", "->"] as const) {
-      const source = [
-        "let result = match mode {",
-        `  _ ${arrow}`,
-        "}",
-        "item potion {",
-        "  select property minecraft:potion_contents {",
-        `    case "minecraft:healing" ${arrow}`,
-        "  }",
-        "}"
-      ].join("\n");
-      const module = parseRsgl(source);
-
-      assert.strictEqual(
-        module.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.expectedExpression").length,
-        2
-      );
-      assert.strictEqual(
-        module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedClosingBrace"),
-        false
-      );
-      assert.strictEqual(itemSelectCases(itemSelectStatement(module.statements[1])).length, 1);
-    }
-  });
-
-  it("does not consume a following arm or clause after an arrow with no RHS", () => {
     const source = [
       "let result = match mode {",
-      "  north ->",
+      "  _ =>",
+      "}",
+      "item potion {",
+      "  select property minecraft:potion_contents {",
+      "    case \"minecraft:healing\" =>",
+      "  }",
+      "}"
+    ].join("\n");
+    const module = parseRsgl(source);
+
+    assert.strictEqual(
+      module.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.expectedExpression").length,
+      2
+    );
+    assert.strictEqual(
+      module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedClosingBrace"),
+      false
+    );
+    assert.strictEqual(itemSelectCases(itemSelectStatement(module.statements[1])).length, 1);
+  });
+
+  it("does not consume a following arm or clause after a separated canonical arrow with no RHS", () => {
+    const source = [
+      "let result = match mode {",
+      "  north =>;",
       "  south => 2",
       "  _ => 3",
       "}",
       "item potion {",
       "  select property minecraft:potion_contents {",
-      "    case \"minecraft:healing\" ->",
+      "    case \"minecraft:healing\" =>;",
       "    fallback minecraft:item/potion",
       "  }",
       "}"
@@ -299,10 +296,6 @@ describe("RSGL arrow semantics", () => {
     const module = parseRsgl(source);
     const matchDecl = module.statements[0];
 
-    assert.strictEqual(
-      module.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.unexpectedOutputContractArrow").length,
-      2
-    );
     assert.strictEqual(
       module.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.expectedExpression").length,
       2
@@ -318,7 +311,7 @@ describe("RSGL arrow semantics", () => {
     assert.strictEqual(itemModelExpressionKind(itemSelectFallback(select)?.model), "ResourceLocationExpr");
   });
 
-  it("propagates wrong-arrow diagnostics out of template-string interpolations", () => {
+  it("reports wrong mapping arrows as ordinary syntax errors inside template strings", () => {
     const source = [
       "model block sample {",
       "  parent `minecraft:block/${match key { _ -> \"cube_all\" }}`",
@@ -326,9 +319,7 @@ describe("RSGL arrow semantics", () => {
     ].join("\n");
 
     const module = parseRsgl(source);
-    const diagnostic = module.diagnostics.find(candidate =>
-      candidate.code === "rsgl.unexpectedOutputContractArrow"
-    );
+    const diagnostic = module.diagnostics.find(candidate => candidate.code === "rsgl.expectedMappingArrow");
 
     assert.ok(diagnostic);
     assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "->");
@@ -336,15 +327,10 @@ describe("RSGL arrow semantics", () => {
     assert.deepStrictEqual(result.units, []);
   });
 
-  it("keeps recovered lambda ranges absolute inside template-string interpolations", () => {
+  it("does not construct a lambda from the wrong arrow inside a template string", () => {
     const source = "let rendered = `${(name -> name)(\"cube_all\")}`";
     const module = parseRsgl(source);
-    const diagnostic = module.diagnostics.find(candidate =>
-      candidate.code === "rsgl.unexpectedOutputContractArrow"
-    );
-
-    assert.ok(diagnostic);
-    assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "->");
+    assert.ok(module.diagnostics.some(candidate => candidate.code === "rsgl.expectedClosingParen"));
     const declaration = module.statements[0];
     assert.strictEqual(declaration.kind, "LetDecl");
     if (declaration.kind !== "LetDecl" || declaration.value.kind !== "TemplateStringExpr") {
@@ -352,23 +338,13 @@ describe("RSGL arrow semantics", () => {
     }
     const part = declaration.value.parts.find(candidate => candidate.kind === "expression");
     assert.ok(part && part.kind === "expression");
-    if (!part || part.kind !== "expression" || part.expression.kind !== "CallExpr") {
-      assert.fail("Expected a call expression interpolation.");
+    if (!part || part.kind !== "expression") {
+      assert.fail("Expected an expression interpolation.");
     }
-    assert.strictEqual(part.expression.callee.kind, "LambdaExpr");
-    if (part.expression.callee.kind === "LambdaExpr") {
-      assert.strictEqual(source.slice(
-        part.expression.callee.parameters[0].range.start,
-        part.expression.callee.parameters[0].range.end
-      ), "name");
-      assert.strictEqual(source.slice(
-        part.expression.callee.body.range.start,
-        part.expression.callee.body.range.end
-      ), "name");
-    }
+    assert.strictEqual(part.expression.kind, "IdentifierExpr");
   });
 
-  it("blocks resource output after recovering a wrong mapping arrow", () => {
+  it("blocks resource output after a wrong mapping arrow", () => {
     const source = [
       "blockstate variants lamp {",
       "  case { powered: true } -> minecraft:block/lamp_on",
@@ -378,42 +354,53 @@ describe("RSGL arrow semantics", () => {
     const result = compileRsglModule(parseRsgl(source));
 
     assert.ok(result.diagnostics.some(diagnostic =>
-      diagnostic.code === "rsgl.unexpectedOutputContractArrow"
+      diagnostic.code === "rsgl.expectedMappingArrow"
     ));
     assert.deepStrictEqual(result.units, []);
   });
 
-  it("rejects both migrated legacy constructs and compiles their arrow-only fixes", () => {
-    const legacySources = [
-      [
-        "model block sample {",
-        "  parent match true { _ -> minecraft:block/cube_all }",
-        "}"
-      ],
-      [
-        "item potion {",
-        "  select property minecraft:potion_contents {",
-        "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
-        "    fallback minecraft:item/potion",
-        "  }",
-        "}"
-      ]
+  it("rejects wrong mapping arrows while canonical sources still compile", () => {
+    const cases = [
+      {
+        invalid: [
+          "model block sample {",
+          "  parent match true { _ -> minecraft:block/cube_all }",
+          "}"
+        ],
+        canonical: [
+          "model block sample {",
+          "  parent match true { _ => minecraft:block/cube_all }",
+          "}"
+        ]
+      },
+      {
+        invalid: [
+          "item potion {",
+          "  select property minecraft:potion_contents {",
+          "    case \"minecraft:healing\" -> minecraft:item/potion_healing",
+          "    fallback minecraft:item/potion",
+          "  }",
+          "}"
+        ],
+        canonical: [
+          "item potion {",
+          "  select property minecraft:potion_contents {",
+          "    case \"minecraft:healing\" => minecraft:item/potion_healing",
+          "    fallback minecraft:item/potion",
+          "  }",
+          "}"
+        ]
+      }
     ];
 
-    for (const lines of legacySources) {
-      const source = lines.join("\n");
-      const module = parseRsgl(source);
-      const diagnostic = module.diagnostics.find(candidate =>
-        candidate.code === "rsgl.unexpectedOutputContractArrow"
-      );
-      assert.ok(diagnostic);
-      const legacyResult = compileSourceWithUncheckedExterns(lines);
-      assert.deepStrictEqual(legacyResult.units, []);
+    for (const { invalid, canonical } of cases) {
+      const invalidResult = compileSourceWithUncheckedExterns(invalid);
+      assert.ok(invalidResult.diagnostics.some(candidate => candidate.code === "rsgl.expectedMappingArrow"));
+      assert.deepStrictEqual(invalidResult.units, []);
 
-      const fixed = source.slice(0, diagnostic.range.start) + "=>" + source.slice(diagnostic.range.end);
-      const fixedResult = compileSourceWithUncheckedExterns(fixed.split("\n"));
-      assert.deepStrictEqual(fixedResult.diagnostics, []);
-      assert.ok(fixedResult.units.length > 0);
+      const canonicalResult = compileSourceWithUncheckedExterns(canonical);
+      assert.deepStrictEqual(canonicalResult.diagnostics, []);
+      assert.ok(canonicalResult.units.length > 0);
     }
   });
 });

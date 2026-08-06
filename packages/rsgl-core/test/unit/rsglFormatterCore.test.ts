@@ -162,7 +162,7 @@ describe("RSGL formatter core", () => {
       "let canonical = match mode {",
       "north => 1",
       "}",
-      "let legacy = match mode {",
+      "let erroneous = match mode {",
       "north -> 1",
       "}",
       "type Correct = (Json) -> ModelId",

@@ -63,19 +63,23 @@ export function tryParseItemModelStatement(
   }
 
   const terminal = text === "empty" || text === "selected_item";
+  if (terminal) {
+    const start = host.current();
+    return producer(start, parseItemModelTerminal(host, text), "terminal", host);
+  }
   if (!terminal && !isRsglItemModelConstructorStart(text, host.peekText(1))) {
     return undefined;
   }
 
   const start = host.current();
-  const value = parseItemModelNode(host, { allowBareTerminal: terminal });
-  return producer(start, value, terminal ? "terminal" : "structured", host);
+  const value = parseItemModelNode(host);
+  return producer(start, value, "structured", host);
 }
 
 /** Parses one recursive item-model value without narrowing ordinary RSGL expressions. */
 export function parseItemModelNode(
   host: ResourceStatementParserHost,
-  options: { allowLeadingLineBreak?: boolean; allowBareTerminal?: boolean } = {}
+  options: { allowLeadingLineBreak?: boolean } = {}
 ): ItemModelNode {
   const text = host.current().text;
   if (text === "use" && looksLikeItemModelUse(host)) {
@@ -97,17 +101,14 @@ export function parseItemModelNode(
       case "first_match":
         return parseItemModelFirstMatch(host);
       case "empty":
-        return parseItemModelTerminal(host, "empty", false);
+        return parseItemModelTerminal(host, "empty");
       case "selected_item":
-        return parseItemModelTerminal(host, "selected_item", false);
+        return parseItemModelTerminal(host, "selected_item");
       default:
         break;
     }
   }
 
-  if (options.allowBareTerminal && (text === "empty" || text === "selected_item")) {
-    return parseItemModelTerminal(host, text, true);
-  }
   return parseItemModelExpression(host, options.allowLeadingLineBreak === true);
 }
 
@@ -397,8 +398,7 @@ function parseItemModelSpecial(host: ResourceStatementParserHost): ItemModelSpec
 
 function parseItemModelTerminal(
   host: ResourceStatementParserHost,
-  terminal: "empty" | "selected_item",
-  allowBare: boolean
+  terminal: "empty" | "selected_item"
 ): ItemModelEmptyNode | ItemModelSelectedItemNode {
   const start = host.advance();
   if (host.current().text === "{") {
@@ -409,7 +409,7 @@ function parseItemModelTerminal(
       );
     }
     host.consumeBalancedEnclosure("{", "}", `Expected '}' after item ${terminal}.`);
-  } else if (!allowBare) {
+  } else {
     host.addDiagnosticAtCurrent("rsgl.expectedItemTerminalBody", `Expected '{}' after item ${terminal}.`);
   }
   rejectUnsupportedPostfixOptions(host, `item ${terminal}`);
@@ -609,15 +609,13 @@ function parseRequiredItemModel(
     || current.text === ";"
     // After the canonical arrow, a contextual clause word on the next line is
     // still a valid identifier-valued RHS (for example `=>\n fallback`). The
-    // boundary heuristic is only needed when the arrow itself was absent or
-    // recovered from the wrong spelling.
+    // boundary heuristic is only needed when the arrow itself was absent.
     || (arrow !== "expected" && host.isLineBoundaryOr() && clauseStarts.has(current.text));
   if (!missing) {
     return parseItemModelNode(host, { allowLeadingLineBreak: true });
   }
-  // A missing arrow already explains an absent mapping RHS. If an arrow was
-  // consumed (including the recoverable wrong spelling), retain the shared
-  // expression diagnostic used by match/blockstate recovery.
+  // A missing arrow already explains an absent mapping RHS. If the canonical
+  // arrow was consumed, retain the shared expression diagnostic.
   if (arrow !== "missing") {
     host.addDiagnosticAtCurrent(
       arrow ? "rsgl.expectedExpression" : "rsgl.expectedItemModel",

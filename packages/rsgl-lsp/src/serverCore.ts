@@ -2,12 +2,10 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizePathKey } from "../../mc-assets/src";
 import {
-  CodeActionKind,
   CompletionItemKind,
   DiagnosticSeverity,
   InsertTextFormat,
   MarkupKind,
-  type CodeAction,
   type CompletionItem,
   type Diagnostic,
   type FormattingOptions,
@@ -40,7 +38,6 @@ import {
   prepareRsglDocumentRename,
   projectCompileOptionsFromRsglConfig,
   resolveRsglOutputPackRoot,
-  rsglArrowQuickFixForDiagnosticCode,
   resolveRsglCompileConfiguration,
   RsglProjectConfigError,
   type CompileDependency,
@@ -100,7 +97,6 @@ export interface RsglWorkspaceInitializationParams {
 /** Minimal transport-neutral view of an open text document. */
 export interface RsglLspDocument {
   getText(): string;
-  offsetAt?(position: Position): number;
   positionAt(offset: number): Position;
   readonly version?: number;
 }
@@ -247,61 +243,6 @@ function isSerializedWorkspaceUri(value: unknown): value is string {
   return typeof value === "string"
     && /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value)
     && !/^[a-zA-Z]:[\\/]/.test(value);
-}
-
-/** Builds precise, token-sized quick fixes for parser diagnostics. */
-export function codeActionsForDiagnostics(
-  document: RsglLspDocument,
-  documentUri: string,
-  diagnostics: readonly Diagnostic[]
-): CodeAction[] {
-  const actions: CodeAction[] = [];
-  for (const diagnostic of diagnostics) {
-    const fix = rsglArrowQuickFixForDiagnosticCode(diagnostic.code);
-    if (
-      !fix
-      || diagnostic.source !== "RSGL"
-      || textInRange(document, diagnostic.range) !== fix.original
-    ) {
-      continue;
-    }
-    actions.push({
-      title: fix.title,
-      kind: CodeActionKind.QuickFix,
-      diagnostics: [diagnostic],
-      isPreferred: true,
-      edit: {
-        documentChanges: [{
-          textDocument: {
-            uri: documentUri,
-            version: document.version ?? null
-          },
-          edits: [{ range: diagnostic.range, newText: fix.replacement }]
-        }]
-      }
-    });
-  }
-  return actions;
-}
-
-function textInRange(document: RsglLspDocument, range: Range): string {
-  const text = document.getText();
-  const offsetAt = document.offsetAt
-    ? (position: Position) => document.offsetAt!(position)
-    : (position: Position) => offsetAtPosition(text, position);
-  return text.slice(offsetAt(range.start), offsetAt(range.end));
-}
-
-function offsetAtPosition(text: string, position: Position): number {
-  let lineStart = 0;
-  for (let line = 0; line < position.line && lineStart < text.length; line++) {
-    const lineEnd = text.indexOf("\n", lineStart);
-    lineStart = lineEnd < 0 ? text.length : lineEnd + 1;
-  }
-  const lineFeed = text.indexOf("\n", lineStart);
-  const lineEnd = lineFeed < 0 ? text.length : lineFeed;
-  const contentEnd = lineEnd > lineStart && text[lineEnd - 1] === "\r" ? lineEnd - 1 : lineEnd;
-  return Math.max(lineStart, Math.min(contentEnd, lineStart + position.character));
 }
 
 export {

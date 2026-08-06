@@ -1,4 +1,5 @@
 import * as assert from "node:assert";
+import { compileRsglModule } from "../../src/compiler";
 import {
   parseRsgl,
   type ItemModelProducerStmtNode,
@@ -262,19 +263,30 @@ describe("RSGL recursive item-model parser", () => {
     }
   });
 
-  it("accepts canonical terminal braces while retaining legacy bare terminals at item roots", () => {
+  it("accepts canonical terminal braces at item roots", () => {
     const module = parseRsgl([
-      "item legacy_empty { empty }",
       "item canonical_empty { empty {} }",
-      "item legacy_selected { selected_item }",
       "item canonical_selected { selected_item {} }"
     ].join("\n"));
 
     assert.deepStrictEqual(module.diagnostics, []);
     assert.deepStrictEqual(
       module.statements.map(statement => itemProducer(statement).value.kind),
-      ["ItemModelEmpty", "ItemModelEmpty", "ItemModelSelectedItem", "ItemModelSelectedItem"]
+      ["ItemModelEmpty", "ItemModelSelectedItem"]
     );
+  });
+
+  it("rejects bare item terminals without emitting resources", () => {
+    const module = parseRsgl([
+      "item bare_empty { empty }",
+      "item bare_selected { selected_item }"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.expectedItemTerminalBody",
+      "rsgl.expectedItemTerminalBody"
+    ]);
+    assert.deepStrictEqual(compileRsglModule(module).units, []);
   });
 
   it("rejects caller-side options consistently on root and nested item_model template calls", () => {

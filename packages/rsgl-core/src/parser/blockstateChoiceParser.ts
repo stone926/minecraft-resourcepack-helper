@@ -1,6 +1,7 @@
 import { blockstateModelOptionMessages } from "../diagnosticMessages";
 import { choiceBodyParseContext } from "./bodyParseContext";
 import type { ResourceStatementParserHost } from "./statementParserHost";
+import { recoverUnexpectedStatementTail } from "./statementRecovery";
 import type {
   BlockstateChoiceBodyNode,
   BlockstateChoiceNode,
@@ -16,9 +17,6 @@ const modelHeadTerminators = ["with", "weight", ",", ";", "}"] as const;
 /** Parses the only two blockstate choice forms: a model spec or a random block. */
 export function parseBlockstateChoice(host: ResourceStatementParserHost): BlockstateChoiceNode {
   if (host.current().text === "random") {
-    if (host.peekText(1) === "[") {
-      return rejectLegacyRandomList(host);
-    }
     return parseBlockstateRandomChoice(host);
   }
   return parseBlockstateModelSpec(host);
@@ -81,12 +79,20 @@ function parseBlockstateModelSpec(host: ResourceStatementParserHost): Blockstate
     return { kind: "BlockstateModelSpec", model, ...host.nodeRanges(start, start) };
   }
 
-  const legacyObjectOrList = start.text === "{" || start.text === "[";
-  if (legacyObjectOrList) {
+  if (start.text === "{" || start.text === "[") {
     host.addDiagnosticAtCurrent(
-      "rsgl.legacyBlockstateModelValue",
-      "Blockstate model objects and arrays are no longer supported; use a model expression with 'with { ... }' or a random block."
+      "rsgl.expectedBlockstateModel",
+      "Expected a model expression in the blockstate choice."
     );
+    host.consumeBalancedEnclosure(
+      start.text,
+      start.text === "{" ? "}" : "]",
+      start.text === "{"
+        ? "Expected '}' after malformed blockstate model expression."
+        : "Expected ']' after malformed blockstate model expression."
+    );
+    const model = host.missingExprAt(start);
+    return { kind: "BlockstateModelSpec", model, ...host.nodeRanges(start, host.previousOr(start)) };
   }
 
   const model = host.parseExpression({ stopTexts: modelHeadTerminators });
@@ -177,21 +183,6 @@ function parseBlockstateRandomOption(host: ResourceStatementParserHost): Blockst
   };
 }
 
-function rejectLegacyRandomList(host: ResourceStatementParserHost): BlockstateModelSpecNode {
-  const start = host.advance();
-  host.addDiagnostic(
-    "rsgl.legacyBlockstateRandomList",
-    "'random [...]' is no longer supported; use 'random { option ... }'.",
-    { start: start.offset, end: start.offset + start.length }
-  );
-  host.consumeBalancedEnclosure("[", "]", "Expected ']' after the legacy random list.");
-  return {
-    kind: "BlockstateModelSpec",
-    model: host.missingExprAt(start),
-    ...host.nodeRanges(start, host.previousOr(start))
-  };
-}
-
 function rejectChoiceStatement(host: ResourceStatementParserHost): UnknownStmtNode {
   const start = host.current();
   host.addDiagnosticAtCurrent(
@@ -210,7 +201,7 @@ function rejectChoiceStatement(host: ResourceStatementParserHost): UnknownStmtNo
   };
 }
 
-/** Ensures removed trailing `x=...`/`weight=...` forms cannot become sibling statements. */
+/** Rejects tokens that do not belong to the canonical choice grammar. */
 export function validateBlockstateChoiceEnd(host: ResourceStatementParserHost): void {
   if (host.current().text === "weight") {
     validateStatementEnd(
@@ -222,8 +213,8 @@ export function validateBlockstateChoiceEnd(host: ResourceStatementParserHost): 
   }
   validateStatementEnd(
     host,
-    "rsgl.legacyBlockstateModelModifiers",
-    "Trailing blockstate model modifiers are no longer supported; use 'with { ... }'."
+    "rsgl.unexpectedBlockstateChoiceTail",
+    "Unexpected tokens after the blockstate choice."
   );
 }
 
@@ -232,5 +223,5 @@ function validateStatementEnd(host: ResourceStatementParserHost, code: string, m
     return;
   }
   host.addDiagnosticAtCurrent(code, message);
-  host.recoverToLineEnd();
+  recoverUnexpectedStatementTail(host);
 }

@@ -3,13 +3,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { CodeActionKind, CompletionItemKind, DiagnosticSeverity, InsertTextFormat } from "vscode-languageserver/node";
+import { CompletionItemKind, DiagnosticSeverity, InsertTextFormat } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   RsglProjectTargetCache,
   RsglWorkspaceSemanticCache,
   RsglWorkspaceValidationCache,
-  parseRsgl,
   rsglSemanticTokenModifiers,
   rsglSemanticTokenTypes,
   type RsglSemanticToken,
@@ -18,7 +17,6 @@ import {
 } from "../../../rsgl-core/src";
 import {
   clampOffset,
-  codeActionsForDiagnostics,
   completionItemsForContent,
   completionItemsForDocument,
   computeDocumentHover,
@@ -79,51 +77,6 @@ describe("RSGL LSP server core", () => {
     assert.strictEqual(toLspSeverity("error"), DiagnosticSeverity.Error);
     assert.strictEqual(toLspSeverity("warning"), DiagnosticSeverity.Warning);
     assert.strictEqual(toLspSeverity("info"), DiagnosticSeverity.Information);
-  });
-
-  it("creates preferred token-sized quick fixes for both wrong-arrow diagnostics", () => {
-    const source = [
-      "/*😀*/ let identity = value -> value",
-      "type Mapper = (Json) => ModelId"
-    ].join("\n");
-    const document = documentOf(source);
-    const diagnostics = parseRsgl(source).diagnostics.map(diagnostic =>
-      toLspDiagnostic(document, diagnostic)
-    );
-    const actions = codeActionsForDiagnostics(document, document.uri, [
-      ...diagnostics,
-      {
-        range: diagnostics[0].range,
-        message: "unrelated",
-        code: "rsgl.expectedMappingArrow",
-        source: "RSGL"
-      },
-      { ...diagnostics[0], source: "another-language" },
-      { ...diagnostics[0], range: diagnostics[1].range }
-    ]);
-
-    assert.strictEqual(actions.length, 2);
-    assert.ok(actions.every(action => action.kind === CodeActionKind.QuickFix));
-    assert.ok(actions.every(action => action.isPreferred));
-    assert.ok(actions.every(action => action.diagnostics?.length === 1));
-    const documentChanges = actions.flatMap(action => action.edit?.documentChanges ?? []);
-    assert.ok(documentChanges.every(change =>
-      "textDocument" in change
-      && change.textDocument.uri === document.uri
-      && change.textDocument.version === document.version
-    ));
-    const edits = documentChanges.flatMap(change => "edits" in change ? change.edits : []);
-    assert.deepStrictEqual(edits.map(edit => document.getText(edit.range)), ["->", "=>"]);
-    assert.deepStrictEqual(edits.map(edit => edit.newText), ["=>", "->"]);
-
-    const fixed = [...edits]
-      .sort((left, right) => document.offsetAt(right.range.start) - document.offsetAt(left.range.start))
-      .reduce((text, edit) => {
-        const start = document.offsetAt(edit.range.start);
-        const end = document.offsetAt(edit.range.end);
-        return text.slice(0, start) + edit.newText + text.slice(end);
-      }, source);
-    assert.deepStrictEqual(parseRsgl(fixed).diagnostics, []);
   });
 
   it("clamps offsets to the document text range", () => {
@@ -1938,7 +1891,7 @@ describe("RSGL LSP server core", () => {
     }
   });
 
-  it("advertises references, prepare rename, and quick fixes and registers their handlers", () => {
+  it("advertises references and prepare rename without registering removed arrow fixes", () => {
     const serverSource = fs.readFileSync(path.join(
       process.cwd(),
       "packages",
@@ -1995,8 +1948,8 @@ describe("RSGL LSP server core", () => {
     assert.ok(serverSource.includes("renameProvider: { prepareProvider: true }"));
     assert.ok(serverSource.includes("connection.onPrepareRename"));
     assert.ok(serverSource.includes("connection.onRenameRequest"));
-    assert.ok(serverSource.includes("codeActionKinds: [CodeActionKind.QuickFix]"));
-    assert.ok(serverSource.includes("connection.onCodeAction"));
+    assert.strictEqual(serverSource.includes("codeActionProvider"), false);
+    assert.strictEqual(serverSource.includes("connection.onCodeAction"), false);
     assert.ok(serverSource.includes("new DirtyDiagnosticScheduler<string>"));
     assert.ok(serverSource.includes("scheduleAffectedDocuments("));
     assert.ok(serverSource.includes("diagnosticScheduler.drop("));

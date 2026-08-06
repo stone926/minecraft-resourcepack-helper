@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import { walkRsglModule } from "../../src/parser/astTraversal";
-import { parseRsgl } from "../../src/parser";
+import { parseRsgl, type BlockstateVariantsRootStatementNode } from "../../src/parser";
 
 function parseSingleBlockstate(source: string) {
   const module = parseRsgl(source);
@@ -30,16 +30,19 @@ describe("RSGL blockstate parser", () => {
     const parsed = parseSingleBlockstate([
       "blockstate variants computed_root {",
       "  [\"variants\"]: { \"\": { model: minecraft:block/stone } }",
+      "  [\"custom\"] = true",
       "}"
     ].join("\n"));
 
     assert.deepStrictEqual(parsed.module.diagnostics, []);
     assert.strictEqual(parsed.resource.body.kind, "BlockstateVariantsRootBody");
     if (parsed.resource.body.kind === "BlockstateVariantsRootBody") {
-      const property = parsed.resource.body.statements[0];
-      assert.strictEqual(property.kind, "PropertyStmt");
-      if (property.kind === "PropertyStmt") {
-        assert.strictEqual(property.key.kind, "DynamicKey");
+      assert.strictEqual(parsed.resource.body.statements.length, 2);
+      for (const property of parsed.resource.body.statements) {
+        assert.strictEqual(property.kind, "PropertyStmt");
+        if (property.kind === "PropertyStmt") {
+          assert.strictEqual(property.key.kind, "DynamicKey");
+        }
       }
     }
   });
@@ -321,59 +324,52 @@ describe("RSGL blockstate parser", () => {
     ));
   });
 
-  it("rejects every removed blockstate surface without producing legacy AST", () => {
-    const cases: Array<[string, string]> = [
-      [
-        "blockstate old { variants { [facing=north] -> @minecraft:block/old } }",
-        "rsgl.blockstateModeRequired"
-      ],
-      [
-        "blockstate variants old { [facing=north] -> minecraft:block/old }",
-        "rsgl.expectedBlockstateCase"
-      ],
-      [
-        "blockstate variants old { case * => @minecraft:block/old }",
-        "rsgl.expectedExpression"
-      ],
-      [
-        "blockstate variants old { { facing: north }: minecraft:block/old }",
-        "rsgl.legacyBlockstateVariantEntry"
-      ],
-      [
-        "blockstate multipart old { apply minecraft:block/old }",
-        "rsgl.legacyBlockstateMultipartEntry"
-      ],
-      [
-        "blockstate multipart old { when { north: true } apply minecraft:block/old }",
-        "rsgl.legacyBlockstateMultipartEntry"
-      ],
-      [
-        "blockstate variants old { case * => minecraft:block/old x=90 }",
-        "rsgl.legacyBlockstateModelModifiers"
-      ],
-      [
-        "blockstate variants old { case * => { model: minecraft:block/old } }",
-        "rsgl.legacyBlockstateModelValue"
-      ],
-      [
-        "blockstate variants old { case * => [minecraft:block/a, minecraft:block/b] }",
-        "rsgl.legacyBlockstateModelValue"
-      ],
-      [
-        "blockstate variants old { case * => random [minecraft:block/a, minecraft:block/b] }",
-        "rsgl.legacyBlockstateRandomList"
-      ]
+  it("treats every removed blockstate surface as an ordinary syntax error", () => {
+    const cases = [
+      "blockstate old { variants { [facing=north] -> @minecraft:block/old } }",
+      "blockstate variants old { [facing=north] -> minecraft:block/old }",
+      "blockstate variants old { [facing=north] => minecraft:block/old }",
+      "blockstate variants old { case * => @minecraft:block/old }",
+      "blockstate variants old { { facing: north }: minecraft:block/old }",
+      "blockstate variants old { (facing: north): minecraft:block/old }",
+      "blockstate multipart old { apply minecraft:block/old }",
+      "blockstate multipart old { when { north: true } apply minecraft:block/old }",
+      "blockstate variants old { case * => minecraft:block/old x=90 }",
+      "blockstate variants old { case * => { model: minecraft:block/old } }",
+      "blockstate variants old { case * => [minecraft:block/a, minecraft:block/b] }",
+      "blockstate variants old { case * => random [minecraft:block/a, minecraft:block/b] }"
     ];
 
-    for (const [source, code] of cases) {
+    for (const source of cases) {
       const parsed = parseRsgl(source);
-      assert.ok(parsed.diagnostics.some(diagnostic => diagnostic.code === code), `${code}: ${source}`);
+      assert.ok(parsed.diagnostics.some(diagnostic => diagnostic.severity === "error"), source);
+      assert.ok(parsed.diagnostics.every(diagnostic => !/legacy/i.test(diagnostic.code)), source);
     }
   });
 
-  it("balances removed multiline multipart entries and retains the next canonical part", () => {
+  it("recovers alternate removed variant delimiters before canonical cases", () => {
     const { module, resource } = parseSingleBlockstate([
-      "blockstate multipart recovered_legacy {",
+      "blockstate variants recovered_variant_delimiters {",
+      "  [facing=north] => minecraft:block/old_bracket",
+      "  case { recovered: bracket } => minecraft:block/good_bracket",
+      "  (facing: north): minecraft:block/old_selector",
+      "  case { recovered: selector } => minecraft:block/good_selector",
+      "}"
+    ].join("\n"));
+
+    assert.ok(module.diagnostics.some(diagnostic => diagnostic.severity === "error"));
+    assert.ok(module.diagnostics.every(diagnostic => !/legacy/i.test(diagnostic.code)));
+    assert.strictEqual(resource.body.kind, "BlockstateVariantsRootBody");
+    if (resource.body.kind === "BlockstateVariantsRootBody") {
+      assert.strictEqual(resource.body.statements.filter(statement =>
+        statement.kind === "BlockstateVariantEntry"
+      ).length, 2);
+    }
+  });
+
+  it("uses generic balanced recovery and retains the next canonical part", () => {
+    const { module, resource } = parseSingleBlockstate([
+      "blockstate multipart recovered_invalid {",
       "  apply {",
       "    model: minecraft:block/old",
       "    y: 90",
@@ -388,8 +384,8 @@ describe("RSGL blockstate parser", () => {
     ].join("\n"));
 
     assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.legacyBlockstateMultipartEntry",
-      "rsgl.legacyBlockstateMultipartEntry"
+      "rsgl.expectedBlockstatePart",
+      "rsgl.expectedBlockstatePart"
     ]);
     assert.strictEqual(resource.body.kind, "BlockstateMultipartRootBody");
     assert.deepStrictEqual(resource.body.statements.map(statement => statement.kind), [
@@ -399,7 +395,71 @@ describe("RSGL blockstate parser", () => {
     ]);
   });
 
-  it("rejects separated legacy model modifiers after both case and part entries", () => {
+  it("replaces invalid object and list model values with missing nodes before recovering", () => {
+    const { module, resource } = parseSingleBlockstate([
+      "blockstate variants recovered_values {",
+      "  case { old: object } => {",
+      "    model: minecraft:block/old_object",
+      "  }",
+      "  case { ok: object } => minecraft:block/good_object",
+      "  case { old: list } => [",
+      "    minecraft:block/old_list",
+      "  ]",
+      "  case { ok: list } => minecraft:block/good_list",
+      "  case { old: random } => random [",
+      "    minecraft:block/old_random",
+      "  ]",
+      "  case * => minecraft:block/good_random",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.expectedBlockstateModel",
+      "rsgl.expectedBlockstateModel",
+      "rsgl.expectedBlockstateChoiceBody",
+      "rsgl.emptyBlockstateRandomChoice",
+      "rsgl.unexpectedBlockstateChoiceTail"
+    ]);
+    assert.strictEqual(resource.body.kind, "BlockstateVariantsRootBody");
+    if (resource.body.kind !== "BlockstateVariantsRootBody") {
+      assert.fail("Expected variants body.");
+    }
+    assert.deepStrictEqual(resource.body.statements.map(statement => statement.kind), [
+      "BlockstateVariantEntry",
+      "BlockstateVariantEntry",
+      "BlockstateVariantEntry",
+      "BlockstateVariantEntry",
+      "BlockstateVariantEntry",
+      "BlockstateVariantEntry"
+    ]);
+    for (const index of [0, 2]) {
+      const entry: BlockstateVariantsRootStatementNode = resource.body.statements[index];
+      assert.strictEqual(
+        entry.kind === "BlockstateVariantEntry" && entry.choice.kind === "BlockstateModelSpec"
+          ? entry.choice.model.kind
+          : undefined,
+        "MissingExpr"
+      );
+    }
+    const random = resource.body.statements[4];
+    assert.strictEqual(
+      random.kind === "BlockstateVariantEntry" ? random.choice.kind : undefined,
+      "BlockstateRandomChoice"
+    );
+    if (random.kind === "BlockstateVariantEntry" && random.choice.kind === "BlockstateRandomChoice") {
+      assert.deepStrictEqual(random.choice.body.statements, []);
+    }
+  });
+
+  it("rejects detached model fields after choices without reserving those root property names", () => {
+    const standalone = parseSingleBlockstate([
+      "blockstate variants standalone_model_field_names {",
+      "  x=90",
+      "  case * => minecraft:block/good",
+      "}"
+    ].join("\n"));
+    assert.deepStrictEqual(standalone.module.diagnostics, []);
+
     const variants = parseSingleBlockstate([
       "blockstate variants misplaced_variants {",
       "  case { slot: a } => minecraft:block/a, x=90",
@@ -415,19 +475,19 @@ describe("RSGL blockstate parser", () => {
     ].join("\n"));
 
     assert.deepStrictEqual(variants.module.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.legacyBlockstateModelModifiers",
-      "rsgl.legacyBlockstateModelModifiers",
-      "rsgl.legacyBlockstateModelModifiers",
-      "rsgl.legacyBlockstateModelModifiers",
-      "rsgl.blockstateWeightInvalidContext"
+      "rsgl.unexpectedBlockstateRootStatement",
+      "rsgl.unexpectedBlockstateRootStatement",
+      "rsgl.unexpectedBlockstateRootStatement",
+      "rsgl.unexpectedBlockstateRootStatement",
+      "rsgl.unexpectedBlockstateRootStatement"
     ]);
     assert.strictEqual(variants.resource.body.kind, "BlockstateVariantsRootBody");
     assert.deepStrictEqual(variants.resource.body.statements.map(statement => statement.kind), [
-      "BlockstateVariantEntry", "UnknownStmt",
-      "BlockstateVariantEntry", "UnknownStmt",
-      "BlockstateVariantEntry", "UnknownStmt",
-      "BlockstateVariantEntry", "UnknownStmt",
-      "BlockstateVariantEntry", "UnknownStmt",
+      "BlockstateVariantEntry", "PropertyStmt",
+      "BlockstateVariantEntry", "PropertyStmt",
+      "BlockstateVariantEntry", "PropertyStmt",
+      "BlockstateVariantEntry", "PropertyStmt",
+      "BlockstateVariantEntry", "PropertyStmt",
       "BlockstateVariantEntry"
     ]);
 
@@ -442,15 +502,15 @@ describe("RSGL blockstate parser", () => {
     ].join("\n"));
 
     assert.deepStrictEqual(multipart.module.diagnostics.map(diagnostic => diagnostic.code), [
-      "rsgl.legacyBlockstateModelModifiers",
-      "rsgl.legacyBlockstateModelModifiers",
-      "rsgl.blockstateWeightInvalidContext"
+      "rsgl.unexpectedBlockstateRootStatement",
+      "rsgl.unexpectedBlockstateRootStatement",
+      "rsgl.unexpectedBlockstateRootStatement"
     ]);
     assert.strictEqual(multipart.resource.body.kind, "BlockstateMultipartRootBody");
     assert.deepStrictEqual(multipart.resource.body.statements.map(statement => statement.kind), [
-      "BlockstateMultipartEntry", "UnknownStmt",
-      "BlockstateMultipartEntry", "UnknownStmt",
-      "BlockstateMultipartEntry", "UnknownStmt",
+      "BlockstateMultipartEntry", "PropertyStmt",
+      "BlockstateMultipartEntry", "PropertyStmt",
+      "BlockstateMultipartEntry", "PropertyStmt",
       "BlockstateMultipartEntry"
     ]);
   });
@@ -478,6 +538,21 @@ describe("RSGL blockstate parser", () => {
     assert.deepStrictEqual(multipart.resource.body.statements.map(statement => statement.kind), [
       "UnknownStmt",
       "BlockstateMultipartEntry"
+    ]);
+
+    const choiceTail = parseSingleBlockstate([
+      "blockstate variants recovered_tail {",
+      "  case { slot: old } => minecraft:block/old x=90",
+      "  case * => minecraft:block/good",
+      "}"
+    ].join("\n"));
+    assert.deepStrictEqual(choiceTail.module.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.unexpectedBlockstateChoiceTail"
+    ]);
+    assert.strictEqual(choiceTail.resource.body.kind, "BlockstateVariantsRootBody");
+    assert.deepStrictEqual(choiceTail.resource.body.statements.map(statement => statement.kind), [
+      "BlockstateVariantEntry",
+      "BlockstateVariantEntry"
     ]);
   });
 

@@ -2,17 +2,15 @@ import {
   parseBlockstateChoice,
   validateBlockstateChoiceEnd
 } from "./blockstateChoiceParser";
-import {
-  isRemovedModelModifierProperty,
-  recoverRemovedMultipartEntry,
-  rejectRemovedModelModifierProperty
-} from "./blockstateRemovedSyntaxRecovery";
+import { blockstateModelOptionNames } from "../blockstateModelOptions";
 import { parseBlockstateVariantEntry } from "./blockstateSelectorParser";
 import {
   multipartBodyParseContext,
   variantsBodyParseContext,
   type BlockstateRootParseContext
 } from "./bodyParseContext";
+import { staticPropertyKeyName } from "./propertyKeys";
+import { recoverInvalidStatement } from "./statementRecovery";
 import type { ResourceStatementParserHost } from "./statementParserHost";
 import type {
   BlockstateMultipartEntryNode,
@@ -75,13 +73,11 @@ export function parseBlockstateVariantsRootBody(
   let followsChoice = false;
   while (!host.isAtEnd() && host.current().text !== "}") {
     const mark = host.mark();
-    const misplacedModifier: boolean = followsChoice && isRemovedModelModifierProperty(host);
-    const statement: BlockstateVariantsRootStatementNode = misplacedModifier
-      ? rejectRemovedModelModifierProperty(host)
-      : parseVariantsRootStatement(host, context);
+    const statement = parseVariantsRootStatement(host, context);
+    const misplacedModelField = validateModelFieldAfterChoice(host, statement, followsChoice);
     seenBase = validateRootBase(host, statement, statements.length, seenBase, context.allowBase);
     statements.push(statement);
-    followsChoice = statement.kind === "BlockstateVariantEntry" || misplacedModifier;
+    followsChoice = statement.kind === "BlockstateVariantEntry" || misplacedModelField;
     host.consumeOptionalSeparator();
     host.ensureProgress(mark, "Unable to parse blockstate variants root statement; skipping token.");
   }
@@ -107,13 +103,11 @@ export function parseBlockstateMultipartRootBody(
   let followsChoice = false;
   while (!host.isAtEnd() && host.current().text !== "}") {
     const mark = host.mark();
-    const misplacedModifier: boolean = followsChoice && isRemovedModelModifierProperty(host);
-    const statement: BlockstateMultipartRootStatementNode = misplacedModifier
-      ? rejectRemovedModelModifierProperty(host)
-      : parseMultipartRootStatement(host, context);
+    const statement = parseMultipartRootStatement(host, context);
+    const misplacedModelField = validateModelFieldAfterChoice(host, statement, followsChoice);
     seenBase = validateRootBase(host, statement, statements.length, seenBase, context.allowBase);
     statements.push(statement);
-    followsChoice = statement.kind === "BlockstateMultipartEntry" || misplacedModifier;
+    followsChoice = statement.kind === "BlockstateMultipartEntry" || misplacedModelField;
     host.consumeOptionalSeparator();
     host.ensureProgress(mark, "Unable to parse blockstate multipart root statement; skipping token.");
   }
@@ -178,18 +172,11 @@ function parseCanonicalMultipartEntry(
 ): BlockstateMultipartEntryNode | UnknownStmtNode {
   const start = host.current();
   if (!host.matchText("part")) {
-    const legacy = start.text === "when" || start.text === "apply";
     host.addDiagnosticAtCurrent(
-      legacy ? "rsgl.legacyBlockstateMultipartEntry" : "rsgl.expectedBlockstatePart",
-      legacy
-        ? "'when ... apply' and 'apply ...' entries are no longer supported; use 'part when ... => ...' or 'part always => ...'."
-        : "Expected a multipart blockstate entry beginning with 'part'."
+      "rsgl.expectedBlockstatePart",
+      "Expected a multipart blockstate entry beginning with 'part'."
     );
-    if (legacy) {
-      recoverRemovedMultipartEntry(host, start.text);
-    } else {
-      host.recoverToLineEnd();
-    }
+    recoverInvalidStatement(host);
     return unknownMultipartEntry(host, start);
   }
 
@@ -246,7 +233,7 @@ function isRootCommonStatementStart(host: ResourceStatementParserHost): boolean 
     || text === "if"
     || text === "base"
     || text === "merge"
-    || (text === "[" && !isRemovedBracketedEntryStart(host))
+    || text === "["
     || host.peekText(1) === ":"
     || host.peekText(1) === "="
     || (text !== "[" && text !== "{" && text !== "(" && text !== "apply" && text !== "when"
@@ -254,25 +241,25 @@ function isRootCommonStatementStart(host: ResourceStatementParserHost): boolean 
       && text !== "variants" && text !== "multipart");
 }
 
-/** Keeps the removed `[state=value] -> model` surface on its directed recovery path. */
-function isRemovedBracketedEntryStart(host: ResourceStatementParserHost): boolean {
-  let squareDepth = 0;
-  for (let ahead = 0; host.peekText(ahead) !== ""; ahead += 1) {
-    const text = host.peekText(ahead);
-    if (text === "[") {
-      squareDepth += 1;
-      continue;
-    }
-    if (text !== "]") {
-      continue;
-    }
-    squareDepth -= 1;
-    if (squareDepth === 0) {
-      const next = host.peekText(ahead + 1);
-      return next === "->" || next === "=>";
-    }
+/** Rejects model fields only when their position makes them a detached choice suffix. */
+function validateModelFieldAfterChoice(
+  host: ResourceStatementParserHost,
+  statement: BlockstateVariantsRootStatementNode | BlockstateMultipartRootStatementNode,
+  followsChoice: boolean
+): boolean {
+  if (!followsChoice || statement.kind !== "PropertyStmt") {
+    return false;
   }
-  return false;
+  const name = staticPropertyKeyName(statement.key);
+  if (!name || !blockstateDetachedModelFieldNames.has(name)) {
+    return false;
+  }
+  host.addDiagnostic(
+    "rsgl.unexpectedBlockstateRootStatement",
+    `Blockstate model field '${name}' cannot be detached from the preceding choice.`,
+    statement.key.range
+  );
+  return true;
 }
 
 function validateRootBase(
@@ -298,3 +285,5 @@ function validateRootBase(
   }
   return true;
 }
+
+const blockstateDetachedModelFieldNames = new Set([...blockstateModelOptionNames, "weight"]);

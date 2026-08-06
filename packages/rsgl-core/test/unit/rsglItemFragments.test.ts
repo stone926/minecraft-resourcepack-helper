@@ -170,10 +170,10 @@ describe("RSGL item model fragments", () => {
       "  special base minecraft:item/chest model { type: minecraft:chest, texture: \"christmas\" }",
       "}",
       "item hidden {",
-      "  empty",
+      "  empty {}",
       "}",
       "item bundle {",
-      "  selected_item",
+      "  selected_item {}",
       "}"
     ], {
       externResourceExists: (_source, kind, id) => {

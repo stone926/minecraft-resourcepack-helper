@@ -1,5 +1,4 @@
 import { binaryPrecedence } from "./statementKeywords";
-import { isRsglArrowText } from "./arrowSemantics";
 import { lexRsgl } from "./lexer";
 import {
   parseTemplateStringParts,
@@ -56,7 +55,7 @@ export class ExpressionParser extends TypeParser {
     left = this.parsePostfixExpression(left, stopTexts, contextualStopTexts);
 
     while (!this.isExpressionStop(stopTexts, false, contextualStopTexts)) {
-      if (isRsglArrowText(this.current().text) && left.kind === "IdentifierExpr") {
+      if (this.current().text === "=>" && left.kind === "IdentifierExpr") {
         if (minPrecedence > 0) {
           break;
         }
@@ -537,12 +536,11 @@ export class ExpressionParser extends TypeParser {
         patterns.push(this.parseExpression({ stopTexts: ["|", "=>", "->"] }));
       }
       const arrow = this.expectMappingArrow("match arm");
-      const hasArrow = arrow !== "missing";
+      const hasArrow = arrow === "expected";
       let value: ExprNode;
       const atArmBoundary = this.current().text === "}"
         || this.current().text === ","
-        || this.current().text === ";"
-        || (arrow === "recoveredUnexpected" && this.looksLikeMatchArmStartOnCurrentLine());
+        || this.current().text === ";";
       if (hasArrow && atArmBoundary) {
         this.addDiagnosticAtCurrent("rsgl.expectedExpression", "Expected expression after mapping arrow.");
         value = this.missingExprAt(this.current());
@@ -662,7 +660,7 @@ export class ExpressionParser extends TypeParser {
       const token = this.tokens[index];
       if (token.text === ")") {
         const arrow = this.tokens[index + 1]?.text ?? "";
-        return isRsglArrowText(arrow) && !stopTexts.includes(arrow);
+        return arrow === "=>" && !stopTexts.includes(arrow);
       }
       if (expectParameter) {
         if (token.text === "...") {
@@ -684,36 +682,6 @@ export class ExpressionParser extends TypeParser {
     return false;
   }
 
-  /**
-   * On the already-invalid wrong-arrow path, keeps an incomplete arm from
-   * treating the next line's complete arm as its RHS. Canonical arrows do not
-   * use this heuristic, so multiline lambda values remain unambiguous.
-   */
-  private looksLikeMatchArmStartOnCurrentLine(): boolean {
-    if (!this.isStatementBoundary(this.current()) || this.isAtEnd()) {
-      return false;
-    }
-    const start = this.tokenOffset();
-    let depth = 0;
-    for (let index = start; index < this.tokens.length; index++) {
-      const token = this.tokens[index];
-      if (index > start && token.leadingTrivia.some(trivia => trivia.kind === "newline")) {
-        return false;
-      }
-      if (depth === 0 && isRsglArrowText(token.text)) {
-        return true;
-      }
-      if (token.text === "(" || token.text === "[" || token.text === "{") {
-        depth++;
-      } else if (token.text === ")" || token.text === "]" || token.text === "}") {
-        if (depth === 0) {
-          return false;
-        }
-        depth--;
-      }
-    }
-    return false;
-  }
 }
 
 export class StandaloneExpressionParser extends ExpressionParser {

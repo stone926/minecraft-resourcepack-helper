@@ -606,7 +606,7 @@ describe("RSGL legacy item model backend", () => {
     const result = compileSourceWithUncheckedExterns([
       "target java format 43",
       "item bundle {",
-      "  selected_item",
+      "  selected_item {}",
       "}"
     ]);
 

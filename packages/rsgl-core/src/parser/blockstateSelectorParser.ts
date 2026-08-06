@@ -3,6 +3,10 @@ import {
   validateBlockstateChoiceEnd
 } from "./blockstateChoiceParser";
 import type { ResourceStatementParserHost } from "./statementParserHost";
+import {
+  recoverInvalidStatement,
+  recoverUnexpectedStatementTail
+} from "./statementRecovery";
 import type {
   BlockstateVariantEntryNode,
   BlockstateWildcardSelectorNode,
@@ -14,7 +18,7 @@ export type ParsedVariantEntry = BlockstateVariantEntryNode | UnknownStmtNode;
 export function parseBlockstateVariantEntry(host: ResourceStatementParserHost): ParsedVariantEntry {
   const start = host.current();
   if (!host.matchText("case")) {
-    rejectMissingCase(host, start.text === "{" || start.text === "(");
+    rejectMissingCase(host);
     return unknownVariantEntry(host, start);
   }
 
@@ -56,26 +60,16 @@ function wildcardSelector(
   };
 }
 
-function rejectMissingCase(host: ResourceStatementParserHost, legacyShape: boolean): void {
+function rejectMissingCase(host: ResourceStatementParserHost): void {
   host.addDiagnosticAtCurrent(
-    legacyShape ? "rsgl.legacyBlockstateVariantEntry" : "rsgl.expectedBlockstateCase",
-    legacyShape
-      ? "Selector-colon blockstate entries are no longer supported; use 'case <selector> => <choice>'."
-      : "Expected a blockstate variant entry beginning with 'case'."
+    "rsgl.expectedBlockstateCase",
+    "Expected a blockstate variant entry beginning with 'case'."
   );
-  consumeRejectedEntryTail(host);
+  recoverInvalidStatement(host);
 }
 
 function consumeRejectedEntryTail(host: ResourceStatementParserHost): void {
-  if (host.isLineBoundaryOr("}", ",", ";")) {
-    return;
-  }
-  if (host.current().text === "{") {
-    host.consumeBalancedBlock("Expected '}' after malformed blockstate entry.");
-    host.recoverToLineEnd();
-    return;
-  }
-  host.recoverToLineEnd();
+  recoverUnexpectedStatementTail(host);
 }
 
 function unknownVariantEntry(

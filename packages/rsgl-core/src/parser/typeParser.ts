@@ -331,26 +331,12 @@ export class TypeParser extends ParserContext {
     return this.expectArrow("outputContract", context);
   }
 
-  /**
-   * Consumes either arrow so callers can keep a local recovery AST. A wrong
-   * arrow still emits an error at the exact token and therefore cannot compile
-   * successfully.
-   */
+  /** Consumes only the arrow assigned to this grammar role. */
   private expectArrow(role: RsglArrowRole, context: string): RsglArrowExpectation {
     const rule = rsglArrowRule(role);
-    const token = this.current();
-    if (token.text === rule.expectedText) {
+    if (this.current().text === rule.expectedText) {
       this.advance();
       return "expected";
-    }
-    if (token.text === rule.unexpectedText) {
-      this.advance();
-      this.addDiagnostic(
-        rule.unexpectedDiagnosticCode,
-        rule.unexpectedMessage(context),
-        tokenRange(token)
-      );
-      return "recoveredUnexpected";
     }
     this.addDiagnosticAtCurrent(rule.expectedDiagnosticCode, rule.expectedMessage(context));
     return "missing";

@@ -26,6 +26,17 @@ describe("RSGL completion data", () => {
     }
   });
 
+  it("inserts canonical bodies for item terminal models", () => {
+    assert.strictEqual(
+      blockRsglCompletions.find(candidate => candidate.label === "empty")?.insertText,
+      "empty {}"
+    );
+    assert.strictEqual(
+      blockRsglCompletions.find(candidate => candidate.label === "selected_item")?.insertText,
+      "selected_item {}"
+    );
+  });
+
   it("provides top-level and block-aware completion candidates", () => {
     const topLevel = getRsglCompletionCandidates("", 0);
     assert.ok(topLevel.some(candidate => candidate.label === "target"));

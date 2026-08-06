@@ -608,55 +608,29 @@ describe("RSGL canonical blockstate compiler", () => {
   });
 
   it("rejects every removed blockstate surface without emitting a resource", () => {
-    const cases: Array<[string, string]> = [
+    const cases = [
+      "blockstate old { variants { [facing=north] -> @minecraft:block/old } }",
+      "blockstate variants old { [facing=north] -> minecraft:block/old }",
+      "blockstate variants old { case * => @minecraft:block/old }",
+      "blockstate variants old { {}: minecraft:block/old }",
+      "blockstate multipart old { apply minecraft:block/old }",
+      "blockstate multipart old { when { north: true } apply minecraft:block/old }",
+      "blockstate variants old { case * => minecraft:block/old x=90 }",
       [
-        "blockstate old { variants { [facing=north] -> @minecraft:block/old } }",
-        "rsgl.blockstateModeRequired"
-      ],
-      [
-        "blockstate variants old { [facing=north] -> minecraft:block/old }",
-        "rsgl.expectedBlockstateCase"
-      ],
-      [
-        "blockstate variants old { case * => @minecraft:block/old }",
-        "rsgl.expectedExpression"
-      ],
-      [
-        "blockstate variants old { {}: minecraft:block/old }",
-        "rsgl.legacyBlockstateVariantEntry"
-      ],
-      [
-        "blockstate multipart old { apply minecraft:block/old }",
-        "rsgl.legacyBlockstateMultipartEntry"
-      ],
-      [
-        "blockstate multipart old { when { north: true } apply minecraft:block/old }",
-        "rsgl.legacyBlockstateMultipartEntry"
-      ],
-      [
-        "blockstate variants old { case * => minecraft:block/old x=90 }",
-        "rsgl.legacyBlockstateModelModifiers"
-      ],
-      [
-        "blockstate variants old { case * => { model: minecraft:block/old } }",
-        "rsgl.legacyBlockstateModelValue"
-      ],
-      [
-        "blockstate variants old { case * => [minecraft:block/a, minecraft:block/b] }",
-        "rsgl.legacyBlockstateModelValue"
-      ],
-      [
-        "blockstate variants old { case * => random [minecraft:block/a] }",
-        "rsgl.legacyBlockstateRandomList"
-      ]
+        "blockstate variants old {",
+        "  case * => minecraft:block/old",
+        "  x=90",
+        "}"
+      ].join("\n"),
+      "blockstate variants old { case * => { model: minecraft:block/old } }",
+      "blockstate variants old { case * => [minecraft:block/a, minecraft:block/b] }",
+      "blockstate variants old { case * => random [minecraft:block/a] }"
     ];
 
-    for (const [source, expected] of cases) {
+    for (const source of cases) {
       const result = compileSourceWithUncheckedExterns([source]);
-      assert.ok(
-        result.diagnostics.some(diagnostic => diagnostic.code === expected),
-        `Missing ${expected} for ${source}`
-      );
+      assert.ok(result.diagnostics.some(diagnostic => diagnostic.severity === "error"), source);
+      assert.ok(result.diagnostics.every(diagnostic => !/legacy/i.test(diagnostic.code)), source);
       assert.deepStrictEqual(result.units, [], `Removed syntax must not emit a unit: ${source}`);
     }
   });

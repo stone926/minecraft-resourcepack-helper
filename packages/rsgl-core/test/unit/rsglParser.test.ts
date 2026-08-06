@@ -766,10 +766,10 @@ describe("RSGL parser", () => {
       "  special base minecraft:item/shield model { type: minecraft:shield }",
       "}",
       "item hidden {",
-      "  empty",
+      "  empty {}",
       "}",
       "item bundle {",
-      "  selected_item",
+      "  selected_item {}",
       "}"
     ].join("\n"));
 

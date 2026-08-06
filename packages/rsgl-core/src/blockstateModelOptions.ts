@@ -1,6 +1,6 @@
 /**
  * Single source of truth for the option fields a blockstate model spec's
- * `with { ... }` block accepts. Parser recovery, semantic checking, compiler
+ * `with { ... }` block accepts. Parser validation, semantic checking, compiler
  * lowering, JSON validation, emitted key order, and completion all derive
  * from this table; declaration order is the canonical emitted JSON key order.
  */
