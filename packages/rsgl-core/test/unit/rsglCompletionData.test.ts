@@ -64,6 +64,8 @@ describe("RSGL completion data", () => {
     assert.ok(topLevel.some(candidate => candidate.label === "template -> item_model"));
     assert.strictEqual(topLevel.some(candidate => candidate.label === "template"), false);
     for (const label of [
+      "asList",
+      "length",
       "map",
       "filter",
       "flatMap",
@@ -91,6 +93,15 @@ describe("RSGL completion data", () => {
     assert.ok(inBlock.some(candidate => candidate.label === "merge upsert"));
     assert.ok(inBlock.some(candidate => candidate.label === "merge append"));
     assert.deepStrictEqual(
+      inBlock.find(candidate => candidate.label === "computed property"),
+      {
+        label: "computed property",
+        insertText: "[${1:key}]: ${2:value}",
+        detail: "Resource property with a computed key",
+        kind: "property"
+      }
+    );
+    assert.deepStrictEqual(
       inBlock.find(candidate => candidate.label === "for object"),
       {
         label: "for object",
@@ -100,6 +111,15 @@ describe("RSGL completion data", () => {
       }
     );
     assert.ok(inBlock.some(candidate => candidate.label === "for multidim"));
+    assert.deepStrictEqual(
+      inBlock.find(candidate => candidate.label === "for indexed"),
+      {
+        label: "for indexed",
+        insertText: "for ${1:item} at ${2:index} in ${3:items} {\n  ${4}\n}",
+        detail: "Finite expansion loop with a zero-based index",
+        kind: "snippet"
+      }
+    );
   });
 
   it("filters explicit template body completions by output dialect", () => {
@@ -169,7 +189,7 @@ describe("RSGL completion data", () => {
     );
 
     const root = labelsAtEnd("item example {\n  ");
-    for (const label of ["model", "select", "range", "condition", "first_match", "use item_model", "for object", "merge", "hand_animation_on_swap"]) {
+    for (const label of ["model", "select", "range", "condition", "first_match", "use item_model", "for indexed", "for object", "merge", "hand_animation_on_swap"]) {
       assert.ok(root.has(label), `missing item-root completion ${label}`);
     }
     assert.deepStrictEqual(
@@ -200,6 +220,7 @@ describe("RSGL completion data", () => {
     assert.ok(select.has("case"));
     assert.ok(select.has("fallback"));
     assert.ok(select.has("for"));
+    assert.ok(select.has("for indexed"));
     assert.ok(select.has("for object"));
     assert.strictEqual(select.has("entry"), false);
 

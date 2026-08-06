@@ -1,5 +1,8 @@
 import type { ForStmtNode, TextRange } from "../parser";
-import { forBindingMappings, type ForBindingMapping } from "../forBindingPatterns";
+import {
+  forDimensionBindingMappings,
+  type ForDimensionBindingMapping
+} from "../forBindingPatterns";
 import {
   EvaluationContext,
   type EvaluationOrigin,
@@ -19,14 +22,17 @@ import { isJsonObject } from "./jsonValues";
 import { ensureEvaluationItemsForExpansion } from "./evaluationItemAccounting";
 
 function selectLoopBindings(
-  mappings: readonly ForBindingMapping[],
-  value: EvaluationValue
+  mappings: readonly ForDimensionBindingMapping[],
+  value: EvaluationValue,
+  valueIndex: number
 ): Record<string, EvaluationValue> {
   const bindings = Object.create(null) as Record<string, EvaluationValue>;
   const objectValue = isJsonObject(value) ? value : undefined;
   for (const mapping of mappings) {
     if (mapping.kind === "wholeValue") {
       bindings[mapping.binding.text] = value;
+    } else if (mapping.kind === "index") {
+      bindings[mapping.binding.text] = valueIndex;
     } else {
       bindings[mapping.binding.text] = objectValue && Object.hasOwn(objectValue, mapping.property.text)
         ? objectValue[mapping.property.text] as EvaluationValue
@@ -159,7 +165,7 @@ export function forEachLoopContext(
       iterableResult,
       iterableContext.sourceFile
     );
-    const bindingMappings = forBindingMappings(dimension.pattern);
+    const bindingMappings = forDimensionBindingMappings(dimension);
     for (const [valueIndex, value] of iterable.entries()) {
       const indexedPath = `/${valueIndex}`;
       const itemOrigins = selectEvaluationPathOrigins(iterableOrigins, indexedPath);
@@ -173,36 +179,47 @@ export function forEachLoopContext(
       const nextPathOrigins = new Map(bindingPathOrigins);
       const nextSelectionPathOrigins = new Map(bindingSelectionPathOrigins);
       const nextValueIssues = new Map(bindingValueIssues);
-      const selectedBindings = selectLoopBindings(bindingMappings, value);
+      const selectedBindings = selectLoopBindings(bindingMappings, value, valueIndex);
       for (const mapping of bindingMappings) {
         const sourceProperty = mapping.kind === "objectProperty"
           ? mapping.property.text
           : undefined;
-        const bindingItemOrigins = mapping.kind === "wholeValue"
-          ? itemOrigins
-          : sourceProperty !== undefined
-            ? selectEvaluationPathOrigins(
-                itemOrigins,
-                `/${escapeJsonPointerSegment(sourceProperty)}`
-              )
-            : [];
-        const bindingItemIssues = mapping.kind === "wholeValue"
-          ? itemIssues
-          : sourceProperty !== undefined
-            ? selectEvaluationValueIssues(
-                itemIssues,
-                `/${escapeJsonPointerSegment(sourceProperty)}`
-              )
-            : [];
-        const bindingItemSelectionOrigins = mapping.kind === "wholeValue"
-          ? itemSelectionOrigins
-          : sourceProperty !== undefined
-            ? selectEvaluationPathOrigins(
-                itemSelectionOrigins,
-                `/${escapeJsonPointerSegment(sourceProperty)}`
-              )
-            : [];
-        const bindingOrigin = originForEvaluationPath(bindingItemOrigins, "") ?? iterableOrigin;
+        const indexOrigin: EvaluationOrigin | undefined = mapping.kind === "index" && context.sourceFile
+          ? { sourceFile: context.sourceFile, sourceRange: mapping.binding.range }
+          : undefined;
+        const bindingItemOrigins: readonly EvaluationPathOrigin[] = indexOrigin
+          ? [{ ...indexOrigin, generatedPath: "" }]
+          : mapping.kind === "wholeValue"
+            ? itemOrigins
+            : sourceProperty !== undefined
+              ? selectEvaluationPathOrigins(
+                  itemOrigins,
+                  `/${escapeJsonPointerSegment(sourceProperty)}`
+                )
+              : [];
+        const bindingItemIssues: readonly EvaluationValueIssue[] = mapping.kind === "index"
+          ? []
+          : mapping.kind === "wholeValue"
+            ? itemIssues
+            : sourceProperty !== undefined
+              ? selectEvaluationValueIssues(
+                  itemIssues,
+                  `/${escapeJsonPointerSegment(sourceProperty)}`
+                )
+              : [];
+        const bindingItemSelectionOrigins: readonly EvaluationPathOrigin[] = indexOrigin
+          ? [{ ...indexOrigin, generatedPath: "" }]
+          : mapping.kind === "wholeValue"
+            ? itemSelectionOrigins
+            : sourceProperty !== undefined
+              ? selectEvaluationPathOrigins(
+                  itemSelectionOrigins,
+                  `/${escapeJsonPointerSegment(sourceProperty)}`
+                )
+              : [];
+        const bindingOrigin = indexOrigin
+          ?? originForEvaluationPath(bindingItemOrigins, "")
+          ?? iterableOrigin;
         const bindingName = mapping.binding.text;
         if (bindingOrigin) {
           nextOrigins.set(bindingName, bindingOrigin);

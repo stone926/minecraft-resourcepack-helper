@@ -22,6 +22,7 @@ import {
   ObjectEntryNode,
   ObjectExprNode,
   ObjectPropertyNode,
+  PropertyKeyNode,
   ResourceBodyNode,
   RsglDiagnostic,
   RsglNode,
@@ -167,6 +168,9 @@ export class ExpressionParser extends TypeParser {
     if (token.text === "match") {
       return this.parseMatchExpression();
     }
+    if (token.text === "#") {
+      return this.parseTextureVariableLiteral();
+    }
     if (token.kind === "string") {
       return this.parseStringLiteral();
     }
@@ -208,6 +212,33 @@ export class ExpressionParser extends TypeParser {
       this.advance();
     }
     return this.missingExprAt(token);
+  }
+
+  private parseTextureVariableLiteral(): ExprNode {
+    const hash = this.advance();
+    const name = this.parseIdentifier("Expected texture variable name after '#'.")
+      ?? this.syntheticIdentifier(hash, "");
+    const hashEnd = hash.offset + hash.length;
+    if (name.range.start !== hashEnd) {
+      this.addDiagnostic(
+        "rsgl.textureVariableMustBeAdjacent",
+        "A texture variable name must immediately follow '#'.",
+        { start: hashEnd, end: name.range.start }
+      );
+    }
+    if (name.text && !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name.text)) {
+      this.addDiagnostic(
+        "rsgl.invalidTextureVariable",
+        "An unquoted texture variable must use '#name' with an identifier containing only letters, digits, and underscores.",
+        name.range
+      );
+    }
+    return {
+      kind: "TextureVariableLiteral",
+      name,
+      range: { start: hash.offset, end: name.range.end },
+      fullRange: { start: this.fullStart(hash), end: name.fullRange.end }
+    };
   }
 
   private parsePostfixExpression(
@@ -442,7 +473,7 @@ export class ExpressionParser extends TypeParser {
     };
   }
 
-  private parsePropertyKey(): ObjectPropertyNode["key"] | null {
+  protected parsePropertyKey(): PropertyKeyNode | null {
     if (this.current().text === "[") {
       const start = this.advance();
       const expression = this.parseExpression({ stopTexts: ["]"] });

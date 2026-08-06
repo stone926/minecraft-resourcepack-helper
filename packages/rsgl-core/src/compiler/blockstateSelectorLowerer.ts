@@ -1,23 +1,14 @@
 import type { ExprNode } from "../parser";
-import { blockstateSelectorMessages } from "../diagnosticMessages";
+import {
+  lowerBlockstateStateRecord,
+  type BlockstateStateRecordLoweringHost
+} from "./blockstateStateRecordLowerer";
 import { blockstateVariantKey } from "./blockstateKeys";
-import {
-  evaluateExpressionResult,
-  type EvaluationOrigin,
-  originForEvaluationPath
-} from "./evaluate";
-import {
-  createJsonValueLoweringHost,
-  type JsonValueSinkOptions,
-  lowerJsonEvaluationResult
-} from "./jsonValueLowerer";
-import { cloneJsonObject, isJsonObject } from "./jsonValues";
+import type { EvaluationOrigin } from "./evaluate";
 import type { JsonValue } from "./ir";
 import type { RsglCompileContext } from "./templateExpansion";
 
-export interface BlockstateSelectorLoweringHost extends JsonValueSinkOptions {
-  onError: NonNullable<JsonValueSinkOptions["onError"]>;
-}
+export type BlockstateSelectorLoweringHost = BlockstateStateRecordLoweringHost;
 
 export interface LoweredBlockstateSelector {
   readonly key: string;
@@ -31,67 +22,13 @@ export function lowerBlockstateSelector(
   context: RsglCompileContext,
   host: BlockstateSelectorLoweringHost
 ): LoweredBlockstateSelector | undefined {
-  const result = evaluateExpressionResult(expression, context);
-  const keyIssue = result.valueIssues.find(issue =>
-    issue.kind === "duplicateObjectKey" || issue.kind === "invalidObjectKey"
-  );
-  if (keyIssue) {
-    host.onError(
-      keyIssue.kind === "duplicateObjectKey"
-        ? "rsgl.duplicateBlockstateSelectorProperty"
-        : "rsgl.invalidBlockstateSelectorKey",
-      keyIssue.kind === "duplicateObjectKey"
-        ? "A blockstate selector property resolves to a duplicate canonical key."
-        : blockstateSelectorMessages.computedKeyMustBeScalar,
-      keyIssue.sourceRange,
-      keyIssue.sourceFile
-    );
+  const record = lowerBlockstateStateRecord(expression, context, host, "selector");
+  if (!record) {
     return undefined;
   }
-  const value = lowerJsonEvaluationResult(
-    result,
-    expression.range,
-    createJsonValueLoweringHost(context, host)
-  );
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isJsonObject(value)) {
-    host.onError(
-      "rsgl.invalidBlockstateSelector",
-      "A blockstate variants selector must evaluate to an object.",
-      expression.range,
-      context.sourceFile
-    );
-    return undefined;
-  }
-  if (Object.keys(value).length === 0) {
-    host.onError(
-      "rsgl.emptyBlockstateSelectorUseWildcard",
-      blockstateSelectorMessages.emptySelectorUseWildcard,
-      expression.range,
-      context.sourceFile
-    );
-    return undefined;
-  }
-  if (!Object.values(value).every(isBlockstateStateValue)) {
-    host.onError(
-      "rsgl.invalidBlockstateSelectorValue",
-      "Blockstate variants selector values must be strings, numbers, or booleans.",
-      expression.range,
-      context.sourceFile
-    );
-    return undefined;
-  }
-  const cloned = cloneJsonObject(value);
-  const origin = originForEvaluationPath(result.pathOrigins, "") ?? result.origin;
   return {
-    key: blockstateVariantKey(cloned),
-    value: cloned,
-    ...(origin ? { origin } : {})
+    key: blockstateVariantKey(record.value),
+    value: record.value,
+    ...(record.origin ? { origin: record.origin } : {})
   };
-}
-
-function isBlockstateStateValue(value: JsonValue): boolean {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }

@@ -27,7 +27,9 @@ import {
 } from "./itemModelExecutor";
 import { findItemModelDepthViolation } from "./itemModelDepth";
 import {
+  applyResolvedResourceBodyProperty,
   applyResourceBodyStatement,
+  resolveResourceBodyPropertyKey,
   type ResourceBodyCompileOptions,
   type ResourceBodyMapping
 } from "./resourceBody";
@@ -169,15 +171,30 @@ function executeStatement(
     executeProducer(frame, statement, context, host, state, options);
     return;
   }
-  if (statement.kind === "PropertyStmt" && statement.name.text === "model") {
-    executeProducer(
-      frame,
-      canonicalPropertyProducer(statement),
-      context,
-      host,
-      state,
-      options
-    );
+  if (statement.kind === "PropertyStmt") {
+    const key = resolveResourceBodyPropertyKey(statement, context, options);
+    if (key === null) {
+      return;
+    }
+    if (key === "model") {
+      executeProducer(
+        frame,
+        canonicalPropertyProducer(statement),
+        context,
+        host,
+        state,
+        options
+      );
+    } else {
+      applyResolvedResourceBodyProperty(
+        frame.content,
+        statement,
+        key,
+        context,
+        options,
+        ""
+      );
+    }
     return;
   }
   if (statement.kind === "UseDecl") {

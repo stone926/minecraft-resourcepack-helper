@@ -121,6 +121,42 @@ describe("RSGL formatter core", () => {
     assert.strictEqual(formatRsglText(formatted), formatted);
   });
 
+  it("keeps contextual loop index bindings stable", () => {
+    const source = [
+      "for item at itemIndex in [a, b], variant at variantIndex in [x, y] {",
+      "let selected = [itemIndex, variantIndex]",
+      "}"
+    ].join("\n");
+
+    const formatted = formatRsglText(source);
+    assert.strictEqual(formatted, [
+      "for item at itemIndex in [a, b], variant at variantIndex in [x, y] {",
+      "  let selected = [itemIndex, variantIndex]",
+      "}"
+    ].join("\n"));
+    assert.strictEqual(formatRsglText(formatted), formatted);
+  });
+
+  it("keeps computed properties and texture literals lexically intact", () => {
+    const source = [
+      "model block dynamic_format {",
+      "textures {",
+      "[slot]=#all",
+      "particle:#all",
+      "}",
+      "}"
+    ].join("\n");
+
+    assert.strictEqual(formatRsglText(source), [
+      "model block dynamic_format {",
+      "  textures {",
+      "    [slot] = #all",
+      "    particle: #all",
+      "  }",
+      "}"
+    ].join("\n"));
+  });
+
   it("keeps canonical and erroneous arrow tokens stable and idempotent", () => {
     const source = [
       "let canonical = match mode {",

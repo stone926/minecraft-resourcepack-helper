@@ -120,6 +120,30 @@ describe("RSGL completion lexical scope", () => {
     assertNamesExclude(model, outsideOffset, "alias", "shorthand", "second");
   });
 
+  it("exposes explicit loop indexes only after their own iterable", () => {
+    const text = [
+      "model block indexed_scope {",
+      "  for item at itemIndex in [1], other at otherIndex in [itemIndex] {",
+      "    let selected = otherIndex",
+      "    parent minecraft:block/cube",
+      "  }",
+      "  parent minecraft:block/cube",
+      "}"
+    ].join("\n");
+    const model = bind(text);
+    const firstIterableOffset = text.indexOf("[1]") + 1;
+    const secondIterableOffset = text.indexOf("[itemIndex]") + 2;
+    const bodyOffset = endOf(text, "let selected = otherIndex");
+    const outsideOffset = text.lastIndexOf("parent minecraft:block/cube")
+      + "parent minecraft:block/cube".length;
+
+    assertNamesExclude(model, firstIterableOffset, "item", "itemIndex", "other", "otherIndex");
+    assertNamesInclude(model, secondIterableOffset, "item", "itemIndex");
+    assertNamesExclude(model, secondIterableOffset, "other", "otherIndex");
+    assertNamesInclude(model, bodyOffset, "item", "itemIndex", "other", "otherIndex", "selected");
+    assertNamesExclude(model, outsideOffset, "item", "itemIndex", "other", "otherIndex", "selected");
+  });
+
   it("does not leak local lets between if siblings or after the branch", () => {
     const text = [
       "model block branches {",

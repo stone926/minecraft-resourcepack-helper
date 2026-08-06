@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import { forBindingMappings } from "../../src/forBindingPatterns";
-import { parseRsgl } from "../../src/parser";
+import { parseRsgl, staticPropertyKeyName } from "../../src/parser";
 import { resourceKeywords } from "../../src/parser/keywords";
 import { rsglResourceKinds } from "../../src/resourceKinds";
 
@@ -75,7 +75,9 @@ describe("RSGL parser", () => {
     assert.strictEqual(textures.kind, "SectionStmt");
     assert.deepStrictEqual(
       textures.kind === "SectionStmt"
-        ? textures.body?.statements.map(statement => statement.kind === "PropertyStmt" ? statement.name.text : "")
+        ? textures.body?.statements.map(statement => statement.kind === "PropertyStmt"
+          ? staticPropertyKeyName(statement.key) ?? ""
+          : "")
         : [],
       ["0", "1"]
     );
@@ -359,6 +361,88 @@ describe("RSGL parser", () => {
     assert.ok(emptyPattern.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expectedLoopBinding"));
   });
 
+  it("parses contextual index bindings on each for dimension", () => {
+    const source = "for item at itemIndex in items, variant at variantIndex in variants {}";
+    const module = parseRsgl(source);
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const statement = module.statements[0];
+    assert.strictEqual(statement.kind, "ForStmt");
+    if (statement.kind !== "ForStmt") {
+      throw new Error("Expected a for statement.");
+    }
+
+    assert.deepStrictEqual(statement.dimensions.map(dimension => ({
+      binding: dimension.pattern.kind === "Identifier" ? dimension.pattern.text : undefined,
+      indexBinding: dimension.indexBinding?.text
+    })), [
+      { binding: "item", indexBinding: "itemIndex" },
+      { binding: "variant", indexBinding: "variantIndex" }
+    ]);
+    assert.strictEqual(source.slice(
+      statement.dimensions[0].indexBinding!.range.start,
+      statement.dimensions[0].indexBinding!.range.end
+    ), "itemIndex");
+
+    const contextual = parseRsgl("let at = 1\nfor item in [at] {}");
+    assert.deepStrictEqual(contextual.diagnostics, []);
+  });
+
+  it("parses computed resource properties and texture-variable literals", () => {
+    const module = parseRsgl([
+      "model block dynamic_fields {",
+      "  [first]: #all",
+      "  [second] = #inside",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    const resource = module.statements[0];
+    assert.strictEqual(resource.kind, "ResourceDecl");
+    if (resource.kind !== "ResourceDecl") {
+      throw new Error("Expected a resource declaration.");
+    }
+    const properties = resource.body.statements;
+    assert.deepStrictEqual(properties.map(statement => statement.kind), [
+      "PropertyStmt",
+      "PropertyStmt"
+    ]);
+    for (const [statement, expectedKey, expectedSlot] of [
+      [properties[0], "first", "all"],
+      [properties[1], "second", "inside"]
+    ] as const) {
+      assert.strictEqual(statement.kind, "PropertyStmt");
+      if (statement.kind !== "PropertyStmt") {
+        continue;
+      }
+      assert.strictEqual(statement.key.kind, "DynamicKey");
+      assert.strictEqual(statement.value.kind, "TextureVariableLiteral");
+      if (statement.key.kind === "DynamicKey") {
+        assert.strictEqual(statement.key.expression.kind, "IdentifierExpr");
+        if (statement.key.expression.kind === "IdentifierExpr") {
+          assert.strictEqual(statement.key.expression.name.text, expectedKey);
+        }
+      }
+      if (statement.value.kind === "TextureVariableLiteral") {
+        assert.strictEqual(statement.value.name.text, expectedSlot);
+      }
+    }
+
+    const missingSeparator = parseRsgl("model block bad { [key] value }");
+    assert.ok(missingSeparator.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.expectedPropertySeparator"
+    ));
+    const spacedTexture = parseRsgl("let value = # all");
+    assert.ok(spacedTexture.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.textureVariableMustBeAdjacent"
+    ));
+    for (const source of ["let value = #$slot", "let value = #foo$bar"]) {
+      assert.ok(parseRsgl(source).diagnostics.some(diagnostic =>
+        diagnostic.code === "rsgl.invalidTextureVariable"
+      ));
+    }
+  });
+
   it("rejects multiple bare loop bindings", () => {
     const commaSeparated = parseRsgl(
       "for first, second in [{ first: 1, second: 2 }] {}"
@@ -521,7 +605,7 @@ describe("RSGL parser", () => {
       const modelField = itemTemplate.body.statements[0];
       assert.strictEqual(modelField.kind, "PropertyStmt");
       if (modelField.kind === "PropertyStmt") {
-        assert.strictEqual(modelField.name.text, "model");
+        assert.strictEqual(staticPropertyKeyName(modelField.key), "model");
         assert.strictEqual(modelField.value.kind, "ResourceLocationExpr");
       }
     }

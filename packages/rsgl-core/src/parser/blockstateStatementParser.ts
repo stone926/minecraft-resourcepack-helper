@@ -246,11 +246,33 @@ function isRootCommonStatementStart(host: ResourceStatementParserHost): boolean 
     || text === "if"
     || text === "base"
     || text === "merge"
+    || (text === "[" && !isRemovedBracketedEntryStart(host))
     || host.peekText(1) === ":"
     || host.peekText(1) === "="
-    || (text !== "{" && text !== "(" && text !== "[" && text !== "apply" && text !== "when"
+    || (text !== "[" && text !== "{" && text !== "(" && text !== "apply" && text !== "when"
       && text !== "case" && text !== "part"
       && text !== "variants" && text !== "multipart");
+}
+
+/** Keeps the removed `[state=value] -> model` surface on its directed recovery path. */
+function isRemovedBracketedEntryStart(host: ResourceStatementParserHost): boolean {
+  let squareDepth = 0;
+  for (let ahead = 0; host.peekText(ahead) !== ""; ahead += 1) {
+    const text = host.peekText(ahead);
+    if (text === "[") {
+      squareDepth += 1;
+      continue;
+    }
+    if (text !== "]") {
+      continue;
+    }
+    squareDepth -= 1;
+    if (squareDepth === 0) {
+      const next = host.peekText(ahead + 1);
+      return next === "->" || next === "=>";
+    }
+  }
+  return false;
 }
 
 function validateRootBase(

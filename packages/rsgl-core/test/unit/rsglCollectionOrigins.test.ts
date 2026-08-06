@@ -115,6 +115,42 @@ describe("RSGL collection evaluation origins", () => {
     assert.strictEqual(originForEvaluationPath(concatenated.pathOrigins, "/2")?.sourceFile, "right.rsgl");
   });
 
+  it("preserves asList element origins for pass-through lists and scalar wrapping", () => {
+    const source = ["first", "second"];
+    const listExpression = parseExpression("asList(source)");
+    const list = evaluateExpressionResult(
+      listExpression.expression,
+      evaluationContext(
+        listExpression.fileName,
+        new Map([["source", source]]),
+        new Map([["source", [
+          pathOrigin("/0", "list.rsgl", 1, 6),
+          pathOrigin("/1", "list.rsgl", 8, 14)
+        ]]])
+      )
+    );
+
+    assert.strictEqual(list.value, source, "asList must retain the original list value");
+    assert.strictEqual(originForEvaluationPath(list.pathOrigins, "/0")?.sourceRange.start, 1);
+    assert.strictEqual(originForEvaluationPath(list.pathOrigins, "/1")?.sourceRange.start, 8);
+
+    const scalarExpression = parseExpression("asList(source)");
+    const scalar = evaluateExpressionResult(
+      scalarExpression.expression,
+      evaluationContext(
+        scalarExpression.fileName,
+        new Map([["source", "only"]]),
+        new Map([["source", [pathOrigin("", "scalar.rsgl", 20, 24)]]])
+      )
+    );
+
+    assert.deepStrictEqual(scalar.value, ["only"]);
+    assert.deepStrictEqual(originForEvaluationPath(scalar.pathOrigins, "/0"), {
+      sourceFile: "scalar.rsgl",
+      sourceRange: { start: 20, end: 24 }
+    });
+  });
+
   it("copies spread paths and lets later object owners replace earlier origins", () => {
     const listExpression = parseExpression("[head, ...middle, tail]");
     const list = evaluateExpressionResult(

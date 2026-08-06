@@ -88,6 +88,34 @@ describe("RSGL expression evaluation and loops", () => {
     ]);
   });
 
+  it("binds zero-based indexes per dimension and resets child indexes", () => {
+    const source = [
+      "model block indexed_loop {",
+      "  for item at itemIndex in [a, b], variant at variantIndex in [x, y] {",
+      "    merge { [`${item}_${itemIndex}_${variantIndex}`]: variantIndex }",
+      "  }",
+      "}"
+    ].join("\n");
+    const result = compileSourceWithUncheckedExterns(source.split("\n"), {
+      fileName: path.resolve("pack", "indexed-loop.rsgl")
+    });
+
+    expectNoDiagnostics(result);
+    const unit = generatedResourceUnits(result)[0];
+    assert.deepStrictEqual(unit.content, {
+      a_0_0: 0,
+      a_0_1: 1,
+      b_1_0: 0,
+      b_1_1: 1
+    });
+    const declarationStart = source.indexOf("variantIndex");
+    assert.deepStrictEqual(
+      unit.validation?.referenceOrigins?.find(origin => origin.generatedPath === "/a_0_0")
+        ?.sourceRange,
+      { start: declarationStart, end: declarationStart + "variantIndex".length }
+    );
+  });
+
   it("destructures records by field name and supports aliases", () => {
     const result = compileSourceWithUncheckedExterns([
       "model block named_record_binding {",
@@ -261,6 +289,73 @@ describe("RSGL expression evaluation and loops", () => {
       "/textures/layer1"
     ]);
     assert.ok(loopMappings.every(mapping => mapping.expansionStack.some(frame => frame.label === "for")));
+  });
+
+  it("evaluates computed resource keys in order and preserves texture literals", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "let all = \"this local must not be read by #all\"",
+      "model block dynamic_properties {",
+      "  ambientocclusion: false",
+      "  [\"ambientocclusion\"] = true",
+      "  textures {",
+      "    all: minecraft:block/stone",
+      "    tainted: #all + \"\"",
+      "    for slot in [\"particle\"] {",
+      "      [slot]: #all",
+      "    }",
+      "  }",
+      "}",
+      "json \"assets/minecraft/custom/numeric-key.json\" { [0x10]: true }"
+    ], { fileName: path.resolve("pack", "dynamic-properties.rsgl") });
+
+    expectNoDiagnostics(result);
+    const units = generatedResourceUnits(result);
+    const unit = units.find(candidate => candidate.outputPath.endsWith("dynamic_properties.json"));
+    assert.ok(unit);
+    assert.deepStrictEqual(unit.content, {
+      ambientocclusion: true,
+      textures: {
+        all: "minecraft:block/stone",
+        tainted: "#all",
+        particle: "#all"
+      }
+    });
+    assert.ok(unit.sourceMap.mappings.some(mapping =>
+      mapping.generatedPath === "/textures/particle"
+      && mapping.reason === "loop"
+    ));
+    assert.deepStrictEqual(
+      units.find(candidate => candidate.outputPath.endsWith("numeric-key.json"))?.content,
+      { "16": true }
+    );
+  });
+
+  it("reports targeted computed-key and texture-sink errors", () => {
+    const result = compileSourceWithUncheckedExterns([
+      "model block bad_key { [[]]: true }",
+      "json \"assets/minecraft/custom/bad-texture.json\" { value: #all }"
+    ]);
+    const codes = result.diagnostics.map(diagnostic => diagnostic.code);
+
+    assert.ok(codes.includes("rsgl.invalidPropertyKey"));
+    assert.ok(codes.includes("rsgl.textureVariableInvalidContext"));
+  });
+
+  it("does not let texture-variable taint escape through string concatenation", () => {
+    const source = "json \"assets/minecraft/custom/tainted.json\" { value: #inside + \"\" }";
+    const result = compileSourceWithUncheckedExterns(source.split("\n"));
+    const diagnostic = result.diagnostics.find(candidate =>
+      candidate.code === "rsgl.textureVariableInvalidContext"
+    );
+
+    assert.ok(diagnostic);
+    assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "#inside + \"\"");
+    const unit = generatedResourceUnits(result)[0];
+    assert.ok(unit);
+    assert.ok(unit.validation?.resourceValueObservations?.some(observation =>
+      observation.generatedPath === "/value"
+      && observation.valueKind === "textureVariable"
+    ));
   });
 
   it("expands literal range loops without non-finite loop diagnostics", () => {

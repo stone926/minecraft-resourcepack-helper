@@ -10,6 +10,7 @@ import type {
   RsglStatementBodyNode,
   TextRange
 } from "./parser";
+import { staticPropertyKeyName } from "./parser";
 import {
   findItemModelPropertySchema,
   findItemModelSpecialSchema,
@@ -99,10 +100,11 @@ export function getRsglItemModelHoverInfo(
         visitItemModel(statement.model);
         return;
       case "PropertyStmt":
-        if (itemRoot && touchesRange(statement.name.range, offset)) {
-          const field = itemModelRootFields.find(candidate => candidate.name === statement.name.text);
+        if (itemRoot && touchesRange(statement.key.range, offset)) {
+          const name = staticPropertyKeyName(statement.key);
+          const field = itemModelRootFields.find(candidate => candidate.name === name);
           if (field) {
-            select(fieldHover(statement.name.range, field, "item definition root", target));
+            select(fieldHover(statement.key.range, field, "item definition root", target));
           }
         }
         return;

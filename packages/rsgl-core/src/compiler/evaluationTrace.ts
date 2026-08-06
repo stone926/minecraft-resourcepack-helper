@@ -1,4 +1,5 @@
 import type { ExprNode, ObjectPropertyNode, TextRange } from "../parser";
+import { staticPropertyKeyName } from "../parser";
 import { isRsglResourceIdConstructorName } from "../resourceIdSemantics";
 import type { CollectionEvaluationTrace } from "./collectionBuiltins";
 import { isLambdaLikeValue } from "./evaluationJsonValues";
@@ -408,7 +409,10 @@ function tracedCollectionEvaluationResult(
     );
     return rebaseEvaluationResult(durable, path.outputPath);
   });
-  return structuralEvaluationResult(value, range, children, additionalIssues);
+  return structuralEvaluationResult(value, range, children, [
+    ...additionalIssues,
+    ...(trace.stateRecordKeyIssues ?? [])
+  ]);
 }
 
 function wrappedEvaluationResult(
@@ -562,14 +566,12 @@ function tracedPropertyKey(
   property: ObjectPropertyNode,
   frame: EvaluationTraceFrame
 ): string | null {
-  if (property.key.kind === "Identifier") {
-    return property.key.text;
+  const staticName = staticPropertyKeyName(property.key);
+  if (staticName !== undefined) {
+    return staticName;
   }
-  if (property.key.kind === "StringLiteral") {
-    return property.key.value;
-  }
-  if (property.key.kind === "NumberLiteral") {
-    return property.key.raw;
+  if (property.key.kind !== "DynamicKey") {
+    return null;
   }
   const child = childForExpression(frame, property.key.expression);
   return scalarText(child?.result.value);

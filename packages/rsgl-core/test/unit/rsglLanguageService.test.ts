@@ -242,6 +242,28 @@ describe("RSGL language service", () => {
     );
   });
 
+  it("describes unquoted texture-variable literals on hover", () => {
+    const text = "model block hover_texture { textures { particle: #inside } }";
+    const document = {
+      fileName: path.resolve("texture-variable-hover.rsgl"),
+      getText: () => text
+    };
+    const fallbackWorkspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open document fallback.");
+      }
+    };
+    const start = text.indexOf("#inside");
+
+    assert.deepStrictEqual(
+      getRsglDocumentHoverInfo(document, start + 2, fallbackWorkspace),
+      {
+        range: { start, end: start + "#inside".length },
+        label: "value #inside: TextureVariable"
+      }
+    );
+  });
+
   it("presents builtin rest parameters and keeps extra arguments on the rest slot", () => {
     const text = "let combined = concat([1], [2], [3])";
     const document = {

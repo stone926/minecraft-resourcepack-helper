@@ -87,6 +87,8 @@ type CollectionInferenceHandler = (
  * The registry (../builtinRegistry.ts) decides which builtin routes here.
  */
 const collectionInferenceHandlers = {
+  asList: (session, expectedReturnType) => checkAsList(session, expectedReturnType),
+  length: session => checkLength(session),
   map: (session, expectedReturnType) => checkMap(session, expectedReturnType),
   filter: (session, expectedReturnType) => checkFilter(session, expectedReturnType),
   flatMap: (session, expectedReturnType) => checkFlatMap(session, expectedReturnType),
@@ -194,6 +196,39 @@ class CollectionArgumentSession {
       }
     }
   }
+}
+
+function checkAsList(
+  session: CollectionArgumentSession,
+  expectedReturnType: RsglType | undefined
+): RsglType {
+  const expectedElement = expectedListElement(expectedReturnType);
+  const value = session.primary("value");
+  if (!value) {
+    return listOf(expectedElement ?? unknownType);
+  }
+
+  const actualType = expectedElement
+    ? session.checkExpected(value, asListInputOf(expectedElement))
+    : session.check(value);
+  if (!isPotentialAsListInput(actualType)) {
+    reportCollectionExpected(
+      session,
+      value.arg.value,
+      "a List, Range, or scalar value",
+      actualType
+    );
+  }
+  const inferredElement = asListElementType(session, actualType);
+  return listOf(expectedElement ?? inferredElement);
+}
+
+function checkLength(session: CollectionArgumentSession): RsglType {
+  const source = session.primary("source");
+  if (source) {
+    checkIterableArgument(session, source);
+  }
+  return numberType;
 }
 
 function checkMap(
@@ -657,6 +692,92 @@ function expectedListElement(type: RsglType | undefined): RsglType | undefined {
   }
   const lists = (type.options ?? []).filter(option => option.kind === "List");
   return lists.length === 1 ? lists[0].elementType ?? unknownType : undefined;
+}
+
+function asListElementType(
+  session: CollectionArgumentSession,
+  type: RsglType
+): RsglType {
+  if (type.kind === "List") {
+    return normalizeNestedAsListType(session, type.elementType ?? unknownType);
+  }
+  if (type.kind === "Range") {
+    return numberType;
+  }
+  if (type.kind !== "Union") {
+    return type;
+  }
+  return normalizeNestedAsListType(session, combineRsglTypes(
+    (type.options ?? []).map(option => asListElementType(session, option)),
+    false,
+    inferredUnionBudgetOptions(session.context.diagnostics, session.expression.range)
+  ));
+}
+
+/**
+ * Keeps nested collection structure while coalescing homogeneous List union
+ * branches into one List whose element type is the union of each branch.
+ * This is intentionally scoped to asList: general unions retain their branch
+ * correlation elsewhere in the type system.
+ */
+function normalizeNestedAsListType(
+  session: CollectionArgumentSession,
+  type: RsglType
+): RsglType {
+  if (type.kind === "List") {
+    return {
+      ...type,
+      elementType: normalizeNestedAsListType(session, type.elementType ?? unknownType)
+    };
+  }
+  if (type.kind !== "Union") {
+    return type;
+  }
+
+  const options = (type.options ?? []).map(option => normalizeNestedAsListType(session, option));
+  const unionBudget = inferredUnionBudgetOptions(
+    session.context.diagnostics,
+    session.expression.range
+  );
+  if (options.length > 0 && options.every(option => option.kind === "List")) {
+    return listOf(normalizeNestedAsListType(session, combineRsglTypes(
+      options.map(option => option.elementType ?? unknownType),
+      false,
+      unionBudget
+    )));
+  }
+  return combineRsglTypes(options, false, unionBudget);
+}
+
+function asListInputOf(elementType: RsglType): RsglType {
+  const options = [elementType, listOf(elementType)];
+  if (isAssignable(elementType, numberType)) {
+    options.push({ kind: "Range", elementType: numberType });
+  }
+  return combineRsglTypes(options);
+}
+
+function isPotentialAsListInput(type: RsglType): boolean {
+  if (type.kind === "Union") {
+    return (type.options ?? []).every(isPotentialAsListInput);
+  }
+  return type.kind === "List"
+    || type.kind === "Range"
+    || type.kind === "String"
+    || type.kind === "Number"
+    || type.kind === "Boolean"
+    || type.kind === "Null"
+    || type.kind === "Path"
+    || type.kind === "ResourceId"
+    || type.kind === "ModelId"
+    || type.kind === "TextureId"
+    || type.kind === "TextureVariable"
+    || type.kind === "TextureRef"
+    || type.kind === "Any"
+    || type.kind === "Unknown"
+    || type.kind === "TypeParameter"
+    || type.kind === "Json"
+    || type.kind === "Never";
 }
 
 function iterableOf(elementType: RsglType): RsglType {

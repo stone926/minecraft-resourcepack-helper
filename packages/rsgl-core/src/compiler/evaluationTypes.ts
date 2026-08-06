@@ -76,6 +76,7 @@ export type EvaluationValueIssueKind =
   | "lambda"
   | "nonFiniteNumber"
   | "duplicateObjectKey"
+  | "stateRecordDuplicateObjectKey"
   | "invalidObjectKey";
 
 /** Runtime value-shape facts captured without evaluating an expression twice. */

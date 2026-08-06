@@ -7,6 +7,7 @@ import {
   RsglNode,
   TextRange
 } from "../parser";
+import { staticPropertyKeyName } from "../parser";
 import { diagnostic } from "./diagnostics";
 import {
   mergeObjectTypeAlternatives,
@@ -15,6 +16,7 @@ import {
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { lookup } from "./scopes";
 import { objectSpreadTypes } from "./objectSpreadTypes";
+import { checkPropertyKey } from "./propertyKeyChecking";
 import { finiteObjectKeysFromType, staticIndexKey } from "./structuralTypes";
 import { combineRsglTypes, rsglTypeKey } from "./typeNormalization";
 import { isAssignable } from "./typeRelations";
@@ -120,11 +122,8 @@ export function checkContextualObject(
     const expectedProperty = key ? expectedType?.properties?.get(key) : undefined;
     let computedKeys: string[] | undefined;
     if (property.key.kind === "DynamicKey") {
-      const keyType = host.checkExpression(context, property.key.expression, scope);
-      const staticKey = staticIndexKey(property.key.expression);
-      computedKeys = staticKey !== undefined
-        ? [staticKey]
-        : finiteObjectKeysFromType(keyType);
+      const checkedKey = checkPropertyKey(context, property.key, scope, host);
+      computedKeys = checkedKey.names ? [...checkedKey.names] : undefined;
     }
     const expectedValueType = expectedProperty?.type
       ?? (key ? expectedType?.indexType : expectedComputedValueType(expectedType, computedKeys));
@@ -210,16 +209,7 @@ export function checkContextualObject(
 }
 
 export function objectKeyName(property: ObjectPropertyNode): string | null {
-  if (property.key.kind === "Identifier") {
-    return property.key.text;
-  }
-  if (property.key.kind === "StringLiteral") {
-    return property.key.value;
-  }
-  if (property.key.kind === "NumberLiteral") {
-    return property.key.raw;
-  }
-  return null;
+  return staticPropertyKeyName(property.key) ?? null;
 }
 
 export function selectContextualObjectArm(

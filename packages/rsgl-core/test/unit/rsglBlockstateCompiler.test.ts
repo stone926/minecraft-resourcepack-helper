@@ -56,6 +56,36 @@ describe("RSGL canonical blockstate compiler", () => {
     ]);
   });
 
+  it("evaluates computed blockstate root properties once", () => {
+    const module = parseRsgl([
+      "blockstate variants computed_root {",
+      "  [glob(\"root-key\")[0]]: { \"\": { model: minecraft:block/stone } }",
+      "}"
+    ].join("\n"));
+    const calls: string[] = [];
+    const result = new RsglCompiler(module, {
+      fileName: "computed-root.rsgl",
+      namespace: "minecraft",
+      stdlibTemplates: [],
+      globLoader: pattern => {
+        calls.push(pattern);
+        return pattern === "root-key" ? ["variants"] : [];
+      }
+    }).compile();
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.deepStrictEqual(calls, ["root-key"]);
+    assert.deepStrictEqual(result.units[0].content, {
+      variants: {
+        "": { model: "minecraft:block/stone" }
+      }
+    });
+    assert.ok(result.units[0].sourceMap.mappings.some(mapping =>
+      mapping.generatedPath === "/variants"
+    ));
+  });
+
   it("omits canonical ModelSpec and option defaults", () => {
     const result = compileSourceWithUncheckedExterns([
       "blockstate variants defaults {",
@@ -218,6 +248,9 @@ describe("RSGL canonical blockstate compiler", () => {
 
     assert.ok(diagnostic);
     assert.strictEqual(source.slice(diagnostic.range.start, diagnostic.range.end), "[second]");
+    assert.strictEqual(result.diagnostics.filter(item =>
+      item.code === "rsgl.duplicateBlockstateSelectorProperty"
+    ).length, 1);
     assert.deepStrictEqual(result.units[0].content, { variants: {} });
   });
 
@@ -628,16 +661,68 @@ describe("RSGL canonical blockstate compiler", () => {
     }
   });
 
-  it("rejects raw multipart condition objects instead of lowering legacy conditions", () => {
+  it("lowers multipart state records as canonical equality conjunctions", () => {
+    const source = [
+      "let shared = { powered: true }",
+      "blockstate multipart record_condition {",
+      "  for distance in 1..2 {",
+      "    part when { ...shared, distance } => `minecraft:block/distance_${distance}`",
+      "  }",
+      "}"
+    ].join("\n");
+    const result = compileSourceWithUncheckedExterns(source.split("\n"));
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(result.units[0]?.content, {
+      multipart: [
+        {
+          apply: { model: "minecraft:block/distance_1" },
+          when: { powered: "true", distance: "1" }
+        },
+        {
+          apply: { model: "minecraft:block/distance_2" },
+          when: { powered: "true", distance: "2" }
+        }
+      ]
+    });
+    const distanceMapping = result.units[0]?.sourceMap.mappings.find(mapping =>
+      mapping.generatedPath === "/multipart/0/when/distance"
+    );
+    assert.ok(distanceMapping);
+    assert.strictEqual(
+      source.slice(distanceMapping.sourceRange.start, distanceMapping.sourceRange.end),
+      "distance"
+    );
+  });
+
+  it("rejects unsafe multipart state-record encodings and shapes", () => {
     const result = compileSourceWithUncheckedExterns([
-      "blockstate multipart raw_condition {",
-      "  part when { north: true } => minecraft:block/old",
+      "let shared = { north: true }",
+      "blockstate multipart invalid_records {",
+      "  part when {} => minecraft:block/empty",
+      "  part when { north: [] } => minecraft:block/non_scalar",
+      "  part when { OR: north } => minecraft:block/raw_or",
+      "  part when { facing: \"north|south\" } => minecraft:block/raw_pipe",
+      "  part when { facing: \"!north\" } => minecraft:block/raw_bang",
+      "  part when { ...shared, north: false } => minecraft:block/duplicate",
       "}"
     ]);
 
-    assert.ok(result.diagnostics.some(diagnostic =>
-      diagnostic.code === "rsgl.invalidBlockstatePredicate"
-    ));
+    const codes = new Set(result.diagnostics.map(diagnostic => diagnostic.code));
+    assert.ok(codes.has("rsgl.emptyMultipartStateRecordUseAlways"));
+    assert.ok(codes.has("rsgl.invalidMultipartStateRecordValue"));
+    assert.ok(codes.has("rsgl.rawMultipartStateRecordLogicalKey"));
+    assert.ok(codes.has("rsgl.rawMultipartStateRecordValue"));
+    assert.ok(codes.has("rsgl.duplicateMultipartStateRecordProperty"));
+    assert.strictEqual(result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.rawMultipartStateRecordLogicalKey"
+    ).length, 1);
+    assert.strictEqual(result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.rawMultipartStateRecordValue"
+    ).length, 2);
+    assert.strictEqual(result.diagnostics.filter(diagnostic =>
+      diagnostic.code === "rsgl.duplicateMultipartStateRecordProperty"
+    ).length, 1);
     assert.deepStrictEqual(result.units[0]?.content, { multipart: [] });
   });
 

@@ -41,6 +41,7 @@ import {
   lowerBlockstateSelector
 } from "./blockstateSelectorLowerer";
 import { lowerBlockstatePredicate } from "./blockstatePredicate";
+import { lowerBlockstateStateRecord } from "./blockstateStateRecordLowerer";
 import { blockstateRootModeEvidence } from "./blockstateModePolicy";
 import {
   blockstateMultipartPath,
@@ -50,6 +51,7 @@ import {
   bindEvaluationResult,
   childEvaluationContext,
   evaluateCompileTimeCondition,
+  evaluateExpression,
   evaluateExpressionResult,
   type EvaluationOrigin,
   type EvaluationResult,
@@ -64,6 +66,7 @@ import {
   lowerJsonEvaluationResult
 } from "./jsonValueLowerer";
 import { forEachLoopContext } from "./looping";
+import { evaluatePropertyKey } from "./propertyKeyEvaluation";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
 import type { RsglCompileContext, TemplateExpansion } from "./templateExpansion";
 
@@ -375,8 +378,19 @@ export class BlockstateOperationExecutor {
     statement: PropertyStmtNode,
     context: RsglCompileContext
   ): void {
+    const key = evaluatePropertyKey(statement.key, context, { evaluateExpression });
+    if (key === null) {
+      context.onEvaluationFailure?.();
+      this.host.onError(
+        "rsgl.invalidPropertyKey",
+        "A computed property key must evaluate to a string, number, or boolean scalar value.",
+        statement.key.kind === "DynamicKey" ? statement.key.expression.range : statement.key.range,
+        context.sourceFile
+      );
+      return;
+    }
     const result = evaluateExpressionResult(statement.value, context);
-    const path = appendGeneratedPath("", statement.name.text);
+    const path = appendGeneratedPath("", key);
     const observations: RsglResourceValueObservation[] = [];
     const loweringHost = createJsonValueLoweringHost(
       context,
@@ -408,7 +422,7 @@ export class BlockstateOperationExecutor {
     );
     const mergeResult = this.applyRootOperand(
       root,
-      { [statement.name.text]: value },
+      { [key]: value },
       "shallow",
       statement.range,
       context,
@@ -490,17 +504,30 @@ export class BlockstateOperationExecutor {
       generatedPath: joinGeneratedPath("/apply", item.generatedPath)
     })));
     if (!statement.always && statement.predicate) {
-      const when = lowerBlockstatePredicate(
-        statement.predicate,
-        context,
-        this.host,
-        blockstatePredicateEvaluationHost
-      );
+      const stateRecord = statement.predicate.kind === "ObjectExpr";
+      const when = stateRecord
+        ? lowerBlockstateStateRecord(statement.predicate, context, this.host, "multipart")
+        : lowerBlockstatePredicate(
+          statement.predicate,
+          context,
+          this.host,
+          blockstatePredicateEvaluationHost
+        );
       if (!when) {
         return;
       }
       value.when = when.value;
-      mappings.push(relativeMapping("/when", statement.predicate.range, context, when.origin));
+      if (stateRecord && "evaluation" in when) {
+        mappings.push(...evaluationRelativeMappingsForValue(
+          when.value,
+          when.evaluation,
+          statement.predicate.range,
+          context,
+          "/when"
+        ));
+      } else {
+        mappings.push(relativeMapping("/when", statement.predicate.range, context, when.origin));
+      }
     }
     const index = this.rootMerger.appendMultipart(
       root.state,
@@ -694,6 +721,43 @@ function evaluationMappingsForValue(
       sourceRange,
       context,
       host,
+      appendGeneratedPath(generatedPath, key)
+    )));
+  }
+  return mappings;
+}
+
+function evaluationRelativeMappingsForValue(
+  value: JsonValue,
+  evaluation: EvaluationResult,
+  sourceRange: TextRange,
+  context: RsglCompileContext,
+  generatedPath = ""
+): BlockstateModelSpecMapping[] {
+  const evaluationPath = generatedPath.startsWith("/when")
+    ? generatedPath.slice("/when".length)
+    : generatedPath;
+  const origin = originForEvaluationPath(evaluation.pathOrigins, evaluationPath) ?? evaluation.origin;
+  const mappings: BlockstateModelSpecMapping[] = [relativeMapping(
+    generatedPath,
+    rangeForEvaluationPath(evaluation.pathRanges, evaluationPath) ?? sourceRange,
+    context,
+    origin
+  )];
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => mappings.push(...evaluationRelativeMappingsForValue(
+      item,
+      evaluation,
+      sourceRange,
+      context,
+      appendGeneratedPath(generatedPath, String(index))
+    )));
+  } else if (isJsonObject(value)) {
+    Object.entries(value).forEach(([key, item]) => mappings.push(...evaluationRelativeMappingsForValue(
+      item,
+      evaluation,
+      sourceRange,
+      context,
       appendGeneratedPath(generatedPath, key)
     )));
   }

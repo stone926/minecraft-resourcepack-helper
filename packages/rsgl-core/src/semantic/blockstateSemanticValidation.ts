@@ -1,8 +1,8 @@
 import type { ExprNode, RsglDiagnostic } from "../parser";
+import { checkBlockstateMultipartCondition } from "./blockstateMultipartConditionChecker";
 import { checkBlockstateModelSpec } from "./blockstateModelSpecChecker";
 import { checkBlockstateSelector } from "./blockstateSelectorChecker";
 import { fileDiagnostic } from "./diagnostics";
-import { checkBlockstatePredicate } from "./expressionChecker";
 import { scopeWithLinkedGlobalFallback } from "./linkedScope";
 import type {
   RsglFileDiagnostic,
@@ -26,6 +26,15 @@ const provisionalContextualExpressionDiagnosticCodes = new Set([
   "rsgl.invalidBlockstateSelectorKey",
   "rsgl.duplicateBlockstateSelectorProperty",
   "rsgl.emptyBlockstateSelectorUseWildcard",
+  "rsgl.unverifiableBlockstateSelectorSpread",
+  "rsgl.multipartStateRecordMustBeObject",
+  "rsgl.invalidMultipartStateRecordValue",
+  "rsgl.invalidMultipartStateRecordKey",
+  "rsgl.duplicateMultipartStateRecordProperty",
+  "rsgl.emptyMultipartStateRecordUseAlways",
+  "rsgl.unverifiableMultipartStateRecordSpread",
+  "rsgl.rawMultipartStateRecordLogicalKey",
+  "rsgl.rawMultipartStateRecordValue",
   "rsgl.invalidBlockstatePredicate",
   "rsgl.invalidBlockstatePredicateProperty",
   "rsgl.invalidBlockstatePredicateValue",
@@ -83,7 +92,7 @@ export function validateResolvedProgramBlockstateSemantics(
       if (record.kind === "selector") {
         checkBlockstateSelector(context, record.expression, scope);
       } else {
-        checkBlockstatePredicate(context, record.expression, scope);
+        checkBlockstateMultipartCondition(context, record.expression, scope);
       }
       appendNewDiagnostics(result, known, diagnostics, model.fileName);
     }

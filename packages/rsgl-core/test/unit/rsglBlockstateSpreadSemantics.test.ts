@@ -12,7 +12,7 @@ describe("RSGL blockstate object spread semantics", () => {
     ]), []);
   });
 
-  it("accepts conditional StatePredicate values without exposing condition-object spreads", () => {
+  it("accepts closed state-record spreads alongside conditional StatePredicate values", () => {
     assert.deepStrictEqual(diagnosticCodes([
       "let facing: StatePredicate = $state.facing == north",
       "let powered: StatePredicate = $state.powered == true",
@@ -23,11 +23,26 @@ describe("RSGL blockstate object spread semantics", () => {
     ]), []);
 
     assert.deepStrictEqual(diagnosticCodes([
-      "let condition = true ? { OR: [{ facing: \"north\" }] } : { powered: true }",
+      "let condition = true ? { facing: \"north\" } : { powered: true }",
       "blockstate multipart minecraft:test {",
       "  part when { ...condition } => minecraft:block/stone",
       "}"
-    ]), ["rsgl.invalidBlockstatePredicate"]);
+    ]), []);
+  });
+
+  it("rejects open or conflicting state-record spreads", () => {
+    const codes = diagnosticCodes([
+      "let shared = { north: true }",
+      "template unsafe(condition: Any) -> multipart {",
+      "  part when { ...condition } => minecraft:block/stone",
+      "}",
+      "blockstate multipart minecraft:test {",
+      "  part when { ...shared, north: false } => minecraft:block/stone",
+      "}"
+    ]);
+
+    assert.ok(codes.includes("rsgl.unverifiableMultipartStateRecordSpread"));
+    assert.ok(codes.includes("rsgl.duplicateMultipartStateRecordProperty"));
   });
 
   it("rejects spreads in closed ModelSpec with blocks", () => {

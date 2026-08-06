@@ -40,9 +40,11 @@ import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   identifierName,
   inferLiteralType,
+  mayContainTextureVariable,
   numberType,
   stringType,
   textureRefType,
+  textureVariableType,
   typeFromAnnotation,
   unknownType,
   type RsglScope,
@@ -133,6 +135,9 @@ function checkExpressionCore(
     }
     return symbol.type;
   }
+  if (expression.kind === "TextureVariableLiteral") {
+    return textureVariableType;
+  }
   if (expression.kind === "ResourceLocationExpr") {
     validateResourceLocationValue(context, expression.value, expression.range);
     // A resource-location token is ordinary text until an annotation or a
@@ -204,6 +209,12 @@ function checkExpressionCore(
       ));
       return unknownType;
     }
+    if (
+      expression.operator === "+"
+      && (mayContainTextureVariable(leftType) || mayContainTextureVariable(rightType))
+    ) {
+      return textureVariableType;
+    }
     return binaryOperatorResultType(expression.operator);
   }
   if (expression.kind === "RangeExpr") {
@@ -243,10 +254,16 @@ function checkExpressionCore(
     );
   }
   if (expression.kind === "TemplateStringExpr") {
+    let textureVariableInterpolation = false;
     for (const part of expression.parts) {
       if (part.kind === "expression") {
-        checkExpression(context, part.expression, scope);
+        textureVariableInterpolation ||= mayContainTextureVariable(
+          checkExpression(context, part.expression, scope)
+        );
       }
+    }
+    if (textureVariableInterpolation) {
+      return textureVariableType;
     }
     const finiteDomain = finiteStringDomain(expression, scope);
     return finiteDomain?.length

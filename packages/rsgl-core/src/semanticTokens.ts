@@ -80,6 +80,7 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): readonly RsglSe
 
   collectTypeAliasTokens(model, candidates);
   collectPropertyTokens(model.module, candidates);
+  collectTextureVariableLiteralTokens(model, candidates);
   collectModuleNamespaceMemberTokens(model, candidates);
   for (const record of model.imports) {
     collectImportDeclarationTokens(record.node, model, candidates);
@@ -137,6 +138,24 @@ function collectPropertyTokens(root: RsglNode, candidates: RsglSemanticToken[]):
   visitPropertyContainer(root, candidates, new WeakSet<object>());
 }
 
+function collectTextureVariableLiteralTokens(
+  model: RsglSemanticModel,
+  candidates: RsglSemanticToken[]
+): void {
+  walkRsglModule(model.module, {
+    enterExpression(expression) {
+      if (expression.kind === "TextureVariableLiteral" && isSemanticIdentifier(expression.name)) {
+        pushToken(
+          candidates,
+          expression.name.range,
+          { tokenType: variableTokenType, tokenModifiers: 0 },
+          0
+        );
+      }
+    }
+  });
+}
+
 function visitPropertyContainer(
   value: unknown,
   candidates: RsglSemanticToken[],
@@ -192,7 +211,9 @@ function propertyIdentifiers(node: RsglNode): readonly IdentifierNode[] {
     case "MemberExpr":
       return [(node as MemberExprNode).property];
     case "PropertyStmt":
-      return [(node as PropertyStmtNode).name];
+      return (node as PropertyStmtNode).key.kind === "Identifier"
+        ? [(node as PropertyStmtNode).key as IdentifierNode]
+        : [];
     case "ItemOption":
       return [(node as ItemOptionNode).name];
     default:

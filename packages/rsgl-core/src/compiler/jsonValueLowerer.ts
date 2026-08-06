@@ -166,9 +166,12 @@ export function lowerJsonEvaluationResult(
   fallbackRange: TextRange,
   host: JsonValueLoweringHost
 ): JsonValue | undefined {
+  const serializableIssues = result.valueIssues.filter(issue =>
+    issue.kind !== "stateRecordDuplicateObjectKey"
+  );
   const issue = host.reporter.selectIssue
-    ? host.reporter.selectIssue(result.valueIssues)
-    : result.valueIssues[0];
+    ? host.reporter.selectIssue(serializableIssues)
+    : serializableIssues[0];
   if (issue) {
     fail(host, {
       generatedPath: issue.generatedPath,

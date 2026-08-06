@@ -7,10 +7,12 @@ import {
 import type {
   EvaluationResult,
   EvaluationValue,
+  EvaluationValueIssue,
   LambdaValue
 } from "./evaluationTypes";
 import { normalizeJsonValue } from "./evaluationJsonValues";
 import type { EvaluationItemBudget } from "./evaluationItemBudget";
+import { evaluationScalarText } from "./evaluatedResourceValues";
 import type { JsonValue } from "./ir";
 import {
   createJsonObject,
@@ -59,6 +61,8 @@ export interface CollectionTracePath {
 /** Path ownership captured by the same evaluation that produced the value. */
 export interface CollectionEvaluationTrace {
   paths: CollectionTracePath[];
+  /** Contextual state-record collisions ignored by ordinary object sinks. */
+  stateRecordKeyIssues?: EvaluationValueIssue[];
 }
 
 export interface CollectionBuiltinHost {
@@ -94,6 +98,8 @@ type CollectionBuiltinEvaluator = (
  * The registry (../builtinRegistry.ts) decides which builtin routes here.
  */
 const collectionEvaluationHandlers = {
+  asList: evaluateAsList,
+  length: evaluateLength,
   map: evaluateMap,
   filter: evaluateFilter,
   flatMap: evaluateFlatMap,
@@ -117,6 +123,53 @@ export function evaluateCollectionBuiltin(
     return { handled: false };
   }
   return collectionEvaluationHandlers[handlerKey](args, range, host);
+}
+
+function evaluateAsList(
+  args: readonly CollectionBuiltinArgument[],
+  range: TextRange,
+  host: CollectionBuiltinHost
+): CollectionBuiltinEvaluation {
+  const valueArg = argument(args, "value", 0);
+  if (!valueArg || valueArg.value === undefined) {
+    host.markFailure();
+    return handledFailure();
+  }
+
+  const source = traceSource(valueArg);
+  if (Array.isArray(valueArg.value)) {
+    return tracedValue(valueArg.value, source ? [{ outputPath: "", source }] : []);
+  }
+  if (valueArg.value !== null && evaluationScalarText(valueArg.value) === null) {
+    host.reportError(
+      "rsgl.collectionExpected",
+      `asList expected a List, Range, or scalar value for value, got ${runtimeValueKind(valueArg.value)}.`,
+      valueArg.range
+    );
+    host.markFailure();
+    return handledFailure();
+  }
+  if (!consumeItems(host, 1, range, "asList")) {
+    return handledFailure();
+  }
+  return tracedValue(
+    [normalizeJsonValue(valueArg.value)],
+    source ? [{ outputPath: "/0", source }] : []
+  );
+}
+
+function evaluateLength(
+  args: readonly CollectionBuiltinArgument[],
+  _range: TextRange,
+  host: CollectionBuiltinHost
+): CollectionBuiltinEvaluation {
+  const sourceArg = argument(args, "source", 0);
+  const source = sourceArg ? listArgument(sourceArg, "length", "source", host) : undefined;
+  if (!sourceArg || !source) {
+    host.markFailure();
+    return handledFailure();
+  }
+  return { handled: true, value: source.length };
 }
 
 function evaluateMap(

@@ -123,6 +123,7 @@ describe("RSGL blockstate completion", () => {
       "let",
       "use",
       "for",
+      "for indexed",
       "for object",
       "for multidim",
       "if"
@@ -131,11 +132,13 @@ describe("RSGL blockstate completion", () => {
     const multipart = syntaxLabelsAtEnd("template parts() -> multipart {\n  ");
     assert.deepStrictEqual([...multipart], [
       "part when",
+      "part when predicate",
       "part always",
       "random",
       "let",
       "use",
       "for",
+      "for indexed",
       "for object",
       "for multidim",
       "if"
@@ -159,8 +162,12 @@ describe("RSGL blockstate completion", () => {
     assert.doesNotMatch(variantRandom, /@|\{\s*model\s*:/);
 
     const multipart = candidatesAtEnd("template parts() -> multipart {\n  ");
+    const stateRecord = multipart.find(candidate => candidate.label === "part when")?.insertText ?? "";
+    const predicate = multipart.find(candidate => candidate.label === "part when predicate")?.insertText ?? "";
     const apply = multipart.find(candidate => candidate.label === "part always")?.insertText ?? "";
     const random = multipart.find(candidate => candidate.label === "random")?.insertText ?? "";
+    assert.match(stateRecord, /^part when \{.*\} =>/);
+    assert.match(predicate, /^part when \$state\./);
     assert.match(apply, /^part always => .*minecraft:block\/stone/);
     assert.doesNotMatch(apply, /@|\{\s*model\s*:/);
     assert.match(random, /^part always => random \{/);
@@ -176,6 +183,7 @@ describe("RSGL blockstate completion", () => {
       "let",
       "use",
       "for",
+      "for indexed",
       "for object",
       "for multidim",
       "if"

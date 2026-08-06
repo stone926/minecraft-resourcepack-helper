@@ -19,10 +19,10 @@ import {
   checkBlockstateModelSpec,
   checkBlockstateRandomWeight
 } from "./blockstateModelSpecChecker";
+import { checkBlockstateMultipartCondition } from "./blockstateMultipartConditionChecker";
 import { checkBlockstateSelector } from "./blockstateSelectorChecker";
 import { diagnostic } from "./diagnostics";
 import {
-  checkBlockstatePredicate,
   checkCompileTimeCondition,
   checkExpression,
   checkLocalLetDecl,
@@ -30,6 +30,7 @@ import {
 } from "./expressionChecker";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { applyLambdaValueDiagnostics } from "./lambdaAnalysis";
+import { checkPropertyKey } from "./propertyKeyChecking";
 import { createChildScope } from "./scopes";
 import { scopeForTruthyCondition } from "./typeNarrowing";
 import type { RsglScope } from "./types";
@@ -212,8 +213,15 @@ export class RsglBlockstateBodyChecker {
         this.checkStaticModeEvidence(statement.value, callerContext);
         break;
       case "PropertyStmt":
+        for (const name of checkPropertyKey(
+          this.host.context,
+          statement.key,
+          scope,
+          { checkExpression }
+        ).names ?? []) {
+          this.checkNamedRootField(name, statement.key.range, callerContext);
+        }
         checkExpression(this.host.context, statement.value, scope);
-        this.checkNamedRootField(statement.name.text, statement.name.range, callerContext);
         break;
       case "UnknownStmt":
         break;
@@ -227,9 +235,9 @@ export class RsglBlockstateBodyChecker {
     scope: RsglScope
   ): void {
     if (!statement.always && statement.predicate) {
-      checkBlockstatePredicate(this.host.context, statement.predicate, scope);
+      checkBlockstateMultipartCondition(this.host.context, statement.predicate, scope);
       this.host.recordContextualExpression({
-        kind: "predicate",
+        kind: "multipartCondition",
         expression: statement.predicate
       }, scope);
     }

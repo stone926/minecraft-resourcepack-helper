@@ -5,7 +5,6 @@ import { reportInvalidSpread } from "./evaluationErrors";
 import { normalizeJsonValue } from "./evaluationJsonValues";
 import type { EvaluationRuntimeHost } from "./evaluationRuntimeHost";
 import type { EvaluationContext, EvaluationValue } from "./evaluationTypes";
-import { evaluationScalarText } from "./evaluatedResourceValues";
 import {
   createJsonObject,
   jsonObjectKeys,
@@ -13,6 +12,7 @@ import {
 } from "./jsonObjectProperties";
 import { isJsonObject } from "./jsonValues";
 import { appendGeneratedPath } from "./sourcePaths";
+import { evaluatePropertyKey } from "./propertyKeyEvaluation";
 
 export function evaluateListExpression(
   elements: readonly ListElementNode[],
@@ -83,6 +83,8 @@ export function evaluateObjectEntries(
 ): EvaluationValue {
   const result = createJsonObject();
   const pathOwners = new Map<string, CollectionEvaluationTrace["paths"][number]["source"]>();
+  const writtenKeys = new Set<string>();
+  const stateRecordKeyIssues: NonNullable<CollectionEvaluationTrace["stateRecordKeyIssues"]> = [];
   let requiresOwnershipTrace = false;
   for (const entry of entries) {
     if (entry.kind === "ObjectSpread") {
@@ -106,6 +108,14 @@ export function evaluateObjectEntries(
         return undefined;
       }
       for (const key of keys) {
+        if (writtenKeys.has(key)) {
+          stateRecordKeyIssues.push({
+            generatedPath: appendGeneratedPath("", key),
+            kind: "stateRecordDuplicateObjectKey",
+            sourceRange: entry.range
+          });
+        }
+        writtenKeys.add(key);
         setJsonObjectProperty(result, key, normalizeJsonValue(spreadValue[key]));
         if (child) {
           pathOwners.set(key, {
@@ -124,6 +134,14 @@ export function evaluateObjectEntries(
     const value = host.evaluateExpression(entry.value, context);
     const child = context.evaluationTrace?.latestChildResult(entry.value);
     if (key !== null) {
+      if (writtenKeys.has(key)) {
+        stateRecordKeyIssues.push({
+          generatedPath: appendGeneratedPath("", key),
+          kind: "stateRecordDuplicateObjectKey",
+          sourceRange: entry.key.range
+        });
+      }
+      writtenKeys.add(key);
       requiresOwnershipTrace ||= pathOwners.has(key);
       setJsonObjectProperty(result, key, normalizeJsonValue(value));
       if (child) {
@@ -133,12 +151,13 @@ export function evaluateObjectEntries(
       }
     }
   }
-  if (requiresOwnershipTrace) {
+  if (requiresOwnershipTrace || stateRecordKeyIssues.length > 0) {
     context.evaluationTrace?.recordCollectionTrace({
       paths: Array.from(pathOwners, ([key, source]) => ({
         outputPath: appendGeneratedPath("", key),
         source
-      }))
+      })),
+      ...(stateRecordKeyIssues.length > 0 ? { stateRecordKeyIssues } : {})
     });
   }
   return result;
@@ -171,14 +190,5 @@ function propertyKeyToString(
   context: EvaluationContext,
   host: EvaluationRuntimeHost
 ): string | null {
-  if (property.key.kind === "Identifier") {
-    return property.key.text;
-  }
-  if (property.key.kind === "StringLiteral") {
-    return property.key.value;
-  }
-  if (property.key.kind === "NumberLiteral") {
-    return property.key.raw;
-  }
-  return evaluationScalarText(host.evaluateExpression(property.key.expression, context));
+  return evaluatePropertyKey(property.key, context, host);
 }

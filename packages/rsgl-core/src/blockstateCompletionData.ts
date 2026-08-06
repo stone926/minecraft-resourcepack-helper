@@ -29,8 +29,14 @@ const variantsEntryCompletions = [
 const multipartEntryCompletions = [
   {
     label: "part when",
+    insertText: "part when { ${1:facing}: ${2:north} } => ${3:minecraft:block/stone}${4: with { y: 90 }}",
+    detail: "Multipart equality-record entry",
+    kind: "snippet"
+  },
+  {
+    label: "part when predicate",
     insertText: "part when $state.${1:facing} == ${2:north} => ${3:minecraft:block/stone}${4: with { y: 90 }}",
-    detail: "Conditional multipart entry",
+    detail: "Multipart StatePredicate entry",
     kind: "snippet"
   },
   {

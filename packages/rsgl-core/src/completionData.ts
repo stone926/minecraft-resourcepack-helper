@@ -198,9 +198,11 @@ export const blockRsglCompletions: RsglCompletionCandidate[] = [
   { label: "let", insertText: "let ${1:name} = ${2:value}", detail: "Local constant", kind: "snippet" },
   { label: "use", insertText: "use ${1:templateName}(${2})", detail: "Template call", kind: "snippet" },
   { label: "for", insertText: "for ${1:item} in ${2:items} {\n  ${3}\n}", detail: "Finite expansion loop", kind: "snippet" },
+  { label: "for indexed", insertText: "for ${1:item} at ${2:index} in ${3:items} {\n  ${4}\n}", detail: "Finite expansion loop with a zero-based index", kind: "snippet" },
   { label: "for object", insertText: "for { ${1:name}, ${2:value}: ${3:localValue} } in ${4:items} {\n  ${5}\n}", detail: "Finite expansion loop with named object bindings", kind: "snippet" },
   { label: "for multidim", insertText: "for ${1:a} in ${2:items}, ${3:b} in ${4:variants} {\n  ${5}\n}", detail: "Multidimensional finite expansion loop", kind: "snippet" },
   { label: "if", insertText: "if ${1:condition} {\n  ${2}\n}", detail: "Static conditional block", kind: "snippet" },
+  { label: "computed property", insertText: "[${1:key}]: ${2:value}", detail: "Resource property with a computed key", kind: "property" },
   { label: "base", insertText: "base \"${1:./resource.json}\"", detail: "Initialize this resource from a JSON document", kind: "snippet" },
   { label: "merge", insertText: "merge {\n  ${1:key}: ${2:value}\n}", detail: "Shallow-merge a JSON fragment", kind: "snippet" },
   { label: "merge deep", insertText: "merge deep {\n  ${1:key}: ${2:value}\n}", detail: "Recursively merge objects and append arrays", kind: "snippet" },
@@ -218,7 +220,7 @@ const blockstateRootOnlyCompletions: readonly RsglCompletionCandidate[] = [
   }
 ];
 
-const blockstateControlLabels = new Set(["let", "use", "for", "for object", "for multidim", "if"]);
+const blockstateControlLabels = new Set(["let", "use", "for", "for indexed", "for object", "for multidim", "if"]);
 const blockstateRootOperationLabels = new Set([
   "base",
   "merge",

@@ -227,6 +227,27 @@ describe("RSGL structural expression types", () => {
     ]);
   });
 
+  it("types explicit loop indexes as numbers in later dimensions and the body", () => {
+    const model = bind([
+      "for item at itemIndex in [\"a\"], other at otherIndex in [itemIndex] {",
+      "  let firstIndex = itemIndex",
+      "  let secondIndex = otherIndex",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(formatType(symbolType(model, "itemIndex")), "Number");
+    assert.strictEqual(formatType(symbolType(model, "otherIndex")), "Number");
+    assert.strictEqual(formatType(symbolType(model, "firstIndex")), "Number");
+    assert.strictEqual(formatType(symbolType(model, "secondIndex")), "Number");
+
+    const ownIterable = bind(["for item at itemIndex in [itemIndex + 0] {}"]);
+    assert.ok(codes(ownIterable).includes("rsgl.undefinedSymbol"));
+
+    const duplicate = bind(["for item at item in [1] {}"]);
+    assert.ok(codes(duplicate).includes("rsgl.duplicateLoopBinding"));
+  });
+
   it("reports one invalid-destructuring diagnostic across iterable union arms", () => {
     const model = bind([
       "let rows: List<Number> | List<String> = true ? [1] : [\"two\"]",

@@ -18,7 +18,11 @@ import {
   TopLevelStatementNode,
   VariantBodyNode
 } from "../parser";
-import { forBindingMappings, type ForBindingMapping } from "../forBindingPatterns";
+import {
+  forBindingMappings,
+  forDimensionBindingMappings,
+  type ForBindingMapping
+} from "../forBindingPatterns";
 import { RsglBlockstateBodyChecker } from "./blockstateBodyChecker";
 import { RsglItemModelBodyChecker } from "./itemModelBodyChecker";
 import { diagnostic } from "./diagnostics";
@@ -39,6 +43,7 @@ import {
 } from "./expressionChecker";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import { createChildScope, lookup } from "./scopes";
+import { checkPropertyKey } from "./propertyKeyChecking";
 import {
   expectedTypeForResourceReferenceSink,
   resourcePropertyReferenceSink,
@@ -57,6 +62,8 @@ import {
   type RsglBlockstateContextualExpression,
   RsglScope,
   RsglType,
+  mayContainTextureVariable,
+  numberType,
   stringType,
   unknownType
 } from "./types";
@@ -198,7 +205,8 @@ export class RsglResourceBodyChecker {
   public checkForStatement(
     statement: ForStmtNode,
     scope: RsglScope,
-    callerContext?: RsglTemplateCallerContext
+    callerContext?: RsglTemplateCallerContext,
+    resourceOwner = "resource"
   ): void {
     const loopScope = createChildScope(scope, "loop");
     const seen = new Set<string>();
@@ -220,7 +228,8 @@ export class RsglResourceBodyChecker {
       const finiteDomain = dimension.pattern.kind === "Identifier"
         ? finiteStringDomain(dimension.iterable, loopScope)
         : null;
-      for (const [bindingIndex, mapping] of bindingMappings.entries()) {
+      let valueBindingIndex = 0;
+      for (const mapping of forDimensionBindingMappings(dimension)) {
         const binding = mapping.binding;
         if (seen.has(binding.text)) {
           this.context.diagnostics.push(diagnostic("rsgl.duplicateLoopBinding", `Duplicate loop binding '${binding.text}'.`, binding.range));
@@ -230,10 +239,12 @@ export class RsglResourceBodyChecker {
           loopScope,
           binding,
           "variable",
-          bindingResult.bindingTypes[bindingIndex] ?? unknownType,
+          mapping.kind === "index"
+            ? numberType
+            : bindingResult.bindingTypes[valueBindingIndex++] ?? unknownType,
           binding
         );
-        if (finiteDomain) {
+        if (finiteDomain && mapping.kind === "wholeValue") {
           const symbol = lookup(loopScope, binding.text);
           if (symbol) {
             symbol.finiteDomain = finiteDomain;
@@ -241,7 +252,7 @@ export class RsglResourceBodyChecker {
         }
       }
     }
-    this.checkBody(statement.body, loopScope, callerContext);
+    this.checkNestedBody(statement.body, loopScope, callerContext, resourceOwner);
   }
 
   private checkResourceStatement(
@@ -252,18 +263,23 @@ export class RsglResourceBodyChecker {
   ): void {
     switch (statement.kind) {
       case "PropertyStmt": {
-        const propertySink = resourcePropertyReferenceSink(
-          callerContext?.kind === "resourceBody"
-            ? callerContext.resourceKind
-            : callerContext?.kind === "itemModel"
-              ? "item"
-              : undefined,
+        const resourceKind = callerContext?.kind === "resourceBody"
+          ? callerContext.resourceKind
+          : callerContext?.kind === "itemModel"
+            ? "item"
+            : undefined;
+        const checkedKey = checkPropertyKey(this.context, statement.key, scope, {
+          checkExpression
+        });
+        const propertyNames = checkedKey.names;
+        const propertySink = this.commonPropertyReferenceSink(
+          resourceKind,
           owner,
-          statement.name.text
+          propertyNames
         );
-        if (owner === "equipment" && statement.name.text === "layers") {
+        if (owner === "equipment" && propertyNames?.every(name => name === "layers")) {
           checkEquipmentLayerListExpression(this.context, statement.value, scope);
-        } else if (owner === "scaling" && statement.name.text === "type") {
+        } else if (owner === "scaling" && propertyNames?.every(name => name === "type")) {
           checkStringEnumLikeExpression(this.context, statement.value, scope);
         } else if (propertySink) {
           this.checkResourceReference(statement.value, scope, propertySink);
@@ -396,20 +412,26 @@ export class RsglResourceBodyChecker {
         this.checkBody(statement.body, createChildScope(scope, "block"), callerContext);
         break;
       case "ForStmt":
-        this.checkForStatement(statement, scope, callerContext);
+        this.checkForStatement(statement, scope, callerContext, owner);
         break;
       case "IfStmt":
         checkCompileTimeCondition(this.context, statement.condition, scope);
         {
           const thenScope = scopeForTruthyCondition(scope, statement.condition);
-          this.checkBody(
+          this.checkNestedBody(
             statement.thenBody,
             thenScope === scope ? createChildScope(scope, "block") : thenScope,
-            callerContext
+            callerContext,
+            owner
           );
         }
         if (statement.elseBody) {
-          this.checkBody(statement.elseBody, createChildScope(scope, "block"), callerContext);
+          this.checkNestedBody(
+            statement.elseBody,
+            createChildScope(scope, "block"),
+            callerContext,
+            owner
+          );
         }
         break;
       case "BaseStmt":
@@ -454,6 +476,19 @@ export class RsglResourceBodyChecker {
     return checkExpression(this.context, expression, scope);
   }
 
+  private checkNestedBody(
+    body: CheckableBody,
+    scope: RsglScope,
+    callerContext: RsglTemplateCallerContext | undefined,
+    resourceOwner: string
+  ): void {
+    if (body.kind === "ResourceBody") {
+      this.checkResourceBody(body, scope, resourceOwner, callerContext);
+      return;
+    }
+    this.checkBody(body, scope, callerContext);
+  }
+
   private checkResourceReference(
     expression: ExprNode,
     scope: RsglScope,
@@ -465,8 +500,27 @@ export class RsglResourceBodyChecker {
     return actualType;
   }
 
+  private commonPropertyReferenceSink(
+    resourceKind: string | undefined,
+    owner: string,
+    propertyNames: readonly string[] | undefined
+  ): RsglResourceReferenceSinkType | undefined {
+    if (!propertyNames?.length) {
+      return resourceKind === "model" && owner === "textures"
+        ? "modelTexture"
+        : undefined;
+    }
+    const sinks = propertyNames.map(name => resourcePropertyReferenceSink(
+      resourceKind,
+      owner,
+      name
+    ));
+    const first = sinks[0];
+    return first && sinks.every(sink => sink === first) ? first : undefined;
+  }
+
   private rejectTextureVariableOutsideModelSink(type: RsglType, expression: ExprNode): void {
-    if (type.kind !== "TextureVariable" && type.kind !== "TextureRef") {
+    if (!mayContainTextureVariable(type)) {
       return;
     }
     this.context.diagnostics.push(diagnostic(

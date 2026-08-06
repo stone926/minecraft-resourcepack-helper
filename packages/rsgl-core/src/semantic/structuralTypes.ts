@@ -280,7 +280,7 @@ export function staticIndexKey(expression: ExprNode): string | undefined {
     case "ResourceLocationExpr":
       return expression.value;
     case "NumberLiteral":
-      return expression.raw;
+      return String(expression.value);
     case "BooleanLiteral":
       return String(expression.value);
     case "NullLiteral":

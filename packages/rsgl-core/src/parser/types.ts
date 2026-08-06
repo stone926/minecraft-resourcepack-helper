@@ -119,6 +119,13 @@ export interface ResourceLocationExprNode extends RsglNode {
   value: string;
 }
 
+/** A statically named Minecraft model texture slot such as `#all`. */
+export interface TextureVariableLiteralNode extends RsglNode {
+  kind: "TextureVariableLiteral";
+  /** Slot name without the leading '#'. */
+  name: IdentifierNode;
+}
+
 export interface IdentifierExprNode extends RsglNode {
   kind: "IdentifierExpr";
   name: IdentifierNode;
@@ -159,7 +166,7 @@ export type ObjectEntryNode = ObjectPropertyNode | ObjectSpreadNode;
 
 export interface ObjectPropertyNode extends RsglNode {
   kind: "ObjectProperty";
-  key: IdentifierNode | StringLiteralNode | NumberLiteralNode | DynamicKeyNode;
+  key: PropertyKeyNode;
   value: ExprNode;
   /** True when `{ name }` supplies the equivalent `{ name: name }` value. */
   shorthand?: boolean;
@@ -174,6 +181,13 @@ export interface DynamicKeyNode extends RsglNode {
   kind: "DynamicKey";
   expression: ExprNode;
 }
+
+/** Shared property-key syntax for object literals and resource-body fields. */
+export type PropertyKeyNode =
+  | IdentifierNode
+  | StringLiteralNode
+  | NumberLiteralNode
+  | DynamicKeyNode;
 
 export interface RangeExprNode extends RsglNode {
   kind: "RangeExpr";
@@ -257,6 +271,7 @@ export type ExprNode =
   | BooleanLiteralNode
   | NullLiteralNode
   | ResourceLocationExprNode
+  | TextureVariableLiteralNode
   | TemplateStringExprNode
   | ListExprNode
   | ObjectExprNode
@@ -574,6 +589,8 @@ export interface ForObjectBindingPropertyNode extends RsglNode {
 export interface ForDimensionNode extends RsglNode {
   kind: "ForDimension";
   pattern: ForBindingPatternNode;
+  /** Optional zero-based index binding introduced after this iterable. */
+  indexBinding?: IdentifierNode;
   iterable: ExprNode;
 }
 
@@ -632,7 +649,7 @@ export interface ExternVarStmtNode extends StatementNodeBase {
 
 export interface PropertyStmtNode extends StatementNodeBase {
   kind: "PropertyStmt";
-  name: IdentifierNode;
+  key: PropertyKeyNode;
   value: ExprNode;
 }
 

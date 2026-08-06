@@ -1,6 +1,7 @@
 import { resourceBodyMessages } from "../diagnosticMessages";
 import {
   ExprNode,
+  PropertyStmtNode,
   ResourceBodyNode,
   ResourceStatementNode,
   TextRange,
@@ -12,6 +13,7 @@ import {
   bindEvaluationResult,
   childEvaluationContext,
   evaluateCompileTimeCondition,
+  evaluateExpression,
   evaluateExpressionResult
 } from "./evaluate";
 import { applyBaseDocument } from "./base/application";
@@ -34,6 +36,7 @@ import {
   emitResourceBodyMapping as emitMapping
 } from "./resourceBodyContentMerge";
 import { appendGeneratedPath, joinGeneratedPath } from "./sourcePaths";
+import { evaluatePropertyKey } from "./propertyKeyEvaluation";
 
 export interface ResourceBodyCompileOptions extends JsonValueSinkOptions {
   onUseFragment?: (statement: UseDeclNode, context: EvaluationContext) => ResourceBodyFragment | undefined;
@@ -110,18 +113,9 @@ export function applyResourceBodyStatement(
   isFirstStatement: boolean
 ): void {
   if (statement.kind === "PropertyStmt") {
-    const generatedPath = appendGeneratedPath(path, statement.name.text);
-    const evaluated = evaluateJsonExpressionWithResult(statement.value, context, options, generatedPath);
-    if (evaluated) {
-      setJsonObjectProperty(result, statement.name.text, evaluated.value);
-      emitExpressionMapping(
-        options,
-        generatedPath,
-        statement.value,
-        evaluated,
-        statement.range,
-        context
-      );
+    const key = resolveResourceBodyPropertyKey(statement, context, options);
+    if (key !== null) {
+      applyResolvedResourceBodyProperty(result, statement, key, context, options, path);
     }
   } else if (statement.kind === "LetDecl") {
     if (statement.name) {
@@ -232,6 +226,52 @@ export function applyResourceBodyStatement(
       applyResourceBodyFragment(result, fragment, "deep", statement.range, context, options, path);
     }
   }
+}
+
+/** Evaluates one resource property key once and reports a targeted failure. */
+export function resolveResourceBodyPropertyKey(
+  statement: PropertyStmtNode,
+  context: EvaluationContext,
+  options: ResourceBodyCompileOptions
+): string | null {
+  const key = evaluatePropertyKey(statement.key, context, { evaluateExpression });
+  if (key !== null) {
+    return key;
+  }
+  context.onEvaluationFailure?.();
+  options.onInvalidJsonValue?.();
+  options.onError?.(
+    "rsgl.invalidPropertyKey",
+    "A computed property key must evaluate to a string, number, or boolean scalar value.",
+    statement.key.kind === "DynamicKey" ? statement.key.expression.range : statement.key.range,
+    context.sourceFile
+  );
+  return null;
+}
+
+/** Applies a property whose key has already been evaluated by an ordered executor. */
+export function applyResolvedResourceBodyProperty(
+  result: Record<string, JsonValue>,
+  statement: PropertyStmtNode,
+  key: string,
+  context: EvaluationContext,
+  options: ResourceBodyCompileOptions,
+  path: string
+): void {
+  const generatedPath = appendGeneratedPath(path, key);
+  const evaluated = evaluateJsonExpressionWithResult(statement.value, context, options, generatedPath);
+  if (!evaluated) {
+    return;
+  }
+  setJsonObjectProperty(result, key, evaluated.value);
+  emitExpressionMapping(
+    options,
+    generatedPath,
+    statement.value,
+    evaluated,
+    statement.range,
+    context
+  );
 }
 
 function emitExpressionMapping(

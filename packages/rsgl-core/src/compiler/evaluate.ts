@@ -2,7 +2,7 @@ import {
   ExprNode,
   TextRange
 } from "../parser";
-import { statePredicateMessages } from "../diagnosticMessages";
+import { resourceBodyMessages, statePredicateMessages } from "../diagnosticMessages";
 import { builtinEffect } from "../semantic/builtins";
 import { findLambdaImpureCalls } from "../semantic/lambdaPurity";
 import { typeKindForResourceValueKind } from "../resourceIdSemantics";
@@ -14,9 +14,11 @@ import {
 } from "./contextualResourceValueConversion";
 import {
   createEvaluatedResourceId,
+  createEvaluatedTextureVariable,
   evaluationScalarText,
   isEvaluatedResourceId,
-  isEvaluatedResourceValue
+  isEvaluatedResourceValue,
+  isEvaluatedTextureVariable
 } from "./evaluatedResourceValues";
 import { JsonValue } from "./ir";
 import { evaluationItemBudget } from "./evaluationBudget";
@@ -192,6 +194,9 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
   if (expression.kind === "NullLiteral") {
     return null;
   }
+  if (expression.kind === "TextureVariableLiteral") {
+    return createEvaluatedTextureVariable(`#${expression.name.text}`) ?? undefined;
+  }
   if (expression.kind === "ResourceLocationExpr") {
     return evaluateResourceLocationExpression(expression, context);
   }
@@ -205,12 +210,21 @@ function evaluateExpressionCore(expression: ExprNode, context: EvaluationContext
     return builtinValues.get(expression.name.text) ?? expression.name.text;
   }
   if (expression.kind === "TemplateStringExpr") {
-    return expression.parts.map(part => {
+    let textureVariableInterpolation = false;
+    const value = expression.parts.map(part => {
       if (part.kind === "text") {
         return part.text;
       }
-      return evaluationScalarText(evaluateExpression(part.expression, context)) ?? "";
+      const evaluated = evaluateExpression(part.expression, context);
+      textureVariableInterpolation ||= isEvaluatedTextureVariable(evaluated);
+      return evaluationScalarText(evaluated) ?? "";
     }).join("");
+    return preserveTextureVariableTextTaint(
+      value,
+      textureVariableInterpolation,
+      expression.range,
+      context
+    );
   }
   if (expression.kind === "ListExpr") {
     return evaluateListExpression(expression.elements, context, evaluationRuntimeHost);
@@ -468,7 +482,12 @@ function evaluateBinaryExpression(
   }
   if (operator === "+") {
     if (typeof left === "string" || typeof right === "string" || isEvaluatedResourceValue(left) || isEvaluatedResourceValue(right)) {
-      return `${scalarText(left) ?? ""}${scalarText(right) ?? ""}`;
+      return preserveTextureVariableTextTaint(
+        `${scalarText(left) ?? ""}${scalarText(right) ?? ""}`,
+        isEvaluatedTextureVariable(left) || isEvaluatedTextureVariable(right),
+        range,
+        context
+      );
     }
     return Number(left) + Number(right);
   }
@@ -517,6 +536,26 @@ function evaluateBinaryExpression(
       context.sourceFile
     );
   }
+  return undefined;
+}
+
+function preserveTextureVariableTextTaint(
+  value: string,
+  tainted: boolean,
+  range: TextRange,
+  context: EvaluationContext
+): EvaluationValue {
+  if (!tainted) {
+    return value;
+  }
+  const textureVariable = createEvaluatedTextureVariable(value);
+  if (textureVariable) {
+    return textureVariable;
+  }
+  reportContextualValueError({
+    code: "rsgl.textureVariableInvalidContext",
+    message: resourceBodyMessages.textureVariableOutsideModelSink
+  }, range, context);
   return undefined;
 }
 

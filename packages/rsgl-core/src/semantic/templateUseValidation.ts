@@ -24,6 +24,7 @@ import type {
   RsglSemanticModel,
   RsglTemplateUseRecord
 } from "./types";
+import { mayContainTextureVariable } from "./types";
 
 interface TemplateUseSite {
   fileName: string;
@@ -214,8 +215,7 @@ class ResolvedTemplateUseValidator {
       : site.record.actualType;
     if (
       directTextureVariable
-      || finalActualType.kind === "TextureVariable"
-      || finalActualType.kind === "TextureRef"
+      || mayContainTextureVariable(finalActualType)
     ) {
       this.push(fileDiagnostic(
         site.fileName,

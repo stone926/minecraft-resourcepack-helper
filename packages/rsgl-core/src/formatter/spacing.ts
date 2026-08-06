@@ -86,9 +86,6 @@ function spacingBetween(
   if (rightText === "...") {
     return openingDelimiters.has(leftText) ? "" : " ";
   }
-  if (rightText === "#" || rightText === "@") {
-    return isWordLike(left) || closingDelimiters.has(leftText) ? " " : "";
-  }
   if (rightText === ":") {
     return facts.spacedOperatorOffsets.has(right.offset) ? " " : "";
   }
@@ -143,6 +140,9 @@ function spacingBetween(
   }
   if (leftText === "!") {
     return crossesCompoundOperatorBoundary(leftText, rightText) ? " " : "";
+  }
+  if (rightText === "#" || rightText === "@") {
+    return isWordLike(left) || closingDelimiters.has(leftText) ? " " : "";
   }
   if (rightText === "!") {
     return isWordLike(left) || closingDelimiters.has(leftText) ? " " : "";

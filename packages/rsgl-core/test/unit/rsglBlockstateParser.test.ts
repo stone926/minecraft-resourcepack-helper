@@ -26,6 +26,24 @@ describe("RSGL blockstate parser", () => {
     assert.strictEqual(multipart.resource.body.kind, "BlockstateMultipartRootBody");
   });
 
+  it("keeps computed root properties in the common blockstate statement path", () => {
+    const parsed = parseSingleBlockstate([
+      "blockstate variants computed_root {",
+      "  [\"variants\"]: { \"\": { model: minecraft:block/stone } }",
+      "}"
+    ].join("\n"));
+
+    assert.deepStrictEqual(parsed.module.diagnostics, []);
+    assert.strictEqual(parsed.resource.body.kind, "BlockstateVariantsRootBody");
+    if (parsed.resource.body.kind === "BlockstateVariantsRootBody") {
+      const property = parsed.resource.body.statements[0];
+      assert.strictEqual(property.kind, "PropertyStmt");
+      if (property.kind === "PropertyStmt") {
+        assert.strictEqual(property.key.kind, "DynamicKey");
+      }
+    }
+  });
+
   it("recommends parentheses around complex dynamic blockstate ids", () => {
     const unparenthesized = parseSingleBlockstate(
       'blockstate variants type == "nest" ? "bee_nest" : "beehive" {}'

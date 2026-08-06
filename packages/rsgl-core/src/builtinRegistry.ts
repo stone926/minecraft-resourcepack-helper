@@ -18,6 +18,8 @@ export type RsglCollectionBuiltinLayer = "infer" | "eval";
 
 /** Handler keys implemented by semantic/collectionBuiltinInference.ts. */
 export type RsglCollectionInferHandler =
+  | "asList"
+  | "length"
   | "map"
   | "filter"
   | "flatMap"
@@ -32,6 +34,8 @@ export type RsglCollectionInferHandler =
 
 /** Handler keys implemented by compiler/collectionBuiltins.ts. */
 export type RsglCollectionEvalHandler =
+  | "asList"
+  | "length"
   | "map"
   | "filter"
   | "flatMap"
@@ -102,6 +106,40 @@ const r = typeParameter("R");
  *   and compiler/evaluationTrace.ts keep their by-name special cases.
  */
 export const collectionBuiltinDescriptors = [
+  {
+    name: "asList",
+    effect: "pure",
+    signature: {
+      parameters: [{ name: "value", type: asListSourceOf(t), optional: false }],
+      returnType: listOfType(t),
+      typeParameters: [genericParameter("T")]
+    },
+    layers: ["infer", "eval"],
+    infer: "asList",
+    eval: "asList",
+    completion: {
+      label: "asList",
+      insertText: "asList(${1:value})",
+      detail: "Keep a list, materialize a range, or wrap one scalar value"
+    }
+  },
+  {
+    name: "length",
+    effect: "pure",
+    signature: {
+      parameters: [{ name: "source", type: iterableOf(t), optional: false }],
+      returnType: numberType,
+      typeParameters: [genericParameter("T")]
+    },
+    layers: ["infer", "eval"],
+    infer: "length",
+    eval: "length",
+    completion: {
+      label: "length",
+      insertText: "length(${1:source})",
+      detail: "Return the number of items in a List or Range"
+    }
+  },
   {
     name: "map",
     effect: "pure",
@@ -390,6 +428,13 @@ function iterableOf(elementType: RsglType): RsglType {
   return {
     kind: "Union",
     options: [listOfType(elementType), { kind: "Range", elementType: numberType }]
+  };
+}
+
+function asListSourceOf(elementType: RsglType): RsglType {
+  return {
+    kind: "Union",
+    options: [elementType, listOfType(elementType), { kind: "Range", elementType: numberType }]
   };
 }
 

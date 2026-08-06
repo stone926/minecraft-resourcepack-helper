@@ -475,6 +475,17 @@
     "structuralStatements": {
       "patterns": [
         {
+          "match": "\\b(for)\\b([ \\t]+)(?:[A-Za-z_][A-Za-z0-9_]*|\\{[^}\\r\\n]*\\})([ \\t]+)(at)\\b(?=[ \\t]+[A-Za-z_][A-Za-z0-9_]*[ \\t]+in\\b)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.rsgl"
+            },
+            "4": {
+              "name": "keyword.control.rsgl"
+            }
+          }
+        },
+        {
           "match": "(^|\\{)[ \\t]*(transform)([ \\t]+)((?:rotate_x|rotate_y|rotate_z))\\b(?=[ \\t]*\\()",
           "captures": {
             "2": {
@@ -548,7 +559,7 @@
       "patterns": [
         {
           "name": "support.function.rsgl",
-          "match": "\\b(?:product|seq|pad|yaw|glob|model_path|texture_path|resource_namespace|resource_path|startsWith|endsWith|replace|padStart|padEnd|atlasDirectory|particlesSeq|mcmetaAnimation|nineSliceGui|equipmentLayers)\\b"
+          "match": "\\b(?:asList|length|map|filter|flatMap|concat|join|entries|keys|values|mergeObjects|product|has|seq|pad|yaw|glob|model_path|texture_path|resource_namespace|resource_path|startsWith|endsWith|replace|padStart|padEnd|atlasDirectory|particlesSeq|mcmetaAnimation|nineSliceGui|equipmentLayers)\\b"
         },
         {
           "name": "support.constant.rsgl",

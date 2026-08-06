@@ -123,6 +123,9 @@ function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void 
       }
       break;
     case "PropertyStmt":
+      if (statement.key.kind === "DynamicKey") {
+        walkExpression(statement.key.expression, visitor);
+      }
       walkExpression(statement.value, visitor);
       break;
     case "SectionStmt":
@@ -339,6 +342,7 @@ function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {
     case "BooleanLiteral":
     case "NullLiteral":
     case "ResourceLocationExpr":
+    case "TextureVariableLiteral":
     case "MissingExpr":
       break;
     case "TemplateStringExpr":

@@ -1,5 +1,6 @@
 import type {
   ForBindingPatternNode,
+  ForDimensionNode,
   IdentifierNode
 } from "./parser";
 
@@ -13,6 +14,11 @@ export type ForBindingMapping =
       property: IdentifierNode;
       binding: IdentifierNode;
     };
+
+export type ForDimensionBindingMapping = ForBindingMapping | {
+  kind: "index";
+  binding: IdentifierNode;
+};
 
 /**
  * Describes how one loop input value supplies each lexical binding. Keeping
@@ -33,4 +39,23 @@ export function forBindingMappings(pattern: ForBindingPatternNode): ForBindingMa
 /** Returns only the local declarations introduced by a for binding pattern. */
 export function forBindingIdentifiers(pattern: ForBindingPatternNode): IdentifierNode[] {
   return forBindingMappings(pattern).map(mapping => mapping.binding);
+}
+
+/** Normalizes every declaration introduced by one loop dimension. */
+export function forDimensionBindingMappings(
+  dimension: ForDimensionNode
+): ForDimensionBindingMapping[] {
+  return [
+    ...forBindingMappings(dimension.pattern),
+    ...(dimension.indexBinding
+      ? [{ kind: "index" as const, binding: dimension.indexBinding }]
+      : [])
+  ];
+}
+
+/** Returns value/destructuring and optional index declarations in source order. */
+export function forDimensionBindingIdentifiers(
+  dimension: ForDimensionNode
+): IdentifierNode[] {
+  return forDimensionBindingMappings(dimension).map(mapping => mapping.binding);
 }

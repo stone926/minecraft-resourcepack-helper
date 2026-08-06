@@ -172,6 +172,45 @@ describe("RSGL TextMate grammar", () => {
     }
   });
 
+  it("highlights at only as a contextual for-index keyword", () => {
+    const grammar = readGrammar();
+    const source = [
+      "let at = 1",
+      "for item at itemIndex in items {}",
+      "at strayIndex in items"
+    ].join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectNoScope(tokenization, source, "at", "keyword.control.rsgl", 0);
+    expectScope(tokenization, source, "at", "keyword.control.rsgl", 1);
+    expectNoScope(tokenization, source, "at", "keyword.control.rsgl", 2);
+  });
+
+  it("highlights collection builtins including list normalization and length", () => {
+    const grammar = readGrammar();
+    const names = [
+      "asList",
+      "length",
+      "map",
+      "filter",
+      "flatMap",
+      "concat",
+      "join",
+      "entries",
+      "keys",
+      "values",
+      "mergeObjects",
+      "product",
+      "has"
+    ];
+    const source = names.map(name => `let ${name}Result = ${name}(value)`).join("\n");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    for (const name of names) {
+      expectScope(tokenization, source, `${name}(value)`, "support.function.rsgl");
+    }
+  });
+
   it("keeps mapping and erroneous arrows in stable general operator scopes", () => {
     const grammar = readGrammar();
     const source = [

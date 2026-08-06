@@ -79,6 +79,13 @@ export function getRsglHoverInfo(
   if (!model) {
     return undefined;
   }
+  const textureVariable = textureVariableLiteralAtOffset(model, offset);
+  if (textureVariable) {
+    return {
+      range: textureVariable.range,
+      label: `value #${textureVariable.name.text}: TextureVariable`
+    };
+  }
   const member = getRsglMemberAccessInfo(program, fileName, sourceText, offset);
   if (member) {
     if (member.category && member.symbol) {
@@ -123,6 +130,24 @@ export function getRsglHoverInfo(
     range: occurrence.range,
     label: `${occurrence.symbol.kind} ${occurrence.name}: ${formatType(occurrence.symbol.type)}`
   };
+}
+
+function textureVariableLiteralAtOffset(
+  model: RsglSemanticModel,
+  offset: number
+): Extract<import("./parser").ExprNode, { kind: "TextureVariableLiteral" }> | undefined {
+  let selected: Extract<import("./parser").ExprNode, { kind: "TextureVariableLiteral" }> | undefined;
+  walkRsglModule(model.module, {
+    enterExpression(expression) {
+      if (
+        expression.kind === "TextureVariableLiteral"
+        && touchesRange(expression.range, offset)
+      ) {
+        selected = expression;
+      }
+    }
+  });
+  return selected;
 }
 
 /** Resolves the innermost callable at an argument-list offset. */

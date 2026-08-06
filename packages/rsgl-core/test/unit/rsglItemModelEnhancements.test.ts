@@ -171,6 +171,8 @@ describe("RSGL recursive item-model enhancements", () => {
       "item introduced { model minecraft:item/shared }",
       "item colon { model: minecraft:item/shared }",
       "item equals { model = minecraft:item/shared }",
+      "item dynamic_colon { [\"model\"]: minecraft:item/shared }",
+      "item dynamic_equals { let key = \"model\"\n  [key] = minecraft:item/shared }",
       "item conflict {",
       "  if true { model minecraft:item/first }",
       "  model: minecraft:item/ignored",
@@ -182,6 +184,8 @@ describe("RSGL recursive item-model enhancements", () => {
     assert.deepStrictEqual(unitByPath(result, "items/introduced.json").content, shared);
     assert.deepStrictEqual(unitByPath(result, "items/colon.json").content, shared);
     assert.deepStrictEqual(unitByPath(result, "items/equals.json").content, shared);
+    assert.deepStrictEqual(unitByPath(result, "items/dynamic_colon.json").content, shared);
+    assert.deepStrictEqual(unitByPath(result, "items/dynamic_equals.json").content, shared);
     assert.deepStrictEqual(unitByPath(result, "items/conflict.json").content, {
       model: { type: "minecraft:model", model: "minecraft:item/first" }
     });

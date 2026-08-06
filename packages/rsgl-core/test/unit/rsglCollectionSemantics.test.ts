@@ -79,6 +79,66 @@ describe("RSGL typed collection semantics", () => {
     assertNoTypeParameter(symbolType(model, "flattened"));
   });
 
+  it("normalizes asList inputs to one list layer without flattening nested lists", () => {
+    const model = bind([
+      "let fromList = asList([1, 2])",
+      "let fromRange = asList(1..2)",
+      "let fromScalar = asList(\"one\")",
+      "let fromUnion = asList(true ? [1] : \"two\")",
+      "let existing = [[1], [2]]",
+      "let nested = asList(existing)"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(symbolType(model, "fromList").kind, "List");
+    assert.strictEqual(formatType(symbolType(model, "fromRange")), "List<Number>");
+    assert.match(formatType(symbolType(model, "fromScalar")), /^List<(?:.*String|"one")/u);
+
+    const union = symbolType(model, "fromUnion");
+    assert.strictEqual(union.kind, "List");
+    assert.match(formatType(union.elementType ?? { kind: "Unknown" }), /Number|1/u);
+    assert.match(formatType(union.elementType ?? { kind: "Unknown" }), /String|"two"/u);
+
+    const nested = symbolType(model, "nested");
+    assert.strictEqual(nested.kind, "List");
+    assert.strictEqual(nested.elementType?.kind, "List", "asList must not flatten an existing list");
+    assert.match(formatType(nested.elementType ?? { kind: "Unknown" }), /1/u);
+    assert.match(formatType(nested.elementType ?? { kind: "Unknown" }), /2/u);
+    for (const name of ["fromList", "fromRange", "fromScalar", "fromUnion", "nested"]) {
+      assertNoTypeParameter(symbolType(model, name));
+    }
+  });
+
+  it("contextually types asList and limits length to Lists and Ranges", () => {
+    const valid = bind([
+      "let ids: List<ModelId> = asList(\"minecraft:block/stone\")",
+      "let listLength = length([1, 2])",
+      "let rangeLength = length(1..3)",
+      "let source: List<Number> | Range<Number> = true ? [1] : 1..3",
+      "let unionLength = length(source)"
+    ]);
+
+    assert.deepStrictEqual(codes(valid), []);
+    assert.strictEqual(formatType(symbolType(valid, "ids")), "List<ModelId>");
+    for (const name of ["listLength", "rangeLength", "unionLength"]) {
+      assert.strictEqual(symbolType(valid, name).kind, "Number");
+      assertNoTypeParameter(symbolType(valid, name));
+    }
+
+    const invalid = bind([
+      "let stringLength = length(\"abc\")",
+      "let objectLength = length({ value: 1 })",
+      "let objectList = asList({ value: 1 })",
+      "let wrongContext: List<String> = asList(1..2)"
+    ]);
+    assert.deepStrictEqual(codes(invalid), [
+      "rsgl.collectionExpected",
+      "rsgl.collectionExpected",
+      "rsgl.collectionExpected",
+      "rsgl.typeMismatch"
+    ]);
+  });
+
   it("preserves List-union spread element types", () => {
     const model = bind([
       "let combined = [...(true ? [1] : [\"one\"])]"

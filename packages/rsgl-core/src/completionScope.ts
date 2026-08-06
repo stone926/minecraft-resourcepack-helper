@@ -5,7 +5,7 @@ import type {
   RsglStatementBodyNode,
   TextRange,
 } from "./parser";
-import { forBindingIdentifiers } from "./forBindingPatterns";
+import { forDimensionBindingIdentifiers } from "./forBindingPatterns";
 import { walkRsglModule } from "./parser/astTraversal";
 import type { RsglSemanticModel, RsglSymbol } from "./semantic";
 
@@ -138,7 +138,7 @@ function indexNestedScopes(
           // body, but not while evaluating their own iterable.
           visibleAfter: dimension.iterable.range.end
         };
-        for (const binding of forBindingIdentifiers(dimension.pattern)) {
+        for (const binding of forDimensionBindingIdentifiers(dimension)) {
           owners.set(binding, owner);
         }
       }

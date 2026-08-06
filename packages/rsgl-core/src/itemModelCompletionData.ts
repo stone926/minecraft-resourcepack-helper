@@ -58,6 +58,7 @@ function itemModelConstructorCompletions(
 const itemModelControlCompletions: readonly RsglCompletionCandidate[] = [
   { label: "let", insertText: "let ${1:name} = ${2:value}", detail: "Item-model local constant", kind: "snippet" },
   { label: "for", insertText: "for ${1:item} in ${2:items} {\n  ${3}\n}", detail: "Finite item-model expansion", kind: "snippet" },
+  { label: "for indexed", insertText: "for ${1:item} at ${2:index} in ${3:items} {\n  ${4}\n}", detail: "Finite item-model expansion with a zero-based index", kind: "snippet" },
   { label: "for object", insertText: "for { ${1:name}, ${2:value}: ${3:localValue} } in ${4:items} {\n  ${5}\n}", detail: "Finite item-model expansion with named object bindings", kind: "snippet" },
   { label: "if", insertText: "if ${1:condition} {\n  ${2}\n}", detail: "Compile-time item-model branch", kind: "snippet" }
 ];

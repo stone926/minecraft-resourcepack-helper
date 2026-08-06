@@ -462,7 +462,11 @@ const overlappingDualGuardCodes = new Set([
   "rsgl.invalidListSpread",
   "rsgl.invalidObjectSpread",
   "rsgl.mapperReturnTypeMismatch",
-  "rsgl.predicateMustReturnBoolean"
+  "rsgl.predicateMustReturnBoolean",
+  "rsgl.duplicateBlockstateSelectorProperty",
+  "rsgl.duplicateMultipartStateRecordProperty",
+  "rsgl.rawMultipartStateRecordLogicalKey",
+  "rsgl.rawMultipartStateRecordValue"
 ]);
 
 function compatibleDiagnosticFiles(

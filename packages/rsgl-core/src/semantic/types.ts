@@ -115,7 +115,7 @@ export type RsglBlockstateContextualExpression =
       expression: ExprNode;
     }
   | {
-      kind: "predicate";
+      kind: "multipartCondition";
       expression: ExprNode;
     };
 
@@ -324,6 +324,13 @@ export const textureVariableType: RsglType = { kind: "TextureVariable" };
 export const textureRefType: RsglType = { kind: "TextureRef" };
 export const statePredicateType: RsglType = { kind: "StatePredicate" };
 export const jsonType: RsglType = { kind: "Json" };
+
+/** True when a value can carry a model texture-variable reference. */
+export function mayContainTextureVariable(type: RsglType): boolean {
+  return type.kind === "TextureVariable"
+    || type.kind === "TextureRef"
+    || (type.kind === "Union" && (type.options ?? []).some(mayContainTextureVariable));
+}
 
 export function typeFromAnnotation(
   typeNode: TypeNode | undefined,

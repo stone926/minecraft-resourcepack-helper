@@ -31,6 +31,28 @@ export const blockstateSelectorMessages = {
   computedKeyMustBeScalar: "A computed blockstate selector key must evaluate to a scalar value."
 } as const;
 
+/** Neutral blockstate state-record diagnostics shared by semantic checking and lowering. */
+export const blockstateStateRecordMessages = {
+  selectorValueMustBeScalar:
+    "Blockstate selector values must be scalar strings, numbers, or booleans.",
+  multipartValueMustBeScalar:
+    "Multipart state record values must be scalar strings, numbers, or booleans.",
+  multipartComputedKeyMustBeScalar:
+    "A computed multipart state record key must evaluate to a scalar value.",
+  multipartMustBeObject:
+    "A multipart state record condition must evaluate to an object.",
+  emptyMultipartUseAlways:
+    "An empty multipart state record must be written as 'part always'.",
+  selectorSpreadMustBeVerifiable:
+    "A blockstate selector spread must have a closed, statically verifiable object type.",
+  multipartSpreadMustBeVerifiable:
+    "A multipart state record spread must have a closed, statically verifiable object type.",
+  multipartRawLogicalKey:
+    "Multipart state records cannot use raw 'OR' or 'AND' keys; use a StatePredicate for complex conditions.",
+  multipartRawEncodedValue:
+    "Multipart state records cannot use raw '|' or '!' condition encoding; use a StatePredicate for complex conditions."
+} as const;
+
 /** State-predicate misuse diagnostics (semantic checker + compile-time evaluation). */
 export const statePredicateMessages = {
   compileTimeCondition:

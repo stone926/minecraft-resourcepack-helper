@@ -44,6 +44,55 @@ describe("RSGL collection runtime", () => {
     );
   });
 
+  it("keeps asList pass-through work free, charges scalar wrapping, and evaluates length in O(1)", () => {
+    const source = [1, 2, 3];
+    const passThroughErrors: string[] = [];
+    const passThroughContext = evaluationContext(
+      new Map([["source", source as EvaluationValue]]),
+      0,
+      passThroughErrors
+    );
+
+    assert.strictEqual(evaluate("asList(source)", passThroughContext), source);
+    assert.strictEqual(evaluate("length(source)", passThroughContext), 3);
+    assert.strictEqual(passThroughContext.evaluationItemBudget?.consumed, 0);
+    assert.deepStrictEqual(passThroughErrors, []);
+
+    const rangeContext = evaluationContext(new Map(), 3);
+    assert.deepStrictEqual(evaluate("asList(0..2)", rangeContext), [0, 1, 2]);
+    assert.strictEqual(
+      rangeContext.evaluationItemBudget?.consumed,
+      3,
+      "asList must not charge a materialized Range twice"
+    );
+
+    const scalarErrors: string[] = [];
+    const rejectedScalarContext = evaluationContext(new Map(), 0, scalarErrors);
+    assert.strictEqual(evaluate("asList(1)", rejectedScalarContext), undefined);
+    assert.deepStrictEqual(scalarErrors, ["rsgl.collectionExpansionLimit"]);
+
+    const scalarContext = evaluationContext(new Map(), 1);
+    assert.deepStrictEqual(evaluate("asList(1)", scalarContext), [1]);
+    assert.strictEqual(scalarContext.evaluationItemBudget?.consumed, 1);
+  });
+
+  it("rejects scalar length inputs at runtime", () => {
+    for (const source of ["length(\"abc\")", "length({ value: 1 })"]) {
+      const errors: string[] = [];
+      assert.strictEqual(evaluate(source, evaluationContext(new Map(), 1, errors)), undefined);
+      assert.deepStrictEqual(errors, ["rsgl.collectionExpected"], source);
+    }
+  });
+
+  it("rejects non-scalar asList inputs at runtime", () => {
+    const errors: string[] = [];
+    assert.strictEqual(
+      evaluate("asList({ value: 1 })", evaluationContext(new Map(), 1, errors)),
+      undefined
+    );
+    assert.deepStrictEqual(errors, ["rsgl.collectionExpected"]);
+  });
+
   it("keeps object insertion order and omits absent optional fields", () => {
     const record = { first: 1, third: 3 };
     const context = evaluationContext(new Map([

@@ -1,6 +1,6 @@
 import { blockSyntaxMessages, externSyntaxMessages } from "../diagnosticMessages";
 import { ExpressionParser } from "./expressionParser";
-import { unquoteString } from "./typeParser";
+import { staticPropertyKeyName } from "./propertyKeys";
 import {
   parseBlockstateMultipartRootBody,
   parseBlockstateVariantsRootBody,
@@ -109,6 +109,19 @@ export abstract class StatementParser extends ExpressionParser {
 
   private parseForDimension(startToken: RsglToken): ForDimensionNode {
     const pattern = this.parseForBindingPattern();
+    let indexBinding: IdentifierNode | undefined;
+    if (this.matchText("at")) {
+      const bindingStart = this.current();
+      if (bindingStart.text === "in") {
+        this.addDiagnosticAtCurrent(
+          "rsgl.expectedLoopIndexBinding",
+          "Expected loop index binding after 'at'."
+        );
+      } else {
+        indexBinding = this.parseIdentifier("Expected loop index binding after 'at'.")
+          ?? this.syntheticIdentifier(bindingStart, "");
+      }
+    }
     if (!this.expectText("in", "Expected 'in' in for statement.")) {
       this.recoverForDimensionAfterMissingIn();
     }
@@ -116,6 +129,7 @@ export abstract class StatementParser extends ExpressionParser {
     return {
       kind: "ForDimension",
       pattern,
+      ...(indexBinding ? { indexBinding } : {}),
       iterable,
       ...this.nodeRanges(startToken, this.previousOr(startToken))
     };
@@ -590,9 +604,15 @@ export abstract class StatementParser extends ExpressionParser {
 
   private parsePropertyStmt(): PropertyStmtNode {
     const start = this.current();
-    const name = this.parsePropertyName(start);
-    if (this.current().text === ":" || this.current().text === "=") {
+    const key = this.parsePropertyKey() ?? this.syntheticIdentifier(start, start.text);
+    const hasSeparator = this.current().text === ":" || this.current().text === "=";
+    if (hasSeparator) {
       this.advance();
+    } else if (key.kind === "DynamicKey") {
+      this.addDiagnosticAtCurrent(
+        "rsgl.expectedPropertySeparator",
+        "Expected ':' or '=' after a dynamic property key."
+      );
     }
 
     let value: ExprNode;
@@ -603,30 +623,21 @@ export abstract class StatementParser extends ExpressionParser {
     }
 
     if (value.kind === "MissingExpr") {
-      this.addDiagnostic("rsgl.expectedPropertyValue", `Expected value for '${name.text}'.`, {
-        start: name.range.end,
-        end: name.range.end + 1
+      const label = staticPropertyKeyName(key);
+      this.addDiagnostic("rsgl.expectedPropertyValue", label === undefined
+        ? "Expected value for dynamic property."
+        : `Expected value for '${label}'.`, {
+        start: key.range.end,
+        end: key.range.end + 1
       });
     }
     return {
       kind: "PropertyStmt",
-      keyword: name.text,
-      name,
+      keyword: staticPropertyKeyName(key) ?? "[]",
+      key,
       value,
       ...this.nodeRanges(start, this.previousOr(start))
     };
-  }
-
-  private parsePropertyName(start: RsglToken): IdentifierNode {
-    if (this.current().kind === "string") {
-      const token = this.advance();
-      return this.syntheticIdentifier(token, unquoteString(token.text));
-    }
-    if (this.current().kind === "number") {
-      const token = this.advance();
-      return this.syntheticIdentifier(token, token.text);
-    }
-    return this.parseIdentifier("Expected property name.") ?? this.syntheticIdentifier(start, start.text);
   }
 
   private parseBaseStmt(): BaseStmtNode {
@@ -641,7 +652,9 @@ export abstract class StatementParser extends ExpressionParser {
   }
 
   private isExplicitPropertyStart(): boolean {
-    return this.peekText(1) === ":" || this.peekText(1) === "=";
+    return this.current().text === "["
+      || this.peekText(1) === ":"
+      || this.peekText(1) === "=";
   }
 
   private parseMergeStmt(): MergeStmtNode {

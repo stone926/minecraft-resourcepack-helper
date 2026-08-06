@@ -85,6 +85,8 @@ function offsetExpressionRanges<T extends ExprNode>(expression: T, offset: numbe
   offsetNodeRange(expression, offset);
   if (expression.kind === "IdentifierExpr") {
     offsetNodeRange(expression.name, offset);
+  } else if (expression.kind === "TextureVariableLiteral") {
+    offsetNodeRange(expression.name, offset);
   } else if (expression.kind === "TemplateStringExpr") {
     for (const part of expression.parts) {
       part.range = offsetRange(part.range, offset);

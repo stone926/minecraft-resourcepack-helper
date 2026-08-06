@@ -141,6 +141,30 @@ describe("RSGL typed resource runtime values", () => {
     assert.strictEqual(isJsonObject(constructed), false);
   });
 
+  it("preserves texture-variable taint through text-producing expressions", () => {
+    const errors: string[] = [];
+    let failures = 0;
+    const context: EvaluationContext = {
+      ...evaluationContext("demo"),
+      onError: code => errors.push(code),
+      onEvaluationFailure: () => {
+        failures += 1;
+      }
+    };
+
+    const concatenated = evaluate("#inside + \"\"", context);
+    assert.ok(isEvaluatedTextureVariable(concatenated));
+    assert.strictEqual(concatenated.value, "#inside");
+
+    const interpolated = evaluate("`${#inside}`", context);
+    assert.ok(isEvaluatedTextureVariable(interpolated));
+    assert.strictEqual(interpolated.value, "#inside");
+
+    assert.strictEqual(evaluate("#inside + \"!\"", context), undefined);
+    assert.deepStrictEqual(errors, ["rsgl.textureVariableInvalidContext"]);
+    assert.strictEqual(failures, 1);
+  });
+
   it("does not cascade a shape diagnostic after a nested constructor kind mismatch", () => {
     const source = [
       "namespace demo",

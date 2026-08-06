@@ -33,11 +33,12 @@ describe("RSGL blockstate semantics", () => {
     assert.ok(codes.includes("rsgl.blockstateEnumLiteralShadowed"));
   });
 
-  it("checks first-class StatePredicate operators and rejects raw condition objects", () => {
+  it("checks first-class StatePredicate operators and typed state records", () => {
     const model = bindRsglModule(parseRsgl([
       "blockstate multipart conditions {",
       "  part when $state.facing == north => minecraft:block/north",
       "  part when $state.axis in [x, z] => minecraft:block/axis",
+      "  part when { powered: true } => minecraft:block/record",
       "  part when $state.power in [] => minecraft:block/empty",
       "  part when { OR: [{ powered: true }] } => minecraft:block/raw",
       "  part when $state.north == $state.south => minecraft:block/runtime_rhs",
@@ -53,6 +54,7 @@ describe("RSGL blockstate semantics", () => {
     assert.ok(codes.includes("rsgl.emptyBlockstatePredicateMembership"));
     assert.ok(codes.includes("rsgl.invalidBlockstatePredicate"));
     assert.ok(codes.includes("rsgl.invalidBlockstatePredicateComparison"));
+    assert.ok(codes.includes("rsgl.rawMultipartStateRecordLogicalKey"));
   });
 
   it("accepts boolean state-property shorthand as a StatePredicate", () => {

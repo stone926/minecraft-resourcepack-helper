@@ -271,6 +271,80 @@ describe("RSGL semantic tokens", () => {
     expectToken(loopTokens, aliasReference, "variable", readonlyFlag, "m".length);
   });
 
+  it("classifies explicit loop index declarations and references", () => {
+    const source = [
+      "for item at itemIndex in [a], variant at variantIndex in [itemIndex] {",
+      "  let selected = variantIndex",
+      "}"
+    ].join("\n");
+    const module = parseRsgl(source);
+    assert.deepStrictEqual(module.diagnostics, []);
+    const tokens = getRsglSemanticTokens(bindRsglModule(module));
+
+    expectToken(
+      tokens,
+      offsetOf(source, "itemIndex"),
+      "variable",
+      declaration | readonlyFlag,
+      "itemIndex".length
+    );
+    expectToken(
+      tokens,
+      offsetOf(source, "variantIndex"),
+      "variable",
+      declaration | readonlyFlag,
+      "variantIndex".length
+    );
+    expectToken(
+      tokens,
+      offsetOf(source, "itemIndex", 1),
+      "variable",
+      readonlyFlag,
+      "itemIndex".length
+    );
+    expectToken(
+      tokens,
+      offsetOf(source, "variantIndex", 1),
+      "variable",
+      readonlyFlag,
+      "variantIndex".length
+    );
+  });
+
+  it("classifies computed resource-key references and texture literals", () => {
+    const source = [
+      "let slot = \"particle\"",
+      "model block semantic_fields {",
+      "  textures { [slot]: #all }",
+      "}"
+    ].join("\n");
+    const module = parseRsgl(source);
+    assert.deepStrictEqual(module.diagnostics, []);
+    const tokens = getRsglSemanticTokens(bindRsglModule(module));
+
+    expectToken(
+      tokens,
+      offsetOf(source, "slot"),
+      "variable",
+      declaration | readonlyFlag,
+      "slot".length
+    );
+    expectToken(
+      tokens,
+      offsetOf(source, "slot", 1),
+      "variable",
+      readonlyFlag,
+      "slot".length
+    );
+    expectToken(
+      tokens,
+      offsetOf(source, "all"),
+      "variable",
+      0,
+      "all".length
+    );
+  });
+
   it("classifies recursive item-model option fields without overriding DSL keywords", () => {
     const itemSource = [
       "template choose(fallbackModel: ModelId) -> item_model {",

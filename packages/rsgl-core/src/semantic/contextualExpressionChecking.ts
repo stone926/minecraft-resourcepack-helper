@@ -19,6 +19,7 @@ import { formatType, isAssignable } from "./typeRelations";
 import { inferredUnionBudgetOptions } from "./unionBudget";
 import {
   resourceIdType,
+  mayContainTextureVariable,
   textureIdType,
   textureRefType,
   textureVariableType,
@@ -47,6 +48,10 @@ export function checkResourceIdExpression(
   scope: RsglScope,
   host: ContextualExpressionCheckHost
 ): RsglType {
+  if (expression.kind === "TextureVariableLiteral") {
+    recordResolvedExpectedType(context, expression, textureVariableType);
+    return textureVariableType;
+  }
   if (expression.kind === "StringLiteral") {
     validateContextualResourceLiteral(context, expression);
     return resourceIdType;
@@ -252,6 +257,10 @@ function checkContextualTextureRefExpression(
   expectedType: RsglType,
   host: ContextualExpressionCheckHost
 ): RsglType {
+  if (expression.kind === "TextureVariableLiteral") {
+    recordResolvedExpectedType(context, expression, textureVariableType);
+    return textureVariableType;
+  }
   if (expression.kind === "StringLiteral") {
     validateTextureRefExpressionSyntax(context, expression);
     const resolvedType = expression.value.startsWith("#") ? textureVariableType : textureIdType;
@@ -259,9 +268,9 @@ function checkContextualTextureRefExpression(
     return resolvedType;
   }
   if (expression.kind === "TemplateStringExpr") {
-    host.checkExpression(context, expression, scope);
+    const actualType = host.checkExpression(context, expression, scope);
     recordResolvedExpectedType(context, expression, textureRefType);
-    return textureRefType;
+    return mayContainTextureVariable(actualType) ? actualType : textureRefType;
   }
   if (expression.kind === "ResourceLocationExpr") {
     validateResourceLocationValue(context, expression.value, expression.range);
@@ -313,9 +322,9 @@ function checkContextualResourceIdExpression(
     return expectedType;
   }
   if (expression.kind === "TemplateStringExpr") {
-    host.checkExpression(context, expression, scope);
+    const actualType = host.checkExpression(context, expression, scope);
     recordResolvedExpectedType(context, expression, expectedType);
-    return expectedType;
+    return mayContainTextureVariable(actualType) ? actualType : expectedType;
   }
   if (expression.kind === "ResourceLocationExpr") {
     validateResourceLocationValue(context, expression.value, expression.range);
@@ -430,6 +439,10 @@ function contextualizeCheckedResourceExpression(
   actualType: RsglType
 ): RsglType {
   if (expectedType.kind === "TextureRef" || expectedType.kind === "TextureVariable") {
+    if (expression.kind === "TextureVariableLiteral") {
+      recordResolvedExpectedType(context, expression, textureVariableType);
+      return textureVariableType;
+    }
     if (expression.kind === "StringLiteral") {
       validateTextureRefExpressionSyntax(context, expression);
       const resolvedType = expression.value.startsWith("#") ? textureVariableType : textureIdType;
@@ -457,7 +470,8 @@ function contextualResourceUnionCandidates(
   options: readonly RsglType[],
   expression: ExprNode
 ): RsglType[] {
-  const textureVariableSyntax = expression.kind === "StringLiteral" && expression.value.startsWith("#");
+  const textureVariableSyntax = expression.kind === "TextureVariableLiteral"
+    || (expression.kind === "StringLiteral" && expression.value.startsWith("#"));
   return options.filter(option => textureVariableSyntax
     ? option.kind === "TextureRef" || option.kind === "TextureVariable"
     : option.kind === "ResourceId"
@@ -467,7 +481,8 @@ function contextualResourceUnionCandidates(
 }
 
 function isContextualResourceConversionSource(expression: ExprNode, actualType: RsglType): boolean {
-  return expression.kind === "StringLiteral"
+  return expression.kind === "TextureVariableLiteral"
+    || expression.kind === "StringLiteral"
     || expression.kind === "TemplateStringExpr"
     || expression.kind === "ResourceLocationExpr"
     || isStringLikeType(actualType);
