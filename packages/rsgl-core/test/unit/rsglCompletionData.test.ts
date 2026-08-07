@@ -79,6 +79,7 @@ describe("RSGL completion data", () => {
       "length",
       "map",
       "filter",
+      "flat",
       "flatMap",
       "concat",
       "join",

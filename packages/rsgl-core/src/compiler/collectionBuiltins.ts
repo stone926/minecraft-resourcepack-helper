@@ -4,6 +4,7 @@ import {
   getCollectionBuiltinDescriptor,
   type RsglCollectionEvalHandler
 } from "../builtinRegistry";
+import { normalizeFlatDepth } from "../flatDepth";
 import type {
   EvaluationResult,
   EvaluationValue,
@@ -11,7 +12,10 @@ import type {
   LambdaValue
 } from "./evaluationTypes";
 import { normalizeJsonValue } from "./evaluationJsonValues";
-import type { EvaluationItemBudget } from "./evaluationItemBudget";
+import {
+  MAX_EVALUATION_ITEMS_PER_ALLOCATION,
+  type EvaluationItemBudget
+} from "./evaluationItemBudget";
 import { evaluationScalarText } from "./evaluatedResourceValues";
 import type { JsonValue } from "./ir";
 import {
@@ -103,6 +107,7 @@ const collectionEvaluationHandlers = {
   map: evaluateMap,
   filter: evaluateFilter,
   flatMap: evaluateFlatMap,
+  flat: evaluateFlat,
   concat: evaluateConcat,
   join: evaluateJoin,
   entries: evaluateEntries,
@@ -355,6 +360,127 @@ function evaluateFlatMap(
     }
   }
   return tracedValue(value, paths);
+}
+
+interface FlatTraversalFrame {
+  source: readonly JsonValue[];
+  length: number;
+  index: number;
+  depth: number;
+  sourcePath?: FlatTraversalPath;
+}
+
+interface FlatTraversalPath {
+  parent?: FlatTraversalPath;
+  index: number;
+}
+
+function evaluateFlat(
+  args: readonly CollectionBuiltinArgument[],
+  range: TextRange,
+  host: CollectionBuiltinHost
+): CollectionBuiltinEvaluation {
+  const sourceArg = argument(args, "source", 0);
+  const source = sourceArg ? listArgument(sourceArg, "flat", "source", host) : undefined;
+  const depthArg = argument(args, "depth", 1);
+  if (!sourceArg || !source || (depthArg && typeof depthArg.value !== "number")) {
+    host.markFailure();
+    return handledFailure();
+  }
+
+  const depth = depthArg ? normalizeFlatDepth(depthArg.value as number) : Number.POSITIVE_INFINITY;
+  const value: JsonValue[] = [];
+  const paths: CollectionTracePath[] = [];
+  const active = new Set<readonly JsonValue[]>([source]);
+  const stack: FlatTraversalFrame[] = [{
+    source,
+    length: source.length,
+    index: 0,
+    depth
+  }];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.length) {
+      active.delete(frame.source);
+      stack.pop();
+      continue;
+    }
+
+    const sourceIndex = frame.index;
+    frame.index += 1;
+    // RSGL source Lists are dense, but injected evaluator values can be sparse.
+    // Array.flat skips missing indices at every level it visits.
+    if (!(sourceIndex in frame.source)) {
+      continue;
+    }
+
+    const item = frame.source[sourceIndex];
+    const itemPath = sourceArg.result
+      ? { parent: frame.sourcePath, index: sourceIndex }
+      : undefined;
+    if (frame.depth > 0 && Array.isArray(item)) {
+      const nestedDepth = frame.depth === Number.POSITIVE_INFINITY
+        ? frame.depth
+        : frame.depth - 1;
+      // Cyclic arrays are not valid RSGL/JSON values. Reject them before a
+      // large finite depth can allocate an unbounded chain of traversal frames.
+      if (active.has(item)) {
+        host.reportError(
+          "rsgl.collectionExpansionLimit",
+          "Collection operation 'flat' cannot flatten a cyclic List.",
+          range
+        );
+        host.markFailure();
+        return handledFailure();
+      }
+      active.add(item);
+      stack.push({
+        source: item,
+        length: item.length,
+        index: 0,
+        depth: nestedDepth,
+        sourcePath: itemPath
+      });
+      continue;
+    }
+
+    const nextLength = checkedLengthSum(value.length, 1);
+    if (nextLength === null || nextLength > MAX_EVALUATION_ITEMS_PER_ALLOCATION) {
+      reportExpansionLimit(host, range, "flat", nextLength ?? Number.POSITIVE_INFINITY);
+      return handledFailure();
+    }
+    if (!consumeItems(host, 1, range, "flat")) {
+      return handledFailure();
+    }
+    const outputIndex = value.length;
+    value.push(normalizeJsonValue(item));
+    const sourceTrace = itemPath
+      ? traceSource(sourceArg, flatTraversalPathText(itemPath))
+      : undefined;
+    if (sourceTrace) {
+      paths.push({
+        outputPath: appendGeneratedPath("", String(outputIndex)),
+        source: sourceTrace
+      });
+    }
+  }
+
+  return tracedValue(value, paths);
+}
+
+function flatTraversalPathText(path: FlatTraversalPath): string {
+  const indexes: number[] = [];
+  let current: FlatTraversalPath | undefined = path;
+  while (current) {
+    indexes.push(current.index);
+    current = current.parent;
+  }
+  let result = "";
+  for (let index = indexes.length - 1; index >= 0; index -= 1) {
+    result = appendGeneratedPath(result, String(indexes[index]));
+  }
+  return result;
 }
 
 function evaluateConcat(

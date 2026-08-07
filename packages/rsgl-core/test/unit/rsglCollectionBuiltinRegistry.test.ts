@@ -45,7 +45,7 @@ describe("RSGL collection builtin registry", () => {
     const inferNames = collectionBuiltinNamesForLayer("infer");
     assert.deepStrictEqual(
       [...inferNames].sort(),
-      ["asList", "concat", "entries", "filter", "flatMap", "has", "join", "keys", "length", "map", "mergeObjects", "product", "values"]
+      ["asList", "concat", "entries", "filter", "flat", "flatMap", "has", "join", "keys", "length", "map", "mergeObjects", "product", "values"]
     );
     for (const descriptor of collectionBuiltinDescriptors) {
       assert.strictEqual(
@@ -63,7 +63,7 @@ describe("RSGL collection builtin registry", () => {
     const evalNames = collectionBuiltinNamesForLayer("eval");
     assert.deepStrictEqual(
       [...evalNames].sort(),
-      ["asList", "concat", "entries", "filter", "flatMap", "join", "keys", "length", "map", "mergeObjects", "product", "values"]
+      ["asList", "concat", "entries", "filter", "flat", "flatMap", "join", "keys", "length", "map", "mergeObjects", "product", "values"]
     );
     for (const descriptor of collectionBuiltinDescriptors) {
       assert.strictEqual(

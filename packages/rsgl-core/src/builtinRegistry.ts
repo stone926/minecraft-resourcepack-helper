@@ -23,6 +23,7 @@ export type RsglCollectionInferHandler =
   | "map"
   | "filter"
   | "flatMap"
+  | "flat"
   | "concat"
   | "join"
   | "entries"
@@ -39,6 +40,7 @@ export type RsglCollectionEvalHandler =
   | "map"
   | "filter"
   | "flatMap"
+  | "flat"
   | "concat"
   | "join"
   | "entries"
@@ -198,6 +200,26 @@ export const collectionBuiltinDescriptors = [
       label: "flatMap",
       insertText: "flatMap(${1:source}, ${2:item} => ${3:items})",
       detail: "Transform and flatten collection items"
+    }
+  },
+  {
+    name: "flat",
+    effect: "pure",
+    signature: {
+      parameters: [
+        { name: "source", type: listOfType(t), optional: false },
+        { name: "depth", type: numberType, optional: true }
+      ],
+      returnType: listOfType(t),
+      typeParameters: [genericParameter("T")]
+    },
+    layers: ["infer", "eval"],
+    infer: "flat",
+    eval: "flat",
+    completion: {
+      label: "flat",
+      insertText: "flat(${1:source})",
+      detail: "Flatten nested Lists to an optional depth (all levels by default)"
     }
   },
   {

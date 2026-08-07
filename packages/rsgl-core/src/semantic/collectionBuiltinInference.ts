@@ -17,6 +17,11 @@ import {
 } from "../builtinRegistry";
 import { diagnostic } from "./diagnostics";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
+import {
+  contextualFlatSourceType,
+  inferFlatElementType,
+  staticFlatDepths
+} from "./flatBuiltinTypes";
 import { checkLambdaExpression } from "./lambdaTyping";
 import { inferProductType, RsglProductSourceIssue } from "./productTypeInference";
 import {
@@ -92,6 +97,7 @@ const collectionInferenceHandlers = {
   map: (session, expectedReturnType) => checkMap(session, expectedReturnType),
   filter: (session, expectedReturnType) => checkFilter(session, expectedReturnType),
   flatMap: (session, expectedReturnType) => checkFlatMap(session, expectedReturnType),
+  flat: (session, expectedReturnType) => checkFlat(session, expectedReturnType),
   concat: (session, expectedReturnType) => checkConcat(session, expectedReturnType),
   join: session => checkJoin(session),
   entries: session => checkRecordProjection(session, "entries"),
@@ -315,6 +321,30 @@ function checkFlatMap(
   return listOf(inferredOrUnknown(resultElement));
 }
 
+function checkFlat(
+  session: CollectionArgumentSession,
+  expectedReturnType: RsglType | undefined
+): RsglType {
+  const depth = session.primary("depth");
+  const depths = depth
+    ? staticFlatDepths(session.checkExpected(depth, numberType), depth.arg.value)
+    : [Number.POSITIVE_INFINITY];
+  const source = session.primary("source");
+  const expectedElement = expectedListElement(expectedReturnType);
+  const expectedSource = source && expectedElement
+    ? contextualFlatSourceType(expectedElement, depths, source.arg.value)
+    : undefined;
+  const sourceElement = source
+    ? checkListArgument(session, source, expectedSource)
+    : unknownType;
+  return listOf(inferFlatElementType(
+    sourceElement,
+    depths,
+    inferredUnionBudgetOptions(session.context.diagnostics, session.expression.range),
+    expectedElement
+  ));
+}
+
 function checkConcat(
   session: CollectionArgumentSession,
   expectedReturnType: RsglType | undefined
@@ -518,6 +548,40 @@ function checkIterableArgument(
     "source",
     !mismatchOwned
   );
+}
+
+function checkListArgument(
+  session: CollectionArgumentSession,
+  assignment: RsglArgumentAssignment<RsglParameterSymbol>,
+  expectedType?: RsglType
+): RsglType {
+  const actualType = session.check(assignment, expectedType);
+  if (actualType.kind === "List") {
+    return actualType.elementType ?? unknownType;
+  }
+  if (actualType.kind === "Union") {
+    const elements: RsglType[] = [];
+    let invalid = false;
+    for (const option of actualType.options ?? []) {
+      if (option.kind === "List") {
+        elements.push(option.elementType ?? unknownType);
+      } else if (!isDynamicType(option) && option.kind !== "Never") {
+        invalid = true;
+      }
+    }
+    if (invalid) {
+      reportCollectionExpected(session, assignment.arg.value, "List", actualType);
+    }
+    return combineInformativeTypes(session, elements);
+  }
+  if (isDynamicType(actualType)) {
+    return actualType;
+  }
+  if (actualType.kind === "Never") {
+    return neverType;
+  }
+  reportCollectionExpected(session, assignment.arg.value, "List", actualType);
+  return unknownType;
 }
 
 function checkUnaryMapper(

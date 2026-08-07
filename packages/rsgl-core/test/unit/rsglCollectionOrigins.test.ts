@@ -115,6 +115,58 @@ describe("RSGL collection evaluation origins", () => {
     assert.strictEqual(originForEvaluationPath(concatenated.pathOrigins, "/2")?.sourceFile, "right.rsgl");
   });
 
+  it("remaps flat outputs to their full nested source paths", () => {
+    const source = [[{ name: "first" }], [[{ name: "second" }]]];
+    const origins = new Map([[
+      "source",
+      [
+        pathOrigin("/0/0/name", "nested.rsgl", 10, 15),
+        pathOrigin("/1/0/0/name", "nested.rsgl", 30, 36)
+      ]
+    ]]);
+    const deeplyParsed = parseExpression("flat(source)");
+    const deeplyFlattened = evaluateExpressionResult(
+      deeplyParsed.expression,
+      evaluationContext(
+        deeplyParsed.fileName,
+        new Map([[
+          "source",
+          source
+        ]]),
+        origins
+      )
+    );
+
+    assert.deepStrictEqual(deeplyFlattened.value, [{ name: "first" }, { name: "second" }]);
+    assert.deepStrictEqual(originForEvaluationPath(deeplyFlattened.pathOrigins, "/0/name"), {
+      sourceFile: "nested.rsgl",
+      sourceRange: { start: 10, end: 15 }
+    });
+    assert.deepStrictEqual(originForEvaluationPath(deeplyFlattened.pathOrigins, "/1/name"), {
+      sourceFile: "nested.rsgl",
+      sourceRange: { start: 30, end: 36 }
+    });
+
+    const shallowParsed = parseExpression("flat(source, 1)");
+    const shallowlyFlattened = evaluateExpressionResult(
+      shallowParsed.expression,
+      evaluationContext(
+        shallowParsed.fileName,
+        new Map([["source", source]]),
+        origins
+      )
+    );
+
+    assert.deepStrictEqual(shallowlyFlattened.value, [
+      { name: "first" },
+      [{ name: "second" }]
+    ]);
+    assert.deepStrictEqual(originForEvaluationPath(shallowlyFlattened.pathOrigins, "/1/0/name"), {
+      sourceFile: "nested.rsgl",
+      sourceRange: { start: 30, end: 36 }
+    });
+  });
+
   it("preserves asList element origins for pass-through lists and scalar wrapping", () => {
     const source = ["first", "second"];
     const listExpression = parseExpression("asList(source)");
@@ -248,9 +300,11 @@ describe("RSGL collection evaluation origins", () => {
     const fileName = path.resolve("pack", "collection-origins.rsgl");
     const lines = [
       "let source = [{ value: \"first\" }, { value: \"second\" }]",
+      "let nested = [[{ value: \"nested\" }]]",
       "model block collection_origins {",
       "  merge {",
       "    mapped: map(source, item => ({ copied: item.value, fixed: \"helper\" }))",
+      "    flattened: flat(nested)",
       "  }",
       "}"
     ];
@@ -261,12 +315,20 @@ describe("RSGL collection evaluation origins", () => {
     const firstCopied = origins.find(origin => origin.generatedPath === "/mapped/0/copied");
     const secondCopied = origins.find(origin => origin.generatedPath === "/mapped/1/copied");
     const fixed = origins.find(origin => origin.generatedPath === "/mapped/0/fixed");
+    const flattened = origins.find(origin => origin.generatedPath === "/flattened/0/value");
 
     assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.strictEqual(source.slice(firstCopied!.sourceRange.start, firstCopied!.sourceRange.end), "\"first\"");
     assert.strictEqual(source.slice(secondCopied!.sourceRange.start, secondCopied!.sourceRange.end), "\"second\"");
     assert.strictEqual(source.slice(fixed!.sourceRange.start, fixed!.sourceRange.end), "\"helper\"");
-    assert.ok([firstCopied, secondCopied, fixed].every(origin => origin?.sourceFile === fileName));
+    assert.strictEqual(
+      source.slice(flattened!.sourceRange.start, flattened!.sourceRange.end),
+      "\"nested\""
+    );
+    assert.ok(
+      [firstCopied, secondCopied, fixed, flattened]
+        .every(origin => origin?.sourceFile === fileName)
+    );
   });
 });
 

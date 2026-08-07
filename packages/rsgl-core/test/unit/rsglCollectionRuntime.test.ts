@@ -44,6 +44,104 @@ describe("RSGL collection runtime", () => {
     );
   });
 
+  it("flattens Lists with JavaScript depth semantics and ordering", () => {
+    const context = evaluationContext();
+    const nested = "[[[[1]]], [[2]], [true], 4]";
+
+    assert.deepStrictEqual(evaluate(`flat(${nested})`, context), [1, 2, true, 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, 0)`, context), [[[[1]]], [[2]], [true], 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, 1)`, context), [[[1]], [2], true, 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, 2)`, context), [[1], 2, true, 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, -2.4)`, context), [[[[1]]], [[2]], [true], 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, 1.9)`, context), [[[1]], [2], true, 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, 1 / 0)`, context), [1, 2, true, 4]);
+    assert.deepStrictEqual(evaluate(`flat(${nested}, 0 / 0)`, context), [[[[1]]], [[2]], [true], 4]);
+    assert.deepStrictEqual(evaluate("flat([1..2])", context), [1, 2]);
+    assert.deepStrictEqual(evaluate("flat([1..2], 0)", context), [[1, 2]]);
+    assert.deepStrictEqual(evaluate("flat([])", context), []);
+    assert.deepStrictEqual(evaluate("flat([1, [2], \"three\", null, [true, [4]]])", context), [
+      1,
+      2,
+      "three",
+      null,
+      true,
+      4
+    ]);
+  });
+
+  it("returns a new List without modifying the flat source", () => {
+    const source = [[1], [2, [3]]] as EvaluationValue;
+    const before = [[1], [2, [3]]];
+    const context = evaluationContext(new Map([["source", source]]));
+
+    const depthZero = evaluate("flat(source, 0)", context);
+    const flattened = evaluate("flat(source)", context);
+
+    assert.deepStrictEqual(source, before);
+    assert.deepStrictEqual(depthZero, before);
+    assert.notStrictEqual(depthZero, source);
+    assert.deepStrictEqual(flattened, [1, 2, 3]);
+    assert.deepStrictEqual(source, before);
+  });
+
+  it("skips sparse holes and reads each present numeric index once", () => {
+    let reads = 0;
+    const nested = new Array<number>(3);
+    nested[0] = 1;
+    nested[2] = 2;
+    const source = new Array<number | number[]>(4);
+    source[1] = nested;
+    Object.defineProperty(source, 2, {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return [3];
+      }
+    });
+    source[3] = 4;
+    const context = evaluationContext(new Map([["source", source as EvaluationValue]]));
+
+    assert.deepStrictEqual(evaluate("flat(source, 1)", context), [1, 2, 3, 4]);
+    assert.strictEqual(reads, 1);
+    assert.strictEqual(0 in source, false);
+    assert.strictEqual(1 in nested, false);
+  });
+
+  it("rejects cyclic injected Lists before depth can grow the traversal stack", () => {
+    const source: unknown[] = [];
+    source.push(source);
+    for (const expression of ["flat(source)", "flat(source, 1000000000)"]) {
+      const errors: string[] = [];
+      assert.strictEqual(
+        evaluate(
+          expression,
+          evaluationContext(new Map([["source", source as unknown as EvaluationValue]]), 1, errors)
+        ),
+        undefined
+      );
+      assert.deepStrictEqual(errors, ["rsgl.collectionExpansionLimit"], expression);
+    }
+  });
+
+  it("flattens deeply nested injected Lists without recursive call-stack growth", () => {
+    let source: EvaluationValue = "leaf";
+    for (let depth = 0; depth < 20_000; depth += 1) {
+      source = [source] as unknown as EvaluationValue;
+    }
+    const context = evaluationContext(new Map([["source", source]]), 1);
+
+    assert.deepStrictEqual(evaluate("flat(source)", context), ["leaf"]);
+    assert.strictEqual(context.evaluationItemBudget?.consumed, 1);
+  });
+
+  it("rejects non-List flat sources at runtime", () => {
+    for (const source of ["1", "{ value: 1 }"]) {
+      const errors: string[] = [];
+      assert.strictEqual(evaluate(`flat(${source})`, evaluationContext(new Map(), 1, errors)), undefined);
+      assert.deepStrictEqual(errors, ["rsgl.collectionExpected"], source);
+    }
+  });
+
   it("keeps asList pass-through work free, charges scalar wrapping, and evaluates length in O(1)", () => {
     const source = [1, 2, 3];
     const passThroughErrors: string[] = [];
@@ -335,6 +433,25 @@ describe("RSGL collection evaluation budget", () => {
       assert.strictEqual(evaluate(source, context), undefined, source);
       assert.deepStrictEqual(errors, ["rsgl.collectionExpansionLimit"], source);
     }
+  });
+
+  it("charges flat output items once and rejects over-budget expansion", () => {
+    const source = [[1, 2], [3, [4]]] as EvaluationValue;
+    const exact = evaluationContext(new Map([["source", source]]), 4);
+
+    assert.deepStrictEqual(evaluate("flat(source)", exact), [1, 2, 3, 4]);
+    assert.strictEqual(exact.evaluationItemBudget?.consumed, 4);
+
+    const errors: string[] = [];
+    const limited = evaluationContext(new Map([["source", source]]), 3, errors);
+    assert.strictEqual(evaluate("flat(source)", limited), undefined);
+    assert.deepStrictEqual(errors, ["rsgl.collectionExpansionLimit"]);
+    assert.strictEqual(limited.evaluationItemBudget?.consumed, 3);
+    assert.deepStrictEqual(source, [[1, 2], [3, [4]]]);
+
+    const empty = evaluationContext(new Map(), 0);
+    assert.deepStrictEqual(evaluate("flat([])", empty), []);
+    assert.strictEqual(empty.evaluationItemBudget?.consumed, 0);
   });
 
   it("suppresses collection-shape cascades after an upstream expansion failure", () => {

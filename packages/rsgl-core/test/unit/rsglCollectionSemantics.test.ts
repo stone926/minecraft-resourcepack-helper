@@ -4,6 +4,7 @@ import { parseRsgl } from "../../src/parser";
 import {
   bindRsglModule,
   formatType,
+  isAssignable,
   type RsglSemanticModel,
   type RsglType
 } from "../../src/semantic";
@@ -46,6 +47,24 @@ describe("RSGL typed collection semantics", () => {
     assert.strictEqual(named.restAssignments.length, 0);
   });
 
+  it("publishes flat with a List source and optional Number depth", () => {
+    const signature = getBuiltinSignature("flat");
+
+    assert.deepStrictEqual(signature?.typeParameters?.map(parameter => parameter.name), ["T"]);
+    assert.deepStrictEqual(
+      signature?.parameters.map(parameter => ({
+        name: parameter.name,
+        type: formatType(parameter.type),
+        optional: parameter.optional
+      })),
+      [
+        { name: "source", type: "List<T>", optional: false },
+        { name: "depth", type: "Number", optional: true }
+      ]
+    );
+    assert.strictEqual(formatType(signature?.returnType ?? { kind: "Unknown" }), "List<T>");
+  });
+
   it("infers Never for empty lists while using contextual collection types", () => {
     const model = bind([
       "let empty = []",
@@ -77,6 +96,141 @@ describe("RSGL typed collection semantics", () => {
     assertNoTypeParameter(symbolType(model, "mapped"));
     assertNoTypeParameter(symbolType(model, "filtered"));
     assertNoTypeParameter(symbolType(model, "flattened"));
+  });
+
+  it("infers flat precisely for static depths and conservatively for dynamic depth", () => {
+    const model = bind([
+      "let nested = [[[[1]]], [[2]], [true], 4]",
+      "let infinite = flat(nested)",
+      "let zero = flat(nested, 0)",
+      "let one = flat(nested, 1)",
+      "let two = flat(nested, 2)",
+      "let fractional = flat(nested, 1.9)",
+      "let negative = flat(nested, -2.4)",
+      "let selectedDepth = flat(nested, true ? 0 : 2)",
+      "let nestedRange = flat([1..2])",
+      "let preservedRange = flat([1..2], 0)",
+      "let dynamicDepth: Number = 1",
+      "let dynamic = flat(nested, dynamicDepth)"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(formatType(symbolType(model, "infinite")), "List<true | 1 | 2 | 4>");
+    assert.strictEqual(formatType(symbolType(model, "zero")), formatType(symbolType(model, "nested")));
+    assert.strictEqual(
+      formatType(symbolType(model, "one")),
+      "List<true | List<List<1>> | List<2> | 4>"
+    );
+    assert.strictEqual(formatType(symbolType(model, "two")), "List<true | List<1> | 2 | 4>");
+    assert.strictEqual(formatType(symbolType(model, "fractional")), formatType(symbolType(model, "one")));
+    assert.strictEqual(formatType(symbolType(model, "negative")), formatType(symbolType(model, "zero")));
+    for (const possible of ["zero", "two"]) {
+      assert.strictEqual(
+        isAssignable(
+          symbolType(model, "selectedDepth").elementType ?? { kind: "Unknown" },
+          symbolType(model, possible).elementType ?? { kind: "Unknown" }
+        ),
+        true,
+        `A finite depth union must include the element shape from '${possible}'.`
+      );
+    }
+    assert.strictEqual(formatType(symbolType(model, "nestedRange")), "List<Number>");
+    assert.strictEqual(formatType(symbolType(model, "preservedRange")), "List<Range>");
+
+    const dynamic = symbolType(model, "dynamic");
+    assert.strictEqual(dynamic.kind, "List");
+    assert.strictEqual(dynamic.elementType?.kind, "Union");
+    for (const possible of ["zero", "one", "two", "infinite"]) {
+      assert.strictEqual(
+        isAssignable(
+          dynamic.elementType ?? { kind: "Unknown" },
+          symbolType(model, possible).elementType ?? { kind: "Unknown" }
+        ),
+        true,
+        `Dynamic flat depth must include every element shape from '${possible}'.`
+      );
+    }
+    for (const name of [
+      "infinite",
+      "zero",
+      "one",
+      "two",
+      "fractional",
+      "negative",
+      "selectedDepth",
+      "nestedRange",
+      "preservedRange",
+      "dynamic"
+    ]) {
+      assertNoTypeParameter(symbolType(model, name));
+    }
+  });
+
+  it("propagates contextual leaf types through literal flat inputs", () => {
+    const model = bind([
+      "let rawNested = [[\"minecraft:block/stone\"]]",
+      "let mixed = [[model_id(\"minecraft:block/a\")], [\"minecraft:block/b\"]]",
+      "let direct: List<ModelId> = flat([\"minecraft:block/stone\"])",
+      "let nested: List<ModelId> = flat([[\"minecraft:block/stone\"]])",
+      "let variable: List<ModelId> = flat(rawNested)",
+      "let mixedIds: List<ModelId> = flat(mixed)",
+      "let fromCall: List<ModelId> = flat(asList([\"minecraft:block/stone\"]))",
+      "let depthZero: List<ModelId> = flat([\"minecraft:block/stone\"], 0)",
+      "let numbers: List<Number> = flat([[1..2]])"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    for (const name of ["direct", "nested", "variable", "mixedIds", "fromCall", "depthZero"]) {
+      assert.strictEqual(formatType(symbolType(model, name)), "List<ModelId>");
+    }
+    assert.strictEqual(formatType(symbolType(model, "numbers")), "List<Number>");
+
+    const direct = model.module.statements.find(statement =>
+      statement.kind === "LetDecl" && statement.name?.text === "direct");
+    if (
+      !direct
+      || direct.kind !== "LetDecl"
+      || direct.value.kind !== "CallExpr"
+      || direct.value.args[0]?.value.kind !== "ListExpr"
+    ) {
+      assert.fail("Expected direct flat call with a List literal source.");
+    }
+    const leaf = direct.value.args[0].value.elements[0];
+    assert.ok(leaf && leaf.kind !== "ListSpread");
+    assert.strictEqual(
+      formatType(model.resolvedExpectedTypes.get(leaf) ?? { kind: "Unknown" }),
+      "ModelId"
+    );
+    const variable = model.module.statements.find(statement =>
+      statement.kind === "LetDecl" && statement.name?.text === "variable");
+    assert.ok(variable && variable.kind === "LetDecl");
+    assert.strictEqual(
+      formatType(model.resolvedExpectedTypes.get(variable.value) ?? { kind: "Unknown" }),
+      "List<ModelId>"
+    );
+
+    const invalid = bind([
+      "let depth: Number = 0",
+      "let tooShallow: List<ModelId> = flat([[\"minecraft:block/stone\"]], 0)",
+      "let dynamic: List<ModelId> = flat([[\"minecraft:block/stone\"]], depth)"
+    ]);
+    assert.deepStrictEqual(codes(invalid), ["rsgl.typeMismatch", "rsgl.typeMismatch"]);
+  });
+
+  it("rejects non-List flat sources and non-Number depths without cascades", () => {
+    const model = bind([
+      "let rangeSource = flat(1..3)",
+      "let scalarSource = flat(1)",
+      "let recordSource = flat({ value: 1 })",
+      "let invalidDepth = flat([1], \"deep\")"
+    ]);
+
+    assert.deepStrictEqual(codes(model), [
+      "rsgl.collectionExpected",
+      "rsgl.collectionExpected",
+      "rsgl.collectionExpected",
+      "rsgl.typeMismatch"
+    ]);
   });
 
   it("normalizes asList inputs to one list layer without flattening nested lists", () => {
