@@ -426,6 +426,109 @@ describe("RSGL semantic tokens", () => {
     }
   });
 
+  it("classifies local exports, re-exports, and import aliases in their linked namespaces", () => {
+    const root = path.resolve("pack", "module-specifier-tokens");
+    const mainFile = path.join(root, "main.rsgl");
+    const barrelFile = path.join(root, "barrel.rsgl");
+    const familiesFile = path.join(root, "families.rsgl");
+    const familiesText = [
+      "type ShapeFamily = { name: String }",
+      "let slabFamilies: List<ShapeFamily> = []",
+      "template buildFamily(name: String) {",
+      "  let selected = name",
+      "}",
+      "export {",
+      "  ShapeFamily,",
+      "  slabFamilies,",
+      "  buildFamily",
+      "}"
+    ].join("\n");
+    const barrelText = [
+      "export {",
+      "  ShapeFamily,",
+      "  ShapeFamily as PublicFamily,",
+      "  slabFamilies,",
+      "  slabFamilies as publicFamilies,",
+      "  buildFamily as publicBuilder",
+      "} from \"./families.rsgl\""
+    ].join("\n");
+    const mainText = [
+      "import {",
+      "  ShapeFamily,",
+      "  slabFamilies,",
+      "  PublicFamily as Family,",
+      "  publicFamilies as families,",
+      "  publicBuilder as makeFamily",
+      "} from \"./barrel.rsgl\"",
+      "let selected: Family = families",
+      "use makeFamily(\"stone\")"
+    ].join("\n");
+    const program = bindRsglProgram([
+      { fileName: mainFile, module: parseRsgl(mainText) },
+      { fileName: barrelFile, module: parseRsgl(barrelText) },
+      { fileName: familiesFile, module: parseRsgl(familiesText) }
+    ]);
+    const familiesModel = program.models.find(candidate => candidate.fileName === familiesFile);
+    const barrelModel = program.models.find(candidate => candidate.fileName === barrelFile);
+    const mainModel = program.models.find(candidate => candidate.fileName === mainFile);
+    assert.ok(familiesModel && barrelModel && mainModel, "expected every module to be bound");
+
+    const familiesTokens = getRsglSemanticTokens(familiesModel, program);
+    expectToken(
+      familiesTokens,
+      offsetOf(familiesText, "ShapeFamily", 2),
+      "type",
+      0,
+      "ShapeFamily".length
+    );
+    expectToken(
+      familiesTokens,
+      offsetOf(familiesText, "slabFamilies", 1),
+      "variable",
+      readonlyFlag,
+      "slabFamilies".length
+    );
+    expectToken(
+      familiesTokens,
+      offsetOf(familiesText, "buildFamily", 1),
+      "function",
+      0,
+      "buildFamily".length
+    );
+
+    // A standalone model has no target module for a source re-export. Its
+    // cache entry must not suppress the later linked-program classifications.
+    const standaloneBarrelTokens = getRsglSemanticTokens(barrelModel);
+    assert.ok(!standaloneBarrelTokens.some(token =>
+      token.start === offsetOf(barrelText, "PublicFamily")
+    ));
+    const barrelTokens = getRsglSemanticTokens(barrelModel, program);
+    expectToken(barrelTokens, offsetOf(barrelText, "ShapeFamily"), "type", 0, "ShapeFamily".length);
+    expectToken(barrelTokens, offsetOf(barrelText, "PublicFamily"), "type", 0, "PublicFamily".length);
+    expectToken(barrelTokens, offsetOf(barrelText, "slabFamilies"), "variable", readonlyFlag, "slabFamilies".length);
+    expectToken(barrelTokens, offsetOf(barrelText, "publicFamilies"), "variable", readonlyFlag, "publicFamilies".length);
+    expectToken(barrelTokens, offsetOf(barrelText, "buildFamily"), "function", 0, "buildFamily".length);
+    expectToken(barrelTokens, offsetOf(barrelText, "publicBuilder"), "function", 0, "publicBuilder".length);
+    assert.strictEqual(getRsglSemanticTokens(barrelModel), standaloneBarrelTokens);
+    assert.strictEqual(getRsglSemanticTokens(barrelModel, program), barrelTokens);
+
+    const mainTokens = getRsglSemanticTokens(mainModel, program);
+    expectToken(mainTokens, offsetOf(mainText, "ShapeFamily"), "type", declaration, "ShapeFamily".length);
+    expectToken(mainTokens, offsetOf(mainText, "slabFamilies"), "variable", declaration, "slabFamilies".length);
+    expectToken(mainTokens, offsetOf(mainText, "PublicFamily"), "type", 0, "PublicFamily".length);
+    expectToken(
+      mainTokens,
+      offsetOf(mainText, "PublicFamily as Family") + "PublicFamily as ".length,
+      "type",
+      declaration,
+      "Family".length
+    );
+    expectToken(mainTokens, offsetOf(mainText, "publicFamilies"), "variable", 0, "publicFamilies".length);
+    expectToken(mainTokens, offsetOf(mainText, "families"), "variable", declaration, "families".length);
+    expectToken(mainTokens, offsetOf(mainText, "publicBuilder"), "function", 0, "publicBuilder".length);
+    expectToken(mainTokens, offsetOf(mainText, "makeFamily"), "function", declaration, "makeFamily".length);
+  });
+
   it("classifies imported template aliases as functions after program linking", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");

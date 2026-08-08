@@ -124,7 +124,8 @@ export function getRsglDocumentSemanticTokens(
   document: RsglLanguageDocument,
   workspace: RsglLanguageWorkspace
 ): readonly RsglSemanticToken[] {
-  return getRsglSemanticTokens(semanticModelForRsglDocument(document, workspace));
+  const context = semanticContextForRsglDocument(document, workspace);
+  return getRsglSemanticTokens(context.model, context.program);
 }
 
 /** Returns hover information from the linked semantic model, never from completion labels. */

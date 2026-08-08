@@ -101,7 +101,12 @@
               "name": "storage.modifier.blockstate-mode.rsgl"
             },
             "5": {
-              "name": "string.template.rsgl"
+              "name": "string.template.rsgl",
+              "patterns": [
+                {
+                  "include": "#templateStringContent"
+                }
+              ]
             },
             "6": {
               "name": "string.quoted.double.rsgl"
@@ -240,18 +245,25 @@
           "end": "`",
           "patterns": [
             {
-              "name": "constant.character.escape.rsgl",
-              "match": "\\\\(?:[nrt`\\\\]|u[0-9A-Fa-f]{4})"
-            },
+              "include": "#templateStringContent"
+            }
+          ]
+        }
+      ]
+    },
+    "templateStringContent": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.rsgl",
+          "match": "\\\\(?:[nrt`\\\\]|u[0-9A-Fa-f]{4})"
+        },
+        {
+          "name": "meta.embedded.expression.rsgl",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "patterns": [
             {
-              "name": "meta.embedded.expression.rsgl",
-              "begin": "\\$\\{",
-              "end": "\\}",
-              "patterns": [
-                {
-                  "include": "$self"
-                }
-              ]
+              "include": "$self"
             }
           ]
         }

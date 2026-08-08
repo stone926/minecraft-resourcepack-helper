@@ -307,6 +307,8 @@ describe("RSGL TextMate grammar", () => {
 
     const tokenization = tokenizeGrammar(grammar, source);
     expectScopeAcross(tokenization, source, "`${name}_door`", "string.template.rsgl");
+    expectScopeAcross(tokenization, source, "${name}", "meta.embedded.expression.rsgl");
+    expectNoScopeAcross(tokenization, source, "_door", "meta.embedded.expression.rsgl");
     expectScope(tokenization, source, "for", "keyword.control.rsgl");
     expectScope(tokenization, source, "\"lower\"", "string.quoted.double.rsgl");
     expectNoScope(tokenization, source, "\"lower\"", "string.template.rsgl");

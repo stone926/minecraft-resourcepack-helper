@@ -1,5 +1,6 @@
 import type {
   ArgumentNode,
+  ExportDeclNode,
   ForObjectBindingPropertyNode,
   IdentifierNode,
   ImportDeclNode,
@@ -14,6 +15,10 @@ import type {
 import { walkRsglModule } from "./parser/astTraversal";
 import type { RsglReferenceRecord, RsglSemanticModel, RsglSymbol } from "./semantic";
 import { resolveModuleNamespaceExpressionMember } from "./semantic/moduleNamespace";
+import {
+  getRsglSemanticOccurrences,
+  type RsglSemanticOccurrenceProgram
+} from "./semanticOccurrences";
 
 /**
  * Semantic token legend shared by every RSGL transport (LSP server and the
@@ -67,23 +72,39 @@ interface RsglTokenClassification {
   tokenModifiers: number;
 }
 
-const tokensBySemanticModel = new WeakMap<RsglSemanticModel, readonly RsglSemanticToken[]>();
+interface RsglSemanticTokenCacheEntry {
+  standalone?: readonly RsglSemanticToken[];
+  readonly byProgram: WeakMap<object, readonly RsglSemanticToken[]>;
+}
+
+const tokensBySemanticModel = new WeakMap<RsglSemanticModel, RsglSemanticTokenCacheEntry>();
 
 /** Computes the semantic highlighting tokens for one bound RSGL module. */
-export function getRsglSemanticTokens(model: RsglSemanticModel): readonly RsglSemanticToken[] {
-  const cached = tokensBySemanticModel.get(model);
+export function getRsglSemanticTokens(
+  model: RsglSemanticModel,
+  program?: RsglSemanticOccurrenceProgram
+): readonly RsglSemanticToken[] {
+  const cache = semanticTokenCacheEntry(model);
+  const cached = program ? cache.byProgram.get(program) : cache.standalone;
   if (cached) {
     return cached;
   }
   const candidates: RsglSemanticToken[] = [];
   const referenceStarts = collectReferenceStarts(model.references);
+  const specifierClassifications = collectModuleSpecifierClassifications(
+    program ?? standaloneOccurrenceProgram(model),
+    model
+  );
 
   collectTypeAliasTokens(model, candidates);
   collectPropertyTokens(model.module, candidates);
   collectTextureVariableLiteralTokens(model, candidates);
   collectModuleNamespaceMemberTokens(model, candidates);
   for (const record of model.imports) {
-    collectImportDeclarationTokens(record.node, model, candidates);
+    collectImportDeclarationTokens(record.node, model, specifierClassifications, candidates);
+  }
+  for (const record of model.exports) {
+    collectExportSpecifierTokens(record.node, model, specifierClassifications, candidates);
   }
   for (const symbol of model.symbols) {
     collectDeclarationToken(symbol, referenceStarts, candidates);
@@ -93,8 +114,34 @@ export function getRsglSemanticTokens(model: RsglSemanticModel): readonly RsglSe
   }
 
   const tokens = Object.freeze(normalizeTokens(candidates));
-  tokensBySemanticModel.set(model, tokens);
+  if (program) {
+    cache.byProgram.set(program, tokens);
+  } else {
+    cache.standalone = tokens;
+  }
   return tokens;
+}
+
+function semanticTokenCacheEntry(model: RsglSemanticModel): RsglSemanticTokenCacheEntry {
+  const cached = tokensBySemanticModel.get(model);
+  if (cached) {
+    return cached;
+  }
+  const entry: RsglSemanticTokenCacheEntry = { byProgram: new WeakMap() };
+  tokensBySemanticModel.set(model, entry);
+  return entry;
+}
+
+function standaloneOccurrenceProgram(model: RsglSemanticModel): RsglSemanticOccurrenceProgram {
+  return {
+    models: [model],
+    importGraph: {
+      files: [model.fileName],
+      edges: [],
+      cycles: [],
+      missing: []
+    }
+  };
 }
 
 /** Emits aliases from the type namespace, which is separate from value symbols. */
@@ -266,15 +313,51 @@ function collectReferenceStarts(references: readonly RsglReferenceRecord[]): Set
   return starts;
 }
 
+function collectModuleSpecifierClassifications(
+  program: RsglSemanticOccurrenceProgram,
+  model: RsglSemanticModel
+): ReadonlyMap<string, RsglTokenClassification> {
+  const classifications = new Map<
+    string,
+    { classification: RsglTokenClassification; priority: number }
+  >();
+  for (const occurrence of getRsglSemanticOccurrences(program, model)) {
+    const classification = occurrence.kind === "typeAlias"
+      ? { tokenType: typeTokenType, tokenModifiers: 0 }
+      : classifySymbol(occurrence.symbol);
+    if (!classification) {
+      continue;
+    }
+    const key = rangeKey(occurrence.range);
+    const priority = occurrence.kind === "value" ? 1 : 0;
+    const existing = classifications.get(key);
+    if (!existing || priority > existing.priority) {
+      classifications.set(key, { classification, priority });
+    }
+  }
+  return new Map(Array.from(classifications, ([key, value]) => [key, value.classification]));
+}
+
+function rangeKey(range: TextRange): string {
+  return `${range.start}\0${range.end}`;
+}
+
+function classificationAt(
+  classifications: ReadonlyMap<string, RsglTokenClassification>,
+  range: TextRange
+): RsglTokenClassification | undefined {
+  return classifications.get(rangeKey(range));
+}
+
 /**
- * Emits declaration tokens for the local names introduced by an import
- * declaration (`import fallback from "..."` / `import { a as b } from "..."`).
- * The AST node is used instead of the symbol table because `import *` links
- * synthetic symbols whose ranges point at the source string literal.
+ * Emits resolved source names and declaration tokens for the local names
+ * introduced by an import declaration. Type-only imports are classified from
+ * the linked type namespace instead of being flattened into value variables.
  */
 function collectImportDeclarationTokens(
   node: ImportDeclNode,
   model: RsglSemanticModel,
+  classifications: ReadonlyMap<string, RsglTokenClassification>,
   candidates: RsglSemanticToken[]
 ): void {
   if (node.defaultName) {
@@ -289,13 +372,54 @@ function collectImportDeclarationTokens(
     );
   }
   for (const specifier of node.namedImports) {
-    pushToken(candidates, specifier.local.range, importClassification(model, specifier.local.text), declarationModifier);
+    const classification = classificationAt(classifications, specifier.local.range)
+      ?? classificationAt(classifications, specifier.imported.range)
+      ?? importClassification(model, specifier.local.text);
+    pushToken(candidates, specifier.imported.range, classification, 0);
+    pushToken(candidates, specifier.local.range, classification, declarationModifier);
   }
 }
 
+/** Emits local exports and re-exports using the category of their resolved target. */
+function collectExportSpecifierTokens(
+  node: ExportDeclNode,
+  model: RsglSemanticModel,
+  classifications: ReadonlyMap<string, RsglTokenClassification>,
+  candidates: RsglSemanticToken[]
+): void {
+  for (const specifier of node.specifiers) {
+    const localClassification = classificationAt(classifications, specifier.local.range)
+      ?? localExportClassification(model, node, specifier.local.text);
+    const exportedClassification = classificationAt(classifications, specifier.exported.range)
+      ?? localClassification;
+    if (localClassification) {
+      pushToken(candidates, specifier.local.range, localClassification, 0);
+    }
+    if (exportedClassification) {
+      pushToken(candidates, specifier.exported.range, exportedClassification, 0);
+    }
+  }
+}
+
+function localExportClassification(
+  model: RsglSemanticModel,
+  node: ExportDeclNode,
+  name: string
+): RsglTokenClassification | null {
+  if (node.source) {
+    return null;
+  }
+  const valueSymbol = model.scope.symbols.get(name);
+  if (valueSymbol) {
+    return classifySymbol(valueSymbol);
+  }
+  return model.scope.typeAliases.has(name)
+    ? { tokenType: typeTokenType, tokenModifiers: 0 }
+    : null;
+}
+
 /**
- * Classifies an imported local name by the linked symbol's shape: templates
- * and other callables highlight as functions, everything else as variables.
+ * Classifies an imported local name by its linked value or type namespace.
  * Before program linking resolves the underlying export, imports default to
  * the variable classification.
  */
@@ -303,6 +427,9 @@ function importClassification(model: RsglSemanticModel, name: string): RsglToken
   const symbol = model.scope.symbols.get(name);
   if (symbol && (symbol.kind === "import" || symbol.kind === "namespace")) {
     return classifySymbol(symbol) ?? { tokenType: variableTokenType, tokenModifiers: 0 };
+  }
+  if (model.scope.typeAliases.has(name)) {
+    return { tokenType: typeTokenType, tokenModifiers: 0 };
   }
   return { tokenType: variableTokenType, tokenModifiers: 0 };
 }

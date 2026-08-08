@@ -19,6 +19,7 @@ import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 
 const functionTokenType = rsglSemanticTokenTypes.indexOf("function");
 const namespaceTokenType = rsglSemanticTokenTypes.indexOf("namespace");
+const typeTokenType = rsglSemanticTokenTypes.indexOf("type");
 const variableTokenType = rsglSemanticTokenTypes.indexOf("variable");
 const declarationModifier = 1 << rsglSemanticTokenModifiers.indexOf("declaration");
 
@@ -68,6 +69,41 @@ describe("RSGL language service", () => {
         tokenType: functionTokenType,
         tokenModifiers: 0
       });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the linked workspace program to classify re-export semantic tokens", () => {
+    assert.ok(typeTokenType >= 0, "semantic token legend should include type");
+    assert.ok(variableTokenType >= 0, "semantic token legend should include variable");
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-reexport-tokens-"));
+    try {
+      const barrelFile = path.join(root, "barrel.rsgl");
+      const familiesFile = path.join(root, "families.rsgl");
+      const barrelText = [
+        "export {",
+        "  ShapeFamily as PublicFamily,",
+        "  slabFamilies as publicFamilies",
+        "} from \"./families.rsgl\""
+      ].join("\n");
+      fs.writeFileSync(barrelFile, barrelText);
+      fs.writeFileSync(familiesFile, [
+        "type ShapeFamily = { name: String }",
+        "let slabFamilies: List<ShapeFamily> = []",
+        "export { ShapeFamily, slabFamilies }"
+      ].join("\n"));
+
+      const tokens = getRsglDocumentSemanticTokens({
+        fileName: barrelFile,
+        getText: () => barrelText
+      }, RsglWorkspaceSemanticCache.create());
+
+      assert.strictEqual(tokenAt(tokens, barrelText.indexOf("ShapeFamily")).tokenType, typeTokenType);
+      assert.strictEqual(tokenAt(tokens, barrelText.indexOf("PublicFamily")).tokenType, typeTokenType);
+      assert.strictEqual(tokenAt(tokens, barrelText.indexOf("slabFamilies")).tokenType, variableTokenType);
+      assert.strictEqual(tokenAt(tokens, barrelText.indexOf("publicFamilies")).tokenType, variableTokenType);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

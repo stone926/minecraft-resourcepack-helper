@@ -3,6 +3,7 @@ import * as path from "node:path";
 
 export interface GrammarCapture {
   name?: string;
+  patterns?: GrammarPattern[];
 }
 
 export interface GrammarPattern {
@@ -96,7 +97,15 @@ export function tokenizeGrammar(grammar: RsglGrammar, source: string): GrammarTo
       if (candidate.kind === "end") {
         contexts.pop();
       } else if (candidate.pattern) {
-        applyPatternScopes(scopes, lineStart, candidate.pattern, candidate.match, candidate.kind === "begin");
+        applyPatternScopes(
+          grammar,
+          scopes,
+          lineStart,
+          line,
+          candidate.pattern,
+          candidate.match,
+          candidate.kind === "begin"
+        );
         if (candidate.kind === "begin") {
           contexts.push({
             patterns: candidate.pattern.patterns ?? [],
@@ -178,8 +187,10 @@ function activeScopes(contexts: readonly GrammarContext[]): string[] {
 }
 
 function applyPatternScopes(
+  grammar: RsglGrammar,
   scopes: Array<Set<string>>,
   lineStart: number,
+  line: string,
   pattern: GrammarPattern,
   match: RegExpExecArray,
   begin: boolean
@@ -199,6 +210,85 @@ function applyPatternScopes(
     const range = indices[Number(rawIndex)];
     if (capture.name && range) {
       applyScopes(scopes, lineStart + range[0], lineStart + range[1], [capture.name]);
+    }
+    if (capture.patterns && range) {
+      tokenizeCapturedPatterns(
+        grammar,
+        scopes,
+        lineStart + range[0],
+        line.slice(range[0], range[1]),
+        capture.patterns
+      );
+    }
+  }
+}
+
+function tokenizeCapturedPatterns(
+  grammar: RsglGrammar,
+  scopes: Array<Set<string>>,
+  lineStart: number,
+  line: string,
+  patterns: readonly GrammarPattern[]
+): void {
+  const contexts: GrammarContext[] = [{ patterns }];
+  let cursor = 0;
+  let iterations = 0;
+  const rangeEnd = line.length;
+  const maxIterations = Math.max(32, rangeEnd * 8);
+
+  while (cursor < rangeEnd && contexts.length > 0) {
+    if (iterations++ >= maxIterations) {
+      throw new Error(`TextMate capture retokenization exceeded ${maxIterations} iterations on line '${line}'.`);
+    }
+    const context = contexts.at(-1);
+    if (!context) {
+      break;
+    }
+    const candidate = firstCandidate(grammar, context, line, cursor);
+    if (!candidate || candidate.match.index >= rangeEnd) {
+      applyScopes(scopes, lineStart + cursor, lineStart + rangeEnd, activeScopes(contexts));
+      break;
+    }
+
+    applyScopes(
+      scopes,
+      lineStart + cursor,
+      lineStart + candidate.match.index,
+      activeScopes(contexts)
+    );
+    const matchEnd = Math.min(candidate.match.index + candidate.match[0].length, rangeEnd);
+    applyScopes(
+      scopes,
+      lineStart + candidate.match.index,
+      lineStart + matchEnd,
+      activeScopes(contexts)
+    );
+
+    if (candidate.kind === "end") {
+      contexts.pop();
+    } else if (candidate.pattern) {
+      applyPatternScopes(
+        grammar,
+        scopes,
+        lineStart,
+        line,
+        candidate.pattern,
+        candidate.match,
+        candidate.kind === "begin"
+      );
+      if (candidate.kind === "begin") {
+        contexts.push({
+          patterns: candidate.pattern.patterns ?? [],
+          end: candidate.pattern.end,
+          scope: candidate.pattern.name
+        });
+      }
+    }
+
+    if (matchEnd > cursor) {
+      cursor = matchEnd;
+    } else if (candidate.kind !== "end") {
+      cursor++;
     }
   }
 }
