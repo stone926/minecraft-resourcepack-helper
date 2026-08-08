@@ -7,8 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const defaultFixtureRoot = path.join(repositoryRoot, "docs", "better_textures_rsgl");
-const expectedResourceCount = 729;
-const expectedSourceFileCount = 32;
+const expectedResourceCount = 1137;
+const expectedSourceFileCount = 33;
 const allowedErrorCodes = new Set(["rsgl.undeclaredExternalResource"]);
 const allowedWarningCodes = new Set(["rsgl.unresolvedTextureVariable"]);
 
