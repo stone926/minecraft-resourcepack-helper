@@ -58,6 +58,8 @@ export interface PreviewMaterial {
 export interface PreviewDependency {
   uri: string;
   kind: "model" | "texture" | "textureMetadata" | "packMetadata" | "configuration";
+  /** Internal resolution candidate that must be watched but is not an effective preview input. */
+  watchOnly?: boolean;
 }
 
 export interface PreviewPosition {

@@ -104,6 +104,8 @@ export interface ResolvedElement {
 export interface ResolvedDependency {
   fileName: string;
   kind: "model" | "texture" | "textureMetadata" | "packMetadata";
+  /** Candidate observed only so a create/delete can invalidate resource resolution. */
+  watchOnly?: boolean;
 }
 
 export function isTextureObject(value: RawTextureValue): value is RawTextureObject {

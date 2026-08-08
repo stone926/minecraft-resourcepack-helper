@@ -180,8 +180,14 @@ describe("model preview generated item and CIT previews", () => {
       const service = createService();
 
       const missing = await service.getPreviewDocument(properties);
-      assert.ok(missing.dependencies.some(dependency => dependency.uri.endsWith("missing_model.properties")));
-      assert.ok(missing.dependencies.some(dependency => dependency.uri.endsWith("later_model.json")));
+      assert.notStrictEqual(
+        missing.dependencies.find(dependency => dependency.uri.endsWith("missing_model.properties"))?.watchOnly,
+        true
+      );
+      assert.strictEqual(
+        missing.dependencies.find(dependency => dependency.uri.endsWith("later_model.json"))?.watchOnly,
+        true
+      );
 
       writeJson(pack, "assets/minecraft/citresewn/cit/later_model.json", {
         elements: [{
@@ -193,6 +199,10 @@ describe("model preview generated item and CIT previews", () => {
       service.invalidateDependents(modelCandidate);
       const created = await service.getPreviewDocument(properties);
       assert.strictEqual(created.meshes.length, 1);
+      assert.notStrictEqual(
+        created.dependencies.find(dependency => dependency.uri.endsWith("later_model.json"))?.watchOnly,
+        true
+      );
     } finally {
       removeTempDirectory(root);
     }
@@ -213,12 +223,19 @@ describe("model preview generated item and CIT previews", () => {
       const service = createService();
 
       const missing = await service.getPreviewDocument(properties);
-      assert.ok(missing.dependencies.some(dependency => dependency.uri.endsWith("later_texture.png")));
+      assert.strictEqual(
+        missing.dependencies.find(dependency => dependency.uri.endsWith("later_texture.png"))?.watchOnly,
+        true
+      );
 
       writeFile(pack, "assets/minecraft/citresewn/cit/later_texture.png", createRgbaPng(2, 2, () => 255));
       service.invalidateDependents(textureCandidate);
       const created = await service.getPreviewDocument(properties);
       assert.match(created.materials[0].textureUri ?? "", /later_texture\.png$/);
+      assert.notStrictEqual(
+        created.dependencies.find(dependency => dependency.uri.endsWith("later_texture.png"))?.watchOnly,
+        true
+      );
     } finally {
       removeTempDirectory(root);
     }

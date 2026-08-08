@@ -5,6 +5,7 @@ import type {
   ModelPreviewFileSystem,
   ResolvedDependency
 } from "../model/ModelDocument";
+import { setDependencyWithActualPriority } from "../model/DependencyPriority";
 
 /**
  * Pack discovery is itself a resource dependency. Keep both the current
@@ -12,22 +13,28 @@ import type {
  * the nearest pack root without leaving an open preview stale.
  */
 export function collectPackMetadataDependencies(
-  resourceFileNames: Iterable<string>,
+  resourceDependencies: Iterable<ResolvedDependency>,
   configuration: ModelPreviewConfiguration,
   fileSystem: ModelPreviewFileSystem
 ): ResolvedDependency[] {
   const dependencies = new Map<string, ResolvedDependency>();
 
-  for (const fileName of resourceFileNames) {
+  for (const resourceDependency of resourceDependencies) {
+    const fileName = resourceDependency.fileName;
     const packRoot = fileSystem.getPackRoot?.(fileName) ?? null;
     for (const candidate of ancestorPackMetadataCandidates(fileName, packRoot)) {
-      addDependency(dependencies, candidate);
+      addDependency(
+        dependencies,
+        candidate,
+        resourceDependency.watchOnly === true || !fileSystem.fileExists(candidate)
+      );
     }
   }
 
   for (const configuredRoot of configuration.resourcePackRoots ?? []) {
     if (configuredRoot.trim()) {
-      addDependency(dependencies, path.join(path.normalize(configuredRoot), "pack.mcmeta"));
+      const candidate = path.join(path.normalize(configuredRoot), "pack.mcmeta");
+      addDependency(dependencies, candidate, !fileSystem.fileExists(candidate));
     }
   }
 
@@ -72,9 +79,18 @@ function ancestorPackMetadataCandidates(fileName: string, packRoot: string | nul
   }
 }
 
-function addDependency(dependencies: Map<string, ResolvedDependency>, fileName: string): void {
-  dependencies.set(normalizePathKey(fileName), {
-    fileName,
-    kind: "packMetadata"
-  });
+function addDependency(
+  dependencies: Map<string, ResolvedDependency>,
+  fileName: string,
+  watchOnly: boolean
+): void {
+  setDependencyWithActualPriority(
+    dependencies,
+    normalizePathKey(fileName),
+    {
+      fileName,
+      kind: "packMetadata",
+      ...(watchOnly ? { watchOnly: true } : {})
+    }
+  );
 }

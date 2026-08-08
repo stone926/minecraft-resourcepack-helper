@@ -5,6 +5,7 @@ import { localize } from "../../i18n/runtime";
 import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
 import { findPackRoot } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewMaterial, WebviewModelPreviewDocument } from "../ir/PreviewDocument";
+import { getDisplayedPreviewDependencies } from "./ModelPreviewDependencyPresentation";
 
 export class ModelPreviewWebview {
   constructor(
@@ -115,6 +116,7 @@ export class ModelPreviewWebview {
   toWebviewDocument(document: ModelPreviewDocument): WebviewModelPreviewDocument {
     return {
       ...document,
+      dependencies: getDisplayedPreviewDependencies(document.dependencies),
       materials: document.materials.map(material => this.toWebviewMaterial(material)),
       issues: document.issues.map(issue => ({
         ...issue,

@@ -129,7 +129,11 @@ export class CitPreviewResolver {
     });
     for (const candidate of candidates) {
       this.observeDependency?.(candidate);
-      this.dependencies.set(`${kind}\0${normalizePathKey(candidate)}`, { fileName: candidate, kind });
+      this.dependencies.set(`${kind}\0${normalizePathKey(candidate)}`, {
+        fileName: candidate,
+        kind,
+        watchOnly: true
+      });
     }
     return candidates;
   }

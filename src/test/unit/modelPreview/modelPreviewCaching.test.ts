@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
 import { ModelPreviewCancellationSource } from "../../../modelPreview/cancellation";
+import { dependencyKey } from "../../../modelPreview/paths";
 import { ModelDependencyTracker } from "../../../modelPreview/service/ModelDependencyTracker";
 import {
   ModelPreviewConsistencyError,
@@ -179,11 +180,19 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
 
       const fallback = await service.getPreviewDocument(childFileName);
       assert.strictEqual(fallback.meshes[0].faces.length, 1);
-      assert.ok(fallback.dependencies.some(dependency =>
+      const missingOverride = fallback.dependencies.find(dependency =>
         dependency.kind === "model" &&
         dependency.uri.includes("/current-parent/") &&
         dependency.uri.endsWith("/fallback_parent.json")
-      ), "the missing higher-priority parent candidate must remain a dependency");
+      );
+      const selectedParent = fallback.dependencies.find(dependency =>
+        dependency.kind === "model" &&
+        dependency.uri.includes("/lower-parent/") &&
+        dependency.uri.endsWith("/fallback_parent.json")
+      );
+      assert.strictEqual(missingOverride?.watchOnly, true, "the missing higher-priority parent must remain watchable");
+      assert.ok(selectedParent);
+      assert.notStrictEqual(selectedParent.watchOnly, true, "the selected parent must remain displayable");
 
       writeJson(currentPack, "assets/minecraft/models/block/fallback_parent.json", modelWithFaces("north", "south"));
       service.invalidateDependents(overrideCandidate);
@@ -208,11 +217,19 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
 
       const fallback = await service.getPreviewDocument(modelFileName);
       assert.match(fallback.materials[0].textureUri ?? "", /lower-texture.*override\.png$/);
-      assert.ok(fallback.dependencies.some(dependency =>
+      const missingOverride = fallback.dependencies.find(dependency =>
         dependency.kind === "texture" &&
         dependency.uri.includes("/current-texture/") &&
         dependency.uri.endsWith("/override.png")
-      ), "the missing higher-priority texture candidate must remain a dependency");
+      );
+      const selectedTexture = fallback.dependencies.find(dependency =>
+        dependency.kind === "texture" &&
+        dependency.uri.includes("/lower-texture/") &&
+        dependency.uri.endsWith("/override.png")
+      );
+      assert.strictEqual(missingOverride?.watchOnly, true, "the missing higher-priority texture must remain watchable");
+      assert.ok(selectedTexture);
+      assert.notStrictEqual(selectedTexture.watchOnly, true, "the selected texture must remain displayable");
 
       writeFile(currentPack, "assets/minecraft/textures/block/override.png", "higher");
       service.invalidateDependents(overrideCandidate);
@@ -394,6 +411,12 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
       assert.strictEqual(tracker.hasFile(nestedPackMetadata), true, "missing closer pack root must remain a create dependency");
       assert.strictEqual(tracker.hasFile(outerPackMetadata), true, "current pack metadata must remain a change/delete dependency");
       assert.strictEqual(tracker.hasFile(lowerPackMetadata), true, "configured pack metadata must remain a filter/overlay dependency");
+      const dependencyFor = (fileName: string) => blockedByOuter.dependencies.find(dependency =>
+        dependency.kind === "packMetadata" && dependencyKey(dependency.uri) === dependencyKey(fileName)
+      );
+      assert.strictEqual(dependencyFor(nestedPackMetadata)?.watchOnly, true);
+      assert.notStrictEqual(dependencyFor(outerPackMetadata)?.watchOnly, true);
+      assert.notStrictEqual(dependencyFor(lowerPackMetadata)?.watchOnly, true);
 
       writeJson(nestedPack, "pack.mcmeta", basePackMetadata());
       invalidatePreviewPath(cache, service, nestedPackMetadata);

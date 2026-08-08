@@ -8,6 +8,7 @@ import type {
   ResolvedModel
 } from "../model/ModelDocument";
 import { isTextureObject } from "../model/ModelDocument";
+import { setDependencyWithActualPriority } from "../model/DependencyPriority";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { normalizePathKey } from "../../../packages/mc-assets/src";
 import { fileUriString } from "../paths";
@@ -56,7 +57,11 @@ export class TextureReferenceResolver {
     const dependencies = new Map<string, ResolvedDependency>();
     for (const resolution of this.materials.values()) {
       for (const dependency of resolution.dependencies) {
-        dependencies.set(`${dependency.kind}\0${normalizePathKey(dependency.fileName)}`, dependency);
+        setDependencyWithActualPriority(
+          dependencies,
+          `${dependency.kind}\0${normalizePathKey(dependency.fileName)}`,
+          dependency
+        );
       }
     }
     return [...dependencies.values()];
@@ -123,7 +128,10 @@ export class TextureReferenceResolver {
       return missingMaterial(textureResource, candidateDependencies);
     }
 
-    const dependencies: ResolvedDependency[] = candidateDependencies;
+    const dependencies: ResolvedDependency[] = [
+      ...candidateDependencies,
+      { fileName: textureFile.fileName, kind: "texture" }
+    ];
     const metadataFileName = `${textureFile.fileName}.mcmeta`;
     if (this.fileSystem.fileExists(metadataFileName)) {
       dependencies.push({ fileName: metadataFileName, kind: "textureMetadata" });
@@ -148,7 +156,7 @@ export class TextureReferenceResolver {
 function uniqueTextureDependencies(fileNames: readonly string[]): ResolvedDependency[] {
   return [...new Map(fileNames.map(fileName => [
     normalizePathKey(fileName),
-    { fileName, kind: "texture" as const }
+    { fileName, kind: "texture" as const, watchOnly: true }
   ])).values()];
 }
 

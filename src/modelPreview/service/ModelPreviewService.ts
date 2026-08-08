@@ -6,6 +6,7 @@ import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys
 import { normalizePathKey, type ResourceFileRequest } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewDependency } from "../ir/PreviewDocument";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem, ResolvedDependency, ResolvedModel } from "../model/ModelDocument";
+import { setDependencyWithActualPriority } from "../model/DependencyPriority";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import type { PngAlphaMask } from "../bake/AlphaMask";
 import { CuboidBaker } from "../bake/CuboidBaker";
@@ -153,7 +154,7 @@ export class ModelPreviewService {
         ...additionalDependencies
       ];
       const dependencies = collectPackMetadataDependencies(
-        resourceDependencies.map(dependency => dependency.fileName),
+        resourceDependencies,
         configuration,
         this.fileSystem
       );
@@ -203,7 +204,7 @@ export class ModelPreviewService {
     const dependencies = [
       ...resourceDependencies,
       ...collectPackMetadataDependencies(
-        resourceDependencies.map(dependency => dependency.fileName),
+        resourceDependencies,
         configuration,
         this.fileSystem
       )
@@ -352,10 +353,12 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
   const previewDependencies = new Map<string, PreviewDependency>();
   for (const dependency of dependencies) {
     const key = `${dependency.kind}\0${normalizePathKey(dependency.fileName)}`;
-    previewDependencies.set(key, {
+    const previewDependency: PreviewDependency = {
       uri: fileUriString(dependency.fileName),
-      kind: dependency.kind
-    });
+      kind: dependency.kind,
+      ...(dependency.watchOnly ? { watchOnly: true } : {})
+    };
+    setDependencyWithActualPriority(previewDependencies, key, previewDependency);
   }
 
   if (includeConfiguration) {

@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PreviewIssue } from "../../../modelPreview/ir/PreviewDocument";
 import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
+import { fileUriString } from "../../../modelPreview/paths";
 import { createPack, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
 
@@ -42,8 +43,16 @@ describe("model preview parent and texture resolution", () => {
       assert.strictEqual(preview.materials[0].fallback, "texture");
       assert.ok(preview.materials[0].textureVersion, "texture materials should carry file dependency versions for webview caching");
       assert.match(preview.materials[0].textureUri ?? "", /custom\.png$/);
-      assert.ok(preview.dependencies.some(dependency => dependency.uri.endsWith("/cube_all.json") || dependency.uri.endsWith("cube_all.json")));
-      assert.ok(preview.dependencies.some(dependency => dependency.uri.endsWith("/custom.png") || dependency.uri.endsWith("custom.png")));
+      const parentDependency = preview.dependencies.find(dependency =>
+        dependency.uri.endsWith("/cube_all.json") || dependency.uri.endsWith("cube_all.json")
+      );
+      const textureDependency = preview.dependencies.find(dependency =>
+        dependency.uri.endsWith("/custom.png") || dependency.uri.endsWith("custom.png")
+      );
+      assert.ok(parentDependency);
+      assert.notStrictEqual(parentDependency.watchOnly, true, "the selected parent must remain displayable");
+      assert.ok(textureDependency);
+      assert.notStrictEqual(textureDependency.watchOnly, true, "the selected texture must remain displayable");
       assert.deepStrictEqual(preview.issues.filter(issue => issue.severity === "error"), []);
     } finally {
       removeTempDirectory(root);
@@ -236,6 +245,7 @@ describe("model preview parent and texture resolution", () => {
     try {
       const pack = createPack(root, "pack");
       const defaultAssets = path.join(root, "default");
+      const defaultParent = path.join(defaultAssets, "assets/minecraft/models/block/cube_all.json");
       writeJson(defaultAssets, "assets/minecraft/models/block/cube_all.json", {
         elements: [
           {
@@ -255,7 +265,52 @@ describe("model preview parent and texture resolution", () => {
         .getPreviewDocument(path.join(pack, "assets/minecraft/models/block/custom.json"));
 
       assert.strictEqual(preview.meshes.length, 1);
-      assert.ok(preview.dependencies.some(dependency => dependency.uri.includes("/default/") || dependency.uri.includes("%5Cdefault%5C")));
+      const selectedParent = preview.dependencies.find(dependency => dependency.uri === fileUriString(defaultParent));
+      const unusedDefaultCandidates = preview.dependencies.filter(dependency =>
+        dependency.kind === "model" &&
+        dependency.uri !== fileUriString(defaultParent) &&
+        (dependency.uri.includes("/default/") || dependency.uri.includes("%5Cdefault%5C")) &&
+        dependency.uri.endsWith("cube_all.json")
+      );
+      assert.ok(selectedParent);
+      assert.notStrictEqual(selectedParent.watchOnly, true, "the selected default-layout candidate must be displayable");
+      assert.ok(unusedDefaultCandidates.length >= 2, "default assets should retain alternate layout candidates for invalidation");
+      assert.ok(unusedDefaultCandidates.every(dependency => dependency.watchOnly === true));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("keeps existing but unused default-asset candidates out of the displayed dependency set", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const defaultAssets = createPack(root, "default");
+      const currentTexture = path.join(pack, "assets/minecraft/textures/block/custom.png");
+      const unusedDefaultTexture = path.join(defaultAssets, "assets/minecraft/textures/block/custom.png");
+      const unusedDefaultMetadata = path.join(defaultAssets, "pack.mcmeta");
+      writeJson(pack, "assets/minecraft/models/block/custom.json", {
+        textures: { all: "minecraft:block/custom" },
+        elements: [{
+          from: [0, 0, 0],
+          to: [16, 16, 16],
+          faces: { north: { texture: "#all" } }
+        }]
+      });
+      writeFile(pack, "assets/minecraft/textures/block/custom.png", "current");
+      writeFile(defaultAssets, "assets/minecraft/textures/block/custom.png", "default");
+
+      const preview = await createService({ defaultAssetsPath: defaultAssets })
+        .getPreviewDocument(path.join(pack, "assets/minecraft/models/block/custom.json"));
+
+      const dependencyFor = (fileName: string) => preview.dependencies.find(dependency =>
+        dependency.uri === fileUriString(fileName)
+      );
+      assert.match(preview.materials[0].textureUri ?? "", /[\\/]pack[\\/].*custom\.png$/);
+      assert.notStrictEqual(dependencyFor(currentTexture)?.watchOnly, true);
+      assert.strictEqual(dependencyFor(unusedDefaultTexture)?.watchOnly, true);
+      assert.strictEqual(dependencyFor(unusedDefaultMetadata)?.watchOnly, true);
     } finally {
       removeTempDirectory(root);
     }

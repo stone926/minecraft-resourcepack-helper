@@ -81,7 +81,8 @@ export class ParentChainResolver {
       for (const candidate of this.resources.getModelFileCandidates(parent, fileName)) {
         this.resolutionDependencies.set(normalizePathKey(candidate), {
           fileName: candidate,
-          kind: "model"
+          kind: "model",
+          watchOnly: true
         });
       }
       const parentFile = this.resources.resolveModelFileName(parent, fileName);
