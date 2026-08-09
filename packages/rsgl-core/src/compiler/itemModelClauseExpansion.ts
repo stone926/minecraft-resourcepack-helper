@@ -13,6 +13,10 @@ import type {
   TextRange
 } from "../parser";
 import {
+  forEachBodyStatement,
+  type RsglBodyEntryStatement
+} from "../bodyStatementDispatch";
+import {
   bindEvaluationResult,
   childEvaluationContext,
   evaluateCompileTimeCondition,
@@ -51,6 +55,27 @@ type ItemCompositeClause = Extract<
   { kind: "ItemCompositeModel" }
 >;
 
+type ItemOwnerBody =
+  | ItemSelectBodyNode
+  | ItemRangeBodyNode
+  | ItemCompositeBodyNode
+  | ItemFirstMatchBodyNode
+  | ItemModelTemplateBodyNode;
+
+type ItemOwnerStatement = ItemOwnerBody["statements"][number];
+
+interface ItemBodyExpansionContext {
+  readonly context: RsglCompileContext;
+  readonly host: ItemModelClauseExpansionHost;
+  readonly expectedKind: ItemOwnerBody["kind"];
+  readonly expectedDescription: string;
+  readonly generatedPath: string;
+  readonly visitBody: (
+    body: RsglStatementBodyNode,
+    context: RsglCompileContext
+  ) => void;
+}
+
 export type ItemModelTemplateExecutableStatement = Extract<
   ItemModelTemplateBodyNode["statements"][number],
   { kind: "ItemModelProducerStmt" | "UseDecl" }
@@ -64,30 +89,15 @@ export function expandItemSelectBody(
   visit: (statement: ItemSelectClause, context: RsglCompileContext) => void,
   generatedPath = "/model"
 ): void {
-  for (const statement of body.statements) {
-    switch (statement.kind) {
-      case "ItemSelectCase":
-      case "ItemFallbackClause":
-        visit(statement, context);
-        break;
-      case "LetDecl":
-        bindLet(statement, context);
-        break;
-      case "ForStmt":
-        executeOwnerFor(statement, context, host, "ItemSelectBody", (nested, nestedContext) =>
-          expandItemSelectBody(nested as ItemSelectBodyNode, nestedContext, host, visit, generatedPath),
-        "ItemSelectBody", generatedPath);
-        break;
-      case "IfStmt":
-        executeOwnerIf(statement, context, host, "ItemSelectBody", (nested, nestedContext) =>
-          expandItemSelectBody(nested as ItemSelectBodyNode, nestedContext, host, visit, generatedPath));
-        break;
-      case "UnknownStmt":
-        break;
-      default:
-        assertNever(statement);
-    }
-  }
+  expandItemBodyStatements(body.statements, {
+    context,
+    host,
+    expectedKind: "ItemSelectBody",
+    expectedDescription: "ItemSelectBody",
+    generatedPath,
+    visitBody: (nested, nestedContext) =>
+      expandItemSelectBody(nested as ItemSelectBodyNode, nestedContext, host, visit, generatedPath)
+  }, visit);
 }
 
 /** Expands entry/frames/fallback clauses in a range body in source order. */
@@ -98,31 +108,15 @@ export function expandItemRangeBody(
   visit: (statement: ItemRangeClause, context: RsglCompileContext) => void,
   generatedPath = "/model"
 ): void {
-  for (const statement of body.statements) {
-    switch (statement.kind) {
-      case "ItemRangeEntry":
-      case "ItemRangeFrames":
-      case "ItemFallbackClause":
-        visit(statement, context);
-        break;
-      case "LetDecl":
-        bindLet(statement, context);
-        break;
-      case "ForStmt":
-        executeOwnerFor(statement, context, host, "ItemRangeBody", (nested, nestedContext) =>
-          expandItemRangeBody(nested as ItemRangeBodyNode, nestedContext, host, visit, generatedPath),
-        "ItemRangeBody", generatedPath);
-        break;
-      case "IfStmt":
-        executeOwnerIf(statement, context, host, "ItemRangeBody", (nested, nestedContext) =>
-          expandItemRangeBody(nested as ItemRangeBodyNode, nestedContext, host, visit, generatedPath));
-        break;
-      case "UnknownStmt":
-        break;
-      default:
-        assertNever(statement);
-    }
-  }
+  expandItemBodyStatements(body.statements, {
+    context,
+    host,
+    expectedKind: "ItemRangeBody",
+    expectedDescription: "ItemRangeBody",
+    generatedPath,
+    visitBody: (nested, nestedContext) =>
+      expandItemRangeBody(nested as ItemRangeBodyNode, nestedContext, host, visit, generatedPath)
+  }, visit);
 }
 
 /** Expands model clauses in a composite body in source order. */
@@ -133,29 +127,21 @@ export function expandItemCompositeBody(
   visit: (statement: ItemCompositeClause, context: RsglCompileContext) => void,
   generatedPath = "/model"
 ): void {
-  for (const statement of body.statements) {
-    switch (statement.kind) {
-      case "ItemCompositeModel":
-        visit(statement, context);
-        break;
-      case "LetDecl":
-        bindLet(statement, context);
-        break;
-      case "ForStmt":
-        executeOwnerFor(statement, context, host, "ItemCompositeBody", (nested, nestedContext) =>
-          expandItemCompositeBody(nested as ItemCompositeBodyNode, nestedContext, host, visit, generatedPath),
-        "ItemCompositeBody", generatedPath);
-        break;
-      case "IfStmt":
-        executeOwnerIf(statement, context, host, "ItemCompositeBody", (nested, nestedContext) =>
-          expandItemCompositeBody(nested as ItemCompositeBodyNode, nestedContext, host, visit, generatedPath));
-        break;
-      case "UnknownStmt":
-        break;
-      default:
-        assertNever(statement);
-    }
-  }
+  expandItemBodyStatements(body.statements, {
+    context,
+    host,
+    expectedKind: "ItemCompositeBody",
+    expectedDescription: "ItemCompositeBody",
+    generatedPath,
+    visitBody: (nested, nestedContext) =>
+      expandItemCompositeBody(
+        nested as ItemCompositeBodyNode,
+        nestedContext,
+        host,
+        visit,
+        generatedPath
+      )
+  }, visit);
 }
 
 /**
@@ -181,44 +167,21 @@ export function expandItemModelTemplateBody(
   visit: (statement: ItemModelTemplateExecutableStatement, context: RsglCompileContext) => void,
   generatedPath = "/model"
 ): void {
-  for (const statement of body.statements) {
-    switch (statement.kind) {
-      case "ItemModelProducerStmt":
-      case "UseDecl":
-        visit(statement, context);
-        break;
-      case "LetDecl":
-        bindLet(statement, context);
-        break;
-      case "ForStmt":
-        executeOwnerFor(
-          statement,
-          context,
-          host,
-          "ItemModelTemplateBody",
-          (nested, nestedContext) =>
-            expandItemModelTemplateBody(nested as ItemModelTemplateBodyNode, nestedContext, host, visit, generatedPath),
-          "item_model template",
-          generatedPath
-        );
-        break;
-      case "IfStmt":
-        executeOwnerIf(
-          statement,
-          context,
-          host,
-          "ItemModelTemplateBody",
-          (nested, nestedContext) =>
-            expandItemModelTemplateBody(nested as ItemModelTemplateBodyNode, nestedContext, host, visit, generatedPath),
-          "item_model template"
-        );
-        break;
-      case "UnknownStmt":
-        break;
-      default:
-        assertNever(statement);
-    }
-  }
+  expandItemBodyStatements(body.statements, {
+    context,
+    host,
+    expectedKind: "ItemModelTemplateBody",
+    expectedDescription: "item_model template",
+    generatedPath,
+    visitBody: (nested, nestedContext) =>
+      expandItemModelTemplateBody(
+        nested as ItemModelTemplateBodyNode,
+        nestedContext,
+        host,
+        visit,
+        generatedPath
+      )
+  }, visit);
 }
 
 function collectFirstMatchBody(
@@ -228,32 +191,64 @@ function collectFirstMatchBody(
   result: ExpandedItemFirstMatchClauses,
   generatedPath: string
 ): void {
-  for (const statement of body.statements) {
+  expandItemBodyStatements(body.statements, {
+    context,
+    host,
+    expectedKind: "ItemFirstMatchBody",
+    expectedDescription: "ItemFirstMatchBody",
+    generatedPath,
+    visitBody: (nested, nestedContext) =>
+      collectFirstMatchBody(
+        nested as ItemFirstMatchBodyNode,
+        nestedContext,
+        host,
+        result,
+        generatedPath
+      )
+  }, (statement, entryContext) => {
     switch (statement.kind) {
       case "ItemFirstMatchWhen":
-        result.whens.push({ node: statement, context: childEvaluationContext(context, {}) });
+        result.whens.push({ node: statement, context: childEvaluationContext(entryContext, {}) });
         break;
       case "ItemFallbackClause":
-        result.fallbacks.push({ node: statement, context: childEvaluationContext(context, {}) });
-        break;
-      case "LetDecl":
-        bindLet(statement, context);
-        break;
-      case "ForStmt":
-        executeOwnerFor(statement, context, host, "ItemFirstMatchBody", (nested, nestedContext) =>
-          collectFirstMatchBody(nested as ItemFirstMatchBodyNode, nestedContext, host, result, generatedPath),
-        "ItemFirstMatchBody", generatedPath);
-        break;
-      case "IfStmt":
-        executeOwnerIf(statement, context, host, "ItemFirstMatchBody", (nested, nestedContext) =>
-          collectFirstMatchBody(nested as ItemFirstMatchBodyNode, nestedContext, host, result, generatedPath));
-        break;
-      case "UnknownStmt":
+        result.fallbacks.push({ node: statement, context: childEvaluationContext(entryContext, {}) });
         break;
       default:
         assertNever(statement);
     }
-  }
+  });
+}
+
+function expandItemBodyStatements<TStatement extends ItemOwnerStatement>(
+  statements: readonly TStatement[],
+  expansion: ItemBodyExpansionContext,
+  onEntry: (
+    statement: RsglBodyEntryStatement<TStatement>,
+    context: RsglCompileContext
+  ) => void
+): void {
+  forEachBodyStatement(statements, {
+    context: expansion,
+    onEntry: (statement, current) => onEntry(statement, current.context),
+    onLet: (statement, current) => bindLet(statement, current.context),
+    onFor: (statement, current) => executeOwnerFor(
+      statement,
+      current.context,
+      current.host,
+      current.expectedKind,
+      current.visitBody,
+      current.expectedDescription,
+      current.generatedPath
+    ),
+    onIf: (statement, current) => executeOwnerIf(
+      statement,
+      current.context,
+      current.host,
+      current.expectedKind,
+      current.visitBody,
+      current.expectedDescription
+    )
+  });
 }
 
 function executeOwnerFor(

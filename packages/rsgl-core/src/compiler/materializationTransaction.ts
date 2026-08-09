@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { errorMessage } from "../../../shared-utils/src";
 import { uniqueValues } from "../../../mc-assets/src";
 import { materializationCancellationMessages } from "../diagnosticMessages";
 import { mapWithConcurrency } from "../asyncWorkPool";
@@ -419,9 +420,6 @@ function transactionFailure(error: unknown): RsglMaterializationFailure {
   return { operation: "write", message: errorMessage(error) };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));

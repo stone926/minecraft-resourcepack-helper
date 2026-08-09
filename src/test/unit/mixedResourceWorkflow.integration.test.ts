@@ -14,10 +14,12 @@ import {
   runRsglMaterializationTransaction
 } from "../../../packages/rsgl-core/src";
 import {
+  RsglGeneratedProvider,
+  projectRsglGeneratedOwnershipManifest
+} from "../../rsgl/provider";
+import {
   ResourceNavigationService,
   ResourceUniverseIndex,
-  RsglGeneratedProvider,
-  projectRsglGeneratedOwnershipManifest,
   type ResourceContributionRequest,
   type ResourceEdge,
   type ResourceNavigationResult,

@@ -17,6 +17,7 @@
     "src/rsgl/host/**"
   ],
   "references": [
+    { "path": "./packages/shared-utils" },
     { "path": "./packages/mc-assets" },
     { "path": "./packages/resource-project" },
     { "path": "./packages/rsgl-shared" }

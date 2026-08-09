@@ -1,5 +1,6 @@
 import { providerProjectKey } from "./identity";
 import type { ResourceGraphLogicalKey } from "../../../packages/mc-assets/src";
+import { ListenerSet } from "../../../packages/shared-utils/src";
 import { abortSignalReason } from "../../utils/abortError";
 import { ResourceContributionRegistry, type ResourceProviderRegistration } from "./resourceContributionRegistry";
 import { ResourceUniverseIndex } from "./resourceUniverseIndex";
@@ -72,7 +73,7 @@ export class ResourceUniverseService {
   private readonly requestStates = new Map<string, ProviderProjectRequestState>();
   private readonly generationListeners = new Map<string, Set<(generation: number) => void>>();
   private readonly knownProviderProjects = new Set<string>();
-  private readonly listeners = new Set<(event: ResourceUniverseChangeEvent) => void>();
+  private readonly listeners = new ListenerSet<ResourceUniverseChangeEvent>();
 
   public constructor(
     public readonly registry = new ResourceContributionRegistry(),
@@ -98,8 +99,7 @@ export class ResourceUniverseService {
   }
 
   public onDidChange(listener: (event: ResourceUniverseChangeEvent) => void): ResourceUniverseSubscription {
-    this.listeners.add(listener);
-    return { dispose: () => this.listeners.delete(listener) };
+    return this.listeners.add(listener);
   }
 
   public async refreshProviderProject(
@@ -621,9 +621,7 @@ export class ResourceUniverseService {
   }
 
   private emit(event: ResourceUniverseChangeEvent): void {
-    for (const listener of this.listeners) {
-      listener(event);
-    }
+    this.listeners.emit(event);
   }
 }
 

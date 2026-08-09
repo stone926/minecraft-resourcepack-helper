@@ -10,9 +10,14 @@ import type {
   BlockstateVariantsRootStatementNode,
   ExprNode,
   ForStmtNode,
+  IfStmtNode,
   MultipartSectionStatementNode,
   VariantSectionStatementNode
 } from "../parser";
+import {
+  forEachBodyStatement,
+  type RsglBodyEntryStatement
+} from "../bodyStatementDispatch";
 import { staticBlockstateRootFields } from "../blockstateModeEvidence";
 import type { RsglTemplateCallerContext } from "../templateOutput";
 import {
@@ -42,6 +47,12 @@ type CheckableBlockstateRootBody =
 type CheckableBlockstateRootStatement =
   | BlockstateVariantsRootStatementNode
   | BlockstateMultipartRootStatementNode;
+
+type CheckableBlockstateStatement =
+  | CheckableBlockstateRootStatement
+  | VariantSectionStatementNode
+  | MultipartSectionStatementNode
+  | BlockstateChoiceStatementNode;
 
 export interface RsglBlockstateBodyCheckerHost {
   context: RsglExpressionCheckContext;
@@ -76,110 +87,96 @@ export class RsglBlockstateBodyChecker {
     scope: RsglScope,
     callerContext: Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }>
   ): void {
-    for (const statement of body.statements) {
-      this.checkRootStatement(statement, scope, callerContext);
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
+    this.checkBodyStatements<
+      CheckableBlockstateRootStatement,
+      Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }>
+    >(
+      body.statements as readonly CheckableBlockstateRootStatement[],
+      scope,
+      callerContext,
+      (statement, entryScope, entryContext) =>
+        this.checkRootEntry(statement, entryScope, entryContext),
+      nestedRootContext(callerContext)
+    );
   }
 
   public checkVariantStatements(
     statements: readonly VariantSectionStatementNode[],
     scope: RsglScope
   ): void {
-    for (const statement of statements) {
-      switch (statement.kind) {
-        case "BlockstateVariantEntry":
-          if (statement.selector.kind !== "BlockstateWildcardSelector") {
-            this.checkSelector(statement.selector, scope);
-          }
-          this.checkChoice(statement.choice, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "UseDecl":
-          this.checkUse(statement.expression, scope, variantsEntriesCallerContext);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, variantsEntriesCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope, variantsEntriesCallerContext);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
+    this.checkBodyStatements(
+      statements,
+      scope,
+      variantsEntriesCallerContext,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "BlockstateVariantEntry":
+            if (statement.selector.kind !== "BlockstateWildcardSelector") {
+              this.checkSelector(statement.selector, entryScope);
+            }
+            this.checkChoice(statement.choice, entryScope);
+            break;
+          case "UseDecl":
+            this.checkUse(statement.expression, entryScope, variantsEntriesCallerContext);
+            break;
+          default:
+            assertNever(statement);
+        }
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
+    );
   }
 
   public checkMultipartStatements(
     statements: readonly MultipartSectionStatementNode[],
     scope: RsglScope
   ): void {
-    for (const statement of statements) {
-      switch (statement.kind) {
-        case "BlockstateMultipartEntry":
-          this.checkMultipartEntry(statement, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "UseDecl":
-          this.checkUse(statement.expression, scope, multipartEntriesCallerContext);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, multipartEntriesCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope, multipartEntriesCallerContext);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
+    this.checkBodyStatements(
+      statements,
+      scope,
+      multipartEntriesCallerContext,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "BlockstateMultipartEntry":
+            this.checkMultipartEntry(statement, entryScope);
+            break;
+          case "UseDecl":
+            this.checkUse(statement.expression, entryScope, multipartEntriesCallerContext);
+            break;
+          default:
+            assertNever(statement);
+        }
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
+    );
   }
 
   public checkChoiceStatements(
     statements: readonly BlockstateChoiceStatementNode[],
     scope: RsglScope
   ): void {
-    for (const statement of statements) {
-      switch (statement.kind) {
-        case "BlockstateRandomOption":
-          this.checkModelSpec(statement.model, scope);
-          if (statement.weight) {
-            checkBlockstateRandomWeight(this.host.context, statement.weight, scope);
-          }
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "UseDecl":
-          this.checkUse(statement.expression, scope, choiceEntriesCallerContext);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, choiceEntriesCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope, choiceEntriesCallerContext);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
+    this.checkBodyStatements(
+      statements,
+      scope,
+      choiceEntriesCallerContext,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "BlockstateRandomOption":
+            this.checkModelSpec(statement.model, entryScope);
+            if (statement.weight) {
+              checkBlockstateRandomWeight(this.host.context, statement.weight, entryScope);
+            }
+            break;
+          case "UseDecl":
+            this.checkUse(statement.expression, entryScope, choiceEntriesCallerContext);
+            break;
+          default:
+            assertNever(statement);
+        }
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
+    );
   }
 
-  private checkRootStatement(
-    statement: CheckableBlockstateRootStatement,
+  private checkRootEntry(
+    statement: RsglBodyEntryStatement<CheckableBlockstateRootStatement>,
     scope: RsglScope,
     callerContext: Extract<RsglTemplateCallerContext, { kind: "blockstateRoot" }>
   ): void {
@@ -193,17 +190,8 @@ export class RsglBlockstateBodyChecker {
       case "BlockstateMultipartEntry":
         this.checkMultipartEntry(statement, scope);
         break;
-      case "LetDecl":
-        checkLocalLetDecl(this.host.context, statement, scope);
-        break;
       case "UseDecl":
         this.checkUse(statement.expression, scope, callerContext);
-        break;
-      case "ForStmt":
-        this.host.checkForStatement(statement, scope, nestedRootContext(callerContext));
-        break;
-      case "IfStmt":
-        this.checkIf(statement, scope, nestedRootContext(callerContext));
         break;
       case "BaseStmt":
         checkExpression(this.host.context, statement.path, scope);
@@ -222,8 +210,6 @@ export class RsglBlockstateBodyChecker {
           this.checkNamedRootField(name, statement.key.range, callerContext);
         }
         checkExpression(this.host.context, statement.value, scope);
-        break;
-      case "UnknownStmt":
         break;
       default:
         assertNever(statement);
@@ -276,13 +262,7 @@ export class RsglBlockstateBodyChecker {
   }
 
   private checkIf(
-    statement: Extract<
-      CheckableBlockstateRootStatement
-      | VariantSectionStatementNode
-      | MultipartSectionStatementNode
-      | BlockstateChoiceStatementNode,
-      { kind: "IfStmt" }
-    >,
+    statement: IfStmtNode,
     scope: RsglScope,
     callerContext: RsglTemplateCallerContext
   ): void {
@@ -300,6 +280,35 @@ export class RsglBlockstateBodyChecker {
         callerContext
       );
     }
+  }
+
+  private checkBodyStatements<
+    TStatement extends CheckableBlockstateStatement,
+    TCallerContext extends RsglTemplateCallerContext
+  >(
+    statements: readonly TStatement[],
+    scope: RsglScope,
+    callerContext: TCallerContext,
+    onEntry: (
+      statement: RsglBodyEntryStatement<TStatement>,
+      scope: RsglScope,
+      callerContext: TCallerContext
+    ) => void,
+    controlContext: RsglTemplateCallerContext = callerContext
+  ): void {
+    const context = { scope, callerContext, controlContext };
+    forEachBodyStatement(statements, {
+      context,
+      onEntry: (statement, current) =>
+        onEntry(statement, current.scope, current.callerContext),
+      onLet: (statement, current) =>
+        checkLocalLetDecl(this.host.context, statement, current.scope),
+      onFor: (statement, current) =>
+        this.host.checkForStatement(statement, current.scope, current.controlContext),
+      onIf: (statement, current) =>
+        this.checkIf(statement, current.scope, current.controlContext)
+    });
+    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
   }
 
   private checkStaticModeEvidence(

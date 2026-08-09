@@ -1,3 +1,5 @@
+import { isLanguageDocumentLike } from "../../shared-utils/src/documentIdentity";
+
 export const rsglFileGlob = "**/*.rsgl";
 export const rsglLanguageId = "rsgl";
 export const rsglFileExtension = ".rsgl";
@@ -12,11 +14,7 @@ export function isRsglDocumentLike(document: {
   fileName?: string;
   uriPath?: string;
 }): boolean {
-  if (document.languageId === rsglLanguageId) {
-    return true;
-  }
-  return [document.fileName, document.uriPath]
-    .some(value => value !== undefined && value.toLowerCase().endsWith(rsglFileExtension));
+  return isLanguageDocumentLike(document, rsglLanguageId, rsglFileExtension);
 }
 
 export * from "./resourceSnapshotProtocol";

@@ -1,4 +1,4 @@
-import { errorMessage } from "../utils/errorMessage";
+import { errorMessage } from "../../packages/shared-utils/src";
 import { createHash } from "node:crypto";
 import { uniqueValues } from "../../packages/mc-assets/src";
 import {
@@ -11,11 +11,11 @@ import {
   parseRsglGeneratedOwnershipManifest,
   projectParsedRsglGeneratedOwnershipManifest,
   type RsglGeneratedOwnershipManifest
-} from "../resourceUniverse/providers/rsglGeneratedOwnershipManifest";
+} from "./provider/rsglGeneratedOwnershipManifest";
 import type {
   RsglGeneratedMaterializationEntry,
   RsglGeneratedMaterializationSnapshot
-} from "../resourceUniverse/providers/rsglGeneratedMaterialization";
+} from "./provider/rsglGeneratedMaterialization";
 
 export interface RsglMaterializationHydrationHost {
   readTextUri?(uri: string): Promise<string | undefined>;
@@ -252,4 +252,3 @@ function stableRevision(value: unknown): string {
 function uniqueSorted(values: readonly string[]): string[] {
   return uniqueValues(values).sort((left, right) => left.localeCompare(right, "en"));
 }
-

@@ -2,9 +2,34 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { WorkspaceResourceCache } from "../../services/workspaceResourceCache";
+import { getResourceReferences } from "../../utils/resourceReferences";
 import { createOggVorbisBytes, createPngBytes, createTempDirectory } from "./helpers/tempPack";
 
 describe("workspace resource cache", () => {
+  it("invalidates resource-reference entries with their source document", () => {
+    const cache = new WorkspaceResourceCache();
+    const fileName = path.resolve("pack", "assets", "minecraft", "models", "block", "cached.json");
+    let reads = 0;
+    const document = {
+      fileName,
+      languageId: "json",
+      version: 1,
+      getText: () => {
+        reads++;
+        return JSON.stringify({ parent: "minecraft:block/cube" });
+      }
+    };
+
+    getResourceReferences(document, cache);
+    getResourceReferences(document, cache);
+    assert.strictEqual(reads, 1);
+    assert.strictEqual(cache.getStats().sizes.resourceReferences, 1);
+
+    cache.invalidateDocument(document);
+    getResourceReferences(document, cache);
+    assert.strictEqual(reads, 2);
+  });
+
   it("uses watcher generations for trusted hot-cache versions without stat calls", () => {
     let statCalls = 0;
     const cache = new WorkspaceResourceCache({
@@ -160,12 +185,13 @@ describe("workspace resource cache", () => {
       "fileSystemResourceCache.ts",
       "resourceResolutionCache.ts",
       "modelResourceCache.ts",
-      "mediaMetadataCache.ts"
+      "mediaMetadataCache.ts",
+      "resourceReferenceCache.ts"
     ];
 
     assert.strictEqual(facade.includes("new LruCache"), false);
     assert.strictEqual(facade.includes("new DependencyIndex"), false);
-    assert.ok(facade.split(/\r?\n/).length < 250, "workspace cache facade should stay thin");
+    assert.ok(facade.split(/\r?\n/).length < 300, "workspace cache facade should stay thin");
     for (const fileName of componentFiles) {
       assert.strictEqual(fs.existsSync(path.join(servicesRoot, fileName)), true, fileName);
     }

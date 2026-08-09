@@ -200,7 +200,7 @@ describe("resource surface registry", () => {
     assert.match(getResourceStructureDiscoveryGlob(), /assets/);
 
     const graphScan = fs.readFileSync(
-      path.join(process.cwd(), "src", "utils", "resourceGraphScan.ts"),
+      path.join(process.cwd(), "src", "services", "resourceGraphWorkspaceScan.ts"),
       "utf8"
     );
     assert.match(graphScan, /getResourceGraphDiscoveryGlob\(\)/);

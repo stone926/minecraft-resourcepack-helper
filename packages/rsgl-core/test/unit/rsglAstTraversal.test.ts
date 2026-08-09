@@ -131,4 +131,57 @@ describe("RSGL AST traversal", () => {
       "selectTransform"
     ]);
   });
+
+  it("exposes balanced body and item-model structure in canonical traversal order", () => {
+    const module = parseRsgl([
+      "item traversal {",
+      "  select property selector {",
+      "    case matchValue => condition property enabled {",
+      "      on_true composite { model firstModel }",
+      "      on_false range property damage { fallback secondModel }",
+      "    }",
+      "  }",
+      "}"
+    ].join("\n"));
+    const events: string[] = [];
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    walkRsglModule(module, {
+      enterBody(body) {
+        events.push(`+body:${body.kind}`);
+      },
+      leaveBody(body) {
+        events.push(`-body:${body.kind}`);
+      },
+      enterItemModel(model) {
+        events.push(`+model:${model.kind}`);
+      },
+      leaveItemModel(model) {
+        events.push(`-model:${model.kind}`);
+      }
+    });
+
+    assert.deepStrictEqual(events, [
+      "+body:ResourceBody",
+      "+model:ItemModelSelect",
+      "+body:ItemSelectBody",
+      "+model:ItemModelCondition",
+      "+model:ItemModelComposite",
+      "+body:ItemCompositeBody",
+      "+model:ItemModelExpr",
+      "-model:ItemModelExpr",
+      "-body:ItemCompositeBody",
+      "-model:ItemModelComposite",
+      "+model:ItemModelRange",
+      "+body:ItemRangeBody",
+      "+model:ItemModelExpr",
+      "-model:ItemModelExpr",
+      "-body:ItemRangeBody",
+      "-model:ItemModelRange",
+      "-model:ItemModelCondition",
+      "-body:ItemSelectBody",
+      "-model:ItemModelSelect",
+      "-body:ResourceBody"
+    ]);
+  });
 });

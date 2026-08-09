@@ -1,6 +1,9 @@
-import { isEditableUri, requireIdentity } from "../core/identity";
+import { isEditableUri, requireIdentity } from "../../resourceUniverse/core/identity";
 import { uniqueValues } from "../../../packages/mc-assets/src";
-import type { ResourceMaterializationState, ResourceLocation } from "../core";
+import type {
+  ResourceMaterializationState,
+  ResourceLocation
+} from "../../resourceUniverse/core";
 
 export type RsglGeneratedMaterializationState = Extract<
   ResourceMaterializationState,
@@ -211,5 +214,4 @@ function requireSerializedUri(value: string): string {
   }
   return uri;
 }
-
 

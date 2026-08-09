@@ -1,4 +1,4 @@
-import { errorMessage } from "../../utils/errorMessage";
+import { errorMessage } from "../../../packages/shared-utils/src";
 import { joinResourceProjectUri } from "../../../packages/resource-project/src";
 import type { RsglGeneratedMaterializationSnapshot } from "./rsglGeneratedMaterialization";
 
@@ -145,4 +145,3 @@ function requirePortableOutputPath(value: unknown, label: string): string {
   }
   return outputPath;
 }
-

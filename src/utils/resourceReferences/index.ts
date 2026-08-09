@@ -1,8 +1,4 @@
 import { normalizePathKey } from "../../../packages/mc-assets/src";
-import { workspaceResourceCache } from "../../services/workspaceResourceCache";
-import { LruCache } from "../../services/lruCache";
-import { openDocumentFileVersion } from "../../services/resourceCacheTypes";
-import { getCitPropertyReferences } from "../../cit/citProperties";
 import {
   filterResourceReferencesForSurface,
   getResourceReferenceExtraction
@@ -10,6 +6,15 @@ import {
 import { isInArea } from "../locationChecker";
 import { getReferencesForDocumentKind } from "./dispatch";
 import { getResourceReferenceDocumentKind } from "./documentKind";
+import {
+  getRegisteredResourceReferenceExtractor,
+  getResourceReferenceExtractionGeneration
+} from "./extractorRegistry";
+import {
+  resolveResourceReferenceHost,
+  type ResourceReferenceCacheDescriptor,
+  type ResourceReferenceHost
+} from "./host";
 import { getShaderReferences } from "./shaderRefs";
 import {
   type ResourceReference,
@@ -20,6 +25,15 @@ import {
 
 export { getReferencesForDocumentKind } from "./dispatch";
 export { getResourceReferenceDocumentKind } from "./documentKind";
+export {
+  registerResourceReferenceExtractor,
+  type RegisteredResourceReferenceExtractor
+} from "./extractorRegistry";
+export {
+  registerDefaultResourceReferenceHost,
+  type ResourceReferenceCacheDescriptor,
+  type ResourceReferenceHost
+} from "./host";
 export { isResourceReferenceKind, resourceReferenceKinds } from "./types";
 export type {
   ResourceReference,
@@ -33,9 +47,10 @@ export type {
   ResourceReferenceValueNode
 } from "./types";
 
-const resourceReferenceCache = new LruCache<string, CachedResourceReferences>(2048);
-
-export function getResourceReferences(document: ResourceReferenceDocument): ResourceReference[] {
+export function getResourceReferences(
+  document: ResourceReferenceDocument,
+  host?: ResourceReferenceHost
+): ResourceReference[] {
   const documentKind = getResourceReferenceDocumentKind(document.fileName);
   if (!documentKind) {
     return [];
@@ -49,7 +64,15 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
     return [];
   }
 
-  const cachedReferences = getCachedResourceReferences(document, documentKind);
+  const resolvedHost = resolveResourceReferenceHost(host);
+  const cacheDescriptor = getResourceReferenceCacheDescriptor(
+    document,
+    documentKind,
+    resolvedHost
+  );
+  const cachedReferences = cacheDescriptor
+    ? resolvedHost.getCachedResourceReferences(cacheDescriptor)
+    : null;
   if (cachedReferences) {
     return cachedReferences;
   }
@@ -59,31 +82,38 @@ export function getResourceReferences(document: ResourceReferenceDocument): Reso
       documentKind,
       getShaderReferences(document.getText(), extraction.source)
     );
-    setCachedResourceReferences(document, documentKind, references);
+    setCachedResourceReferences(resolvedHost, cacheDescriptor, references);
     return references;
   }
 
-  if (extraction.mode === "citProperties") {
-    const references = filterResourceReferencesForSurface(documentKind, getCitPropertyReferences(document));
-    setCachedResourceReferences(document, documentKind, references);
+  if (extraction.mode === "registered") {
+    const extractor = getRegisteredResourceReferenceExtractor(extraction.id);
+    const references = extractor
+      ? filterResourceReferencesForSurface(documentKind, extractor(document))
+      : [];
+    setCachedResourceReferences(resolvedHost, cacheDescriptor, references);
     return references;
   }
 
-  const ast = workspaceResourceCache.getJsonAst(document);
+  const ast = resolvedHost.getJsonAst(document);
   if (!ast) {
     return [];
   }
 
   const references = getReferencesForDocumentKind(ast, documentKind, document.fileName);
-  setCachedResourceReferences(document, documentKind, references);
+  setCachedResourceReferences(resolvedHost, cacheDescriptor, references);
   return references;
 }
 
-export function findResourceReferenceAtPosition(document: ResourceReferenceDocument, position: ResourceReferencePosition): ResourceReference | null {
+export function findResourceReferenceAtPosition(
+  document: ResourceReferenceDocument,
+  position: ResourceReferencePosition,
+  host?: ResourceReferenceHost
+): ResourceReference | null {
   const line = position.line + 1;
   const character = position.character + 1;
 
-  return getResourceReferences(document).find(reference =>
+  return getResourceReferences(document, host).find(reference =>
     !reference.synthetic &&
     isInArea(line, character, reference.valueNode.hitLoc ?? reference.valueNode.valueLoc ?? reference.valueNode.loc)
   ) ?? null;
@@ -102,70 +132,32 @@ export function isResourceReferenceFileName(fileName: string): boolean {
   return getResourceReferenceDocumentKind(fileName) !== null;
 }
 
-interface CachedResourceReferences {
-  fileName: string;
-  documentKind: ResourceReferenceDocumentKind;
-  version: string;
-  references: ResourceReference[];
-}
-
-function getCachedResourceReferences(
-  document: ResourceReferenceDocument,
-  documentKind: ResourceReferenceDocumentKind
-): ResourceReference[] | null {
-  const cacheDescriptor = getResourceReferenceCacheDescriptor(document);
-  if (!cacheDescriptor) {
-    return null;
-  }
-
-  const cached = resourceReferenceCache.get(cacheDescriptor.key);
-  if (!cached || cached.fileName !== document.fileName || cached.documentKind !== documentKind || cached.version !== cacheDescriptor.version) {
-    return null;
-  }
-
-  return cached.references;
-}
-
 function setCachedResourceReferences(
-  document: ResourceReferenceDocument,
-  documentKind: ResourceReferenceDocumentKind,
+  host: ResourceReferenceHost,
+  descriptor: ResourceReferenceCacheDescriptor | null,
   references: ResourceReference[]
 ): void {
-  const cacheDescriptor = getResourceReferenceCacheDescriptor(document);
-  if (cacheDescriptor) {
-    resourceReferenceCache.set(cacheDescriptor.key, {
-      fileName: document.fileName,
-      documentKind,
-      version: cacheDescriptor.version,
-      references
-    });
+  if (descriptor) {
+    host.setCachedResourceReferences(descriptor, references);
   }
 }
 
-interface ResourceReferenceCacheDescriptor {
-  key: string;
-  version: string;
-}
-
-function getResourceReferenceCacheDescriptor(document: ResourceReferenceDocument): ResourceReferenceCacheDescriptor | null {
-  const version = getResourceReferenceDocumentVersion(document);
+function getResourceReferenceCacheDescriptor(
+  document: ResourceReferenceDocument,
+  documentKind: ResourceReferenceDocumentKind,
+  host: ResourceReferenceHost
+): ResourceReferenceCacheDescriptor | null {
+  const version = host.getResourceReferenceDocumentVersion(document);
   if (!version) {
     return null;
   }
 
   return {
-    key: `${getResourceReferenceDocumentKey(document)}\0${version}`,
+    key: `${getResourceReferenceDocumentKey(document)}\0${version}\0extractors:${getResourceReferenceExtractionGeneration()}`,
+    fileName: document.fileName,
+    documentKind,
     version
   };
-}
-
-function getResourceReferenceDocumentVersion(document: ResourceReferenceDocument): string | null {
-  if (typeof document.version === "number") {
-    return openDocumentFileVersion(document.version);
-  }
-
-  const fileVersion = workspaceResourceCache.getFileVersion(document.fileName);
-  return fileVersion ? `file:${fileVersion}` : null;
 }
 
 function getResourceReferenceDocumentKey(document: ResourceReferenceDocument): string {

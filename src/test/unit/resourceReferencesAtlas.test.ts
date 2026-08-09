@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getResourceReferences } from "../../utils/resourceReferences";
 import { createJsonDocument } from "./helpers/documents";
+import { getResourceReferences } from "./helpers/resourceReferences";
 
 describe("atlas resource references", () => {
   it("extracts atlas texture file and directory references", () => {

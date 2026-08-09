@@ -10,10 +10,7 @@ export interface CacheTextDocument {
   getText(): string;
 }
 
-export interface ResourceConfiguration {
-  defaultAssetsPath?: string | null;
-  resourcePackRoots?: string[];
-}
+export type { ResourceConfiguration } from "../utils/resourceConfigurationTypes";
 
 export interface CacheStatsSnapshot {
   configurationVersion: number;

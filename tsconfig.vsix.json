@@ -3,6 +3,7 @@
   "references": [
     { "path": "./tsconfig.main.json" },
     { "path": "./tsconfig.rsgl-host.json" },
+    { "path": "./packages/shared-utils" },
     { "path": "./packages/rsgl-lsp" }
   ]
 }

@@ -1,8 +1,8 @@
-import { Uri } from "vscode";
-import { resolveCitReferenceAsset } from "../cit/citAssetResolver";
-import { workspaceResourceCache, type WorkspaceResourceCache } from "../services/workspaceResourceCache";
-import { getResourceConfiguration } from "./resourceConfiguration";
+import type { Uri } from "vscode";
+import type { ResourceFileRequest } from "../../packages/mc-assets/src";
+import type { ResourceConfiguration } from "./resourceConfigurationTypes";
 import type { ResourceReference } from "./resourceReferences";
+import { ScopedRegistry, type ScopedRegistration } from "./scopedRegistry";
 
 interface ResourcePathDocument {
   fileName: string;
@@ -14,17 +14,53 @@ export type ResourceReferencePathResolver = (
 ) => Uri | null;
 
 export interface ResourcePathResolutionHost {
-  resolveResourcePath(request: Parameters<WorkspaceResourceCache["resolveResourcePath"]>[0]): string | null;
+  resolveResourcePath(request: ResourceFileRequest): string | null;
   getPathExists(fileName: string): boolean;
   getPackRoot(fileName: string): string | null;
+  getResourceConfiguration(): ResourceConfiguration;
+  createFileUri(fileName: string): Uri;
 }
+
+export interface ResourceReferencePathResolutionContext {
+  readonly reference: ResourceReference;
+  readonly document: ResourcePathDocument;
+  readonly host: ResourcePathResolutionHost;
+  resolveTypedResource(): string | null;
+}
+
+export type RegisteredResourceReferencePathResolver = (
+  context: ResourceReferencePathResolutionContext
+) => string | null;
 
 interface ResourcePathResolverOptions {
-  cache?: ResourcePathResolutionHost;
+  host?: ResourcePathResolutionHost;
 }
 
-export function createResourceReferencePathResolver(cache: ResourcePathResolutionHost = workspaceResourceCache): ResourceReferencePathResolver {
-  return (reference, document) => generateReferenceRedirectPath(reference, document, { cache });
+const defaultHostRegistry = new ScopedRegistry<"default", ResourcePathResolutionHost>();
+const modeResolverRegistry = new ScopedRegistry<string, RegisteredResourceReferencePathResolver>();
+
+export function registerDefaultResourcePathResolutionHost(
+  host: ResourcePathResolutionHost
+): ScopedRegistration {
+  return defaultHostRegistry.register("default", host);
+}
+
+export function registerResourceReferencePathResolver(
+  resolveMode: string,
+  resolver: RegisteredResourceReferencePathResolver
+): ScopedRegistration {
+  return modeResolverRegistry.register(resolveMode, resolver);
+}
+
+/**
+ * Creates a resolver whose default host is looked up when it runs. This keeps
+ * module-level consumers safe while the application composition root installs
+ * and disposes the workspace adapter.
+ */
+export function createResourceReferencePathResolver(
+  host?: ResourcePathResolutionHost
+): ResourceReferencePathResolver {
+  return (reference, document) => generateReferenceRedirectPath(reference, document, { host });
 }
 
 export function generateReferenceRedirectPath(
@@ -32,21 +68,26 @@ export function generateReferenceRedirectPath(
   document: ResourcePathDocument,
   options: ResourcePathResolverOptions = {}
 ): Uri | null {
-  if (reference.resolveMode === "cit") {
-    const host = getResolutionHost(options);
-    const resolvedPath = resolveCitReferenceAsset(document.fileName, reference, {
-      pathExists: fileName => host.getPathExists(fileName),
-      getPackRoot: fileName => host.getPackRoot(fileName),
+  const host = getResolutionHost(options);
+  if (reference.resolveMode) {
+    const resolver = modeResolverRegistry.get(reference.resolveMode);
+    if (!resolver) {
+      return null;
+    }
+    const resolvedPath = resolver({
+      reference,
+      document,
+      host,
       resolveTypedResource: () => resolveRedirectFilePath(
         reference.value,
         document,
         reference.target,
         reference.source,
         reference.extension,
-        options
+        host
       )
     });
-    return resolvedPath ? Uri.file(resolvedPath) : null;
+    return resolvedPath ? host.createFileUri(resolvedPath) : null;
   }
 
   const resolvedPath = resolveRedirectFilePath(
@@ -55,9 +96,9 @@ export function generateReferenceRedirectPath(
     reference.target,
     reference.source,
     reference.extension,
-    options
+    host
   );
-  return resolvedPath ? Uri.file(resolvedPath) : null;
+  return resolvedPath ? host.createFileUri(resolvedPath) : null;
 }
 
 function resolveRedirectFilePath(
@@ -66,23 +107,24 @@ function resolveRedirectFilePath(
   target: string,
   source: string,
   targetFileExtension: string | null,
-  options: ResourcePathResolverOptions
+  host: ResourcePathResolutionHost
 ): string | null {
-  const configuration = getResourceConfiguration();
-  const configuredDefaultPath = configuration.defaultAssetsPath;
-  const configuredResourcePackRoots = configuration.resourcePackRoots ?? [];
-  const resolvedPath = getResolutionHost(options).resolveResourcePath({
+  const configuration = host.getResourceConfiguration();
+  return host.resolveResourcePath({
     resourcePath,
     sourceFileName: document.fileName,
     source,
     target,
     targetFileExtension,
-    defaultAssetsPath: configuredDefaultPath,
-    resourcePackRoots: configuredResourcePackRoots
+    defaultAssetsPath: configuration.defaultAssetsPath,
+    resourcePackRoots: configuration.resourcePackRoots ?? []
   });
-  return resolvedPath;
 }
 
 function getResolutionHost(options: ResourcePathResolverOptions): ResourcePathResolutionHost {
-  return options.cache ?? workspaceResourceCache;
+  const host = options.host ?? defaultHostRegistry.get("default");
+  if (!host) {
+    throw new Error("Resource path resolution host has not been registered.");
+  }
+  return host;
 }

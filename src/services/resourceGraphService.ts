@@ -11,9 +11,11 @@ import { sameResourceUri } from "../resourceUniverse/core/resourceUriIdentity";
 import {
   loadResourceGraphDocument,
   ResourceGraphIndex,
-  ResourceGraphWorkspaceCache,
-  type ResourceGraphDocument,
-  type ResourceGraphPathChangeKind
+  ResourceGraphWorkspaceCache
+} from "./resourceGraphIndex";
+import type {
+  ResourceGraphDocument,
+  ResourceGraphPathChangeKind
 } from "../utils/resourceGraph";
 import type {
   ResourceGraphTreeDocument,

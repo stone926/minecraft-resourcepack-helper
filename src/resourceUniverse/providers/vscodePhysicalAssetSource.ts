@@ -15,7 +15,6 @@ import {
   type ResourcePackProjectContextDto,
   type SerializedResourceUri
 } from "../../../packages/resource-project/src";
-import type { ResourcePackProjectService } from "../../resourceProject";
 import { mapWithConcurrency } from "../../utils/asyncWorkPool";
 import { throwIfAborted } from "../../utils/abortError";
 import { ignoredWorkspaceDirectoryNames } from "../../resources/resourceSurfaceRegistry";
@@ -68,6 +67,10 @@ type LayerAssetsRootDiscovery =
     }
   | { status: "unsupported" | "unavailable" };
 
+export interface PhysicalAssetProjectContextStore {
+  getCachedContext(projectId: string): ResourcePackProjectContextDto | undefined;
+}
+
 /** Project-bounded VS Code scanner. It is invoked only by an explicit provider request. */
 export class VscodePhysicalAssetSource implements
   PhysicalAssetProjectSource,
@@ -76,7 +79,7 @@ export class VscodePhysicalAssetSource implements
   private ownedOutputLookup?: PhysicalAssetOwnedOutputLookup;
 
   public constructor(
-    private readonly projects: ResourcePackProjectService,
+    private readonly projects: PhysicalAssetProjectContextStore,
     private readonly archiveResources?: Pick<ArchiveResourceStore, "mountLayer">
   ) {}
 

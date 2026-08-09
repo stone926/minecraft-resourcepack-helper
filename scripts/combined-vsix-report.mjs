@@ -152,7 +152,7 @@ export function createCombinedVsixReport(input) {
   });
 }
 
-function evaluateFrozenMainVsixBudget(configuration, production, entryIds) {
+export function evaluateFrozenMainVsixBudget(configuration, production, entryIds) {
   const metricIds = ["archiveBytes", "compressedEntriesBytes", "installedBytes", "fileCount"];
   if (configuration?.source !== "scripts/build-budgets.json" || configuration.schemaVersion !== 2) {
     throw new Error("Combined VSIX report requires the versioned frozen build budget configuration.");

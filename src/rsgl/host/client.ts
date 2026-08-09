@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { abortSignalError } from "../../../packages/shared-utils/src";
 import {
   DidChangeConfigurationNotification,
   DidChangeWatchedFilesNotification,
@@ -358,7 +359,7 @@ export async function startRsglLanguageServer(
         throw new TypeError("The RSGL resource snapshot request failed its runtime guard.");
       }
       if (signal?.aborted) {
-        throw abortSignalError(signal);
+        throw abortSignalError(signal, "The RSGL resource snapshot request was cancelled.");
       }
       const cancellation = new vscode.CancellationTokenSource();
       const abort = (): void => cancellation.cancel();
@@ -441,15 +442,6 @@ function withNativePathMappings(
   return mappings.size > 0
     ? { ...request, nativePathMappings: [...mappings.values()] }
     : request;
-}
-
-function abortSignalError(signal: AbortSignal): Error {
-  if (signal.reason instanceof Error) {
-    return signal.reason;
-  }
-  const error = new Error("The RSGL resource snapshot request was cancelled.");
-  error.name = "AbortError";
-  return error;
 }
 
 function cancelledResourceNavigationResponse(

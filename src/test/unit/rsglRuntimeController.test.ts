@@ -122,16 +122,25 @@ describe("RsglRuntimeController", () => {
       }
     }), { mode: "on", hasActiveProject: true });
     await controller.ensureLoaded("configuration");
+    const terminalStates: string[] = [];
+    controller.onDidChangeState(state => terminalStates.push(state.kind));
 
     let completed = false;
     const shutdown = controller.dispose().then(() => { completed = true; });
     await Promise.resolve();
     assert.strictEqual(completed, false);
     assert.strictEqual(controller.getState().kind, "disposed");
+    assert.deepStrictEqual(terminalStates, ["disposed"]);
+    assert.strictEqual(
+      (controller as unknown as { listeners: { size: number } }).listeners.size,
+      0,
+      "terminal shutdown should release state listeners after the final event"
+    );
     disposal.resolve();
     await shutdown;
     await controller.dispose();
     assert.strictEqual(disposeCalls, 1);
+    assert.deepStrictEqual(terminalStates, ["disposed"]);
     assert.strictEqual(await controller.ensureLoaded("command"), null);
   });
 });

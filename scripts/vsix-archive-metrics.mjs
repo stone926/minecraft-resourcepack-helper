@@ -17,6 +17,66 @@ export const defaultVsixArchiveLimits = Object.freeze({
   maximumCapturedTotalBytes: 64 * 1024 * 1024
 });
 
+/** Opens a lazily streamed VSIX archive through the one repository ZIP layer. */
+export function openVsixArchive(fileName, errorLabel = "Unable to open VSIX archive") {
+  return new Promise((resolve, reject) => {
+    yauzl.open(fileName, {
+      autoClose: false,
+      lazyEntries: true,
+      decodeStrings: true,
+      strictFileNames: true,
+      validateEntrySizes: true
+    }, (error, zipFile) => {
+      if (error || !zipFile) {
+        reject(new Error(`${errorLabel}: ${fileName}`, { cause: error }));
+        return;
+      }
+      resolve(zipFile);
+    });
+  });
+}
+
+export function nextVsixArchiveEntry(
+  zipFile,
+  errorMessage = "Invalid VSIX archive while reading its entries."
+) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      zipFile.removeListener("entry", onEntry);
+      zipFile.removeListener("end", onEnd);
+      zipFile.removeListener("error", onError);
+    };
+    const onEntry = entry => {
+      cleanup();
+      resolve(entry);
+    };
+    const onEnd = () => {
+      cleanup();
+      resolve(undefined);
+    };
+    const onError = error => {
+      cleanup();
+      reject(new Error(errorMessage, { cause: error }));
+    };
+    zipFile.once("entry", onEntry);
+    zipFile.once("end", onEnd);
+    zipFile.once("error", onError);
+    zipFile.readEntry();
+  });
+}
+
+export function openVsixArchiveEntryStream(zipFile, entry) {
+  return new Promise((resolve, reject) => {
+    zipFile.openReadStream(entry, (error, stream) => {
+      if (error || !stream) {
+        reject(new Error(`Unable to read VSIX entry: ${entry.fileName}`, { cause: error }));
+        return;
+      }
+      resolve(stream);
+    });
+  });
+}
+
 export async function readVsixArchiveMetrics(fileName, options = {}) {
   const absoluteFileName = path.resolve(requiredString(fileName, "fileName"));
   const limits = normalizeLimits(options.limits);
@@ -47,7 +107,7 @@ export async function readVsixArchiveMetrics(fileName, options = {}) {
 }
 
 export function findVsixArchiveEntry(metrics, archivePath) {
-  const normalized = normalizeArchivePath(archivePath);
+  const normalized = normalizeVsixArchivePath(archivePath);
   return metrics.entries.find(entry => entry.path === normalized);
 }
 
@@ -94,7 +154,7 @@ function inspectArchive(fileName, captureEntry, limits) {
           if (entries.length >= limits.maximumEntries) {
             throw new Error(`VSIX archive exceeds the ${limits.maximumEntries} entry safety limit.`);
           }
-          const entryPath = normalizeArchivePath(entry.fileName);
+          const entryPath = normalizeVsixArchivePath(entry.fileName);
           const foldedPath = entryPath.toLowerCase();
           if (foldedPaths.has(foldedPath)) {
             throw new Error(`VSIX archive contains a duplicate or case-colliding path: ${entryPath}`);
@@ -191,7 +251,7 @@ function inspectArchive(fileName, captureEntry, limits) {
   });
 }
 
-function normalizeArchivePath(value) {
+export function normalizeVsixArchivePath(value) {
   if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
     throw new Error("VSIX entry paths must be non-empty strings without NUL bytes.");
   }

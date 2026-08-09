@@ -7,6 +7,8 @@ import type {
   ResourceLocation
 } from "../../packages/mc-assets/src";
 import type { JsonDocumentNode } from "../utils/jsonAst";
+import type { ResourceReference } from "../utils/resourceReferences/types";
+import type { ResourceReferenceCacheDescriptor } from "../utils/resourceReferences/host";
 import { FileSystemResourceCache, type OpenTextDocumentProvider } from "./fileSystemResourceCache";
 import type {
   FileFreshnessPolicyOptions,
@@ -28,6 +30,8 @@ import type {
 } from "./resourceCacheTypes";
 import { ResourceResolutionCache } from "./resourceResolutionCache";
 import { ResourceMutationTracker } from "./resourceMutationTracker";
+import { ResourceReferenceCache } from "./resourceReferenceCache";
+import { openDocumentFileVersion } from "./resourceCacheTypes";
 
 /**
  * Coordination facade for workspace resource caches.
@@ -46,6 +50,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
   private readonly resourceResolution: ResourceResolutionCache;
   private readonly models: ModelResourceCache;
   private readonly mediaMetadata: MediaMetadataCache;
+  private readonly references: ResourceReferenceCache;
   readonly modelPreviewArtifacts: ModelPreviewArtifactCache;
 
   constructor(freshnessOptions: FileFreshnessPolicyOptions = {}) {
@@ -66,6 +71,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     this.mediaMetadata = new MediaMetadataCache({
       getFileVersion: fileName => this.fileSystem.getFileVersion(fileName)
     }, this, this.metrics);
+    this.references = new ResourceReferenceCache(this.metrics);
     this.modelPreviewArtifacts = new ModelPreviewArtifactCache(this.models, this.mediaMetadata);
   }
 
@@ -124,6 +130,27 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
 
   getFileVersion(fileName: string): string | null {
     return this.fileSystem.getFileVersion(fileName);
+  }
+
+  getResourceReferenceDocumentVersion(document: CacheTextDocument): string | null {
+    if (typeof document.version === "number") {
+      return openDocumentFileVersion(document.version);
+    }
+    const fileVersion = this.fileSystem.getFileVersion(document.fileName);
+    return fileVersion ? `file:${fileVersion}` : null;
+  }
+
+  getCachedResourceReferences(
+    descriptor: ResourceReferenceCacheDescriptor
+  ): ResourceReference[] | null {
+    return this.references.get(descriptor);
+  }
+
+  setCachedResourceReferences(
+    descriptor: ResourceReferenceCacheDescriptor,
+    references: ResourceReference[]
+  ): void {
+    this.references.set(descriptor, references);
   }
 
   getPackRoot(fileName: string): string | null {
@@ -192,6 +219,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     this.resourceResolution.invalidateAll();
     this.models.invalidateAll();
     this.mediaMetadata.invalidateAll();
+    this.references.invalidateAll();
   }
 
   invalidatePath(fileName: string): void {
@@ -201,6 +229,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     this.resourceResolution.invalidatePath(fileName);
     this.models.invalidatePath(fileName);
     this.mediaMetadata.invalidatePath(fileName);
+    this.references.invalidatePath(fileName);
   }
 
   invalidateDocument(document: CacheTextDocument): void {
@@ -209,6 +238,7 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     this.resourceResolution.invalidateDocument(document.fileName);
     this.models.invalidatePath(document.fileName);
     this.mediaMetadata.invalidateDocument(document.fileName);
+    this.references.invalidatePath(document.fileName);
   }
 
   invalidateConfiguration(): void {
@@ -228,7 +258,8 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
         ...this.fileSystem.getSizes(),
         ...this.resourceResolution.getSizes(),
         ...this.models.getSizes(),
-        ...this.mediaMetadata.getSizes()
+        ...this.mediaMetadata.getSizes(),
+        resourceReferences: this.references.size
       },
       hits: metrics.hits,
       misses: metrics.misses

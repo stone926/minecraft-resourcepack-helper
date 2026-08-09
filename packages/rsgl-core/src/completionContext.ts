@@ -1,6 +1,6 @@
 import { isObjectPropertyKeyPosition } from "./completionObjectContext";
 import {
-  createItemModelCompletionAnalyzer,
+  findItemModelCompletionContext,
   type RsglItemModelCompletionContext
 } from "./itemModelCompletionContext";
 import type { ItemModelFormat } from "./itemModelSchema";
@@ -103,22 +103,19 @@ function bodyOwnerAt(
   prefix: string,
   openBrace: number
 ): CompletionBodyOwner {
-  const analyzeItemModel = createItemModelCompletionAnalyzer(module, prefix, openBrace);
+  const itemModel = findItemModelCompletionContext(module, prefix, openBrace);
   const owner: CompletionBodyOwner = {
     resourceKind: null,
     blockstateChoice: false,
-    blockstateModelOptions: false
+    blockstateModelOptions: false,
+    ...(itemModel ? { itemModel: itemModel.context } : {})
   };
+  if (itemModel) {
+    owner.resourceKind = itemModel.resourceKind ?? null;
+    return owner;
+  }
   walkRsglModule(module, {
     enterStatement(statement) {
-      const itemModel = analyzeItemModel(statement);
-      if (itemModel) {
-        owner.itemModel = itemModel.context;
-        if (itemModel.resourceKind) {
-          owner.resourceKind = itemModel.resourceKind;
-        }
-        return "skipChildren";
-      }
       if (statement.kind === "ResourceDecl" && statement.body.range.start === openBrace) {
         owner.resourceKind = statement.resourceKind;
         if (statement.resourceKind === "blockstate") {

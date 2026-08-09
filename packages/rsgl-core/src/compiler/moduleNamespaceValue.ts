@@ -4,16 +4,12 @@ import type {
   EvaluationValue,
   EvaluationValueIssue
 } from "./evaluationTypes";
-import type { RsglTemplateDefinition } from "./environment";
+import type { RsglTemplateDefinition, ValueBinding } from "./environment";
 
 export interface ModuleNamespaceValueOptions {
   fileName: string;
   namespace: string;
-  values: ReadonlyMap<string, EvaluationValue>;
-  valueOrigins: ReadonlyMap<string, EvaluationOrigin>;
-  valuePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
-  valueSelectionPathOrigins?: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
-  valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
+  valueBindings: ReadonlyMap<string, ValueBinding>;
   templates: ReadonlyMap<string, RsglTemplateDefinition>;
 }
 
@@ -28,9 +24,10 @@ export interface ModuleNamespaceValueMember {
 /**
  * Compiler-only value representing one imported module's public namespace.
  *
- * The maps are intentionally retained by reference. Module environments are
- * linked recursively, so a namespace created while resolving an import cycle
- * must observe exports populated later instead of snapshotting an empty map.
+ * The binding and template maps are intentionally retained by reference.
+ * Module environments are linked recursively, so a namespace created while
+ * resolving an import cycle must observe exports populated later instead of
+ * snapshotting an empty map.
  * A class instance also keeps the namespace outside the plain-object JSON
  * domain, even when an imported module happens to export fields named `kind`,
  * `values`, or `templates`.
@@ -39,36 +36,28 @@ export class ModuleNamespaceValue {
   public readonly kind = "moduleNamespace" as const;
   public readonly fileName: string;
   public readonly namespace: string;
-  public readonly values: ReadonlyMap<string, EvaluationValue>;
-  public readonly valueOrigins: ReadonlyMap<string, EvaluationOrigin>;
-  public readonly valuePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
-  public readonly valueSelectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>;
-  public readonly valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>;
+  public readonly valueBindings: ReadonlyMap<string, ValueBinding>;
   public readonly templates: ReadonlyMap<string, RsglTemplateDefinition>;
 
   public constructor(options: ModuleNamespaceValueOptions) {
     this.fileName = options.fileName;
     this.namespace = options.namespace;
-    this.values = options.values;
-    this.valueOrigins = options.valueOrigins;
-    this.valuePathOrigins = options.valuePathOrigins;
-    this.valueSelectionPathOrigins = options.valueSelectionPathOrigins ?? new Map();
-    this.valueIssues = options.valueIssues;
+    this.valueBindings = options.valueBindings;
     this.templates = options.templates;
     Object.freeze(this);
   }
 
   public resolveValue(name: string): ModuleNamespaceValueMember | undefined {
-    if (!this.values.has(name)) {
+    const binding = this.valueBindings.get(name);
+    if (!binding) {
       return undefined;
     }
-    const origin = this.valueOrigins.get(name);
     return {
-      value: this.values.get(name),
-      ...(origin ? { origin } : {}),
-      pathOrigins: this.valuePathOrigins.get(name) ?? [],
-      selectionPathOrigins: this.valueSelectionPathOrigins.get(name) ?? [],
-      valueIssues: this.valueIssues.get(name) ?? []
+      value: binding.value,
+      ...(binding.origin ? { origin: binding.origin } : {}),
+      pathOrigins: binding.pathOrigins ?? [],
+      selectionPathOrigins: binding.selectionPathOrigins ?? [],
+      valueIssues: binding.valueIssues ?? []
     };
   }
 

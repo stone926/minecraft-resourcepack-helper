@@ -2,7 +2,10 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import { compileRsglProgram } from "../../src/compiler";
 import { resolveRsglCompileConfiguration } from "../../src/compiler/compileConfiguration";
-import { createProgramCompileEnvironments } from "../../src/compiler/environment";
+import {
+  createProgramCompileEnvironments,
+  mapToExternalValues
+} from "../../src/compiler/environment";
 import {
   type EvaluationContext,
   evaluateExpression
@@ -115,7 +118,7 @@ describe("RSGL module namespace runtime", () => {
     );
   });
 
-  it("keeps namespace export maps live across import cycles", () => {
+  it("keeps namespace export bindings live across import cycles", () => {
     const root = path.resolve("module-namespace-cycle");
     const mainFile = path.join(root, "main.rsgl");
     const aFile = path.join(root, "a.rsgl");
@@ -186,18 +189,60 @@ describe("RSGL module namespace runtime", () => {
     const middle = environments.get(path.normalize(middleFile));
 
     assert.ok(middle);
-    assert.ok(isModuleNamespaceValue(middle.importedValues.get("common")));
-    assert.strictEqual(middle.exportedValues.has("common"), false);
+    assert.ok(isModuleNamespaceValue(middle.importedValueBindings.get("common")?.value));
+    assert.strictEqual(middle.exportedValueBindings.has("common"), false);
+  });
+
+  it("keeps value, provenance, and issues in one binding across aliases", () => {
+    const root = path.resolve("module-value-bindings");
+    const mainFile = path.join(root, "main.rsgl");
+    const barrelFile = path.join(root, "barrel.rsgl");
+    const libraryFile = path.join(root, "library.rsgl");
+    const program = bindRsglProgram([
+      sourceFile(mainFile, [
+        "import { PUBLIC as renamed } from \"./barrel.rsgl\"",
+        "let copy = renamed"
+      ].join("\n")),
+      sourceFile(barrelFile, "export { LIBRARY_VALUE as PUBLIC } from \"./library.rsgl\""),
+      sourceFile(libraryFile, [
+        "let SOURCE = \"stone\"",
+        "export { SOURCE as LIBRARY_VALUE }"
+      ].join("\n"))
+    ]);
+    const environments = createProgramCompileEnvironments(
+      program,
+      resolveRsglCompileConfiguration({})
+    );
+    const main = environments.get(path.normalize(mainFile));
+    const barrel = environments.get(path.normalize(barrelFile));
+    const library = environments.get(path.normalize(libraryFile));
+    const sourceBinding = library?.localValueBindings.get("SOURCE");
+    const exportedBinding = library?.exportedValueBindings.get("LIBRARY_VALUE");
+    const reexportedBinding = barrel?.exportedValueBindings.get("PUBLIC");
+    const importedBinding = main?.importedValueBindings.get("renamed");
+
+    assert.deepStrictEqual(program.diagnostics, []);
+    assert.ok(sourceBinding);
+    assert.strictEqual(library?.allValueBindings.get("SOURCE"), sourceBinding);
+    assert.strictEqual(exportedBinding, sourceBinding);
+    assert.strictEqual(reexportedBinding, sourceBinding);
+    assert.strictEqual(importedBinding, sourceBinding);
+    assert.strictEqual(main?.allValueBindings.get("renamed"), sourceBinding);
+    assert.strictEqual(sourceBinding.value, "stone");
+    assert.ok(sourceBinding.origin);
+    assert.ok(sourceBinding.pathOrigins?.length);
+    assert.ok(sourceBinding.selectionPathOrigins?.length);
+    assert.deepStrictEqual(mapToExternalValues(main?.importedValueBindings ?? new Map()), [{
+      name: "renamed",
+      ...sourceBinding
+    }]);
   });
 
   it("lets collection and spread guards reject namespace values as non-plain objects", () => {
     const namespaceValue = new ModuleNamespaceValue({
       fileName: "/virtual/library.rsgl",
       namespace: "minecraft",
-      values: new Map(),
-      valueOrigins: new Map(),
-      valuePathOrigins: new Map(),
-      valueIssues: new Map(),
+      valueBindings: new Map(),
       templates: new Map()
     });
     for (const [source, expectedCode] of [

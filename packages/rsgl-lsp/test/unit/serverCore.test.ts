@@ -58,6 +58,12 @@ import {
   workspaceValidationOptionsFor,
   type RsglValidationSettings
 } from "../../src/serverCore";
+import { completionItemsForDocument as completionItemsFeature } from "../../src/serverCoreCompletion";
+import { computeDocumentDiagnostics as diagnosticsFeature } from "../../src/serverCoreDiagnostics";
+import { referenceLocationsForDocument as navigationFeature } from "../../src/serverCoreNavigation";
+import { renameEditsForDocument as renameFeature } from "../../src/serverCoreRename";
+import { computeDocumentSemanticTokens as semanticTokensFeature } from "../../src/serverCoreSemanticTokens";
+import { toValidationSettings as settingsFeature } from "../../src/serverCoreSettings";
 
 const emptySettings: RsglValidationSettings = { defaultAssetsPath: null, resourcePackRoots: [] };
 
@@ -75,6 +81,25 @@ function templateSymbol(name: string): RsglSymbol {
 }
 
 describe("RSGL LSP server core", () => {
+  it("keeps the stable serverCore surface as a thin feature facade", () => {
+    assert.strictEqual(completionItemsForDocument, completionItemsFeature);
+    assert.strictEqual(computeDocumentDiagnostics, diagnosticsFeature);
+    assert.strictEqual(referenceLocationsForDocument, navigationFeature);
+    assert.strictEqual(renameEditsForDocument, renameFeature);
+    assert.strictEqual(computeDocumentSemanticTokens, semanticTokensFeature);
+    assert.strictEqual(toValidationSettings, settingsFeature);
+
+    const source = fs.readFileSync(path.join(
+      process.cwd(),
+      "packages",
+      "rsgl-lsp",
+      "src",
+      "serverCore.ts"
+    ), "utf8");
+    assert.ok(source.split(/\r?\n/).length < 40, "serverCore must remain a thin facade");
+    assert.doesNotMatch(source, /\b(?:function|class)\b/);
+  });
+
   it("maps every RSGL severity onto the LSP severity scale", () => {
     assert.strictEqual(toLspSeverity("error"), DiagnosticSeverity.Error);
     assert.strictEqual(toLspSeverity("warning"), DiagnosticSeverity.Warning);

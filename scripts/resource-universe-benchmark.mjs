@@ -27,13 +27,14 @@ import {
   resourceUniverseBenchmarkScenarioIds,
   runResourceUniverseBenchmarkScenarios
 } from "./resource-universe-benchmark/scenarios.mjs";
+import { measurementPaths, measurementsDirectory } from "./measurement-paths.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const defaultRepositoryRoot = path.resolve(scriptDirectory, "..");
 
 export const defaultResourceUniverseBenchmarkOutput =
-  "dist/measurements/resource-universe-benchmark.json";
+  measurementPaths.resourceUniverse.report;
 
 export {
   resourceUniverseBenchmarkProfiles,
@@ -94,7 +95,7 @@ export function parseResourceUniverseBenchmarkArguments(args) {
 
 export function resolveResourceUniverseBenchmarkOutput(repositoryRoot, outputPath) {
   const root = path.resolve(repositoryRoot);
-  const measurementsRoot = path.join(root, "dist", "measurements");
+  const measurementsRoot = path.resolve(root, measurementsDirectory);
   const outputFile = path.resolve(root, outputPath ?? defaultResourceUniverseBenchmarkOutput);
   assertPathAtOrBelow(measurementsRoot, outputFile, "Resource-universe benchmark output");
   if (path.extname(outputFile).toLowerCase() !== ".json") {

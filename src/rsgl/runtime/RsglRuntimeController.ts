@@ -8,6 +8,7 @@ import type {
   RsglRuntimeState,
   RsglRuntimeSuspensionReason
 } from "./types";
+import { ListenerSet } from "../../../packages/shared-utils/src";
 
 /**
  * Main-bundle-owned state machine for the physically separate RSGL host entry.
@@ -22,7 +23,7 @@ export class RsglRuntimeController {
   private languageServerPromise: Promise<void> | undefined;
   private languageServerReady = false;
   private loadAbortController: AbortController | undefined;
-  private readonly listeners = new Set<(state: RsglRuntimeState) => void>();
+  private readonly listeners = new ListenerSet<RsglRuntimeState>();
 
   public constructor(
     private readonly loader: RsglRuntimeLoader,
@@ -49,8 +50,7 @@ export class RsglRuntimeController {
   }
 
   public onDidChangeState(listener: (state: RsglRuntimeState) => void): { dispose(): void } {
-    this.listeners.add(listener);
-    return { dispose: () => this.listeners.delete(listener) };
+    return this.listeners.add(listener);
   }
 
   public async ensureLoaded(
@@ -211,7 +211,11 @@ export class RsglRuntimeController {
     this.runtime = undefined;
     this.languageServerPromise = undefined;
     this.languageServerReady = false;
-    this.transition({ kind: "disposed", generation });
+    try {
+      this.transition({ kind: "disposed", generation });
+    } finally {
+      this.listeners.clear();
+    }
     await Promise.all([
       pendingLoad?.catch(() => null),
       runtime ? disposeRuntime(runtime) : Promise.resolve()
@@ -280,9 +284,7 @@ export class RsglRuntimeController {
 
   private transition(state: RsglRuntimeState): void {
     this.state = state;
-    for (const listener of this.listeners) {
-      listener(state);
-    }
+    this.listeners.emit(state);
   }
 }
 

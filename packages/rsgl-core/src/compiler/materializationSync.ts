@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { errorMessage } from "../../../shared-utils/src";
 import { materializationCancellationMessages } from "../diagnosticMessages";
 import {
   bytesEqual,
@@ -358,9 +359,6 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function preservesStaging(error: unknown): boolean {
   return error !== null && typeof error === "object"

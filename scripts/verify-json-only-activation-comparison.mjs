@@ -31,6 +31,7 @@ import {
   compareJsonOnlyActivationReports,
   verifyMeasuredVsix
 } from "./verify-json-only-activation-budget.mjs";
+import { measurementPaths } from "./measurement-paths.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -40,8 +41,8 @@ const EXTENSION_HOST_TIME_ORIGIN_TOLERANCE_MILLISECONDS = 1_000;
 
 export const pairedActivationComparisonSchemaVersion = 1;
 export const defaultPairedActivationVerificationInputs = Object.freeze({
-  report: "dist/measurements/json-only-activation-comparison.json",
-  output: "dist/measurements/json-only-activation-comparison-verification.json"
+  report: measurementPaths.pairedActivation.report,
+  output: measurementPaths.pairedActivation.verification
 });
 
 export function parsePairedActivationVerificationArguments(args) {

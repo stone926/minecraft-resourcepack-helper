@@ -1,8 +1,7 @@
 import { requireIdentity } from "../resourceUniverse/core/identity";
-import { errorMessage } from "../utils/errorMessage";
+import { errorMessage } from "../../packages/shared-utils/src";
 import type { ResourcePackProjectContextDto } from "../../packages/resource-project/src";
 import type {
-  ResourceContributionProvider,
   ResourceCoverageScope,
   ResourceProviderUnavailableReason
 } from "../resourceUniverse/core/types";
@@ -10,13 +9,8 @@ import type {
   ResourceUniverseRefreshResult,
   ResourceUniverseService
 } from "../resourceUniverse/core/resourceUniverseService";
-import type { PhysicalAssetOwnedOutputLookup } from "../resourceUniverse/providers/physicalAssetProvider";
-import {
-  createRsglResourceSnapshotRequest,
-  createRsglUnavailableSnapshotResponse,
-  RsglGeneratedProvider
-} from "../resourceUniverse/providers/rsglGeneratedProvider";
-import { RsglGeneratedProviderConnection } from "../resourceUniverse/providers/rsglGeneratedProviderConnection";
+import { RsglGeneratedProvider } from "./provider/rsglGeneratedProvider";
+import { RsglGeneratedProviderConnection } from "./provider/rsglGeneratedProviderConnection";
 import {
   hydrateRsglMaterializations,
   type RsglMaterializationHydrationHost
@@ -25,7 +19,7 @@ import {
   BackgroundRefreshScheduler,
   type BackgroundRefreshTimerHost
 } from "./backgroundRefreshScheduler";
-import { abortSignalError, isAbortError } from "../utils/abortError";
+import { asDisposable, isAbortError } from "../../packages/shared-utils/src";
 import { physicalProviderId } from "../resourceUniverse/core/providerIds";
 import {
   parseRsglMaterializationInvalidation,
@@ -38,7 +32,8 @@ import {
   type RsglRuntimeLoadReason,
   type RsglRuntimeState
 } from "./runtime";
-import { asDisposable } from "../utils/asyncShutdown";
+import { bindRsglPhysicalOwnership } from "./rsglOwnershipBinding";
+import { RsglSnapshotRequestGate } from "./rsglSnapshotRequestGate";
 
 export interface RsglGeneratedProjectContextStore {
   getCachedContext(projectId: string): ResourcePackProjectContextDto | undefined;
@@ -65,15 +60,10 @@ export class RsglGeneratedContributionBridge {
   public readonly provider: RsglGeneratedProvider;
   public readonly connection: RsglGeneratedProviderConnection;
 
-  private readonly relevantProjectIds = new Set<string>();
-  private readonly activeSnapshotRequests = new Map<string, number>();
-  private readonly appliedMaterializationTransactions = new Set<string>();
+  private readonly snapshotRequestGate: RsglSnapshotRequestGate;
   private readonly backgroundRefreshScheduler: BackgroundRefreshScheduler<string>;
   private readonly physicalRefreshScheduler: BackgroundRefreshScheduler<string>;
   private readonly physicalRefreshControllers = new Map<string, AbortController>();
-  private readonly hydrationPromises = new Map<string, Promise<void>>();
-  private readonly materializationInvalidationPromises = new Set<Promise<boolean>>();
-  private readonly hydratedContextRevisions = new Map<string, string>();
   private readonly coupledProviderIds: readonly string[];
   private readonly controllerSubscription: { dispose(): void };
   private readonly universeSubscription: { dispose(): void };
@@ -88,8 +78,20 @@ export class RsglGeneratedContributionBridge {
     private readonly controller: RsglRuntimeController,
     private readonly options: RsglGeneratedContributionBridgeOptions = {}
   ) {
+    this.snapshotRequestGate = new RsglSnapshotRequestGate({
+      getProjectContext: projectId => this.projects.getCachedContext(projectId),
+      isRuntimeDisabled: () => this.controller.getMode() === "off",
+      ensureLanguageServer: projectId =>
+        this.ensureLanguageServer(projectId, "graphExpansion"),
+      getRuntimeUnavailableReason: () => unavailableReasonFor(this.controller.getState(), "query"),
+      getLanguageServerFailureReason: error => error instanceof RsglGeneratedRuntimeError
+        ? error.reason
+        : "lspFailed",
+      getLastKnownRevision: projectId => this.provider.getProjectState(projectId)?.revision
+    });
     this.provider = new RsglGeneratedProvider({
-      requestSnapshot: (request, signal) => this.requestSnapshot(request, signal)
+      requestSnapshot: (request, signal) =>
+        this.snapshotRequestGate.requestSnapshot(request, signal)
     }, {
       localLayerIdForProject: projectId =>
         this.projects.getCachedContext(projectId)?.localLayer.layerId
@@ -105,7 +107,7 @@ export class RsglGeneratedContributionBridge {
       timerHost: options.backgroundRefreshTimerHost,
       run: projectId => this.runPhysicalRefresh(projectId)
     });
-    const physicalOwnership = bindPhysicalOwnership(
+    const physicalOwnership = bindRsglPhysicalOwnership(
       universe.getRegisteredProvider(physicalProviderId),
       {
         getOwnedOutputPaths: projectId => this.provider.getOwnedOutputPaths(projectId),
@@ -131,7 +133,7 @@ export class RsglGeneratedContributionBridge {
     if (!this.projects.getCachedContext(normalizedProjectId)) {
       return false;
     }
-    this.relevantProjectIds.add(normalizedProjectId);
+    this.snapshotRequestGate.trackProject(normalizedProjectId);
     return true;
   }
 
@@ -239,7 +241,8 @@ export class RsglGeneratedContributionBridge {
   ): Promise<boolean> {
     this.assertActive();
     const invalidation = parseRsglMaterializationInvalidation(value);
-    if (!invalidation || this.appliedMaterializationTransactions.has(invalidation.transactionId)) {
+    if (!invalidation
+      || this.snapshotRequestGate.hasMaterializationTransaction(invalidation.transactionId)) {
       return false;
     }
     const context = this.projects.getCachedContext(invalidation.projectId)
@@ -248,35 +251,26 @@ export class RsglGeneratedContributionBridge {
       return false;
     }
     if (invalidation.state === "partial") {
-      this.rememberMaterializationTransaction(invalidation.transactionId);
+      this.snapshotRequestGate.rememberMaterializationTransaction(invalidation.transactionId);
       this.universe.invalidateProviderProject(this.provider.providerId, context.projectId, "stale");
       this.invalidatePhysicalProject(context.projectId);
       return true;
     }
-    const application = this.applyCommittedMaterializationInvalidation(invalidation, context);
-    this.materializationInvalidationPromises.add(application);
-    try {
-      return await application;
-    } finally {
-      this.materializationInvalidationPromises.delete(application);
-    }
+    return this.snapshotRequestGate.trackMaterializationApplication(
+      invalidation.transactionId,
+      this.applyCommittedMaterializationInvalidation(invalidation, context)
+    );
   }
 
   /** Used by tests and orderly shutdown to observe coalesced invalidation reloads. */
   public async whenIdle(): Promise<void> {
-    while (
-      this.hydrationPromises.size > 0
-      || this.materializationInvalidationPromises.size > 0
-    ) {
-      await Promise.allSettled(
-        [
-          this.backgroundRefreshScheduler.whenIdle(),
-          this.physicalRefreshScheduler.whenIdle(),
-          ...this.hydrationPromises.values(),
-          ...this.materializationInvalidationPromises
-        ]
-      );
-    }
+    await Promise.all([
+      this.snapshotRequestGate.whenIdle(),
+      this.backgroundRefreshScheduler.whenIdle(),
+      this.physicalRefreshScheduler.whenIdle()
+    ]);
+    // A committed application can enqueue its physical refresh while the
+    // first scheduler wait is already resolving.
     await Promise.all([
       this.backgroundRefreshScheduler.whenIdle(),
       this.physicalRefreshScheduler.whenIdle()
@@ -289,81 +283,6 @@ export class RsglGeneratedContributionBridge {
 
   public shutdown(): Promise<void> {
     return this.shutdownDisposable.shutdown();
-  }
-
-  private async requestSnapshot(
-    request: Parameters<RsglGeneratedProvider["getSnapshot"]>[0],
-    signal: AbortSignal
-  ): Promise<unknown> {
-    const projectId = request.projectId;
-    const context = this.projects.getCachedContext(projectId);
-    if (!context || !this.relevantProjectIds.has(projectId)) {
-      return createRsglUnavailableSnapshotResponse(request, "notProbed");
-    }
-    if (this.controller.getMode() === "off") {
-      return createRsglUnavailableSnapshotResponse(
-        request,
-        "disabled",
-        this.provider.getProjectState(projectId)?.revision
-      );
-    }
-
-    this.activeSnapshotRequests.set(
-      projectId,
-      (this.activeSnapshotRequests.get(projectId) ?? 0) + 1
-    );
-    try {
-      let runtime: RsglRuntimeInstance | null;
-      try {
-        runtime = await this.ensureLanguageServer(projectId, "graphExpansion");
-      } catch (error) {
-        const reason = error instanceof RsglGeneratedRuntimeError
-          ? error.reason
-          : "lspFailed";
-        return createRsglUnavailableSnapshotResponse(
-          request,
-          reason,
-          this.provider.getProjectState(projectId)?.revision
-        );
-      }
-      if (signal.aborted) {
-        throw abortSignalError(signal, "The RSGL resource snapshot request was cancelled.");
-      }
-      if (!runtime) {
-        return createRsglUnavailableSnapshotResponse(
-          request,
-          unavailableReasonFor(this.controller.getState(), "query"),
-          this.provider.getProjectState(projectId)?.revision
-        );
-      }
-      if (!runtime.requestResourceSnapshot) {
-        return createRsglUnavailableSnapshotResponse(
-          request,
-          "protocolMismatch",
-          this.provider.getProjectState(projectId)?.revision
-        );
-      }
-      return await runtime.requestResourceSnapshot(
-        createRsglResourceSnapshotRequest(request, context),
-        signal
-      );
-    } catch {
-      if (signal.aborted) {
-        throw abortSignalError(signal, "The RSGL resource snapshot request was cancelled.");
-      }
-      return createRsglUnavailableSnapshotResponse(
-        request,
-        "lspFailed",
-        this.provider.getProjectState(projectId)?.revision
-      );
-    } finally {
-      const remainingRequests = (this.activeSnapshotRequests.get(projectId) ?? 1) - 1;
-      if (remainingRequests > 0) {
-        this.activeSnapshotRequests.set(projectId, remainingRequests);
-      } else {
-        this.activeSnapshotRequests.delete(projectId);
-      }
-    }
   }
 
   private bindRuntime(runtime: RsglRuntimeInstance): void {
@@ -379,24 +298,21 @@ export class RsglGeneratedContributionBridge {
 
   private async ensureMaterializations(projectId: string): Promise<void> {
     const context = this.projects.getCachedContext(projectId);
-    if (!context || this.hydratedContextRevisions.get(projectId) === context.contextRevision) {
+    if (!context) {
       return;
     }
-    const existing = this.hydrationPromises.get(projectId);
-    if (existing) {
-      return existing;
-    }
-    const hydration = (async () => {
-      const hydrated = await hydrateRsglMaterializations(context, this.options);
-      this.provider.replaceMaterializations(hydrated.snapshot);
-      this.hydratedContextRevisions.set(projectId, context.contextRevision);
-    })().finally(() => {
-      if (this.hydrationPromises.get(projectId) === hydration) {
-        this.hydrationPromises.delete(projectId);
+    return this.snapshotRequestGate.ensureHydrated(
+      projectId,
+      context.contextRevision,
+      () => hydrateRsglMaterializations(context, this.options),
+      hydrated => {
+        if (!this.isCurrentTrackedContext(context)) {
+          return false;
+        }
+        this.provider.replaceMaterializations(hydrated.snapshot);
+        return true;
       }
-    });
-    this.hydrationPromises.set(projectId, hydration);
-    return hydration;
+    );
   }
 
   private async applyCommittedMaterializationInvalidation(
@@ -416,7 +332,7 @@ export class RsglGeneratedContributionBridge {
         throw new Error("The committed ownership manifest could not be verified.");
       }
       this.provider.replaceMaterializations(hydrated.snapshot);
-      this.hydratedContextRevisions.set(context.projectId, context.contextRevision);
+      this.snapshotRequestGate.markHydrated(context.projectId, context.contextRevision);
       this.invalidatePhysicalProject(context.projectId);
       this.backgroundRefreshScheduler.cancel(context.projectId);
       await this.connection.refreshProject(context.projectId);
@@ -426,7 +342,7 @@ export class RsglGeneratedContributionBridge {
       if (this.coupledProviderIds.length > 0) {
         this.physicalRefreshScheduler.schedule(context.projectId, 0);
       }
-      this.rememberMaterializationTransaction(invalidation.transactionId);
+      this.snapshotRequestGate.rememberMaterializationTransaction(invalidation.transactionId);
       return true;
     } catch {
       if (this.isCurrentTrackedContext(context)) {
@@ -474,7 +390,7 @@ export class RsglGeneratedContributionBridge {
     }
     const projectId = projectIdFromNotification(value);
     if (!projectId
-      || !this.relevantProjectIds.has(projectId)
+      || !this.snapshotRequestGate.isProjectTracked(projectId)
       || !this.projects.getCachedContext(projectId)) {
       return;
     }
@@ -499,11 +415,11 @@ export class RsglGeneratedContributionBridge {
   private async runBackgroundRefresh(projectId: string): Promise<void> {
     if (this.disposed
       || this.controller.getMode() === "off"
-      || !this.relevantProjectIds.has(projectId)
+      || !this.snapshotRequestGate.isProjectTracked(projectId)
       || !this.projects.getCachedContext(projectId)) {
       return;
     }
-    if (this.activeSnapshotRequests.has(projectId)) {
+    if (this.snapshotRequestGate.hasActiveSnapshotRequest(projectId)) {
       this.backgroundRefreshScheduler.schedule(projectId);
       return;
     }
@@ -511,7 +427,7 @@ export class RsglGeneratedContributionBridge {
       await this.connection.refreshProject(projectId);
     } catch (error) {
       if (this.disposed
-        || !this.relevantProjectIds.has(projectId)
+        || !this.snapshotRequestGate.isProjectTracked(projectId)
         || this.controller.getMode() === "off") {
         return;
       }
@@ -527,7 +443,7 @@ export class RsglGeneratedContributionBridge {
 
   private async runPhysicalRefresh(projectId: string): Promise<void> {
     if (this.disposed
-      || !this.relevantProjectIds.has(projectId)
+      || !this.snapshotRequestGate.isProjectTracked(projectId)
       || !this.projects.getCachedContext(projectId)
       || this.coupledProviderIds.length === 0) {
       return;
@@ -558,7 +474,7 @@ export class RsglGeneratedContributionBridge {
     if (!reason) {
       return;
     }
-    for (const projectId of this.relevantProjectIds) {
+    for (const projectId of this.snapshotRequestGate.getTrackedProjectIds()) {
       this.markProjectUnavailable(projectId, reason);
     }
   }
@@ -567,7 +483,7 @@ export class RsglGeneratedContributionBridge {
     projectId: string,
     reason: ResourceProviderUnavailableReason
   ): void {
-    if (this.disposed || this.activeSnapshotRequests.has(projectId)) {
+    if (this.disposed || this.snapshotRequestGate.hasActiveSnapshotRequest(projectId)) {
       return;
     }
     this.universe.invalidateProviderProject(this.provider.providerId, projectId, reason);
@@ -577,9 +493,7 @@ export class RsglGeneratedContributionBridge {
     if (this.disposed) {
       return;
     }
-    this.relevantProjectIds.delete(projectId);
-    this.hydratedContextRevisions.delete(projectId);
-    this.hydrationPromises.delete(projectId);
+    this.snapshotRequestGate.forgetProject(projectId);
     this.provider.removeProject(projectId);
     this.backgroundRefreshScheduler.cancel(projectId);
     this.physicalRefreshScheduler.cancel(projectId);
@@ -590,7 +504,7 @@ export class RsglGeneratedContributionBridge {
   private isCurrentTrackedContext(context: ResourcePackProjectContextDto): boolean {
     const current = this.projects.getCachedContext(context.projectId);
     return !this.disposed
-      && this.relevantProjectIds.has(context.projectId)
+      && this.snapshotRequestGate.isProjectTracked(context.projectId)
       && current?.contextRevision === context.contextRevision;
   }
 
@@ -604,17 +518,6 @@ export class RsglGeneratedContributionBridge {
     }
   }
 
-  private rememberMaterializationTransaction(transactionId: string): void {
-    this.appliedMaterializationTransactions.add(transactionId);
-    if (this.appliedMaterializationTransactions.size <= 256) {
-      return;
-    }
-    const oldest = this.appliedMaterializationTransactions.values().next().value;
-    if (oldest) {
-      this.appliedMaterializationTransactions.delete(oldest);
-    }
-  }
-
   private async shutdownNow(): Promise<void> {
     if (this.disposed) {
       return;
@@ -623,7 +526,7 @@ export class RsglGeneratedContributionBridge {
     this.controllerSubscription.dispose();
     this.universeSubscription.dispose();
     this.unbindRuntime();
-    this.relevantProjectIds.clear();
+    this.snapshotRequestGate.clearTrackedProjects();
     this.backgroundRefreshScheduler.dispose();
     this.physicalRefreshScheduler.dispose();
     this.abortAllPhysicalRefreshes();
@@ -636,61 +539,6 @@ export class RsglGeneratedContributionBridge {
     if (this.disposed) {
       throw new Error("The RSGL generated contribution bridge has been disposed.");
     }
-  }
-}
-
-interface PhysicalOwnershipProviderCapability extends ResourceContributionProvider {
-  readonly providerId: "physical";
-  setOwnedOutputLookup(lookup: PhysicalAssetOwnedOutputLookup): { dispose(): void };
-}
-
-interface BoundPhysicalOwnership {
-  providerId: "physical";
-  subscription: { dispose(): void };
-}
-
-/**
- * Provider instances may originate in another bundle, so constructor identity
- * is not a stable integration contract. Keep this optional seam structural and
- * isolate capability failures from the rest of bridge initialization.
- */
-function bindPhysicalOwnership(
-  provider: ResourceContributionProvider | undefined,
-  lookup: PhysicalAssetOwnedOutputLookup
-): BoundPhysicalOwnership | undefined {
-  if (!hasPhysicalOwnershipCapability(provider)) {
-    return undefined;
-  }
-  try {
-    const subscription = provider.setOwnedOutputLookup(lookup);
-    return isDisposable(subscription)
-      ? { providerId: provider.providerId, subscription }
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function hasPhysicalOwnershipCapability(
-  provider: ResourceContributionProvider | undefined
-): provider is PhysicalOwnershipProviderCapability {
-  try {
-    return provider?.providerId === physicalProviderId
-      && "setOwnedOutputLookup" in provider
-      && typeof provider.setOwnedOutputLookup === "function";
-  } catch {
-    return false;
-  }
-}
-
-function isDisposable(value: unknown): value is { dispose(): void } {
-  try {
-    return typeof value === "object"
-      && value !== null
-      && "dispose" in value
-      && typeof value.dispose === "function";
-  } catch {
-    return false;
   }
 }
 

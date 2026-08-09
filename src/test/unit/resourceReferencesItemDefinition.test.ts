@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getResourceReferences } from "../../utils/resourceReferences";
 import { createJsonDocument } from "./helpers/documents";
+import { getResourceReferences } from "./helpers/resourceReferences";
 
 describe("item model definition resource references", () => {
   it("extracts model and base model references from item model definitions", () => {

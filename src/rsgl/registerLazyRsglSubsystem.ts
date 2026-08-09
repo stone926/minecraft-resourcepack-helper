@@ -2,7 +2,7 @@ import { reportBackgroundError } from "../utils/backgroundErrors";
 import * as vscode from "vscode";
 import type { ResourceInfrastructure } from "../registration/registerResourceInfrastructure";
 import type { ResourceUniverseRefreshResult } from "../resourceUniverse/core/resourceUniverseService";
-import { asDisposable } from "../utils/asyncShutdown";
+import { asDisposable } from "../../packages/shared-utils/src";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import {
   configuredRsglMode,

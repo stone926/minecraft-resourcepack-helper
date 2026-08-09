@@ -19,6 +19,7 @@ import {
   validateActivationProbeSample
 } from "./activation-probe/schema.mjs";
 import { readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
+import { measurementPaths } from "./measurement-paths.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -31,9 +32,9 @@ const canonicalExtensionHostSampleRunner = path.join(
 );
 
 export const defaultJsonOnlyActivationBudgetInputs = Object.freeze({
-  baseline: "dist/measurements/json-only-activation.baseline.extension-host.json",
-  candidate: "dist/measurements/json-only-activation.combined-production.extension-host.json",
-  output: "dist/measurements/json-only-activation-budget.json"
+  baseline: measurementPaths.activationBudget.baseline,
+  candidate: measurementPaths.activationBudget.candidate,
+  output: measurementPaths.activationBudget.report
 });
 
 export function parseJsonOnlyActivationBudgetArguments(args) {

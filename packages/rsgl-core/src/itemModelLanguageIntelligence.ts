@@ -6,11 +6,10 @@ import type {
   ObjectExprNode,
   ObjectPropertyNode,
   RsglModule,
-  RsglStatement,
-  RsglStatementBodyNode,
   TextRange
 } from "./parser";
 import { staticPropertyKeyName } from "./parser";
+import { walkRsglModule } from "./parser/astTraversal";
 import {
   findItemModelPropertySchema,
   findItemModelSpecialSchema,
@@ -47,157 +46,108 @@ export function getRsglItemModelHoverInfo(
     }
     return Boolean(result);
   };
+  let itemResourceDepth = 0;
+  let itemModelDepth = 0;
+  const selectProperties: Array<ItemModelPropertySchema | undefined> = [];
 
-  const visitBody = (body: RsglStatementBodyNode, itemRoot: boolean): void => {
-    for (const statement of body.statements) {
-      visitStatement(statement, itemRoot);
+  const selectPropertyOption = (
+    family: PropertyFamily,
+    property: ExprNode,
+    option: ItemOptionNode
+  ): boolean => select(propertyOptionHover(family, property, option, target, offset));
+
+  walkRsglModule(module, {
+    enterStatement(statement) {
+      if (statement.kind === "ResourceDecl" && statement.resourceKind === "item") {
+        itemResourceDepth++;
+      }
       if (result) {
         return;
       }
-    }
-  };
-
-  const visitStatement = (statement: RsglStatement, itemRoot: boolean): void => {
-    if (result) {
-      return;
-    }
-    switch (statement.kind) {
-      case "ResourceDecl":
-        visitBody(statement.body, statement.resourceKind === "item");
-        return;
-      case "TemplateDecl":
-        visitBody(statement.body, false);
-        return;
-      case "OverlayDecl":
-      case "ForStmt":
-        visitBody(statement.body, itemRoot);
-        return;
-      case "IfStmt":
-        visitBody(statement.thenBody, itemRoot);
-        if (!result && statement.elseBody) {
-          visitBody(statement.elseBody, itemRoot);
+      if (statement.kind === "ItemSelectCase") {
+        if (touchesRange(statement.when.range, offset)) {
+          select(selectWhenHover(statement.when.range, selectProperties.at(-1), target));
         }
-        return;
-      case "ItemModelProducerStmt":
-        visitItemModel(statement.value);
-        return;
-      case "ItemSelectCase":
-      case "ItemRangeEntry":
-      case "ItemRangeFrames":
-      case "ItemFallbackClause":
-      case "ItemCompositeModel":
-        visitItemModel(statement.model);
-        return;
-      case "ItemFirstMatchWhen":
-        if (select(propertyHover("condition", statement.property, target, offset))) {
-          return;
+      } else if (statement.kind === "ItemFirstMatchWhen") {
+        if (!select(propertyHover("condition", statement.property, target, offset))) {
+          statement.propertyOptions.some(option =>
+            selectPropertyOption("condition", statement.property, option)
+          );
         }
-        for (const option of statement.propertyOptions) {
-          if (select(propertyOptionHover("condition", statement.property, option, target, offset))) {
-            return;
-          }
+      } else if (
+        statement.kind === "PropertyStmt"
+        && itemResourceDepth > 0
+        && itemModelDepth === 0
+        && touchesRange(statement.key.range, offset)
+      ) {
+        const name = staticPropertyKeyName(statement.key);
+        const field = itemModelRootFields.find(candidate => candidate.name === name);
+        if (field) {
+          select(fieldHover(statement.key.range, field, "item definition root", target));
         }
-        visitItemModel(statement.model);
-        return;
-      case "PropertyStmt":
-        if (itemRoot && touchesRange(statement.key.range, offset)) {
-          const name = staticPropertyKeyName(statement.key);
-          const field = itemModelRootFields.find(candidate => candidate.name === name);
-          if (field) {
-            select(fieldHover(statement.key.range, field, "item definition root", target));
-          }
-        }
-        return;
-      default:
-        return;
-    }
-  };
-
-  const visitItemModel = (node: ItemModelNode): void => {
-    if (result) {
-      return;
-    }
-    if (select(constructorHover(node, sourceText, offset))) {
-      return;
-    }
-    if ("options" in node && node.options) {
-      if (select(postfixOptionsHover(node.options, target, offset))) {
-        return;
       }
-    }
-    switch (node.kind) {
-      case "ItemModelExpr":
-      case "ItemModelUse":
-      case "ItemModelEmpty":
-      case "ItemModelSelectedItem":
-        return;
-      case "ItemModelSpecial":
-        select(specialObjectHover(node.model, target, offset));
-        return;
-      case "ItemModelCondition":
-        if (select(propertyHover("condition", node.property, target, offset))) {
-          return;
-        }
-        for (const option of node.propertyOptions) {
-          if (select(propertyOptionHover("condition", node.property, option, target, offset))) {
-            return;
-          }
-        }
-        if (node.onTrue) {
-          visitItemModel(node.onTrue);
-        }
-        if (!result && node.onFalse) {
-          visitItemModel(node.onFalse);
-        }
-        return;
-      case "ItemModelSelect": {
-        if (select(propertyHover("select", node.property, target, offset))) {
-          return;
-        }
-        for (const option of node.propertyOptions) {
-          if (select(propertyOptionHover("select", node.property, option, target, offset))) {
-            return;
-          }
-        }
-        const property = propertySchema("select", node.property);
-        for (const statement of node.body.statements) {
-          if (statement.kind === "ItemSelectCase" && touchesRange(statement.when.range, offset)) {
-            select(selectWhenHover(statement.when.range, property, target));
-            return;
-          }
-          visitStatement(statement, false);
-          if (result) {
-            return;
-          }
-        }
-        return;
+    },
+    leaveStatement(statement) {
+      if (statement.kind === "ResourceDecl" && statement.resourceKind === "item") {
+        itemResourceDepth--;
       }
-      case "ItemModelRange":
-        if (select(propertyHover("range_dispatch", node.property, target, offset))) {
-          return;
+    },
+    enterItemModel(node) {
+      itemModelDepth++;
+      if (!result) {
+        select(constructorHover(node, sourceText, offset));
+      }
+      if (!result && "options" in node && node.options) {
+        select(postfixOptionsHover(node.options, target, offset));
+      }
+      if (!result) {
+        switch (node.kind) {
+          case "ItemModelExpr":
+          case "ItemModelUse":
+          case "ItemModelEmpty":
+          case "ItemModelSelectedItem":
+          case "ItemModelComposite":
+          case "ItemModelFirstMatch":
+            break;
+          case "ItemModelSpecial":
+            select(specialObjectHover(node.model, target, offset));
+            break;
+          case "ItemModelCondition":
+            if (!select(propertyHover("condition", node.property, target, offset))) {
+              node.propertyOptions.some(option =>
+                selectPropertyOption("condition", node.property, option)
+              );
+            }
+            break;
+          case "ItemModelSelect":
+            if (!select(propertyHover("select", node.property, target, offset))) {
+              node.propertyOptions.some(option =>
+                selectPropertyOption("select", node.property, option)
+              );
+            }
+            break;
+          case "ItemModelRange":
+            if (!select(propertyHover("range_dispatch", node.property, target, offset))) {
+              node.propertyOptions.some(option =>
+                selectPropertyOption("range_dispatch", node.property, option)
+              );
+            }
+            break;
+          default:
+            assertNeverItemModel(node);
         }
-        for (const option of node.propertyOptions) {
-          if (select(propertyOptionHover("range_dispatch", node.property, option, target, offset))) {
-            return;
-          }
-        }
-        visitBody(node.body, false);
-        return;
-      case "ItemModelComposite":
-      case "ItemModelFirstMatch":
-        visitBody(node.body, false);
-        return;
-      default:
-        return assertNeverItemModel(node);
+      }
+      if (node.kind === "ItemModelSelect") {
+        selectProperties.push(propertySchema("select", node.property));
+      }
+    },
+    leaveItemModel(node) {
+      if (node.kind === "ItemModelSelect") {
+        selectProperties.pop();
+      }
+      itemModelDepth--;
     }
-  };
-
-  for (const statement of module.statements) {
-    visitStatement(statement, false);
-    if (result) {
-      break;
-    }
-  }
+  });
   return result;
 }
 

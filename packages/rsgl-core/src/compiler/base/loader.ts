@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { errorMessage } from "../../../../shared-utils/src";
 import {
   evaluate,
   parse,
@@ -144,8 +145,4 @@ function usableFileName(fileName: string | undefined): string | undefined {
     return undefined;
   }
   return path.resolve(fileName);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -213,7 +213,7 @@ describe("RSGL typed resource runtime values", () => {
     });
 
     assert.deepStrictEqual(model.diagnostics, []);
-    assert.strictEqual(environment.localValues.get("result"), undefined);
+    assert.strictEqual(environment.localValueBindings.get("result")?.value, undefined);
     assert.strictEqual(failures, 1);
   });
 
@@ -275,12 +275,12 @@ describe("RSGL typed resource runtime values", () => {
     });
 
     assertResourceId(
-      environment.localValues.get("direct"),
+      environment.localValueBindings.get("direct")?.value,
       "model",
       "environment",
       "block/direct"
     );
-    assert.strictEqual(environment.localValues.get("invalid"), undefined);
+    assert.strictEqual(environment.localValueBindings.get("invalid")?.value, undefined);
     assert.deepStrictEqual(errors, ["rsgl.invalidConstructedResourceId"]);
     assert.strictEqual(failures, 1);
   });
@@ -407,9 +407,9 @@ describe("RSGL typed resource runtime values", () => {
     );
     const caller = environments.get(path.normalize(callerFile));
 
-    assertResourceId(caller?.localValues.get("kept"), "model", "caller", "block/input");
+    assertResourceId(caller?.localValueBindings.get("kept")?.value, "model", "caller", "block/input");
     assertResourceId(
-      caller?.localValues.get("returned"),
+      caller?.localValueBindings.get("returned")?.value,
       "texture",
       "library",
       "block/fallback"

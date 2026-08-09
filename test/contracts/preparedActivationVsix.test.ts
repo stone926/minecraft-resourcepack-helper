@@ -56,6 +56,24 @@ describe("prepared activation VSIX cache", () => {
     preparedVsix = await import(preparedVsixModuleUrl) as PreparedVsixModule;
   });
 
+  it("uses the shared VSIX archive layer instead of owning a second yauzl adapter", () => {
+    const preparedSource = fs.readFileSync(path.join(
+      process.cwd(),
+      "scripts",
+      "activation-probe",
+      "prepared-vsix.mjs"
+    ), "utf8");
+    const archiveSource = fs.readFileSync(path.join(
+      process.cwd(),
+      "scripts",
+      "vsix-archive-metrics.mjs"
+    ), "utf8");
+    assert.strictEqual(preparedSource.includes('require("yauzl")'), false);
+    assert.ok(preparedSource.includes("openVsixArchiveEntryStream"));
+    assert.ok(archiveSource.includes('require("yauzl")'));
+    assert.ok(archiveSource.includes("export function openVsixArchive"));
+  });
+
   it("extracts once into the digest-addressed repository cache and reuses a fully rehashed tree", async () => {
     const fixture = createFixture();
     try {

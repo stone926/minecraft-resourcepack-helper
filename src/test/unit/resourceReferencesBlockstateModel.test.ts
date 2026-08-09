@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { findResourceReferenceAtPosition, getResourceReferences } from "../../utils/resourceReferences";
 import { createJsonDocument, createMarkedTextDocument, createTextDocument } from "./helpers/documents";
+import { findResourceReferenceAtPosition, getResourceReferences } from "./helpers/resourceReferences";
 
 describe("blockstate and model resource references", () => {
   it("extracts object and array model choices from variants and multipart entries", () => {

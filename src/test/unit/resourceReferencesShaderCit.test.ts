@@ -1,10 +1,14 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { findResourceReferenceAtPosition, getResourceReferences } from "../../utils/resourceReferences";
 import { getCitAutoDiscoveryPathCandidates } from "../../cit/citPaths";
+import { registerCitResourceReferenceExtractor } from "../../cit/registerCitResourceReferences";
 import { createJsonDocument, createMarkedTextDocument, createTextDocument } from "./helpers/documents";
+import { findResourceReferenceAtPosition, getResourceReferences } from "./helpers/resourceReferences";
 
 describe("shader and CIT resource references", () => {
+  const citReferences = registerCitResourceReferenceExtractor();
+  after(() => citReferences.dispose());
+
   it("extracts post effect shader references", () => {
     const document = createJsonDocument(
       path.join("pack", "assets", "minecraft", "post_effect", "blur.json"),

@@ -136,6 +136,58 @@ describe("JSON-only activation probe harness", () => {
     temporaryRoots = [];
   });
 
+  it("keeps shared probe construction out of the CLI shell", () => {
+    const cli = fs.readFileSync(probeScript, "utf8");
+    const comparison = fs.readFileSync(path.join(
+      repositoryRoot,
+      "scripts",
+      "measure-json-only-activation-comparison.mjs"
+    ), "utf8");
+    for (const moduleName of [
+      "artifact-identity.mjs",
+      "challenge.mjs",
+      "report.mjs",
+      "workspace-fixture.mjs"
+    ]) {
+      assert.ok(fs.existsSync(path.join(
+        repositoryRoot,
+        "scripts",
+        "activation-probe",
+        moduleName
+      )));
+    }
+    assert.strictEqual(comparison.includes('from "./measure-json-only-activation.mjs"'), false);
+    assert.strictEqual(cli.includes("function summarizeHardConditions"), false);
+    assert.strictEqual(cli.includes("function describeArtifact"), false);
+    assert.strictEqual(cli.includes("function createJsonOnlyWorkspace"), false);
+    assert.ok(cli.split(/\r?\n/).length < 550);
+  });
+
+  it("fingerprints every extracted probe module and its path catalog", async () => {
+    const identityModule = await import(pathToFileURL(path.join(
+      repositoryRoot,
+      "scripts",
+      "activation-probe",
+      "harness-identity.mjs"
+    )).href) as { ACTIVATION_HARNESS_FILES: readonly string[] };
+    for (const dependency of [
+      "artifact-identity.mjs",
+      "challenge.mjs",
+      "report.mjs",
+      "workspace-fixture.mjs",
+      "../measurement-paths.mjs",
+      "../combined-vsix-artifact-names.mjs",
+      "../combined-vsix-layout.mjs",
+      "../build-bundles.mjs",
+      "../lib/hash.mjs"
+    ]) {
+      assert.ok(
+        identityModule.ACTIVATION_HARNESS_FILES.includes(dependency),
+        `${dependency} must participate in the activation harness identity`
+      );
+    }
+  });
+
   it("measures a fresh Node process per sample without claiming Extension Host or combined VSIX data", () => {
     const fixture = createFixture();
     const bundle = writeFile(fixture.extensionRoot, "bundle/extension.js", [

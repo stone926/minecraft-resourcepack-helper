@@ -17,6 +17,7 @@
   ],
   "references": [
     { "path": "./tsconfig.main.json" },
+    { "path": "./packages/shared-utils" },
     { "path": "./packages/mc-assets" },
     { "path": "./packages/resource-project" },
     { "path": "./packages/rsgl-core" },

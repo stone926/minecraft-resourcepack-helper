@@ -49,27 +49,23 @@ export interface RsglModuleCompileEnvironment {
   namespace: string;
   evaluationItemBudget: EvaluationItemBudget;
   resolvedExpectedTypes: ReadonlyMap<ExprNode, RsglType>;
-  importedValues: Map<string, EvaluationValue>;
-  importedValueOrigins: Map<string, EvaluationOrigin>;
-  importedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
-  importedValueSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
-  importedValueIssues: Map<string, EvaluationValueIssue[]>;
+  importedValueBindings: Map<string, ValueBinding>;
   importedTemplates: Map<string, RsglTemplateDefinition>;
   /** Exact direct top-level evaluations keyed by their declaration node. */
   localEvaluationResults?: Map<LetDeclNode | TableDeclNode, EvaluationResult>;
-  localValues: Map<string, EvaluationValue>;
-  allValues: Map<string, EvaluationValue>;
-  allValueOrigins: Map<string, EvaluationOrigin>;
-  allValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
-  allValueSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
-  allValueIssues: Map<string, EvaluationValueIssue[]>;
+  localValueBindings: Map<string, ValueBinding>;
+  allValueBindings: Map<string, ValueBinding>;
   allTemplates: Map<string, RsglTemplateDefinition>;
-  exportedValues: Map<string, EvaluationValue>;
-  exportedValueOrigins: Map<string, EvaluationOrigin>;
-  exportedValuePathOrigins: Map<string, EvaluationPathOrigin[]>;
-  exportedValueSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>;
-  exportedValueIssues: Map<string, EvaluationValueIssue[]>;
+  exportedValueBindings: Map<string, ValueBinding>;
   exportedTemplates: Map<string, RsglTemplateDefinition>;
+}
+
+export interface ValueBinding {
+  readonly value: EvaluationValue;
+  readonly origin?: EvaluationOrigin;
+  readonly pathOrigins?: readonly EvaluationPathOrigin[];
+  readonly selectionPathOrigins?: readonly EvaluationPathOrigin[];
+  readonly valueIssues?: readonly EvaluationValueIssue[];
 }
 
 export interface RsglTemplateDefinition {
@@ -85,21 +81,12 @@ export interface RsglTemplateDefinition {
   signature?: RsglSignature;
   /** Definition-module contextual facts used by defaults and the body. */
   resolvedExpectedTypes?: ReadonlyMap<ExprNode, RsglType>;
-  values: Map<string, EvaluationValue>;
-  valueOrigins?: Map<string, EvaluationOrigin>;
-  valuePathOrigins?: Map<string, EvaluationPathOrigin[]>;
-  valueSelectionPathOrigins?: Map<string, EvaluationPathOrigin[]>;
-  valueIssues?: Map<string, EvaluationValueIssue[]>;
+  valueBindings: ReadonlyMap<string, ValueBinding>;
   templates: Map<string, RsglTemplateDefinition>;
 }
 
-export interface RsglExternalValueDefinition {
+export interface RsglExternalValueDefinition extends ValueBinding {
   name: string;
-  value: EvaluationValue;
-  origin?: EvaluationOrigin;
-  pathOrigins?: readonly EvaluationPathOrigin[];
-  selectionPathOrigins?: readonly EvaluationPathOrigin[];
-  valueIssues?: readonly EvaluationValueIssue[];
 }
 
 export interface RsglCompileEnvironmentOptions {
@@ -189,7 +176,7 @@ export function createTemplateDefinition(
   node: TemplateDeclNode,
   fileName: string,
   namespace: string,
-  values: Map<string, EvaluationValue>,
+  valueBindings: ReadonlyMap<string, ValueBinding>,
   templates: Map<string, RsglTemplateDefinition>,
   outputMetadata: ResolvedTemplateOutputMetadata = templateOutputMetadataForDeclaration(node),
   definitionTargetFingerprint = "unresolved-target",
@@ -211,7 +198,7 @@ export function createTemplateDefinition(
     ...(semantic?.resolvedExpectedTypes
       ? { resolvedExpectedTypes: semantic.resolvedExpectedTypes }
       : {}),
-    values,
+    valueBindings,
     templates
   };
   refreshTemplateDefinitionFingerprint(definition, definitionFingerprintContext);
@@ -232,22 +219,47 @@ export function refreshTemplateDefinitionFingerprint(
 }
 
 export function mapToExternalValues(
-  values: Map<string, EvaluationValue>,
-  origins: ReadonlyMap<string, EvaluationOrigin> = new Map(),
-  pathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
-  selectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]> = new Map(),
-  valueIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]> = new Map()
+  bindings: ReadonlyMap<string, ValueBinding>
 ): RsglExternalValueDefinition[] {
-  return Array.from(values, ([name, value]) => ({
+  return Array.from(bindings, ([name, binding]) => ({
     name,
-    value,
-    ...(origins.get(name) ? { origin: origins.get(name) } : {}),
-    ...(pathOrigins.get(name) ? { pathOrigins: pathOrigins.get(name) } : {}),
-    ...(selectionPathOrigins.get(name)
-      ? { selectionPathOrigins: selectionPathOrigins.get(name) }
-      : {}),
-    ...(valueIssues.get(name) ? { valueIssues: valueIssues.get(name) } : {})
+    ...binding
   }));
+}
+
+export function evaluationStateForValueBindings(
+  bindings: ReadonlyMap<string, ValueBinding>
+): Pick<
+  EvaluationContext,
+  "variables" | "valueOrigins" | "valuePathOrigins" | "valueSelectionPathOrigins" | "valueIssues"
+> {
+  const variables = new Map<string, EvaluationValue>();
+  const valueOrigins = new Map<string, EvaluationOrigin>();
+  const valuePathOrigins = new Map<string, readonly EvaluationPathOrigin[]>();
+  const valueSelectionPathOrigins = new Map<string, readonly EvaluationPathOrigin[]>();
+  const valueIssues = new Map<string, readonly EvaluationValueIssue[]>();
+  for (const [name, binding] of bindings) {
+    variables.set(name, binding.value);
+    if (binding.origin) {
+      valueOrigins.set(name, binding.origin);
+    }
+    if (binding.pathOrigins) {
+      valuePathOrigins.set(name, binding.pathOrigins);
+    }
+    if (binding.selectionPathOrigins) {
+      valueSelectionPathOrigins.set(name, binding.selectionPathOrigins);
+    }
+    if (binding.valueIssues) {
+      valueIssues.set(name, binding.valueIssues);
+    }
+  }
+  return {
+    variables,
+    valueOrigins,
+    valuePathOrigins,
+    valueSelectionPathOrigins,
+    valueIssues
+  };
 }
 
 function createEmptyCompileEnvironment(
@@ -260,25 +272,13 @@ function createEmptyCompileEnvironment(
     namespace,
     evaluationItemBudget,
     resolvedExpectedTypes: model.resolvedExpectedTypes,
-    importedValues: new Map(),
-    importedValueOrigins: new Map(),
-    importedValuePathOrigins: new Map(),
-    importedValueSelectionPathOrigins: new Map(),
-    importedValueIssues: new Map(),
+    importedValueBindings: new Map(),
     importedTemplates: new Map(),
     localEvaluationResults: new Map(),
-    localValues: new Map(),
-    allValues: new Map(),
-    allValueOrigins: new Map(),
-    allValuePathOrigins: new Map(),
-    allValueSelectionPathOrigins: new Map(),
-    allValueIssues: new Map(),
+    localValueBindings: new Map(),
+    allValueBindings: new Map(),
     allTemplates: new Map(),
-    exportedValues: new Map(),
-    exportedValueOrigins: new Map(),
-    exportedValuePathOrigins: new Map(),
-    exportedValueSelectionPathOrigins: new Map(),
-    exportedValueIssues: new Map(),
+    exportedValueBindings: new Map(),
     exportedTemplates: new Map()
   };
 }
@@ -302,89 +302,30 @@ function collectImportedEnvironmentBindings(
       const namespaceValue = new ModuleNamespaceValue({
         fileName: targetEnvironment.fileName,
         namespace: targetEnvironment.namespace,
-        values: targetEnvironment.exportedValues,
-        valueOrigins: targetEnvironment.exportedValueOrigins,
-        valuePathOrigins: targetEnvironment.exportedValuePathOrigins,
-        valueSelectionPathOrigins: targetEnvironment.exportedValueSelectionPathOrigins,
-        valueIssues: targetEnvironment.exportedValueIssues,
+        valueBindings: targetEnvironment.exportedValueBindings,
         templates: targetEnvironment.exportedTemplates
       });
-      environment.importedValues.set(namespaceName, namespaceValue);
-      environment.allValues.set(namespaceName, namespaceValue);
+      const namespaceBinding: ValueBinding = { value: namespaceValue };
+      environment.importedValueBindings.set(namespaceName, namespaceBinding);
+      environment.allValueBindings.set(namespaceName, namespaceBinding);
     }
     if (record.importAll) {
       copyValueBindings(
-        environment.importedValues,
-        environment.importedValueOrigins,
-        environment.importedValuePathOrigins,
-        environment.importedValueSelectionPathOrigins,
-        environment.importedValueIssues,
-        targetEnvironment.exportedValues,
-        targetEnvironment.exportedValueOrigins,
-        targetEnvironment.exportedValuePathOrigins,
-        targetEnvironment.exportedValueSelectionPathOrigins,
-        targetEnvironment.exportedValueIssues
+        environment.importedValueBindings,
+        targetEnvironment.exportedValueBindings
       );
       copyValueBindings(
-        environment.allValues,
-        environment.allValueOrigins,
-        environment.allValuePathOrigins,
-        environment.allValueSelectionPathOrigins,
-        environment.allValueIssues,
-        targetEnvironment.exportedValues,
-        targetEnvironment.exportedValueOrigins,
-        targetEnvironment.exportedValuePathOrigins,
-        targetEnvironment.exportedValueSelectionPathOrigins,
-        targetEnvironment.exportedValueIssues
+        environment.allValueBindings,
+        targetEnvironment.exportedValueBindings
       );
       copyTemplates(environment.importedTemplates, targetEnvironment.exportedTemplates);
       copyTemplates(environment.allTemplates, targetEnvironment.exportedTemplates);
     }
     for (const item of record.namedImports) {
-      if (targetEnvironment.exportedValues.has(item.imported)) {
-        const value = targetEnvironment.exportedValues.get(item.imported);
-        environment.importedValues.set(item.local, value);
-        environment.allValues.set(item.local, value);
-        copyAliasedValueProvenance(
-          item.imported,
-          item.local,
-          targetEnvironment.exportedValueOrigins,
-          targetEnvironment.exportedValuePathOrigins,
-          environment.importedValueOrigins,
-          environment.importedValuePathOrigins
-        );
-        copyAliasedValueSelectionPathOrigins(
-          item.imported,
-          item.local,
-          targetEnvironment.exportedValueSelectionPathOrigins,
-          environment.importedValueSelectionPathOrigins
-        );
-        copyAliasedValueIssues(
-          item.imported,
-          item.local,
-          targetEnvironment.exportedValueIssues,
-          environment.importedValueIssues
-        );
-        copyAliasedValueProvenance(
-          item.imported,
-          item.local,
-          targetEnvironment.exportedValueOrigins,
-          targetEnvironment.exportedValuePathOrigins,
-          environment.allValueOrigins,
-          environment.allValuePathOrigins
-        );
-        copyAliasedValueSelectionPathOrigins(
-          item.imported,
-          item.local,
-          targetEnvironment.exportedValueSelectionPathOrigins,
-          environment.allValueSelectionPathOrigins
-        );
-        copyAliasedValueIssues(
-          item.imported,
-          item.local,
-          targetEnvironment.exportedValueIssues,
-          environment.allValueIssues
-        );
+      const binding = targetEnvironment.exportedValueBindings.get(item.imported);
+      if (binding) {
+        environment.importedValueBindings.set(item.local, binding);
+        environment.allValueBindings.set(item.local, binding);
       }
 
       const template = targetEnvironment.exportedTemplates.get(item.imported);
@@ -409,28 +350,9 @@ function collectExportedEnvironmentBindings(
   for (const [exportedName, symbol] of semanticExports) {
     if (symbol && typeof symbol === "object" && "name" in symbol) {
       const localName = String(symbol.name);
-      if (environment.allValues.has(localName)) {
-        environment.exportedValues.set(exportedName, environment.allValues.get(localName));
-        copyAliasedValueProvenance(
-          localName,
-          exportedName,
-          environment.allValueOrigins,
-          environment.allValuePathOrigins,
-          environment.exportedValueOrigins,
-          environment.exportedValuePathOrigins
-        );
-        copyAliasedValueSelectionPathOrigins(
-          localName,
-          exportedName,
-          environment.allValueSelectionPathOrigins,
-          environment.exportedValueSelectionPathOrigins
-        );
-        copyAliasedValueIssues(
-          localName,
-          exportedName,
-          environment.allValueIssues,
-          environment.exportedValueIssues
-        );
+      const binding = environment.allValueBindings.get(localName);
+      if (binding) {
+        environment.exportedValueBindings.set(exportedName, binding);
       }
       const template = environment.allTemplates.get(localName);
       if (template) {
@@ -450,42 +372,15 @@ function collectExportedEnvironmentBindings(
     const targetEnvironment = createEnvironment(targetModel);
     if (record.exportAll) {
       copyValueBindings(
-        environment.exportedValues,
-        environment.exportedValueOrigins,
-        environment.exportedValuePathOrigins,
-        environment.exportedValueSelectionPathOrigins,
-        environment.exportedValueIssues,
-        targetEnvironment.exportedValues,
-        targetEnvironment.exportedValueOrigins,
-        targetEnvironment.exportedValuePathOrigins,
-        targetEnvironment.exportedValueSelectionPathOrigins,
-        targetEnvironment.exportedValueIssues
+        environment.exportedValueBindings,
+        targetEnvironment.exportedValueBindings
       );
       copyTemplates(environment.exportedTemplates, targetEnvironment.exportedTemplates);
     }
     for (const specifier of record.specifiers) {
-      if (targetEnvironment.exportedValues.has(specifier.local)) {
-        environment.exportedValues.set(specifier.exported, targetEnvironment.exportedValues.get(specifier.local));
-        copyAliasedValueProvenance(
-          specifier.local,
-          specifier.exported,
-          targetEnvironment.exportedValueOrigins,
-          targetEnvironment.exportedValuePathOrigins,
-          environment.exportedValueOrigins,
-          environment.exportedValuePathOrigins
-        );
-        copyAliasedValueSelectionPathOrigins(
-          specifier.local,
-          specifier.exported,
-          targetEnvironment.exportedValueSelectionPathOrigins,
-          environment.exportedValueSelectionPathOrigins
-        );
-        copyAliasedValueIssues(
-          specifier.local,
-          specifier.exported,
-          targetEnvironment.exportedValueIssues,
-          environment.exportedValueIssues
-        );
+      const binding = targetEnvironment.exportedValueBindings.get(specifier.local);
+      if (binding) {
+        environment.exportedValueBindings.set(specifier.exported, binding);
       }
       const template = targetEnvironment.exportedTemplates.get(specifier.local);
       if (template) {
@@ -500,9 +395,10 @@ function evaluateLocalEnvironmentValues(
   model: RsglSemanticModel,
   options: RsglCompileEnvironmentOptions
 ): void {
+  const importedState = evaluationStateForValueBindings(environment.importedValueBindings);
   const context: EvaluationContext = {
     namespace: environment.namespace,
-    variables: new Map(environment.importedValues),
+    ...importedState,
     evaluationItemBudget: environment.evaluationItemBudget,
     resolvedExpectedTypes: environment.resolvedExpectedTypes,
     // Match semantic predeclaration: a later local value still shadows a
@@ -510,17 +406,13 @@ function evaluateLocalEnvironmentValues(
     // this set, `let result = model_id(...); let model_id = ...` can silently
     // execute the constructor and export a branded value.
     valueBindingNames: new Set([
-      ...environment.importedValues.keys(),
+      ...environment.importedValueBindings.keys(),
       ...model.module.statements.flatMap(statement =>
         (isLetDeclNode(statement) || isTableDeclNode(statement)) && statement.name
           ? [statement.name.text]
           : []
       )
     ]),
-    valueOrigins: new Map(environment.importedValueOrigins),
-    valuePathOrigins: new Map(environment.importedValuePathOrigins),
-    valueSelectionPathOrigins: new Map(environment.importedValueSelectionPathOrigins),
-    valueIssues: new Map(environment.importedValueIssues),
     sourceFile: model.fileName,
     mappingReason: "direct",
     expansionStack: [],
@@ -555,33 +447,20 @@ function recordLocalEnvironmentValue(
   result: ReturnType<typeof evaluateExpressionResult>,
   sourceFile: string
 ): void {
-  environment.localValues.set(name, result.value);
-  environment.allValues.set(name, result.value);
   bindEvaluationResult(context, name, result, sourceFile);
-  const materialized = materializeEvaluationPathOrigins(result, sourceFile);
-  const origin = originForEvaluationPath(materialized, "") ?? result.origin;
-  if (origin) {
-    environment.allValueOrigins.set(name, origin);
-  } else {
-    environment.allValueOrigins.delete(name);
-  }
-  if (materialized.length > 0) {
-    environment.allValuePathOrigins.set(name, materialized);
-  } else {
-    environment.allValuePathOrigins.delete(name);
-  }
+  const pathOrigins = materializeEvaluationPathOrigins(result, sourceFile);
+  const origin = originForEvaluationPath(pathOrigins, "") ?? result.origin;
   const selectionPathOrigins = materializeEvaluationSelectionPathOrigins(result, sourceFile);
-  if (selectionPathOrigins.length > 0) {
-    environment.allValueSelectionPathOrigins.set(name, selectionPathOrigins);
-  } else {
-    environment.allValueSelectionPathOrigins.delete(name);
-  }
-  const issues = materializeEvaluationValueIssues(result, sourceFile);
-  if (issues.length > 0) {
-    environment.allValueIssues.set(name, issues);
-  } else {
-    environment.allValueIssues.delete(name);
-  }
+  const valueIssues = materializeEvaluationValueIssues(result, sourceFile);
+  const binding: ValueBinding = {
+    value: result.value,
+    ...(origin ? { origin } : {}),
+    ...(pathOrigins.length > 0 ? { pathOrigins } : {}),
+    ...(selectionPathOrigins.length > 0 ? { selectionPathOrigins } : {}),
+    ...(valueIssues.length > 0 ? { valueIssues } : {})
+  };
+  environment.localValueBindings.set(name, binding);
+  environment.allValueBindings.set(name, binding);
 }
 
 function collectLocalEnvironmentTemplates(
@@ -598,7 +477,7 @@ function collectLocalEnvironmentTemplates(
         statement,
         model.fileName,
         environment.namespace,
-        environment.allValues,
+        environment.allValueBindings,
         environment.allTemplates,
         outputMetadata,
         JSON.stringify(model.module.statements.filter(statement => statement.kind === "TargetDecl")),
@@ -608,10 +487,6 @@ function collectLocalEnvironmentTemplates(
           resolvedExpectedTypes: model.resolvedExpectedTypes
         }
       );
-      definition.valueOrigins = environment.allValueOrigins;
-      definition.valuePathOrigins = environment.allValuePathOrigins;
-      definition.valueSelectionPathOrigins = environment.allValueSelectionPathOrigins;
-      definition.valueIssues = environment.allValueIssues;
       environment.allTemplates.set(statement.name.text, definition);
     }
   }
@@ -635,86 +510,13 @@ function aliasTemplate(template: RsglTemplateDefinition, name: string): RsglTemp
 }
 
 function copyValueBindings(
-  target: Map<string, EvaluationValue>,
-  targetOrigins: Map<string, EvaluationOrigin>,
-  targetPathOrigins: Map<string, EvaluationPathOrigin[]>,
-  targetSelectionPathOrigins: Map<string, EvaluationPathOrigin[]>,
-  targetIssues: Map<string, EvaluationValueIssue[]>,
-  source: ReadonlyMap<string, EvaluationValue>,
-  sourceOrigins: ReadonlyMap<string, EvaluationOrigin>,
-  sourcePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
-  sourceSelectionPathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
-  sourceIssues: ReadonlyMap<string, readonly EvaluationValueIssue[]>
+  target: Map<string, ValueBinding>,
+  source: ReadonlyMap<string, ValueBinding>
 ): void {
-  for (const [name, value] of source) {
+  for (const [name, binding] of source) {
     if (!target.has(name)) {
-      target.set(name, value);
-      copyAliasedValueProvenance(
-        name,
-        name,
-        sourceOrigins,
-        sourcePathOrigins,
-        targetOrigins,
-        targetPathOrigins
-      );
-      copyAliasedValueSelectionPathOrigins(
-        name,
-        name,
-        sourceSelectionPathOrigins,
-        targetSelectionPathOrigins
-      );
-      copyAliasedValueIssues(name, name, sourceIssues, targetIssues);
+      target.set(name, binding);
     }
-  }
-}
-
-function copyAliasedValueSelectionPathOrigins(
-  sourceName: string,
-  targetName: string,
-  source: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
-  target: Map<string, EvaluationPathOrigin[]>
-): void {
-  const origins = source.get(sourceName);
-  if (origins) {
-    target.set(targetName, [...origins]);
-  } else {
-    target.delete(targetName);
-  }
-}
-
-function copyAliasedValueIssues(
-  sourceName: string,
-  targetName: string,
-  source: ReadonlyMap<string, readonly EvaluationValueIssue[]>,
-  target: Map<string, EvaluationValueIssue[]>
-): void {
-  const issues = source.get(sourceName);
-  if (issues) {
-    target.set(targetName, [...issues]);
-  } else {
-    target.delete(targetName);
-  }
-}
-
-function copyAliasedValueProvenance(
-  sourceName: string,
-  targetName: string,
-  sourceOrigins: ReadonlyMap<string, EvaluationOrigin>,
-  sourcePathOrigins: ReadonlyMap<string, readonly EvaluationPathOrigin[]>,
-  targetOrigins: Map<string, EvaluationOrigin>,
-  targetPathOrigins: Map<string, EvaluationPathOrigin[]>
-): void {
-  const origin = sourceOrigins.get(sourceName);
-  if (origin) {
-    targetOrigins.set(targetName, origin);
-  } else {
-    targetOrigins.delete(targetName);
-  }
-  const pathOrigins = sourcePathOrigins.get(sourceName);
-  if (pathOrigins) {
-    targetPathOrigins.set(targetName, [...pathOrigins]);
-  } else {
-    targetPathOrigins.delete(targetName);
   }
 }
 
@@ -759,7 +561,7 @@ function calculateTemplateDefinitionFingerprint(
     .map(reference => {
       const callee = reference.namespaceName
         ? qualifiedTemplateDefinition(
-          definition.values.get(reference.namespaceName),
+          definition.valueBindings.get(reference.namespaceName)?.value,
           reference.memberName
         )
         : definition.templates.get(reference.memberName);

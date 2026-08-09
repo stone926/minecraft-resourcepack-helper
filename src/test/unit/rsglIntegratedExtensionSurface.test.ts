@@ -157,6 +157,12 @@ describe("integrated RSGL extension surface", () => {
     const configuration = readSource("src", "rsgl", "host", "configuration.ts");
     const client = readSource("src", "rsgl", "host", "client.ts");
     const serverCore = readSource("packages", "rsgl-lsp", "src", "serverCore.ts");
+    const serverSettings = readSource(
+      "packages",
+      "rsgl-lsp",
+      "src",
+      "serverCoreSettings.ts"
+    );
     const server = readSource("packages", "rsgl-lsp", "src", "server.ts");
 
     assert.ok(configuration.includes('languageId: "rsgl"'));
@@ -168,9 +174,10 @@ describe("integrated RSGL extension surface", () => {
     assert.ok(client.includes("formatting: configuredRsglFormatting()"));
     assert.ok(client.includes("formatting: configuredRsglFormatting(folder.uri)"));
 
-    assert.ok(serverCore.includes("validationSettingsFingerprint"));
-    assert.ok(serverCore.includes("Formatting is intentionally excluded"));
-    assert.ok(serverCore.includes("formattingConfigurationForSource"));
+    assert.ok(serverCore.includes('export * from "./serverCoreSettings"'));
+    assert.ok(serverSettings.includes("validationSettingsFingerprint"));
+    assert.ok(serverSettings.includes("Formatting is intentionally excluded"));
+    assert.ok(serverSettings.includes("formattingConfigurationForSource"));
     assert.ok(server.includes("const validationChanged = validationSettingsFingerprint"));
     assert.ok(server.includes("if (!validationChanged)"));
     assert.ok(server.includes("params.options,"));

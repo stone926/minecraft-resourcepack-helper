@@ -10,8 +10,7 @@ import {
 } from "./itemModelCompletionSchemaContext";
 import {
   type ItemModelNode,
-  type RsglModule,
-  type RsglStatement
+  type RsglModule
 } from "./parser";
 import { walkRsglModule } from "./parser/astTraversal";
 import { touchesRange } from "./textRangeQueries";
@@ -56,76 +55,106 @@ export function isItemModelCompletionKeyPosition(
 
 /**
  * Creates the item-model facet of completion analysis for one parsed prefix.
- * The returned probe is intentionally parser-only so generic completion
+ * The canonical AST walker owns recursive structure so generic completion
  * orchestration does not need to know item-model body or schema-slot details.
  */
-export function createItemModelCompletionAnalyzer(
+export function findItemModelCompletionContext(
   module: RsglModule,
   prefix: string,
   openBrace: number
-): (statement: RsglStatement) => RsglItemModelCompletionMatch | undefined {
+): RsglItemModelCompletionMatch | undefined {
   const scope = itemModelScopeAt(module, openBrace);
-  return statement => {
-    const nested = itemModelContextForStatement(statement, prefix, openBrace, scope);
-    if (nested) {
-      return { context: nested };
+  if (!scope) {
+    return undefined;
+  }
+
+  let selected: RsglItemModelCompletionMatch | undefined;
+  const selectPropertyNames: Array<string | undefined> = [];
+  const select = (
+    context: RsglItemModelCompletionContext | undefined,
+    resourceKind?: "item"
+  ): void => {
+    if (context) {
+      selected = { context, ...(resourceKind ? { resourceKind } : {}) };
     }
-    if (
-      statement.kind === "ResourceDecl"
-      && statement.resourceKind === "item"
-      && statement.body.range.start === openBrace
-    ) {
-      return {
-        context: itemModelContextInStatements(
-          statement.body.statements,
-          prefix,
-          openBrace,
-          "itemRoot"
-        ) ?? itemModelBodyContext("itemRoot", "itemRoot", prefix, openBrace),
-        resourceKind: "item"
-      };
-    }
-    if (
-      statement.kind === "TemplateDecl"
-      && statement.body.kind === "ItemModelTemplateBody"
-      && statement.body.range.start === openBrace
-    ) {
-      return {
-        context: itemModelContextInStatements(
-          statement.body.statements,
-          prefix,
-          openBrace,
-          "itemModelTemplate"
-        ) ?? itemModelBodyContext(
+  };
+
+  walkRsglModule(module, {
+    enterStatement(statement) {
+      if (
+        statement.kind === "ResourceDecl"
+        && statement.resourceKind === "item"
+        && statement.body.range.start === openBrace
+      ) {
+        select(itemModelBodyContext("itemRoot", "itemRoot", prefix, openBrace), "item");
+      } else if (
+        statement.kind === "TemplateDecl"
+        && statement.body.kind === "ItemModelTemplateBody"
+        && statement.body.range.start === openBrace
+      ) {
+        select(itemModelBodyContext(
           "itemModelTemplate",
           "itemModelTemplate",
           prefix,
           openBrace
-        )
-      };
-    }
-    if (statement.kind === "ForStmt" && statement.body.range.start === openBrace) {
-      const owner = itemModelOwnerForBody(statement.body.kind);
-      if (owner && scope) {
-        return { context: itemModelBodyContext(scope, owner, prefix, openBrace) };
-      }
-    }
-    if (statement.kind === "IfStmt") {
-      if (statement.thenBody.range.start === openBrace) {
-        const owner = itemModelOwnerForBody(statement.thenBody.kind);
-        if (owner && scope) {
-          return { context: itemModelBodyContext(scope, owner, prefix, openBrace) };
+        ));
+      } else if (statement.kind === "ItemSelectCase") {
+        const selectWhen = selectWhenCompletionContext(
+          statement,
+          prefix,
+          selectPropertyNames.at(-1)
+        );
+        if (selectWhen) {
+          select({
+            scope,
+            owner: "select",
+            expectedSlot: "itemModel",
+            schema: selectWhen
+          });
+        }
+      } else if (statement.kind === "ItemFirstMatchWhen") {
+        const header = firstMatchHeaderCompletionContext(statement, prefix);
+        if (header) {
+          select({
+            scope,
+            owner: "first_match",
+            expectedSlot: header.kind === "propertyOptionName" ? "optionKey" : "itemModel",
+            schema: header
+          });
+        }
+      } else if (statement.kind === "ForStmt" && statement.body.range.start === openBrace) {
+        const owner = itemModelOwnerForBody(statement.body.kind);
+        if (owner) {
+          select(itemModelBodyContext(scope, owner, prefix, openBrace));
+        }
+      } else if (statement.kind === "IfStmt") {
+        if (statement.thenBody.range.start === openBrace) {
+          const owner = itemModelOwnerForBody(statement.thenBody.kind);
+          if (owner) {
+            select(itemModelBodyContext(scope, owner, prefix, openBrace));
+          }
+        }
+        if (statement.elseBody?.range.start === openBrace) {
+          const owner = itemModelOwnerForBody(statement.elseBody.kind);
+          if (owner) {
+            select(itemModelBodyContext(scope, owner, prefix, openBrace));
+          }
         }
       }
-      if (statement.elseBody?.range.start === openBrace) {
-        const owner = itemModelOwnerForBody(statement.elseBody.kind);
-        if (owner && scope) {
-          return { context: itemModelBodyContext(scope, owner, prefix, openBrace) };
-        }
+    },
+    enterItemModel(node) {
+      select(itemModelContextForNode(node, prefix, openBrace, scope));
+      if (node.kind === "ItemModelSelect") {
+        selectPropertyNames.push(staticItemModelSchemaName(node.property));
+      }
+    },
+    leaveItemModel(node) {
+      if (node.kind === "ItemModelSelect") {
+        selectPropertyNames.pop();
       }
     }
-    return undefined;
-  };
+  });
+  return selected;
 }
 
 function itemModelScopeAt(
@@ -160,30 +189,6 @@ function itemModelScopeAt(
   return selected?.scope;
 }
 
-function itemModelContextForStatement(
-  statement: RsglStatement,
-  prefix: string,
-  openBrace: number,
-  scope: RsglItemModelCompletionContext["scope"] | undefined
-): RsglItemModelCompletionContext | undefined {
-  if (!scope) {
-    return undefined;
-  }
-  switch (statement.kind) {
-    case "ItemModelProducerStmt":
-      return itemModelContextForNode(statement.value, prefix, openBrace, scope);
-    case "ItemSelectCase":
-    case "ItemRangeEntry":
-    case "ItemRangeFrames":
-    case "ItemFallbackClause":
-    case "ItemCompositeModel":
-    case "ItemFirstMatchWhen":
-      return itemModelContextForNode(statement.model, prefix, openBrace, scope);
-    default:
-      return undefined;
-  }
-}
-
 function itemModelContextForNode(
   node: ItemModelNode,
   prefix: string,
@@ -215,39 +220,24 @@ function itemModelContextForNode(
   switch (node.kind) {
     case "ItemModelSelect":
       if (node.body.range.start === openBrace) {
-        return itemModelContextInStatements(
-          node.body.statements,
-          prefix,
-          openBrace,
-          scope,
-          staticItemModelSchemaName(node.property)
-        ) ?? itemModelBodyContext(scope, "select", prefix, openBrace);
+        return itemModelBodyContext(scope, "select", prefix, openBrace);
       }
-      return itemModelContextInStatements(
-        node.body.statements,
-        prefix,
-        openBrace,
-        scope,
-        staticItemModelSchemaName(node.property)
-      );
+      return undefined;
     case "ItemModelRange":
       if (node.body.range.start === openBrace) {
-        return itemModelContextInStatements(node.body.statements, prefix, openBrace, scope)
-          ?? itemModelBodyContext(scope, "range", prefix, openBrace);
+        return itemModelBodyContext(scope, "range", prefix, openBrace);
       }
-      return itemModelContextInStatements(node.body.statements, prefix, openBrace, scope);
+      return undefined;
     case "ItemModelComposite":
       if (node.body.range.start === openBrace) {
-        return itemModelContextInStatements(node.body.statements, prefix, openBrace, scope)
-          ?? itemModelBodyContext(scope, "composite", prefix, openBrace);
+        return itemModelBodyContext(scope, "composite", prefix, openBrace);
       }
-      return itemModelContextInStatements(node.body.statements, prefix, openBrace, scope);
+      return undefined;
     case "ItemModelFirstMatch":
       if (node.body.range.start === openBrace) {
-        return itemModelContextInStatements(node.body.statements, prefix, openBrace, scope)
-          ?? itemModelBodyContext(scope, "first_match", prefix, openBrace);
+        return itemModelBodyContext(scope, "first_match", prefix, openBrace);
       }
-      return itemModelContextInStatements(node.body.statements, prefix, openBrace, scope);
+      return undefined;
     case "ItemModelCondition": {
       const firstBranchStart = Math.min(
         node.onTrue?.range.start ?? Number.POSITIVE_INFINITY,
@@ -260,9 +250,7 @@ function itemModelContextForNode(
       ) {
         return itemModelBodyContext(scope, "condition", prefix, openBrace);
       }
-      return (node.onTrue && itemModelContextForNode(node.onTrue, prefix, openBrace, scope))
-        || (node.onFalse && itemModelContextForNode(node.onFalse, prefix, openBrace, scope))
-        || undefined;
+      return undefined;
     }
     case "ItemModelExpr":
     case "ItemModelUse":
@@ -273,59 +261,6 @@ function itemModelContextForNode(
     default:
       return assertNeverItemModel(node);
   }
-}
-
-function itemModelContextInStatements(
-  statements: readonly RsglStatement[],
-  prefix: string,
-  openBrace: number,
-  scope: RsglItemModelCompletionContext["scope"],
-  selectPropertyName?: string
-): RsglItemModelCompletionContext | undefined {
-  for (const statement of statements) {
-    if (statement.kind === "ItemSelectCase") {
-      const selectWhen = selectWhenCompletionContext(statement, prefix, selectPropertyName);
-      if (selectWhen) {
-        return {
-          scope,
-          owner: "select",
-          expectedSlot: "itemModel",
-          schema: selectWhen
-        };
-      }
-    }
-    if (statement.kind === "ItemFirstMatchWhen") {
-      const header = firstMatchHeaderCompletionContext(statement, prefix);
-      if (header) {
-        return {
-          scope,
-          owner: "first_match",
-          expectedSlot: header.kind === "propertyOptionName" ? "optionKey" : "itemModel",
-          schema: header
-        };
-      }
-    }
-    const context = itemModelContextForStatement(statement, prefix, openBrace, scope);
-    if (context) {
-      return context;
-    }
-    if (statement.kind === "ForStmt") {
-      const owner = itemModelOwnerForBody(statement.body.kind);
-      if (owner && statement.body.range.start === openBrace) {
-        return itemModelBodyContext(scope, owner, prefix, openBrace);
-      }
-    } else if (statement.kind === "IfStmt") {
-      const thenOwner = itemModelOwnerForBody(statement.thenBody.kind);
-      if (thenOwner && statement.thenBody.range.start === openBrace) {
-        return itemModelBodyContext(scope, thenOwner, prefix, openBrace);
-      }
-      const elseOwner = statement.elseBody && itemModelOwnerForBody(statement.elseBody.kind);
-      if (elseOwner && statement.elseBody?.range.start === openBrace) {
-        return itemModelBodyContext(scope, elseOwner, prefix, openBrace);
-      }
-    }
-  }
-  return undefined;
 }
 
 

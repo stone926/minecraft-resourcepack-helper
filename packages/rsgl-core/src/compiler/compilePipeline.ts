@@ -276,13 +276,7 @@ export function compileRsglProgram(files: RsglSourceFile[], options: RsglProgram
       namespace,
       stdlibTemplates,
       externalTemplates: Array.from(environment.importedTemplates.values()),
-      externalValues: mapToExternalValues(
-        environment.importedValues,
-        environment.importedValueOrigins,
-        environment.importedValuePathOrigins,
-        environment.importedValueSelectionPathOrigins,
-        environment.importedValueIssues
-      ),
+      externalValues: mapToExternalValues(environment.importedValueBindings),
       environment,
       baseDocumentLoader,
       globLoader,

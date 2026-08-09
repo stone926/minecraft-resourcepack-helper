@@ -15,6 +15,7 @@ describe("repository build graph", () => {
     assert.deepStrictEqual(main.include, ["src/**/*.ts"]);
     assert.deepStrictEqual(main.exclude, ["src/test/**", "src/rsgl/host/**"]);
     assert.deepStrictEqual(referencePaths(main), [
+      "./packages/shared-utils",
       "./packages/mc-assets",
       "./packages/resource-project",
       "./packages/rsgl-shared"
@@ -22,6 +23,7 @@ describe("repository build graph", () => {
     assert.deepStrictEqual(rsglHost.include, ["src/rsgl/host/**/*.ts"]);
     assert.deepStrictEqual(referencePaths(rsglHost), [
       "./tsconfig.main.json",
+      "./packages/shared-utils",
       "./packages/mc-assets",
       "./packages/rsgl-core",
       "./packages/rsgl-shared"
@@ -30,14 +32,19 @@ describe("repository build graph", () => {
     assert.ok(referencePaths(solution).includes("./tsconfig.rsgl-host.json"));
     assert.strictEqual(referencePaths(solution).includes("./extensions/vscode-rsgl"), false);
     assert.ok(referencePaths(solution).includes("./tsconfig.tests.json"));
+    assert.ok(referencePaths(tests).includes("./packages/shared-utils"));
     assert.strictEqual(tests.include?.some(pattern => pattern.startsWith("extensions/")) ?? false, false);
     assert.ok(tests.include?.includes("test/**/*.ts"));
 
-    for (const project of ["mc-assets", "resource-project", "rsgl-core", "rsgl-shared", "rsgl-lsp", "rsgl-cli"]) {
+    for (const project of ["shared-utils", "mc-assets", "resource-project", "rsgl-core", "rsgl-shared", "rsgl-lsp", "rsgl-cli"]) {
       const config = readJson<TsConfig>(path.join(root, "packages", project, "tsconfig.json"));
       assert.deepStrictEqual(config.include, ["src/**/*.ts"], `${project} must own only its source files`);
       assert.ok(config.compilerOptions?.tsBuildInfoFile?.includes(project));
     }
+    const rsglShared = readJson<TsConfig>(path.join(root, "packages", "rsgl-shared", "tsconfig.json"));
+    assert.ok(referencePaths(rsglShared).includes("../shared-utils"));
+    const rsglCore = readJson<TsConfig>(path.join(root, "packages", "rsgl-core", "tsconfig.json"));
+    assert.ok(referencePaths(rsglCore).includes("../shared-utils"));
   });
 
   it("runs every owned test suite through the canonical build surface", async () => {
@@ -93,8 +100,11 @@ describe("repository build graph", () => {
     }
     assert.deepStrictEqual(bundles.bundleEntryDefinitions.root.singletonExternals, ["vscode"]);
     assert.deepStrictEqual(bundles.bundleEntryDefinitions.rsglHost.singletonExternals, ["vscode"]);
+    assert.strictEqual(bundles.bundleEntryDefinitions.root.releasePostMinifier, "terser");
+    assert.strictEqual(bundles.bundleEntryDefinitions.rsglHost.releasePostMinifier, "terser");
     for (const id of ["server", "worker", "modelPreview", "cli"] as const) {
       assert.deepStrictEqual(bundles.bundleEntryDefinitions[id].singletonExternals, []);
+      assert.strictEqual(bundles.bundleEntryDefinitions[id].releasePostMinifier, undefined);
     }
     assert.deepStrictEqual(
       pickBuildEnvironment(bundles.bundleEntryDefinitions.modelPreview),
@@ -194,6 +204,11 @@ describe("repository build graph", () => {
       "src/rsgl/registerLazyRsglSubsystem.ts",
       "src/rsgl/rsglActivationSignals.ts"
     ]);
+    assert.ok(
+      Object.keys(result.metafile?.inputs ?? {})
+        .some(input => input.replaceAll("\\", "/").startsWith("packages/shared-utils/src/")),
+      "the root bundle should consume the reviewed shared utility layer"
+    );
     const output = result.outputFiles?.find(file => file.path.endsWith("extension.js"));
     assert.ok(output, "root build should return its CommonJS entry");
     assert.strictEqual(
@@ -235,6 +250,22 @@ describe("repository build graph", () => {
       false,
       "the lazy RSGL host must not pull in the root registration layer"
     );
+    const hostInputs = Object.keys(hostResult.metafile?.inputs ?? {})
+      .map(input => input.replaceAll("\\", "/"));
+    assert.ok(
+      hostInputs.includes("src/rsgl/provider/rsglGeneratedProvider.ts"),
+      "the generated provider implementation belongs to the lazy RSGL feature graph"
+    );
+    assert.strictEqual(
+      hostInputs.some(input => input.startsWith("src/resourceUniverse/providers/rsglGenerated")),
+      false,
+      "ResourceUniverse providers must not own RSGL feature implementations"
+    );
+    assert.ok(
+      Object.keys(hostResult.metafile?.inputs ?? {})
+        .some(input => input.replaceAll("\\", "/").startsWith("packages/shared-utils/src/")),
+      "the lazy RSGL host should consume the same shared utility layer"
+    );
     assert.ok(
       (hostOutput.text.match(/require\("vscode"\)/g)?.length ?? 0)
         < (unsharedHostOutput.text.match(/require\("vscode"\)/g)?.length ?? 0),
@@ -251,6 +282,7 @@ interface BundleEntryDefinition {
   target: string;
   external: readonly string[];
   singletonExternals: readonly string[];
+  releasePostMinifier?: "terser";
   banner?: string;
 }
 

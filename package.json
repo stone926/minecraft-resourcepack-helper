@@ -549,6 +549,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
     "mocha": "^11.7.6",
+    "terser": "^5.44.0",
     "three": "^0.185.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",

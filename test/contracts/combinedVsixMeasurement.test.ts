@@ -248,6 +248,36 @@ describe("combined VSIX artifact measurement", () => {
     );
   });
 
+  it("uses the report evaluator as the single frozen VSIX budget path", () => {
+    const verifier = fs.readFileSync(
+      path.join(process.cwd(), "scripts", "verify-build-budgets.mjs"),
+      "utf8"
+    );
+    assert.ok(verifier.includes("evaluateFrozenMainVsixBudget"));
+    assert.strictEqual(verifier.includes("assertFrozenArtifactBudget"), false);
+  });
+
+  it("keeps measurement pipeline defaults in one path catalog", () => {
+    const scriptsRoot = path.join(process.cwd(), "scripts");
+    const catalog = fs.readFileSync(path.join(scriptsRoot, "measurement-paths.mjs"), "utf8");
+    assert.ok(catalog.includes('measurementsDirectory = "dist/measurements"'));
+    assert.ok(catalog.includes("combined-vsix-artifact-names.mjs"));
+    assert.strictEqual(catalog.includes("combined-vsix-layout.mjs"), false);
+    assert.strictEqual(catalog.includes("build-bundles.mjs"), false);
+    for (const script of [
+      "measure-combined-vsix.mjs",
+      "measure-json-only-activation.mjs",
+      "measure-json-only-activation-comparison.mjs",
+      "resource-universe-benchmark.mjs",
+      "verify-json-only-activation-budget.mjs",
+      "verify-json-only-activation-comparison.mjs"
+    ]) {
+      const source = fs.readFileSync(path.join(scriptsRoot, script), "utf8");
+      assert.ok(source.includes("measurementPaths") || source.includes("measurementsDirectory"));
+      assert.strictEqual(source.includes('"dist/measurements'), false, script);
+    }
+  });
+
   it("strictly parses output arguments without a dirty-build escape hatch", () => {
     assert.deepStrictEqual(measurement.parseCombinedVsixMeasurementArguments([]), {
       outputDirectory: "dist/measurements"

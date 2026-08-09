@@ -5,16 +5,16 @@ import type {
   RsglResourceLocationDto,
   RsglResourceSnapshotResponse
 } from "../../../packages/rsgl-shared/src/resourceSnapshotProtocol";
-import { isEditableUri, mergeByIdentity } from "../core/identity";
+import { isEditableUri, mergeByIdentity } from "../../resourceUniverse/core/identity";
 import { uniqueValues } from "../../../packages/mc-assets/src";
-import { resourceUriComparisonIdentity } from "../core/resourceUriIdentity";
+import { resourceUriComparisonIdentity } from "../../resourceUniverse/core/resourceUriIdentity";
 import type {
   ProviderCoverage,
   ResourceEdge,
   ResourceLocation,
   ResourceProducer,
   ResourceProviderSnapshot
-} from "../core";
+} from "../../resourceUniverse/core";
 import type { RsglGeneratedMaterializationIndex } from "./rsglGeneratedMaterialization";
 
 export interface RsglGeneratedSnapshotFacts {
@@ -267,4 +267,3 @@ function cloneScope<T extends {
     ...(scope.pathPrefixes ? { pathPrefixes: [...scope.pathPrefixes] } : {})
   };
 }
-

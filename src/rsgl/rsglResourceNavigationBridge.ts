@@ -6,7 +6,7 @@ import {
   type RsglResourceNavigationRequest,
   type RsglResourceNavigationResponse
 } from "../../packages/rsgl-shared/src/resourceNavigationProtocol";
-import { throwIfAborted } from "../utils/abortError";
+import { throwIfAborted } from "../../packages/shared-utils/src";
 import type {
   ResourceLocation,
   ResourceProducer

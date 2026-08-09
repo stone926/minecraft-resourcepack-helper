@@ -2,6 +2,7 @@ import type {
   ExprNode,
   ForStmtNode,
   IdentifierNode,
+  IfStmtNode,
   ItemCompositeBodyNode,
   ItemFirstMatchBodyNode,
   ItemModelNode,
@@ -12,6 +13,10 @@ import type {
   ItemSelectBodyNode,
   ObjectExprNode
 } from "../parser";
+import {
+  forEachBodyStatement,
+  type RsglBodyEntryStatement
+} from "../bodyStatementDispatch";
 import type { RsglTemplateCallerContext } from "../templateOutput";
 import {
   checkAssignable,
@@ -42,6 +47,8 @@ type ItemOwnerBody =
   | ItemCompositeBodyNode
   | ItemFirstMatchBodyNode
   | ItemModelTemplateBodyNode;
+
+type ItemOwnerStatement = ItemOwnerBody["statements"][number];
 
 export interface RsglItemModelBodyCheckerHost {
   context: RsglExpressionCheckContext;
@@ -75,159 +82,111 @@ export class RsglItemModelBodyChecker {
   }
 
   public checkTemplateBody(body: ItemModelTemplateBodyNode, scope: RsglScope): void {
-    for (const statement of body.statements) {
-      switch (statement.kind) {
-        case "ItemModelProducerStmt":
-          this.checkProducer(statement, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "UseDecl":
-          this.checkUse(statement.expression, scope);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, itemModelCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
+    this.checkBodyStatements<ItemModelTemplateBodyNode["statements"][number]>(
+      body.statements,
+      scope,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "ItemModelProducerStmt":
+            this.checkProducer(statement, entryScope);
+            break;
+          case "UseDecl":
+            this.checkUse(statement.expression, entryScope);
+            break;
+          default:
+            assertNever(statement);
+        }
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
+    );
   }
 
   public checkSelectBody(body: ItemSelectBodyNode, scope: RsglScope): void {
-    for (const statement of body.statements) {
-      switch (statement.kind) {
-        case "ItemSelectCase":
-          checkExpression(this.host.context, statement.when, scope);
-          this.checkNode(statement.model, scope);
-          break;
-        case "ItemFallbackClause":
-          this.checkNode(statement.model, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, itemModelCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
+    this.checkBodyStatements<ItemSelectBodyNode["statements"][number]>(
+      body.statements,
+      scope,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "ItemSelectCase":
+            checkExpression(this.host.context, statement.when, entryScope);
+            this.checkNode(statement.model, entryScope);
+            break;
+          case "ItemFallbackClause":
+            this.checkNode(statement.model, entryScope);
+            break;
+          default:
+            assertNever(statement);
+        }
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
+    );
   }
 
   public checkRangeBody(body: ItemRangeBodyNode, scope: RsglScope): void {
-    for (const statement of body.statements) {
-      switch (statement.kind) {
-        case "ItemRangeEntry":
-          this.checkNumberExpression(statement.threshold, scope);
-          this.checkNode(statement.model, scope);
-          break;
-        case "ItemRangeFrames": {
-          checkExpression(this.host.context, statement.frames, scope);
-          const frameScope = createChildScope(scope, "block");
-          this.host.context.defineIdentifier(
-            frameScope,
-            syntheticIdentifier("index", statement.range),
-            "variable",
-            numberType,
-            statement
-          );
-          this.host.context.defineIdentifier(
-            frameScope,
-            syntheticIdentifier("frame", statement.range),
-            "variable",
-            anyType,
-            statement
-          );
-          this.checkNode(statement.model, frameScope);
-          break;
+    this.checkBodyStatements<ItemRangeBodyNode["statements"][number]>(
+      body.statements,
+      scope,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "ItemRangeEntry":
+            this.checkNumberExpression(statement.threshold, entryScope);
+            this.checkNode(statement.model, entryScope);
+            break;
+          case "ItemRangeFrames": {
+            checkExpression(this.host.context, statement.frames, entryScope);
+            const frameScope = createChildScope(entryScope, "block");
+            this.host.context.defineIdentifier(
+              frameScope,
+              syntheticIdentifier("index", statement.range),
+              "variable",
+              numberType,
+              statement
+            );
+            this.host.context.defineIdentifier(
+              frameScope,
+              syntheticIdentifier("frame", statement.range),
+              "variable",
+              anyType,
+              statement
+            );
+            this.checkNode(statement.model, frameScope);
+            break;
+          }
+          case "ItemFallbackClause":
+            this.checkNode(statement.model, entryScope);
+            break;
+          default:
+            assertNever(statement);
         }
-        case "ItemFallbackClause":
-          this.checkNode(statement.model, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, itemModelCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
+    );
   }
 
   public checkCompositeBody(body: ItemCompositeBodyNode, scope: RsglScope): void {
-    for (const statement of body.statements) {
-      switch (statement.kind) {
-        case "ItemCompositeModel":
-          this.checkNode(statement.model, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, itemModelCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
-      }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
+    this.checkBodyStatements<ItemCompositeBodyNode["statements"][number]>(
+      body.statements,
+      scope,
+      (statement, entryScope) => this.checkNode(statement.model, entryScope)
+    );
   }
 
   public checkFirstMatchBody(body: ItemFirstMatchBodyNode, scope: RsglScope): void {
-    for (const statement of body.statements) {
-      switch (statement.kind) {
-        case "ItemFirstMatchWhen":
-          this.checkResourceReference(statement.property, scope, "resource");
-          this.checkPropertyOptions(statement.propertyOptions, scope);
-          this.checkNode(statement.model, scope);
-          break;
-        case "ItemFallbackClause":
-          this.checkNode(statement.model, scope);
-          break;
-        case "LetDecl":
-          checkLocalLetDecl(this.host.context, statement, scope);
-          break;
-        case "ForStmt":
-          this.host.checkForStatement(statement, scope, itemModelCallerContext);
-          break;
-        case "IfStmt":
-          this.checkIf(statement, scope);
-          break;
-        case "UnknownStmt":
-          break;
-        default:
-          assertNever(statement);
+    this.checkBodyStatements<ItemFirstMatchBodyNode["statements"][number]>(
+      body.statements,
+      scope,
+      (statement, entryScope) => {
+        switch (statement.kind) {
+          case "ItemFirstMatchWhen":
+            this.checkResourceReference(statement.property, entryScope, "resource");
+            this.checkPropertyOptions(statement.propertyOptions, entryScope);
+            this.checkNode(statement.model, entryScope);
+            break;
+          case "ItemFallbackClause":
+            this.checkNode(statement.model, entryScope);
+            break;
+          default:
+            assertNever(statement);
+        }
       }
-    }
-    applyLambdaValueDiagnostics(this.host.context.diagnostics, body.statements, scope);
+    );
   }
 
   public checkNode(node: ItemModelNode, scope: RsglScope): void {
@@ -284,7 +243,7 @@ export class RsglItemModelBodyChecker {
   }
 
   private checkIf(
-    statement: Extract<ItemOwnerBody["statements"][number], { kind: "IfStmt" }>,
+    statement: IfStmtNode,
     scope: RsglScope
   ): void {
     checkCompileTimeCondition(this.host.context, statement.condition, scope);
@@ -301,6 +260,26 @@ export class RsglItemModelBodyChecker {
         itemModelCallerContext
       );
     }
+  }
+
+  private checkBodyStatements<TStatement extends ItemOwnerStatement>(
+    statements: readonly TStatement[],
+    scope: RsglScope,
+    onEntry: (
+      statement: RsglBodyEntryStatement<TStatement>,
+      scope: RsglScope
+    ) => void
+  ): void {
+    forEachBodyStatement(statements, {
+      context: scope,
+      onEntry,
+      onLet: (statement, entryScope) =>
+        checkLocalLetDecl(this.host.context, statement, entryScope),
+      onFor: (statement, entryScope) =>
+        this.host.checkForStatement(statement, entryScope, itemModelCallerContext),
+      onIf: (statement, entryScope) => this.checkIf(statement, entryScope)
+    });
+    applyLambdaValueDiagnostics(this.host.context.diagnostics, statements, scope);
   }
 
   private checkUse(expression: ExprNode, scope: RsglScope): void {

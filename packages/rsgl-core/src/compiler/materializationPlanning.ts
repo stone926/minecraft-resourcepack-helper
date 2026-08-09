@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { errorMessage } from "../../../shared-utils/src";
 import { uniqueValues } from "../../../mc-assets/src";
 import {
   createLocalResourceLayerDescriptor,
@@ -393,8 +394,4 @@ function assertUniqueResolvedOutputPaths(
       }
     }
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -653,6 +653,6 @@ describe("RSGL let-lambda module APIs", () => {
 
     assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
     assert.strictEqual(globCalls, 1, "the captured definition value must be evaluated once per module environment");
-    assert.strictEqual(mainEnvironment?.localValues.get("result"), "captured/stone");
+    assert.strictEqual(mainEnvironment?.localValueBindings.get("result")?.value, "captured/stone");
   });
 });

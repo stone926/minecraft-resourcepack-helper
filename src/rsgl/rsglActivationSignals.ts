@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { isLanguageDocumentLike } from "../../packages/shared-utils/src";
 
 export type ConfiguredRsglMode = "auto" | "on" | "off";
 
@@ -29,9 +30,11 @@ export function configuredRsglMode(): ConfiguredRsglMode {
 export function isRsglDocument(
   document: Pick<vscode.TextDocument, "languageId" | "uri"> & { fileName?: string }
 ): boolean {
-  return document.languageId === "rsgl"
-    || document.uri.path.toLowerCase().endsWith(".rsgl")
-    || (document.fileName?.toLowerCase().endsWith(".rsgl") ?? false);
+  return isLanguageDocumentLike({
+    languageId: document.languageId,
+    fileName: document.fileName,
+    uriPath: document.uri.path
+  }, "rsgl", ".rsgl");
 }
 
 export async function showRsglDisabledMessage(): Promise<void> {

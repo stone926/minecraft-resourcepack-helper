@@ -13,8 +13,12 @@ import {
 export type RsglAstVisitControl = "skipChildren" | void;
 
 export interface RsglAstVisitor {
+  enterBody?(body: RsglStatementBodyNode): RsglAstVisitControl;
+  leaveBody?(body: RsglStatementBodyNode): void;
   enterStatement?(statement: RsglStatement): RsglAstVisitControl;
   leaveStatement?(statement: RsglStatement): void;
+  enterItemModel?(model: ItemModelNode): RsglAstVisitControl;
+  leaveItemModel?(model: ItemModelNode): void;
   enterExpression?(expression: ExprNode): RsglAstVisitControl;
   leaveExpression?(expression: ExprNode): void;
   enterType?(type: TypeNode): RsglAstVisitControl;
@@ -47,8 +51,17 @@ export function walkRsglType(type: TypeNode, visitor: RsglAstVisitor): void {
   walkType(type, visitor);
 }
 
+/** Walks one recursive item-model value with the same canonical visitor protocol. */
+export function walkRsglItemModel(model: ItemModelNode, visitor: RsglAstVisitor): void {
+  walkItemModelNode(model, visitor);
+}
+
 function walkBody(body: RsglStatementBodyNode, visitor: RsglAstVisitor): void {
+  if (visitor.enterBody?.(body) === "skipChildren") {
+    return;
+  }
   body.statements.forEach(statement => walkStatement(statement, visitor));
+  visitor.leaveBody?.(body);
 }
 
 function walkStatement(statement: RsglStatement, visitor: RsglAstVisitor): void {
@@ -274,8 +287,11 @@ function walkBlockstateModelSpec(model: BlockstateModelSpecNode, visitor: RsglAs
   }
 }
 
-/** Internal recursive item-model walker; public visitors continue to observe statements and expressions. */
 function walkItemModelNode(model: ItemModelNode, visitor: RsglAstVisitor): void {
+  if (visitor.enterItemModel?.(model) === "skipChildren") {
+    return;
+  }
+
   switch (model.kind) {
     case "ItemModelExpr":
       walkExpression(model.expression, visitor);
@@ -328,6 +344,8 @@ function walkItemModelNode(model: ItemModelNode, visitor: RsglAstVisitor): void 
     default:
       assertNever(model);
   }
+
+  visitor.leaveItemModel?.(model);
 }
 
 function walkExpression(expression: ExprNode, visitor: RsglAstVisitor): void {

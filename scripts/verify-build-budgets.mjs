@@ -11,6 +11,7 @@ import {
   mainVsixBudgetEntryIds,
   readBuildBudgetConfiguration
 } from "./build-budget-config.mjs";
+import { evaluateFrozenMainVsixBudget } from "./combined-vsix-report.mjs";
 import { findVsixArchiveEntry, readVsixArchiveMetrics } from "./vsix-archive-metrics.mjs";
 
 export {
@@ -286,23 +287,31 @@ async function verifyVsixBudget(name, relativeFileName) {
     throw new Error(`${name} VSIX does not exist: ${absoluteFileName}`);
   }
   const metrics = await readVsixArchiveMetrics(absoluteFileName);
-  for (const metric of ["archiveBytes", "compressedEntriesBytes", "installedBytes", "fileCount"]) {
-    assertFrozenArtifactBudget(
-      `${name} VSIX ${metric}`,
-      metrics[metric],
-      budgets.mainVsix[metric]
-    );
-  }
+  const runtimeEntries = {};
   for (const entryId of mainVsixBudgetEntryIds) {
     const archivePath = `extension/${bundleEntryDefinitions[entryId].outfile}`;
     const entry = findVsixArchiveEntry(metrics, archivePath);
     if (!entry || entry.directory) {
       throw new Error(`${name} VSIX is missing budgeted runtime entry: ${archivePath}`);
     }
-    assertFrozenArtifactBudget(
-      `${name} VSIX ${entryId} compressed bytes`,
-      entry.compressedBytes,
-      budgets.mainVsix.runtimeEntryCompressedBytes[entryId]
+    runtimeEntries[entryId] = { vsixCompressedBytes: entry.compressedBytes };
+  }
+  const evaluation = evaluateFrozenMainVsixBudget({
+    source: "scripts/build-budgets.json",
+    schemaVersion: budgets.schemaVersion,
+    mainVsix: budgets.mainVsix
+  }, {
+    artifact: metrics,
+    runtimeEntries
+  }, mainVsixBudgetEntryIds);
+  for (const metric of ["archiveBytes", "compressedEntriesBytes", "installedBytes", "fileCount"]) {
+    console.log(`${name} VSIX ${metric}: ${evaluation.measured[metric]}/${evaluation.configured[metric]}`);
+  }
+  for (const entryId of mainVsixBudgetEntryIds) {
+    console.log(
+      `${name} VSIX ${entryId} compressed bytes: `
+      + `${evaluation.measured.runtimeEntryCompressedBytes[entryId]}`
+      + `/${evaluation.configured.runtimeEntryCompressedBytes[entryId]}`
     );
   }
 }
@@ -322,16 +331,6 @@ function assertWithinBudget(label, actual, maximum) {
   }
   console.log(`${label}: ${actual}/${maximum}`);
 }
-
-function assertFrozenArtifactBudget(label, actual, maximum) {
-  if (maximum === null) {
-    throw new Error(
-      `Budget for ${label} is not frozen. Run npm run measure:combined-vsix and review its budgetCandidate.`
-    );
-  }
-  assertWithinBudget(label, actual, maximum);
-}
-
 
 if (isMainModule(import.meta.url)) {
   await verifyBuildBudgets(parseBudgetArguments(process.argv.slice(2)));

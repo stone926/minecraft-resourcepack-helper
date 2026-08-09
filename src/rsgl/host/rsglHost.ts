@@ -1,4 +1,5 @@
 import type * as vscode from "vscode";
+import { ListenerSet } from "../../../packages/shared-utils/src/listenerSet";
 import type { ResourcePackProjectService } from "../../resourceProject/resourcePackProjectService";
 import type { ResourceUniverseService } from "../../resourceUniverse/core/resourceUniverseService";
 import type { ResourceUniverseNavigation } from "../../services/resourceUniverseNavigation";
@@ -80,7 +81,7 @@ export function createRsglRuntime(options: RsglRuntimeOptions): RsglRuntime {
   let buildRuntimePromise: Promise<RsglBuildRuntime> | undefined;
   let disposePromise: Promise<void> | undefined;
   let disposed = false;
-  const resourceSnapshotInvalidationListeners = new Set<(notification: unknown) => void>();
+  const resourceSnapshotInvalidationListeners = new ListenerSet<unknown>();
 
   const ensureLanguageServer = async (_reason?: string, signal?: AbortSignal): Promise<void> => {
     assertRuntimeActive(disposed, signal);
@@ -100,11 +101,7 @@ export function createRsglRuntime(options: RsglRuntimeOptions): RsglRuntime {
             throw runtimeUnavailableError(disposed, signal);
           }
           languageServerInvalidationSubscription = controller.onResourceSnapshotInvalidated(
-            notification => {
-              for (const listener of resourceSnapshotInvalidationListeners) {
-                listener(notification);
-              }
-            }
+            notification => resourceSnapshotInvalidationListeners.emit(notification)
           );
           languageServer = controller;
         })
@@ -142,17 +139,7 @@ export function createRsglRuntime(options: RsglRuntimeOptions): RsglRuntime {
     },
     onResourceSnapshotInvalidated: listener => {
       assertRuntimeActive(disposed);
-      resourceSnapshotInvalidationListeners.add(listener);
-      let listenerDisposed = false;
-      return {
-        dispose: () => {
-          if (listenerDisposed) {
-            return;
-          }
-          listenerDisposed = true;
-          resourceSnapshotInvalidationListeners.delete(listener);
-        }
-      };
+      return resourceSnapshotInvalidationListeners.add(listener);
     },
     executeCommand: async (command, ...args) => {
       assertRuntimeActive(disposed);

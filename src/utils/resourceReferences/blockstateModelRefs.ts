@@ -1,4 +1,3 @@
-import { getCitDocumentSource } from "../../cit/citPaths";
 import { arrayElements, JsonAstNode, JsonDocumentNode, memberName, objectMembers, stringValue } from "../jsonAst";
 import { pushReference } from "./shared";
 import { ResourceReference } from "./types";
@@ -55,8 +54,7 @@ export function getItemModelReferences(ast: JsonDocumentNode): ResourceReference
   return references;
 }
 
-export function getCitModelReferences(ast: JsonDocumentNode, fileName: string): ResourceReference[] {
-  const source = getCitDocumentSource(fileName);
+export function getCitModelReferences(ast: JsonDocumentNode, source: string): ResourceReference[] {
   const references = getModelReferences(ast, source);
 
   for (const item of objectMembers(ast.body)) {

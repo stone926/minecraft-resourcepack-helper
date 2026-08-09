@@ -2,6 +2,7 @@
 
 import { isMainModule } from "./lib/moduleIdentity.mjs";
 import { build } from "esbuild";
+import { minify as minifyWithTerser } from "terser";
 import {
   cpSync,
   existsSync,
@@ -41,7 +42,8 @@ export const bundleEntryDefinitions = Object.freeze({
     format: "cjs",
     target: "node22",
     external: ["vscode"],
-    singletonExternals: ["vscode"]
+    singletonExternals: ["vscode"],
+    releasePostMinifier: "terser"
   }),
   rsglHost: entry({
     entryPoint: "src/rsgl/host/rsglHost.ts",
@@ -50,7 +52,8 @@ export const bundleEntryDefinitions = Object.freeze({
     format: "cjs",
     target: "node22",
     external: ["vscode"],
-    singletonExternals: ["vscode"]
+    singletonExternals: ["vscode"],
+    releasePostMinifier: "terser"
   }),
   server: entry({
     entryPoint: "packages/rsgl-lsp/src/server.ts",
@@ -187,6 +190,9 @@ export async function buildBundleTarget({ targetName = "all", bundleMode = "deve
     const outfile = path.join(repositoryRoot, item.definition.outfile);
     mkdirSync(path.dirname(outfile), { recursive: true });
     const result = await build(createEsbuildOptions(item.definition, bundleMode));
+    if (bundleMode === "production" && item.definition.releasePostMinifier === "terser") {
+      await postMinifyReleaseBundle(outfile);
+    }
     results.push({ ...item, result });
   }
 
@@ -195,6 +201,34 @@ export async function buildBundleTarget({ targetName = "all", bundleMode = "deve
     writeAnalysisReports(results);
   }
   return results;
+}
+
+/**
+ * esbuild remains the fast primary bundler. The two installed activation entries
+ * receive a deterministic release-only Terser pass because their frozen VSIX
+ * budgets measure deflated bytes and benefit materially from top-level folding.
+ * Production source maps are kept accurate, but are intentionally not linked
+ * from runtime code because the production VSIX excludes them.
+ */
+async function postMinifyReleaseBundle(outfile) {
+  const sourceMapFile = `${outfile}.map`;
+  const sourceMap = readFileSync(sourceMapFile, "utf8");
+  const outputName = path.basename(outfile);
+  const result = await minifyWithTerser(
+    { [outputName]: readFileSync(outfile, "utf8") },
+    {
+      ecma: 2022,
+      compress: { passes: 3, toplevel: true },
+      mangle: { toplevel: true },
+      format: { comments: false },
+      sourceMap: { content: sourceMap, filename: outputName }
+    }
+  );
+  if (typeof result.code !== "string" || typeof result.map !== "string") {
+    throw new Error(`Terser did not emit code and a source map for ${outfile}.`);
+  }
+  writeFileSync(outfile, result.code);
+  writeFileSync(sourceMapFile, result.map);
 }
 
 function entry(definition) {

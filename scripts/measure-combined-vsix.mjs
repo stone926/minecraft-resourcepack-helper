@@ -27,6 +27,7 @@ import {
 import { captureCombinedVsixModeEvidence } from "./combined-vsix-evidence.mjs";
 import { readBuildBudgetConfiguration } from "./build-budget-config.mjs";
 import { resolveNpmInvocation } from "./npm-invocation.mjs";
+import { measurementPaths, measurementsDirectory } from "./measurement-paths.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -39,7 +40,7 @@ export const combinedVsixMeasurementFiles = Object.freeze({
 });
 
 export function parseCombinedVsixMeasurementArguments(args) {
-  let outputDirectory = "dist/measurements";
+  let outputDirectory = measurementPaths.combinedVsix.directory;
   let hasOutputDirectory = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -74,10 +75,10 @@ export function parseCombinedVsixMeasurementArguments(args) {
 
 export function resolveCombinedVsixMeasurementPaths(options = {}) {
   const repositoryRoot = path.resolve(options.repositoryRoot ?? defaultRepositoryRoot);
-  const measurementsRoot = path.join(repositoryRoot, "dist", "measurements");
+  const measurementsRoot = path.resolve(repositoryRoot, measurementsDirectory);
   const outputDirectory = path.resolve(
     repositoryRoot,
-    options.outputDirectory ?? "dist/measurements"
+    options.outputDirectory ?? measurementPaths.combinedVsix.directory
   );
   assertPathAtOrBelow(measurementsRoot, outputDirectory, "Measurement output directory");
   return Object.freeze({

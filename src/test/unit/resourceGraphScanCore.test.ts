@@ -6,8 +6,31 @@ import {
   resourceGraphConfiguredRootMaxDepth,
   type ResourceGraphDirectoryEntry
 } from "../../utils/resourceGraphScanCore";
+import { collectResourceGraphWorkspacePathSnapshot } from "../../utils/resourceGraphScan";
 
 describe("resource graph scan core", () => {
+  it("collects workspace and configured paths through a narrow host", async () => {
+    const workspaceModel = path.resolve("workspace", "assets", "minecraft", "models", "block", "stone.json");
+    const workspaceBlockstate = path.resolve("workspace", "assets", "minecraft", "blockstates", "stone.json");
+    const configuredRoot = path.resolve("configured", "assets");
+    const configuredModel = path.join(configuredRoot, "minecraft", "models", "item", "stick.json");
+    const entries = new Map<string, ResourceGraphDirectoryEntry[]>([
+      [configuredRoot, [directory("minecraft")]],
+      [path.join(configuredRoot, "minecraft"), [directory("models")]],
+      [path.join(configuredRoot, "minecraft", "models"), [directory("item")]],
+      [path.join(configuredRoot, "minecraft", "models", "item"), [file("stick.json")]]
+    ]);
+
+    const snapshot = await collectResourceGraphWorkspacePathSnapshot({
+      findWorkspaceResourcePaths: async () => [workspaceModel, workspaceBlockstate],
+      getConfiguredAssetsRoots: async () => [configuredRoot],
+      getDirectoryEntries: async directoryName => entries.get(directoryName) ?? null
+    });
+
+    assert.deepStrictEqual(snapshot.modelDocumentPaths, [workspaceModel, configuredModel]);
+    assert.deepStrictEqual(snapshot.blockstatePaths, [workspaceBlockstate]);
+  });
+
   it("classifies one file snapshot for references, models, and blockstates", () => {
     const files = [
       path.join("pack", "assets", "minecraft", "models", "block", "stone.json"),

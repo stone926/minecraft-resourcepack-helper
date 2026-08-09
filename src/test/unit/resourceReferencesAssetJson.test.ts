@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getResourceReferences, ResourceReferenceDocument } from "../../utils/resourceReferences";
 import { createJsonDocument } from "./helpers/documents";
+import { getResourceReferences, type ResourceReferenceDocument } from "./helpers/resourceReferences";
 
 describe("asset JSON resource references", () => {
   it("skips unrelated JSON documents without reading their contents", () => {

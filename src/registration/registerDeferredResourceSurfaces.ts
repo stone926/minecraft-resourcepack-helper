@@ -9,6 +9,7 @@ import { DeferredResourceGraphTreeProvider } from "./deferredResourceGraphTreePr
 import { registerLanguageProviders } from "./registerLanguageProviders";
 import { registerResourceDiagnostics, type ResourceDiagnosticsController } from "./registerResourceDiagnostics";
 import { registerResourceGraph, type ResourceGraphRegistration } from "./registerResourceGraph";
+import { registerResourcePipeline } from "./registerResourcePipeline";
 import { registerResourceSurfaceCommands } from "./registerResourceSurfaceCommands";
 import { RegistrationScope } from "./registrationScope";
 import { registerWorkspaceEvents, type WorkspaceEventController } from "./registerWorkspaceEvents";
@@ -128,6 +129,7 @@ function installResourceSurfaces(
 ): InstalledResourceSurfaces {
   const scope = new RegistrationScope();
   try {
+    registerResourcePipeline(scope);
     const resourceGraph = registerResourceGraph(scope, navigation);
     const diagnostics = registerResourceDiagnostics(scope, navigation);
     registerLanguageProviders(scope, navigation);

@@ -6,9 +6,9 @@ import type {
   ResourceUniverseRefreshResult,
   ResourceUniverseService
 } from "../resourceUniverse";
-import { isAbortError } from "../utils/abortError";
+import { isAbortError } from "../../packages/shared-utils/src";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
-import { asDisposable } from "../utils/asyncShutdown";
+import { asDisposable } from "../../packages/shared-utils/src";
 import {
   createInstalledRsglRuntimeLoader,
   RsglRuntimeController,

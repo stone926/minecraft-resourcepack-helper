@@ -17,16 +17,17 @@ import {
   unlinkSync,
   writeFileSync
 } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { combinedVsixRuntimeEntries } from "../combined-vsix-layout.mjs";
-import { readVsixArchiveMetrics } from "../vsix-archive-metrics.mjs";
-
-const require = createRequire(import.meta.url);
-// yauzl is part of the locked VSCE toolchain and is also used by the VSIX metrics reader.
-const yauzl = require("yauzl");
+import {
+  nextVsixArchiveEntry,
+  normalizeVsixArchivePath as normalizeArchivePath,
+  openVsixArchive,
+  openVsixArchiveEntryStream,
+  readVsixArchiveMetrics
+} from "../vsix-archive-metrics.mjs";
 
 export const PREPARED_VSIX_CACHE_SCHEMA_VERSION = 2;
 export const PREPARED_VSIX_TREE_ALGORITHM = "sha256-path-content-tree-v1";
@@ -185,24 +186,9 @@ export async function hashPreparedExtensionTree(extensionRoot) {
 }
 
 export function normalizeVsixArchivePath(value) {
-  if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
-    throw new Error("VSIX entry paths must be non-empty strings without NUL bytes.");
-  }
-  if (value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) {
-    throw new Error(`Unsafe VSIX entry path: ${value}`);
-  }
-  const directory = value.endsWith("/");
-  const rawPath = directory ? value.slice(0, -1) : value;
-  const normalized = path.posix.normalize(rawPath);
-  if (normalized === "." || normalized === ".." || normalized.startsWith("../")) {
-    throw new Error(`VSIX entry escapes the archive root: ${value}`);
-  }
-  if (normalized !== rawPath
-    || normalized.split("/").some(segment => segment === "" || segment === "." || segment === "..")) {
-    throw new Error(`VSIX entry path is not canonical: ${value}`);
-  }
-  assertPortableRelativePath(normalized);
-  return directory ? `${normalized}/` : normalized;
+  const normalized = normalizeArchivePath(value);
+  assertPortableRelativePath(normalized.endsWith("/") ? normalized.slice(0, -1) : normalized);
+  return normalized;
 }
 
 function resolveRepositoryRoot(value) {
@@ -375,7 +361,7 @@ async function deriveArchiveExtensionTree(artifactPath, metrics, extensionRoot) 
   const records = [];
   const directories = new Set();
   const files = new Set();
-  const zipFile = await openZip(artifactPath);
+  const zipFile = await openVsixArchive(artifactPath, "Unable to open VSIX for prepared extraction");
   let archiveError;
   const captureArchiveError = error => {
     archiveError = error;
@@ -383,7 +369,10 @@ async function deriveArchiveExtensionTree(artifactPath, metrics, extensionRoot) 
   zipFile.on("error", captureArchiveError);
   try {
     while (true) {
-      const entry = await nextZipEntry(zipFile);
+      const entry = await nextVsixArchiveEntry(
+        zipFile,
+        "Invalid VSIX archive while its extension tree was read."
+      );
       if (!entry) {
         break;
       }
@@ -470,52 +459,8 @@ function addTreeDirectory(directoryPath, directories, files, records) {
   }
 }
 
-function openZip(fileName) {
-  return new Promise((resolve, reject) => {
-    yauzl.open(fileName, {
-      autoClose: false,
-      lazyEntries: true,
-      decodeStrings: true,
-      strictFileNames: true,
-      validateEntrySizes: true
-    }, (error, zipFile) => {
-      if (error || !zipFile) {
-        reject(new Error(`Unable to open VSIX for prepared extraction: ${fileName}`, { cause: error }));
-        return;
-      }
-      resolve(zipFile);
-    });
-  });
-}
-
-function nextZipEntry(zipFile) {
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      zipFile.removeListener("entry", onEntry);
-      zipFile.removeListener("end", onEnd);
-      zipFile.removeListener("error", onError);
-    };
-    const onEntry = entry => {
-      cleanup();
-      resolve(entry);
-    };
-    const onEnd = () => {
-      cleanup();
-      resolve(undefined);
-    };
-    const onError = error => {
-      cleanup();
-      reject(new Error("Invalid VSIX archive while its extension tree was read.", { cause: error }));
-    };
-    zipFile.once("entry", onEntry);
-    zipFile.once("end", onEnd);
-    zipFile.once("error", onError);
-    zipFile.readEntry();
-  });
-}
-
 async function streamZipEntry(zipFile, entry, destination) {
-  const stream = await openZipEntryStream(zipFile, entry);
+  const stream = await openVsixArchiveEntryStream(zipFile, entry);
   const hash = createHash("sha256");
   let bytes = 0;
   if (destination) {
@@ -534,18 +479,6 @@ async function streamZipEntry(zipFile, entry, destination) {
     }
   }
   return { bytes, sha256: hash.digest("hex") };
-}
-
-function openZipEntryStream(zipFile, entry) {
-  return new Promise((resolve, reject) => {
-    zipFile.openReadStream(entry, (error, stream) => {
-      if (error || !stream) {
-        reject(new Error(`Unable to read VSIX entry: ${entry.fileName}`, { cause: error }));
-        return;
-      }
-      resolve(stream);
-    });
-  });
 }
 
 function assertZipEntryMetadata(entry, expected, entryPath) {

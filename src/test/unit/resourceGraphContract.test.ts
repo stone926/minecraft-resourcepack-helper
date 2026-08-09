@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 describe("resource graph index contract", () => {
   it("builds incoming references as a shared target index instead of per-target scans", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "src", "utils", "resourceGraph.ts"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "src", "services", "resourceGraphIndex.ts"), "utf8");
 
     assert.ok(source.includes("buildReferenceIndexes"), "incoming references should be built as a shared source pass");
     assert.ok(source.includes("ResourceGraphReferenceIndex"), "incoming references should use the shared incremental target index");
@@ -21,10 +21,17 @@ describe("resource graph index contract", () => {
     assert.strictEqual(treeSource.includes("new ResourceGraphIndex"), false);
     assert.ok(serviceSource.includes("new ResourceGraphWorkspaceCache"));
     assert.ok(serviceSource.includes("new ResourceGraphIndex"));
+
+    const utilitySource = fs.readFileSync(
+      path.join(process.cwd(), "src", "utils", "resourceGraph.ts"),
+      "utf8"
+    );
+    assert.strictEqual(utilitySource.includes("class ResourceGraph"), false);
+    assert.strictEqual(utilitySource.includes("vscode.workspace"), false);
   });
 
   it("updates indexed source references without discarding the whole incoming index", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "src", "utils", "resourceGraph.ts"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "src", "services", "resourceGraphIndex.ts"), "utf8");
 
     assert.ok(source.includes("pendingDocuments"));
     assert.ok(source.includes("removeIndexedSource"));

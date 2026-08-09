@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import * as path from "node:path";
-import { getResourceReferences, type ResourceReferenceDocument } from "../../utils/resourceReferences";
+import { getResourceReferences, type ResourceReferenceDocument } from "./helpers/resourceReferences";
 
 interface VersionedResourceReferenceDocument extends ResourceReferenceDocument {
   uri: {

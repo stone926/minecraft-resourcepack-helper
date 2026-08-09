@@ -7,11 +7,10 @@ import {
   type RsglResourceSnapshotRequest,
   type RsglResourceSnapshotResponse
 } from "../../../packages/rsgl-shared/src/resourceSnapshotProtocol";
-import { requireIdentity } from "../core/identity";
-import { errorMessage } from "../../utils/errorMessage";
+import { requireIdentity } from "../../resourceUniverse/core/identity";
+import { abortSignalError, errorMessage } from "../../../packages/shared-utils/src";
 import { isRsglDocumentLike } from "../../../packages/rsgl-shared/src";
 import type { ResourcePackProjectContextDto } from "../../../packages/resource-project/src";
-import { abortSignalError } from "../../utils/abortError";
 import type {
   ProviderCoverage,
   ResourceContributionProvider,
@@ -21,7 +20,7 @@ import type {
   ResourceDocumentProjectionRequest,
   ResourceProviderSnapshot,
   ResourceProviderUnavailableReason
-} from "../core";
+} from "../../resourceUniverse/core";
 import {
   RsglGeneratedMaterializationIndex,
   type RsglGeneratedMaterializationSnapshot
@@ -37,10 +36,10 @@ import {
   uniqueRsglStrings,
   type RsglGeneratedSnapshotFacts
 } from "./rsglGeneratedSnapshotMapper";
-import { sameResourceDocumentUri } from "./resourceDocumentUri";
+import { sameResourceDocumentUri } from "../../resourceUniverse/providers/resourceDocumentUri";
 
-export { rsglGeneratedProviderId } from "../core/providerIds";
-import { rsglGeneratedProviderId } from "../core/providerIds";
+export { rsglGeneratedProviderId } from "../../resourceUniverse/core/providerIds";
+import { rsglGeneratedProviderId } from "../../resourceUniverse/core/providerIds";
 
 export type { RsglGeneratedMaterializationSnapshot } from "./rsglGeneratedMaterialization";
 

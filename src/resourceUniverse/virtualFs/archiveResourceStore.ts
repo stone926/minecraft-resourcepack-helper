@@ -1,4 +1,5 @@
 import { uniqueValues } from "../../../packages/mc-assets/src";
+import { ListenerSet } from "../../../packages/shared-utils/src";
 import { throwIfAborted } from "../../utils/abortError";
 import {
   createStableResourceProjectRevision,
@@ -93,10 +94,8 @@ export class ArchiveResourceStore {
   private readonly currentByBaseId = new Map<string, StoredMount>();
   private readonly pendingByBaseId = new Map<string, PendingMount>();
   private readonly latestGenerationByBaseId = new Map<string, number>();
-  private readonly mountListeners = new Set<(event: ArchiveResourceMountEvent) => void>();
-  private readonly invalidationListeners = new Set<(
-    event: ArchiveResourceInvalidationEvent
-  ) => void>();
+  private readonly mountListeners = new ListenerSet<ArchiveResourceMountEvent>();
+  private readonly invalidationListeners = new ListenerSet<ArchiveResourceInvalidationEvent>();
   private generation = 0;
   private disposed = false;
 
@@ -207,24 +206,20 @@ export class ArchiveResourceStore {
       invalidatedRootUris: invalidated.map(mount => mount.rootUri),
       layerIds: uniqueValues(invalidated.map(mount => mount.layerId)).sort()
     };
-    for (const listener of this.invalidationListeners) {
-      listener(event);
-    }
+    this.invalidationListeners.emit(event);
     return event;
   }
 
   public onDidMount(
     listener: (event: ArchiveResourceMountEvent) => void
   ): ArchiveResourceStoreSubscription {
-    this.mountListeners.add(listener);
-    return { dispose: () => this.mountListeners.delete(listener) };
+    return this.mountListeners.add(listener);
   }
 
   public onDidInvalidate(
     listener: (event: ArchiveResourceInvalidationEvent) => void
   ): ArchiveResourceStoreSubscription {
-    this.invalidationListeners.add(listener);
-    return { dispose: () => this.invalidationListeners.delete(listener) };
+    return this.invalidationListeners.add(listener);
   }
 
   public dispose(): void {
@@ -307,9 +302,7 @@ export class ArchiveResourceStore {
     this.currentByBaseId.set(baseId, mount);
     this.mountsByAuthority.set(authority, mount);
     const event = publicMount(mount);
-    for (const listener of this.mountListeners) {
-      listener(event);
-    }
+    this.mountListeners.emit(event);
     return event;
   }
 

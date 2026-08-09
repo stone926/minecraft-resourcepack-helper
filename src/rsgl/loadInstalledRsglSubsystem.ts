@@ -1,4 +1,5 @@
 import type * as vscode from "vscode";
+import { moduleExportWithFunction } from "../../packages/shared-utils/src";
 import type { ResourceInfrastructure } from "../registration/registerResourceInfrastructure";
 import type { RsglSubsystemRegistration } from "./registerRsglSubsystem";
 
@@ -35,13 +36,9 @@ export function createInstalledRsglSubsystemLoader(
 }
 
 export function normalizeSubsystemModule(value: unknown): InstalledRsglSubsystemModule {
-  const record = asRecord(value);
-  if (typeof record?.createRsglSubsystem === "function") {
-    return record as unknown as InstalledRsglSubsystemModule;
-  }
-  const defaultExport = asRecord(record?.default);
-  if (typeof defaultExport?.createRsglSubsystem === "function") {
-    return defaultExport as unknown as InstalledRsglSubsystemModule;
+  const module = moduleExportWithFunction(value, "createRsglSubsystem");
+  if (module) {
+    return module as unknown as InstalledRsglSubsystemModule;
   }
   throw new Error("The installed RSGL host bundle does not export createRsglSubsystem().");
 }
@@ -49,10 +46,4 @@ export function normalizeSubsystemModule(value: unknown): InstalledRsglSubsystem
 async function importSubsystemModule(subsystemUrl: string): Promise<unknown> {
   // A variable URL preserves the explicitly separate CJS feature entry.
   return import(subsystemUrl);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null
-    ? value as Record<string, unknown>
-    : undefined;
 }

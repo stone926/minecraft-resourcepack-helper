@@ -6,7 +6,9 @@ import {
 } from "../../../packages/rsgl-shared/src";
 import {
   RsglGeneratedProvider,
-  RsglGeneratedProviderConnection,
+  RsglGeneratedProviderConnection
+} from "../../rsgl/provider";
+import {
   ResourceUniverseService,
   type ResourceContributionRequest
 } from "../../resourceUniverse";

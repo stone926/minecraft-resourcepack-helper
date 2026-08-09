@@ -1,9 +1,9 @@
-import type { ResourceProviderRegistration } from "../core/resourceContributionRegistry";
+import type { ResourceProviderRegistration } from "../../resourceUniverse/core/resourceContributionRegistry";
 import type {
   ResourceUniverseRefreshResult,
   ResourceUniverseService
-} from "../core/resourceUniverseService";
-import type { ResourceCoverageScope } from "../core/types";
+} from "../../resourceUniverse/core/resourceUniverseService";
+import type { ResourceCoverageScope } from "../../resourceUniverse/core/types";
 import {
   RsglGeneratedProvider,
   type RsglGeneratedMaterializationSnapshot

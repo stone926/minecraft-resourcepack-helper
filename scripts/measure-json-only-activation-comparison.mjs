@@ -31,16 +31,17 @@ import {
 import { createActivationHarnessIdentity } from "./activation-probe/harness-identity.mjs";
 import { formatErrorWithCauses } from "./activation-probe/error-format.mjs";
 import { assertSafeEvidenceOutput } from "./activation-probe/safe-output.mjs";
+import { createChallenge } from "./activation-probe/challenge.mjs";
+import { describeArtifact } from "./activation-probe/artifact-identity.mjs";
+import { createActivationProbeReport } from "./activation-probe/report.mjs";
 import {
   assertJsonOnlyWorkspace,
-  createActivationProbeReport,
-  createChallenge,
-  createJsonOnlyWorkspace,
-  describeArtifact
-} from "./measure-json-only-activation.mjs";
+  createJsonOnlyWorkspace
+} from "./activation-probe/workspace-fixture.mjs";
 import { activationEvidenceTrustBoundary } from "./activation-probe/schema.mjs";
 import { readBuildBudgetConfiguration } from "./build-budget-config.mjs";
 import { compareJsonOnlyActivationReports } from "./verify-json-only-activation-budget.mjs";
+import { measurementPaths } from "./measurement-paths.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
@@ -49,9 +50,9 @@ const relativeOrAbsolute = relativeOrAbsoluteFrom(repositoryRoot);
 
 export const pairedActivationComparisonSchemaVersion = 1;
 export const defaultPairedActivationComparisonInputs = Object.freeze({
-  baseline: "dist/minecraft-resourcepack-helper-final-a.vsix",
-  candidate: "dist/measurements/combined-production.vsix",
-  output: "dist/measurements/json-only-activation-comparison.json",
+  baseline: measurementPaths.pairedActivation.baselineVsix,
+  candidate: measurementPaths.pairedActivation.candidateVsix,
+  output: measurementPaths.pairedActivation.report,
   iterationsPerArm: 20,
   settleMilliseconds: 1_000
 });

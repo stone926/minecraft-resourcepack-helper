@@ -1,5 +1,10 @@
 import { uniqueValues } from "../../packages/mc-assets/src";
-import { citresewnSourceDirectory, isCitModelFileName, isCitPropertiesFileName } from "../cit/citPaths";
+import {
+  citresewnSourceDirectory,
+  getCitDocumentSource,
+  isCitModelFileName,
+  isCitPropertiesFileName
+} from "./citResourceSurface";
 import type { JsonDocumentNode } from "../utils/jsonAst";
 import {
   getEquipmentReferences,
@@ -56,7 +61,7 @@ export type JsonReferenceExtractor = (
 export type ResourceReferenceExtraction =
   | { mode: "json"; extract: JsonReferenceExtractor }
   | { mode: "shader"; source: "shaders/core" | "shaders/post" }
-  | { mode: "citProperties" };
+  | { mode: "registered"; id: string };
 
 export type ResourceGraphPreviewContext =
   | "modelResource"
@@ -206,7 +211,11 @@ const referenceSurfaceRegistry = [
     language: "json",
     selectorPatterns: [`**/assets/*/${citresewnSourceDirectory}/*.json`, `**/assets/*/${citresewnSourceDirectory}/**/*.json`],
     capabilities: [...referenceCapabilities, "citCodeAction"],
-    referenceExtraction: { mode: "json", extract: getCitModelReferences },
+    referenceExtraction: {
+      mode: "json",
+      extract: (ast: JsonDocumentNode, fileName: string) =>
+        getCitModelReferences(ast, getCitDocumentSource(fileName))
+    },
     referenceTargets: ["model", "texture"],
     graphFileExtensions: ["json"],
     matchesFileName: isCitModelFileName
@@ -217,7 +226,7 @@ const referenceSurfaceRegistry = [
     selectorPatterns: [`**/assets/*/${citresewnSourceDirectory}/*.properties`, `**/assets/*/${citresewnSourceDirectory}/**/*.properties`],
     watcherPatterns: [`**/assets/*/${citresewnSourceDirectory}/*.properties`, `**/assets/*/${citresewnSourceDirectory}/**/*.properties`],
     capabilities: [...referenceCapabilities, "citLanguage", "citCodeAction"],
-    referenceExtraction: { mode: "citProperties" },
+    referenceExtraction: { mode: "registered", id: "citProperties" },
     referenceTargets: ["model", "texture"],
     graphFileExtensions: ["properties"],
     manifestWhenClauses: [citPreviewWhen],

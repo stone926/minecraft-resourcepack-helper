@@ -8,6 +8,8 @@ describe("resource universe visible migration contract", () => {
     const locationBridge = readSource("utils", "resourceLocationVscode.ts");
     const graph = readSource("services", "resourceGraphService.ts");
     const facade = readSource("services", "resourceUniverseNavigationFacade.ts");
+    const definitions = readSource("services", "resourceDefinitionQueryService.ts");
+    const refresh = readSource("services", "projectRefreshCoordinator.ts");
 
     assert.ok(definition.includes("navigation.resolveReference(document, reference, {"));
     assert.ok(definition.includes("includeGenerated: true"));
@@ -18,24 +20,31 @@ describe("resource universe visible migration contract", () => {
     assert.ok(graph.includes("navigation.getOutgoingReferences"));
     assert.ok(graph.includes("navigation.getIncomingReferences"));
     assert.ok(facade.includes("new ResourceNavigationService"));
-    assert.ok(facade.includes("resolveProducerDefinition"));
-    assert.ok(facade.includes("[physicalProviderId, ...(generatedApplicable ? [rsglGeneratedProviderId] : [])]"));
+    assert.ok(definitions.includes("resolveProducerDefinition"));
+    assert.ok(refresh.includes("physicalProviderId"));
+    assert.ok(refresh.includes("rsglGeneratedProviderId"));
+    assert.ok(refresh.includes('applicability !== "none"'));
     assert.strictEqual(
-      facade.includes(".filter(providerId => this.universe.registry.get(providerId)"),
+      refresh.includes(".filter(providerId => this.universe.registry.get(providerId)"),
       false
     );
+    assert.ok(facade.split(/\r?\n/u).length < 400, "the public facade must remain a thin composition root");
   });
 
   it("keeps the established overlay/filter/load-order resolver as physical winner evidence", () => {
     const facade = readSource("services", "resourceUniverseNavigationFacade.ts");
+    const legacy = readSource("services", "legacyReferenceBridge.ts");
     const scanner = readSource("resourceUniverse", "providers", "vscodePhysicalAssetSource.ts");
 
     assert.ok(facade.includes("legacyResolver"));
     assert.ok(facade.includes("generateReferenceRedirectPath"));
-    assert.ok(facade.includes("findPhysicalProducer"));
+    assert.ok(legacy.includes("findPhysicalProducer"));
+    assert.ok(legacy.includes("legacyReferenceEvidence"));
     assert.ok(scanner.includes("parsePackMetadata"));
     assert.ok(scanner.includes("overlayApplies"));
     assert.ok(scanner.includes("effectiveDocuments"));
+    assert.strictEqual(scanner.includes('from "../../resourceProject"'), false);
+    assert.ok(scanner.includes("PhysicalAssetProjectContextStore"));
   });
 
   it("keeps legacy graph indexing only as an unavailable coverage fallback", () => {
@@ -72,19 +81,38 @@ describe("resource universe visible migration contract", () => {
 
   it("keeps diagnostics generated-aware without scanning explicit non-RSGL directory projects", () => {
     const registration = readSource("registration", "registerResourceDiagnostics.ts");
-    const facade = readSource("services", "resourceUniverseNavigationFacade.ts");
+    const references = readSource("services", "resourceReferenceQueryService.ts");
     const policy = readSource("services", "referenceIndexRefreshPolicy.ts");
 
     assert.ok(registration.includes("navigation.resolveReference(document, reference, {"));
     assert.ok(registration.includes("includeGenerated: true"));
     assert.ok(policy.includes('input.rsglApplicability !== "none"'));
     assert.ok(policy.includes('source !== "directory"'));
-    assert.ok(facade.includes("this.discoverProjectForUri(document.uri)"));
-    assert.ok(facade.includes('coverage: "authoritative"'));
+    assert.ok(references.includes("this.refreshCoordinator.discoverProjectForUri(document.uri)"));
+    assert.ok(references.includes('coverage: "authoritative"'));
     assert.ok(
-      facade.indexOf("requiresReferenceIndexRefresh({")
-        < facade.indexOf("this.refreshDiscoveredProject(discovered, options)")
+      references.indexOf("this.legacy.requiresIndexRefresh(")
+        < references.indexOf("this.refreshCoordinator.refreshDiscoveredProject(discovered, options)")
     );
+  });
+
+  it("keeps RSGL generated providers inside the RSGL feature boundary", () => {
+    const physicalProviders = readSource("resourceUniverse", "providers", "index.ts");
+    const rsglProviders = readSource("rsgl", "provider", "index.ts");
+    const formerDirectory = path.join(process.cwd(), "src", "resourceUniverse", "providers");
+
+    assert.strictEqual(physicalProviders.includes("rsglGenerated"), false);
+    for (const name of [
+      "rsglGeneratedMaterialization.ts",
+      "rsglGeneratedOwnershipManifest.ts",
+      "rsglGeneratedProvider.ts",
+      "rsglGeneratedProviderConnection.ts",
+      "rsglGeneratedSnapshotMapper.ts"
+    ]) {
+      assert.strictEqual(fs.existsSync(path.join(formerDirectory, name)), false);
+    }
+    assert.ok(rsglProviders.includes('export * from "./rsglGeneratedProvider"'));
+    assert.ok(rsglProviders.includes('export * from "./rsglGeneratedMaterialization"'));
   });
 });
 

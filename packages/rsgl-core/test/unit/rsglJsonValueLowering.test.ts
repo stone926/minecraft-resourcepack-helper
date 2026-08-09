@@ -202,10 +202,7 @@ describe("RSGL JSON value lowering", () => {
     const namespaceValue = new ModuleNamespaceValue({
       fileName: "/virtual/library.rsgl",
       namespace: "minecraft",
-      values: new Map(),
-      valueOrigins: new Map(),
-      valuePathOrigins: new Map(),
-      valueIssues: new Map(),
+      valueBindings: new Map(),
       templates: new Map()
     });
     const context: EvaluationContext = {

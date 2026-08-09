@@ -1,8 +1,5 @@
 import type {
-  ItemModelNode,
   RsglNode,
-  RsglStatement,
-  RsglStatementBodyNode,
   TextRange,
 } from "./parser";
 import { forDimensionBindingIdentifiers } from "./forBindingPatterns";
@@ -63,13 +60,55 @@ function visibilityIndex(model: RsglSemanticModel): VisibilityIndex {
   }
 
   const owners = new Map<RsglNode, LexicalOwner>();
-  for (const statement of model.module.statements) {
-    indexNestedScopes(statement, owners);
-  }
-
-  // Lambda scopes can occur in any expression position. The AST walker keeps
-  // this independent from the growing set of statement-specific expressions.
   walkRsglModule(model.module, {
+    enterBody(body) {
+      const region = lexicalOwner(body.range);
+      for (const statement of body.statements) {
+        if (statement.kind === "LetDecl") {
+          owners.set(statement, {
+            range: region.range,
+            visibleAfter: statement.range.end
+          });
+        } else if (
+          statement.kind === "TableDecl"
+          || statement.kind === "TemplateDecl"
+          || statement.kind === "ResourceDecl"
+        ) {
+          // Blocks containing top-level declarations are predeclared by the
+          // binder. Keep the declaration local to its containing body.
+          owners.set(statement, region);
+        }
+      }
+    },
+    enterStatement(statement) {
+      if (statement.kind === "TemplateDecl") {
+        const owner = lexicalOwner(statement.body.range);
+        for (const parameter of statement.parameters) {
+          owners.set(parameter, owner);
+        }
+      } else if (statement.kind === "ForStmt") {
+        for (const dimension of statement.dimensions) {
+          const owner: LexicalOwner = {
+            range: {
+              start: dimension.iterable.range.end,
+              end: statement.body.range.end
+            },
+            // A dimension's locals are available to later dimensions and the
+            // body, but not while evaluating their own iterable.
+            visibleAfter: dimension.iterable.range.end
+          };
+          for (const binding of forDimensionBindingIdentifiers(dimension)) {
+            owners.set(binding, owner);
+          }
+        }
+      } else if (statement.kind === "ItemRangeFrames") {
+        // `index` and `frame` are synthetic bindings scoped to the complete
+        // nested model produced by the frames clause.
+        owners.set(statement, lexicalOwner(statement.model.range));
+      }
+    },
+    // Lambda scopes can occur in any expression position. The AST walker keeps
+    // this independent from the growing set of statement-specific expressions.
     enterExpression(expression) {
       if (expression.kind !== "LambdaExpr") {
         return;
@@ -84,135 +123,6 @@ function visibilityIndex(model: RsglSemanticModel): VisibilityIndex {
   const created = { owners };
   visibilityIndexes.set(model, created);
   return created;
-}
-
-function indexBody(body: RsglStatementBodyNode, owners: Map<RsglNode, LexicalOwner>): void {
-  const region = lexicalOwner(body.range);
-  for (const statement of body.statements) {
-    if (statement.kind === "LetDecl") {
-      owners.set(statement, {
-        range: region.range,
-        visibleAfter: statement.range.end
-      });
-    } else if (
-      statement.kind === "TableDecl"
-      || statement.kind === "TemplateDecl"
-      || statement.kind === "ResourceDecl"
-    ) {
-      // Blocks containing top-level declarations are predeclared by the
-      // binder. Preserve that behavior while keeping the declaration local to
-      // its containing body.
-      owners.set(statement, region);
-    }
-    indexNestedScopes(statement, owners);
-  }
-}
-
-function indexNestedScopes(
-  statement: RsglStatement,
-  owners: Map<RsglNode, LexicalOwner>
-): void {
-  switch (statement.kind) {
-    case "TemplateDecl": {
-      const owner = lexicalOwner(statement.body.range);
-      for (const parameter of statement.parameters) {
-        owners.set(parameter, owner);
-      }
-      indexBody(statement.body, owners);
-      break;
-    }
-    case "ResourceDecl":
-      indexBody(statement.body, owners);
-      break;
-    case "OverlayDecl":
-      indexBody(statement.body, owners);
-      break;
-    case "ForStmt": {
-      for (const dimension of statement.dimensions) {
-        const owner: LexicalOwner = {
-          range: {
-            start: dimension.iterable.range.end,
-            end: statement.body.range.end
-          },
-          // A dimension's locals are available to later dimensions and the
-          // body, but not while evaluating their own iterable.
-          visibleAfter: dimension.iterable.range.end
-        };
-        for (const binding of forDimensionBindingIdentifiers(dimension)) {
-          owners.set(binding, owner);
-        }
-      }
-      indexBody(statement.body, owners);
-      break;
-    }
-    case "IfStmt":
-      indexBody(statement.thenBody, owners);
-      if (statement.elseBody) {
-        indexBody(statement.elseBody, owners);
-      }
-      break;
-    case "BlockstateVariantEntry":
-    case "BlockstateMultipartEntry":
-      if (statement.choice.kind === "BlockstateRandomChoice") {
-        indexBody(statement.choice.body, owners);
-      }
-      break;
-    case "SectionStmt":
-      if (statement.body) {
-        indexBody(statement.body, owners);
-      }
-      break;
-    case "PackOverlayStmt":
-    case "AtlasPalettedPermutationsStmt":
-    case "ModelTransformStmt":
-      indexBody(statement.body, owners);
-      break;
-    case "ItemModelProducerStmt":
-      indexItemModelNode(statement.value, owners);
-      break;
-    case "ItemSelectCase":
-    case "ItemRangeEntry":
-    case "ItemFallbackClause":
-    case "ItemCompositeModel":
-    case "ItemFirstMatchWhen":
-      indexItemModelNode(statement.model, owners);
-      break;
-    case "ItemRangeFrames":
-      // `index` and `frame` are synthetic bindings scoped to the complete nested model.
-      owners.set(statement, lexicalOwner(statement.model.range));
-      indexItemModelNode(statement.model, owners);
-      break;
-    default:
-      break;
-  }
-}
-
-function indexItemModelNode(
-  model: ItemModelNode,
-  owners: Map<RsglNode, LexicalOwner>
-): void {
-  switch (model.kind) {
-    case "ItemModelRange":
-    case "ItemModelSelect":
-    case "ItemModelComposite":
-    case "ItemModelFirstMatch":
-      indexBody(model.body, owners);
-      break;
-    case "ItemModelCondition":
-      if (model.onTrue) {
-        indexItemModelNode(model.onTrue, owners);
-      }
-      if (model.onFalse) {
-        indexItemModelNode(model.onFalse, owners);
-      }
-      break;
-    case "ItemModelExpr":
-    case "ItemModelUse":
-    case "ItemModelSpecial":
-    case "ItemModelEmpty":
-    case "ItemModelSelectedItem":
-      break;
-  }
 }
 
 function lexicalOwner(range: TextRange): LexicalOwner {

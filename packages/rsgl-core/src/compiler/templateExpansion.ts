@@ -4,7 +4,10 @@ import {
   ParameterNode
 } from "../parser";
 import { bindRsglArguments, RsglCallableParameter } from "../arguments";
-import { RsglTemplateDefinition } from "./environment";
+import {
+  evaluationStateForValueBindings,
+  type RsglTemplateDefinition
+} from "./environment";
 import {
   EvaluationContext,
   type EvaluationOrigin,
@@ -385,18 +388,13 @@ function createTemplateBaseContext(
   onEvaluationFailure?: () => void,
   onResourceValueFailure?: () => void
 ): RsglCompileContext {
+  const bindingState = evaluationStateForValueBindings(template.valueBindings);
   return {
     namespace: template.namespace,
-    variables: new Map(template.values),
+    ...bindingState,
     evaluationItemBudget,
     resolvedExpectedTypes: template.resolvedExpectedTypes,
-    valueOrigins: template.valueOrigins ? new Map(template.valueOrigins) : undefined,
-    valuePathOrigins: template.valuePathOrigins ? new Map(template.valuePathOrigins) : undefined,
-    valueSelectionPathOrigins: template.valueSelectionPathOrigins
-      ? new Map(template.valueSelectionPathOrigins)
-      : undefined,
-    valueIssues: template.valueIssues ? new Map(template.valueIssues) : undefined,
-    valueBindingNames: new Set(template.values.keys()),
+    valueBindingNames: new Set(template.valueBindings.keys()),
     sourceFile: template.fileName,
     mappingReason: "template",
     expansionStack: [],

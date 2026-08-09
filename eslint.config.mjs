@@ -10,6 +10,11 @@ const parentSrcEscapes = ["../../../src/**", "../../../../src/**", "../../../../
  */
 const layerBoundaries = [
   {
+    files: ["packages/shared-utils/src/**/*.ts"],
+    forbidden: ["vscode", "**/mc-assets/**", "**/resource-project/**", "**/rsgl-*/**", ...parentSrcEscapes],
+    message: "shared-utils must remain dependency-free and usable by every bundle."
+  },
+  {
     files: ["src/**/*.ts"],
     ignores: ["src/test/**/*.ts"],
     forbidden: [
@@ -19,12 +24,17 @@ const layerBoundaries = [
       "**/rsgl-shared/**",
       "**/vscode-rsgl/**"
     ],
-    message: "The main extension may depend only on the mc-assets and resource-project internal source modules."
+    message: "The main extension may depend only on shared-utils, mc-assets, and resource-project internal source modules."
+  },
+  {
+    files: ["src/utils/**/*.ts"],
+    forbidden: ["**/services/**", "**/cit/**"],
+    message: "Utility modules must stay below stateful services and feature-owned CIT adapters."
   },
   {
     files: [
-      "src/resourceUniverse/providers/rsglGeneratedProvider.ts",
-      "src/resourceUniverse/providers/rsglGeneratedSnapshotMapper.ts",
+      "src/rsgl/provider/rsglGeneratedProvider.ts",
+      "src/rsgl/provider/rsglGeneratedSnapshotMapper.ts",
       "src/rsgl/rsglResourceNavigationBridge.ts",
       "src/rsgl/rsglGeneratedContributionBridge.ts",
       "src/rsgl/runtime/loadInstalledRsglRuntime.ts"
@@ -67,12 +77,12 @@ const layerBoundaries = [
       "**/vscode-rsgl/**",
       ...parentSrcEscapes
     ],
-    message: "rsgl-core may depend on mc-assets, but not on hosts or higher RSGL layers."
+    message: "rsgl-core may depend on shared-utils and mc-assets, but not on hosts or higher RSGL layers."
   },
   {
     files: ["packages/rsgl-shared/src/**/*.ts"],
     forbidden: ["**/mc-assets/**", "**/rsgl-*/**", "**/vscode-rsgl/**", ...parentSrcEscapes],
-    message: "rsgl-shared must remain a dependency-free constants layer."
+    message: "rsgl-shared may depend on shared-utils and resource-project, but not on domain or host layers."
   },
   {
     files: ["packages/rsgl-lsp/src/**/*.ts"],
