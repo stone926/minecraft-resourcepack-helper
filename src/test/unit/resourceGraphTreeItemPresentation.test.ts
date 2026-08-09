@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { createResourceGraphTreeItemPresentation } from "../../views/resourceGraphTreeItemPresentation";
 
 describe("resource graph TreeItem presentation", () => {

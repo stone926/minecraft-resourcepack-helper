@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { createTemplateDefinition } from "../../src/compiler/environment";
 import { RsglTemplateDispatchCache } from "../../src/compiler/templateDispatchCache";
 import { parseRsgl, type TemplateDeclNode } from "../../src/parser";

@@ -1,9 +1,13 @@
-import * as assert from "node:assert";
-import { execFileSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
 interface NpmInvocationModule {
   resolveNpmInvocation(args: string[], options?: {
@@ -26,7 +30,9 @@ interface InstalledCliInvocationModule {
   ): { file: string; args: string[] };
 }
 
-describe("npm process invocation", () => {
+describe("npm process invocation", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   let npmInvocation: NpmInvocationModule;
   let installedCliInvocation: InstalledCliInvocationModule;
   let temporaryRoot: string;
@@ -165,15 +171,16 @@ describe("npm process invocation", () => {
     environment.npm_config_cache = path.join(temporaryRoot, "inherited stale cache");
     environment.RSGL_CLI_NPM_RECORD = recordPath;
 
-    execFileSync(
+    const result = runTestProcessSync(
       process.execPath,
       [
         path.join(process.cwd(), "scripts", "package-rsgl-cli.mjs"),
         "--out",
         outputPath
       ],
-      { cwd: process.cwd(), env: environment, stdio: "pipe" }
+      { cwd: process.cwd(), env: environment }
     );
+    assertTestProcessStatus(result);
 
     const record = JSON.parse(fs.readFileSync(recordPath, "utf8")) as {
       args: string[];
@@ -218,12 +225,13 @@ describe("npm process invocation", () => {
       .filter(([name]) => name.toLowerCase() !== "npm_config_cache"));
     environment.npm_execpath = fakeNpmCli;
 
-    const stdout = execFileSync(
+    const result = runTestProcessSync(
       process.execPath,
       [path.join(process.cwd(), "scripts", "verify-rsgl-cli-package.mjs"), archivePath],
-      { cwd: process.cwd(), env: environment, encoding: "utf8" }
+      { cwd: process.cwd(), env: environment }
     );
+    assertTestProcessStatus(result);
 
-    assert.match(stdout, /RSGL CLI package smoke passed:/);
+    assert.match(result.stdout, /RSGL CLI package smoke passed:/);
   });
 });

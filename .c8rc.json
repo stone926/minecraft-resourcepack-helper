@@ -1,0 +1,26 @@
+{
+  "all": true,
+  "include": [
+    "out/src/**/*.js",
+    "out/packages/*/src/**/*.js",
+    "scripts/**/*.mjs"
+  ],
+  "exclude": [
+    "out/src/test/**",
+    "out/packages/*/test/**",
+    "scripts/activation-probe/extension-host-runner.mjs"
+  ],
+  "exclude-after-remap": false,
+  "reporter": [
+    "text-summary",
+    "json-summary",
+    "lcov"
+  ],
+  "reports-dir": "coverage",
+  "clean": true,
+  "check-coverage": true,
+  "statements": 78,
+  "branches": 80,
+  "functions": 84,
+  "lines": 78
+}

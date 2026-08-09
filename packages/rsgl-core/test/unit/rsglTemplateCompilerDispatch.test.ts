@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { RsglCompiler } from "../../src/compiler/compiler";
 import { compileRsglProgram } from "../../src/compiler";

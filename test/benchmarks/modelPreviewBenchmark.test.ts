@@ -1,16 +1,23 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
-describe("model preview benchmark script", () => {
+describe("model preview benchmark script", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("loads the compiled preview service and emits every benchmark fixture", () => {
     const root = process.cwd();
-    const result = spawnSync(process.execPath, [path.join(root, "scripts", "model-preview-benchmark.mjs")], {
-      cwd: root,
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(
+      process.execPath,
+      [path.join(root, "scripts", "model-preview-benchmark.mjs")],
+      { cwd: root }
+    );
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
     assert.strictEqual(result.stderr, "");
     const lines = result.stdout.trim().split(/\r?\n/);
     assert.strictEqual(lines[0], "fixture,first_ir_ms,hot_refresh_ms");

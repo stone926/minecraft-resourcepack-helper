@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { minecraftResourceTarget } from "../../packages/mc-assets/src";
@@ -23,9 +23,17 @@ import {
   rsglResourceKindDescriptors,
   rsglResourceKinds
 } from "../../packages/rsgl-core/src/resourceKinds";
-import { readGrammar, rsglGrammarPath, tokenizeGrammar } from "./helpers/textMateGrammar";
+import {
+  initializeGrammarTokenizer,
+  readGrammar,
+  rsglGrammarPath,
+  tokenizeGrammar
+} from "./helpers/textMateGrammar";
 
 describe("RSGL resource kind descriptors", () => {
+  before(async () => {
+    await initializeGrammarTokenizer();
+  });
   it("derive parser keywords, generic JSON kinds, and completion snippets from one registry", () => {
     assert.deepStrictEqual(rsglResourceKinds, rsglResourceKindDescriptors.map(descriptor => descriptor.keyword));
     assert.deepStrictEqual(resourceKeywords, rsglResourceKinds);

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { mapWithConcurrency } from "../../src/asyncWorkPool";
 
 describe("RSGL async work pool", () => {

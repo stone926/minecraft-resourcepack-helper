@@ -23,6 +23,7 @@ jobs:
   contract:
     name: Validate release contract
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       product: ${{ steps.contract.outputs.product }}
       version: ${{ steps.contract.outputs.version }}
@@ -67,6 +68,7 @@ jobs:
       - contract
       - verify
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     outputs:
@@ -158,6 +160,7 @@ jobs:
       - build
     if: needs.contract.outputs.publish_kind == 'marketplace'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: release
     permissions:
       contents: write
@@ -270,6 +273,7 @@ jobs:
       - build
     if: needs.contract.outputs.publish_kind == 'npm'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: release
     permissions:
       contents: write

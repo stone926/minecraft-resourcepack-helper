@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -38,7 +38,7 @@ import {
   slash,
   type MixedFixtureGolden
 } from "./helpers/mixedResourceWorkflowFixture";
-import { createZipFixture } from "./helpers/zipFixture";
+import { createZipFixture } from "../helpers/zipFixture";
 
 describe("mixed RSGL/resource-pack workflows", () => {
   it("executes all five fixture workflows through compiler, Universe, ZIP, navigation, and materialization", async () => {

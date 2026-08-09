@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import { parseRsgl } from "../../src/parser";
 import { bindRsglModule } from "../../src/semantic";

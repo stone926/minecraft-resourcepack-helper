@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { compileSourceWithUncheckedExterns, expectNoDiagnostics, unitByPath } from "./helpers/compile";
 
 describe("RSGL blockstate fragment merge policy", () => {

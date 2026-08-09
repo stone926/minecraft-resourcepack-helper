@@ -1,18 +1,17 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("resource graph tree provider", () => {
+describe("resource graph tree provider", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("keeps a searched focus stable across active-editor changes", () => {
-    const modulePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "views",
-      "resourceGraphTree.js"
-    );
+    const modulePath = resolveFreshCompiledModule("src/views/resourceGraphTree.ts");
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const modulePath = process.argv[1];",
       "class EventEmitter {",
@@ -77,10 +76,8 @@ describe("resource graph tree provider", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
 
-    const result = spawnSync(process.execPath, ["-e", script, modulePath], {
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(process.execPath, ["-e", script, modulePath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

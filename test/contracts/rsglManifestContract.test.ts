@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { rsglModelGeometryKeywordDescriptors } from "../../packages/rsgl-core/src/modelGeometrySyntax";

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { ResourcePackProjectContextDto } from "../../../packages/resource-project/src";
 import {

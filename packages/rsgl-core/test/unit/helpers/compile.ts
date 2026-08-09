@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { compileRsglModule, type ResourceUnit, type RsglCompileOptions, type RsglCompileResult, type RsglEmittedFile } from "../../../src/compiler";
 import type { RsglGlobalExternConfigEntry } from "../../../src/externDeclarations";
 import { parseRsgl } from "../../../src/parser";

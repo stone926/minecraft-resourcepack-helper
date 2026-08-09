@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import type { ExprNode } from "../../src/parser";
 import { parseRsgl } from "../../src/parser";
 import {

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -59,7 +59,7 @@ describe("build orchestration", () => {
       ["scripts/build-bundles.mjs", "all", "--bundle-mode", "development"]
     ]);
     assert.deepStrictEqual(stepCommands(build.createBuildPlan("test")), [
-      ["scripts/clean.mjs"],
+      ["scripts/prune-stale-typescript-outputs.mjs"],
       ["node_modules/typescript/bin/tsc", "-b", "tsconfig.tests.json"],
       ["scripts/copy-rsgl-stdlib.mjs", "out"]
     ]);

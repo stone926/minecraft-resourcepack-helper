@@ -8,6 +8,11 @@
     "root": 500,
     "rsglHost": 500
   },
+  "coldActivationSampling": {
+    "discardedWarmupProcesses": 1,
+    "measuredProcesses": 3,
+    "processTimeoutMilliseconds": 30000
+  },
   "jsonOnlyExtensionHost": {
     "minimumIterations": 20,
     "minimumSteadyStateSettleMilliseconds": 1000,
@@ -15,15 +20,46 @@
     "maximumRelativeP95RegressionRatio": 0.05,
     "maximumSteadyRssP95DeltaBytes": 2097152
   },
-  "bundleBytes": {
-    "development": {
-      "root": 1800000,
-      "rsglHost": 1800000,
-      "server": 2800000,
-      "worker": 2800000,
-      "modelPreview": 1400000,
-      "cli": 2800000
+  "runtimeBenchmarks": {
+    "modelPreviewMilliseconds": {
+      "simple": { "firstIr": 500, "hotRefresh": 250 },
+      "parent-chain-8": { "firstIr": 500, "hotRefresh": 250 },
+      "elements-500": { "firstIr": 750, "hotRefresh": 500 },
+      "generated-texture-alpha": { "firstIr": 500, "hotRefresh": 250 }
     },
+    "rsglSmokeP95Milliseconds": {
+      "single-file-parse-semantic": 250,
+      "large-canonical-blockstate-compile": 1000,
+      "bounded-product-budget": 250
+    },
+    "resourceUniverseSmokeP95Milliseconds": {
+      "platform-path-canonicalization": {
+        "canonicalizationMilliseconds": 10
+      },
+      "multi-root-project-cache": {
+        "coldProjectCacheBatchMilliseconds": 500,
+        "warmProjectCacheBatchMilliseconds": 50,
+        "targetedInvalidationAndRefreshMilliseconds": 250
+      },
+      "synthetic-vscode-remote-project-discovery": {
+        "uriOnlyProjectDiscoveryMilliseconds": 100
+      },
+      "large-pack-resource-universe": {
+        "snapshotConstructionMilliseconds": 100,
+        "atomicIndexReplacementMilliseconds": 250,
+        "coldResolutionBatchMilliseconds": 50,
+        "warmResolutionBatchMilliseconds": 50,
+        "coldIncomingBatchMilliseconds": 50,
+        "warmIncomingBatchMilliseconds": 50
+      },
+      "extraction-free-zip": {
+        "centralDirectoryIndexMilliseconds": 100,
+        "coldTargetedReadBatchMilliseconds": 50,
+        "warmTargetedReadBatchMilliseconds": 50
+      }
+    }
+  },
+  "bundleBytes": {
     "production": {
       "root": 1200000,
       "rsglHost": 1300000,
@@ -35,7 +71,12 @@
   },
   "bundleGzipBytes": {
     "production": {
-      "modelPreview": 184320
+      "root": 250000,
+      "rsglHost": 350000,
+      "server": 500000,
+      "worker": 400000,
+      "modelPreview": 184320,
+      "cli": 500000
     }
   },
   "mainVsix": {
@@ -44,8 +85,8 @@
     "installedBytes": 3525000,
     "fileCount": 88,
     "runtimeEntryCompressedBytes": {
-      "root": 102000,
-      "rsglHost": 131000,
+      "root": 103000,
+      "rsglHost": 130000,
       "server": 255000,
       "worker": 183000,
       "modelPreview": 153000

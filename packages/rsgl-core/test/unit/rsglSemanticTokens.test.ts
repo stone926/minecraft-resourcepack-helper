@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { parseRsgl } from "../../src/parser";
 import { bindRsglModule, bindRsglProgram, type RsglSemanticModel, type RsglSymbol } from "../../src/semantic";
@@ -9,15 +9,30 @@ import {
   type RsglSemanticToken
 } from "../../src/semanticTokens";
 
+const tokenTypeIndices: Readonly<Record<string, number>> = Object.freeze({
+  namespace: 0,
+  type: 1,
+  function: 2,
+  variable: 3,
+  parameter: 4,
+  property: 5
+});
+
+const tokenModifierIndices: Readonly<Record<string, number>> = Object.freeze({
+  declaration: 0,
+  readonly: 1,
+  defaultLibrary: 2
+});
+
 const tokenType = (name: string): number => {
-  const index = rsglSemanticTokenTypes.indexOf(name);
-  assert.ok(index >= 0, `legend is missing token type '${name}'`);
+  const index = tokenTypeIndices[name];
+  assert.notStrictEqual(index, undefined, `test legend is missing token type '${name}'`);
   return index;
 };
 
 const modifier = (name: string): number => {
-  const index = rsglSemanticTokenModifiers.indexOf(name);
-  assert.ok(index >= 0, `legend is missing token modifier '${name}'`);
+  const index = tokenModifierIndices[name];
+  assert.notStrictEqual(index, undefined, `test legend is missing token modifier '${name}'`);
   return 1 << index;
 };
 
@@ -603,6 +618,12 @@ describe("RSGL semantic tokens", () => {
   });
 
   it("uses only standard VS Code token types and modifiers", () => {
+    assert.deepStrictEqual(rsglSemanticTokenTypes, [
+      "namespace", "type", "function", "variable", "parameter", "property"
+    ]);
+    assert.deepStrictEqual(rsglSemanticTokenModifiers, [
+      "declaration", "readonly", "defaultLibrary"
+    ]);
     const standardTypes = new Set([
       "namespace", "class", "enum", "interface", "struct", "typeParameter", "type", "parameter",
       "variable", "property", "enumMember", "decorator", "event", "function", "method", "macro",

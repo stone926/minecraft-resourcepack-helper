@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { visibleRsglSymbolsAtOffset } from "../../src/completionScope";

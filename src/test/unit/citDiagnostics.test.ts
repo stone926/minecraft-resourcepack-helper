@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { getCitDiagnostics } from "../../cit/citDiagnosticsCore";
 import type { CitLanguageDocument } from "../../cit/citLanguage";

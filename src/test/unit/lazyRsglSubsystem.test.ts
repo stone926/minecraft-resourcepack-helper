@@ -1,11 +1,16 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("lazy RSGL subsystem", () => {
+describe("lazy RSGL subsystem", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("keeps cold auto/off unloaded, single-flights triggers, and recreates after off", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const events = { open: [], visible: [], configuration: [], folders: [] };",
       "const commands = new Map(); let mode = 'auto'; let informationMessages = 0; let errorMessages = 0;",
@@ -84,17 +89,9 @@ describe("lazy RSGL subsystem", () => {
       "  assert.strictEqual(commands.size, 0);",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const registrationPath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "rsgl",
-      "registerLazyRsglSubsystem.js"
-    );
-    const result = spawnSync(process.execPath, ["-e", script, registrationPath], {
-      encoding: "utf8"
-    });
+    const registrationPath = resolveFreshCompiledModule("src/rsgl/registerLazyRsglSubsystem.ts");
+    const result = runTestProcessSync(process.execPath, ["-e", script, registrationPath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

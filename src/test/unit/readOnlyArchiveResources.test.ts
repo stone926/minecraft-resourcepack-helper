@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import {
   joinResourceProjectUri,
   type ResourceLayerDescriptor
@@ -17,7 +17,7 @@ import {
   type ArchiveResourceSourceStat
 } from "../../resourceUniverse/virtualFs";
 import { sharedConfigurationFromSettings } from "../../resourceProject";
-import { createZipFixture } from "./helpers/zipFixture";
+import { createZipFixture } from "../helpers/zipFixture";
 
 describe("read-only archive resources", () => {
   it("classifies configured ZIP packs and vanilla JARs at the shared project boundary", () => {
@@ -62,6 +62,60 @@ describe("read-only archive resources", () => {
     assert.throws(
       () => ZipArchive.fromBytes(createZipFixture([{ path: "../escaped.json", content: "{}" }])),
       (error: unknown) => error instanceof ZipArchiveError && error.code === "invalidArchive"
+    );
+  });
+
+  it("contains deterministic malformed-archive mutations behind typed errors", () => {
+    const entryPath = "assets/demo/models/block/mutated.json";
+    const valid = Buffer.from(createZipFixture([{ path: entryPath, content: "{\"ok\":true}" }]));
+    const mutations: Buffer[] = [
+      Buffer.alloc(0),
+      valid.subarray(0, 1),
+      valid.subarray(0, Math.max(0, valid.length - 22))
+    ];
+    for (let seed = 1; seed <= 48; seed++) {
+      const bytes = Buffer.from(valid);
+      const offset = (seed * 7_919) % bytes.length;
+      bytes[offset] ^= ((seed * 31) & 0xff) || 0x80;
+      mutations.push(seed % 4 === 0
+        ? bytes.subarray(0, (seed * 3_571) % bytes.length)
+        : bytes);
+    }
+
+    for (const [index, bytes] of mutations.entries()) {
+      try {
+        const archive = ZipArchive.fromBytes(bytes);
+        archive.readDirectory("");
+        try {
+          archive.readFile(entryPath);
+        } catch (error) {
+          assert.ok(
+            error instanceof ZipArchiveError,
+            `mutation ${index} leaked ${String(error)}`
+          );
+        }
+      } catch (error) {
+        assert.ok(
+          error instanceof ZipArchiveError,
+          `mutation ${index} leaked ${String(error)}`
+        );
+      }
+    }
+  });
+
+  it("enforces entry-count and decompressed-size limits", () => {
+    const archiveBytes = createZipFixture([
+      { path: "one.txt", content: "1234" },
+      { path: "two.txt", content: "5678" }
+    ]);
+    assert.throws(
+      () => ZipArchive.fromBytes(archiveBytes, { maximumEntries: 1 }),
+      (error: unknown) => error instanceof ZipArchiveError && error.code === "invalidArchive"
+    );
+    const archive = ZipArchive.fromBytes(archiveBytes, { maximumEntryBytes: 3 });
+    assert.throws(
+      () => archive.readFile("one.txt"),
+      (error: unknown) => error instanceof ZipArchiveError && error.code === "entryTooLarge"
     );
   });
 

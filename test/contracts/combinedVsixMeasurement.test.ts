@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -476,8 +476,8 @@ describe("combined VSIX artifact measurement", () => {
       installedBytes: 3_525_000,
       fileCount: 88,
       runtimeEntryCompressedBytes: {
-        root: 102_000,
-        rsglHost: 131_000,
+        root: 103_000,
+        rsglHost: 130_000,
         server: 255_000,
         worker: 183_000,
         modelPreview: 153_000

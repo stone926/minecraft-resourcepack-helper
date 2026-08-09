@@ -1,18 +1,17 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("resource graph search quick pick", () => {
+describe("resource graph search quick pick", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("ignores stale requests and focuses the accepted resource", () => {
-    const modulePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "views",
-      "resourceGraphSearchQuickPick.js"
-    );
+    const modulePath = resolveFreshCompiledModule("src/views/resourceGraphSearchQuickPick.ts");
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const modulePath = process.argv[1];",
       "const format = (value, args) => args.reduce((text, arg, index) => text.replace(`{${index}}`, String(arg)), value);",
@@ -73,16 +72,23 @@ describe("resource graph search quick pick", () => {
       "} };",
       "const selected = [];",
       "const { ResourceGraphSearchQuickPick } = require(modulePath);",
-      "const controller = new ResourceGraphSearchQuickPick(search, value => selected.push(value));",
+      "const controller = new ResourceGraphSearchQuickPick(search, value => selected.push(value), 0);",
       "const wait = ms => new Promise(resolve => setTimeout(resolve, ms));",
+      "const waitFor = async (predicate, label) => {",
+      "  const deadline = Date.now() + 1000;",
+      "  while (!predicate()) {",
+      "    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}`);",
+      "    await wait(5);",
+      "  }",
+      "};",
       "(async () => {",
       "  controller.show();",
       "  picker.value = 'old'; picker.change();",
-      "  await wait(140);",
+      "  await waitFor(() => calls.length === 1, 'the initial search');",
       "  assert.deepStrictEqual(calls, ['old']);",
       "  picker.value = 'new'; picker.change();",
       "  assert.strictEqual(requests[0].signal.aborted, true, 'a superseded query should stop before filtering the shared inventory');",
-      "  await wait(140);",
+      "  await waitFor(() => calls.length === 2, 'the replacement search');",
       "  assert.deepStrictEqual(calls, ['old', 'new']);",
       "  assert.ok(picker.items.some(item => item.match?.id === 'demo:new'));",
       "  assert.strictEqual(picker.activeItems[0]?.match?.id, 'demo:new');",
@@ -94,14 +100,14 @@ describe("resource graph search quick pick", () => {
       "  assert.strictEqual(picker.items.some(item => item.match), false, 'changing the query must immediately remove selectable stale items');",
       "  picker.selectedItems = [staleItem]; picker.accept();",
       "  assert.deepStrictEqual(selected, [], 'an item rendered for an older request must not be accepted');",
-      "  await wait(140);",
+      "  await waitFor(() => calls.length === 3, 'the later search');",
       "  assert.deepStrictEqual(calls, ['old', 'new', 'later']);",
       "  assert.ok(picker.items.some(item => item.match?.id === 'demo:new'));",
       "  assert.strictEqual(picker.items[0].kind, -1, 'coverage should be presented as a non-selectable separator');",
       "  assert.strictEqual(picker.activeItems[0]?.match?.id, 'demo:new');",
       "  invalidateListener();",
       "  assert.strictEqual(picker.items.some(item => item.match), false, 'inventory invalidation must immediately retire rendered matches');",
-      "  await wait(140);",
+      "  await waitFor(() => calls.length === 4, 'the invalidation refresh');",
       "  assert.deepStrictEqual(calls, ['old', 'new', 'later', 'later']);",
       "  picker.selectedItems = [picker.items.find(item => item.match?.id === 'demo:new')];",
       "  picker.accept();",
@@ -111,10 +117,8 @@ describe("resource graph search quick pick", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
 
-    const result = spawnSync(process.execPath, ["-e", script, modulePath], {
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(process.execPath, ["-e", script, modulePath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

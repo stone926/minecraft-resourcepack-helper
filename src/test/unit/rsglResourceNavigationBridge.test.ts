@@ -1,11 +1,16 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("integrated RSGL ResourceUniverse navigation bridge", () => {
+describe("integrated RSGL ResourceUniverse navigation bridge", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("registers the lazy generated provider before the first generated projection", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const uri = value => ({ path: new URL(value).pathname, toString: () => value });",
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
@@ -34,14 +39,14 @@ describe("integrated RSGL ResourceUniverse navigation bridge", () => {
       "  assert.strictEqual(result.coverage, 'authoritative'); assert.strictEqual(result.projections.length, 1);",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const facadePath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");
-    const result = spawnSync(process.execPath, ["-e", script, facadePath], { encoding: "utf8" });
-    assert.strictEqual(result.status, 0, result.stderr);
+    const facadePath = resolveFreshCompiledModule("src/services/resourceUniverseNavigationFacade.ts");
+    const result = runTestProcessSync(process.execPath, ["-e", script, facadePath]);
+    assertTestProcessStatus(result);
   });
 
   it("does not probe generated facts for an explicitly non-RSGL project", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: value => ({ toString: () => value }) } }; return originalLoad.call(this, request, ...args); };",
       "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
@@ -76,14 +81,14 @@ describe("integrated RSGL ResourceUniverse navigation bridge", () => {
       "  assert.deepStrictEqual(invalidations.at(-1), ['rsgl', 'project', 'lspFailed']);",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const facadePath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");
-    const result = spawnSync(process.execPath, ["-e", script, facadePath], { encoding: "utf8" });
-    assert.strictEqual(result.status, 0, result.stderr);
+    const facadePath = resolveFreshCompiledModule("src/services/resourceUniverseNavigationFacade.ts");
+    const result = runTestProcessSync(process.execPath, ["-e", script, facadePath]);
+    assertTestProcessStatus(result);
   });
 
   it("returns scoped directory/ZIP/JAR/remote definitions and physical References without fake paths", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module');",
       "const originalLoad = Module._load;",
       "const uri = value => ({ value, toString: () => value });",
@@ -166,11 +171,9 @@ describe("integrated RSGL ResourceUniverse navigation bridge", () => {
       "  assert.strictEqual(cancelledAfterResolution.status, 'cancelled');",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const bridgePath = path.join(process.cwd(), "out", "src", "rsgl", "rsglResourceNavigationBridge.js");
-    const protocolPath = path.join(process.cwd(), "out", "packages", "rsgl-shared", "src", "index.js");
-    const result = spawnSync(process.execPath, ["-e", script, bridgePath, protocolPath], {
-      encoding: "utf8"
-    });
-    assert.strictEqual(result.status, 0, result.stderr);
+    const bridgePath = resolveFreshCompiledModule("src/rsgl/rsglResourceNavigationBridge.ts");
+    const protocolPath = resolveFreshCompiledModule("packages/rsgl-shared/src/index.ts");
+    const result = runTestProcessSync(process.execPath, ["-e", script, bridgePath, protocolPath]);
+    assertTestProcessStatus(result);
   });
 });

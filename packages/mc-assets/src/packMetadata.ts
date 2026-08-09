@@ -108,6 +108,9 @@ function parseOverlayEntry(raw: unknown): OverlayEntry | null {
 }
 
 function parseResourceFilter(raw: unknown): ResourceFilter | null {
+  if (!isObjectRecord(raw)) {
+    return null;
+  }
   const filter = objectRecord(raw);
   return {
     namespace: typeof filter.namespace === "string" ? filter.namespace : null,
@@ -147,7 +150,9 @@ function parseLegacyFormatRange(value: unknown): LegacyFormatRange | null {
     typeof objectValue.min_inclusive === "number" &&
     typeof objectValue.max_inclusive === "number" &&
     Number.isInteger(objectValue.min_inclusive) &&
-    Number.isInteger(objectValue.max_inclusive)
+    Number.isInteger(objectValue.max_inclusive) &&
+    objectValue.min_inclusive > 0 &&
+    objectValue.max_inclusive >= objectValue.min_inclusive
   ) {
     return { min: objectValue.min_inclusive, max: objectValue.max_inclusive };
   }
@@ -163,7 +168,12 @@ function isFormatTuple(value: unknown[]): value is [number] | [number, number] {
 
 function isLegacyFormatTuple(value: unknown[]): value is [number, number] {
   return value.length === 2 &&
-    value.every(item => typeof item === "number" && Number.isInteger(item) && item > 0);
+    typeof value[0] === "number" &&
+    typeof value[1] === "number" &&
+    Number.isInteger(value[0]) &&
+    Number.isInteger(value[1]) &&
+    value[0] > 0 &&
+    value[0] <= value[1];
 }
 
 function compareFormats(left: ResourcePackFormat, right: ResourcePackFormat): number {
@@ -183,7 +193,11 @@ function regexMatches(pattern: string, value: string): boolean {
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
+  return isObjectRecord(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { modelSourceForFile } from "../../services/modelParentChain";
 
 describe("model parent chain", () => {

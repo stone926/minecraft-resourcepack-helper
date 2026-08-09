@@ -1,0 +1,194 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_release_tag:
+        description: Optional released main-extension tag whose single VSIX is the activation baseline
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime_benchmarks:
+    name: Runtime benchmark budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare benchmark evidence directory
+        shell: bash
+        run: mkdir -p dist/measurements
+
+      - name: Verify runtime benchmark budgets
+        shell: bash
+        run: npm run verify:runtime-benchmarks | tee dist/measurements/runtime-benchmark-verification.log
+
+      - name: Run isolated benchmark smoke tests
+        shell: bash
+        run: npm run test:benchmarks | tee dist/measurements/benchmark-smoke-tests.log
+
+      - name: Explain benchmark scope
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo "### Runtime benchmark scope" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Hosted-runner timings are checked against broad repository-owned absolute ceilings." >> "${GITHUB_STEP_SUMMARY}"
+          echo "The retained logs are telemetry; the ceilings detect catastrophic regressions rather than small cross-run changes." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload benchmark reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-telemetry-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/measurements/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  json_only_extension_host:
+    name: Paired JSON-only Extension Host budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Resolve released baseline VSIX
+        id: baseline
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_BASELINE_TAG: ${{ inputs.baseline_release_tag }}
+        run: |
+          set -euo pipefail
+          baseline_tag="${REQUESTED_BASELINE_TAG}"
+          if [[ -z "${baseline_tag}" ]]; then
+            baseline_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '[.[] | select(.draft == false and .prerelease == false and any(.assets[]; .name | endswith(".vsix")))][0].tag_name // ""')"
+          fi
+          if [[ -z "${baseline_tag}" ]]; then
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "### JSON-only Extension Host budget not measured" >> "${GITHUB_STEP_SUMMARY}"
+            echo "No published release contains a baseline VSIX; provide baseline_release_tag after publishing one." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${baseline_tag}" \
+            --jq '[.assets[] | select(.name | endswith(".vsix"))] | length')"
+          if [[ "${asset_count}" != "1" ]]; then
+            echo "Release ${baseline_tag} must contain exactly one VSIX baseline; found ${asset_count}." >&2
+            exit 1
+          fi
+          asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${baseline_tag}" \
+            --jq '.assets[] | select(.name | endswith(".vsix")) | .id')"
+          mkdir -p dist/measurements
+          gh api --header "Accept: application/octet-stream" \
+            "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" > dist/measurements/baseline.vsix
+          test -s dist/measurements/baseline.vsix
+          echo "available=true" >> "${GITHUB_OUTPUT}"
+          echo "tag=${baseline_tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node.js
+        if: steps.baseline.outputs.available == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        if: steps.baseline.outputs.available == 'true'
+        run: npm ci
+
+      - name: Build and measure combined VSIX variants
+        if: steps.baseline.outputs.available == 'true'
+        run: npm run measure:combined-vsix
+
+      - name: Check candidate artifact identity
+        if: steps.baseline.outputs.available == 'true'
+        id: activation_candidate
+        shell: bash
+        run: |
+          baseline_sha256="$(sha256sum dist/measurements/baseline.vsix | cut -d ' ' -f 1)"
+          candidate_sha256="$(sha256sum dist/measurements/combined-production.vsix | cut -d ' ' -f 1)"
+          if [[ "${baseline_sha256}" == "${candidate_sha256}" ]]; then
+            echo "measurable=false" >> "${GITHUB_OUTPUT}"
+            echo "### JSON-only Extension Host budget not measured" >> "${GITHUB_STEP_SUMMARY}"
+            echo "The reproducible candidate VSIX is byte-identical to the released baseline, so there is no distinct comparison arm." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "measurable=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Install repository minimum VS Code version
+        if: steps.activation_candidate.outputs.measurable == 'true'
+        id: vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          vscode_version="$(node -p "require('./package.json').engines.vscode.match(/[0-9]+(?:\\.[0-9]+){2}/)[0]")"
+          mkdir -p dist/vscode
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output dist/vscode/vscode-linux-x64.tar.gz \
+            "https://update.code.visualstudio.com/${vscode_version}/linux-x64/stable"
+          tar -xzf dist/vscode/vscode-linux-x64.tar.gz -C dist/vscode
+          code_path="${PWD}/dist/vscode/VSCode-linux-x64/code"
+          test -x "${code_path}"
+          echo "path=${code_path}" >> "${GITHUB_OUTPUT}"
+          echo "version=${vscode_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Measure paired JSON-only activation
+        if: steps.activation_candidate.outputs.measurable == 'true'
+        shell: bash
+        env:
+          CODE_EXECUTABLE: ${{ steps.vscode.outputs.path }}
+        run: node scripts/measure-json-only-activation-comparison.mjs --baseline dist/measurements/baseline.vsix --candidate dist/measurements/combined-production.vsix --code "${CODE_EXECUTABLE}"
+
+      - name: Verify paired activation evidence
+        if: steps.activation_candidate.outputs.measurable == 'true'
+        run: npm run verify:json-only-extension-host-budget
+
+      - name: Record activation comparison scope
+        if: steps.activation_candidate.outputs.measurable == 'true' && always()
+        shell: bash
+        env:
+          BASELINE_TAG: ${{ steps.baseline.outputs.tag }}
+          VSCODE_VERSION: ${{ steps.vscode.outputs.version }}
+        run: |
+          echo "### JSON-only Extension Host comparison" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Baseline: ${BASELINE_TAG}; candidate: current commit; VS Code: ${VSCODE_VERSION}." >> "${GITHUB_STEP_SUMMARY}"
+          echo "Both arms run on the same hosted runner, but shared-runner variance still limits cross-run comparisons." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload activation evidence
+        if: steps.activation_candidate.outputs.measurable == 'true' && !cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: json-only-activation-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/measurements/*
+          if-no-files-found: error
+          retention-days: 30

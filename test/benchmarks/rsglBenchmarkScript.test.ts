@@ -1,17 +1,23 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
-describe("RSGL benchmark script", () => {
+describe("RSGL benchmark script", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("runs deterministic synthetic smoke scenarios and emits validated CSV metrics", () => {
     const root = process.cwd();
-    const result = spawnSync(
+    const result = runTestProcessSync(
       process.execPath,
       [path.join(root, "scripts", "rsgl-benchmark.mjs"), "--smoke"],
-      { cwd: root, encoding: "utf8" }
+      { cwd: root }
     );
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
     assert.strictEqual(result.stderr, "");
     const rows = result.stdout.trim().split(/\r?\n/).map(line => line.split(","));
     assert.deepStrictEqual(rows[0], [

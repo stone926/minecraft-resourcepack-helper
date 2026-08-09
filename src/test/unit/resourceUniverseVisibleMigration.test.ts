@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -15,7 +15,7 @@ describe("resource universe visible migration contract", () => {
     assert.ok(definition.includes("includeGenerated: true"));
     assert.ok(definition.includes("toVscodeLocation(location, token)"));
     assert.ok(locationBridge.includes("document.positionAt(location.range.start)"));
-    assert.ok(definition.includes("navigation.primary, ...navigation.alternatives"));
+    assert.ok(definition.includes("definitionLocationsForNavigation"));
     assert.strictEqual(definition.includes("generateReferenceRedirectPath"), false);
     assert.ok(graph.includes("navigation.getOutgoingReferences"));
     assert.ok(graph.includes("navigation.getIncomingReferences"));

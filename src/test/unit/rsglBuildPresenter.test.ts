@@ -1,20 +1,17 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("RSGL build presenter", () => {
+describe("RSGL build presenter", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("opens conflict previews even when materialization diagnostics are errors", () => {
-    const modulePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "rsgl",
-      "host",
-      "commands",
-      "buildPresenter.js"
-    );
+    const modulePath = resolveFreshCompiledModule("src/rsgl/host/commands/buildPresenter.ts");
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const modulePath = process.argv[1];",
       "const errors = []; const opened = []; const shown = [];",
@@ -54,10 +51,8 @@ describe("RSGL build presenter", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
 
-    const result = spawnSync(process.execPath, ["-e", script, modulePath], {
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(process.execPath, ["-e", script, modulePath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

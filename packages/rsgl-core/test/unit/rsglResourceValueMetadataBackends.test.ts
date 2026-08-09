@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import type { ResourceUnit } from "../../src/compiler";
 import { lowerItemUnitsForTarget } from "../../src/compiler/itemLegacyBackend";
 import { mergeResourceUnits } from "../../src/compiler/merge";

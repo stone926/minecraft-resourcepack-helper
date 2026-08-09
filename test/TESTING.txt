@@ -1,0 +1,20 @@
+Test suite boundaries
+=====================
+
+`npm test` is the merge/release correctness gate. It builds incrementally,
+lints, runs unit/integration/contract suites, records LCOV, and enforces the
+repository-wide coverage floors.
+
+- `npm run test:unit` runs fast source and package behavior tests.
+- `npm run test:integration` runs cross-layer workflows with real filesystem
+  fixtures, compilation, archives, navigation, and materialization.
+- `npm run test:contracts` validates public engineering and artifact contracts.
+- `npm run test:benchmarks` runs timing-sensitive smoke scenarios separately;
+  the scheduled Performance workflow owns their hosted-runner execution.
+- `npm run test:rsgl:better-textures` is an opt-in local compatibility check;
+  it depends on a separately acquired Better Textures corpus and is not a CI
+  release gate.
+
+Contract tests should prefer executable behavior or parsed configuration over
+matching implementation source text. Timing tests must have an OS-level process
+timeout in addition to a Mocha timeout.

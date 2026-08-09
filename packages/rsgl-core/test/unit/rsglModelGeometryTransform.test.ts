@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import {
   MODEL_FACE_DIRECTIONS,
   composeSignedPermutationTransforms,

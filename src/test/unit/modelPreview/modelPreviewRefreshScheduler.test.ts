@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { ModelPreviewRefreshScheduler } from "../../../modelPreview/host/ModelPreviewRefreshScheduler";
 
 describe("model preview refresh scheduler", () => {

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { shouldReportMissingResource } from "../../diagnostics/resourceDiagnosticResolution";
 
 describe("resource diagnostic resolution", () => {

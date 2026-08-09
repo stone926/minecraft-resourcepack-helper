@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import { getResourceConfiguration } from "../../utils/resourceConfiguration";
 import { getResourceGraphNodeUri } from "../../views/resourceGraphTreeItem";
-import { ModelPreviewHostFileSystem } from "../host/ModelPreviewHostFileSystem";
+import { createModelPreviewHostFileSystem } from "../host/createModelPreviewHostFileSystem";
 import type { ScreenshotOptions } from "../host/ModelPreviewMessages";
 import { createWorkspaceCacheModelLoader, resolveWorkspaceResourcePath } from "../host/workspaceCacheModelBackend";
 import { ModelPreviewService } from "../service/ModelPreviewService";
@@ -20,7 +20,7 @@ export interface ModelPreviewCommandRuntime {
 }
 
 export function createModelPreviewCommandRuntime(extensionUri: vscode.Uri): ModelPreviewCommandRuntime {
-  const fileSystem = new ModelPreviewHostFileSystem();
+  const fileSystem = createModelPreviewHostFileSystem();
   const service = new ModelPreviewService({
     fileSystem,
     configuration: getResourceConfiguration,

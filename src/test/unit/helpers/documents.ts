@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import type { ResourceReferenceDocument } from "../../../utils/resourceReferences";
 
 export function createJsonDocument(fileName: string, value: unknown): ResourceReferenceDocument {

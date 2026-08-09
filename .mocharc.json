@@ -1,0 +1,7 @@
+{
+  "timeout": 15000,
+  "slow": 1500,
+  "reporter": "spec",
+  "retries": 0,
+  "forbidOnly": true
+}

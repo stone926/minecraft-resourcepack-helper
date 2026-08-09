@@ -2,14 +2,10 @@ import * as vscode from "vscode";
 import { isResourceSurfaceFile } from "../resources/resourceSurfaceRegistry";
 import { modelSourceForFile } from "../services/modelParentChain";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
-import { JsonAstNode, memberName, objectMembers } from "../utils/jsonAst";
-import { jsonAstLocationToLineCharacterRange } from "../utils/astLocationRanges";
-import {
-  collectTextureVariableReferenceNodes,
-  createTextureVariableDefinitionResolver
-} from "../utils/modelTexture";
+import { createTextureVariableDefinitionResolver } from "../utils/modelTexture";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
+import { collectUndefinedTextureVariableRanges } from "./textureVarDecorationCore";
 
 let decorationType: vscode.TextEditorDecorationType | null = null;
 
@@ -29,24 +25,15 @@ export function applyDecoration(editor: vscode.TextEditor): void {
     return;
   }
 
-  const texturesAst = objectMembers(ast.body).find(member => memberName(member) === "textures");
   const modelSource = modelSourceForFile(editor.document.fileName);
-  const textureDefinitions = new Set(
-    objectMembers(texturesAst?.value)
-      .map(member => memberName(member))
-      .filter((name): name is string => typeof name === "string" && name !== "particle")
-  );
-  const ranges: vscode.Range[] = [];
   const textureVariableResolver = createTextureVariableDefinitionResolver(ast, editor.document, getResourceConfiguration, modelSource);
-
-  for (const reference of collectTextureVariableReferenceNodes(ast.body)) {
-    if (
-      !textureDefinitions.has(reference.value.slice(1)) &&
-      !textureVariableResolver.has(reference.value)
-    ) {
-      pushRange(ranges, reference.node);
-    }
-  }
+  const ranges = collectUndefinedTextureVariableRanges(
+    ast,
+    reference => textureVariableResolver.has(reference)
+  ).map(range => new vscode.Range(
+    new vscode.Position(range.start.line, range.start.character),
+    new vscode.Position(range.end.line, range.end.character)
+  ));
 
   editor.setDecorations(currentDecorationType, ranges);
 }
@@ -74,14 +61,4 @@ function createDecorationType(): vscode.TextEditorDecorationType {
     resourceConfigurationKeys.undefinedTextureVariableColor
   ) ?? "Chartreuse";
   return vscode.window.createTextEditorDecorationType({ color });
-}
-
-function pushRange(ranges: vscode.Range[], node: JsonAstNode | null | undefined): void {
-  if (node?.loc) {
-    const pair = jsonAstLocationToLineCharacterRange(node.loc);
-    ranges.push(new vscode.Range(
-      new vscode.Position(pair.start.line, pair.start.character),
-      new vscode.Position(pair.end.line, pair.end.character)
-    ));
-  }
 }

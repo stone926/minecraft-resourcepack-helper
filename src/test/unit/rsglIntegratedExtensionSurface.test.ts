@@ -1,6 +1,6 @@
 import { rsglConfigKeys } from "../../../packages/rsgl-shared/src";
 import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 

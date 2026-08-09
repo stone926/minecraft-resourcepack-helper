@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { walkRsglModule } from "../../src/parser/astTraversal";
 import { parseRsgl, type BlockstateVariantsRootStatementNode } from "../../src/parser";
 

@@ -1,12 +1,10 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { forBindingMappings } from "../../src/forBindingPatterns";
 import { parseRsgl, staticPropertyKeyName } from "../../src/parser";
-import { resourceKeywords } from "../../src/parser/keywords";
 import { rsglResourceKinds } from "../../src/resourceKinds";
 
 describe("RSGL parser", () => {
-  it("keeps resource keyword registry wired into the parser", () => {
-    assert.deepStrictEqual([...resourceKeywords], [...rsglResourceKinds]);
+  it("parses every registered resource kind", () => {
     for (const kind of rsglResourceKinds) {
       const source = kind === "model"
         ? "model block example {}"

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -136,6 +136,15 @@ function normalizedTestPath(fileName: string): string {
 }
 
 describe("RSGL CLI", () => {
+  const suiteCwd = process.cwd();
+
+  afterEach(() => {
+    if (process.cwd() !== suiteCwd) {
+      process.chdir(suiteCwd);
+    }
+    assert.strictEqual(process.cwd(), suiteCwd, "CLI tests must restore the process working directory");
+  });
+
   it("rejects unknown commands with exit code 2 and prints usage", () => {
     const captured = captureIo();
     const exitCode = runRsglCli(["frobnicate"], captured.io);

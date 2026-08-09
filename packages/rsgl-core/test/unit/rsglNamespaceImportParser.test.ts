@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { parseRsgl } from "../../src/parser";
 
 describe("RSGL namespace import parser", () => {

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { getDefaultUv, getFaceUvs } from "../../../../packages/mc-assets/src/modelGeometry";
 import type { PreviewFace, PreviewVec3 } from "../../../modelPreview/ir/PreviewDocument";

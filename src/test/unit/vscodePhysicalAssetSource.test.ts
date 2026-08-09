@@ -1,11 +1,16 @@
-import * as assert from "node:assert";
-import * as path from "node:path";
-import { spawnSync } from "node:child_process";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("VS Code physical asset source exact resolution", () => {
+describe("VS Code physical asset source exact resolution", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("uses canonical open-document identity and falls back on incomplete filesystem evidence", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "class FileSystemError extends Error { constructor(code) { super(code); this.code = code; } }",
       "const uri = value => ({ value, scheme: value.slice(0, value.indexOf(':')), path: value.slice(value.indexOf(':') + 1), fsPath: value.slice(value.indexOf(':') + 1), toString: () => value });",
@@ -40,15 +45,10 @@ describe("VS Code physical asset source exact resolution", () => {
       "  assert.strictEqual(scan.coverage.status, 'partial');",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const sourcePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "resourceUniverse",
-      "providers",
-      "vscodePhysicalAssetSource.js"
+    const sourcePath = resolveFreshCompiledModule(
+      "src/resourceUniverse/providers/vscodePhysicalAssetSource.ts"
     );
-    const result = spawnSync(process.execPath, ["-e", script, sourcePath], { encoding: "utf8" });
-    assert.strictEqual(result.status, 0, result.stderr);
+    const result = runTestProcessSync(process.execPath, ["-e", script, sourcePath]);
+    assertTestProcessStatus(result);
   });
 });

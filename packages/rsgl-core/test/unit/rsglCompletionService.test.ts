@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { getRsglCompletionItems } from "../../src/completionService";
 import type { RsglSymbol } from "../../src/semantic";
 

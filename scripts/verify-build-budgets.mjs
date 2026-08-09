@@ -6,7 +6,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
-import { bundleEntryDefinitions, bundleModes } from "./build-bundles.mjs";
+import { bundleEntryDefinitions } from "./build-bundles.mjs";
 import {
   mainVsixBudgetEntryIds,
   readBuildBudgetConfiguration
@@ -24,6 +24,7 @@ const scriptFile = fileURLToPath(import.meta.url);
 const scriptDirectory = path.dirname(scriptFile);
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const supportedTargets = Object.freeze(["main", "rsgl-cli"]);
+const supportedBundleModes = Object.freeze(["production"]);
 const targetEntries = Object.freeze({
   main: mainVsixBudgetEntryIds,
   "rsgl-cli": Object.freeze(["cli"])
@@ -33,7 +34,7 @@ const budgets = readBuildBudgetConfiguration();
 export function parseBudgetArguments(args) {
   let target = "all";
   let artifactPath;
-  let bundleMode = "development";
+  let bundleMode = "production";
   let hasTarget = false;
   let hasArtifact = false;
   let hasBundleMode = false;
@@ -113,7 +114,7 @@ export function budgetTargets(target) {
 export function createBudgetPlan(options = {}) {
   const target = options.target ?? "all";
   const artifactPath = options.artifactPath;
-  const bundleMode = options.bundleMode ?? "development";
+  const bundleMode = options.bundleMode ?? "production";
   const targets = budgetTargets(target);
   assertBundleMode(bundleMode);
   if (artifactPath !== undefined
@@ -215,7 +216,7 @@ function verifyBundle(entryId, bundleMode) {
   if (!existsSync(fileName) || !existsSync(sourceMap)) {
     throw new Error(`${entryId} ${bundleMode} bundle or source map is missing: ${definition.outfile}`);
   }
-  const budgetMode = bundleMode === "development" ? "development" : "production";
+  const budgetMode = "production";
   assertWithinBudget(
     `${entryId} ${bundleMode} bundle bytes`,
     statSync(fileName).size,
@@ -258,27 +259,52 @@ function verifyCliBundle() {
 }
 
 function verifyColdActivationBudget(name, relativeFileName) {
-  const result = spawnSync(process.execPath, [
-    path.join(scriptDirectory, "measure-cold-activation.mjs"),
-    path.join(repositoryRoot, relativeFileName)
-  ], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    windowsHide: true
-  });
-  if (result.error || result.status !== 0) {
-    throw new Error([
-      `Unable to measure ${name} cold activation.`,
-      result.error?.message,
-      result.stderr
-    ].filter(Boolean).join("\n"));
+  const sampling = budgets.coldActivationSampling;
+  const sampleCount = sampling.discardedWarmupProcesses + sampling.measuredProcesses;
+  const samples = [];
+  for (let index = 0; index < sampleCount; index += 1) {
+    const result = spawnSync(process.execPath, [
+      path.join(scriptDirectory, "measure-cold-activation.mjs"),
+      path.join(repositoryRoot, relativeFileName)
+    ], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: sampling.processTimeoutMilliseconds
+    });
+    if (result.error || result.status !== 0) {
+      throw new Error([
+        `Unable to measure ${name} cold activation sample ${index + 1}/${sampleCount}.`,
+        result.error?.message,
+        result.stdout,
+        result.stderr
+      ].filter(Boolean).join("\n"));
+    }
+    const measurement = JSON.parse(result.stdout);
+    if (!Number.isFinite(measurement.milliseconds) || measurement.milliseconds < 0) {
+      throw new Error(`${name} cold activation emitted an invalid duration.`);
+    }
+    samples.push(measurement.milliseconds);
   }
-  const measurement = JSON.parse(result.stdout);
+  const measured = samples.slice(sampling.discardedWarmupProcesses);
+  const median = medianOf(measured);
   assertWithinBudget(
-    `${name} cold activation milliseconds`,
-    Math.ceil(measurement.milliseconds),
+    `${name} cold activation median milliseconds (${measured.length} processes)`,
+    Math.ceil(median),
     budgets.coldActivationMilliseconds[name]
   );
+}
+
+export function medianOf(values) {
+  if (!Array.isArray(values) || values.length === 0
+    || values.some(value => !Number.isFinite(value))) {
+    throw new Error("Median requires at least one finite sample.");
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 async function verifyVsixBudget(name, relativeFileName) {
@@ -317,8 +343,10 @@ async function verifyVsixBudget(name, relativeFileName) {
 }
 
 function assertBundleMode(bundleMode) {
-  if (!bundleModes.includes(bundleMode)) {
-    throw new Error(`Unknown bundle mode '${bundleMode}'. Expected ${bundleModes.join(", ")}.`);
+  if (!supportedBundleModes.includes(bundleMode)) {
+    throw new Error(
+      `Unknown bundle mode '${bundleMode}'. Budget verification supports production only.`
+    );
   }
 }
 

@@ -1,9 +1,26 @@
-import * as assert from "node:assert";
-import { execFileSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+  getWorkflowJob,
+  getWorkflowStep,
+  getWorkflowTrigger,
+  loadGitHubWorkflow,
+  workflowRunSteps,
+  type GitHubWorkflow,
+  type LoadedWorkflow,
+  type WorkflowJob,
+  type WorkflowStep
+} from "./helpers/githubWorkflow";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
-describe("single-extension release contracts", () => {
+describe("single-extension release contracts", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   const root = process.cwd();
 
   it("maps the combined VSIX and CLI tag namespaces to one product each", () => {
@@ -61,9 +78,19 @@ describe("single-extension release contracts", () => {
         "verify:build-budgets",
         "verify:json-only-extension-host-budget",
         "verify:main:vsix",
-        "verify:rsgl-cli"
+        "verify:rsgl-cli",
+        "verify:runtime-benchmarks"
       ]
     );
+    const expectedArtifactScripts = {
+      "package:main:vsix": "node scripts/artifact.mjs package main",
+      "verify:main:vsix": "node scripts/artifact.mjs verify main",
+      "package:rsgl-cli": "node scripts/artifact.mjs package rsgl-cli",
+      "verify:rsgl-cli": "node scripts/artifact.mjs verify rsgl-cli"
+    };
+    for (const [name, command] of Object.entries(expectedArtifactScripts)) {
+      assert.strictEqual(scripts[name], command, `${name} must retain the artifact orchestrator`);
+    }
     assert.strictEqual(
       scripts["verify:build-budgets"],
       "node scripts/build.mjs all --bundle-only --bundle-mode production && "
@@ -113,136 +140,201 @@ describe("single-extension release contracts", () => {
   });
 
   it("gates release builds on Ubuntu and Windows through one reusable workflow", () => {
-    const ci = read(".github/workflows/ci.yml");
-    const reusable = read(".github/workflows/verify-release.yml");
-    const release = read(".github/workflows/release.yml");
+    const ci = loadWorkflow("ci.yml");
+    const reusable = loadWorkflow("verify-release.yml");
+    const release = loadWorkflow("release.yml");
+    const ciVerify = getWorkflowJob(ci.workflow, "verify");
+    const releaseVerify = getWorkflowJob(release.workflow, "verify");
+    const reusableVerify = getWorkflowJob(reusable.workflow, "verify");
+    const reusableNode20 = getWorkflowJob(reusable.workflow, "rsgl_cli_node20");
 
-    assert.match(ci, /uses: \.\/\.github\/workflows\/verify-release\.yml/);
-    assert.match(release, /uses: \.\/\.github\/workflows\/verify-release\.yml/);
-    assert.match(release, /source_ref: \$\{\{ needs\.contract\.outputs\.commit \}\}/);
-    assert.match(reusable, /ubuntu-latest/);
-    assert.match(reusable, /windows-latest/);
-    assert.match(reusable, /package:main:vsix/);
-    assert.match(reusable, /package:rsgl-cli/);
-    assert.match(reusable, /verify:main:vsix/);
-    assert.match(reusable, /verify:rsgl-cli/);
-    assert.strictEqual(reusable.includes("package:rsgl:vsix"), false);
-    assert.strictEqual(reusable.includes("verify:rsgl:vsix"), false);
-    assert.strictEqual(reusable.includes("verify:build-budgets"), false);
-    assert.strictEqual(reusable.includes("verify:vsix-budgets"), false);
+    assert.strictEqual(ciVerify.uses, "./.github/workflows/verify-release.yml");
+    assert.deepStrictEqual(ciVerify.with, { product: "all", upload_artifacts: true });
+    assert.strictEqual(releaseVerify.uses, "./.github/workflows/verify-release.yml");
+    assert.strictEqual(
+      releaseVerify.with?.source_ref,
+      "${{ needs.contract.outputs.commit }}"
+    );
+    const matrix = requireRecord(reusableVerify.strategy?.matrix, "verify strategy matrix");
+    assert.deepStrictEqual(matrix.os, ["ubuntu-latest", "windows-latest"]);
+    assert.strictEqual(reusableVerify["timeout-minutes"], 60);
+    assert.strictEqual(reusableNode20["timeout-minutes"], 30);
+    assert.strictEqual(getWorkflowJob(release.workflow, "contract")["timeout-minutes"], 10);
+    assert.strictEqual(getWorkflowJob(release.workflow, "build")["timeout-minutes"], 45);
+    assert.strictEqual(getWorkflowJob(release.workflow, "publish_marketplace")["timeout-minutes"], 20);
+    assert.strictEqual(getWorkflowJob(release.workflow, "publish_cli")["timeout-minutes"], 20);
+
     assertSingleCommandStep(
-      reusable,
+      reusable.workflow,
+      "verify",
       "Package main extension",
       "npm run package:main:vsix -- --out"
     );
     assertSingleCommandStep(
-      reusable,
+      reusable.workflow,
+      "verify",
       "Verify main extension package",
       "npm run verify:main:vsix --"
     );
     assertSingleCommandStep(
-      reusable,
+      reusable.workflow,
+      "verify",
       "Package RSGL CLI",
       "npm run package:rsgl-cli -- --out"
     );
     assertSingleCommandStep(
-      reusable,
+      reusable.workflow,
+      "verify",
       "Verify RSGL CLI package",
       "npm run verify:rsgl-cli --"
     );
     assertSingleCommandStep(
-      release,
+      release.workflow,
+      "build",
       "Package selected product",
       "node scripts/artifact.mjs package"
     );
     assertSingleCommandStep(
-      release,
+      release.workflow,
+      "build",
       "Verify selected product",
       "node scripts/artifact.mjs verify"
     );
+    const buildSteps = getWorkflowJob(release.workflow, "build").steps ?? [];
     assert.ok(
-      release.indexOf("artifact.mjs package") < release.indexOf("artifact.mjs verify"),
+      stepIndex(buildSteps, "Package selected product") < stepIndex(buildSteps, "Verify selected product"),
       "immutable artifact verification must follow packaging"
     );
-    assert.strictEqual(release.includes('case "${PRODUCT}"'), false);
-    assert.match(release, /- "v\*"/);
-    assert.strictEqual(release.includes('- "rsgl-v*"'), false);
-    assert.match(release, /- "rsgl-cli-v\*"/);
-    assert.match(
-      release,
-      /group: release-\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.tag \|\| github\.ref_name \}\}/
+    const releaseRuns = workflowRunSteps(release).map(step => step.run).join("\n");
+    const reusableRuns = workflowRunSteps(reusable).map(step => step.run).join("\n");
+    assert.strictEqual(releaseRuns.includes('case "${PRODUCT}"'), false);
+    for (const removed of [
+      "package:rsgl:vsix",
+      "verify:rsgl:vsix",
+      "verify:build-budgets",
+      "verify:vsix-budgets"
+    ]) {
+      assert.strictEqual(reusableRuns.includes(removed), false, removed);
+    }
+    assert.deepStrictEqual(getWorkflowTrigger(release.workflow, "push")?.tags, [
+      "v*",
+      "rsgl-cli-v*"
+    ]);
+    assert.deepStrictEqual(
+      release.workflow.concurrency,
+      {
+        group: "release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}",
+        "cancel-in-progress": false
+      }
     );
-    assert.strictEqual(
-      /^\s*group: release-.*\|\| github\.ref \}\}$/m.test(release),
-      false
-    );
-
   });
 
   it("keeps build credentials read-only and publishes only a verified immutable artifact", () => {
-    const reusable = read(".github/workflows/verify-release.yml");
-    const release = read(".github/workflows/release.yml");
-    const contract = jobSection(release, "contract");
-    const build = jobSection(release, "build");
-    const marketplace = jobSection(release, "publish_marketplace");
-    const cli = jobSection(release, "publish_cli");
+    const reusable = loadWorkflow("verify-release.yml");
+    const release = loadWorkflow("release.yml");
+    const contract = getWorkflowJob(release.workflow, "contract");
+    const build = getWorkflowJob(release.workflow, "build");
+    const marketplace = getWorkflowJob(release.workflow, "publish_marketplace");
+    const cli = getWorkflowJob(release.workflow, "publish_cli");
 
-    assert.match(contract, /persist-credentials: false/);
-    assert.match(contract, /commit: \$\{\{ steps\.contract\.outputs\.commit \}\}/);
-    assert.match(build, /permissions:\s*\n\s+contents: read/);
-    assert.strictEqual(contract.includes("secrets."), false);
-    assert.strictEqual(build.includes("secrets."), false);
-    assert.strictEqual(reusable.includes("secrets."), false);
-    assert.match(build, /actions\/upload-artifact@[0-9a-f]{40}/);
-    assert.match(build, /SHA256SUMS/);
-    assert.match(build, /npm ci --prefix tools\/vsce-publisher --ignore-scripts/);
-    assert.match(build, /node tools\/vsce-publisher\/node_modules\/@vscode\/vsce\/vsce --version/);
-    assert.match(build, /vsce-publisher\.tgz/);
-    assert.match(build, /publisher_sha256/);
-    for (const publish of [marketplace, cli]) {
-      assert.match(publish, /environment: release/);
-      assert.match(publish, /contents: write/);
-      assert.match(publish, /artifact-ids:/);
-      assert.match(publish, /EXPECTED_SHA256/);
-      assert.strictEqual(publish.includes("actions/checkout"), false);
-      assert.strictEqual(publish.includes("npm ci"), false);
-      assert.strictEqual(publish.includes("npm run package:"), false);
-      assert.match(publish, /EXPECTED_COMMIT/);
-      assert.match(publish, /GH_REPO: \$\{\{ github\.repository \}\}/);
-      assert.match(publish, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/commits\/\$\{RELEASE_TAG\}"/);
-    }
-    assert.strictEqual(marketplace.includes("id-token: write"), false);
-    assert.match(marketplace, /EXPECTED_PUBLISHER_SHA256/);
-    assert.match(marketplace, /node release\/vsce-publisher\/node_modules\/@vscode\/vsce\/vsce publish/);
-    assert.strictEqual(marketplace.includes("npx --yes"), false);
-    assert.match(marketplace, /marketplace\.visualstudio\.com\/_apis\/public\/gallery\/publishers/);
-    assert.match(marketplace, /PUBLISHED_SHA256/);
-    assert.match(marketplace, /EXPECTED_SHA256/);
-    assert.match(marketplace, /steps\.marketplace\.outputs\.already_published != 'true'/);
-    assert.strictEqual(marketplace.includes("--skip-duplicate"), false);
-    assert.match(cli, /id-token: write/);
-    assert.match(cli, /npm publish .*--provenance/);
-    assert.match(cli, /dist\.integrity/);
-    assert.match(cli, /LOCAL_INTEGRITY/);
-    assert.match(cli, /already published with the verified artifact; continuing/);
+    assert.deepStrictEqual(release.workflow.permissions, { contents: "read" });
+    assert.deepStrictEqual(build.permissions, { contents: "read" });
+    assert.strictEqual(
+      getWorkflowStep(release.workflow, "contract", "Checkout release tag").with?.["persist-credentials"],
+      false
+    );
+    assert.strictEqual(contract.outputs?.commit, "${{ steps.contract.outputs.commit }}");
+    assertNoSecretReferences(contract, "contract job");
+    assertNoSecretReferences(build, "build job");
+    assertNoSecretReferences(reusable.workflow, "reusable verification workflow");
 
-    for (const source of [read(".github/workflows/ci.yml"), reusable, release]) {
-      for (const match of source.matchAll(/^\s*uses:\s+([^\s#]+)(?:\s+#.*)?$/gm)) {
-        const reference = match[1];
-        if (!reference.startsWith("./")) {
-          assert.match(reference, /^[^@]+@[0-9a-f]{40}$/, reference);
-        }
-      }
+    const upload = getWorkflowStep(release.workflow, "build", "Upload immutable artifact");
+    assert.strictEqual(actionName(upload), "actions/upload-artifact");
+    assert.strictEqual(upload.with?.["if-no-files-found"], "error");
+    assertRunIncludes(release.workflow, "build", "Generate SHA-256 digest", "SHA256SUMS");
+    assertRunIncludes(
+      release.workflow,
+      "build",
+      "Install pinned Marketplace publishing client",
+      "npm ci --prefix tools/vsce-publisher --ignore-scripts"
+    );
+    assertRunIncludes(
+      release.workflow,
+      "build",
+      "Smoke test pinned Marketplace publishing client",
+      "node tools/vsce-publisher/node_modules/@vscode/vsce/vsce --version"
+    );
+    assertRunIncludes(release.workflow, "build", "Archive pinned Marketplace publishing client", "vsce-publisher.tgz");
+    assert.strictEqual(build.outputs?.publisher_sha256, "${{ steps.publisher.outputs.sha256 }}");
+
+    for (const [jobId, publish] of [[
+      "publish_marketplace",
+      marketplace
+    ], [
+      "publish_cli",
+      cli
+    ]] as const) {
+      assert.strictEqual(publish.environment, "release");
+      assert.strictEqual(permission(publish, "contents"), "write");
+      const download = getWorkflowStep(release.workflow, jobId, "Download immutable artifact");
+      assert.strictEqual(actionName(download), "actions/download-artifact");
+      assert.strictEqual(download.with?.["artifact-ids"], "${{ needs.build.outputs.artifact_id }}");
+      assert.strictEqual(hasStepEnv(publish, "EXPECTED_SHA256"), true, `${jobId} EXPECTED_SHA256`);
+      assert.strictEqual(hasStepEnv(publish, "EXPECTED_COMMIT"), true, `${jobId} EXPECTED_COMMIT`);
+      assert.strictEqual(hasStepEnv(publish, "GH_REPO", "${{ github.repository }}"), true, `${jobId} GH_REPO`);
+      assert.strictEqual(
+        (publish.steps ?? []).some(step => step.uses?.startsWith("actions/checkout@")),
+        false,
+        `${jobId} must not checkout or rebuild source`
+      );
+      const publishRun = jobRunText(publish);
+      assert.strictEqual(publishRun.includes("npm ci"), false, jobId);
+      assert.strictEqual(publishRun.includes("npm run package:"), false, jobId);
+      assert.match(
+        publishRun,
+        /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/commits\/\$\{RELEASE_TAG\}"/,
+        jobId
+      );
     }
+
+    assert.strictEqual(permission(marketplace, "id-token"), undefined);
+    assert.strictEqual(hasStepEnv(marketplace, "EXPECTED_PUBLISHER_SHA256"), true);
+    const marketplaceRun = jobRunText(marketplace);
+    assert.match(marketplaceRun, /marketplace\.visualstudio\.com\/_apis\/public\/gallery\/publishers/);
+    assert.match(marketplaceRun, /PUBLISHED_SHA256/);
+    assert.match(marketplaceRun, /EXPECTED_SHA256/);
+    assert.strictEqual(marketplaceRun.includes("npx --yes"), false);
+    assert.strictEqual(marketplaceRun.includes("--skip-duplicate"), false);
+    const publishMarketplace = getWorkflowStep(
+      release.workflow,
+      "publish_marketplace",
+      "Publish to VS Code Marketplace"
+    );
+    assert.strictEqual(
+      publishMarketplace.if,
+      "steps.marketplace.outputs.already_published != 'true'"
+    );
+    assert.match(
+      publishMarketplace.run ?? "",
+      /node release\/vsce-publisher\/node_modules\/@vscode\/vsce\/vsce publish/
+    );
+
+    assert.strictEqual(permission(cli, "id-token"), "write");
+    const cliPublishRun = stepRun(getWorkflowStep(release.workflow, "publish_cli", "Publish RSGL CLI to npm"));
+    assert.match(cliPublishRun, /npm publish .*--provenance/);
+    assert.match(cliPublishRun, /dist\.integrity/);
+    assert.match(cliPublishRun, /LOCAL_INTEGRITY/);
+    assert.match(cliPublishRun, /already published with the verified artifact; continuing/);
   });
 
   function describeTag(tag: string): Record<string, string> {
-    const output = execFileSync(
+    const result = runTestProcessSync(
       process.execPath,
       [path.join(root, "scripts", "release-contract.mjs"), "describe", "--tag", tag],
-      { cwd: root, encoding: "utf8" }
+      { cwd: root }
     );
-    return Object.fromEntries(output.trim().split(/\r?\n/).map(line => {
+    assertTestProcessStatus(result);
+    return Object.fromEntries(result.stdout.trim().split(/\r?\n/).map(line => {
       const separator = line.indexOf("=");
       return [line.slice(0, separator), line.slice(separator + 1)];
     }));
@@ -250,6 +342,11 @@ describe("single-extension release contracts", () => {
 
   function read(relativePath: string): string {
     return fs.readFileSync(path.join(root, relativePath), "utf8");
+  }
+
+  function loadWorkflow(fileName: string): LoadedWorkflow {
+    const absoluteFileName = path.join(root, ".github", "workflows", fileName);
+    return { fileName: absoluteFileName, workflow: loadGitHubWorkflow(absoluteFileName) };
   }
 });
 
@@ -266,32 +363,77 @@ function readJson<T>(fileName: string): T {
   return JSON.parse(fs.readFileSync(fileName, "utf8")) as T;
 }
 
-function jobSection(workflow: string, jobName: string): string {
-  const normalized = workflow.replace(/\r\n/g, "\n");
-  const marker = `  ${jobName}:\n`;
-  const start = normalized.indexOf(marker);
-  assert.notStrictEqual(start, -1, `Missing workflow job: ${jobName}`);
-  const nextJob = /^ {2}[a-zA-Z0-9_-]+:\n/gm;
-  nextJob.lastIndex = start + marker.length;
-  const next = nextJob.exec(normalized);
-  return normalized.slice(start, next?.index ?? normalized.length);
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function assertSingleCommandStep(workflow: string, stepName: string, command: string): void {
-  const normalized = workflow.replace(/\r\n/g, "\n");
-  const marker = `      - name: ${stepName}\n`;
-  const start = normalized.indexOf(marker);
-  assert.notStrictEqual(start, -1, `Missing workflow step: ${stepName}`);
-  const nextStep = /^ {6}- name: /gm;
-  nextStep.lastIndex = start + marker.length;
-  const next = nextStep.exec(normalized);
-  const step = normalized.slice(start, next?.index ?? normalized.length);
-  const runLines = step.match(/^\s*run:\s*(.+)$/gm) ?? [];
-  assert.strictEqual(runLines.length, 1, `${stepName} must contain one run command`);
-  assert.ok(runLines[0].includes(command), `${stepName} must run ${command}`);
-  assert.strictEqual(step.includes("run: |"), false, `${stepName} must fail at its command boundary`);
+function assertSingleCommandStep(
+  workflow: GitHubWorkflow,
+  jobId: string,
+  stepName: string,
+  command: string
+): void {
+  const run = stepRun(getWorkflowStep(workflow, jobId, stepName));
+  assert.ok(run.includes(command), `${stepName} must run ${command}; received: ${run}`);
+  assert.strictEqual(
+    run.includes("\n"),
+    false,
+    `${stepName} must keep one external command at its failure boundary; received: ${run}`
+  );
+}
+
+function assertRunIncludes(
+  workflow: GitHubWorkflow,
+  jobId: string,
+  stepName: string,
+  expected: string
+): void {
+  const run = stepRun(getWorkflowStep(workflow, jobId, stepName));
+  assert.ok(run.includes(expected), `${jobId}/${stepName} must include ${expected}; received: ${run}`);
+}
+
+function stepRun(step: WorkflowStep): string {
+  if (typeof step.run !== "string") {
+    assert.fail(`${step.name ?? "unnamed step"} must have a run command`);
+  }
+  return step.run;
+}
+
+function stepIndex(steps: readonly WorkflowStep[], stepName: string): number {
+  const index = steps.findIndex(step => step.name === stepName);
+  assert.notStrictEqual(index, -1, `Missing workflow step: ${stepName}`);
+  return index;
+}
+
+function jobRunText(job: WorkflowJob): string {
+  return (job.steps ?? []).flatMap(step => step.run ?? []).join("\n");
+}
+
+function hasStepEnv(job: WorkflowJob, key: string, expected?: unknown): boolean {
+  return (job.steps ?? []).some(step => {
+    if (!step.env || !Object.prototype.hasOwnProperty.call(step.env, key)) {
+      return false;
+    }
+    return expected === undefined || step.env[key] === expected;
+  });
+}
+
+function permission(job: WorkflowJob, name: string): string | undefined {
+  return job.permissions && typeof job.permissions === "object"
+    ? job.permissions[name]
+    : undefined;
+}
+
+function actionName(step: WorkflowStep): string | undefined {
+  return step.uses?.split("@", 1)[0];
+}
+
+function assertNoSecretReferences(value: unknown, label: string): void {
+  const serialized = JSON.stringify(value);
+  assert.strictEqual(serialized.includes("secrets."), false, `${label} must not reference release secrets`);
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  assert.ok(value !== null && typeof value === "object" && !Array.isArray(value), `${label} must be an object`);
+  return value as Record<string, unknown>;
 }

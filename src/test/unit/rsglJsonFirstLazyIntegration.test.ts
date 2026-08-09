@@ -1,11 +1,16 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("JSON-first lazy RSGL integration", () => {
+describe("JSON-first lazy RSGL integration", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("distinguishes foreground snapshot cancellation from refresh failures", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const createUri = value => {",
       "  const parsed = new URL(value);",
@@ -102,15 +107,14 @@ describe("JSON-first lazy RSGL integration", () => {
       "  assert.deepStrictEqual({ consoleErrors: reports.consoleErrors.length, errorMessages: reports.errorMessages.length }, { consoleErrors: 1, errorMessages: 1 });",
       "})().catch(error => { process.stderr.write(`${error?.stack ?? error}\\n`); process.exitCode = 1; });"
     ].join("\n");
-    const registrationPath = path.join(process.cwd(), "out", "src", "rsgl", "registerRsglSubsystem.js");
-    const runtimePath = path.join(process.cwd(), "out", "src", "rsgl", "runtime", "index.js");
-    const universePath = path.join(process.cwd(), "out", "src", "resourceUniverse", "index.js");
-    const navigationPath = path.join(process.cwd(), "out", "src", "services", "resourceUniverseNavigationFacade.js");
-    const result = spawnSync(
+    const registrationPath = resolveFreshCompiledModule("src/rsgl/registerRsglSubsystem.ts");
+    const runtimePath = resolveFreshCompiledModule("src/rsgl/runtime/index.ts");
+    const universePath = resolveFreshCompiledModule("src/resourceUniverse/index.ts");
+    const navigationPath = resolveFreshCompiledModule("src/services/resourceUniverseNavigationFacade.ts");
+    const result = runTestProcessSync(
       process.execPath,
-      ["-e", script, registrationPath, runtimePath, universePath, navigationPath],
-      { encoding: "utf8" }
+      ["-e", script, registrationPath, runtimePath, universePath, navigationPath]
     );
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

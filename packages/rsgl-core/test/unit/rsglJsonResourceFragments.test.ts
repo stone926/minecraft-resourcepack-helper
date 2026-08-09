@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { compileRsglModule, stableJsonStringify, type JsonValue } from "../../src/compiler";
 import {
   EvaluationItemBudget,

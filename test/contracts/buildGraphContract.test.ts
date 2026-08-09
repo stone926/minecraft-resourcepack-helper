@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -146,12 +146,15 @@ describe("repository build graph", () => {
     );
     assert.ok((budgets.coldActivationMilliseconds?.root ?? 0) > 0);
     assert.ok((budgets.coldActivationMilliseconds?.rsglHost ?? 0) > 0);
-    for (const mode of ["development", "production"]) {
-      assert.deepStrictEqual(
-        Object.keys(budgets.bundleBytes?.[mode] ?? {}).sort(),
-        ["cli", "modelPreview", "root", "rsglHost", "server", "worker"]
-      );
-    }
+    assert.strictEqual(
+      budgets.bundleBytes?.development,
+      undefined,
+      "unmeasured development bundles must not carry a dead release budget"
+    );
+    assert.deepStrictEqual(
+      Object.keys(budgets.bundleBytes?.production ?? {}).sort(),
+      ["cli", "modelPreview", "root", "rsglHost", "server", "worker"]
+    );
   });
 
   it("produces a self-contained browser ESM model preview bundle from one npm Three package", async () => {

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import type { ModelPreviewDocument } from "../../../modelPreview/ir/PreviewDocument";
 import type { ResolvedModel } from "../../../modelPreview/model/ModelDocument";

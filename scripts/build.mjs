@@ -31,7 +31,7 @@ export const buildProfiles = Object.freeze({
     tsconfig: "tsconfig.tests.json",
     bundleTarget: null,
     stdlibOutputs: Object.freeze(["out"]),
-    cleanFirst: true
+    pruneStaleTypeScriptOutputs: true
   })
 });
 
@@ -59,8 +59,11 @@ export function createBuildPlan(targetName, options = {}) {
   }
 
   const plan = [];
-  if (profile.cleanFirst && mode !== "bundle") {
-    plan.push(nodeStep("clean generated outputs", "scripts/clean.mjs"));
+  if (profile.pruneStaleTypeScriptOutputs && mode !== "bundle") {
+    plan.push(nodeStep(
+      "prune stale TypeScript outputs",
+      "scripts/prune-stale-typescript-outputs.mjs"
+    ));
   }
   if (mode !== "bundle") {
     plan.push(nodeStep(

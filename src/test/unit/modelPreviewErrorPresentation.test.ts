@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { ModelPreviewCancellationError } from "../../modelPreview/cancellation";
 import { getModelPreviewExportErrorMessage } from "../../modelPreview/host/modelPreviewErrorPresentation";
 import { ModelPreviewConsistencyError } from "../../modelPreview/service/ModelPreviewService";

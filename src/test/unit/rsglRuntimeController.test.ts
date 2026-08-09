@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { RsglRuntimeController, type RsglRuntimeInstance } from "../../rsgl/runtime";
 
 describe("RsglRuntimeController", () => {

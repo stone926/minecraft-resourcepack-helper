@@ -1,10 +1,16 @@
-import * as assert from "node:assert";
-import { execFileSync, spawnSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
-describe("release contract step output", () => {
+describe("release contract step output", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   const repositoryRoot = process.cwd();
   let temporaryRoot: string;
 
@@ -16,9 +22,7 @@ describe("release contract step output", () => {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   });
 
-  it("writes only key-value records when Git tag verification is enabled", function () {
-    this.timeout(10_000);
-
+  it("writes only key-value records when Git tag verification is enabled", () => {
     const scriptsDirectory = path.join(temporaryRoot, "scripts");
     fs.mkdirSync(scriptsDirectory, { recursive: true });
     for (const script of [
@@ -64,7 +68,7 @@ describe("release contract step output", () => {
 
     const githubOutput = path.join(temporaryRoot, "github-output.txt");
     fs.writeFileSync(githubOutput, "preexisting=value\n", "utf8");
-    const stdout = execFileSync(
+    const describeResult = runTestProcessSync(
       process.execPath,
       [
         path.join(scriptsDirectory, "release-contract.mjs"),
@@ -73,10 +77,11 @@ describe("release contract step output", () => {
         "--verify-git",
         "--output", githubOutput
       ],
-      { cwd: temporaryRoot, encoding: "utf8" }
+      { cwd: temporaryRoot }
     );
+    assertTestProcessStatus(describeResult);
 
-    assert.strictEqual(stdout, "");
+    assert.strictEqual(describeResult.stdout, "");
     const records = fs.readFileSync(githubOutput, "utf8").trim().split(/\r?\n/);
     assert.strictEqual(records[0], "preexisting=value");
     assert.ok(records.length > 0);
@@ -109,7 +114,7 @@ describe("release contract step output", () => {
       fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8")
     ).version as string;
     const notesOutput = path.join(temporaryRoot, "release-notes.md");
-    execFileSync(
+    const notesResult = runTestProcessSync(
       process.execPath,
       [
         path.join(repositoryRoot, "scripts", "release-contract.mjs"),
@@ -117,14 +122,15 @@ describe("release contract step output", () => {
         "--tag", `v${version}`,
         "--output", notesOutput
       ],
-      { cwd: repositoryRoot, stdio: "pipe" }
+      { cwd: repositoryRoot }
     );
+    assertTestProcessStatus(notesResult);
     assert.ok(fs.readFileSync(notesOutput, "utf8").length > 0);
 
     const asset = path.join(temporaryRoot, "fixture.tgz");
     const sumsOutput = path.join(temporaryRoot, "SHA256SUMS");
     fs.writeFileSync(asset, "release fixture", "utf8");
-    const digest = execFileSync(
+    const digestResult = runTestProcessSync(
       process.execPath,
       [
         path.join(repositoryRoot, "scripts", "release-contract.mjs"),
@@ -132,8 +138,10 @@ describe("release contract step output", () => {
         "--asset", asset,
         "--output", sumsOutput
       ],
-      { cwd: repositoryRoot, encoding: "utf8" }
-    ).trim();
+      { cwd: repositoryRoot }
+    );
+    assertTestProcessStatus(digestResult);
+    const digest = digestResult.stdout.trim();
     assert.match(digest, /^[a-f0-9]{64}$/);
     assert.strictEqual(
       fs.readFileSync(sumsOutput, "utf8"),
@@ -172,10 +180,10 @@ describe("release contract step output", () => {
         error: /Usage: release-contract\.mjs <describe\|notes\|digest>/
       }
     ]) {
-      const result = spawnSync(
+      const result = runTestProcessSync(
         process.execPath,
         [path.join(repositoryRoot, "scripts", "release-contract.mjs"), ...args],
-        { cwd: repositoryRoot, encoding: "utf8" }
+        { cwd: repositoryRoot }
       );
       assert.notStrictEqual(result.status, 0, args.join(" "));
       assert.match(result.stderr, error);
@@ -183,11 +191,9 @@ describe("release contract step output", () => {
   });
 
   function runGit(args: string[], stdout: "ignore" | "pipe" = "ignore"): string {
-    return execFileSync("git", args, {
-      cwd: temporaryRoot,
-      encoding: "utf8",
-      stdio: ["ignore", stdout, "pipe"]
-    }) ?? "";
+    const result = runTestProcessSync("git", args, { cwd: temporaryRoot });
+    assertTestProcessStatus(result);
+    return stdout === "pipe" ? result.stdout : "";
   }
 });
 

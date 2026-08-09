@@ -1,0 +1,14 @@
+import * as shared from "./shared.rsgl"
+
+type CorpusModel = {
+  parent: ModelId
+  texture?: TextureId
+}
+
+model block corpus/example {
+  parent minecraft:block/stone
+}
+
+blockstate variants corpus_example {
+  case { powered: true } => minecraft:block/stone
+}

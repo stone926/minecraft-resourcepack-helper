@@ -4,8 +4,12 @@
  */
 export function parsePlainSemver(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
-  return match
-    ? { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) }
+  if (!match) {
+    return null;
+  }
+  const [major, minor, patch] = match.slice(1).map(Number);
+  return [major, minor, patch].every(Number.isSafeInteger)
+    ? { major, minor, patch }
     : null;
 }
 
@@ -28,13 +32,13 @@ export function resolveNextReleaseVersion(currentVersion, input, options = {}) {
     );
   }
   if (input === "major") {
-    return `${parsed.major + 1}.0.0`;
+    return `${increment(parsed.major, "major")}.0.0`;
   }
   if (input === "minor") {
-    return `${parsed.major}.${parsed.minor + 1}.0`;
+    return `${parsed.major}.${increment(parsed.minor, "minor")}.0`;
   }
   if (input === "patch") {
-    return `${parsed.major}.${parsed.minor}.${parsed.patch + 1}`;
+    return `${parsed.major}.${parsed.minor}.${increment(parsed.patch, "patch")}`;
   }
   const exact = parsePlainSemver(input);
   if (!exact) {
@@ -46,4 +50,11 @@ export function resolveNextReleaseVersion(currentVersion, input, options = {}) {
     );
   }
   return input;
+}
+
+function increment(value, component) {
+  if (value >= Number.MAX_SAFE_INTEGER) {
+    throw new Error(`Cannot bump ${component} beyond JavaScript's safe integer range.`);
+  }
+  return value + 1;
 }

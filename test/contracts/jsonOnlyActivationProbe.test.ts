@@ -1,9 +1,13 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
 interface ProbeModule {
   activationProbeAdapters: readonly string[];
@@ -111,7 +115,9 @@ interface ProbeSample {
   instrumentationWarnings: Array<{ hook: string; message: string }>;
 }
 
-describe("JSON-only activation probe harness", () => {
+describe("JSON-only activation probe harness", function () {
+  this.timeout(defaultTestProcessTimeoutMs * 2 + 5_000);
+
   const repositoryRoot = process.cwd();
   const probeScript = path.join(repositoryRoot, "scripts", "measure-json-only-activation.mjs");
   const extensionHostSampleScript = path.join(
@@ -209,7 +215,7 @@ describe("JSON-only activation probe harness", () => {
       "--out", output
     ]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
     assert.match(result.stdout, /Node bundle probe only/);
     const report = readJson<ProbeReport>(output);
     assert.strictEqual(report.schemaVersion, 3);
@@ -296,7 +302,7 @@ describe("JSON-only activation probe harness", () => {
       "--out", output
     ]);
 
-    assert.strictEqual(result.status, 1, result.stderr);
+    assertTestProcessStatus(result, 1);
     const report = readJson<ProbeReport>(output);
     assert.strictEqual(report.valid, false);
     assert.strictEqual(report.summary.successfulSamples, 0);
@@ -431,7 +437,7 @@ describe("JSON-only activation probe harness", () => {
       "--settle-ms", "0",
       "--out", wrongExitOutput
     ]);
-    assert.strictEqual(wrongExit.status, 1, wrongExit.stderr);
+    assertTestProcessStatus(wrongExit, 1);
     assert.match(
       readJson<ProbeReport>(wrongExitOutput).samples[0].error?.message ?? "",
       /exit status 1 contradicts sample status 'ok'/
@@ -452,7 +458,7 @@ describe("JSON-only activation probe harness", () => {
       "--settle-ms", "0",
       "--out", staleOutput
     ]);
-    assert.strictEqual(stale.status, 1, stale.stderr);
+    assertTestProcessStatus(stale, 1);
     assert.match(
       readJson<ProbeReport>(staleOutput).samples[0].error?.message ?? "",
       /did not echo its iteration, challenges, and artifact identity/
@@ -468,13 +474,13 @@ describe("JSON-only activation probe harness", () => {
       '  context.subscriptions.push(vscode.window.registerWebviewViewProvider("example.search", {}));',
       "};"
     ].join("\n"));
-    const result = spawnSync(
+    const result = runTestProcessSync(
       process.execPath,
       [path.join(repositoryRoot, "scripts", "measure-cold-activation.mjs"), bundle],
-      { cwd: repositoryRoot, encoding: "utf8", windowsHide: true }
+      { cwd: repositoryRoot }
     );
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
     const measurement = JSON.parse(result.stdout) as { milliseconds?: number };
     assert.ok(Number.isFinite(measurement.milliseconds));
     assert.ok((measurement.milliseconds ?? -1) >= 0);
@@ -495,12 +501,7 @@ describe("JSON-only activation probe harness", () => {
   }
 
   function runProbe(args: string[]) {
-    return spawnSync(process.execPath, [probeScript, ...args], {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 60_000
-    });
+    return runTestProcessSync(process.execPath, [probeScript, ...args], { cwd: repositoryRoot });
   }
 });
 

@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import type { ResourceLayerDescriptor } from "../../../packages/resource-project/src";
 import { LazyVscodeArchiveResources } from "../../resourceUniverse/virtualFs/lazyVscodeArchiveResources";
 

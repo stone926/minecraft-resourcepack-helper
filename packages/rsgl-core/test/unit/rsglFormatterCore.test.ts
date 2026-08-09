@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { formatRsglText } from "../../src/formatterCore";
 
 describe("RSGL formatter core", () => {

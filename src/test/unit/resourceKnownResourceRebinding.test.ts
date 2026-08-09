@@ -1,18 +1,17 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("known resource rebinding", () => {
+describe("known resource rebinding", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("uses the current producer snapshot, retains last-known facts, and clears removal", () => {
-    const modulePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "services",
-      "resourceUniverseNavigationFacade.js"
-    );
+    const modulePath = resolveFreshCompiledModule("src/services/resourceUniverseNavigationFacade.ts");
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const modulePath = process.argv[1];",
       "Module._load = function(request, ...args) {",
@@ -62,10 +61,8 @@ describe("known resource rebinding", () => {
       "assert.strictEqual(facade.getKnownResource('physical:model:demo:block/stone', target), undefined);"
     ].join("\n");
 
-    const result = spawnSync(process.execPath, ["-e", script, modulePath], {
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(process.execPath, ["-e", script, modulePath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

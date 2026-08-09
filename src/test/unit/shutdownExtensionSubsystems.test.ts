@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { shutdownExtensionSubsystems } from "../../registration/shutdownExtensionSubsystems";
 import { asDisposable } from "../../utils/asyncShutdown";
 

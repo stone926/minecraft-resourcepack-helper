@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { createJsonDocument } from "./helpers/documents";
 import { getResourceReferences } from "./helpers/resourceReferences";

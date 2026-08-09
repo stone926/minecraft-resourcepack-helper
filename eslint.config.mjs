@@ -121,6 +121,17 @@ export default tseslint.config(
       "no-undef": "off"
     }
   },
+  {
+    files: ["src/test/**/*.ts", "packages/*/test/**/*.ts", "test/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "node:assert",
+          message: "Tests must import node:assert/strict so new assertions cannot use loose equality."
+        }]
+      }]
+    }
+  },
   ...layerBoundaries.map(({ files, ignores, forbidden, message }) => ({
     files,
     ...(ignores ? { ignores } : {}),

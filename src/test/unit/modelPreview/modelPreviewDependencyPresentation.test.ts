@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { getDisplayedPreviewDependencies } from "../../../modelPreview/host/ModelPreviewDependencyPresentation";
 import type { PreviewDependency } from "../../../modelPreview/ir/PreviewDocument";
 

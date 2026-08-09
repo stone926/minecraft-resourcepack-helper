@@ -1,8 +1,13 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 import {
   runRsglWorkerTask,
   type RsglWorkerTransport
@@ -13,11 +18,16 @@ import type {
 } from "../../rsgl/host/commands/buildWorkerProtocol";
 import { executeRsglWorkerTask } from "../../rsgl/host/commands/buildWorkerTask";
 
-describe("integrated RSGL host runtime", () => {
+describe("integrated RSGL host runtime", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("loads and creates the host factory without touching VS Code, the client, or build commands", () => {
-    const hostRoot = path.join(process.cwd(), "out", "src", "rsgl", "host");
+    const hostModule = resolveFreshCompiledModule("src/rsgl/host/rsglHost.ts");
+    const clientModule = resolveFreshCompiledModule("src/rsgl/host/client.ts");
+    const buildModule = resolveFreshCompiledModule("src/rsgl/host/commands/build.ts");
+    const hostRoot = path.dirname(hostModule);
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module');",
       "const originalLoad = Module._load;",
       "Module._load = function(request, ...args) {",
@@ -40,24 +50,26 @@ describe("integrated RSGL host runtime", () => {
       "  assert.strictEqual(require.cache[buildPath], undefined);",
       "}).catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const result = spawnSync(process.execPath, [
+    const result = runTestProcessSync(process.execPath, [
       "-e",
       script,
-      path.join(hostRoot, "rsglHost.js"),
-      path.join(hostRoot, "client.js"),
-      path.join(hostRoot, "commands", "build.js"),
+      hostModule,
+      clientModule,
+      buildModule,
       path.join(hostRoot, "server.js"),
       path.join(hostRoot, "worker.js"),
       path.join(hostRoot, "stdlib")
-    ], { encoding: "utf8" });
+    ]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 
   it("forwards snapshot requests and invalidations through the lazy host boundary", () => {
-    const hostRoot = path.join(process.cwd(), "out", "src", "rsgl", "host");
+    const hostModule = resolveFreshCompiledModule("src/rsgl/host/rsglHost.ts");
+    const clientModule = resolveFreshCompiledModule("src/rsgl/host/client.ts");
+    const hostRoot = path.dirname(hostModule);
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const hostPath = process.argv[1];",
       "const clientPath = require.resolve(process.argv[2]);",
       "let serverListener; let requestSignal; let disposed = 0;",
@@ -86,17 +98,17 @@ describe("integrated RSGL host runtime", () => {
       "  await runtime.dispose(); assert.strictEqual(disposed, 1); assert.strictEqual(serverListener, undefined);",
       "}).catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
-    const result = spawnSync(process.execPath, [
+    const result = runTestProcessSync(process.execPath, [
       "-e",
       script,
-      path.join(hostRoot, "rsglHost.js"),
-      path.join(hostRoot, "client.js"),
+      hostModule,
+      clientModule,
       path.join(hostRoot, "server.js"),
       path.join(hostRoot, "worker.js"),
       path.join(hostRoot, "stdlib")
-    ], { encoding: "utf8" });
+    ]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 
   it("passes the explicit worker path and awaits termination before completing a transaction", async () => {

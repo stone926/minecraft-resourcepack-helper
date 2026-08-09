@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import {
   ITEM_MODEL_TRANSFORMATION_INTRODUCED_FORMAT,
   compareItemModelFormats,

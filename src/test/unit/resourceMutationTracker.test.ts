@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { ResourceMutationTracker } from "../../services/resourceMutationTracker";
 
 describe("resource mutation tracker", () => {

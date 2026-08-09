@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -67,6 +67,7 @@ describe("release version and changelog logic", () => {
   it("preserves the existing narrow version contract and error messages", () => {
     assert.strictEqual(versions.parsePlainSemver("1.2.3-beta.1"), null);
     assert.strictEqual(versions.parsePlainSemver("1.2.3+build"), null);
+    assert.strictEqual(versions.parsePlainSemver("9007199254740992.0.0"), null);
     assert.deepStrictEqual(versions.parsePlainSemver("01.002.0003"), {
       major: 1,
       minor: 2,
@@ -97,6 +98,10 @@ describe("release version and changelog logic", () => {
     assert.throws(
       () => versions.resolveNextReleaseVersion("1.2.3", "1.1.9"),
       /Next version 1\.1\.9 must be greater than current version 1\.2\.3\./
+    );
+    assert.throws(
+      () => versions.resolveNextReleaseVersion("1.2.9007199254740991", "patch"),
+      /Cannot bump patch beyond JavaScript's safe integer range/
     );
   });
 

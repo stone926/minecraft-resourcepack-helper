@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import {
   CANONICAL_FACE_BASES,
   IDENTITY_SIGNED_PERMUTATION_MATRIX,

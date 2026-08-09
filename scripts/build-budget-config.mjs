@@ -32,6 +32,18 @@ export function parseBuildBudgetConfiguration(value) {
     value.coldActivationMilliseconds?.rsglHost,
     "coldActivationMilliseconds.rsglHost"
   );
+  assertNonNegativeInteger(
+    value.coldActivationSampling?.discardedWarmupProcesses,
+    "coldActivationSampling.discardedWarmupProcesses"
+  );
+  assertPositiveBudget(
+    value.coldActivationSampling?.measuredProcesses,
+    "coldActivationSampling.measuredProcesses"
+  );
+  assertPositiveBudget(
+    value.coldActivationSampling?.processTimeoutMilliseconds,
+    "coldActivationSampling.processTimeoutMilliseconds"
+  );
   assertPositiveBudget(
     value.jsonOnlyExtensionHost?.minimumIterations,
     "jsonOnlyExtensionHost.minimumIterations"
@@ -52,10 +64,18 @@ export function parseBuildBudgetConfiguration(value) {
     value.jsonOnlyExtensionHost?.maximumSteadyRssP95DeltaBytes,
     "jsonOnlyExtensionHost.maximumSteadyRssP95DeltaBytes"
   );
-  for (const mode of ["development", "production"]) {
-    for (const entryId of Object.keys(bundleEntryDefinitions)) {
-      assertPositiveBudget(value.bundleBytes?.[mode]?.[entryId], `bundleBytes.${mode}.${entryId}`);
-    }
+  assertRuntimeBenchmarkBudgets(value.runtimeBenchmarks);
+  for (const entryId of Object.keys(bundleEntryDefinitions)) {
+    assertPositiveBudget(
+      value.bundleBytes?.production?.[entryId],
+      `bundleBytes.production.${entryId}`
+    );
+  }
+  for (const entryId of Object.keys(bundleEntryDefinitions)) {
+    assertPositiveBudget(
+      value.bundleGzipBytes?.production?.[entryId],
+      `bundleGzipBytes.production.${entryId}`
+    );
   }
   if (!isPlainObject(value.mainVsix)) {
     throw new Error("Missing mainVsix artifact budget configuration.");
@@ -87,9 +107,45 @@ export function parseBuildBudgetConfiguration(value) {
   return Object.freeze(value);
 }
 
+function assertRuntimeBenchmarkBudgets(value) {
+  if (!isPlainObject(value)) {
+    throw new Error("Missing runtimeBenchmarks budget configuration.");
+  }
+  const groups = [
+    ["modelPreviewMilliseconds", value.modelPreviewMilliseconds, 2],
+    ["rsglSmokeP95Milliseconds", value.rsglSmokeP95Milliseconds, 1],
+    ["resourceUniverseSmokeP95Milliseconds", value.resourceUniverseSmokeP95Milliseconds, 2]
+  ];
+  for (const [label, group, minimumDepth] of groups) {
+    if (!isPlainObject(group) || Object.keys(group).length === 0) {
+      throw new Error(`runtimeBenchmarks.${label} must be a non-empty budget map.`);
+    }
+    assertPositiveBudgetTree(group, `runtimeBenchmarks.${label}`, minimumDepth);
+  }
+}
+
+function assertPositiveBudgetTree(value, label, remainingDepth) {
+  if (remainingDepth === 0) {
+    assertPositiveBudget(value, label);
+    return;
+  }
+  if (!isPlainObject(value) || Object.keys(value).length === 0) {
+    throw new Error(`${label} must be a non-empty budget map.`);
+  }
+  for (const [name, child] of Object.entries(value)) {
+    assertPositiveBudgetTree(child, `${label}.${name}`, remainingDepth - 1);
+  }
+}
+
 function assertPositiveBudget(value, label) {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${label} must be a positive integer budget.`);
+  }
+}
+
+function assertNonNegativeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
   }
 }
 

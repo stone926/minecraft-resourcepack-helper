@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { parseRsgl, type ModelTransformStmtNode } from "../../src/parser";
 
 describe("RSGL geometry transform parser", () => {

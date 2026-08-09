@@ -1,11 +1,16 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("resource diagnostics abort handling", () => {
+describe("resource diagnostics abort handling", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("silently abandons cancelled refreshes while preserving later refreshes and real failures", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "class Position { constructor(line, character) { this.line = line; this.character = character; } }",
       "class Range { constructor(start, end) { this.start = start; this.end = end; } }",
@@ -53,16 +58,10 @@ describe("resource diagnostics abort handling", () => {
       "  assert.strictEqual(collection.setCalls.length, 3, 'a real failure must not publish partial diagnostics');",
       "})().catch(error => { process.stderr.write(`${error?.stack ?? error}\\n`); process.exitCode = 1; });"
     ].join("\n");
-    const diagnosticsPath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "diagnostics",
-      "resourceDiagnostics.js"
-    );
+    const diagnosticsPath = resolveFreshCompiledModule("src/diagnostics/resourceDiagnostics.ts");
 
-    const result = spawnSync(process.execPath, ["-e", script, diagnosticsPath], { encoding: "utf8" });
+    const result = runTestProcessSync(process.execPath, ["-e", script, diagnosticsPath]);
 
-    assert.strictEqual(result.status, 0, String(result.stderr));
+    assertTestProcessStatus(result);
   });
 });

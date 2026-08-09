@@ -1,8 +1,11 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   type GrammarPattern,
   type GrammarTokenization,
   type RsglGrammar,
+  initializeGrammarTokenizer,
   readGrammar,
   readGrammarText,
   repositoryPatterns,
@@ -10,6 +13,9 @@ import {
 } from "./helpers/textMateGrammar";
 
 describe("RSGL TextMate grammar", () => {
+  before(async () => {
+    await initializeGrammarTokenizer();
+  });
   it("highlights namespace import aliases without reclassifying other import forms", () => {
     const grammar = readGrammar();
     const source = [
@@ -64,11 +70,30 @@ describe("RSGL TextMate grammar", () => {
 
   it("highlights base and merge vocabulary", () => {
     const grammar = readGrammar();
-    const controlKeywords = matchRegex(namedPattern(grammar, "keywords", "keyword.control.rsgl"));
+    const source = "base merge deep strict upsert append";
+    const tokenization = tokenizeGrammar(grammar, source);
 
     for (const keyword of ["base", "merge", "deep", "strict", "upsert", "append"]) {
-      assert.match(keyword, controlKeywords, `Expected '${keyword}' to use keyword.control.rsgl.`);
+      expectScope(tokenization, source, keyword, "keyword.control.rsgl");
     }
+  });
+
+  it("tokenizes the committed golden corpus with the production TextMate engine", () => {
+    const grammar = readGrammar();
+    const source = fs.readFileSync(path.join(
+      process.cwd(),
+      "test",
+      "fixtures",
+      "rsgl",
+      "grammar-corpus.rsgl"
+    ), "utf8");
+    const tokenization = tokenizeGrammar(grammar, source);
+
+    expectScope(tokenization, source, "shared", "entity.name.namespace.rsgl");
+    expectScope(tokenization, source, "CorpusModel", "entity.name.type.alias.rsgl");
+    expectScopeAcross(tokenization, source, "minecraft:block/stone", "entity.name.resource-location.rsgl");
+    expectScope(tokenization, source, "variants", "storage.modifier.blockstate-mode.rsgl");
+    expectScope(tokenization, source, "case", "keyword.control.rsgl");
   });
 
   it("highlights model transform headers without reclassifying explicit properties", () => {
@@ -254,10 +279,6 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "variants", "storage.modifier.blockstate-mode.rsgl", 0);
     expectScope(tokenization, source, "multipart", "storage.modifier.blockstate-mode.rsgl", 0);
     expectScopeAcross(tokenization, source, "\"wall\"", "string.quoted.double.rsgl");
-    const declaration = repositoryPatterns(grammar, "blockstateDeclarations")[0];
-    assert.ok(declaration.begin);
-    const headerPattern = new RegExp(declaration.begin);
-    assert.strictEqual(headerPattern.test("blockstate variants stairs {"), true);
   });
 
   it("highlights the canonical blockstate rule, predicate, model, and choice vocabulary", () => {
@@ -272,7 +293,8 @@ describe("RSGL TextMate grammar", () => {
       "blockstate multipart powered {",
       "  part when active => minecraft:block/lamp with { uvlock: true }",
       "  part always => minecraft:block/base",
-      "}"
+      "}",
+      "apply minecraft:block/legacy"
     ].join("\n");
     const tokenization = tokenizeGrammar(grammar, source);
 
@@ -282,8 +304,7 @@ describe("RSGL TextMate grammar", () => {
     expectScope(tokenization, source, "part", "keyword.control.rsgl", 1);
     expectScope(tokenization, source, "StatePredicate", "support.type.rsgl");
     expectScope(tokenization, source, "$state", "variable.language.state.rsgl");
-    const controlKeywords = matchRegex(namedPattern(grammar, "keywords", "keyword.control.rsgl"));
-    assert.doesNotMatch("apply", controlKeywords, "Legacy multipart 'apply' must not remain a grammar keyword.");
+    expectNoScope(tokenization, source, "apply", "keyword.control.rsgl");
   });
 
   it("keeps template-literal blockstate names from terminating at interpolation braces", () => {
@@ -296,15 +317,6 @@ describe("RSGL TextMate grammar", () => {
       "}",
       "let doors = [{ btex: minecraft:block/door_open/oak/bottom }]"
     ].join("\n");
-    const header = source.slice(0, source.indexOf("\n"));
-    const declaration = repositoryPatterns(grammar, "blockstateDeclarations")[0];
-    assert.ok(declaration.begin);
-
-    const match = new RegExp(declaration.begin, "d").exec(header);
-    assert.ok(match?.indices, "Expected the blockstate header to match.");
-    assert.strictEqual(match[0], header);
-    assert.deepStrictEqual(match.indices[8], [header.length - 1, header.length]);
-
     const tokenization = tokenizeGrammar(grammar, source);
     expectScopeAcross(tokenization, source, "`${name}_door`", "string.template.rsgl");
     expectScopeAcross(tokenization, source, "${name}", "meta.embedded.expression.rsgl");

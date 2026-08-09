@@ -1,11 +1,18 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import * as assert from "node:assert/strict";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync,
+  type TestProcessResult
+} from "../../../test/helpers/testProcess";
 
-describe("resource reference resolution fast path", () => {
+describe("resource reference resolution fast path", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("avoids physical and generated refreshes only when bounded evidence is authoritative", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
@@ -38,12 +45,12 @@ describe("resource reference resolution fast path", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
     const result = runFacadeScript(script);
-    assert.strictEqual(result.status, 0, String(result.stderr));
+    assertTestProcessStatus(result);
   });
 
   it("resolves an exact RSGL physical Definition without refreshing the project index", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
@@ -73,12 +80,12 @@ describe("resource reference resolution fast path", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
     const result = runFacadeScript(script);
-    assert.strictEqual(result.status, 0, String(result.stderr));
+    assertTestProcessStatus(result);
   });
 
   it("fully refreshes References and filters incoming edges to the current project", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
@@ -101,12 +108,12 @@ describe("resource reference resolution fast path", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
     const result = runFacadeScript(script);
-    assert.strictEqual(result.status, 0, String(result.stderr));
+    assertTestProcessStatus(result);
   });
 
   it("does not invalidate newer physical work after an aborted reference refresh", () => {
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
       "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
@@ -134,13 +141,7 @@ describe("resource reference resolution fast path", () => {
   });
 });
 
-function runFacadeScript(script: string): ReturnType<typeof spawnSync> {
-  const facadePath = path.join(
-    process.cwd(),
-    "out",
-    "src",
-    "services",
-    "resourceUniverseNavigationFacade.js"
-  );
-  return spawnSync(process.execPath, ["-e", script, facadePath], { encoding: "utf8" });
+function runFacadeScript(script: string): TestProcessResult {
+  const facadePath = resolveFreshCompiledModule("src/services/resourceUniverseNavigationFacade.ts");
+  return runTestProcessSync(process.execPath, ["-e", script, facadePath]);
 }

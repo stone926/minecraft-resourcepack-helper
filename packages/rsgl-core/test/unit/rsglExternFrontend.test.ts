@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { getRsglCompletionCandidates } from "../../src/completionData";
 import { lexRsgl, parseRsgl, type ExternDeclNode } from "../../src/parser";
 

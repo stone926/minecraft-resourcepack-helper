@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { MissingCitResourcePlanner } from "../../cit/services/missingCitResourcePlanner";
 import type { ResourceReference } from "../../utils/resourceReferences";

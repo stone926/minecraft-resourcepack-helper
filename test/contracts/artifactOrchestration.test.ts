@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -151,30 +151,30 @@ describe("artifact orchestration", () => {
     assert.deepStrictEqual(budget.parseBudgetArguments([]), {
       target: "all",
       artifactPath: undefined,
-      bundleMode: "development"
+      bundleMode: "production"
     });
     assert.deepStrictEqual(
       budget.parseBudgetArguments(["--target", "main", "--artifact", "dist/main.vsix"]),
-      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
+      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "production" }
     );
     assert.deepStrictEqual(
       budget.parseBudgetArguments(["--artifact", "dist/main.vsix", "--target", "main"]),
-      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
+      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "production" }
     );
     assert.deepStrictEqual(budget.budgetTargets("all"), ["main", "rsgl-cli"]);
     assert.deepStrictEqual(budget.createBudgetPlan({ target: "main", artifactPath: "dist/main.vsix" }), [
-      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "development" }
+      { target: "main", artifactPath: "dist/main.vsix", bundleMode: "production" }
     ]);
     assert.deepStrictEqual(budget.createBudgetPlan({ target: "rsgl-cli" }), [
-      { target: "rsgl-cli", artifactPath: undefined, bundleMode: "development" }
+      { target: "rsgl-cli", artifactPath: undefined, bundleMode: "production" }
     ]);
     assert.deepStrictEqual(
       budget.parseBudgetArguments(["--target", "main", "--bundle-mode=production"]),
       { target: "main", artifactPath: undefined, bundleMode: "production" }
     );
-    assert.deepStrictEqual(
-      budget.createBudgetPlan({ target: "rsgl-cli", bundleMode: "analyze" }),
-      [{ target: "rsgl-cli", artifactPath: undefined, bundleMode: "analyze" }]
+    assert.throws(
+      () => budget.createBudgetPlan({ target: "rsgl-cli", bundleMode: "analyze" }),
+      /supports production only/
     );
     assert.throws(
       () => budget.parseBudgetArguments(["--target", "rsgl-cli", "--artifact", "cli.tgz"]),

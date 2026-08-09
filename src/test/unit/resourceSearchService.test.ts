@@ -1,18 +1,17 @@
-import * as assert from "node:assert";
-import { spawnSync } from "node:child_process";
-import * as path from "node:path";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("resource search service", () => {
+describe("resource search service", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("caches prepared responses, scopes projects, and preserves candidates", () => {
-    const modulePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "services",
-      "resourceSearchService.js"
-    );
+    const modulePath = resolveFreshCompiledModule("src/services/resourceSearchService.ts");
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const modulePath = process.argv[1];",
       "let findCalls = 0; let folderListener; let folderSubscriptionDisposed = false;",
@@ -118,23 +117,15 @@ describe("resource search service", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
 
-    const result = spawnSync(process.execPath, ["-e", script, modulePath], {
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(process.execPath, ["-e", script, modulePath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 
   it("retries an in-flight inventory invalidated by a real structural change", () => {
-    const modulePath = path.join(
-      process.cwd(),
-      "out",
-      "src",
-      "services",
-      "resourceSearchService.js"
-    );
+    const modulePath = resolveFreshCompiledModule("src/services/resourceSearchService.ts");
     const script = [
-      "const assert = require('node:assert');",
+      "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
       "const modulePath = process.argv[1];",
       "const uri = value => ({ fsPath: value, path: value, toString: () => `file:///${value}` });",
@@ -215,10 +206,8 @@ describe("resource search service", () => {
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
 
-    const result = spawnSync(process.execPath, ["-e", script, modulePath], {
-      encoding: "utf8"
-    });
+    const result = runTestProcessSync(process.execPath, ["-e", script, modulePath]);
 
-    assert.strictEqual(result.status, 0, result.stderr);
+    assertTestProcessStatus(result);
   });
 });

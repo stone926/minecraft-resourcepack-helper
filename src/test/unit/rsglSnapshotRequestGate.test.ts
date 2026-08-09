@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import type { ResourcePackProjectContextDto } from "../../../packages/resource-project/src";
 import type { RsglRuntimeInstance } from "../../rsgl/runtime";
 import {

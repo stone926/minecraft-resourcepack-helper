@@ -1,10 +1,16 @@
-import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
+import { resolveFreshCompiledModule } from "../../../test/helpers/compiledHarness";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../../../test/helpers/testProcess";
 
-describe("RSGL build contexts", () => {
+describe("RSGL build contexts", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   it("resolves the current-file command as an authoritative source-directory build", () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rsgl-build-context-"));
     try {
@@ -22,7 +28,7 @@ describe("RSGL build contexts", () => {
       }
 
       const script = [
-        "const assert = require('node:assert');",
+        "const assert = require('node:assert/strict');",
         "const Module = require('node:module'); const originalLoad = Module._load;",
         "const [modulePath, projectRoot, sourceRoot, mainSource, siblingSource, outsideSource] = process.argv.slice(1);",
         "const saved = []; const messages = [];",
@@ -57,16 +63,8 @@ describe("RSGL build contexts", () => {
         "  assert.deepStrictEqual(messages, [`The current RSGL file is outside the configured source directory: ${sourceRoot}`]);",
         "})().catch(error => { console.error(error); process.exitCode = 1; });"
       ].join("\n");
-      const modulePath = path.join(
-        process.cwd(),
-        "out",
-        "src",
-        "rsgl",
-        "host",
-        "commands",
-        "buildContexts.js"
-      );
-      const result = spawnSync(process.execPath, [
+      const modulePath = resolveFreshCompiledModule("src/rsgl/host/commands/buildContexts.ts");
+      const result = runTestProcessSync(process.execPath, [
         "-e",
         script,
         modulePath,
@@ -75,9 +73,9 @@ describe("RSGL build contexts", () => {
         mainSource,
         siblingSource,
         outsideSource
-      ], { encoding: "utf8" });
+      ]);
 
-      assert.strictEqual(result.status, 0, result.stderr);
+      assertTestProcessStatus(result);
     } finally {
       fs.rmSync(projectRoot, { recursive: true, force: true });
     }

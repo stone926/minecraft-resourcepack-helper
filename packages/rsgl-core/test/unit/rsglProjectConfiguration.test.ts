@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import {
   DEFAULT_MAX_EVALUATION_ITEMS,
   DEFAULT_MAX_ITEM_MODEL_DEPTH,

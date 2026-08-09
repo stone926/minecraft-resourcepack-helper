@@ -38,7 +38,8 @@ export class ResourceGraphSearchQuickPick implements vscode.Disposable {
 
   public constructor(
     private readonly search: Pick<ResourceSearchService, "search" | "onDidInvalidate">,
-    private readonly selectResource: (match: ResourceSearchMatch) => void
+    private readonly selectResource: (match: ResourceSearchMatch) => void,
+    private readonly searchDelayMilliseconds = 120
   ) {
     this.invalidationSubscription = search.onDidInvalidate(() => {
       const picker = this.active?.picker;
@@ -122,7 +123,7 @@ export class ResourceGraphSearchQuickPick implements vscode.Disposable {
 
   private scheduleSearch(
     picker: vscode.QuickPick<ResourceSearchQuickPickItem>,
-    delay = 120
+    delay = this.searchDelayMilliseconds
   ): void {
     this.cancelScheduledSearch();
     this.cancelActiveSearch();

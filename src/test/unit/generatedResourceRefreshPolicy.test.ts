@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { shouldRequestGeneratedSnapshot } from "../../services/generatedResourceRefreshPolicy";
 
 describe("generated resource refresh policy", () => {

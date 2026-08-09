@@ -25,6 +25,7 @@ jobs:
   verify:
     name: Verify ${{ inputs.product }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -60,8 +61,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit runtime dependencies
+        if: runner.os == 'Linux'
+        run: npm run audit:runtime
+
       - name: Test
         run: npm test
+
+      - name: Upload coverage report
+        if: ${{ always() && runner.os == 'Linux' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ inputs.product }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            coverage/lcov.info
+            coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Package main extension
         if: inputs.product == 'all' || inputs.product == 'main'
@@ -87,3 +103,72 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 7
+
+  rsgl_cli_node20:
+    name: Verify RSGL CLI minimum Node.js version
+    if: inputs.product == 'all' || inputs.product == 'rsgl-cli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Setup minimum supported Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package RSGL CLI on Node.js 20
+        run: npm run package:rsgl-cli -- --out dist/rsgl-cli-node20.tgz
+
+      - name: Verify RSGL CLI package on Node.js 20
+        run: npm run verify:rsgl-cli -- dist/rsgl-cli-node20.tgz
+
+  macos_compatibility:
+    name: Verify path compatibility on macOS
+    if: inputs.product == 'all' || inputs.product == 'main' || inputs.product == 'rsgl-cli'
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build test outputs
+        run: npm run build:test
+
+      - name: Test path, pack, project, and archive compatibility
+        run: >-
+          node node_modules/mocha/bin/_mocha
+          "./out/packages/mc-assets/test/unit/path*.test.js"
+          "./out/packages/mc-assets/test/unit/pack*.test.js"
+          "./out/packages/mc-assets/test/unit/resourceId.test.js"
+          "./out/packages/mc-assets/test/unit/javaResourcePackFormat.test.js"
+          "./out/packages/resource-project/test/unit/resourceProject.test.js"
+          "./out/packages/rsgl-core/test/unit/rsglPathIdentity.test.js"
+          "./out/src/test/unit/*ArchiveResources.test.js"
+          "./out/src/test/unit/pathGeneratorContract.test.js"
+          "./out/src/test/unit/resourceDocumentUri.test.js"
+          "./out/test/contracts/pathIdentityContract.test.js"

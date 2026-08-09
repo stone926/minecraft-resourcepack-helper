@@ -1,11 +1,17 @@
-import * as assert from "node:assert";
-import { execFileSync } from "node:child_process";
+import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  assertTestProcessStatus,
+  defaultTestProcessMochaTimeoutMs,
+  runTestProcessSync
+} from "../helpers/testProcess";
 
-describe("VSIX packaging output", () => {
+describe("VSIX packaging output", function () {
+  this.timeout(defaultTestProcessMochaTimeoutMs);
+
   const repositoryRoot = process.cwd();
   let temporaryRoot: string;
 
@@ -47,11 +53,12 @@ describe("VSIX packaging output", () => {
       `const result = prepareVsixPackageArguments(${JSON.stringify(args)}, ${JSON.stringify(temporaryRoot)});`,
       "process.stdout.write(JSON.stringify(result));"
     ].join("\n");
-    const output = execFileSync(
+    const result = runTestProcessSync(
       process.execPath,
       ["--input-type=module", "--eval", program],
-      { cwd: repositoryRoot, encoding: "utf8" }
+      { cwd: repositoryRoot }
     );
-    return JSON.parse(output) as string[];
+    assertTestProcessStatus(result);
+    return JSON.parse(result.stdout) as string[];
   }
 });

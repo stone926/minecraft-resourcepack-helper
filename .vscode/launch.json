@@ -23,9 +23,52 @@
 			"request": "launch",
 			"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
 			"args": [
+				"--timeout",
+				"15000",
 				"${workspaceFolder}/out/src/test/unit/**/*.test.js",
-				"${workspaceFolder}/out/packages/**/test/**/*.test.js",
-				"${workspaceFolder}/out/test/**/*.test.js"
+				"${workspaceFolder}/out/packages/**/test/**/*.test.js"
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal",
+			"internalConsoleOptions": "neverOpen",
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js"
+			],
+			"preLaunchTask": "npm: build:test",
+			"skipFiles": [
+				"<node_internals>/**"
+			]
+		},
+		{
+			"name": "Debug Integration Tests",
+			"type": "node",
+			"request": "launch",
+			"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+			"args": [
+				"--timeout",
+				"30000",
+				"${workspaceFolder}/out/src/test/integration/**/*.test.js"
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal",
+			"internalConsoleOptions": "neverOpen",
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js"
+			],
+			"preLaunchTask": "npm: build:test",
+			"skipFiles": [
+				"<node_internals>/**"
+			]
+		},
+		{
+			"name": "Debug Contract Tests",
+			"type": "node",
+			"request": "launch",
+			"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+			"args": [
+				"--timeout",
+				"15000",
+				"${workspaceFolder}/out/test/contracts/**/*.test.js"
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal",

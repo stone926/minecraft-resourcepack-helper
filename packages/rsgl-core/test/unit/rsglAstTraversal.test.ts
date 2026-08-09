@@ -1,4 +1,4 @@
-import * as assert from "node:assert";
+import * as assert from "node:assert/strict";
 import { parseRsgl, walkRsglModule } from "../../src/parser";
 
 describe("RSGL AST traversal", () => {
