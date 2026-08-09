@@ -9,6 +9,7 @@ import {
   ResourceCompletionService,
   type ResourceCompletionDirectoryEntry,
   type ResourceCompletionHost,
+  type ResourceCompletionInventoryHost,
   type ResourceCompletionRootRequest
 } from "../../services/resourceCompletionService";
 import type { ResourceReference } from "../../utils/resourceReferences";
@@ -104,6 +105,87 @@ describe("resource completion service", () => {
       filterText: "icon",
       retriggerSuggest: false
     }]);
+  });
+
+  it("filters last-known generated resources in the shared domain service", async () => {
+    const packRoot = path.resolve("virtual", "generated-pack");
+    const inventory: ResourceCompletionInventoryHost = {
+      getKnownResources: async () => ({
+        resources: [
+          { target: { kind: "texture", id: "minecraft:block/stone" }, producer: { origin: "generated" } },
+          { target: { kind: "texture", id: "custom:block/stone_custom" }, producer: { origin: "generated" } },
+          { target: { kind: "model", id: "minecraft:block/stone" }, producer: { origin: "generated" } },
+          { target: { kind: "texture", id: "minecraft:block/stone_physical" }, producer: { origin: "physical" } }
+        ]
+      })
+    };
+
+    const candidates = await new ResourceCompletionService(
+      new FakeResourceCompletionHost(packRoot),
+      inventory
+    ).getCompletionCandidates({
+      documentFileName: modelDocument(packRoot),
+      reference: textureReference("minecraft:block/st"),
+      configuration: {}
+    });
+
+    assert.deepStrictEqual(candidates, [{
+      label: "stone",
+      kind: "file",
+      value: "minecraft:block/stone",
+      filterText: "block/stone",
+      retriggerSuggest: false
+    }]);
+  });
+
+  it("keeps physical candidates when generated inventory contains the same resource", async () => {
+    const packRoot = path.resolve("virtual", "deduplicated-pack");
+    const host = new FakeResourceCompletionHost(packRoot);
+    host.setDirectoryEntries(
+      path.join(packRoot, "assets", "minecraft", "textures", "block"),
+      [entry("stone.png", "file")]
+    );
+    const inventory: ResourceCompletionInventoryHost = {
+      getKnownResources: async () => ({
+        resources: [{
+          target: { kind: "texture", id: "minecraft:block/stone" },
+          producer: { origin: "generated" }
+        }]
+      })
+    };
+
+    const candidates = await new ResourceCompletionService(host, inventory).getCompletionCandidates({
+      documentFileName: modelDocument(packRoot),
+      reference: textureReference("minecraft:block/st"),
+      configuration: {}
+    });
+
+    assert.strictEqual(
+      candidates.filter(candidate => candidate.value === "minecraft:block/stone").length,
+      1
+    );
+  });
+
+  it("keeps physical completion available when generated inventory rejects", async () => {
+    const packRoot = path.resolve("virtual", "rejected-inventory-pack");
+    const host = new FakeResourceCompletionHost(packRoot);
+    host.setDirectoryEntries(
+      path.join(packRoot, "assets", "minecraft", "textures", "block"),
+      [entry("stone.png", "file")]
+    );
+    const inventory: ResourceCompletionInventoryHost = {
+      getKnownResources: async () => {
+        throw new Error("inventory unavailable");
+      }
+    };
+
+    const candidates = await new ResourceCompletionService(host, inventory).getCompletionCandidates({
+      documentFileName: modelDocument(packRoot),
+      reference: textureReference("minecraft:block/st"),
+      configuration: {}
+    });
+
+    assert.deepStrictEqual(candidates.map(candidate => candidate.value), ["minecraft:block/stone"]);
   });
 
   it("uses pack filters when deciding whether fallback-root entries are allowed", async () => {

@@ -132,7 +132,7 @@ describe("lazy resource infrastructure", () => {
     assert.ok(lazySource.includes('import("./registerResourceInfrastructure.js")'));
     assert.ok(lazySource.includes("ensureResources(): Promise<ResourceInfrastructure>"));
     assert.ok(concreteSource.includes("export function createResourceInfrastructure()"));
-    assert.ok(concreteSource.includes("const registration = createResourceInfrastructure();"));
+    assert.strictEqual(concreteSource.includes("export function registerResourceInfrastructure("), false);
   });
 
   it("types visible consumers against the structural navigation contract", () => {

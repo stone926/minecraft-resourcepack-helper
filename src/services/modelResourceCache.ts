@@ -6,6 +6,7 @@ import { LruCache } from "./lruCache";
 import {
   collectModelTextureVariableDefinitions,
   loadModelParentChain,
+  loadModelParentChainAsync,
   modelSourceForFile,
   type CachedModelDocument,
   type CachedTextureVariableDefinition,
@@ -21,7 +22,15 @@ import {
 } from "./resourceCacheTypes";
 
 export interface ModelResourceCacheHost extends ModelParentChainHost {
+  getJsonFileAstAsync(fileName: string): Promise<JsonDocumentNode | null>;
   getFileVersion(fileName: string): string | null;
+  canReuseVerifiedPaths(fileNames: readonly string[], verifiedAt: number): boolean;
+  verificationTimestamp(): number;
+}
+
+interface VerifiedModelCacheEntry<T> extends CacheEntry<T> {
+  verificationPaths: readonly string[];
+  verifiedAt: number;
 }
 
 interface PreviewRawModelCacheEntry {
@@ -37,13 +46,16 @@ interface PreviewResolvedModelCacheEntry {
 }
 
 export class ModelResourceCache {
-  private readonly modelParentChainCache = new LruCache<string, CacheEntry<CachedModelDocument[]>>(
+  private readonly modelParentChainCache = new LruCache<
+    string,
+    VerifiedModelCacheEntry<CachedModelDocument[]>
+  >(
     1024,
     key => this.modelCacheDependencies.release(`chain\0${key}`)
   );
   private readonly modelTextureDefinitionsCache = new LruCache<
     string,
-    CacheEntry<ReadonlyMap<string, CachedTextureVariableDefinition>>
+    VerifiedModelCacheEntry<ReadonlyMap<string, CachedTextureVariableDefinition>>
   >(
     1024,
     key => this.modelCacheDependencies.release(`definitions\0${key}`)
@@ -67,15 +79,71 @@ export class ModelResourceCache {
     const key = this.modelCacheKey(document, source, configuration);
     const generation = this.state.getResourceFsGeneration();
     const cached = this.modelParentChainCache.get(key);
-    if (cached && cached.generation === generation) {
+    if (cached && cached.generation === generation && this.canReuse(cached)) {
       this.metrics.hit("modelParentChain");
       return cached.value;
     }
 
     this.metrics.miss("modelParentChain");
-    const chain = loadModelParentChain(this.host, document.fileName, ast, source, configuration);
-    this.modelParentChainCache.set(key, { generation, value: chain });
-    this.modelCacheDependencies.register(`chain\0${key}`, chain.map(model => model.fileName));
+    const dependencies = new Set<string>([document.fileName]);
+    const chain = loadModelParentChain(
+      this.host,
+      document.fileName,
+      ast,
+      source,
+      configuration,
+      fileName => dependencies.add(fileName)
+    );
+    const verificationPaths = [...dependencies];
+    this.modelParentChainCache.set(key, {
+      generation,
+      value: chain,
+      verificationPaths,
+      verifiedAt: this.host.verificationTimestamp()
+    });
+    this.modelCacheDependencies.register(`chain\0${key}`, verificationPaths);
+    return chain;
+  }
+
+  async getModelParentChainAsync(
+    document: CacheTextDocument,
+    ast: JsonDocumentNode,
+    configuration: ResourceConfiguration,
+    source = modelSourceForFile(document.fileName)
+  ): Promise<CachedModelDocument[]> {
+    const key = this.modelCacheKey(document, source, configuration);
+    const generation = this.state.getResourceFsGeneration();
+    const cached = this.modelParentChainCache.get(key);
+    if (cached?.generation === generation && this.canReuse(cached)) {
+      this.metrics.hit("modelParentChain");
+      return cached.value;
+    }
+
+    this.metrics.miss("modelParentChain");
+    let chain: CachedModelDocument[] = [];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const mutationGeneration = this.state.getResourceMutationGeneration();
+      const dependencies = new Set<string>([document.fileName]);
+      chain = await loadModelParentChainAsync(
+        this.host,
+        document.fileName,
+        ast,
+        source,
+        configuration,
+        fileName => dependencies.add(fileName)
+      );
+      if (!this.state.hasAnyResourceChangedSince(mutationGeneration, dependencies)) {
+        const verificationPaths = [...dependencies];
+        this.modelParentChainCache.set(key, {
+          generation: this.state.getResourceFsGeneration(),
+          value: chain,
+          verificationPaths,
+          verifiedAt: this.host.verificationTimestamp()
+        });
+        this.modelCacheDependencies.register(`chain\0${key}`, verificationPaths);
+        return chain;
+      }
+    }
     return chain;
   }
 
@@ -88,7 +156,7 @@ export class ModelResourceCache {
     const key = this.modelCacheKey(document, source, configuration);
     const generation = this.state.getResourceFsGeneration();
     const cached = this.modelTextureDefinitionsCache.get(key);
-    if (cached && cached.generation === generation) {
+    if (cached && cached.generation === generation && this.canReuse(cached)) {
       this.metrics.hit("modelTextureDefinitions");
       return cached.value;
     }
@@ -96,8 +164,15 @@ export class ModelResourceCache {
     this.metrics.miss("modelTextureDefinitions");
     const chain = this.getModelParentChain(document, ast, configuration, source);
     const definitions = collectModelTextureVariableDefinitions(chain);
-    this.modelTextureDefinitionsCache.set(key, { generation, value: definitions });
-    this.modelCacheDependencies.register(`definitions\0${key}`, chain.map(model => model.fileName));
+    const verificationPaths = this.modelParentChainCache.peek(key)?.verificationPaths
+      ?? chain.map(model => model.fileName);
+    this.modelTextureDefinitionsCache.set(key, {
+      generation,
+      value: definitions,
+      verificationPaths,
+      verifiedAt: this.host.verificationTimestamp()
+    });
+    this.modelCacheDependencies.register(`definitions\0${key}`, [...verificationPaths]);
     return definitions;
   }
 
@@ -234,5 +309,9 @@ export class ModelResourceCache {
       }
       this.modelCacheDependencies.release(cacheKey);
     }
+  }
+
+  private canReuse(entry: VerifiedModelCacheEntry<unknown>): boolean {
+    return this.host.canReuseVerifiedPaths(entry.verificationPaths, entry.verifiedAt);
   }
 }

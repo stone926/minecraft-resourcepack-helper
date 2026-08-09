@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { toVscodeRange } from "../../utils/resourceLocationVscode";
 import { getCitHoverInfo, type CitHoverInfo } from "../citLanguage";
 
 const citHoverProvider: vscode.HoverProvider = {
@@ -8,7 +9,7 @@ const citHoverProvider: vscode.HoverProvider = {
       return null;
     }
 
-    return new vscode.Hover(toMarkdown(info), toVsCodeRange(info.range));
+    return new vscode.Hover(toMarkdown(info), toVscodeRange(info.range));
   }
 };
 
@@ -74,11 +75,4 @@ function localizeRuntimeStatus(runtimeStatus: NonNullable<CitHoverInfo["runtimeS
     case "supported": return vscode.l10n.t("Supported");
     case "legacy": return vscode.l10n.t("Legacy");
   }
-}
-
-function toVsCodeRange(range: CitHoverInfo["range"]): vscode.Range {
-  return new vscode.Range(
-    new vscode.Position(range.start.line, range.start.character),
-    new vscode.Position(range.end.line, range.end.character)
-  );
 }

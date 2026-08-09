@@ -5,6 +5,7 @@ import type {
 import { forDimensionBindingIdentifiers } from "./forBindingPatterns";
 import { walkRsglModule } from "./parser/astTraversal";
 import type { RsglSemanticModel, RsglSymbol } from "./semantic";
+import { touchesRange } from "./textRangeQueries";
 
 interface LexicalOwner {
   /** The source region in which the binding can be referenced. */
@@ -130,9 +131,7 @@ function lexicalOwner(range: TextRange): LexicalOwner {
 }
 
 function isVisibleAt(owner: LexicalOwner, offset: number): boolean {
-  return owner.range.start <= offset
-    && offset <= owner.range.end
-    && owner.visibleAfter <= offset;
+  return touchesRange(owner.range, offset) && owner.visibleAfter <= offset;
 }
 
 function isMoreLocal(candidate: VisibleCandidate, existing: VisibleCandidate): boolean {

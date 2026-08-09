@@ -150,6 +150,8 @@ describe("extension surface", () => {
     const source = readSource("registration", "registerWorkspaceEvents.ts");
 
     assert.ok(source.includes("getResourceWatcherGlob()"));
+    assert.ok(source.includes("citResourceIdInventoryWatcherPattern"));
+    assert.ok(source.includes("invalidateCitResourceIdInventory(uri, kind)"));
     assert.strictEqual(source.includes("for (const pattern of getResourceWatcherPatterns())"), false);
     assert.ok(source.includes("diagnostics.refreshSoon(event.document);"));
     assert.ok(source.includes("diagnostics.refresh(document);"));

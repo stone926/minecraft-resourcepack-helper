@@ -2,25 +2,31 @@ import { contributedCommands, internalCommands } from "../commandIds";
 import * as vscode from "vscode";
 import createCitTemplateCommand from "../cit/commands/createCitTemplate";
 import generateCitForCurrentItemCommand from "../cit/commands/generateCitForCurrentItem";
-import {
-  createMissingCitResource,
-  createMissingCitResourceCommand
-} from "../cit/providers/citCodeActionProvider";
-import createNewResourcePack from "../commands/createNewResourcePack";
-import createNewResourcePackRoot from "../commands/createNewResourcePackRoot";
 import openDefaultMcAssetsPath from "../commands/openDefaultMcAssetsPath";
 import type { ModelPreviewCommandRuntime } from "../modelPreview/commands/modelPreviewCommandRuntime";
-import { triggerResourceCompletionCommand } from "../providers/resourceCompletionProvider";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 
 export function registerCommands(context: vscode.ExtensionContext): void {
+  const createNewResourcePack = createLazyCommand<[], Promise<void>>(() =>
+    import("../commands/createNewResourcePack.js")
+      .then(module => module.createNewResourcePack));
+  const createNewResourcePackRoot = createLazyCommand<[], Promise<void>>(() =>
+    import("../commands/createNewResourcePackRoot.js")
+      .then(module => module.createNewResourcePackRoot));
+  const createMissingCitResource = createLazyCommand<
+    [uri: vscode.Uri, referenceIndex: number],
+    Promise<vscode.Uri | null>
+  >(() =>
+    import("../cit/commands/createMissingCitResource.js")
+      .then(module => module.createMissingCitResource));
+
   context.subscriptions.push(
     vscode.commands.registerCommand(contributedCommands.openDefaultMcAssetsPath, openDefaultMcAssetsPath),
     vscode.commands.registerCommand(contributedCommands.createNewResourcePack, createNewResourcePack),
     vscode.commands.registerCommand(contributedCommands.createNewResourcePackRoot, createNewResourcePackRoot),
     vscode.commands.registerCommand(contributedCommands.createCitTemplate, createCitTemplateCommand),
     vscode.commands.registerCommand(contributedCommands.generateCitForCurrentItem, generateCitForCurrentItemCommand),
-    vscode.commands.registerCommand(createMissingCitResourceCommand, createMissingCitResource)
+    vscode.commands.registerCommand(internalCommands.createMissingCitResource, createMissingCitResource)
   );
 
   registerModelPreviewCommands(context);
@@ -30,12 +36,20 @@ export function registerCommands(context: vscode.ExtensionContext): void {
       internalCommands.showWorkspaceResourceCacheStats,
       () => vscode.window.showInformationMessage(JSON.stringify(workspaceResourceCache.getStats()))
     ),
-    vscode.commands.registerCommand(triggerResourceCompletionCommand, () => {
+    vscode.commands.registerCommand(internalCommands.triggerResourceCompletion, () => {
       setTimeout(() => {
         void vscode.commands.executeCommand("editor.action.triggerSuggest");
       }, 0);
     })
   );
+}
+
+function createLazyCommand<Args extends unknown[], Result>(
+  load: () => Promise<(...args: Args) => Result>
+): (...args: Args) => Promise<Awaited<Result>> {
+  let commandPromise: Promise<(...args: Args) => Result> | undefined;
+  return async (...args: Args): Promise<Awaited<Result>> =>
+    await (await (commandPromise ??= load()))(...args);
 }
 
 function registerModelPreviewCommands(context: vscode.ExtensionContext): void {

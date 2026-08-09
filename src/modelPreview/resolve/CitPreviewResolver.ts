@@ -1,7 +1,6 @@
 import { citLocationToLineCharacterRange } from "../../utils/astLocationRanges";
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
-import { getCitAssetCandidates } from "../../cit/citAssetResolver";
 import { resolveCitKeyForType, resolveCitType } from "../../cit/citKeyResolution";
 import { parseCitProperties, type CitPropertyEntry } from "../../cit/citPropertiesParser";
 import type { CitAssetKind, CitType } from "../../cit/citSpecTypes";
@@ -13,7 +12,7 @@ import type {
 } from "../model/ModelDocument";
 import { ModelIssueCollector } from "../model/ModelIssues";
 import { throwIfCancellationRequested, type ModelPreviewCancellationToken } from "../cancellation";
-import { collectPotentialPackMetadataFileNames } from "./PackMetadataDependencies";
+import { observeCitAssetCandidates } from "./CitAssetCandidateObserver";
 
 export class CitPreviewResolver {
   private readonly dependencies = new Map<string, ResolvedDependency>();
@@ -119,16 +118,11 @@ export class CitPreviewResolver {
     resourceType: "models" | "textures",
     kind: "model" | "texture"
   ): string[] {
-    collectPotentialPackMetadataFileNames(sourceFileName, {})
-      .forEach(candidate => this.observeDependency?.(candidate));
-    const candidates = getCitAssetCandidates(sourceFileName, value, resourceType, {
-      pathExists: candidate => this.fileSystem.fileExists(candidate),
-      getPackRoot: this.fileSystem.getPackRoot
-        ? fileName => this.fileSystem.getPackRoot?.(fileName) ?? null
-        : undefined
+    const candidates = observeCitAssetCandidates(sourceFileName, value, resourceType, {
+      fileSystem: this.fileSystem,
+      observeDependency: this.observeDependency
     });
     for (const candidate of candidates) {
-      this.observeDependency?.(candidate);
       this.dependencies.set(`${kind}\0${normalizePathKey(candidate)}`, {
         fileName: candidate,
         kind,

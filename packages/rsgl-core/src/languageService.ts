@@ -87,7 +87,12 @@ export function getRsglDocumentCompletionItems(
     document.fileName,
     workspace
   );
-  const completionContext = getRsglCompletionContext(text, offset, effectiveTarget);
+  const completionContext = getRsglCompletionContext(
+    text,
+    offset,
+    effectiveTarget,
+    context.model.module
+  );
   const itemSchemaOwnsCompletion = Boolean(completionContext.itemModel?.schema)
     || isItemModelCompletionKeyPosition(completionContext.itemModel);
   const members = itemSchemaOwnsCompletion
@@ -116,7 +121,7 @@ export function getRsglDocumentCompletionItems(
     completionContext,
     visibleRsglSymbolsAtOffset(context.model, offset),
     context.model.scope.typeAliases,
-    completionNamespaceAt(context.model, text, offset)
+    completionNamespaceAt(context.model, offset)
   );
 }
 
@@ -368,7 +373,6 @@ function resourceNavigationForDocument(
 
 function completionNamespaceAt(
   model: RsglSemanticModel,
-  text: string,
   offset: number
 ): RsglCompletionNamespace {
   let insideType = false;
@@ -386,7 +390,7 @@ function completionNamespaceAt(
       return undefined;
     }
   });
-  if (insideType || looksLikeIncompleteTypePosition(text.slice(0, offset))) {
+  if (insideType) {
     return "type";
   }
   const ambiguousImportOrExport = model.module.statements.some(statement =>
@@ -394,14 +398,6 @@ function completionNamespaceAt(
     && touchesRange(statement.range, offset)
   );
   return ambiguousImportOrExport ? "both" : "value";
-}
-
-function looksLikeIncompleteTypePosition(prefix: string): boolean {
-  const line = prefix.slice(Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf("\r")) + 1);
-  if (/^\s*type\s+[A-Za-z_][A-Za-z0-9_]*\s*=/.test(line)) {
-    return true;
-  }
-  return /(?:\blet\s+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*\??)\s*:\s*[^=,)]*$/.test(line);
 }
 
 export function semanticModelForFile(

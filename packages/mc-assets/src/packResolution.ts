@@ -226,10 +226,15 @@ export function ancestorPackMetadataCandidates(fileName: string, stopAt?: string
   const candidates: string[] = [];
   while (true) {
     candidates.push(path.join(directory, "pack.mcmeta"));
-    if (directory === root || directory === normalizedStop) {
+    if (isSamePath(directory, root) || (normalizedStop && isSamePath(directory, normalizedStop))) {
       return candidates;
     }
-    directory = path.dirname(directory);
+
+    const parent = path.dirname(directory);
+    if (isSamePath(parent, directory)) {
+      return candidates;
+    }
+    directory = parent;
   }
 }
 

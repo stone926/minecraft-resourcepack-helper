@@ -16,3 +16,8 @@ export function moduleExportWithFunction(
   const defaultExport = asRecord(direct?.default);
   return typeof defaultExport?.[functionName] === "function" ? defaultExport : undefined;
 }
+
+/** Dynamically imports a non-literal module boundary without exposing its shape. */
+export function importModuleSpecifier(specifier: string): Promise<unknown> {
+  return import(specifier);
+}

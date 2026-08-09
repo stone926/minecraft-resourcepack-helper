@@ -58,32 +58,41 @@ export function computeDocumentDiagnostics(
       range: { start: 0, end: 1 }
     })];
   }
-  const semanticConfigurationFingerprint = resolveRsglCompileConfiguration(
-    validationOptions
-  ).semanticFingerprint;
-  const semanticProgram = deps.loadProgramFromEntry(fileName, semanticConfigurationFingerprint);
-  if (semanticProgram.files.length > 0) {
-    const result = compileRsglProgram(semanticProgram.files, {
-      entryFileName: fileName,
-      semanticProgram: semanticProgram.program,
+  try {
+    const semanticConfigurationFingerprint = resolveRsglCompileConfiguration(
+      validationOptions
+    ).semanticFingerprint;
+    const semanticProgram = deps.loadProgramFromEntry(fileName, semanticConfigurationFingerprint);
+    if (semanticProgram.files.length > 0) {
+      const result = compileRsglProgram(semanticProgram.files, {
+        entryFileName: fileName,
+        semanticProgram: semanticProgram.program,
+        ...validationOptions
+      });
+      deps.onDependencies?.(result.dependencies);
+      return result.diagnostics
+        .filter(diagnostic =>
+          !diagnostic.fileName
+          || normalizePathKey(path.resolve(diagnostic.fileName)) === currentFileKey
+        )
+        .map(diagnostic => toLspDiagnostic(document, diagnostic));
+    }
+
+    const parsed = parseRsgl(document.getText());
+    const result = compileRsglModule(parsed, {
+      fileName,
       ...validationOptions
     });
     deps.onDependencies?.(result.dependencies);
-    return result.diagnostics
-      .filter(diagnostic =>
-        !diagnostic.fileName
-        || normalizePathKey(path.resolve(diagnostic.fileName)) === currentFileKey
-      )
-      .map(diagnostic => toLspDiagnostic(document, diagnostic));
+    return result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic));
+  } catch (error) {
+    return [toLspDiagnostic(document, {
+      code: "rsgl.analysisFailure",
+      message: `RSGL analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+      severity: "error",
+      range: { start: 0, end: 1 }
+    })];
   }
-
-  const parsed = parseRsgl(document.getText());
-  const result = compileRsglModule(parsed, {
-    fileName,
-    ...validationOptions
-  });
-  deps.onDependencies?.(result.dependencies);
-  return result.diagnostics.map(diagnostic => toLspDiagnostic(document, diagnostic));
 }
 
 function projectConfigurationDiagnosticCode(error: unknown): string {

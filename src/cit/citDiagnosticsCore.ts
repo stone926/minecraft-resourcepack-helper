@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
+import { inferMinecraftResourceIdFromAssetsFile } from "../../packages/mc-assets/src";
 import { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
 import { isCitPropertiesFileName } from "./citPaths";
 import { getCitPropertiesParseResult, type CitPropertyEntry } from "./citPropertiesParser";
@@ -237,13 +237,13 @@ function validateValue(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDi
       diagnostics.push(createDiagnostic(entry.valueRange, lm("Invalid boolean value '{0}'.", value), "warning"));
     }
   } else if (spec.valueType === "integer" || spec.valueType === "positiveInteger") {
-    diagnostics.push(...validateInteger(entry, spec));
+    diagnostics.push(...validateScalar(entry, spec, "integer"));
   } else if (
     spec.valueType === "number" ||
     spec.valueType === "positiveNumber" ||
     spec.valueType === "nonNegativeNumber"
   ) {
-    diagnostics.push(...validateNumber(entry, spec));
+    diagnostics.push(...validateScalar(entry, spec, "number"));
   } else if (spec.valueType === "range") {
     diagnostics.push(...validateRangeList(entry, spec, false));
   } else if (spec.valueType === "rangeList") {
@@ -257,15 +257,27 @@ function validateValue(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDi
   return diagnostics;
 }
 
-function validateInteger(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
+function validateScalar(
+  entry: CitPropertyEntry,
+  spec: ResolvedCitSpecKey,
+  syntax: "integer" | "number"
+): CitDiagnostic[] {
   const value = entry.value.trim();
-  if (!integerPattern.test(value)) {
-    return [createDiagnostic(entry.valueRange, lm("Invalid integer value '{0}'.", value), "warning")];
+  const pattern = syntax === "integer" ? integerPattern : numberPattern;
+  if (!pattern.test(value)) {
+    const message = syntax === "integer"
+      ? lm("Invalid integer value '{0}'.", value)
+      : lm("Invalid number value '{0}'.", value);
+    return [createDiagnostic(entry.valueRange, message, "warning")];
   }
 
   const numberValue = Number(value);
-  if (spec.valueType === "positiveInteger" && numberValue <= 0) {
+  const positivity = scalarPositivity(spec.valueType);
+  if (positivity === "positive" && numberValue <= 0) {
     return [createDiagnostic(entry.valueRange, lm("Value must be greater than 0."), "warning")];
+  }
+  if (positivity === "nonNegative" && numberValue < 0) {
+    return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", 0), "warning")];
   }
   if (spec.minimum !== undefined && numberValue < spec.minimum) {
     return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", spec.minimum), "warning")];
@@ -276,26 +288,11 @@ function validateInteger(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): Cit
   return [];
 }
 
-function validateNumber(entry: CitPropertyEntry, spec: ResolvedCitSpecKey): CitDiagnostic[] {
-  const value = entry.value.trim();
-  if (!numberPattern.test(value)) {
-    return [createDiagnostic(entry.valueRange, lm("Invalid number value '{0}'.", value), "warning")];
+function scalarPositivity(valueType: ResolvedCitSpecKey["valueType"]): "positive" | "nonNegative" | null {
+  if (valueType === "positiveInteger" || valueType === "positiveNumber") {
+    return "positive";
   }
-
-  const numberValue = Number(value);
-  if (spec.valueType === "positiveNumber" && numberValue <= 0) {
-    return [createDiagnostic(entry.valueRange, lm("Value must be greater than 0."), "warning")];
-  }
-  if (spec.valueType === "nonNegativeNumber" && numberValue < 0) {
-    return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", 0), "warning")];
-  }
-  if (spec.minimum !== undefined && numberValue < spec.minimum) {
-    return [createDiagnostic(entry.valueRange, lm("Value must be at least {0}.", spec.minimum), "warning")];
-  }
-  if (spec.maximum !== undefined && numberValue > spec.maximum) {
-    return [createDiagnostic(entry.valueRange, lm("Value must be at most {0}.", spec.maximum), "warning")];
-  }
-  return [];
+  return valueType === "nonNegativeNumber" ? "nonNegative" : null;
 }
 
 function validateRangeList(entry: CitPropertyEntry, spec: ResolvedCitSpecKey, allowList: boolean): CitDiagnostic[] {
@@ -399,11 +396,7 @@ function isBlendParameter(value: string): boolean {
 }
 
 function inferItemIdFromFileName(fileName: string): string | null {
-  const basename = path.basename(fileName, path.extname(fileName));
-  if (!/^[a-z0-9_.-]+$/.test(basename)) {
-    return null;
-  }
-  return `minecraft:${basename}`;
+  return inferMinecraftResourceIdFromAssetsFile(fileName, { pathMode: "basename" });
 }
 
 function requiresValue(spec: ResolvedCitSpecKey): boolean {

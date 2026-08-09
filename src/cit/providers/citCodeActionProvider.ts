@@ -2,14 +2,11 @@ import { jsonAstLocationToLineCharacterRange } from "../../utils/astLocationRang
 import { internalCommands } from "../../commandIds";
 import * as vscode from "vscode";
 import { generateReferenceRedirectPath } from "../../utils/pathGenerator";
+import { toVscodeRange } from "../../utils/resourceLocationVscode";
 import { getResourceReferences, type ResourceReference } from "../../utils/resourceReferences";
-import { MissingCitResourceApplicationService } from "../services/missingCitResourceApplicationService";
 import { MissingCitResourcePlanner } from "../services/missingCitResourcePlanner";
 
-export const createMissingCitResourceCommand = internalCommands.createMissingCitResource;
-
 const missingResourcePlanner = new MissingCitResourcePlanner();
-const missingResourceApplication = new MissingCitResourceApplicationService();
 
 const citCodeActionProvider: vscode.CodeActionProvider = {
   provideCodeActions(document: vscode.TextDocument, range: vscode.Range) {
@@ -34,7 +31,7 @@ const citCodeActionProvider: vscode.CodeActionProvider = {
 
       const action = new vscode.CodeAction(vscode.l10n.t("Create missing CIT resource"), vscode.CodeActionKind.QuickFix);
       action.command = {
-        command: createMissingCitResourceCommand,
+        command: internalCommands.createMissingCitResource,
         title: vscode.l10n.t("Create missing CIT resource"),
         arguments: [document.uri, index]
       };
@@ -49,20 +46,6 @@ const citCodeActionProvider: vscode.CodeActionProvider = {
 
 export default citCodeActionProvider;
 
-export async function createMissingCitResource(uri: vscode.Uri, referenceIndex: number): Promise<vscode.Uri | null> {
-  const document = await vscode.workspace.openTextDocument(uri);
-  const reference = getResourceReferences(document)[referenceIndex];
-  if (!reference) {
-    return null;
-  }
-
-  const plan = missingResourcePlanner.plan(document.fileName, reference);
-  if (!plan) {
-    return null;
-  }
-  return missingResourceApplication.create(plan);
-}
-
 function referenceRangeIntersects(reference: ResourceReference, range: vscode.Range): boolean {
   const loc = reference.valueNode.valueLoc ?? reference.valueNode.loc;
   if (!loc) {
@@ -73,9 +56,5 @@ function referenceRangeIntersects(reference: ResourceReference, range: vscode.Ra
 }
 
 function rangeFromJsonAstLocation(loc: { start: { line: number; column: number }; end: { line: number; column: number } }): vscode.Range {
-  const pair = jsonAstLocationToLineCharacterRange(loc);
-  return new vscode.Range(
-    new vscode.Position(pair.start.line, pair.start.character),
-    new vscode.Position(pair.end.line, pair.end.character)
-  );
+  return toVscodeRange(jsonAstLocationToLineCharacterRange(loc));
 }

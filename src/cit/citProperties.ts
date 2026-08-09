@@ -1,4 +1,5 @@
-import { getCitDocumentSource } from "./citPaths";
+import { minecraftResourceTarget } from "../../packages/mc-assets/src";
+import { citResourceKindByType, getCitDocumentSource } from "./citPaths";
 import { resolveCitResourceType, resolveCitType } from "./citKeyResolution";
 import { getCitPropertiesEntries, type CitPropertiesDocument, type CitPropertyEntry } from "./citPropertiesParser";
 import type { CitType } from "./citSpecTypes";
@@ -35,6 +36,7 @@ function getCitPropertyReference(
   if (!resourceType) {
     return null;
   }
+  const kind = citResourceKindByType[resourceType];
 
   return {
     value: entry.value,
@@ -54,8 +56,8 @@ function getCitPropertyReference(
     },
     target: resourceType,
     source,
-    extension: resourceType === "textures" ? "png" : "json",
-    kind: resourceType === "textures" ? "texture" : "model",
+    extension: minecraftResourceTarget(kind).extension,
+    kind,
     resolveMode: "cit"
   };
 }
@@ -74,6 +76,7 @@ function getCitAutoDiscoveryReference(
     start: { line: 1, column: 0 },
     end: { line: 1, column: 0 }
   };
+  const kind = citResourceKindByType.models;
 
   return {
     value: stripExtension(fileName),
@@ -82,8 +85,8 @@ function getCitAutoDiscoveryReference(
     },
     target: "models",
     source,
-    extension: "json",
-    kind: "model",
+    extension: minecraftResourceTarget(kind).extension,
+    kind,
     resolveMode: "cit",
     origin: "citAutoDiscovery",
     synthetic: true

@@ -6,6 +6,7 @@ import { asDisposable } from "../../packages/shared-utils/src";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import {
   configuredRsglMode,
+  createRsglDisabledDocumentNotifier,
   isRsglDocument,
   rsglEnablementConfiguration,
   rsglProxyCommands,
@@ -45,7 +46,7 @@ export function registerLazyRsglSubsystem(
   options: LazyRsglSubsystemOptions = {}
 ): LazyRsglSubsystemRegistration {
   const disposables: vscode.Disposable[] = [];
-  const notifiedDisabledDocuments = new Set<string>();
+  const disabledDocumentNotifier = createRsglDisabledDocumentNotifier();
   let subsystemLoad: Promise<RsglSubsystemRegistration | undefined> | undefined;
   let subsystemLoadGeneration = -1;
   let subsystem: RsglSubsystemRegistration | undefined;
@@ -145,11 +146,7 @@ export function registerLazyRsglSubsystem(
     reason: "openDocument" | "visibleDocument"
   ): Promise<void> {
     if (configuredRsglMode() === "off") {
-      const identity = document.uri.toString();
-      if (!notifiedDisabledDocuments.has(identity)) {
-        notifiedDisabledDocuments.add(identity);
-        await showRsglDisabledMessage();
-      }
+      await disabledDocumentNotifier.notify(document);
       return;
     }
     try {

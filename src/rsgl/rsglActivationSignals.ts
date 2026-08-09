@@ -41,3 +41,25 @@ export async function showRsglDisabledMessage(): Promise<void> {
   await vscode.window.showInformationMessage(vscode.l10n.t("RSGL language services are disabled by McResHelper.rsgl.enabled."
   ));
 }
+
+export interface RsglDisabledDocumentNotifier {
+  notify(document: Pick<vscode.TextDocument, "uri">): Promise<boolean>;
+}
+
+/** Deduplicates disabled-service notices by document identity for one owner. */
+export function createRsglDisabledDocumentNotifier(
+  showMessage: () => Promise<void> = showRsglDisabledMessage
+): RsglDisabledDocumentNotifier {
+  const notifiedDocuments = new Set<string>();
+  return {
+    notify: async document => {
+      const identity = document.uri.toString();
+      if (notifiedDocuments.has(identity)) {
+        return false;
+      }
+      notifiedDocuments.add(identity);
+      await showMessage();
+      return true;
+    }
+  };
+}

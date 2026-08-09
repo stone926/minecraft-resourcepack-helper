@@ -11,7 +11,7 @@ import type { ModelPreviewFileSystem } from "../model/ModelDocument";
  */
 export interface ParentChainModelLoader {
   readModelText(fileName: string): Promise<string>;
-  parseModelValue(fileName: string, text: string): unknown;
+  parseModelValue(fileName: string, text: string): Promise<unknown> | unknown;
 }
 
 /** Loader backed only by the preview file system (previous inline behavior). */

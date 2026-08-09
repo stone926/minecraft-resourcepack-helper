@@ -6,6 +6,7 @@ import { createWorkspaceCacheModelLoader } from "../../../modelPreview/host/work
 import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
 import type { ParentChainModelLoader } from "../../../modelPreview/resolve/RawModelLoader";
 import { ModelPreviewService } from "../../../modelPreview/service/ModelPreviewService";
+import { nodeModelPreviewFileSystem } from "../../../modelPreview/service/NodeModelPreviewFileSystem";
 import { WorkspaceResourceCache, workspaceResourceCache } from "../../../services/workspaceResourceCache";
 import { createPack, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 
@@ -43,6 +44,7 @@ describe("model preview shared workspace backend", () => {
         }
       };
       const service = new ModelPreviewService({
+        fileSystem: nodeModelPreviewFileSystem,
         modelLoader,
         resolveResourcePath: request => {
           sharedResolutions.push(request);
@@ -88,13 +90,13 @@ describe("model preview shared workspace backend", () => {
       const loader = createWorkspaceCacheModelLoader(fileSystem);
 
       assert.deepStrictEqual(
-        loader.parseModelValue(modelFileName, await loader.readModelText(modelFileName)),
+        await loader.parseModelValue(modelFileName, await loader.readModelText(modelFileName)),
         { parent: "minecraft:block/cube_all", textures: { all: "minecraft:block/stone" } }
       );
 
       const brokenText = await loader.readModelText(brokenFileName);
-      assert.throws(
-        () => loader.parseModelValue(brokenFileName, brokenText),
+      await assert.rejects(
+        Promise.resolve(loader.parseModelValue(brokenFileName, brokenText)),
         /position \d+/,
         "parse failures must keep a position for issue ranges"
       );

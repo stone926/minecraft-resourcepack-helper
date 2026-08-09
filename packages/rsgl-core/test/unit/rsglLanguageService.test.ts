@@ -127,6 +127,15 @@ describe("RSGL language service", () => {
     const nested = completions("model block stone {\n  textures {\n    ");
     assert.strictEqual(nested.some(item => item.label === "base"), false);
     assert.ok(nested.some(item => item.label === "merge deep"));
+
+    const completeDocument = "model block stone {\n  \n}";
+    const middleOffset = completeDocument.indexOf("  ") + 2;
+    const middle = getRsglDocumentCompletionItems({
+      fileName: "memory.rsgl",
+      getText: () => completeDocument
+    }, middleOffset, unavailableWorkspace);
+    assert.ok(middle.some(item => item.label === "base"));
+    assert.ok(middle.some(item => item.label === "merge append"));
   });
 
   it("provides target-aware item-model schema hover without workspace dependencies", () => {

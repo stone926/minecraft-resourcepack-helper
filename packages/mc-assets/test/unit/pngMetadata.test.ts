@@ -70,7 +70,8 @@ describe("PNG metadata", () => {
     );
 
     assert.ok(source.includes("readFilePrefix(fileName, pngMetadataHeaderBytes)"));
-    assert.ok(source.includes("fs.readSync(handle, bytes, 0, byteLength, 0)"));
+    assert.ok(source.includes("return readFileRange(handle, 0, byteLength)"));
+    assert.ok(source.includes("fs.readSync(handle, bytes, 0, byteLength, position)"));
     assert.strictEqual(pngMetadataHeaderBytes, 24);
     assert.strictEqual(source.includes("readPngMetadata(fs.readFileSync"), false);
   });

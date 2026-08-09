@@ -5,6 +5,7 @@ import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { createTextureVariableDefinitionResolver } from "../utils/modelTexture";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
+import { toVscodeRange } from "../utils/resourceLocationVscode";
 import { collectUndefinedTextureVariableRanges } from "./textureVarDecorationCore";
 
 let decorationType: vscode.TextEditorDecorationType | null = null;
@@ -30,10 +31,7 @@ export function applyDecoration(editor: vscode.TextEditor): void {
   const ranges = collectUndefinedTextureVariableRanges(
     ast,
     reference => textureVariableResolver.has(reference)
-  ).map(range => new vscode.Range(
-    new vscode.Position(range.start.line, range.start.character),
-    new vscode.Position(range.end.line, range.end.character)
-  ));
+  ).map(toVscodeRange);
 
   editor.setDecorations(currentDecorationType, ranges);
 }

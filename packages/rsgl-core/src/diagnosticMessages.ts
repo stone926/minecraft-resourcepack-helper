@@ -67,6 +67,12 @@ export const resourceBodyMessages = {
   textureVariableOutsideModelSink: "Texture variables are only valid in model texture sinks."
 } as const;
 
+/** Computed property-key diagnostics shared by semantic checking and lowering. */
+export const propertyKeyMessages = {
+  computedKeyMustBeScalar:
+    "A computed property key must evaluate to a string, number, or boolean scalar value."
+} as const;
+
 /** Call-argument diagnostics (call checking + import validation). */
 export const callArgumentMessages = {
   namedArgumentsRequireSignature:

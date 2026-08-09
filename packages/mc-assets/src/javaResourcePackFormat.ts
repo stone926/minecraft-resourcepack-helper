@@ -5,20 +5,22 @@ export interface JavaResourcePackFormat {
 }
 
 const minecraftJavaVersionPattern = /^\d+\.\d+(?:\.\d+)?$/;
+export const currentMinecraftJavaVersion = "26.2";
+export const legacyResourcePackFormatBoundaryMinecraftVersion = "1.21.8";
 
 /**
  * Canonical release-to-resource-pack-format registry shared by every product
  * surface. Keep this table aligned with the repository compatibility manual.
  */
 const javaResourcePackFormatsByMinecraftVersion = new Map<string, JavaResourcePackFormat>([
-  ["26.2", { major: 88, minor: 0 }],
+  [currentMinecraftJavaVersion, { major: 88, minor: 0 }],
   ["26.1.2", { major: 84, minor: 0 }],
   ["26.1.1", { major: 84, minor: 0 }],
   ["26.1", { major: 84, minor: 0 }],
   ["1.21.11", { major: 75, minor: 0 }],
   ["1.21.10", { major: 69, minor: 0 }],
   ["1.21.9", { major: 69, minor: 0 }],
-  ["1.21.8", { major: 64, minor: 0 }],
+  [legacyResourcePackFormatBoundaryMinecraftVersion, { major: 64, minor: 0 }],
   ["1.21.7", { major: 64, minor: 0 }],
   ["1.21.6", { major: 63, minor: 0 }],
   ["1.21.5", { major: 55, minor: 0 }],
@@ -65,4 +67,20 @@ export function javaResourcePackFormatForMinecraftVersion(
 ): JavaResourcePackFormat | null {
   const target = javaResourcePackFormatsByMinecraftVersion.get(minecraftVersion);
   return target ? { ...target } : null;
+}
+
+/** Stable format baseline used by metadata evaluation and new-pack scaffolding. */
+export const currentJavaResourcePackFormat: Readonly<JavaResourcePackFormat> =
+  Object.freeze(requiredJavaResourcePackFormat(currentMinecraftJavaVersion));
+
+/** Last integer-only format understood by the legacy overlay declaration. */
+export const legacyJavaResourcePackFormatBoundary =
+  requiredJavaResourcePackFormat(legacyResourcePackFormatBoundaryMinecraftVersion).major;
+
+function requiredJavaResourcePackFormat(minecraftVersion: string): JavaResourcePackFormat {
+  const format = javaResourcePackFormatForMinecraftVersion(minecraftVersion);
+  if (!format) {
+    throw new Error(`Missing Java resource-pack format for ${minecraftVersion}`);
+  }
+  return format;
 }

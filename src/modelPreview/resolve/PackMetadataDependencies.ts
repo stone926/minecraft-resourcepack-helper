@@ -1,5 +1,8 @@
 import * as path from "node:path";
-import { isSamePath, normalizePathKey } from "../../../packages/mc-assets/src";
+import {
+  ancestorPackMetadataCandidates,
+  normalizePathKey
+} from "../../../packages/mc-assets/src";
 import type {
   ModelPreviewConfiguration,
   ModelPreviewFileSystem,
@@ -57,26 +60,6 @@ export function collectPotentialPackMetadataFileNames(
     }
   }
   return [...new Map(candidates.map(candidate => [normalizePathKey(candidate), candidate])).values()];
-}
-
-function ancestorPackMetadataCandidates(fileName: string, packRoot: string | null): string[] {
-  let directory = path.dirname(path.normalize(fileName));
-  const fileSystemRoot = path.parse(directory).root;
-  const stopAt = packRoot ? path.normalize(packRoot) : fileSystemRoot;
-  const candidates: string[] = [];
-
-  while (true) {
-    candidates.push(path.join(directory, "pack.mcmeta"));
-    if (isSamePath(directory, stopAt) || isSamePath(directory, fileSystemRoot)) {
-      return candidates;
-    }
-
-    const parent = path.dirname(directory);
-    if (isSamePath(parent, directory)) {
-      return candidates;
-    }
-    directory = parent;
-  }
 }
 
 function addDependency(

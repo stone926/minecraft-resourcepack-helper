@@ -4,7 +4,7 @@ import {
   TextureLoader
 } from "three";
 import { vscode } from "./webviewApi.js";
-import { webviewToHostMessageTypes } from "./messageTypes.js";
+import { webviewToHostMessageTypes } from "../../src/modelPreview/protocol/ModelPreviewProtocol";
 
 const TEXTURE_LOAD_SETTLE_MILLISECONDS = 3000;
 

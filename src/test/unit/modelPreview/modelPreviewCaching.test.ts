@@ -336,7 +336,7 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
       const releaseRead = deferred<void>();
       let modelReads = 0;
       const service = new ModelPreviewService({
-        artifactCache: cache.modelPreviewArtifacts,
+        artifactCache: cache.getModelPreviewArtifactCache(),
         fileSystem: workspaceBackedFileSystem(cache, async fileName => {
           const text = await fs.promises.readFile(fileName, "utf8");
           if (path.normalize(fileName) === path.normalize(modelFileName)) {
@@ -524,7 +524,7 @@ function createWorkspaceBackedService(
 ): ModelPreviewService {
   return new ModelPreviewService({
     configuration: () => ({ resourcePackRoots }),
-    artifactCache: cache.modelPreviewArtifacts,
+    artifactCache: cache.getModelPreviewArtifactCache(),
     fileSystem: workspaceBackedFileSystem(cache)
   });
 }

@@ -594,32 +594,16 @@ class RsglParser extends StatementParser {
         return this.parseResourceBody(templateResourceBodyParseContext("model"));
       }
       if (declaredOutputDialect === "variants") {
-        const body = this.parseBodyForContext(variantsBodyParseContext);
-        if (body.kind !== "VariantBody") {
-          throw new Error(`Internal parser invariant: expected VariantBody, received ${body.kind}.`);
-        }
-        return body;
+        return this.parseBodyForContext(variantsBodyParseContext);
       }
       if (declaredOutputDialect === "multipart") {
-        const body = this.parseBodyForContext(multipartBodyParseContext);
-        if (body.kind !== "MultipartBody") {
-          throw new Error(`Internal parser invariant: expected MultipartBody, received ${body.kind}.`);
-        }
-        return body;
+        return this.parseBodyForContext(multipartBodyParseContext);
       }
       if (declaredOutputDialect === "choice") {
-        const body = this.parseBodyForContext(choiceBodyParseContext);
-        if (body.kind !== "BlockstateChoiceBody") {
-          throw new Error(`Internal parser invariant: expected BlockstateChoiceBody, received ${body.kind}.`);
-        }
-        return body;
+        return this.parseBodyForContext(choiceBodyParseContext);
       }
       if (declaredOutputDialect === "item_model") {
-        const body = this.parseBodyForContext(itemModelTemplateBodyParseContext);
-        if (body.kind !== "ItemModelTemplateBody") {
-          throw new Error(`Internal parser invariant: expected ItemModelTemplateBody, received ${body.kind}.`);
-        }
-        return body;
+        return this.parseBodyForContext(itemModelTemplateBodyParseContext);
       }
       return this.parseBlock();
     }
@@ -691,11 +675,8 @@ class RsglParser extends StatementParser {
       const mode = modeToken.text as "variants" | "multipart";
       const modeNode = this.syntheticIdentifier(modeToken, mode);
       const id = this.parseBlockstateResourceId();
-      const body = this.parseBodyForContext(blockstateRootParseContext(mode));
       if (mode === "variants") {
-        if (body.kind !== "BlockstateVariantsRootBody") {
-          throw new Error("Parser invariant: variants header must produce a variants root body.");
-        }
+        const body = this.parseBodyForContext(blockstateRootParseContext("variants"));
         return {
           kind: "ResourceDecl",
           keyword: start.text,
@@ -707,9 +688,7 @@ class RsglParser extends StatementParser {
           ...this.nodeRanges(start, this.previousOr(start))
         };
       }
-      if (body.kind !== "BlockstateMultipartRootBody") {
-        throw new Error("Parser invariant: multipart header must produce a multipart root body.");
-      }
+      const body = this.parseBodyForContext(blockstateRootParseContext("multipart"));
       return {
         kind: "ResourceDecl",
         keyword: start.text,

@@ -1,9 +1,9 @@
 import * as path from "node:path";
-import { citResourceTypeFor, getCitAssetCandidates } from "../../cit/citAssetResolver";
+import { citResourceTypeFor } from "../../cit/citAssetResolver";
 import { isCitModelFileName, isCitPropertiesFileName } from "../../cit/citPaths";
 import {
-  getAssetsResource,
   getResourceFileCandidates as getSharedResourceFileCandidates,
+  inferMinecraftResourceIdFromAssetsFile,
   parseResourceLocation,
   resolveResourceFile,
   stripPathExtension,
@@ -11,6 +11,7 @@ import {
 } from "../../../packages/mc-assets/src";
 import { modelSourceForFile } from "../../services/modelParentChain";
 import type { ModelPreviewConfiguration, ModelPreviewFileSystem } from "../model/ModelDocument";
+import { observeCitAssetCandidates } from "./CitAssetCandidateObserver";
 import { collectPotentialPackMetadataFileNames } from "./PackMetadataDependencies";
 
 export interface ResolvedResourceFile {
@@ -63,7 +64,6 @@ export class ResourceDependencyResolver {
     }
 
     const candidates = this.getResourceFileCandidates(resourcePath, sourceFileName, target, source, extension);
-    candidates.forEach(candidate => this.observeDependency?.(candidate));
     const request = createResourceFileRequest(
       resourcePath,
       sourceFileName,
@@ -105,17 +105,31 @@ export class ResourceDependencyResolver {
       return cached;
     }
 
-    collectPotentialPackMetadataFileNames(sourceFileName, this.configuration)
-      .forEach(candidate => this.observeDependency?.(candidate));
-    const candidates = getResourceFileCandidatesUncached(
-      resourcePath,
-      sourceFileName,
-      target,
-      source,
-      extension,
-      this.fileSystem,
-      this.configuration
-    );
+    const citResourceType = citResourceTypeFor(target, extension);
+    const citSource = isCitModelFileName(sourceFileName) || isCitPropertiesFileName(sourceFileName);
+    let candidates: string[];
+    if (citResourceType && citSource) {
+      candidates = observeCitAssetCandidates(sourceFileName, resourcePath, citResourceType, {
+        fileSystem: this.fileSystem,
+        configuration: this.configuration,
+        observeDependency: this.observeDependency
+      });
+    } else {
+      collectPotentialPackMetadataFileNames(sourceFileName, this.configuration)
+        .forEach(candidate => this.observeDependency?.(candidate));
+      candidates = getSharedResourceFileCandidates(
+        createResourceFileRequest(
+          resourcePath,
+          sourceFileName,
+          target,
+          source,
+          extension,
+          this.configuration
+        ),
+        createResourceResolutionHost(this.fileSystem)
+      );
+      candidates.forEach(candidate => this.observeDependency?.(candidate));
+    }
     this.candidateFiles.set(key, candidates);
     return candidates;
   }
@@ -129,33 +143,16 @@ export class ResourceDependencyResolver {
   }
 }
 
-function getResourceFileCandidatesUncached(
-  resourcePath: string,
-  sourceFileName: string,
-  target: string,
-  source: string,
-  extension: string | null,
-  fileSystem: ModelPreviewFileSystem,
-  configuration: ModelPreviewConfiguration
-): string[] {
-  const citResourceType = citResourceTypeFor(target, extension);
-  if (citResourceType && (isCitModelFileName(sourceFileName) || isCitPropertiesFileName(sourceFileName))) {
-    return getCitAssetCandidates(sourceFileName, resourcePath, citResourceType, {
-      pathExists: fileName => fileSystem.fileExists(fileName),
-      getPackRoot: fileSystem.getPackRoot ? fileName => fileSystem.getPackRoot?.(fileName) ?? null : undefined
-    });
-  }
-
-  return getSharedResourceFileCandidates(
-    createResourceFileRequest(resourcePath, sourceFileName, target, source, extension, configuration),
-    {
-      pathExists: fileName => fileSystem.fileExists(fileName),
-      getPackRoot: fileSystem.getPackRoot ? fileName => fileSystem.getPackRoot?.(fileName) ?? null : undefined,
-      getPackMetadata: fileSystem.getPackMetadata
-        ? packRoot => fileSystem.getPackMetadata?.(packRoot) ?? { overlays: [], filters: [] }
-        : undefined
-    }
-  );
+function createResourceResolutionHost(fileSystem: ModelPreviewFileSystem) {
+  return {
+    pathExists: (fileName: string) => fileSystem.fileExists(fileName),
+    getPackRoot: fileSystem.getPackRoot
+      ? (fileName: string) => fileSystem.getPackRoot?.(fileName) ?? null
+      : undefined,
+    getPackMetadata: fileSystem.getPackMetadata
+      ? (packRoot: string) => fileSystem.getPackMetadata?.(packRoot) ?? { overlays: [], filters: [] }
+      : undefined
+  };
 }
 
 function createResourceFileRequest(
@@ -205,33 +202,23 @@ function resourceIdForResolvedCandidate(
   }
 
   if (target === "models" || target === "textures") {
-    return resourceIdFromFileName(candidate);
+    return resourceIdFromFileName(candidate, ["models", "textures"]);
   }
 
   return path.basename(candidate, path.extname(candidate));
 }
 
 export function modelResourceIdFromFileName(fileName: string): string {
-  const assetResource = getAssetsResource(fileName);
-  if (!assetResource || !assetResource.resourcePath.startsWith("models/")) {
-    return path.basename(fileName, path.extname(fileName));
-  }
-
-  return `${assetResource.namespace}:${stripPathExtension(assetResource.resourcePath.slice("models/".length))}`;
+  return resourceIdFromFileName(fileName, ["models"], true);
 }
 
-function resourceIdFromFileName(fileName: string): string {
-  const assetResource = getAssetsResource(fileName);
-  if (!assetResource) {
-    return path.basename(fileName, path.extname(fileName));
-  }
-
-  const resourcePath = assetResource.resourcePath.replaceAll("\\", "/");
-  const typedPrefix = resourcePath.startsWith("models/")
-    ? "models/"
-    : resourcePath.startsWith("textures/")
-      ? "textures/"
-      : "";
-  const rawPath = typedPrefix ? resourcePath.slice(typedPrefix.length) : resourcePath;
-  return `${assetResource.namespace}:${stripPathExtension(rawPath)}`;
+function resourceIdFromFileName(
+  fileName: string,
+  stripPathPrefixes: readonly string[],
+  requirePathPrefix = false
+): string {
+  return inferMinecraftResourceIdFromAssetsFile(fileName, {
+    stripPathPrefixes,
+    requirePathPrefix
+  }) ?? path.basename(fileName, path.extname(fileName));
 }

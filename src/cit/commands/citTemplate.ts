@@ -1,5 +1,10 @@
 import * as path from "node:path";
-import { parseAssetsPath, stripPathExtension } from "../../../packages/mc-assets/src";
+import {
+  minecraftResourceDirectory,
+  parseAssetsPath,
+  stripPathExtension
+} from "../../../packages/mc-assets/src";
+import { citresewnSourceDirectory } from "../../resources/citResourceSurface";
 
 export type CitTemplateType = "item" | "armor" | "elytra" | "enchantment";
 
@@ -13,6 +18,10 @@ export interface GeneratedCit {
   fileName: string;
   text: string;
 }
+
+const itemDefinitionDirectory = minecraftResourceDirectory("item");
+const itemModelDirectory = `${minecraftResourceDirectory("model")}/item`;
+const itemTextureDirectory = `${minecraftResourceDirectory("texture")}/item`;
 
 export function createCitTemplate(type: CitTemplateType, itemId = "minecraft:stick"): string {
   if (type === "armor") {
@@ -70,7 +79,14 @@ export function generateCitForResource(fileName: string): GeneratedCit | null {
   }
 
   return {
-    fileName: path.join(resource.packRoot, "assets", resource.namespace, "citresewn", "cit", `${item.fileStem}.properties`),
+    fileName: path.join(
+      resource.packRoot,
+      "assets",
+      resource.namespace,
+      citresewnSourceDirectory,
+      "cit",
+      `${item.fileStem}.properties`
+    ),
     text: `${lines.join("\n")}\n`
   };
 }
@@ -95,16 +111,16 @@ function inferItemResource(resource: AssetResourceInfo): {
   texture?: string;
 } | null {
   const resourcePath = resource.resourcePath.replaceAll("\\", "/");
-  if (resourcePath.startsWith("items/") && resourcePath.endsWith(".json")) {
-    const idPath = stripPathExtension(resourcePath.slice("items/".length));
+  if (resourcePath.startsWith(`${itemDefinitionDirectory}/`) && resourcePath.endsWith(".json")) {
+    const idPath = stripPathExtension(resourcePath.slice(itemDefinitionDirectory.length + 1));
     return {
       itemId: `${resource.namespace}:${idPath}`,
       fileStem: path.posix.basename(idPath)
     };
   }
 
-  if (resourcePath.startsWith("models/item/") && resourcePath.endsWith(".json")) {
-    const idPath = stripPathExtension(resourcePath.slice("models/item/".length));
+  if (resourcePath.startsWith(`${itemModelDirectory}/`) && resourcePath.endsWith(".json")) {
+    const idPath = stripPathExtension(resourcePath.slice(itemModelDirectory.length + 1));
     return {
       itemId: `${resource.namespace}:${idPath}`,
       fileStem: path.posix.basename(idPath),
@@ -112,8 +128,8 @@ function inferItemResource(resource: AssetResourceInfo): {
     };
   }
 
-  if (resourcePath.startsWith("textures/item/") && resourcePath.endsWith(".png")) {
-    const idPath = stripPathExtension(resourcePath.slice("textures/item/".length));
+  if (resourcePath.startsWith(`${itemTextureDirectory}/`) && resourcePath.endsWith(".png")) {
+    const idPath = stripPathExtension(resourcePath.slice(itemTextureDirectory.length + 1));
     return {
       itemId: `${resource.namespace}:${idPath}`,
       fileStem: path.posix.basename(idPath),

@@ -112,12 +112,15 @@ describe("model preview manifest", () => {
   });
 
   it("exposes clickable issue/dependency resources and structured screenshot failures", () => {
-    const messageTypes = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewMessages.ts"), "utf8");
+    const messageTypes = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "protocol", "ModelPreviewProtocol.ts"), "utf8");
+    const hostMessages = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewMessages.ts"), "utf8");
     const panelSource = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewPanel.ts"), "utf8");
     const script = readCombinedModelPreviewScript();
 
     assert.ok(messageTypes.includes('{ type: "openResource"; uri: string; range?: PreviewRange }'));
     assert.ok(messageTypes.includes('{ type: "screenshotError"; requestId: string; error: ModelPreviewError }'));
+    assert.strictEqual(hostMessages.includes("webviews/modelPreview"), false, "host protocol types must not depend on webview sources");
+    assert.ok(script.includes("src/modelPreview/protocol/ModelPreviewProtocol"), "webview should consume the neutral protocol module");
     assert.ok(panelSource.includes("openTextDocument(uri)"), "host should open text resources itself");
     assert.ok(panelSource.includes("Resource file does not exist"), "missing files should produce an explicit message");
     assert.ok(script.includes('type: webviewToHostMessageTypes.openResource'), "webview should request host resource opening");

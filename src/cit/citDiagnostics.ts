@@ -5,6 +5,7 @@ import { isCitPropertiesFileName } from "./citPaths";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { localize } from "../i18n/runtime";
 import { toVsCodeDiagnosticSeverity } from "../diagnostics/diagnosticSeverity";
+import { toVscodeRange } from "../utils/resourceLocationVscode";
 import {
   getCitDiagnostics as getCoreCitDiagnostics,
   type CitDiagnostic
@@ -41,11 +42,7 @@ export function getCitDiagnostics(
 }
 
 function rangeFromCitLocation(location: CitDiagnostic["range"]): vscode.Range {
-  const range = citLocationToLineCharacterRange(location);
-  return new vscode.Range(
-    new vscode.Position(range.start.line, range.start.character),
-    new vscode.Position(range.end.line, range.end.character)
-  );
+  return toVscodeRange(citLocationToLineCharacterRange(location));
 }
 
 function toVsCodeDiagnostic(diagnostic: CitDiagnostic): vscode.Diagnostic {

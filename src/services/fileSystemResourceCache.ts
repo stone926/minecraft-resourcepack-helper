@@ -59,6 +59,10 @@ export class FileSystemResourceCache {
   private readonly directoryEntriesSyncCache = new LruCache<string, VersionedCacheEntry<Dirent[] | null>>(1024);
   private readonly documentAstCache = new LruCache<string, DocumentAstCacheEntry>(1024);
   private readonly fileAstCache = new LruCache<string, VersionedCacheEntry<JsonDocumentNode | null>>(1024);
+  private readonly pendingFileAsts = new LruCache<
+    string,
+    VersionedCacheEntry<Promise<JsonDocumentNode | null>>
+  >(128);
   private readonly packRootCache = new LruCache<string, FreshnessCacheEntry<string | null>>(4096);
   private readonly packMetadataCache = new LruCache<string, VersionedCacheEntry<PackMetadata>>(256);
   private readonly soundEventsCache = new LruCache<string, VersionedCacheEntry<Set<string> | null>>(512);
@@ -168,6 +172,48 @@ export class FileSystemResourceCache {
     });
   }
 
+  async getJsonFileAstAsync(fileName: string): Promise<JsonDocumentNode | null> {
+    const openDocument = this.findOpenTextDocument(fileName);
+    if (openDocument) {
+      return this.getJsonAst(openDocument);
+    }
+
+    const key = normalizePathKey(fileName);
+    const version = this.getFileVersion(fileName)
+      ?? missingFileVersion(this.state.getResourceFsGeneration());
+    const cached = this.fileAstCache.get(key);
+    if (cached?.version === version) {
+      this.metrics.hit("fileAst");
+      return cached.value;
+    }
+
+    const pending = this.pendingFileAsts.get(key);
+    if (pending?.version === version) {
+      this.metrics.hit("fileAst");
+      return pending.value;
+    }
+
+    this.metrics.miss("fileAst");
+    const entry: VersionedCacheEntry<Promise<JsonDocumentNode | null>> = {
+      version,
+      value: this.readJsonFileAst(fileName)
+    };
+    entry.value = entry.value.then(ast => {
+      const currentVersion = this.getFileVersion(fileName)
+        ?? missingFileVersion(this.state.getResourceFsGeneration());
+      if (this.pendingFileAsts.peek(key) === entry && currentVersion === version) {
+        this.fileAstCache.set(key, { version, value: ast });
+      }
+      return ast;
+    }).finally(() => {
+      if (this.pendingFileAsts.peek(key) === entry) {
+        this.pendingFileAsts.delete(key);
+      }
+    });
+    this.pendingFileAsts.set(key, entry);
+    return entry.value;
+  }
+
   getFileVersion(fileName: string): string | null {
     const openDocument = this.findOpenTextDocument(fileName);
     if (openDocument && typeof openDocument.version === "number") {
@@ -245,6 +291,7 @@ export class FileSystemResourceCache {
     this.directoryEntriesSyncCache.clear();
     this.documentAstCache.clear();
     this.fileAstCache.clear();
+    this.pendingFileAsts.clear();
     this.packRootCache.clear();
     this.packMetadataCache.clear();
     this.soundEventsCache.clear();
@@ -255,6 +302,7 @@ export class FileSystemResourceCache {
     const key = normalizePathKey(fileName);
     this.pathExistsCache.delete(key);
     this.fileAstCache.delete(key);
+    this.pendingFileAsts.delete(key);
     this.documentAstCache.delete(key);
     this.soundEventsCache.delete(key);
     this.deleteDirectoryEntriesForAncestors(fileName);
@@ -267,6 +315,7 @@ export class FileSystemResourceCache {
 
   invalidateDocument(document: CacheTextDocument): void {
     this.freshness.invalidatePath(document.fileName);
+    this.pendingFileAsts.delete(normalizePathKey(document.fileName));
     this.documentAstCache.delete(documentKey(document));
     this.fileAstCache.delete(normalizePathKey(document.fileName));
     this.soundEventsCache.delete(normalizePathKey(document.fileName));
@@ -296,6 +345,14 @@ export class FileSystemResourceCache {
   private async readDirectoryEntries(directory: string): Promise<Dirent[] | null> {
     try {
       return await fsp.readdir(directory, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+  }
+
+  private async readJsonFileAst(fileName: string): Promise<JsonDocumentNode | null> {
+    try {
+      return parseJsonAst(await fsp.readFile(fileName, "utf8"));
     } catch {
       return null;
     }

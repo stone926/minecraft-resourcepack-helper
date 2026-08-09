@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
+import { toVscodeRange } from "../../utils/resourceLocationVscode";
 import { citResourceIdService } from "../citResourceIdService";
 import { getResourceConfiguration } from "../../utils/resourceConfiguration";
 import {
   getCitCompletionResult,
   type CitCompletionCandidate,
-  type CitResourceCompletionData,
-  type CitTextRange
+  type CitResourceCompletionData
 } from "../citLanguage";
 
 const citCompletionProvider: vscode.CompletionItemProvider = {
@@ -16,7 +16,7 @@ const citCompletionProvider: vscode.CompletionItemProvider = {
       return null;
     }
 
-    const range = toVsCodeRange(result.range);
+    const range = toVscodeRange(result.range);
     return result.candidates.map(candidate => toCompletionItem(candidate, range));
   }
 };
@@ -67,11 +67,4 @@ function toCompletionItemKind(candidate: CitCompletionCandidate): vscode.Complet
     return vscode.CompletionItemKind.Value;
   }
   return vscode.CompletionItemKind.EnumMember;
-}
-
-function toVsCodeRange(range: CitTextRange): vscode.Range {
-  return new vscode.Range(
-    new vscode.Position(range.start.line, range.start.character),
-    new vscode.Position(range.end.line, range.end.character)
-  );
 }

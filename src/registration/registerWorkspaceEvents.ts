@@ -22,6 +22,10 @@ import {
 } from "../resources/resourceSurfaceRegistry";
 import type { ResourceDiagnosticsController } from "./registerResourceDiagnostics";
 import type { ResourceGraphController } from "./registerResourceGraph";
+import {
+  citResourceIdInventoryWatcherPattern,
+  citResourceIdInventoryState
+} from "../cit/citResourceIdInventory";
 
 export interface WorkspaceEventRegistrations {
   diagnostics: ResourceDiagnosticsController;
@@ -100,7 +104,7 @@ export function registerWorkspaceEvents(
   const resourceWatcherGlob = getResourceWatcherGlob();
   if (resourceWatcherGlob) {
     registerResourceWatcher(context, resourceWatcherGlob, (uri, kind) => {
-      invalidateResourcePath(uri);
+      invalidateResourcePath(uri, kind);
       resourceGraph.invalidatePath(uri, kind);
       diagnostics.refreshAllSoon();
       resourceGraph.refreshSoon(
@@ -109,6 +113,10 @@ export function registerWorkspaceEvents(
       );
     });
   }
+  registerResourceWatcher(context, citResourceIdInventoryWatcherPattern, (uri, kind) => {
+    invalidateCitResourceIdInventory(uri, kind);
+    diagnostics.refreshAllSoon();
+  });
 
   context.subscriptions.push(vscode.workspace.onWillDeleteFiles(event =>
     resourceStructureOperations.rememberBefore(
@@ -177,6 +185,7 @@ export function registerWorkspaceEvents(
     reconcileOpenedDocument,
     refreshResources: () => {
       resourceGraph.invalidateProjectDiscovery();
+      citResourceIdInventoryState.invalidateAll();
       refreshCoordinator.refreshAll();
     }
   };
@@ -199,6 +208,7 @@ export function registerWorkspaceEvents(
       return;
     }
     workspaceResourceCache.invalidateAll();
+    citResourceIdInventoryState.invalidateAll();
     diagnostics.refreshAllSoon();
     resourceGraph.invalidateProjectDiscovery();
     resourceGraph.refreshSoon(undefined, true);
@@ -206,11 +216,16 @@ export function registerWorkspaceEvents(
 }
 
 async function hasResourceDescendant(directory: string): Promise<boolean> {
-  const pattern = new vscode.RelativePattern(
-    vscode.Uri.file(directory),
-    getResourceStructureDiscoveryGlob()
-  );
-  return (await vscode.workspace.findFiles(pattern, null, 1)).length > 0;
+  const root = vscode.Uri.file(directory);
+  const matches = await Promise.all([
+    getResourceStructureDiscoveryGlob(),
+    citResourceIdInventoryWatcherPattern
+  ].map(pattern => vscode.workspace.findFiles(
+    new vscode.RelativePattern(root, pattern),
+    null,
+    1
+  )));
+  return matches.some(files => files.length > 0);
 }
 
 function registerResourceWatcher(
@@ -225,11 +240,32 @@ function registerResourceWatcher(
   watcher.onDidDelete(uri => handleChange(uri, "delete"), null, context.subscriptions);
 }
 
-function invalidateResourcePath(uri: vscode.Uri): void {
+function invalidateResourcePath(uri: vscode.Uri, kind: ResourceGraphPathChangeKind): void {
   if (uri.scheme === "file") {
     workspaceResourceCache.invalidatePath(uri.fsPath);
+    citResourceIdInventoryState.invalidatePath(uri.fsPath, kind);
   } else {
     workspaceResourceCache.invalidateAll();
+    citResourceIdInventoryState.invalidateAll();
+  }
+}
+
+function invalidateCitResourceIdInventory(
+  uri: vscode.Uri,
+  kind: ResourceGraphPathChangeKind
+): void {
+  if (uri.scheme === "file") {
+    if (/\.json$/iu.test(uri.fsPath)) {
+      workspaceResourceCache.invalidatePath(uri.fsPath);
+      citResourceIdInventoryState.invalidatePath(uri.fsPath, kind);
+    } else if (kind !== "change") {
+      // Recursive watchers can fold a directory operation into one event.
+      workspaceResourceCache.invalidateAll();
+      citResourceIdInventoryState.invalidateAll();
+    }
+  } else {
+    workspaceResourceCache.invalidateAll();
+    citResourceIdInventoryState.invalidateAll();
   }
 }
 

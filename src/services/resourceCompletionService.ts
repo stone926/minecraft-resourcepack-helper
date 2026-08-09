@@ -3,6 +3,7 @@ import * as path from "node:path";
 import {
   isValidMinecraftNamespace,
   isSamePath,
+  minecraftReferenceKindForResourceKind,
   parseResourceLocation,
   startsWithPathSegment
 } from "../../packages/mc-assets/src";
@@ -63,8 +64,20 @@ export interface ResourceCompletionHost {
   ): string[];
 }
 
+export interface ResourceCompletionInventoryHost {
+  getKnownResources(kinds: readonly string[]): Promise<{
+    resources: readonly {
+      target: { kind: string; id: string };
+      producer: { origin: string };
+    }[];
+  }>;
+}
+
 export class ResourceCompletionService {
-  constructor(private readonly host: ResourceCompletionHost) {}
+  constructor(
+    private readonly host: ResourceCompletionHost,
+    private readonly inventory?: ResourceCompletionInventoryHost
+  ) {}
 
   async getCompletionCandidates(request: ResourceCompletionRequest): Promise<ResourceCompletionCandidate[]> {
     if (request.reference.value.startsWith("#")) {
@@ -82,7 +95,65 @@ export class ResourceCompletionService {
       roots.unshift(path.dirname(request.documentFileName));
     }
 
-    return this.collectCompletionCandidates(roots, partialPath, request);
+    const physicalCandidates = await this.collectCompletionCandidates(roots, partialPath, request);
+    const generatedCandidates = await this.collectGeneratedCompletionCandidates(
+      partialPath,
+      request.reference
+    );
+    return uniqueCompletionCandidates([...physicalCandidates, ...generatedCandidates]);
+  }
+
+  /**
+   * Reads only last-known generated inventory; callers decide whether the
+   * inventory host is lazy-load neutral. Filtering stays in this domain layer
+   * beside physical completion filtering.
+   */
+  private async collectGeneratedCompletionCandidates(
+    partialPath: PartialResourcePath,
+    reference: ResourceReference
+  ): Promise<ResourceCompletionCandidate[]> {
+    if (!this.inventory) {
+      return [];
+    }
+
+    try {
+      const inventory = await this.inventory.getKnownResources([reference.kind]);
+      return inventory.resources.flatMap(item => {
+        if (item.producer.origin !== "generated") {
+          return [];
+        }
+        if (minecraftReferenceKindForResourceKind(item.target.kind) !== reference.kind) {
+          return [];
+        }
+
+        const separator = item.target.id.indexOf(":");
+        if (separator < 0) {
+          return [];
+        }
+        const namespace = item.target.id.slice(0, separator);
+        const idPath = item.target.id.slice(separator + 1);
+        if (partialPath.explicitNamespace && namespace !== partialPath.namespace) {
+          return [];
+        }
+        if (partialPath.directory && !idPath.startsWith(`${partialPath.directory}/`)) {
+          return [];
+        }
+
+        const fileName = idPath.split("/").pop() ?? idPath;
+        if (!fileName.startsWith(partialPath.prefix)) {
+          return [];
+        }
+        return [{
+          label: fileName,
+          kind: "file" as const,
+          value: `${namespace}:${idPath}`,
+          filterText: idPath,
+          retriggerSuggest: false
+        }];
+      });
+    } catch {
+      return [];
+    }
   }
 
   private getResourceRoots(
@@ -292,3 +363,15 @@ function isCompletableEntry(
   return entry.isDirectory() || (entry.isFile() && entry.name.endsWith(`.${reference.extension}`));
 }
 
+function uniqueCompletionCandidates(
+  candidates: readonly ResourceCompletionCandidate[]
+): ResourceCompletionCandidate[] {
+  const unique = new Map<string, ResourceCompletionCandidate>();
+  for (const candidate of candidates) {
+    const key = `${candidate.kind}\0${candidate.value}`;
+    if (!unique.has(key)) {
+      unique.set(key, candidate);
+    }
+  }
+  return [...unique.values()];
+}

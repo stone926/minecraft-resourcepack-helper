@@ -22,8 +22,11 @@ import { tryParsePackAtlasEquipmentStatement } from "./packAtlasEquipmentStateme
 import { tokenRange } from "./parserContext";
 import { resourceBodySectionKeywords } from "./statementKeywords";
 import {
+  type BlockstateChoiceParseContext,
+  type BlockstateEntriesParseContext,
   type BlockstateRootParseContext,
   type BodyParseContext,
+  type ItemModelBodyParseContext,
   nestedControlFlowBodyParseContext,
   sectionResourceBodyParseContext,
   type ResourceBodyParseContext
@@ -32,7 +35,10 @@ import { ResourceStatementParserHost } from "./statementParserHost";
 import {
   BlockNode,
   BaseStmtNode,
+  BlockstateChoiceBodyNode,
+  BlockstateMultipartRootBodyNode,
   BlockstateRootCommonStatementNode,
+  BlockstateVariantsRootBodyNode,
   ExprNode,
   ExternVarStmtNode,
   ForBindingPatternNode,
@@ -42,17 +48,24 @@ import {
   ForStmtNode,
   IdentifierNode,
   IfStmtNode,
+  ItemCompositeBodyNode,
+  ItemFirstMatchBodyNode,
+  ItemModelTemplateBodyNode,
+  ItemRangeBodyNode,
+  ItemSelectBodyNode,
   LetDeclNode,
   MergeStmtNode,
   MergeMode,
   MergeModifierNode,
+  MultipartBodyNode,
   PropertyStmtNode,
   ResourceBodyNode,
   ResourceStatementNode,
   RsglStatementBodyNode,
   RsglToken,
   TopLevelStatementNode,
-  UseDeclNode
+  UseDeclNode,
+  VariantBodyNode
 } from "./types";
 
 export abstract class StatementParser extends ExpressionParser {
@@ -334,6 +347,37 @@ export abstract class StatementParser extends ExpressionParser {
     };
   }
 
+  protected parseBodyForContext(context: ResourceBodyParseContext): ResourceBodyNode;
+  protected parseBodyForContext(
+    context: BlockstateEntriesParseContext & { mode: "variants" }
+  ): VariantBodyNode;
+  protected parseBodyForContext(
+    context: BlockstateEntriesParseContext & { mode: "multipart" }
+  ): MultipartBodyNode;
+  protected parseBodyForContext(
+    context: BlockstateRootParseContext & { mode: "variants" }
+  ): BlockstateVariantsRootBodyNode;
+  protected parseBodyForContext(
+    context: BlockstateRootParseContext & { mode: "multipart" }
+  ): BlockstateMultipartRootBodyNode;
+  protected parseBodyForContext(context: BlockstateChoiceParseContext): BlockstateChoiceBodyNode;
+  protected parseBodyForContext(
+    context: ItemModelBodyParseContext & { owner: "select" }
+  ): ItemSelectBodyNode;
+  protected parseBodyForContext(
+    context: ItemModelBodyParseContext & { owner: "range" }
+  ): ItemRangeBodyNode;
+  protected parseBodyForContext(
+    context: ItemModelBodyParseContext & { owner: "composite" }
+  ): ItemCompositeBodyNode;
+  protected parseBodyForContext(
+    context: ItemModelBodyParseContext & { owner: "first_match" }
+  ): ItemFirstMatchBodyNode;
+  protected parseBodyForContext(
+    context: ItemModelBodyParseContext & { owner: "itemModelTemplate" }
+  ): ItemModelTemplateBodyNode;
+  protected parseBodyForContext(context: { kind: "topLevel" }): BlockNode;
+  protected parseBodyForContext(context: BodyParseContext): RsglStatementBodyNode;
   protected parseBodyForContext(context: BodyParseContext): RsglStatementBodyNode {
     if (context.kind === "resource") {
       return this.parseResourceBody(context);

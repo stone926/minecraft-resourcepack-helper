@@ -81,15 +81,3 @@ export function createResourceInfrastructure(): ResourceInfrastructure {
     }
   }
 }
-
-/**
- * Eager compatibility registration. New activation code should prefer the
- * lazy owner and call this seam only when immediate initialization is needed.
- */
-export function registerResourceInfrastructure(
-  context: vscode.ExtensionContext
-): ResourceInfrastructure {
-  const registration = createResourceInfrastructure();
-  context.subscriptions.push(registration);
-  return registration;
-}

@@ -17,8 +17,8 @@ import type { ParentChainModelLoader } from "../resolve/RawModelLoader";
 export function createWorkspaceCacheModelLoader(fileSystem: ModelPreviewFileSystem): ParentChainModelLoader {
   return {
     readModelText: fileName => fileSystem.readTextFile(fileName),
-    parseModelValue(fileName, text) {
-      const ast = workspaceResourceCache.getJsonFileAst(fileName);
+    async parseModelValue(fileName, text) {
+      const ast = await workspaceResourceCache.getJsonFileAstAsync(fileName);
       return ast ? evaluate(ast) : JSON.parse(text);
     }
   };

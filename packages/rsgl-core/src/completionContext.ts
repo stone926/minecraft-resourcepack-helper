@@ -50,7 +50,8 @@ export interface RsglCompletionContext {
 export function getRsglCompletionContext(
   text: string,
   offset: number,
-  projectTargetFormat?: ItemModelFormat
+  projectTargetFormat?: ItemModelFormat,
+  syntaxModule?: RsglModule
 ): RsglCompletionContext {
   const prefix = text.slice(0, Math.max(0, Math.min(offset, text.length)));
   const openBraces = unmatchedOpenBraces(prefix);
@@ -66,9 +67,10 @@ export function getRsglCompletionContext(
     };
   }
 
-  // Completion is a hot LSP path. Parse the prefix once, then derive each
-  // independent context facet from the same immutable syntax tree.
-  const module = parseRsgl(prefix);
+  // Document language services already own a current semantic syntax tree.
+  // Standalone callers parse the prefix once and derive every context facet
+  // from that same immutable tree.
+  const module = syntaxModule ?? parseRsgl(prefix);
   const bodyOwner = bodyOwnerAt(module, prefix, openBrace);
   const templateOutputDialect = templateDialectInStatementsAt(module.statements, openBrace);
   const targetFormat = effectiveItemModelTargetFormat(module, projectTargetFormat);

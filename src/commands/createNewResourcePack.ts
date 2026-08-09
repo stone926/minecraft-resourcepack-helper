@@ -2,11 +2,12 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { localize } from "../i18n/runtime";
-import { errorMsg, promptMsg, defaultPackAttributes, isPackFormatVersion } from "./constants";
+import { errorMsg, promptMsg } from "./constants";
+import { collectResourcePackAttributes } from "./resourcePackInputs";
 import { writePackScaffold } from "./resourcePackScaffold";
 import { pickWorkspaceFolder } from "./workspace";
 
-export default async function createNewResourcePack() {
+export async function createNewResourcePack() {
   const rootFolder = await pickWorkspaceFolder();
   if (!rootFolder) {
     return;
@@ -30,38 +31,21 @@ export default async function createNewResourcePack() {
     return;
   }
 
-  const namespace = await vscode.window.showInputBox({
-    prompt: localize(promptMsg.namespace),
-    value: defaultPackAttributes.namespace,
-    validateInput(input: string) {
-      return isEmpty(input) ? localize(errorMsg.emptyInput) : null;
-    }
-  });
-  if (namespace === undefined) {
-    return;
-  }
-
-  const packFormat = await vscode.window.showInputBox({
-    prompt: localize(promptMsg.packFormat),
-    value: defaultPackAttributes.packFormat,
-    validateInput(input: string) {
-      return isPackFormatVersion(input) ? null : localize(errorMsg.invalidPackFormat);
-    }
-  });
-  if (packFormat === undefined) {
-    return;
-  }
-
-  const description = await vscode.window.showInputBox({
-    prompt: localize(promptMsg.description)
-  });
-  if (description === undefined) {
+  const attributes = await collectResourcePackAttributes();
+  if (!attributes) {
     return;
   }
 
   const packPath = path.join(rootFolder.uri.fsPath, packName);
-  writePackScaffold(packPath, namespace, packFormat, description);
+  writePackScaffold(
+    packPath,
+    attributes.namespace,
+    attributes.packFormat,
+    attributes.description
+  );
 }
+
+export default createNewResourcePack;
 
 function isEmpty(input: string): boolean {
   return input.trim().length === 0;

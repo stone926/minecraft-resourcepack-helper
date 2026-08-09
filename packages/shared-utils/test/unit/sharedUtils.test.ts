@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import {
   ListenerSet,
+  LruCache,
   asDisposable,
   createKeyedDebouncer,
   createSingleFlight,
@@ -81,5 +82,27 @@ describe("shared bundle utilities", () => {
     assert.strictEqual(moduleExportWithFunction(direct, "create"), direct);
     assert.strictEqual(moduleExportWithFunction({ default: direct }, "create"), direct);
     assert.strictEqual(moduleExportWithFunction({}, "create"), undefined);
+  });
+
+  it("shares bounded LRU semantics including explicit and capacity eviction", () => {
+    const evicted: Array<[string, number | undefined]> = [];
+    const cache = new LruCache<string, number | undefined>(2, (key, value) => {
+      evicted.push([key, value]);
+    });
+    cache.set("first", undefined);
+    cache.set("second", 2);
+    assert.strictEqual(cache.get("first"), undefined);
+    cache.set("third", 3);
+    assert.deepStrictEqual([...cache.entries()].map(([key]) => key), ["first", "third"]);
+    assert.deepStrictEqual(evicted, [["second", 2]]);
+    assert.strictEqual(cache.delete("first"), true);
+    assert.strictEqual(cache.delete("missing"), false);
+    cache.clear();
+    assert.deepStrictEqual(evicted, [["second", 2], ["first", undefined], ["third", 3]]);
+
+    const undefinedKeyCache = new LruCache<string | undefined, number>(1);
+    undefinedKeyCache.set(undefined, 1);
+    undefinedKeyCache.set("kept", 2);
+    assert.deepStrictEqual([...undefinedKeyCache.entries()], [["kept", 2]]);
   });
 });

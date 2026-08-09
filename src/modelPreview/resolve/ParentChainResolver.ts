@@ -133,7 +133,7 @@ export class ParentChainResolver {
 
     throwIfCancellationRequested(this.cancellationToken);
     try {
-      const rawValue = this.modelLoader.parseModelValue(fileName, text);
+      const rawValue = await this.modelLoader.parseModelValue(fileName, text);
       const locations = collectModelJsonLocations(text);
       return {
         fileName,

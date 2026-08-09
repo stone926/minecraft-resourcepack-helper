@@ -13,10 +13,15 @@ describe("command registration", function () {
     const runtimePath = resolveFreshCompiledModule(
       "src/modelPreview/commands/modelPreviewCommandRuntime.ts"
     );
+    const createPackPath = resolveFreshCompiledModule("src/commands/createNewResourcePack.ts");
+    const createPackRootPath = resolveFreshCompiledModule("src/commands/createNewResourcePackRoot.ts");
+    const createMissingCitPath = resolveFreshCompiledModule(
+      "src/cit/commands/createMissingCitResource.ts"
+    );
     const script = [
       "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
-      "const [registrationPath, runtimePath] = process.argv.slice(1);",
+      "const [registrationPath, runtimePath, createPackPath, createPackRootPath, createMissingCitPath] = process.argv.slice(1);",
       "const handlers = new Map(); const disposed = []; const directCalls = [];",
       "const direct = name => (...args) => { directCalls.push([name, args]); return `${name}-result`; };",
       "const openDefault = direct('openDefault');",
@@ -41,16 +46,12 @@ describe("command registration", function () {
       "const directStubs = new Map([",
       "  ['../cit/commands/createCitTemplate', createCit],",
       "  ['../cit/commands/generateCitForCurrentItem', generateCit],",
-      "  ['../commands/createNewResourcePack', createPack],",
-      "  ['../commands/createNewResourcePackRoot', createPackRoot],",
       "  ['../commands/openDefaultMcAssetsPath', openDefault]",
       "]);",
       "Module._load = function(request, parent, ...args) {",
       "  if (request === 'vscode') return vscode;",
       "  if (parent?.filename === registrationPath) {",
       "    if (directStubs.has(request)) return directStubs.get(request);",
-      "    if (request === '../cit/providers/citCodeActionProvider') return { createMissingCitResourceCommand: 'McResHelper.createMissingCitResource', createMissingCitResource: createMissingCit };",
-      "    if (request === '../providers/resourceCompletionProvider') return { triggerResourceCompletionCommand: 'McResHelper.triggerResourceCompletion' };",
       "    if (request === '../services/workspaceResourceCache') return { workspaceResourceCache: { getStats: () => ({ hits: 7, misses: 2 }) } };",
       "  }",
       "  return originalLoad.call(this, request, parent, ...args);",
@@ -66,6 +67,9 @@ describe("command registration", function () {
       "  id: runtimePath, filename: runtimePath, loaded: true, children: [], paths: [],",
       "  exports: { createModelPreviewCommandRuntime: extensionUri => { runtimeFactoryCalls++; runtimeExtensionUri = extensionUri; return runtime; } }",
       "};",
+      "require.cache[createPackPath] = { id: createPackPath, filename: createPackPath, loaded: true, children: [], paths: [], exports: { createNewResourcePack: createPack } };",
+      "require.cache[createPackRootPath] = { id: createPackRootPath, filename: createPackRootPath, loaded: true, children: [], paths: [], exports: { createNewResourcePackRoot: createPackRoot } };",
+      "require.cache[createMissingCitPath] = { id: createMissingCitPath, filename: createMissingCitPath, loaded: true, children: [], paths: [], exports: { createMissingCitResource: createMissingCit } };",
       "const extensionUri = { value: 'file:///extension', toString: () => 'file:///extension' };",
       "const context = { extensionUri, subscriptions: [] };",
       "require(registrationPath).registerCommands(context);",
@@ -87,13 +91,13 @@ describe("command registration", function () {
       "assert.deepStrictEqual([...handlers.keys()].sort(), [...expected].sort());",
       "assert.strictEqual(context.subscriptions.length, expected.length);",
       "assert.strictEqual(handlers.get('McResHelper.openDefaultMcAssetsPath'), openDefault);",
-      "assert.strictEqual(handlers.get('McResHelper.createNewResourcePack'), createPack);",
-      "assert.strictEqual(handlers.get('McResHelper.createNewResourcePackRoot'), createPackRoot);",
       "assert.strictEqual(handlers.get('McResHelper.createCitTemplate'), createCit);",
       "assert.strictEqual(handlers.get('McResHelper.generateCitForCurrentItem'), generateCit);",
-      "assert.strictEqual(handlers.get('McResHelper.createMissingCitResource'), createMissingCit);",
       "const timerTurn = () => new Promise(resolve => setTimeout(resolve, 0));",
       "(async () => {",
+      "  assert.strictEqual(await handlers.get('McResHelper.createNewResourcePack')(), 'createPack-result');",
+      "  assert.strictEqual(await handlers.get('McResHelper.createNewResourcePackRoot')(), 'createPackRoot-result');",
+      "  assert.strictEqual(await handlers.get('McResHelper.createMissingCitResource')('uri', 2), 'createMissingCit-result');",
       "  assert.strictEqual(await handlers.get('McResHelper.openModelPreview')('model', 1), 'open-result');",
       "  assert.strictEqual(await handlers.get('McResHelper.openResourceGraphModelPreview')({ id: 'node' }), 'graph-result');",
       "  assert.strictEqual(await handlers.get('McResHelper.exportModelPreviewImage')('png'), 'export-result');",
@@ -103,6 +107,9 @@ describe("command registration", function () {
       "  assert.deepStrictEqual(runtimeCalls, [",
       "    ['open', ['model', 1]], ['openGraphNode', [{ id: 'node' }]],",
       "    ['exportImage', ['png']], ['captureImage', ['capture']]",
+      "  ]);",
+      "  assert.deepStrictEqual(directCalls, [",
+      "    ['createPack', []], ['createPackRoot', []], ['createMissingCit', ['uri', 2]]",
       "  ]);",
       "  await handlers.get('McResHelper.openUnsupportedModelPreviewResource')();",
       "  await handlers.get('McResHelper.showWorkspaceResourceCacheStats')();",
@@ -121,7 +128,15 @@ describe("command registration", function () {
 
     const result = runTestProcessSync(
       process.execPath,
-      ["-e", script, registrationPath, runtimePath]
+      [
+        "-e",
+        script,
+        registrationPath,
+        runtimePath,
+        createPackPath,
+        createPackRootPath,
+        createMissingCitPath
+      ]
     );
     assertTestProcessStatus(result);
   });

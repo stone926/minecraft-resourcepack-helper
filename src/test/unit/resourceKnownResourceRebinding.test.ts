@@ -48,7 +48,7 @@ describe("known resource rebinding", function () {
       "    : { status: 'resolved', target, winner: current, candidates: [candidate], coverageComplete: true, unavailableProviderIds: [] };",
       "} };",
       "const universe = { index, getProducer: id => current?.producerId === id ? current : undefined };",
-      "const facade = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
+      "const facade = new ResourceUniverseNavigationFacade(projects, universe);",
       "const first = facade.getKnownResource(current.producerId, target);",
       "assert.strictEqual(first.producer, current); assert.strictEqual(first.resolutionStatus, 'resolved');",
       "current = producer('r2');",

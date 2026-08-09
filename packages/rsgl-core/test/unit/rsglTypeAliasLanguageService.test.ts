@@ -11,6 +11,30 @@ import {
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 
 describe("RSGL type alias language service", () => {
+  it("uses recovered type nodes for incomplete type-position completion", () => {
+    const workspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("Use the open document fallback.");
+      }
+    };
+    for (const text of [
+      "type Local = String\ntype Pending = ",
+      "type Local = String\nlet pending: ",
+      "type Local = String\ntemplate pending(value: ) -> model {}"
+    ]) {
+      const offset = text.includes("value: ")
+        ? text.indexOf("value: ") + "value: ".length
+        : text.length;
+      const completions = getRsglDocumentCompletionItems({
+        fileName: path.resolve("incomplete-type.rsgl"),
+        getText: () => text
+      }, offset, workspace);
+
+      assert.ok(completions.some(item => item.label === "Local"));
+      assert.strictEqual(completions.some(item => item.label === "seq"), false);
+    }
+  });
+
   it("provides completion, hover, and original definitions through re-exports", () => {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), "rsgl-类型 工具-"));
     try {
@@ -89,7 +113,11 @@ describe("RSGL type alias language service", () => {
         [mainFile, ["Forwarded", "Local", "Local"]]
       ]));
 
-      const completion = getRsglDocumentCompletionItems(mainDocument, mainText.length, workspace)
+      const completion = getRsglDocumentCompletionItems(
+        mainDocument,
+        annotationOffset + 2,
+        workspace
+      )
         .find(item => item.label === "Local");
       assert.deepStrictEqual(completion, {
         label: "Local",

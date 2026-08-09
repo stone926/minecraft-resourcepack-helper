@@ -37,6 +37,7 @@ describe("resource Location VS Code bridge", function () {
       "  assert.deepStrictEqual(ranged.range, new Range(new Position(1, 2), new Position(2, 5)));",
       "  const fallback = await bridge.toVscodeLocation({ uri: 'file:///unreadable.json', range: { start: 4, end: 8 } }, token);",
       "  assert.deepStrictEqual(fallback.range, new Range(new Position(0, 0), new Position(0, 0)));",
+      "  assert.deepStrictEqual(bridge.toVscodeRange({ start: { line: 4, character: 2 }, end: { line: 5, character: 7 } }), new Range(new Position(4, 2), new Position(5, 7)));",
       "  token = { isCancellationRequested: false }; cancelOnOpen = true;",
       "  assert.strictEqual(await bridge.toVscodeLocation({ uri: 'file:///cancelled.json', range: { start: 1, end: 2 } }, token), undefined);",
       "  const duplicate = new Location(Uri.parse('file:///same.json'), new Range(new Position(3, 4), new Position(3, 8)));",

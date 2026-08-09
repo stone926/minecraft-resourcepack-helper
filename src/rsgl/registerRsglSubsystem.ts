@@ -18,6 +18,7 @@ import {
 } from "./runtime";
 import {
   configuredRsglMode,
+  createRsglDisabledDocumentNotifier,
   isRsglDocument,
   rsglProxyCommands,
   showRsglDisabledMessage
@@ -57,7 +58,7 @@ export function registerRsglSubsystem(
   options: RsglSubsystemRegistrationOptions = {}
 ): RsglSubsystemRegistration {
   const disposables: vscode.Disposable[] = [];
-  const notifiedDisabledDocuments = new Set<string>();
+  const disabledDocumentNotifier = createRsglDisabledDocumentNotifier();
   type GeneratedBridge = import("./rsglGeneratedContributionBridge.js").RsglGeneratedContributionBridge;
   let generatedLoad: Promise<GeneratedBridge> | undefined;
   let navigationBridgeLoad: Promise<typeof import("./rsglResourceNavigationBridge.js")> | undefined;
@@ -175,10 +176,7 @@ export function registerRsglSubsystem(
     const mode = configuredRsglMode();
     await controller.setMode(mode);
     if (mode === "off") {
-      if (!notifiedDisabledDocuments.has(document.uri.toString())) {
-        notifiedDisabledDocuments.add(document.uri.toString());
-        await showRsglDisabledMessage();
-      }
+      await disabledDocumentNotifier.notify(document);
       return;
     }
     const project = await resolveProject(document.uri);

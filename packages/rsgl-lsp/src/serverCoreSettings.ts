@@ -139,7 +139,7 @@ function isSerializedWorkspaceUri(value: unknown): value is string {
 export interface RsglSemanticWatchBatchCallbacks {
   invalidatePath(fileName: string): void;
   invalidateProjectConfiguration?(): void;
-  refresh(): void;
+  refresh?(): void;
 }
 
 /** Applies configuration and RSGL source watcher changes as one semantic batch. */
@@ -166,7 +166,7 @@ export function handleSemanticWatchedFileBatch(
   if (!configurationChanged && rsglChanges.size === 0) {
     return false;
   }
-  callbacks.refresh();
+  callbacks.refresh?.();
   return true;
 }
 

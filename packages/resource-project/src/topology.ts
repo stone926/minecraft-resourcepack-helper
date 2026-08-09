@@ -28,6 +28,7 @@ import {
   resourceProjectUriDepth,
   resourceProjectUriParent
 } from "./uri";
+import { packMetadataFileName } from "./projectAnchors";
 
 const conventionalSourceRootNames = new Set(["rsgl", "src"]);
 
@@ -219,7 +220,7 @@ async function discoverPackRoot(
   diagnostics.push({
     code: "resourceProject.packRootNotFound",
     severity: "error",
-    message: "No resource-pack root containing pack.mcmeta could be resolved.",
+    message: `No resource-pack root containing ${packMetadataFileName} could be resolved.`,
     relatedUris: [sourceUri]
   });
   return null;
@@ -245,7 +246,7 @@ async function isPackRoot(
   candidateUri: SerializedResourceUri,
   host: ResourceProjectTopologyHost
 ): Promise<boolean> {
-  return await host.stat(joinResourceProjectUri(candidateUri, "pack.mcmeta")) === "file";
+  return await host.stat(joinResourceProjectUri(candidateUri, packMetadataFileName)) === "file";
 }
 
 async function inferRsglSourceRoot(

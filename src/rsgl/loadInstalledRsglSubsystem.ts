@@ -1,5 +1,8 @@
 import type * as vscode from "vscode";
-import { moduleExportWithFunction } from "../../packages/shared-utils/src";
+import {
+  importModuleSpecifier,
+  moduleExportWithFunction
+} from "../../packages/shared-utils/src";
 import type { ResourceInfrastructure } from "../registration/registerResourceInfrastructure";
 import type { RsglSubsystemRegistration } from "./registerRsglSubsystem";
 
@@ -20,7 +23,7 @@ export type InstalledRsglSubsystemLoader = (
 
 export function createInstalledRsglSubsystemLoader(
   extensionContext: vscode.ExtensionContext,
-  importer: RsglSubsystemModuleImporter = importSubsystemModule
+  importer: RsglSubsystemModuleImporter = importModuleSpecifier
 ): InstalledRsglSubsystemLoader {
   const subsystemPath = extensionContext.asAbsolutePath("bundle/features/rsglHost.js");
   return async resources => {
@@ -41,9 +44,4 @@ export function normalizeSubsystemModule(value: unknown): InstalledRsglSubsystem
     return module as unknown as InstalledRsglSubsystemModule;
   }
   throw new Error("The installed RSGL host bundle does not export createRsglSubsystem().");
-}
-
-async function importSubsystemModule(subsystemUrl: string): Promise<unknown> {
-  // A variable URL preserves the explicitly separate CJS feature entry.
-  return import(subsystemUrl);
 }

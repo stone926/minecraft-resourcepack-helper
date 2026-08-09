@@ -159,23 +159,40 @@ describe("workspace resource cache", () => {
     }
   });
 
-  it("keeps filename-only resource inventory generations stable across text edits", () => {
-    const cache = new WorkspaceResourceCache();
-    const initialGeneration = cache.getResourceIndexGeneration();
-    const initialMutationGeneration = cache.getResourceMutationGeneration();
+  it("coalesces concurrent async JSON AST reads", async () => {
+    const root = createTempDirectory();
+    const fileName = path.join(root, "model.json");
 
-    cache.invalidateDocument({
-      fileName: path.resolve("pack", "assets", "minecraft", "items", "stick.json"),
-      languageId: "json",
-      version: 2,
-      getText: () => "{}"
-    });
-    assert.strictEqual(cache.getResourceIndexGeneration(), initialGeneration);
-    assert.strictEqual(cache.getResourceMutationGeneration(), initialMutationGeneration + 1);
+    try {
+      fs.writeFileSync(fileName, JSON.stringify({ parent: "minecraft:block/cube" }));
+      const cache = new WorkspaceResourceCache();
+      const first = cache.getJsonFileAstAsync(fileName);
+      const second = cache.getJsonFileAstAsync(fileName);
+      const [firstAst, secondAst] = await Promise.all([first, second]);
 
-    cache.invalidatePath(path.resolve("pack", "assets", "minecraft", "items", "new_item.json"));
-    assert.strictEqual(cache.getResourceIndexGeneration(), initialGeneration + 1);
-    assert.strictEqual(cache.getResourceMutationGeneration(), initialMutationGeneration + 2);
+      assert.ok(firstAst);
+      assert.strictEqual(secondAst, firstAst);
+      assert.strictEqual(cache.getStats().misses.fileAst, 1);
+      assert.strictEqual(cache.getStats().hits.fileAst, 1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retries async JSON AST reads after a missing file is created", async () => {
+    const root = createTempDirectory();
+    const fileName = path.join(root, "late.json");
+
+    try {
+      const cache = new WorkspaceResourceCache();
+      assert.strictEqual(await cache.getJsonFileAstAsync(fileName), null);
+
+      fs.writeFileSync(fileName, "{}");
+      cache.invalidatePath(fileName);
+      assert.ok(await cache.getJsonFileAstAsync(fileName));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("keeps the coordination facade free of cache storage details", () => {
@@ -191,6 +208,7 @@ describe("workspace resource cache", () => {
 
     assert.strictEqual(facade.includes("new LruCache"), false);
     assert.strictEqual(facade.includes("new DependencyIndex"), false);
+    assert.strictEqual(facade.includes("resourceIndexGeneration"), false);
     assert.ok(facade.split(/\r?\n/).length < 300, "workspace cache facade should stay thin");
     for (const fileName of componentFiles) {
       assert.strictEqual(fs.existsSync(path.join(servicesRoot, fileName)), true, fileName);
@@ -480,7 +498,221 @@ describe("workspace resource cache", () => {
     }
   });
 
-  it("caches model parent chains through shared JSON AST and resource resolution", () => {
+  it("refreshes an incomplete parent chain when a missing parent model is created", async () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+    const childModel = path.join(packRoot, "assets", "minecraft", "models", "block", "child.json");
+    const parentModel = path.join(packRoot, "assets", "minecraft", "models", "block", "parent.json");
+
+    try {
+      fs.mkdirSync(path.dirname(childModel), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(childModel, JSON.stringify({ parent: "minecraft:block/parent" }));
+
+      const cache = new WorkspaceResourceCache();
+      const childAst = await cache.getJsonFileAstAsync(childModel);
+      assert.ok(childAst);
+      const document = {
+        fileName: childModel,
+        languageId: "json",
+        getText: () => fs.readFileSync(childModel, "utf8")
+      };
+      const configuration = { defaultAssetsPath: null, resourcePackRoots: [] };
+
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel]
+      );
+      assert.strictEqual(
+        cache.getModelTextureVariableDefinitions(
+          document,
+          childAst,
+          configuration,
+          "models/block"
+        ).has("all"),
+        false
+      );
+
+      fs.writeFileSync(parentModel, JSON.stringify({
+        textures: { all: "minecraft:block/stone" }
+      }));
+      cache.invalidatePath(parentModel);
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, parentModel]
+      );
+      assert.strictEqual(
+        cache.getModelTextureVariableDefinitions(
+          document,
+          childAst,
+          configuration,
+          "models/block"
+        ).get("all")?.fileName,
+        parentModel
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes a parent chain when a higher-priority model candidate is created", async () => {
+    const root = createTempDirectory();
+    const currentPack = path.join(root, "current");
+    const lowerPack = path.join(root, "lower");
+    const childModel = path.join(currentPack, "assets", "minecraft", "models", "block", "child.json");
+    const currentParent = path.join(currentPack, "assets", "minecraft", "models", "block", "parent.json");
+    const lowerParent = path.join(lowerPack, "assets", "minecraft", "models", "block", "parent.json");
+
+    try {
+      for (const fileName of [childModel, lowerParent]) {
+        fs.mkdirSync(path.dirname(fileName), { recursive: true });
+      }
+      fs.writeFileSync(path.join(currentPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(path.join(lowerPack, "pack.mcmeta"), "{}");
+      fs.writeFileSync(childModel, JSON.stringify({ parent: "minecraft:block/parent" }));
+      fs.writeFileSync(lowerParent, "{}");
+
+      const cache = new WorkspaceResourceCache();
+      const childAst = await cache.getJsonFileAstAsync(childModel);
+      assert.ok(childAst);
+      const document = {
+        fileName: childModel,
+        languageId: "json",
+        getText: () => fs.readFileSync(childModel, "utf8")
+      };
+      const configuration = { defaultAssetsPath: null, resourcePackRoots: [lowerPack] };
+
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, lowerParent]
+      );
+
+      fs.writeFileSync(currentParent, "{}");
+      cache.invalidatePath(currentParent);
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, currentParent]
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes an incomplete parent chain when a malformed parent is repaired", async () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+    const childModel = path.join(packRoot, "assets", "minecraft", "models", "block", "child.json");
+    const parentModel = path.join(packRoot, "assets", "minecraft", "models", "block", "parent.json");
+
+    try {
+      fs.mkdirSync(path.dirname(childModel), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(childModel, JSON.stringify({ parent: "minecraft:block/parent" }));
+      fs.writeFileSync(parentModel, "{");
+
+      const cache = new WorkspaceResourceCache();
+      const childAst = await cache.getJsonFileAstAsync(childModel);
+      assert.ok(childAst);
+      const document = {
+        fileName: childModel,
+        languageId: "json",
+        getText: () => fs.readFileSync(childModel, "utf8")
+      };
+      const configuration = { defaultAssetsPath: null, resourcePackRoots: [] };
+
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel]
+      );
+
+      assert.strictEqual(
+        cache.getModelTextureVariableDefinitions(
+          document,
+          childAst,
+          configuration,
+          "models/block"
+        ).has("all"),
+        false
+      );
+      fs.writeFileSync(parentModel, JSON.stringify({
+        textures: { all: "minecraft:block/stone" }
+      }));
+      cache.invalidatePath(parentModel);
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, parentModel]
+      );
+      assert.strictEqual(
+        cache.getModelTextureVariableDefinitions(
+          document,
+          childAst,
+          configuration,
+          "models/block"
+        ).get("all")?.fileName,
+        parentModel
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("revalidates cached parent chains after the untrusted-path TTL", async () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+    const childModel = path.join(packRoot, "assets", "minecraft", "models", "block", "child.json");
+    const parentModel = path.join(packRoot, "assets", "minecraft", "models", "block", "parent.json");
+    const grandModel = path.join(packRoot, "assets", "minecraft", "models", "block", "grand.json");
+    let now = 0;
+
+    try {
+      fs.mkdirSync(path.dirname(childModel), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      fs.writeFileSync(childModel, JSON.stringify({ parent: "minecraft:block/parent" }));
+      fs.writeFileSync(parentModel, "{}");
+      fs.writeFileSync(grandModel, "{}");
+
+      const cache = new WorkspaceResourceCache({ verificationTtlMs: 100, now: () => now });
+      cache.setWatcherTrustProvider(() => false);
+      const childAst = await cache.getJsonFileAstAsync(childModel);
+      assert.ok(childAst);
+      const document = {
+        fileName: childModel,
+        languageId: "json",
+        getText: () => fs.readFileSync(childModel, "utf8")
+      };
+      const configuration = { defaultAssetsPath: null, resourcePackRoots: [] };
+
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, parentModel]
+      );
+      fs.writeFileSync(parentModel, JSON.stringify({ parent: "minecraft:block/grand" }));
+
+      now = 99;
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, parentModel]
+      );
+      now = 100;
+      assert.deepStrictEqual(
+        (await cache.getModelParentChainAsync(document, childAst, configuration, "models/block"))
+          .map(model => model.fileName),
+        [childModel, parentModel, grandModel]
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("caches async model parent chains through shared JSON AST and resource resolution", async () => {
     const root = createTempDirectory();
     const packRoot = path.join(root, "pack");
     const childModel = path.join(packRoot, "assets", "minecraft", "models", "block", "child.json");
@@ -503,10 +735,10 @@ describe("workspace resource cache", () => {
       }));
 
       const cache = new WorkspaceResourceCache();
-      const childAst = cache.getJsonFileAst(childModel);
+      const childAst = await cache.getJsonFileAstAsync(childModel);
       assert.ok(childAst);
 
-      const chain = cache.getModelParentChain(
+      const chain = await cache.getModelParentChainAsync(
         {
           fileName: childModel,
           languageId: "json",

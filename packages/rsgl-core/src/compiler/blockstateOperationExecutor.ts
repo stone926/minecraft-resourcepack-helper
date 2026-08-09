@@ -1,4 +1,4 @@
-import { resourceBodyMessages } from "../diagnosticMessages";
+import { propertyKeyMessages, resourceBodyMessages } from "../diagnosticMessages";
 import type {
   BlockstateMode,
   BlockstateMultipartEntryNode,
@@ -383,7 +383,7 @@ export class BlockstateOperationExecutor {
       context.onEvaluationFailure?.();
       this.host.onError(
         "rsgl.invalidPropertyKey",
-        "A computed property key must evaluate to a string, number, or boolean scalar value.",
+        propertyKeyMessages.computedKeyMustBeScalar,
         statement.key.kind === "DynamicKey" ? statement.key.expression.range : statement.key.range,
         context.sourceFile
       );

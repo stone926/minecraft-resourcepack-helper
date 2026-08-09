@@ -12,6 +12,11 @@ import {
   loadCitBuiltinResourceCatalog,
   type CitBuiltinResourceCatalog
 } from "./citBuiltinResourceCatalog";
+import {
+  CitResourceIdInventoryState,
+  citResourceIdInventoryState,
+  type CitResourceIdInventoryChangeKind
+} from "./citResourceIdInventory";
 
 export interface CitResourceIdConfiguration {
   defaultAssetsPath?: string | null;
@@ -25,12 +30,12 @@ export interface CitResourceIds {
 
 interface CachedResourceIds {
   ids: CitResourceIds;
+  cachedAt: number;
 }
 
 interface ResourceIdCacheContext {
   cacheKey: string;
   generation: number;
-  configurationVersion: number;
   documentPackRoot: string | null;
 }
 
@@ -46,17 +51,35 @@ export interface CitResourceIdsReadySubscriber {
 }
 
 const maxCachedResourceIdContexts = 64;
+const defaultInventoryFreshnessTtlMs = 30_000;
+
+export interface CitResourceIdServiceOptions {
+  now?: () => number;
+  inventoryFreshnessTtlMs?: number;
+  inventoryState?: CitResourceIdInventoryState;
+}
 
 export class CitResourceIdService {
   private readonly cached = new LruCache<string, CachedResourceIds>(maxCachedResourceIdContexts);
   private readonly pendingWarmups = new Map<string, PendingWarmResourceIds>();
   private builtinCatalog: CitBuiltinResourceCatalog | undefined;
   private builtinResourceIds: CitResourceIds | undefined;
+  private readonly now: () => number;
+  private readonly inventoryFreshnessTtlMs: number;
+  private readonly inventoryState: CitResourceIdInventoryState;
 
   public constructor(
     private readonly loadBuiltinCatalog: () => CitBuiltinResourceCatalog =
-      loadCitBuiltinResourceCatalog
-  ) {}
+      loadCitBuiltinResourceCatalog,
+    options: CitResourceIdServiceOptions = {}
+  ) {
+    this.now = options.now ?? Date.now;
+    this.inventoryFreshnessTtlMs = Math.max(
+      0,
+      options.inventoryFreshnessTtlMs ?? defaultInventoryFreshnessTtlMs
+    );
+    this.inventoryState = options.inventoryState ?? citResourceIdInventoryState;
+  }
 
   getResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds {
     const context = this.getCacheContext(documentFileName, configuration);
@@ -70,7 +93,7 @@ export class CitResourceIdService {
       configuration,
       this.getBuiltinCatalog()
     );
-    this.cached.set(this.getWarmupKey(context), { ids });
+    this.cached.set(this.getWarmupKey(context), { ids, cachedAt: this.now() });
     return ids;
   }
 
@@ -92,14 +115,18 @@ export class CitResourceIdService {
     configuration: CitResourceIdConfiguration = {},
     readySubscriber?: CitResourceIdsReadySubscriber
   ): CitResourceIds {
-    const cached = this.getCachedResourceIds(documentFileName, configuration);
-    if (cached) {
-      return cached;
+    const context = this.getCacheContext(documentFileName, configuration);
+    const cached = this.cached.get(this.getWarmupKey(context));
+    if (cached && this.isFresh(cached)) {
+      return cached.ids;
     }
     void this.warmResourceIds(documentFileName, configuration, readySubscriber).catch(error => {
       console.error("Failed to warm CIT resource IDs.", error);
     });
-    return this.getBuiltinResourceIds();
+    // Watcher coverage is deliberately treated as incomplete. Keep the last
+    // complete inventory visible while its TTL refresh runs so diagnostics and
+    // completion do not briefly fall back to builtin-only IDs every interval.
+    return cached?.ids ?? this.getBuiltinResourceIds();
   }
 
   warmResourceIds(
@@ -164,25 +191,52 @@ export class CitResourceIdService {
     return catalog.armorSuffixes.some(suffix => id.endsWith(suffix));
   }
 
+  /**
+   * Invalidates filename-derived IDs only when the inventory can change.
+   * File content edits and unrelated resource files do not affect this index.
+   */
+  invalidatePath(
+    fileName: string,
+    kind: CitResourceIdInventoryChangeKind = "change"
+  ): void {
+    this.inventoryState.invalidatePath(fileName, kind);
+  }
+
+  /** Invalidates structural inventory state, for example after a directory operation. */
+  invalidateAll(): void {
+    this.inventoryState.invalidateAll();
+  }
+
   private getCacheContext(documentFileName: string, configuration: CitResourceIdConfiguration): ResourceIdCacheContext {
     const documentPackRoot = resolveDocumentPackRoot(documentFileName);
     return {
       cacheKey: getCacheKey(documentPackRoot, configuration),
-      generation: workspaceResourceCache.getResourceIndexGeneration(),
-      configurationVersion: workspaceResourceCache.getConfigurationVersion(),
+      generation: this.inventoryState.currentGeneration(),
       documentPackRoot
     };
   }
 
   private getCachedResourceIdsForContext(context: ResourceIdCacheContext): CitResourceIds | null {
-    return this.cached.get(this.getWarmupKey(context))?.ids ?? null;
+    const key = this.getWarmupKey(context);
+    const cached = this.cached.get(key);
+    if (!cached) {
+      return null;
+    }
+    if (!this.isFresh(cached)) {
+      this.cached.delete(key);
+      return null;
+    }
+    return cached.ids;
+  }
+
+  private isFresh(cached: CachedResourceIds): boolean {
+    return this.now() - cached.cachedAt < this.inventoryFreshnessTtlMs;
   }
 
   private getWarmupKey(context: ResourceIdCacheContext): string {
     return [
       context.cacheKey,
-      context.generation,
-      context.configurationVersion
+      context.generation
     ].join("\0");
   }
 

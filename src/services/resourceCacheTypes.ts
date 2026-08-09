@@ -23,11 +23,18 @@ export interface CacheStatsSnapshot {
 export interface ResourceCacheGenerationState {
   getConfigurationVersion(): number;
   getResourceFsGeneration(): number;
+  getResourceMutationGeneration(): number;
+  hasAnyResourceChangedSince(generation: number, fileNames: Iterable<string>): boolean;
 }
 
 export interface CacheEntry<T> {
   generation: number;
   value: T;
+}
+
+export interface ResourcePathResolution {
+  fileName: string | null;
+  verificationPaths: readonly string[];
 }
 
 export interface VersionedCacheEntry<T> {

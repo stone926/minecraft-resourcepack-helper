@@ -15,6 +15,7 @@ import { getModelPreviewLocalResourceRoots, ModelPreviewWebview } from "./ModelP
 import { ModelPreviewWatcher } from "./ModelPreviewWatcher";
 import { isModelPreviewFileName } from "./modelPreviewFiles";
 import { getModelPreviewExportErrorMessage } from "./modelPreviewErrorPresentation";
+import { toVscodeRange } from "../../utils/resourceLocationVscode";
 
 interface PendingScreenshot {
   resolve: (value: string) => void;
@@ -301,7 +302,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
     if (uri.scheme === "file" && range && isTextResource(uri.fsPath)) {
       const document = await vscode.workspace.openTextDocument(uri);
       const editor = await vscode.window.showTextDocument(document, { preview: true, viewColumn: vscode.ViewColumn.One });
-      const selection = toVsCodeRange(range);
+      const selection = toVscodeRange(range);
       editor.selection = new vscode.Selection(selection.start, selection.end);
       editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
       return;
@@ -334,13 +335,6 @@ async function fileExists(uri: vscode.Uri): Promise<boolean> {
 
 function isTextResource(fileName: string): boolean {
   return /\.(?:json|mcmeta|txt|properties|vsh|fsh|glsl)$/i.test(fileName);
-}
-
-function toVsCodeRange(range: PreviewRange): vscode.Range {
-  return new vscode.Range(
-    new vscode.Position(range.start.line, range.start.character),
-    new vscode.Position(range.end.line, range.end.character)
-  );
 }
 
 function defaultScreenshotFileName(modelFileName: string): string {

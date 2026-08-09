@@ -73,7 +73,7 @@ describe("JSON-first lazy RSGL integration", function () {
       "};",
       "const universe = new ResourceUniverseService();",
       "const physical = universe.registerProvider({ providerId: 'physical', getSnapshot: async request => { counters.physicalRequests++; return { providerId: 'physical', projectId: request.projectId, generation: request.requestGeneration, revision: 'physical-r1', coverage: { status: 'authoritative', revision: 'physical-r1', coveredScope: request.scope }, producers: [], edges: [] }; } });",
-      "const navigation = new ResourceUniverseNavigationFacade(projects, universe, () => null);",
+      "const navigation = new ResourceUniverseNavigationFacade(projects, universe);",
       "const extensionContext = { subscriptions: [], asAbsolutePath: value => value };",
       "const registration = registerRsglSubsystem(extensionContext, projects, universe, navigation);",
       "navigation.setGeneratedProjectRefresher((projectId, signal) => registration.refreshGeneratedProject(projectId, signal));",

@@ -92,7 +92,7 @@ function parseCitResourceLocation(value: string): { namespace: string; resourceP
   return { namespace: parsed.namespace, resourcePath: parsed.path };
 }
 
-const citResourceKindByType: Record<CitResourceType, string> = {
+export const citResourceKindByType: Readonly<Record<CitResourceType, "texture" | "model">> = {
   textures: "texture",
   models: "model"
 };

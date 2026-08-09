@@ -12,12 +12,7 @@ import {
   type ResourceNavigationOptions,
   type ResourceNavigationResult
 } from "../resourceUniverse/navigation/resourceNavigationService";
-import {
-  generateReferenceRedirectPath,
-  type ResourceReferencePathResolver
-} from "../utils/pathGenerator";
 import type { ResourceReference } from "../utils/resourceReferences";
-import { LegacyReferenceBridge } from "./legacyReferenceBridge";
 import { ProjectRefreshCoordinator } from "./projectRefreshCoordinator";
 import { ResourceDefinitionQueryService } from "./resourceDefinitionQueryService";
 import { ResourceProjectUniverseInvalidator } from "./resourceProjectUniverseInvalidator";
@@ -49,12 +44,10 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
 
   public constructor(
     projects: ResourcePackProjectService,
-    private readonly universe: ResourceUniverseService,
-    legacyResolver: ResourceReferencePathResolver = generateReferenceRedirectPath
+    private readonly universe: ResourceUniverseService
   ) {
     const navigation = new ResourceNavigationService(universe.index);
     this.refreshCoordinator = new ProjectRefreshCoordinator(projects, universe);
-    const legacy = new LegacyReferenceBridge(universe, navigation, legacyResolver);
     this.definitionQueries = new ResourceDefinitionQueryService(
       universe,
       navigation,
@@ -63,8 +56,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
     this.referenceQueries = new ResourceReferenceQueryService(
       universe,
       navigation,
-      this.refreshCoordinator,
-      legacy
+      this.refreshCoordinator
     );
     this.inventory = new ResourceSearchInventoryService(
       projects,
@@ -81,6 +73,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
 
   public setPhysicalDefinitionResolver(resolver: PhysicalAssetDefinitionResolver): void {
     this.definitionQueries.setPhysicalDefinitionResolver(resolver);
+    this.referenceQueries.setPhysicalDefinitionResolver(resolver);
   }
 
   public onDidChangeResources(

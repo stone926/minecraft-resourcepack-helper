@@ -77,6 +77,7 @@ describe("integrated RSGL extension surface", () => {
     const lazyRegistration = readSource("src", "rsgl", "registerLazyRsglSubsystem.ts");
     const subsystemLoader = readSource("src", "rsgl", "loadInstalledRsglSubsystem.ts");
     const loader = readSource("src", "rsgl", "runtime", "loadInstalledRsglRuntime.ts");
+    const moduleExport = readSource("packages", "shared-utils", "src", "moduleExport.ts");
     const host = readSource("src", "rsgl", "host", "rsglHost.ts");
 
     assert.ok(registration.includes("createInstalledRsglRuntimeLoader(context, options.runtimeModuleImporter, {"));
@@ -103,7 +104,9 @@ describe("integrated RSGL extension surface", () => {
     ));
     assert.strictEqual(lazyRegistration.includes('await import("./registerRsglSubsystem.js")'), false);
     assert.ok(subsystemLoader.includes('asAbsolutePath("bundle/features/rsglHost.js")'));
-    assert.ok(subsystemLoader.includes("return import(subsystemUrl)"));
+    assert.ok(subsystemLoader.includes("importModuleSpecifier"));
+    assert.ok(loader.includes("importModuleSpecifier"));
+    assert.ok(moduleExport.includes("return import(specifier)"));
     assert.ok(host.includes('import("../registerRsglSubsystem.js")'));
     assert.ok(host.includes("createRsglSubsystem"));
     assert.ok(loader.includes('path.join("bundle", "rsgl", "server.js")'));

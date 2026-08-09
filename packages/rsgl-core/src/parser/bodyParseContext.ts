@@ -60,39 +60,41 @@ export type ResourceBodyParseContext =
       allowModelExternVariables: false;
     };
 
-export const topLevelBodyParseContext: BodyParseContext = Object.freeze({ kind: "topLevel" });
-export const variantsBodyParseContext: BlockstateEntriesParseContext = Object.freeze({
+export const topLevelBodyParseContext = Object.freeze({ kind: "topLevel" } satisfies BodyParseContext);
+export const variantsBodyParseContext = Object.freeze({
   kind: "blockstateEntries",
   mode: "variants"
-});
-export const multipartBodyParseContext: BlockstateEntriesParseContext = Object.freeze({
+} satisfies BlockstateEntriesParseContext);
+export const multipartBodyParseContext = Object.freeze({
   kind: "blockstateEntries",
   mode: "multipart"
-});
-export const choiceBodyParseContext: BlockstateChoiceParseContext = Object.freeze({
+} satisfies BlockstateEntriesParseContext);
+export const choiceBodyParseContext = Object.freeze({
   kind: "blockstateChoice"
-});
-export const selectItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+} satisfies BlockstateChoiceParseContext);
+export const selectItemModelBodyParseContext = Object.freeze({
   kind: "itemModelBody",
   owner: "select"
-});
-export const rangeItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+} satisfies ItemModelBodyParseContext);
+export const rangeItemModelBodyParseContext = Object.freeze({
   kind: "itemModelBody",
   owner: "range"
-});
-export const compositeItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+} satisfies ItemModelBodyParseContext);
+export const compositeItemModelBodyParseContext = Object.freeze({
   kind: "itemModelBody",
   owner: "composite"
-});
-export const firstMatchItemModelBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+} satisfies ItemModelBodyParseContext);
+export const firstMatchItemModelBodyParseContext = Object.freeze({
   kind: "itemModelBody",
   owner: "first_match"
-});
-export const itemModelTemplateBodyParseContext: ItemModelBodyParseContext = Object.freeze({
+} satisfies ItemModelBodyParseContext);
+export const itemModelTemplateBodyParseContext = Object.freeze({
   kind: "itemModelBody",
   owner: "itemModelTemplate"
-});
-export function blockstateRootParseContext(mode: BlockstateMode): BlockstateRootParseContext {
+} satisfies ItemModelBodyParseContext);
+export function blockstateRootParseContext<M extends BlockstateMode>(
+  mode: M
+): BlockstateRootParseContext & { mode: M } {
   return {
     kind: "blockstateRoot",
     mode,

@@ -20,7 +20,8 @@ import {
   resolvedRsglPathKey,
   type CompileDependency,
   type RsglBuildOptions,
-  type RsglBuildResult
+  type RsglBuildResult,
+  type RsglProjectConfig
 } from "../../rsgl-core/src";
 
 export interface RsglCliArgs {
@@ -103,6 +104,15 @@ const defaultWatchRuntime: RsglCliWatchRuntime = {
 
 /** Runs the RSGL CLI for the given argument vector and returns the process exit code. */
 export function runRsglCli(argv: string[], io: RsglCliIo = processIo): number {
+  try {
+    return runRsglCliCommand(argv, io);
+  } catch (error) {
+    writeCliError(io, error);
+    return 1;
+  }
+}
+
+function runRsglCliCommand(argv: string[], io: RsglCliIo): number {
   const args = parseRsglCliArgs(argv);
   if (args.command === "help" || args.command === "--help" || args.command === "-h") {
     printHelp(io);
@@ -255,7 +265,7 @@ export function startRsglCliWatch(
     try {
       nextContext = createCliContextForSearchRoot(args, configSearchRoot);
     } catch (error) {
-      io.writeErr(`${error instanceof Error ? error.message : String(error)}\n`);
+      writeCliError(io, error);
       return;
     }
 
@@ -266,7 +276,7 @@ export function startRsglCliWatch(
       context = nextContext;
       result = runtime.build(context.root, context.options);
     } catch (error) {
-      io.writeErr(`${error instanceof Error ? error.message : String(error)}\n`);
+      writeCliError(io, error);
       return;
     }
     dependencies = result.dependencies;
@@ -509,7 +519,20 @@ export function createCliContext(args: RsglCliArgs): RsglCliContext {
 
 function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: string): RsglCliContext {
   const loadedConfig = loadRsglProjectConfigForSource(configSearchRoot);
-  const config = loadedConfig?.config ?? {};
+  return createCliContextFromProjectConfig(
+    args,
+    configSearchRoot,
+    loadedConfig?.config ?? {},
+    loadedConfig?.fileName ?? null
+  );
+}
+
+function createCliContextFromProjectConfig(
+  args: RsglCliArgs,
+  configSearchRoot: string,
+  config: RsglProjectConfig,
+  configFileName: string | null
+): RsglCliContext {
   const root = config.root ?? configSearchRoot;
   const outputRoot = args.outDir
     ? assertRsglOutputPackRoot(path.resolve(args.outDir), "--out")
@@ -517,13 +540,13 @@ function createCliContextForSearchRoot(args: RsglCliArgs, configSearchRoot: stri
   return {
     root,
     configSearchRoot,
-    configFileName: loadedConfig?.fileName ?? null,
+    configFileName,
     options: {
       outputRoot,
       materializationProject: createRsglMaterializationProject(
         root,
         outputRoot,
-        loadedConfig ? path.dirname(loadedConfig.fileName) : outputRoot
+        configFileName ? path.dirname(configFileName) : outputRoot
       ),
       materializationSourceRoot: root,
       adoptUnownedIdentical: args.adoptIdentical,
@@ -540,24 +563,7 @@ function createCliContextWithoutConfig(
   args: RsglCliArgs,
   configSearchRoot: string
 ): RsglCliContext {
-  const root = configSearchRoot;
-  const outputRoot = args.outDir
-    ? assertRsglOutputPackRoot(path.resolve(args.outDir), "--out")
-    : resolveRsglOutputPackRoot(root) ?? path.resolve(".generated");
-  return {
-    root,
-    configSearchRoot,
-    configFileName: null,
-    options: {
-      outputRoot,
-      materializationProject: createRsglMaterializationProject(root, outputRoot, outputRoot),
-      materializationSourceRoot: root,
-      adoptUnownedIdentical: args.adoptIdentical,
-      sourceMaps: true,
-      manifest: true,
-      ...compileOptionsFromProjectConfig({}, { sourceFileName: root, outputPackRoot: outputRoot })
-    }
-  };
+  return createCliContextFromProjectConfig(args, configSearchRoot, {}, null);
 }
 
 function resolveCliConfigSearchRoot(args: RsglCliArgs): string {
@@ -590,6 +596,10 @@ function printDiagnostics(diagnostics: { severity: string; code: string; message
     const location = diagnostic.fileName ? `${diagnostic.fileName}: ` : "";
     io.writeErr(`${location}${diagnostic.severity} ${diagnostic.code}: ${diagnostic.message}\n`);
   }
+}
+
+function writeCliError(io: RsglCliIo, error: unknown): void {
+  io.writeErr(`Error: ${error instanceof Error ? error.message : String(error)}\n`);
 }
 
 function printHelp(io: RsglCliIo): void {

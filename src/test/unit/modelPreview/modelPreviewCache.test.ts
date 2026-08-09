@@ -169,8 +169,8 @@ describe("model preview cache", () => {
 
   it("shares model and media artifacts through the workspace cache component", () => {
     const workspaceCache = new WorkspaceResourceCache();
-    const first = new ModelPreviewCache(workspaceCache.modelPreviewArtifacts);
-    const second = new ModelPreviewCache(workspaceCache.modelPreviewArtifacts);
+    const first = new ModelPreviewCache(workspaceCache.getModelPreviewArtifactCache());
+    const second = new ModelPreviewCache(workspaceCache.getModelPreviewArtifactCache());
     first.setRawModel(modelFileName, "v1", Promise.resolve({
       fileName: modelFileName,
       text: "{}",

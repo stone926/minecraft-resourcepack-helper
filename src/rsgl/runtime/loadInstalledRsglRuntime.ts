@@ -1,6 +1,9 @@
 import * as path from "node:path";
 import type * as vscode from "vscode";
-import { moduleExportWithFunction } from "../../../packages/shared-utils/src";
+import {
+  importModuleSpecifier,
+  moduleExportWithFunction
+} from "../../../packages/shared-utils/src";
 import type { RsglMaterializationInvalidationDto } from "../../../packages/rsgl-shared/src";
 import type { RsglRuntimeInstance, RsglRuntimeLoader } from "./types";
 
@@ -47,7 +50,7 @@ export type RsglRuntimeModuleImporter = (url: string) => Promise<unknown>;
 /** Resolves all runtime paths from the one owning ExtensionContext. */
 export function createInstalledRsglRuntimeLoader(
   extensionContext: vscode.ExtensionContext,
-  importer: RsglRuntimeModuleImporter = importRuntimeModule,
+  importer: RsglRuntimeModuleImporter = importModuleSpecifier,
   integration: InstalledRsglRuntimeIntegration = {}
 ): RsglRuntimeLoader {
   const runtimePath = extensionContext.asAbsolutePath(path.join("bundle", "features", "rsglHost.js"));
@@ -76,9 +79,4 @@ export function normalizeRuntimeModule(value: unknown): RsglRuntimeModule {
     return module as unknown as RsglRuntimeModule;
   }
   throw new Error("The installed RSGL host bundle does not export createRsglRuntime().");
-}
-
-async function importRuntimeModule(runtimeUrl: string): Promise<unknown> {
-  // The non-literal URL keeps the explicitly separate CJS entry out of the root bundle.
-  return import(runtimeUrl);
 }

@@ -1,4 +1,3 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { lm } from "../../i18n/messages";
 import { isCitPropertiesFileName } from "../../cit/citPaths";
@@ -27,7 +26,7 @@ import {
 } from "../cancellation";
 
 export interface ModelPreviewServiceOptions {
-  fileSystem?: ModelPreviewFileSystem;
+  fileSystem: ModelPreviewFileSystem;
   configuration?: () => ModelPreviewConfiguration;
   artifactCache?: ModelPreviewArtifactCacheStore;
   /** Raw-model loading backend; hosts inject the shared workspace-cache loader. */
@@ -52,8 +51,8 @@ export class ModelPreviewService {
   private readonly modelLoader: ParentChainModelLoader | undefined;
   private readonly resolveResourcePath: ((request: ResourceFileRequest) => string | null) | undefined;
 
-  constructor(options: ModelPreviewServiceOptions = {}) {
-    this.fileSystem = options.fileSystem ?? nodeFileSystem;
+  constructor(options: ModelPreviewServiceOptions) {
+    this.fileSystem = options.fileSystem;
     this.getConfiguration = options.configuration ?? (() => ({}));
     this.cache = new ModelPreviewCache(options.artifactCache);
     this.modelLoader = options.modelLoader;
@@ -374,20 +373,6 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
 
   return [...previewDependencies.values()];
 }
-
-const nodeFileSystem: ModelPreviewFileSystem = {
-  readTextFile: fileName => fs.promises.readFile(fileName, "utf8"),
-  readBinaryFile: fileName => fs.promises.readFile(fileName),
-  fileExists: fileName => fs.existsSync(fileName),
-  fileVersion: fileName => {
-    try {
-      const stat = fs.statSync(fileName);
-      return `${stat.mtimeMs}:${stat.size}`;
-    } catch {
-      return null;
-    }
-  }
-};
 
 function getResolutionKey(configuration: ModelPreviewConfiguration): string {
   return JSON.stringify({

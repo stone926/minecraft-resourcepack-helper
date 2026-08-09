@@ -1,5 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+  currentJavaResourcePackFormat,
+  legacyJavaResourcePackFormatBoundary
+} from "./javaResourcePackFormat";
 
 export interface PackMetadata {
   overlays: OverlayEntry[];
@@ -32,8 +36,6 @@ export interface PackMetadataReadOptions {
   pathExists?: (filePath: string) => boolean;
 }
 
-const currentResourcePackFormat: ResourcePackFormat = { major: 88, minor: 0 };
-const currentLegacyBoundaryFormat = 64;
 const overlayDirectoryPattern = /^[a-z0-9_-]+$/;
 
 export function readPackMetadata(packRoot: string, options: PackMetadataReadOptions = {}): PackMetadata {
@@ -64,12 +66,13 @@ export function parsePackMetadata(raw: unknown): PackMetadata {
 
 export function overlayApplies(entry: OverlayEntry): boolean {
   if (entry.minFormat || entry.maxFormat) {
-    return (!entry.minFormat || compareFormats(currentResourcePackFormat, entry.minFormat) >= 0) &&
-      (!entry.maxFormat || compareFormats(currentResourcePackFormat, entry.maxFormat) <= 0);
+    return (!entry.minFormat || compareFormats(currentJavaResourcePackFormat, entry.minFormat) >= 0) &&
+      (!entry.maxFormat || compareFormats(currentJavaResourcePackFormat, entry.maxFormat) <= 0);
   }
 
   if (entry.legacyFormats) {
-    return currentLegacyBoundaryFormat >= entry.legacyFormats.min && currentLegacyBoundaryFormat <= entry.legacyFormats.max;
+    return legacyJavaResourcePackFormatBoundary >= entry.legacyFormats.min &&
+      legacyJavaResourcePackFormatBoundary <= entry.legacyFormats.max;
   }
 
   return false;

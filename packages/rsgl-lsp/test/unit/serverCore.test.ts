@@ -446,6 +446,20 @@ describe("RSGL LSP server core", () => {
     assert.ok(diagnostics.every(diagnostic => diagnostic.source === "RSGL"));
   });
 
+  it("converts unexpected program-load failures into document diagnostics", () => {
+    const fileName = path.join(os.tmpdir(), "rsgl-analysis-failure", "main.rsgl");
+    const diagnostics = computeDocumentDiagnostics(documentOf("model block x {}"), fileName, {
+      loadProgramFromEntry: () => {
+        throw new Error("semantic cache unavailable");
+      },
+      settings: emptySettings
+    });
+
+    assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.code), ["rsgl.analysisFailure"]);
+    assert.match(diagnostics[0].message, /semantic cache unavailable/);
+    assert.strictEqual(diagnostics[0].source, "RSGL");
+  });
+
   it("reports unsupported default imports consistently through program and fallback paths", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-lsp-default-import-"));
     try {

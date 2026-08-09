@@ -1,7 +1,11 @@
 import * as assert from "node:assert/strict";
 import {
+  currentJavaResourcePackFormat,
+  currentMinecraftJavaVersion,
   isMinecraftJavaVersionText,
-  javaResourcePackFormatForMinecraftVersion
+  javaResourcePackFormatForMinecraftVersion,
+  legacyJavaResourcePackFormatBoundary,
+  legacyResourcePackFormatBoundaryMinecraftVersion
 } from "../../src";
 
 describe("Java resource-pack format registry", () => {
@@ -18,6 +22,17 @@ describe("Java resource-pack format registry", () => {
       major: 9,
       minor: 0
     });
+  });
+
+  it("derives the current and legacy-boundary formats from the release registry", () => {
+    assert.deepStrictEqual(
+      currentJavaResourcePackFormat,
+      javaResourcePackFormatForMinecraftVersion(currentMinecraftJavaVersion)
+    );
+    assert.strictEqual(
+      legacyJavaResourcePackFormatBoundary,
+      javaResourcePackFormatForMinecraftVersion(legacyResourcePackFormatBoundaryMinecraftVersion)?.major
+    );
   });
 
   it("validates version syntax and never exposes a mutable registry entry", () => {

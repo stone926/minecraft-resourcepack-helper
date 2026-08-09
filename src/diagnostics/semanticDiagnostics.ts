@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { localize } from "../i18n/runtime";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
+import { toVscodeRange } from "../utils/resourceLocationVscode";
 import { toVsCodeDiagnosticSeverity } from "./diagnosticSeverity";
 import {
   getPackImageResourceIssues,
@@ -31,7 +32,7 @@ const semanticDiagnosticsHost: SemanticDiagnosticsHost = {
   },
   getPackImageResourceIssues: packRoot => getPackImageResourceIssues(packRoot, packImageResourceHost),
   getModelParentChain: (document, ast, configuration) =>
-    workspaceResourceCache.getModelParentChain(document, ast, configuration),
+    workspaceResourceCache.getModelParentChainAsync(document, ast, configuration),
   getSoundEvents: soundsJsonPath => workspaceResourceCache.getSoundEvents(soundsJsonPath)
 };
 
@@ -48,10 +49,7 @@ export async function getSemanticResourceDiagnostics(
 
 function toVsCodeDiagnostic(diagnostic: SemanticDiagnostic): vscode.Diagnostic {
   return new vscode.Diagnostic(
-    new vscode.Range(
-      new vscode.Position(diagnostic.range.start.line, diagnostic.range.start.character),
-      new vscode.Position(diagnostic.range.end.line, diagnostic.range.end.character)
-    ),
+    toVscodeRange(diagnostic.range),
     localize(diagnostic.message),
     toVsCodeDiagnosticSeverity(diagnostic.severity)
   );

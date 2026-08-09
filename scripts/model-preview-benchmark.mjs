@@ -5,6 +5,7 @@ import zlib from "node:zlib";
 import { performance } from "node:perf_hooks";
 import { build } from "esbuild";
 import { ModelPreviewService } from "../out/src/modelPreview/service/ModelPreviewService.js";
+import { nodeModelPreviewFileSystem } from "../out/src/modelPreview/service/NodeModelPreviewFileSystem.js";
 import { bundleEntryDefinitions, createEsbuildOptions } from "./build-bundles.mjs";
 
 function writeFile(root, relativePath, value) {
@@ -121,7 +122,7 @@ function createBenchmarkFixtures(root) {
 }
 
 async function measure(root, relativePath) {
-  const service = new ModelPreviewService();
+  const service = new ModelPreviewService({ fileSystem: nodeModelPreviewFileSystem });
   const fileName = path.join(root, relativePath);
   const first = await time(() => service.getPreviewDocument(fileName));
   service.invalidate(fileName);

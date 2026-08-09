@@ -41,6 +41,9 @@ export async function readPngAlphaMask(
 
   const rowBytes = getRowBytes(data);
   const expectedBytes = data.height * (rowBytes + 1);
+  if (!Number.isSafeInteger(rowBytes) || !Number.isSafeInteger(expectedBytes)) {
+    return null;
+  }
   if (options.maxInflatedBytes !== undefined && expectedBytes > options.maxInflatedBytes) {
     return null;
   }
@@ -82,6 +85,8 @@ function parsePng(bytes: Uint8Array): PngData | null {
   };
 
   let offset = pngSignature.length;
+  let sawHeader = false;
+  let sawEnd = false;
   while (offset + 12 <= buffer.length) {
     const length = buffer.readUInt32BE(offset);
     const type = buffer.toString("ascii", offset + 4, offset + 8);
@@ -93,6 +98,10 @@ function parsePng(bytes: Uint8Array): PngData | null {
 
     const chunk = buffer.subarray(chunkStart, chunkEnd);
     if (type === "IHDR") {
+      if (sawHeader || chunk.length !== 13) {
+        return null;
+      }
+      sawHeader = true;
       data.width = chunk.readUInt32BE(0);
       data.height = chunk.readUInt32BE(4);
       data.bitDepth = chunk[8];
@@ -101,25 +110,42 @@ function parsePng(bytes: Uint8Array): PngData | null {
         return null;
       }
     } else if (type === "PLTE") {
+      if (!sawHeader || chunk.length === 0 || chunk.length % 3 !== 0 || chunk.length > 256 * 3) {
+        return null;
+      }
       data.palette = [...chunk];
     } else if (type === "tRNS") {
       if (data.colorType === 3) {
+        if (chunk.length > data.palette.length / 3) {
+          return null;
+        }
         data.paletteAlpha = [...chunk];
-      } else if (data.colorType === 0 && chunk.length >= 2) {
+      } else if (data.colorType === 0 && chunk.length === 2) {
         data.transparentColor = [chunk.readUInt16BE(0)];
-      } else if (data.colorType === 2 && chunk.length >= 6) {
+      } else if (data.colorType === 2 && chunk.length === 6) {
         data.transparentColor = [chunk.readUInt16BE(0), chunk.readUInt16BE(2), chunk.readUInt16BE(4)];
+      } else {
+        return null;
       }
     } else if (type === "IDAT") {
+      if (!sawHeader) {
+        return null;
+      }
       data.idat.push(chunk);
     } else if (type === "IEND") {
+      if (chunk.length !== 0) {
+        return null;
+      }
+      sawEnd = true;
       break;
     }
 
     offset = chunkEnd + 4;
   }
 
-  return data.width > 0 && data.height > 0 && data.idat.length > 0 ? data : null;
+  return sawHeader && sawEnd && data.width > 0 && data.height > 0 && data.idat.length > 0
+    ? data
+    : null;
 }
 
 function getBytesPerPixel(colorType: number): number {
@@ -141,7 +167,8 @@ function getBytesPerPixel(colorType: number): number {
 
 function isSupportedBitDepth(data: PngData): boolean {
   if (data.colorType === 3) {
-    return data.bitDepth === 1 || data.bitDepth === 2 || data.bitDepth === 4 || data.bitDepth === 8;
+    return data.palette.length > 0 &&
+      (data.bitDepth === 1 || data.bitDepth === 2 || data.bitDepth === 4 || data.bitDepth === 8);
   }
   return data.bitDepth === 8;
 }
@@ -155,7 +182,7 @@ function getRowBytes(data: PngData): number {
 
 function unfilterRows(inflated: Buffer, height: number, rowBytes: number, bytesPerPixel: number): Uint8Array | null {
   const expectedBytes = height * (rowBytes + 1);
-  if (inflated.length < expectedBytes) {
+  if (inflated.length !== expectedBytes) {
     return null;
   }
 
@@ -163,6 +190,9 @@ function unfilterRows(inflated: Buffer, height: number, rowBytes: number, bytesP
   let readOffset = 0;
   for (let y = 0; y < height; y++) {
     const filter = inflated[readOffset++];
+    if (filter > 4) {
+      return null;
+    }
     const rowOffset = y * rowBytes;
     const previousRowOffset = rowOffset - rowBytes;
 

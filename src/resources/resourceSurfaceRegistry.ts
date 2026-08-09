@@ -1,4 +1,7 @@
-import { uniqueValues } from "../../packages/mc-assets/src";
+import {
+  minecraftResourceDirectory,
+  uniqueValues
+} from "../../packages/mc-assets/src";
 import {
   citresewnSourceDirectory,
   getCitDocumentSource,
@@ -101,18 +104,33 @@ const referenceCapabilities: readonly ResourceSurfaceCapability[] = [
   "graph"
 ];
 
+const blockstateDirectory = minecraftResourceDirectory("blockstate");
+const modelDirectory = minecraftResourceDirectory("model");
+const modelBlockDirectory = `${modelDirectory}/block` as const;
+const modelItemDirectory = `${modelDirectory}/item` as const;
+const particleDirectory = minecraftResourceDirectory("particles");
+const itemDefinitionDirectory = minecraftResourceDirectory("item");
+const atlasDirectory = minecraftResourceDirectory("atlas");
+const equipmentDirectory = minecraftResourceDirectory("equipment");
+const fontDirectory = minecraftResourceDirectory("font");
+const waypointStyleDirectory = minecraftResourceDirectory("waypoint_style");
+const postEffectDirectory = minecraftResourceDirectory("post_effect");
+const soundDirectory = minecraftResourceDirectory("sound");
+const shaderDirectory = minecraftResourceDirectory("shaderVertex");
+const textureDirectory = minecraftResourceDirectory("texture");
+
 const modelPreviewWhen =
-  "resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]models(?:[\\\\/]|$)/";
+  `resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${modelDirectory}(?:[\\\\/]|$)/`;
 const citPreviewWhen =
   `resourceExtname == .properties && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${citresewnSourceDirectory}(?:[\\\\/]|$)/`;
 const citGenerationWhen =
-  "resourceExtname =~ /\\.(json|png)$/ && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:items|models[\\\\/]item|textures[\\\\/]item)(?:[\\\\/]|$)/";
+  `resourceExtname =~ /\\.(json|png)$/ && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/](?:${itemDefinitionDirectory}|${manifestDirectoryPattern(modelItemDirectory)}|${manifestDirectoryPattern(`${textureDirectory}/item`)})(?:[\\\\/]|$)/`;
 
 const referenceSurfaceRegistry = [
   jsonReferenceSurface(
     "blockstates",
-    "blockstates",
-    "**/blockstates/*.json",
+    blockstateDirectory,
+    `**/${blockstateDirectory}/*.json`,
     "%schema.blockstates.url%",
     getBlockstateReferences,
     ["model"],
@@ -121,41 +139,41 @@ const referenceSurfaceRegistry = [
   {
     id: "modelsBlock",
     documentKind: "modelsBlock",
-    schema: [{ fileMatch: "**/models/**/*.json", url: "%schema.modelsBlock.url%" }],
-    referenceExtraction: { mode: "json", extract: (ast: JsonDocumentNode) => getModelReferences(ast, "models/block") },
+    schema: [{ fileMatch: `**/${modelDirectory}/**/*.json`, url: "%schema.modelsBlock.url%" }],
+    referenceExtraction: { mode: "json", extract: (ast: JsonDocumentNode) => getModelReferences(ast, modelBlockDirectory) },
     referenceTargets: ["model", "texture"],
     graphFileExtensions: ["json"],
-    fileNamePattern: /[\\/]models[\\/]block[\\/].+\.json$/i
+    fileNamePattern: resourceJsonFilePattern(modelBlockDirectory)
   },
   {
     id: "modelsItem",
     documentKind: "modelsItem",
-    schema: [{ fileMatch: "**/models/item/**/*.json", url: "%schema.modelsItem.url%" }],
+    schema: [{ fileMatch: `**/${modelItemDirectory}/**/*.json`, url: "%schema.modelsItem.url%" }],
     referenceExtraction: { mode: "json", extract: getItemModelReferences },
     referenceTargets: ["model", "texture"],
     manifestWhenClauses: [citGenerationWhen],
-    fileNamePattern: /[\\/]models[\\/]item[\\/].+\.json$/i
+    fileNamePattern: resourceJsonFilePattern(modelItemDirectory)
   },
   {
     id: "models",
     documentKind: "models",
     language: "json",
-    selectorPatterns: ["**/models/**/*.json"],
+    selectorPatterns: [`**/${modelDirectory}/**/*.json`],
     capabilities: [...referenceCapabilities, "textureVariables"],
-    referenceExtraction: { mode: "json", extract: (ast: JsonDocumentNode) => getModelReferences(ast, "models") },
+    referenceExtraction: { mode: "json", extract: (ast: JsonDocumentNode) => getModelReferences(ast, modelDirectory) },
     referenceTargets: ["model", "texture"],
     graphFileExtensions: ["json"],
-    incomingReferenceRoots: [{ root: "models" }],
+    incomingReferenceRoots: [{ root: modelDirectory }],
     manifestWhenClauses: [modelPreviewWhen],
     graphPreviewContext: "modelResource",
     semanticDiagnostics: "model",
-    fileNamePattern: /[\\/]models[\\/].+\.json$/i
+    fileNamePattern: resourceJsonFilePattern(modelDirectory)
   },
-  jsonReferenceSurface("particles", "particles", "**/particles/**/*.json", "%schema.particles.url%", getParticleReferences, ["texture"]),
+  jsonReferenceSurface("particles", particleDirectory, `**/${particleDirectory}/**/*.json`, "%schema.particles.url%", getParticleReferences, ["texture"]),
   jsonReferenceSurface(
     "items",
-    "items",
-    "**/items/**/*.json",
+    itemDefinitionDirectory,
+    `**/${itemDefinitionDirectory}/**/*.json`,
     "%schema.items.url%",
     getItemDefinitionReferences,
     ["model", "texture"],
@@ -164,25 +182,25 @@ const referenceSurfaceRegistry = [
       graphPreviewContext: "unsupportedPreviewResource"
     }
   ),
-  jsonReferenceSurface("atlases", "atlases", "**/atlases/**/*.json", "%schema.atlases.url%", getAtlasReferences, ["texture", "textureDirectory"]),
-  jsonReferenceSurface("equipment", "equipment", "**/equipment/**/*.json", "%schema.equipment.url%", getEquipmentReferences, ["texture"]),
+  jsonReferenceSurface("atlases", atlasDirectory, `**/${atlasDirectory}/**/*.json`, "%schema.atlases.url%", getAtlasReferences, ["texture", "textureDirectory"]),
+  jsonReferenceSurface("equipment", equipmentDirectory, `**/${equipmentDirectory}/**/*.json`, "%schema.equipment.url%", getEquipmentReferences, ["texture"]),
   jsonReferenceSurface(
     "font",
-    "font",
-    "**/font/**/*.json",
+    fontDirectory,
+    `**/${fontDirectory}/**/*.json`,
     "%schema.font.url%",
     getFontReferences,
     ["font", "fontFile", "texture"],
     {
-      watcherPatterns: ["**/assets/*/font/**/*"],
-      incomingReferenceRoots: [{ root: "font" }]
+      watcherPatterns: [`**/assets/*/${fontDirectory}/**/*`],
+      incomingReferenceRoots: [{ root: fontDirectory }]
     }
   ),
-  jsonReferenceSurface("waypointStyle", "waypoint_style", "**/waypoint_style/**/*.json", "%schema.waypointStyle.url%", getWaypointStyleReferences, ["texture"]),
+  jsonReferenceSurface("waypointStyle", waypointStyleDirectory, `**/${waypointStyleDirectory}/**/*.json`, "%schema.waypointStyle.url%", getWaypointStyleReferences, ["texture"]),
   jsonReferenceSurface(
     "postEffect",
-    "post_effect",
-    "**/post_effect/**/*.json",
+    postEffectDirectory,
+    `**/${postEffectDirectory}/**/*.json`,
     "%schema.postEffect.url%",
     getPostEffectReferences,
     ["shader", "texture"],
@@ -195,11 +213,11 @@ const referenceSurfaceRegistry = [
     selectorPatterns: ["**/assets/*/sounds.json"],
     schema: [{ fileMatch: "**/assets/*/sounds.json", url: "%schema.sounds.url%" }],
     capabilities: referenceCapabilities,
-    watcherPatterns: ["**/assets/*/sounds/**/*.ogg"],
+    watcherPatterns: [`**/assets/*/${soundDirectory}/**/*.ogg`],
     referenceExtraction: { mode: "json", extract: getSoundReferences },
     referenceTargets: ["sound"],
     graphFileExtensions: ["json"],
-    incomingReferenceRoots: [{ root: "sounds" }],
+    incomingReferenceRoots: [{ root: soundDirectory }],
     semanticDiagnostics: "sounds",
     fileNamePattern: /[\\/]assets[\\/][^\\/]+[\\/]sounds\.json$/i
   },
@@ -241,15 +259,18 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   ...referenceSurfaceRegistry,
   {
     id: "shaderInclude",
-    watcherPatterns: ["**/assets/*/shaders/**/*.glsl"],
+    watcherPatterns: [`**/assets/*/${shaderDirectory}/**/*.glsl`],
     capabilities: ["graph"],
     graphFileExtensions: ["glsl", "vsh", "fsh"],
     incomingReferenceRoots: [
-      { root: "shaders" },
-      { root: "shaders/core" },
-      { root: "shaders/include" }
+      { root: shaderDirectory },
+      { root: `${shaderDirectory}/core` },
+      { root: `${shaderDirectory}/include` }
     ],
-    fileNamePattern: /[\\/]assets[\\/][^\\/]+[\\/]shaders[\\/]include[\\/].+\.(?:glsl|vsh|fsh)$/i
+    fileNamePattern: new RegExp(
+      `[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/include`)}[\\\\/].+\\.(?:glsl|vsh|fsh)$`,
+      "i"
+    )
   },
   {
     id: "assetJsonWatcher",
@@ -259,32 +280,32 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   {
     id: "textureAssets",
     watcherPatterns: [
-      "**/assets/*/textures/**/*.png",
+      `**/assets/*/${textureDirectory}/**/*.png`,
       `**/assets/*/${citresewnSourceDirectory}/*.png`,
       `**/assets/*/${citresewnSourceDirectory}/**/*.png`
     ],
     incomingReferenceRoots: [
-      { root: "textures" },
-      { root: "textures/particle" },
-      { root: "textures/entity" },
-      { root: "textures/entity/bed" },
-      { root: "textures/entity/chest" },
-      { root: "textures/entity/shulker" },
-      { root: "textures/entity/signs" },
-      { root: "textures/entity/signs/hanging" },
-      { root: "textures/effect" },
-      { root: "textures/gui/sprites/hud/locator_bar_dot" },
-      { root: "textures/entity/equipment", stripLeadingSegments: 1 }
+      { root: textureDirectory },
+      { root: `${textureDirectory}/particle` },
+      { root: `${textureDirectory}/entity` },
+      { root: `${textureDirectory}/entity/bed` },
+      { root: `${textureDirectory}/entity/chest` },
+      { root: `${textureDirectory}/entity/shulker` },
+      { root: `${textureDirectory}/entity/signs` },
+      { root: `${textureDirectory}/entity/signs/hanging` },
+      { root: `${textureDirectory}/effect` },
+      { root: `${textureDirectory}/gui/sprites/hud/locator_bar_dot` },
+      { root: `${textureDirectory}/entity/equipment`, stripLeadingSegments: 1 }
     ],
     manifestWhenClauses: [citGenerationWhen]
   },
   {
     id: "packMetadata",
     language: "json",
-    watcherPatterns: ["**/pack.mcmeta", "**/pack.png", "**/assets/*/textures/**/*.png.mcmeta"],
+    watcherPatterns: ["**/pack.mcmeta", "**/pack.png", `**/assets/*/${textureDirectory}/**/*.png.mcmeta`],
     schema: [
       { fileMatch: "**/pack.mcmeta", url: "%schema.packMcmeta.url%" },
-      { fileMatch: "**/textures/**/*.png.mcmeta", url: "%schema.pngMcmeta.url%" }
+      { fileMatch: `**/${textureDirectory}/**/*.png.mcmeta`, url: "%schema.pngMcmeta.url%" }
     ],
     semanticDiagnostics: "packMetadata",
     fileNamePattern: /[\\/]pack\.mcmeta$/i
@@ -462,6 +483,17 @@ function matchesSurface(surface: ResourceSurfaceDescriptor, fileName: string): b
   return surface.fileNamePattern?.test(fileName) || surface.matchesFileName?.(fileName) === true;
 }
 
+function manifestDirectoryPattern(directory: string): string {
+  return directory
+    .split("/")
+    .map(segment => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[\\\\/]");
+}
+
+function resourceJsonFilePattern(directory: string): RegExp {
+  return new RegExp(`[\\\\/]${manifestDirectoryPattern(directory)}[\\\\/].+\\.json$`, "i");
+}
+
 function jsonReferenceSurface<const K extends string>(
   documentKind: K,
   folder: string,
@@ -492,7 +524,7 @@ function jsonReferenceSurface<const K extends string>(
     manifestWhenClauses: options.manifestWhenClauses,
     graphPreviewContext: options.graphPreviewContext,
     semanticDiagnostics: options.semanticDiagnostics,
-    fileNamePattern: new RegExp(`[\\\\/]${folder}[\\\\/].+\\.json$`, "i")
+    fileNamePattern: resourceJsonFilePattern(folder)
   };
 }
 
@@ -505,15 +537,21 @@ function shaderSurface<const K extends "shaderCore" | "shaderPost">(
     id: documentKind,
     documentKind,
     selectorPatterns: [
-      `**/assets/*/shaders/${folder}/**/*.vsh`,
-      `**/assets/*/shaders/${folder}/**/*.fsh`
+      `**/assets/*/${shaderDirectory}/${folder}/**/*.vsh`,
+      `**/assets/*/${shaderDirectory}/${folder}/**/*.fsh`
     ],
-    watcherPatterns: ["**/assets/*/shaders/**/*.vsh", "**/assets/*/shaders/**/*.fsh"],
+    watcherPatterns: [
+      `**/assets/*/${shaderDirectory}/**/*.vsh`,
+      `**/assets/*/${shaderDirectory}/**/*.fsh`
+    ],
     capabilities: referenceCapabilities,
     referenceExtraction: { mode: "shader", source },
     referenceTargets: ["shader"],
     graphFileExtensions: ["vsh", "fsh"],
-    fileNamePattern: new RegExp(`[\\\\/]shaders[\\\\/]${folder}[\\\\/].+\\.(?:vsh|fsh)$`, "i")
+    fileNamePattern: new RegExp(
+      `[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/${folder}`)}[\\\\/].+\\.(?:vsh|fsh)$`,
+      "i"
+    )
   };
 }
 
@@ -548,24 +586,33 @@ export function isModelJsonFileName(fileName: string): boolean {
   return modelsSurfacePattern?.test(fileName) ?? false;
 }
 
-const assetsModelJsonPattern = /[\\/]assets[\\/][^\\/]+[\\/]models[\\/].+\.json$/i;
+const assetsModelJsonPattern = new RegExp(
+  `[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${modelDirectory}[\\\\/].+\\.json$`,
+  "i"
+);
 
 export function isAssetsModelJsonFileName(fileName: string): boolean {
   return assetsModelJsonPattern.test(fileName);
 }
 
-const modelsItemPrefixPattern = /[\\/]models[\\/]item[\\/]/i;
-const modelsBlockPrefixPattern = /[\\/]models[\\/]block[\\/]/i;
+const modelsItemPrefixPattern = new RegExp(
+  `[\\\\/]${manifestDirectoryPattern(modelItemDirectory)}[\\\\/]`,
+  "i"
+);
+const modelsBlockPrefixPattern = new RegExp(
+  `[\\\\/]${manifestDirectoryPattern(modelBlockDirectory)}[\\\\/]`,
+  "i"
+);
 
 /** Blockstate-model source directory owning a model file (mirrors modelsItem/modelsBlock surfaces). */
 export function modelSourceForFileName(fileName: string): "models/item" | "models/block" | "models" {
   if (modelsItemPrefixPattern.test(fileName)) {
-    return "models/item";
+    return modelItemDirectory as "models/item";
   }
   if (modelsBlockPrefixPattern.test(fileName)) {
-    return "models/block";
+    return modelBlockDirectory as "models/block";
   }
-  return "models";
+  return modelDirectory as "models";
 }
 
 export type TextResourceFileKind = "splashes" | "endText" | "postcredits";

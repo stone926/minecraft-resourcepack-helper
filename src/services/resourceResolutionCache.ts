@@ -16,7 +16,8 @@ import { LruCache } from "./lruCache";
 import { ResourceCacheMetrics } from "./resourceCacheMetrics";
 import type {
   CacheEntry,
-  ResourceCacheGenerationState
+  ResourceCacheGenerationState,
+  ResourcePathResolution
 } from "./resourceCacheTypes";
 
 export interface ResourceResolutionCacheHost {
@@ -96,9 +97,13 @@ export class ResourceResolutionCache {
   }
 
   resolveResourcePath(request: ResourceFileRequest): string | null {
+    return this.resolveResourcePathWithDependencies(request).fileName;
+  }
+
+  resolveResourcePathWithDependencies(request: ResourceFileRequest): ResourcePathResolution {
     const location = this.getResourceLocation(request.resourcePath, request.targetFileExtension);
     if (!location.isValid) {
-      return null;
+      return { fileName: null, verificationPaths: [] };
     }
 
     const key = [
@@ -117,7 +122,10 @@ export class ResourceResolutionCache {
     const cached = this.resourceResolutionCache.get(key);
     if (cached && cached.generation === generation && this.canReuse(cached)) {
       this.metrics.hit("resourceResolution");
-      return cached.value;
+      return {
+        fileName: cached.value,
+        verificationPaths: cached.verificationPaths
+      };
     }
 
     this.metrics.miss("resourceResolution");
@@ -138,7 +146,10 @@ export class ResourceResolutionCache {
       verifiedAt: this.verificationTimestamp()
     });
     this.resourceResolutionDependencies.register(key, verificationPaths);
-    return resolution.fileName;
+    return {
+      fileName: resolution.fileName,
+      verificationPaths
+    };
   }
 
   getResourceLocation(resourcePath: string, targetFileExtension: string | null): ResourceLocation {

@@ -165,10 +165,10 @@ export async function startRsglLanguageServer(
         throw new TypeError("The RSGL resource navigation request failed its runtime guard.");
       }
       if (token.isCancellationRequested) {
-        return cancelledResourceNavigationResponse(value);
+        return terminalResourceNavigationResponse(value, "cancelled", "cancelled");
       }
       if (!options.resolveResourceNavigation) {
-        return unavailableResourceNavigationResponse(value);
+        return terminalResourceNavigationResponse(value, "unavailable", "internalError");
       }
       const controller = new AbortController();
       const cancellation = token.onCancellationRequested(() => controller.abort());
@@ -444,31 +444,19 @@ function withNativePathMappings(
     : request;
 }
 
-function cancelledResourceNavigationResponse(
-  request: RsglResourceNavigationRequest
+function terminalResourceNavigationResponse(
+  request: RsglResourceNavigationRequest,
+  status: "cancelled" | "unavailable",
+  reason: "cancelled" | "internalError"
 ): RsglResourceNavigationResponse {
   return {
     protocolVersion: rsglResourceNavigationProtocolVersion,
     requestGeneration: request.requestGeneration,
     operation: request.operation,
-    status: "cancelled",
+    status,
     coverage: "unavailable",
     locations: [],
-    reason: "cancelled"
-  };
-}
-
-function unavailableResourceNavigationResponse(
-  request: RsglResourceNavigationRequest
-): RsglResourceNavigationResponse {
-  return {
-    protocolVersion: rsglResourceNavigationProtocolVersion,
-    requestGeneration: request.requestGeneration,
-    operation: request.operation,
-    status: "unavailable",
-    coverage: "unavailable",
-    locations: [],
-    reason: "internalError"
+    reason
   };
 }
 

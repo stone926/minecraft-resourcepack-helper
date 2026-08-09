@@ -49,6 +49,14 @@ describe("CIT diagnostics", () => {
     assert.ok(diagnostics.some(message => message.includes("Invalid regular expression")));
   });
 
+  it("applies shared scalar positivity rules to integers and numbers", () => {
+    const globalFile = path.join("pack", "assets", "minecraft", "citresewn", "cit.properties");
+    const diagnostics = getMessages("cap=0\nfade=-0.5", globalFile);
+
+    assert.ok(diagnostics.some(message => message.includes("greater than 0")));
+    assert.ok(diagnostics.some(message => message.includes("at least 0")));
+  });
+
   it("recognizes CIT Resewn aliases and modern component keys", () => {
     const diagnostics = getMessages([
       "cit_weight=10",
@@ -124,6 +132,16 @@ describe("CIT diagnostics", () => {
     const fileName = path.join("pack", "assets", "minecraft", "citresewn", "cit", "stick.properties");
     const diagnostics = getMessages("type=item", fileName, {
       items: ["minecraft:stick"],
+      enchantments: []
+    });
+
+    assert.strictEqual(diagnostics.some(message => message.includes("requires items")), false);
+  });
+
+  it("infers the item namespace from the CIT assets path", () => {
+    const fileName = path.join("pack", "assets", "custom", "citresewn", "cit", "stick.properties");
+    const diagnostics = getMessages("type=item", fileName, {
+      items: ["custom:stick"],
       enchantments: []
     });
 

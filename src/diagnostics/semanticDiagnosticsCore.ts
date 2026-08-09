@@ -47,7 +47,7 @@ export interface SemanticDiagnosticsHost {
     document: SemanticDiagnosticsDocument,
     ast: JsonDocumentNode,
     configuration: SemanticDiagnosticsConfiguration
-  ): readonly SemanticDiagnosticsModelDocument[];
+  ): Promise<readonly SemanticDiagnosticsModelDocument[]> | readonly SemanticDiagnosticsModelDocument[];
   getSoundEvents(soundsJsonPath: string): ReadonlySet<string> | null;
 }
 
@@ -92,7 +92,7 @@ type SemanticDiagnosticsHandler = (
   document: SemanticDiagnosticsDocument,
   ast: JsonDocumentNode,
   options: SemanticDiagnosticsOptions
-) => SemanticDiagnostic[];
+) => Promise<SemanticDiagnostic[]> | SemanticDiagnostic[];
 
 const semanticDiagnosticsHandlers = {
   packMetadata: (document, ast, options) =>
@@ -242,15 +242,15 @@ async function getTextResourceDiagnostics(
   }));
 }
 
-function getModelDiagnostics(
+async function getModelDiagnostics(
   document: SemanticDiagnosticsDocument,
   ast: JsonDocumentNode,
   configuration: SemanticDiagnosticsConfiguration,
   host: SemanticDiagnosticsHost
-): SemanticDiagnostic[] {
+): Promise<SemanticDiagnostic[]> {
   const diagnostics: SemanticDiagnostic[] = [];
   const parent = getObjectMember(ast.body, "parent");
-  const chain = host.getModelParentChain(document, ast, configuration);
+  const chain = await host.getModelParentChain(document, ast, configuration);
 
   // The chain includes the entry model itself, so a chain of maxModelParentDepth + 1
   // models is still within Minecraft's parent-depth budget.

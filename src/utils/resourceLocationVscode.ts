@@ -5,6 +5,19 @@ export interface OffsetRangeLocationLike {
   range?: { start: number; end: number };
 }
 
+export interface LineCharacterRangeLike {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}
+
+/** Maps a VS Code-free line/character range onto the editor API. */
+export function toVscodeRange(range: LineCharacterRangeLike): vscode.Range {
+  return new vscode.Range(
+    new vscode.Position(range.start.line, range.start.character),
+    new vscode.Position(range.end.line, range.end.character)
+  );
+}
+
 /**
  * Maps a byte-offset location onto a `vscode.Location` by opening the target
  * document. Locations without a range, and unreadable targets, resolve to the

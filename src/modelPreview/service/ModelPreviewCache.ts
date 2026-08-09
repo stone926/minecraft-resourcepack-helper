@@ -36,7 +36,8 @@ export class ModelPreviewCache {
   private readonly previews = new LruCache<string, PreviewCacheEntry>(128);
 
   constructor(
-    private readonly artifacts: ModelPreviewArtifactCacheStore = new WorkspaceResourceCache().modelPreviewArtifacts
+    private readonly artifacts: ModelPreviewArtifactCacheStore = new WorkspaceResourceCache()
+      .getModelPreviewArtifactCache()
   ) {}
 
   get(fileName: string): Promise<ModelPreviewDocument> | null {

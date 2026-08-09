@@ -1,4 +1,5 @@
 export * from "./resourceId";
+export * from "./assetsResourceId";
 export * from "./collections";
 export * from "./resourceTargets";
 export * from "./resourceGraphIdentity";

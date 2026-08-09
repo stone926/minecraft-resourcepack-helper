@@ -1,5 +1,10 @@
 import * as fs from "node:fs";
-import { readOggMetadata, type OggMetadata } from "./oggMetadata";
+import {
+  oggMaximumPageBytes,
+  oggVorbisIdentificationPageBytes,
+  readOggMetadataFromHeadAndTail,
+  type OggMetadata
+} from "./oggMetadata";
 import { pngMetadataHeaderBytes, readPngMetadata, type PngMetadata } from "./pngMetadata";
 
 export function readPngFileMetadata(fileName: string): PngMetadata | null {
@@ -11,20 +16,46 @@ export function readPngFileMetadata(fileName: string): PngMetadata | null {
 }
 
 export function readOggFileMetadata(fileName: string): OggMetadata | null {
+  const handle = openFile(fileName);
+  if (handle === null) {
+    return null;
+  }
   try {
-    return readOggMetadata(fs.readFileSync(fileName));
+    const fileSize = fs.fstatSync(handle).size;
+    const head = readFileRange(
+      handle,
+      0,
+      Math.min(fileSize, oggVorbisIdentificationPageBytes)
+    );
+    const tailLength = Math.min(fileSize, oggMaximumPageBytes);
+    const tail = readFileRange(handle, fileSize - tailLength, tailLength);
+    return readOggMetadataFromHeadAndTail(head, tail);
   } catch {
     return null;
+  } finally {
+    fs.closeSync(handle);
   }
 }
 
 function readFilePrefix(fileName: string, byteLength: number): Buffer {
   const handle = fs.openSync(fileName, "r");
   try {
-    const bytes = Buffer.allocUnsafe(byteLength);
-    const bytesRead = fs.readSync(handle, bytes, 0, byteLength, 0);
-    return bytes.subarray(0, bytesRead);
+    return readFileRange(handle, 0, byteLength);
   } finally {
     fs.closeSync(handle);
   }
+}
+
+function openFile(fileName: string): number | null {
+  try {
+    return fs.openSync(fileName, "r");
+  } catch {
+    return null;
+  }
+}
+
+function readFileRange(handle: number, position: number, byteLength: number): Buffer {
+  const bytes = Buffer.allocUnsafe(byteLength);
+  const bytesRead = fs.readSync(handle, bytes, 0, byteLength, position);
+  return bytes.subarray(0, bytesRead);
 }

@@ -4,5 +4,6 @@ export * from "./disposable";
 export * from "./documentIdentity";
 export * from "./errors";
 export * from "./listenerSet";
+export * from "./lruCache";
 export * from "./moduleExport";
 export * from "./singleFlight";

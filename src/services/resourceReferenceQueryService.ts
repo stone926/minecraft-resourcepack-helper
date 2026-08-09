@@ -2,24 +2,29 @@ import * as vscode from "vscode";
 import {
   canonicalizeResourceGraphIdentity,
   canonicalizeResourceGraphOutputPath,
-  uniqueLogicalKeys
+  uniqueLogicalKeys,
+  type ResourceGraphLogicalKey
 } from "../../packages/mc-assets/src";
 import type { ResourceProducer } from "../resourceUniverse/core/types";
 import type { ResourceUniverseService } from "../resourceUniverse/core/resourceUniverseService";
+import { physicalProviderId } from "../resourceUniverse/core/providerIds";
+import type { PhysicalAssetDefinitionResolver } from "../resourceUniverse/providers/physicalAssetDefinitionResolver";
 import type {
   ResourceNavigationResult,
   ResourceNavigationService
 } from "../resourceUniverse/navigation/resourceNavigationService";
 import { getResourceReferences, type ResourceReference } from "../utils/resourceReferences";
+import { generateReferenceRedirectPath } from "../utils/pathGenerator";
+import { isAbortError } from "../utils/abortError";
 import {
   resourceReferenceForEdge,
   resourceSourceUriForEdge
 } from "./resourceEdgeReferenceMapper";
 import { combineResourceFactsCoverage as combineCoverage } from "./resourceFactsCoverage";
 import { createResourceResolutionContext } from "./resourceNavigationContext";
-import type { LegacyReferenceBridge } from "./legacyReferenceBridge";
 import type { ProjectRefreshCoordinator } from "./projectRefreshCoordinator";
 import type {
+  EnsuredResourceProject,
   ResourceUniverseDocument,
   UnifiedReferenceResolution,
   UnifiedReferenceSet,
@@ -29,12 +34,17 @@ import type {
 
 /** Resource-reference extraction and indexed incoming/outgoing query orchestration. */
 export class ResourceReferenceQueryService {
+  private physicalDefinitionResolver?: PhysicalAssetDefinitionResolver;
+
   public constructor(
     private readonly universe: ResourceUniverseService,
     private readonly navigation: ResourceNavigationService,
-    private readonly refreshCoordinator: ProjectRefreshCoordinator,
-    private readonly legacy: LegacyReferenceBridge
+    private readonly refreshCoordinator: ProjectRefreshCoordinator
   ) {}
+
+  public setPhysicalDefinitionResolver(resolver: PhysicalAssetDefinitionResolver): void {
+    this.physicalDefinitionResolver = resolver;
+  }
 
   public async resolveReference(
     document: ResourceUniverseDocument,
@@ -45,31 +55,70 @@ export class ResourceReferenceQueryService {
       return { targetUri: null, coverage: "authoritative" };
     }
 
-    const legacy = this.legacy.resolve(document, reference);
     const identity = canonicalizeResourceGraphIdentity(reference.kind, reference.value, {
       extension: reference.extension
     });
-    const discovered = await this.refreshCoordinator.discoverProjectForUri(document.uri);
-    if (discovered.context && !this.legacy.requiresIndexRefresh(
-      document,
-      discovered.context,
-      discovered.rsglApplicability,
-      legacy
-    )) {
+    const modeResolution = resolveModeReference(document, reference);
+    if (modeResolution.handled) {
       return {
         target: identity?.primaryKey,
-        targetUri: legacy.winner,
+        targetUri: modeResolution.targetUri,
         coverage: "authoritative"
       };
     }
 
+    const discovered = await this.refreshCoordinator.discoverProjectForUri(document.uri);
+    if (!identity) {
+      return {
+        targetUri: null,
+        coverage: discovered.context ? "authoritative" : "unavailable"
+      };
+    }
+
+    const currentCoverage = discovered.context
+      ? this.universe.getCoverage(physicalProviderId, discovered.context.projectId)
+      : undefined;
+    const currentIndexIsUsable = discovered.context !== undefined
+      && this.refreshCoordinator.isPhysicalIndexCurrent(discovered.context)
+      && currentCoverage !== undefined
+      && currentCoverage.status !== "unavailable";
+    const generatedFactsAreApplicable = options.includeGenerated === true
+      && discovered.rsglApplicability !== "none";
+    if (
+      discovered.context
+      && !currentIndexIsUsable
+      && !generatedFactsAreApplicable
+      && this.physicalDefinitionResolver
+    ) {
+      try {
+        const exact = await this.physicalDefinitionResolver.resolveExactDefinition({
+          context: discovered.context,
+          target: identity.primaryKey,
+          scope: "effective"
+        }, options.signal);
+        if (exact.status === "resolved") {
+          return {
+            target: exact.target,
+            targetUri: vscode.Uri.parse(exact.definition.uri, true),
+            coverage: "authoritative"
+          };
+        }
+        if (exact.status === "missing") {
+          return { target: exact.target, targetUri: null, coverage: "authoritative" };
+        }
+      } catch (error) {
+        if (isAbortError(error) || options.signal?.aborted) {
+          throw error;
+        }
+        // An incomplete exact probe falls through to the canonical provider index.
+      }
+    }
+
     const ensured = await this.refreshCoordinator.refreshDiscoveredProject(discovered, options);
-    return this.legacy.resolveIndexedReference(
+    return this.resolveIndexedReference(
       document,
-      identity?.primaryKey,
-      legacy.winner,
+      identity.primaryKey,
       ensured,
-      options,
       this.refreshCoordinator.applicableProviderIds(
         options.includeGenerated === true,
         ensured.context?.projectId,
@@ -95,18 +144,26 @@ export class ResourceReferenceQueryService {
           resolution: { targetUri: null, coverage: "authoritative" as const }
         };
       }
-      const legacyWinner = this.legacy.resolve(document, reference).winner;
       const identity = canonicalizeResourceGraphIdentity(reference.kind, reference.value, {
         extension: reference.extension
       });
+      const modeResolution = resolveModeReference(document, reference);
+      if (modeResolution.handled) {
+        return {
+          reference,
+          resolution: {
+            target: identity?.primaryKey,
+            targetUri: modeResolution.targetUri,
+            coverage: "authoritative" as const
+          }
+        };
+      }
       return {
         reference,
-        resolution: this.legacy.resolveIndexedReference(
+        resolution: this.resolveIndexedReference(
           document,
           identity?.primaryKey,
-          legacyWinner,
           ensured,
-          options,
           applicableProviderIds
         )
       };
@@ -124,6 +181,32 @@ export class ResourceReferenceQueryService {
         ensured.coverage,
         ...resolutions.map(item => item.resolution.coverage)
       ])
+    };
+  }
+
+  private resolveIndexedReference(
+    document: ResourceUniverseDocument,
+    target: ResourceGraphLogicalKey | undefined,
+    ensured: EnsuredResourceProject,
+    applicableProviderIds: readonly string[]
+  ): UnifiedReferenceResolution {
+    if (!target || !ensured.context) {
+      return {
+        target,
+        targetUri: null,
+        coverage: ensured.context ? ensured.coverage : "unavailable"
+      };
+    }
+    const navigation = this.navigation.resolveDefinition(
+      target,
+      createResourceResolutionContext(ensured.context, applicableProviderIds),
+      { activeUri: document.uri.toString() }
+    );
+    return {
+      target,
+      targetUri: resolvedLocationUri(navigation),
+      coverage: ensured.coverage,
+      navigation
     };
   }
 
@@ -240,6 +323,28 @@ export class ResourceReferenceQueryService {
         })
     );
     return { references: uniqueResolvedReferences(references), coverage: ensured.coverage };
+  }
+}
+
+type ModeReferenceResolution =
+  | { handled: false; targetUri: null }
+  | { handled: true; targetUri: vscode.Uri | null };
+
+/** Specialized path modes (currently CIT) remain outside logical physical resolution. */
+function resolveModeReference(
+  document: ResourceUniverseDocument,
+  reference: ResourceReference
+): ModeReferenceResolution {
+  if (!reference.resolveMode || document.uri.scheme !== "file") {
+    return { handled: false, targetUri: null };
+  }
+  try {
+    return {
+      handled: true,
+      targetUri: generateReferenceRedirectPath(reference, document)
+    };
+  } catch {
+    return { handled: false, targetUri: null };
   }
 }
 

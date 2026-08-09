@@ -1,4 +1,4 @@
-import { resourceBodyMessages } from "../diagnosticMessages";
+import { propertyKeyMessages, resourceBodyMessages } from "../diagnosticMessages";
 import {
   ExprNode,
   PropertyStmtNode,
@@ -242,7 +242,7 @@ export function resolveResourceBodyPropertyKey(
   options.onInvalidJsonValue?.();
   options.onError?.(
     "rsgl.invalidPropertyKey",
-    "A computed property key must evaluate to a string, number, or boolean scalar value.",
+    propertyKeyMessages.computedKeyMustBeScalar,
     statement.key.kind === "DynamicKey" ? statement.key.expression.range : statement.key.range,
     context.sourceFile
   );

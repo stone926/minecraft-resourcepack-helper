@@ -31,15 +31,22 @@ describe("resource universe visible migration contract", () => {
     assert.ok(facade.split(/\r?\n/u).length < 400, "the public facade must remain a thin composition root");
   });
 
-  it("keeps the established overlay/filter/load-order resolver as physical winner evidence", () => {
+  it("uses exact physical resolution and the Universe without a parallel legacy bridge", () => {
     const facade = readSource("services", "resourceUniverseNavigationFacade.ts");
-    const legacy = readSource("services", "legacyReferenceBridge.ts");
+    const references = readSource("services", "resourceReferenceQueryService.ts");
     const scanner = readSource("resourceUniverse", "providers", "vscodePhysicalAssetSource.ts");
 
-    assert.ok(facade.includes("legacyResolver"));
-    assert.ok(facade.includes("generateReferenceRedirectPath"));
-    assert.ok(legacy.includes("findPhysicalProducer"));
-    assert.ok(legacy.includes("legacyReferenceEvidence"));
+    assert.strictEqual(facade.includes("legacyResolver"), false);
+    assert.strictEqual(facade.includes("LegacyReferenceBridge"), false);
+    assert.ok(facade.includes("referenceQueries.setPhysicalDefinitionResolver"));
+    assert.ok(references.includes("resolveExactDefinition"));
+    assert.ok(references.includes("this.navigation.resolveDefinition"));
+    assert.ok(references.includes("if (modeResolution.handled)"));
+    assert.strictEqual(
+      references.includes("modeResolution.targetUri || !identity"),
+      false,
+      "specialized CIT misses must not fall through to logical Universe resolution"
+    );
     assert.ok(scanner.includes("parsePackMetadata"));
     assert.ok(scanner.includes("overlayApplies"));
     assert.ok(scanner.includes("effectiveDocuments"));
@@ -82,16 +89,13 @@ describe("resource universe visible migration contract", () => {
   it("keeps diagnostics generated-aware without scanning explicit non-RSGL directory projects", () => {
     const registration = readSource("registration", "registerResourceDiagnostics.ts");
     const references = readSource("services", "resourceReferenceQueryService.ts");
-    const policy = readSource("services", "referenceIndexRefreshPolicy.ts");
 
     assert.ok(registration.includes("navigation.resolveReference(document, reference, {"));
     assert.ok(registration.includes("includeGenerated: true"));
-    assert.ok(policy.includes('input.rsglApplicability !== "none"'));
-    assert.ok(policy.includes('source !== "directory"'));
     assert.ok(references.includes("this.refreshCoordinator.discoverProjectForUri(document.uri)"));
     assert.ok(references.includes('coverage: "authoritative"'));
     assert.ok(
-      references.indexOf("this.legacy.requiresIndexRefresh(")
+      references.indexOf("this.physicalDefinitionResolver.resolveExactDefinition")
         < references.indexOf("this.refreshCoordinator.refreshDiscoveredProject(discovered, options)")
     );
   });

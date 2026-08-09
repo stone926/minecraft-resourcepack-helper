@@ -12,9 +12,6 @@ import {
   rsglResourceSnapshotProtocolVersion,
   type RsglProviderCoverageDto,
   type RsglResourceCoverageScopeDto,
-  type RsglResourceDto,
-  type RsglResourceEdgeDto,
-  type RsglResourceIssueDto,
   type RsglResourceSnapshotInvalidationNotification,
   type RsglResourceSnapshotRequest,
   type RsglResourceSnapshotResponse
@@ -271,10 +268,10 @@ function createSnapshotResponse(
     revision,
     status: partial ? "partial" : "ok",
     coverage,
-    resources: scopedResources as RsglResourceDto[],
-    edges: scopedEdges as RsglResourceEdgeDto[],
+    resources: scopedResources,
+    edges: scopedEdges,
     ...(skippedSourceUris.length > 0 ? { skippedSourceUris } : {}),
-    ...(issues.length > 0 ? { issues: issues as RsglResourceIssueDto[] } : {})
+    ...(issues.length > 0 ? { issues } : {})
   };
 }
 

@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+  ancestorPackMetadataCandidates,
   findAssetsRoot,
   findPackRoot,
   getAssetsRootPathCandidates,
@@ -17,6 +18,23 @@ import {
 
 
 describe("resource location utilities", () => {
+  it("collects pack metadata candidates through the requested ancestor", () => {
+    const root = path.parse(__dirname).root;
+    const packRoot = path.join(root, "packs", "example");
+    const modelDirectory = path.join(packRoot, "assets", "minecraft", "models", "block");
+
+    assert.deepStrictEqual(
+      ancestorPackMetadataCandidates(path.join(modelDirectory, "cube.json"), packRoot),
+      [
+        path.join(modelDirectory, "pack.mcmeta"),
+        path.join(packRoot, "assets", "minecraft", "models", "pack.mcmeta"),
+        path.join(packRoot, "assets", "minecraft", "pack.mcmeta"),
+        path.join(packRoot, "assets", "pack.mcmeta"),
+        path.join(packRoot, "pack.mcmeta")
+      ]
+    );
+  });
+
   it("parses implicit minecraft namespace and appends extension", () => {
     const result = parseResourceLocation("block/acacia_button", "json");
 

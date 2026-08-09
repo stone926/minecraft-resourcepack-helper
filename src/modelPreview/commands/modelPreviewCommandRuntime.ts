@@ -24,7 +24,7 @@ export function createModelPreviewCommandRuntime(extensionUri: vscode.Uri): Mode
   const service = new ModelPreviewService({
     fileSystem,
     configuration: getResourceConfiguration,
-    artifactCache: workspaceResourceCache.modelPreviewArtifacts,
+    artifactCache: workspaceResourceCache.getModelPreviewArtifactCache(),
     modelLoader: createWorkspaceCacheModelLoader(fileSystem),
     resolveResourcePath: resolveWorkspaceResourcePath
   });

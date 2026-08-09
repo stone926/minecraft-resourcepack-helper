@@ -58,6 +58,7 @@ import {
   fileNameFromUri,
   formattingConfigurationForSource,
   formattingEditsForDocument,
+  handleSemanticWatchedFileBatch,
   normalizeDisplayFileName,
   projectSemanticConfigurationFingerprint,
   referenceLocationsForDocument,
@@ -274,20 +275,25 @@ function scheduleWatchedPathInvalidation(
   invalidationPaths: readonly string[],
   affectedUris: ReadonlySet<string>
 ): void {
-  let configurationChanged = false;
   for (const invalidationPath of invalidationPaths) {
     workspaceValidationCache.invalidatePath(invalidationPath);
-    if (path.basename(invalidationPath).toLowerCase() === "rsgl.config.json") {
-      configurationChanged = true;
-    } else if (path.extname(invalidationPath).toLowerCase() === ".rsgl") {
-      semanticCache.invalidatePath(invalidationPath);
-    }
   }
+  let configurationChanged = false;
+  let sourceChanged = false;
+  handleSemanticWatchedFileBatch(invalidationPaths, {
+    invalidatePath: fileName => {
+      sourceChanged = true;
+      semanticCache.invalidatePath(fileName);
+    },
+    invalidateProjectConfiguration: () => {
+      configurationChanged = true;
+    }
+  });
   invalidateResourceAnalysisCache(configurationChanged);
   publishResourceSnapshotInvalidations(
     configurationChanged
       ? "configuration"
-      : invalidationPaths.some(fileName => path.extname(fileName).toLowerCase() === ".rsgl")
+      : sourceChanged
         ? "document"
         : "dependency",
     invalidationPaths
@@ -597,18 +603,10 @@ function loadSemanticProgram(
   entryFileName: string,
   semanticConfigurationFingerprint?: string
 ) {
-  let fingerprint = semanticConfigurationFingerprint;
-  if (!fingerprint) {
-    try {
-      fingerprint = projectSemanticConfigurationFingerprint(entryFileName);
-    } catch {
-      // Diagnostics report malformed project config; language features keep
-      // using the default semantic identity instead of failing outright.
-    }
-  }
-  return semanticCache.loadProgramFromEntry(entryFileName, fingerprint
-    ? { semanticConfigurationFingerprint: fingerprint }
-    : {});
+  return semanticCache.loadProgramFromEntry(
+    entryFileName,
+    semanticConfigurationCacheOptions(entryFileName, semanticConfigurationFingerprint)
+  );
 }
 
 function loadNavigationSemanticProgram(sourceFileName: string) {
@@ -622,16 +620,26 @@ function loadNavigationSemanticProgramFromRoot(
   rootDirectory: string,
   configurationAnchor = rootDirectory
 ) {
-  let fingerprint: string | undefined;
-  try {
-    fingerprint = projectSemanticConfigurationFingerprint(configurationAnchor);
-  } catch {
-    // Diagnostics report malformed project config; navigation remains available.
-  }
   return semanticCache.loadProgramFromDirectory(
     rootDirectory,
-    fingerprint ? { semanticConfigurationFingerprint: fingerprint } : {}
+    semanticConfigurationCacheOptions(configurationAnchor)
   );
+}
+
+function semanticConfigurationCacheOptions(
+  configurationAnchor: string,
+  knownFingerprint?: string
+): { semanticConfigurationFingerprint?: string } {
+  let fingerprint = knownFingerprint;
+  if (!fingerprint) {
+    try {
+      fingerprint = projectSemanticConfigurationFingerprint(configurationAnchor);
+    } catch {
+      // Diagnostics own malformed project-config reporting. Best-effort
+      // language features keep using the default semantic cache identity.
+    }
+  }
+  return fingerprint ? { semanticConfigurationFingerprint: fingerprint } : {};
 }
 
 function loadDocumentResourceAnalysis(

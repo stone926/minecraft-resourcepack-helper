@@ -372,17 +372,26 @@ describe("RSGL CLI", () => {
     }
   });
 
-  it("throws a descriptive error when rsgl.config.json is not valid JSON", () => {
+  it("reports malformed project configuration without exposing a stack trace", () => {
     const root = createTempRoot();
     const previousCwd = process.cwd();
     try {
       fs.mkdirSync(path.join(root, "src"), { recursive: true });
       fs.writeFileSync(path.join(root, "src", "main.rsgl"), minimalModel);
-      fs.writeFileSync(path.join(root, "rsgl.config.json"), "{ not json");
       process.chdir(root);
 
-      const captured = captureIo();
-      assert.throws(() => runRsglCli(["check"], captured.io), /Failed to read .*rsgl\.config\.json/);
+      for (const [command, config] of [
+        ["build", "{ not json"],
+        ["check", JSON.stringify({ namespace: "Invalid Namespace" })]
+      ] as const) {
+        fs.writeFileSync(path.join(root, "rsgl.config.json"), config);
+        const captured = captureIo();
+
+        assert.strictEqual(runRsglCli([command], captured.io), 1);
+        assert.match(captured.stderr(), /^Error: /);
+        assert.match(captured.stderr(), /rsgl\.config\.json/);
+        assert.doesNotMatch(captured.stderr(), /\n\s+at\s/);
+      }
     } finally {
       process.chdir(previousCwd);
       fs.rmSync(root, { recursive: true, force: true });

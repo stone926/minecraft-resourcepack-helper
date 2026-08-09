@@ -2,7 +2,7 @@ import { vscode, t } from "./webviewApi.js";
 import {
   hostToWebviewMessageTypes,
   webviewToHostMessageTypes
-} from "./messageTypes.js";
+} from "../../src/modelPreview/protocol/ModelPreviewProtocol";
 import { DetailsPanelController } from "./detailsPanel.js";
 import { PreviewRenderer } from "./previewRenderer.js";
 

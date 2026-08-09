@@ -1,5 +1,6 @@
 import type { ExprNode, PropertyKeyNode } from "../parser";
 import { staticPropertyKeyName } from "../parser";
+import { propertyKeyMessages } from "../diagnosticMessages";
 import { diagnostic } from "./diagnostics";
 import type { RsglExpressionCheckContext } from "./expressionCheckContext";
 import type { RsglScope, RsglType } from "./types";
@@ -38,7 +39,7 @@ export function checkPropertyKey(
   if (!isPotentialPropertyKeyType(type)) {
     context.diagnostics.push(diagnostic(
       "rsgl.invalidPropertyKey",
-      "A computed property key must evaluate to a string, number, or boolean scalar value.",
+      propertyKeyMessages.computedKeyMustBeScalar,
       key.expression.range
     ));
   }

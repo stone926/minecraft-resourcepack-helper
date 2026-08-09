@@ -1,17 +1,23 @@
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { citResourceIdService } from "../../cit/citResourceIdService";
+import {
+  CitResourceIdService,
+  citResourceIdService
+} from "../../cit/citResourceIdService";
+import { citResourceIdInventoryWatcherPattern } from "../../cit/citResourceIdInventory";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import { createPack, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "./helpers/tempPack";
 
 describe("CIT resource ID service", () => {
   beforeEach(() => {
     workspaceResourceCache.invalidateAll();
+    citResourceIdService.invalidateAll();
   });
 
   afterEach(() => {
     workspaceResourceCache.invalidateAll();
+    citResourceIdService.invalidateAll();
   });
 
   it("refreshes item IDs after resource JSON files are created", () => {
@@ -28,9 +34,169 @@ describe("CIT resource ID service", () => {
 
       writeJson(pack, "assets/custom/items/wand.json", {});
       workspaceResourceCache.invalidatePath(itemFileName);
+      citResourceIdService.invalidatePath(itemFileName, "create");
 
       const after = citResourceIdService.getResourceIds(citFileName);
       assert.strictEqual(after.items.includes("custom:wand"), true);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("keeps filename inventories warm across content and unrelated resource changes", () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const citFileName = path.join(pack, "assets", "minecraft", "citresewn", "cit", "wand.properties");
+      const itemFileName = path.join(pack, "assets", "custom", "items", "wand.json");
+      writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=item\n");
+      writeJson(pack, "assets/custom/items/wand.json", {});
+
+      const initial = citResourceIdService.getResourceIds(citFileName);
+      citResourceIdService.invalidatePath(itemFileName, "change");
+      citResourceIdService.invalidatePath(
+        path.join(pack, "assets", "custom", "textures", "item", "wand.png"),
+        "create"
+      );
+
+      assert.strictEqual(citResourceIdService.getResourceIds(citFileName), initial);
+
+      const secondItem = path.join(pack, "assets", "custom", "items", "staff.json");
+      writeJson(pack, "assets/custom/items/staff.json", {});
+      workspaceResourceCache.invalidatePath(secondItem);
+      citResourceIdService.invalidatePath(secondItem, "create");
+      const refreshed = citResourceIdService.getResourceIds(citFileName);
+      assert.notStrictEqual(refreshed, initial);
+      assert.ok(refreshed.items.includes("custom:staff"));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("refreshes custom enchantment IDs on data inventory create and delete events", () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const citFileName = path.join(
+        pack,
+        "assets",
+        "minecraft",
+        "citresewn",
+        "cit",
+        "wand.properties"
+      );
+      const enchantmentFileName = path.join(
+        pack,
+        "data",
+        "arcana",
+        "enchantment",
+        "stormcall.json"
+      );
+      writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=elytra\n");
+
+      assert.strictEqual(
+        citResourceIdService.getResourceIds(citFileName).enchantments.includes("arcana:stormcall"),
+        false
+      );
+
+      writeJson(pack, "data/arcana/enchantment/stormcall.json", {});
+      workspaceResourceCache.invalidatePath(enchantmentFileName);
+      citResourceIdService.invalidatePath(enchantmentFileName, "create");
+      assert.strictEqual(
+        citResourceIdService.getResourceIds(citFileName).enchantments.includes("arcana:stormcall"),
+        true
+      );
+
+      fs.rmSync(enchantmentFileName);
+      workspaceResourceCache.invalidatePath(enchantmentFileName);
+      citResourceIdService.invalidatePath(enchantmentFileName, "delete");
+      assert.strictEqual(
+        citResourceIdService.getResourceIds(citFileName).enchantments.includes("arcana:stormcall"),
+        false
+      );
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("declares one dedicated watcher for singular and plural enchantment inventories", () => {
+    assert.strictEqual(
+      citResourceIdInventoryWatcherPattern,
+      "**/data/*/{enchantment,enchantments}/**"
+    );
+  });
+
+  it("eventually revalidates inventories when recursive watcher coverage is unavailable", () => {
+    const root = createTempDirectory();
+    let now = 0;
+
+    try {
+      const pack = createPack(root, "pack");
+      const citFileName = path.join(pack, "assets", "minecraft", "citresewn", "cit", "wand.properties");
+      const itemFileName = path.join(pack, "assets", "custom", "items", "late.json");
+      writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=item\n");
+      const service = new CitResourceIdService(() => ({
+        schemaVersion: 1,
+        defaultNamespace: "minecraft",
+        items: [],
+        enchantments: [],
+        armorSuffixes: []
+      }), {
+        now: () => now,
+        inventoryFreshnessTtlMs: 100
+      });
+
+      assert.strictEqual(service.getResourceIds(citFileName).items.includes("custom:late"), false);
+      writeJson(pack, "assets/custom/items/late.json", {});
+      workspaceResourceCache.invalidatePath(itemFileName);
+      now = 99;
+      assert.strictEqual(service.getResourceIds(citFileName).items.includes("custom:late"), false);
+      now = 100;
+      assert.strictEqual(service.getResourceIds(citFileName).items.includes("custom:late"), true);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("keeps a stale inventory visible while a TTL refresh runs", async () => {
+    const root = createTempDirectory();
+    let now = 0;
+
+    try {
+      const pack = createPack(root, "pack");
+      const citFileName = path.join(pack, "assets", "minecraft", "citresewn", "cit", "wand.properties");
+      writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=item\n");
+      writeJson(pack, "assets/custom/items/existing.json", {});
+      const service = new CitResourceIdService(() => ({
+        schemaVersion: 1,
+        defaultNamespace: "minecraft",
+        items: [],
+        enchantments: [],
+        armorSuffixes: []
+      }), {
+        now: () => now,
+        inventoryFreshnessTtlMs: 100
+      });
+
+      assert.deepStrictEqual(service.getResourceIds(citFileName).items, ["custom:existing"]);
+      writeJson(pack, "assets/custom/items/late.json", {});
+      // Simulate the filesystem cache independently observing the change while
+      // the inventory watcher misses it; only the inventory TTL should expire.
+      workspaceResourceCache.invalidatePath(path.join(pack, "assets", "custom", "items", "late.json"));
+      now = 100;
+
+      let readyCount = 0;
+      const stale = service.getResourceIdsForHotPath(citFileName, {}, {
+        key: "ttl-refresh",
+        onReady: () => { readyCount++; }
+      });
+      assert.deepStrictEqual(stale.items, ["custom:existing"]);
+
+      const refreshed = await service.warmResourceIds(citFileName);
+      assert.deepStrictEqual(refreshed.items, ["custom:existing", "custom:late"]);
+      assert.strictEqual(readyCount, 1);
     } finally {
       removeTempDirectory(root);
     }
